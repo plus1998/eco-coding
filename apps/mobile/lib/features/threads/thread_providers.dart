@@ -10,6 +10,7 @@ import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
+import '../../core/utils/thread_status.dart';
 
 final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final client = ref.watch(ecoCenterClientProvider);
@@ -461,16 +462,28 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       );
     }
 
+    if (shouldUpdateThreadSummaryFromLiveEvent(live.type) &&
+        state.thread != null) {
+      final thread = state.thread!;
+      state = state.copyWith(
+        thread: thread.copyWith(
+          status: threadStatusFromLiveEvent(live.type, thread.status),
+          message: resolveThreadMessageFromLiveEvent(live.type, live.message),
+          updatedAt: DateTime.now().toUtc().toIso8601String(),
+          runtimeConfig: live.runtimeConfig ?? thread.runtimeConfig,
+        ),
+      );
+    }
+
     if (event.kind == 'thread.plan') {
-      if (live.type == 'thread.awaiting_plan') {
-        ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
-          if (!mounted) return;
-          if (plan != null && state.thread?.status == 'awaiting_plan') {
-            state = state.copyWith(pendingPlan: plan);
-          }
-        });
-      } else {
+      if (live.type == 'thread.plan_cleared' || live.type == 'thread.completed') {
         state = state.copyWith(clearPlan: true);
+      } else if (live.type == 'thread.awaiting_plan' ||
+          live.type == 'thread.execution_failed') {
+        if (live.plan != null) {
+          state = state.copyWith(pendingPlan: live.plan);
+        }
+        _loadPendingPlanFromRpc();
       }
     }
     if (event.kind == 'thread.bash_approval') {
@@ -509,6 +522,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         if (thread == null) return;
         if (thread.status != 'awaiting_plan' && state.pendingPlan != null) {
           state = state.copyWith(clearPlan: true, thread: thread);
+          return;
+        }
+        if (thread.status == 'awaiting_plan' && state.pendingPlan == null) {
+          ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
+            if (!mounted) return;
+            state = state.copyWith(
+              pendingPlan: plan,
+              thread: thread,
+            );
+          });
           return;
         }
         state = state.copyWith(thread: thread);
@@ -552,6 +575,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   Future<void> dismissPlan() async {
     await ref.read(desktopRpcProvider)?.dismissPlan(threadId);
     state = state.copyWith(clearPlan: true);
+  }
+
+  void _loadPendingPlanFromRpc() {
+    ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
+      if (!mounted) return;
+      if (plan != null) {
+        state = state.copyWith(pendingPlan: plan);
+      }
+    });
   }
 
   Future<void> resolveBash(String toolUseId, String decision) async {

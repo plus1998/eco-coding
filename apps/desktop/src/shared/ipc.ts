@@ -519,6 +519,8 @@ export interface RouteManualSpec {
   outputPerM?: number;
   cacheReadPerM?: number;
   cacheWritePerM?: number;
+  /** Multiplier applied to models.dev catalog rates; default 1. */
+  priceMultiplier?: number;
 }
 
 export interface CandidateModelInput {

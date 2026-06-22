@@ -18,6 +18,7 @@ class SessionComposer extends ConsumerStatefulWidget {
     required this.runtimeConfig,
     required this.threadId,
     required this.isRunning,
+    this.canStopThread = false,
     this.followUpMode = false,
     this.sendBusy = false,
     required this.hasActivity,
@@ -39,6 +40,7 @@ class SessionComposer extends ConsumerStatefulWidget {
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool isRunning;
+  final bool canStopThread;
   final bool followUpMode;
   final bool sendBusy;
   final bool hasActivity;
@@ -316,7 +318,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                                   onSend: _canSend ? _handleSend : null,
                                 )
                               : _StopButton(onStop: _handleStop)
-                        else if (widget.isRunning)
+                        else if (widget.isRunning || widget.canStopThread)
                           _StopButton(onStop: _handleStop)
                         else
                           _SendButton(onSend: _canSend ? _handleSend : null),

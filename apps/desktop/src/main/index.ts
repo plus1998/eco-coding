@@ -221,6 +221,7 @@ import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
   type RuntimeRoute,
+  resolveRatesForRoute,
   resolveRuntimeRoutesFromSettings,
 } from "./billing-resolver";
 import {
@@ -6631,24 +6632,22 @@ async function resolveCandidateModels(
           view.resolvedSupportsReasoning = manual.supportsReasoning;
       }
       if (pricingLookup) {
-        view.resolvedInputPerM = manual?.inputPerM ?? pricingLookup.rates.input;
-        view.resolvedOutputPerM = manual?.outputPerM ?? pricingLookup.rates.output;
-        if (pricingLookup.rates.cacheRead !== undefined) {
-          view.resolvedCacheReadPerM = manual?.cacheReadPerM ?? pricingLookup.rates.cacheRead;
-        } else if (manual?.cacheReadPerM !== undefined) {
-          view.resolvedCacheReadPerM = manual.cacheReadPerM;
-        }
-        if (pricingLookup.rates.cacheWrite !== undefined) {
-          view.resolvedCacheWritePerM = manual?.cacheWritePerM ?? pricingLookup.rates.cacheWrite;
-        } else if (manual?.cacheWritePerM !== undefined) {
-          view.resolvedCacheWritePerM = manual.cacheWritePerM;
+        const rates = resolveRatesForRoute(pricingLookup, manual);
+        if (rates) {
+          view.resolvedInputPerM = rates.input;
+          view.resolvedOutputPerM = rates.output;
+          if (rates.cacheRead !== undefined) view.resolvedCacheReadPerM = rates.cacheRead;
+          if (rates.cacheWrite !== undefined) view.resolvedCacheWritePerM = rates.cacheWrite;
         }
         if (pricingLookup.displayName !== undefined) view.modelsDevLabel = pricingLookup.displayName;
       } else {
-        if (manual?.inputPerM !== undefined) view.resolvedInputPerM = manual.inputPerM;
-        if (manual?.outputPerM !== undefined) view.resolvedOutputPerM = manual.outputPerM;
-        if (manual?.cacheReadPerM !== undefined) view.resolvedCacheReadPerM = manual.cacheReadPerM;
-        if (manual?.cacheWritePerM !== undefined) view.resolvedCacheWritePerM = manual.cacheWritePerM;
+        const rates = resolveRatesForRoute(null, manual);
+        if (rates) {
+          view.resolvedInputPerM = rates.input;
+          view.resolvedOutputPerM = rates.output;
+          if (rates.cacheRead !== undefined) view.resolvedCacheReadPerM = rates.cacheRead;
+          if (rates.cacheWrite !== undefined) view.resolvedCacheWritePerM = rates.cacheWrite;
+        }
       }
       return view;
     }),

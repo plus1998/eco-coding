@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/widgets/eco_markdown.dart';
 
 Future<void> showPlanApprovalSheet({
   required BuildContext context,
@@ -59,7 +60,8 @@ Future<void> showPlanApprovalSheet({
             Text(plan.analysis),
             const SizedBox(height: 12),
             Text('计划', style: Theme.of(context).textTheme.labelLarge),
-            Text(plan.plan),
+            const SizedBox(height: 4),
+            EcoMarkdown(text: plan.plan),
           ],
         ),
       );

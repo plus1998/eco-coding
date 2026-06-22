@@ -5,6 +5,10 @@ import {
   type ModelCostRates,
   type ModelPricingLookup,
 } from "@eco/runtime";
+import {
+  applyPriceMultiplierToCostRates,
+  resolvePriceMultiplier,
+} from "../shared/manual-spec-pricing";
 import { createModelAlias, resolveProxyRoute, stripExtendedContextModelSuffix, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
@@ -57,8 +61,9 @@ export function resolveRatesForRoute(
 ): ModelCostRates | null {
   const catalogRates = lookup?.rates ?? null;
   const manualRates = manualSpecToRates(manualSpec);
-  if (manualRates && manualSpec?.inputPerM !== undefined && manualSpec.outputPerM !== undefined) {
-    return {
+  let baseRates: ModelCostRates | null;
+  if (manualRates && manualSpec?.inputPerM !== undefined && manualSpec?.outputPerM !== undefined) {
+    baseRates = {
       input: manualSpec.inputPerM,
       output: manualSpec.outputPerM,
       ...(manualSpec.cacheReadPerM !== undefined
@@ -68,12 +73,21 @@ export function resolveRatesForRoute(
         ? { cacheWrite: manualSpec.cacheWritePerM }
         : catalogRates?.cacheWrite !== undefined && { cacheWrite: catalogRates.cacheWrite }),
     };
+  } else {
+    baseRates = catalogRates ?? manualRates;
   }
-  return catalogRates ?? manualRates;
+  if (!baseRates) {
+    return null;
+  }
+  return applyPriceMultiplierToCostRates(baseRates, resolvePriceMultiplier(manualSpec));
 }
 
 export function formatManualPricingLabel(spec: RouteManualSpec): string {
   const parts: string[] = [];
+  const multiplier = resolvePriceMultiplier(spec);
+  if (multiplier !== 1) {
+    parts.push(`倍率 x${formatMultiplierLabel(multiplier)}`);
+  }
   if (spec.inputPerM !== undefined && spec.outputPerM !== undefined) {
     parts.push(`输入 $${spec.inputPerM}/M · 输出 $${spec.outputPerM}/M`);
   }
@@ -298,8 +312,13 @@ function hasManualPricingOverride(spec?: RouteManualSpec): boolean {
     spec.inputPerM !== undefined ||
     spec.outputPerM !== undefined ||
     spec.cacheReadPerM !== undefined ||
-    spec.cacheWritePerM !== undefined
+    spec.cacheWritePerM !== undefined ||
+    (spec.priceMultiplier !== undefined && spec.priceMultiplier !== 1)
   );
+}
+
+function formatMultiplierLabel(multiplier: number): string {
+  return Number.isInteger(multiplier) ? String(multiplier) : multiplier.toString();
 }
 
 function resolveEffectiveCapabilities(

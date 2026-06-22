@@ -1,4 +1,9 @@
 import type { RouteCapabilityHint, RouteManualSpec, RoutePricingHint } from "../shared/ipc";
+import {
+  applyPriceMultiplierToPerMRates,
+  normalizeStoredPriceMultiplier,
+  resolvePriceMultiplier,
+} from "../shared/manual-spec-pricing";
 
 export type ManualTriState = "auto" | "yes" | "no";
 
@@ -7,6 +12,7 @@ export interface ManualSpecFormFields {
   maxOutputTokens: string;
   supportsImageInput: ManualTriState;
   supportsReasoning: ManualTriState;
+  priceMultiplier: string;
   inputPerM: string;
   outputPerM: string;
   cacheReadPerM: string;
@@ -18,6 +24,7 @@ export type ManualSpecOverrideField =
   | "maxOutputTokens"
   | "supportsImageInput"
   | "supportsReasoning"
+  | "priceMultiplier"
   | "inputPerM"
   | "outputPerM"
   | "cacheReadPerM"
@@ -29,10 +36,24 @@ export function emptyManualSpecForm(): ManualSpecFormFields {
     maxOutputTokens: "",
     supportsImageInput: "auto",
     supportsReasoning: "auto",
+    priceMultiplier: "1",
     inputPerM: "",
     outputPerM: "",
     cacheReadPerM: "",
     cacheWritePerM: "",
+  };
+}
+
+function pricingFieldsFromManual(spec?: RouteManualSpec): Pick<
+  ManualSpecFormFields,
+  "priceMultiplier" | "inputPerM" | "outputPerM" | "cacheReadPerM" | "cacheWritePerM"
+> {
+  return {
+    priceMultiplier: formatPriceMultiplierFormValue(spec?.priceMultiplier),
+    inputPerM: formatManualRateValue(spec?.inputPerM),
+    outputPerM: formatManualRateValue(spec?.outputPerM),
+    cacheReadPerM: formatManualRateValue(spec?.cacheReadPerM),
+    cacheWritePerM: formatManualRateValue(spec?.cacheWritePerM),
   };
 }
 
@@ -42,10 +63,69 @@ export function manualSpecToForm(spec?: RouteManualSpec): ManualSpecFormFields {
     maxOutputTokens: formatManualTokenValue(spec?.maxOutputTokens),
     supportsImageInput: booleanToTriState(spec?.supportsImageInput),
     supportsReasoning: booleanToTriState(spec?.supportsReasoning),
-    inputPerM: formatManualRateValue(spec?.inputPerM),
-    outputPerM: formatManualRateValue(spec?.outputPerM),
-    cacheReadPerM: formatManualRateValue(spec?.cacheReadPerM),
-    cacheWritePerM: formatManualRateValue(spec?.cacheWritePerM),
+    ...pricingFieldsFromManual(spec),
+  };
+}
+
+export interface CandidateResolvedSpecSource {
+  manualSpec?: RouteManualSpec;
+  resolvedContextTokens?: number;
+  resolvedMaxOutputTokens?: number;
+  resolvedSupportsImageInput?: boolean;
+  resolvedSupportsReasoning?: boolean;
+  resolvedInputPerM?: number;
+  resolvedOutputPerM?: number;
+  resolvedCacheReadPerM?: number;
+  resolvedCacheWritePerM?: number;
+}
+
+/** 将候选模型解析结果预填到表单，便于参考后手动修改。 */
+export function prefillManualSpecFormFromCandidate(
+  candidate: CandidateResolvedSpecSource,
+): ManualSpecFormFields {
+  const hasResolved =
+    candidate.resolvedContextTokens !== undefined ||
+    candidate.resolvedMaxOutputTokens !== undefined ||
+    candidate.resolvedSupportsImageInput !== undefined ||
+    candidate.resolvedSupportsReasoning !== undefined ||
+    candidate.resolvedInputPerM !== undefined ||
+    candidate.resolvedOutputPerM !== undefined ||
+    candidate.resolvedCacheReadPerM !== undefined ||
+    candidate.resolvedCacheWritePerM !== undefined;
+
+  if (!hasResolved) {
+    return manualSpecToForm(candidate.manualSpec);
+  }
+
+  return {
+    contextTokens: formatManualTokenValue(candidate.resolvedContextTokens),
+    maxOutputTokens: formatManualTokenValue(candidate.resolvedMaxOutputTokens),
+    supportsImageInput: booleanToTriState(candidate.resolvedSupportsImageInput),
+    supportsReasoning: booleanToTriState(candidate.resolvedSupportsReasoning),
+    ...pricingFieldsFromManual(candidate.manualSpec),
+  };
+}
+
+/** 将 models.dev 查询结果预填到表单。 */
+export function prefillManualSpecFormFromHints(
+  capability?: RouteCapabilityHint,
+  pricing?: RoutePricingHint,
+): ManualSpecFormFields {
+  const catalogCap = catalogCapabilityHint(capability);
+  const catalogPrice = catalogPricingHint(pricing);
+  const contextTokens = catalogCap?.catalogContextTokens ?? catalogCap?.contextTokens;
+  const maxOutputTokens = catalogCap?.catalogMaxOutputTokens ?? catalogCap?.maxOutputTokens;
+  const supportsImageInput =
+    catalogCap?.catalogSupportsImageInput ?? catalogCap?.supportsImageInput;
+  const supportsReasoning =
+    catalogCap?.catalogSupportsReasoning ?? catalogCap?.supportsReasoning;
+
+  return {
+    contextTokens: formatManualTokenValue(contextTokens),
+    maxOutputTokens: formatManualTokenValue(maxOutputTokens),
+    supportsImageInput: booleanToTriState(supportsImageInput),
+    supportsReasoning: booleanToTriState(supportsReasoning),
+    ...pricingFieldsFromManual(),
   };
 }
 
@@ -68,12 +148,17 @@ export function formToManualSpec(
   const outputPerM = parseManualRateInput(form.outputPerM, { strict, fieldLabel: "输出价格" });
   const cacheReadPerM = parseManualRateInput(form.cacheReadPerM, { strict, fieldLabel: "缓存读取价格" });
   const cacheWritePerM = parseManualRateInput(form.cacheWritePerM, { strict, fieldLabel: "缓存写入价格" });
+  const priceMultiplier = parsePriceMultiplierInput(form.priceMultiplier, {
+    strict,
+    fieldLabel: "价格倍率",
+  });
 
   const next: RouteManualSpec = {
     ...(contextTokens !== undefined && { contextTokens }),
     ...(maxOutputTokens !== undefined && { maxOutputTokens }),
     ...(supportsImageInput !== undefined && { supportsImageInput }),
     ...(supportsReasoning !== undefined && { supportsReasoning }),
+    ...(priceMultiplier !== undefined && { priceMultiplier }),
     ...(inputPerM !== undefined && { inputPerM }),
     ...(outputPerM !== undefined && { outputPerM }),
     ...(cacheReadPerM !== undefined && { cacheReadPerM }),
@@ -93,6 +178,7 @@ export function countManualOverrides(form: ManualSpecFormFields): number {
   if (form.maxOutputTokens.trim()) count += 1;
   if (form.supportsImageInput !== "auto") count += 1;
   if (form.supportsReasoning !== "auto") count += 1;
+  if (isPriceMultiplierOverride(form.priceMultiplier)) count += 1;
   if (form.inputPerM.trim()) count += 1;
   if (form.outputPerM.trim()) count += 1;
   if (form.cacheReadPerM.trim()) count += 1;
@@ -106,6 +192,7 @@ export function listManualOverrideFields(form: ManualSpecFormFields): Set<Manual
   if (form.maxOutputTokens.trim()) fields.add("maxOutputTokens");
   if (form.supportsImageInput !== "auto") fields.add("supportsImageInput");
   if (form.supportsReasoning !== "auto") fields.add("supportsReasoning");
+  if (isPriceMultiplierOverride(form.priceMultiplier)) fields.add("priceMultiplier");
   if (form.inputPerM.trim()) fields.add("inputPerM");
   if (form.outputPerM.trim()) fields.add("outputPerM");
   if (form.cacheReadPerM.trim()) fields.add("cacheReadPerM");
@@ -165,7 +252,21 @@ export function mergeEffectivePricingHint(
   const outputPerM = manualSpec?.outputPerM ?? autoRates?.outputPerM;
   const cacheReadPerM = manualSpec?.cacheReadPerM ?? autoRates?.cacheReadPerM;
   const cacheWritePerM = manualSpec?.cacheWritePerM ?? autoRates?.cacheWritePerM;
-  const hasRates = inputPerM !== undefined && outputPerM !== undefined && inputPerM > 0 && outputPerM > 0;
+  const baseRates =
+    inputPerM !== undefined && outputPerM !== undefined
+      ? {
+          inputPerM,
+          outputPerM,
+          ...(cacheReadPerM !== undefined && { cacheReadPerM }),
+          ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+        }
+      : undefined;
+  const rates = applyPriceMultiplierToPerMRates(baseRates, resolvePriceMultiplier(manualSpec));
+  const hasRates =
+    rates?.inputPerM !== undefined &&
+    rates.outputPerM !== undefined &&
+    rates.inputPerM > 0 &&
+    rates.outputPerM > 0;
   const pricingResolved =
     hasManualPricingOverride(manualSpec) || auto?.pricingResolved === true;
 
@@ -178,12 +279,7 @@ export function mergeEffectivePricingHint(
     modelId: auto?.modelId ?? "",
     providerName: auto?.providerName ?? "",
     ...(hasRates && {
-      rates: {
-        inputPerM: inputPerM!,
-        outputPerM: outputPerM!,
-        ...(cacheReadPerM !== undefined && { cacheReadPerM }),
-        ...(cacheWritePerM !== undefined && { cacheWritePerM }),
-      },
+      rates,
     }),
     pricingResolved,
     ...(auto?.pricingLabel && { pricingLabel: auto.pricingLabel }),
@@ -196,6 +292,25 @@ export function formatManualTokenValue(value?: number): string {
 
 export function formatManualRateValue(value?: number): string {
   return value !== undefined && value >= 0 ? String(value) : "";
+}
+
+export function formatPriceMultiplierFormValue(value?: number): string {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return "1";
+  }
+  return String(value);
+}
+
+export function parsePriceMultiplierFormValue(value: string): number {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 1;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 1;
+  }
+  return parsed;
 }
 
 export function formatTokenCountHint(value?: number): string | undefined {
@@ -320,6 +435,40 @@ function hasManualPricingOverride(spec?: RouteManualSpec): boolean {
     spec.inputPerM !== undefined ||
     spec.outputPerM !== undefined ||
     spec.cacheReadPerM !== undefined ||
-    spec.cacheWritePerM !== undefined
+    spec.cacheWritePerM !== undefined ||
+    (spec.priceMultiplier !== undefined && spec.priceMultiplier !== 1)
   );
+}
+
+function isPriceMultiplierOverride(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "1") {
+    return false;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function parsePriceMultiplierInput(
+  value: string,
+  options: { strict: boolean; fieldLabel: string },
+): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "1") {
+    return undefined;
+  }
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    if (options.strict) {
+      throw new Error(`${options.fieldLabel}必须是正数。`);
+    }
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    if (options.strict) {
+      throw new Error(`${options.fieldLabel}必须是正数。`);
+    }
+    return undefined;
+  }
+  return normalizeStoredPriceMultiplier(parsed);
 }

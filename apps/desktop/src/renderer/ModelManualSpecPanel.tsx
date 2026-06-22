@@ -8,10 +8,12 @@ import {
   listManualOverrideFields,
   mergeEffectiveCapabilityHint,
   mergeEffectivePricingHint,
+  parsePriceMultiplierFormValue,
   tryFormToManualSpec,
   type ManualSpecFormFields,
   type ManualTriState,
 } from "./agent-profile-manual-spec-form";
+import { multiplyUnitRate } from "../shared/manual-spec-pricing";
 
 interface ModelManualSpecPanelProps {
   value: ManualSpecFormFields;
@@ -126,6 +128,13 @@ export function ModelManualSpecPanel({
   const title =
     overrideCount > 0 ? `手动覆盖规格 (${overrideCount} 项已覆盖)` : "手动覆盖规格";
 
+  const multiplier = parsePriceMultiplierFormValue(value.priceMultiplier);
+  const catalogRates = autoPricing?.rates;
+  const effectiveInputPerM = multiplyUnitRate(catalogRates?.inputPerM, multiplier);
+  const effectiveOutputPerM = multiplyUnitRate(catalogRates?.outputPerM, multiplier);
+  const effectiveCacheReadPerM = multiplyUnitRate(catalogRates?.cacheReadPerM, multiplier);
+  const effectiveCacheWritePerM = multiplyUnitRate(catalogRates?.cacheWritePerM, multiplier);
+
   return (
     <div className="models-route-manual-spec">
       <button
@@ -186,12 +195,27 @@ export function ModelManualSpecPanel({
             <span className="model-manual-spec-section-title">定价 ($/M tokens)</span>
             <div className="models-route-manual-spec-grid">
               <NumericField
+                label="价格倍率"
+                value={value.priceMultiplier}
+                placeholder="默认 x1"
+                autoHint={
+                  catalogRates?.inputPerM !== undefined && catalogRates.outputPerM !== undefined
+                    ? `正价 $${catalogRates.inputPerM}/$${catalogRates.outputPerM} → 实际 $${formatRateHint(effectiveInputPerM)}/$${formatRateHint(effectiveOutputPerM)}`
+                    : undefined
+                }
+                {...(disabled !== undefined ? { disabled } : {})}
+                inputMode="decimal"
+                onChange={(priceMultiplier) => onChange({ priceMultiplier })}
+              />
+              <NumericField
                 label="输入"
                 value={value.inputPerM}
                 placeholder={
-                  autoPricing?.rates?.inputPerM !== undefined
-                    ? `自动: $${autoPricing.rates.inputPerM}`
-                    : "留空则使用 models.dev"
+                  effectiveInputPerM !== undefined
+                    ? `倍率后: $${formatRateHint(effectiveInputPerM)}`
+                    : catalogRates?.inputPerM !== undefined
+                      ? `正价: $${catalogRates.inputPerM}`
+                      : "留空则使用 models.dev"
                 }
                 {...(disabled !== undefined ? { disabled } : {})}
                 inputMode="decimal"
@@ -201,9 +225,11 @@ export function ModelManualSpecPanel({
                 label="输出"
                 value={value.outputPerM}
                 placeholder={
-                  autoPricing?.rates?.outputPerM !== undefined
-                    ? `自动: $${autoPricing.rates.outputPerM}`
-                    : "留空则使用 models.dev"
+                  effectiveOutputPerM !== undefined
+                    ? `倍率后: $${formatRateHint(effectiveOutputPerM)}`
+                    : catalogRates?.outputPerM !== undefined
+                      ? `正价: $${catalogRates.outputPerM}`
+                      : "留空则使用 models.dev"
                 }
                 {...(disabled !== undefined ? { disabled } : {})}
                 inputMode="decimal"
@@ -213,9 +239,11 @@ export function ModelManualSpecPanel({
                 label="缓存读"
                 value={value.cacheReadPerM}
                 placeholder={
-                  autoPricing?.rates?.cacheReadPerM !== undefined
-                    ? `自动: $${autoPricing.rates.cacheReadPerM}`
-                    : "可选"
+                  effectiveCacheReadPerM !== undefined
+                    ? `倍率后: $${formatRateHint(effectiveCacheReadPerM)}`
+                    : catalogRates?.cacheReadPerM !== undefined
+                      ? `正价: $${catalogRates.cacheReadPerM}`
+                      : "可选"
                 }
                 {...(disabled !== undefined ? { disabled } : {})}
                 inputMode="decimal"
@@ -225,9 +253,11 @@ export function ModelManualSpecPanel({
                 label="缓存写"
                 value={value.cacheWritePerM}
                 placeholder={
-                  autoPricing?.rates?.cacheWritePerM !== undefined
-                    ? `自动: $${autoPricing.rates.cacheWritePerM}`
-                    : "可选"
+                  effectiveCacheWritePerM !== undefined
+                    ? `倍率后: $${formatRateHint(effectiveCacheWritePerM)}`
+                    : catalogRates?.cacheWritePerM !== undefined
+                      ? `正价: $${catalogRates.cacheWritePerM}`
+                      : "可选"
                 }
                 {...(disabled !== undefined ? { disabled } : {})}
                 inputMode="decimal"
@@ -237,12 +267,19 @@ export function ModelManualSpecPanel({
           </div>
 
           <span className="mcp-field-hint">
-            留空或选「自动」则使用 models.dev 匹配值；填写后手动值优先于 catalog。
+            价格倍率作用于 models.dev 正价；也可手动填写绝对单价覆盖单项价格。
           </span>
         </div>
       ) : null}
     </div>
   );
+}
+
+function formatRateHint(value: number | undefined): string {
+  if (value === undefined) {
+    return "—";
+  }
+  return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, "");
 }
 
 export function useEffectiveModelSpecHints(

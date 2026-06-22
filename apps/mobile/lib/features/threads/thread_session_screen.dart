@@ -11,6 +11,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
+import '../../core/utils/thread_status.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
@@ -109,6 +110,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     return thread.status == 'running' || thread.status == 'queued';
   }
 
+  bool _isAwaitingPlan(ThreadSummary? thread, ThreadSessionState session) {
+    if (thread == null) return false;
+    return thread.status == 'awaiting_plan' &&
+        session.pendingPlan?.threadId == thread.id;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -154,6 +161,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
     final isRunning = _isRunning(thread);
+    final isAwaitingPlan = _isAwaitingPlan(thread, session);
+    final canStopThread = isRunning || isAwaitingPlan;
+    final planFailureMessage = isAwaitingPlan
+        ? extractPlanFailureMessage(thread?.message ?? '')
+        : null;
     final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
     final queuedFollowUps = queuedThreadFollowUps(session.followUps)
         .where((item) => item.id != _editingFollowUpId)
@@ -280,12 +292,24 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   ),
                 if (_editingFollowUpId != null)
                   _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
+                if (isAwaitingPlan && session.pendingPlan != null)
+                  _PlanApprovalBanner(
+                    failureMessage: planFailureMessage,
+                    onViewPlan: () => _showApprovalSheets(session),
+                    onApprove: () => _handlePlanApproval(
+                      approve: true,
+                    ),
+                    onDismiss: () => _handlePlanApproval(
+                      approve: false,
+                    ),
+                  ),
                 SessionComposer(
                   controller: _promptController,
                   attachments: _attachments,
                   runtimeConfig: runtimeConfig,
                   threadId: widget.threadId,
                   isRunning: isRunning,
+                  canStopThread: canStopThread,
                   followUpMode: followUpMode,
                   sendBusy: _followUpBusy,
                   hasActivity: session.activities.isNotEmpty,
@@ -487,6 +511,23 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     }
   }
 
+  Future<void> _handlePlanApproval({required bool approve}) async {
+    final notifier = ref.read(threadSessionProvider(widget.threadId).notifier);
+    try {
+      if (approve) {
+        await notifier.approvePlan();
+      } else {
+        await notifier.dismissPlan();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    }
+  }
+
   void _showApprovalSheets(ThreadSessionState session) {
     if (!_needsApprovalSheet(session)) return;
     final thread = session.thread;
@@ -496,12 +537,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       showPlanApprovalSheet(
         context: context,
         plan: session.pendingPlan!,
-        onApprove: () => ref
-            .read(threadSessionProvider(widget.threadId).notifier)
-            .approvePlan(),
-        onDismiss: () => ref
-            .read(threadSessionProvider(widget.threadId).notifier)
-            .dismissPlan(),
+        onApprove: () => _handlePlanApproval(approve: true),
+        onDismiss: () => _handlePlanApproval(approve: false),
       );
     } else if (session.pendingBash != null &&
         session.pendingBash!.threadId == thread?.id) {
@@ -590,6 +627,97 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PlanApprovalBanner extends StatelessWidget {
+  const _PlanApprovalBanner({
+    required this.onViewPlan,
+    required this.onApprove,
+    required this.onDismiss,
+    this.failureMessage,
+  });
+
+  final VoidCallback onViewPlan;
+  final Future<void> Function() onApprove;
+  final Future<void> Function() onDismiss;
+  final String? failureMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    final retryMode = failureMessage != null;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: EcoColors.accentSoft,
+        border: Border(top: BorderSide(color: eco.borderSubtle)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.fact_check_outlined,
+                  size: 18,
+                  color: EcoColors.accentText,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    retryMode ? '执行失败，计划待确认' : '计划已生成，等待确认',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: EcoColors.accentText,
+                        ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: onViewPlan,
+                  style: TextButton.styleFrom(
+                    foregroundColor: EcoColors.accentText,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('查看计划'),
+                ),
+              ],
+            ),
+            if (failureMessage != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                failureMessage!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: EcoColors.accentText,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => onDismiss(),
+                    child: const Text('驳回'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => onApprove(),
+                    child: Text(retryMode ? '重试执行' : '批准执行'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

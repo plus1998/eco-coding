@@ -7,6 +7,8 @@ import {
   manualSpecToForm,
   mergeEffectiveCapabilityHint,
   mergeEffectivePricingHint,
+  prefillManualSpecFormFromCandidate,
+  prefillManualSpecFormFromHints,
   tryFormToManualSpec,
 } from "../src/renderer/agent-profile-manual-spec-form";
 import type { RouteCapabilityHint, RoutePricingHint } from "../src/shared/ipc";
@@ -97,4 +99,70 @@ test("mergeEffectivePricingHint prefers manual input/output and merges cache", (
     outputPerM: 10,
   });
   expect(merged?.rates).toEqual({ inputPerM: 5, outputPerM: 10, cacheReadPerM: 0.1 });
+});
+
+test("prefillManualSpecFormFromCandidate fills resolved values for editing", () => {
+  const form = prefillManualSpecFormFromCandidate({
+    resolvedContextTokens: 200_000,
+    resolvedMaxOutputTokens: 8_192,
+    resolvedSupportsImageInput: true,
+    resolvedSupportsReasoning: false,
+    resolvedInputPerM: 3,
+    resolvedOutputPerM: 15,
+    manualSpec: { priceMultiplier: 1.5 },
+  });
+  expect(form.contextTokens).toBe("200000");
+  expect(form.maxOutputTokens).toBe("8192");
+  expect(form.supportsImageInput).toBe("yes");
+  expect(form.supportsReasoning).toBe("no");
+  expect(form.priceMultiplier).toBe("1.5");
+  expect(form.inputPerM).toBe("");
+  expect(form.outputPerM).toBe("");
+});
+
+test("prefillManualSpecFormFromHints uses catalog values for capabilities only", () => {
+  const form = prefillManualSpecFormFromHints(
+    {
+      role: "planner",
+      modelId: "gpt-4o",
+      providerName: "OpenAI",
+      supportsImageInput: true,
+      supportsReasoning: false,
+      capabilitiesResolved: true,
+      contextLimitResolved: true,
+      catalogContextTokens: 128_000,
+      catalogMaxOutputTokens: 16_384,
+      catalogSupportsImageInput: true,
+      catalogSupportsReasoning: false,
+    },
+    {
+      role: "planner",
+      modelId: "gpt-4o",
+      providerName: "OpenAI",
+      pricingResolved: true,
+      catalogRates: { inputPerM: 2.5, outputPerM: 10, cacheReadPerM: 1.25 },
+    },
+  );
+  expect(form.contextTokens).toBe("128000");
+  expect(form.maxOutputTokens).toBe("16384");
+  expect(form.supportsImageInput).toBe("yes");
+  expect(form.priceMultiplier).toBe("1");
+  expect(form.inputPerM).toBe("");
+  expect(form.outputPerM).toBe("");
+});
+
+test("mergeEffectivePricingHint applies price multiplier to catalog rates", () => {
+  const merged = mergeEffectivePricingHint(
+    {
+      role: "planner",
+      modelId: "gpt-4o",
+      providerName: "OpenAI",
+      pricingResolved: true,
+      rates: { inputPerM: 2, outputPerM: 8, cacheReadPerM: 0.2 },
+    },
+    { priceMultiplier: 1.5 },
+  );
+  expect(merged?.rates?.inputPerM).toBeCloseTo(3);
+  expect(merged?.rates?.outputPerM).toBeCloseTo(12);
+  expect(merged?.rates?.cacheReadPerM).toBeCloseTo(0.3);
 });

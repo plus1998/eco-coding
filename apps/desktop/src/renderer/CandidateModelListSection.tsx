@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Pencil, Trash2, X, RefreshCw } from "lucide-react";
 import type {
   CandidateModelInput,
   CandidateModelView,
   ModelsDevMapping,
-  RouteManualSpec,
+  RouteCapabilityHint,
+  RoutePricingHint,
+  RuntimeRoleRouteConfig,
   UpstreamModelOption,
 } from "../shared/ipc";
 import { ModelManualSpecPanel } from "./ModelManualSpecPanel";
@@ -17,7 +19,14 @@ import {
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import type { ModelsDevModelOption } from "../shared/ipc";
 import type { ManualSpecFormFields } from "./agent-profile-manual-spec-form";
-import { emptyManualSpecForm } from "./agent-profile-manual-spec-form";
+import {
+  catalogCapabilityHint,
+  catalogPricingHint,
+  emptyManualSpecForm,
+  prefillManualSpecFormFromCandidate,
+  prefillManualSpecFormFromHints,
+  tryFormToManualSpec,
+} from "./agent-profile-manual-spec-form";
 
 interface CandidateModelPanelProps {
   providerId: string;
@@ -29,43 +38,25 @@ interface CandidateModelPanelProps {
   onRefreshModels: () => void;
 }
 
-function manualSpecToFormFields(spec?: RouteManualSpec): ManualSpecFormFields {
+async function lookupCandidateRouteHints(
+  providerId: string,
+  modelId: string,
+  mapping?: ModelsDevMapping,
+): Promise<{ capability?: RouteCapabilityHint; pricing?: RoutePricingHint }> {
+  const route: RuntimeRoleRouteConfig = {
+    role: "planner",
+    providerId,
+    modelId,
+    ...(mapping ? { modelsDevMapping: mapping } : {}),
+  };
+  const [capabilities, pricing] = await Promise.all([
+    window.eco!.getRouteCapabilities([route]),
+    window.eco!.getRoutePricing([route]),
+  ]);
   return {
-    contextTokens: spec?.contextTokens?.toString() ?? "",
-    maxOutputTokens: spec?.maxOutputTokens?.toString() ?? "",
-    supportsImageInput: spec?.supportsImageInput === undefined ? "auto" : spec.supportsImageInput ? "yes" : "no",
-    supportsReasoning: spec?.supportsReasoning === undefined ? "auto" : spec.supportsReasoning ? "yes" : "no",
-    inputPerM: spec?.inputPerM?.toString() ?? "",
-    outputPerM: spec?.outputPerM?.toString() ?? "",
-    cacheReadPerM: spec?.cacheReadPerM?.toString() ?? "",
-    cacheWritePerM: spec?.cacheWritePerM?.toString() ?? "",
+    capability: capabilities[0],
+    pricing: pricing[0],
   };
-}
-
-function formFieldsToManualSpec(fields: ManualSpecFormFields): RouteManualSpec | undefined {
-  const parseNum = (v: string) => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : undefined;
-  };
-  const triToBool = (v: string): boolean | undefined => (v === "yes" ? true : v === "no" ? false : undefined);
-  const spec: RouteManualSpec = {};
-  const ctx = parseNum(fields.contextTokens);
-  const maxOut = parseNum(fields.maxOutputTokens);
-  const imgIn = triToBool(fields.supportsImageInput);
-  const reasoning = triToBool(fields.supportsReasoning);
-  const input = parseNum(fields.inputPerM);
-  const output = parseNum(fields.outputPerM);
-  const cacheRead = parseNum(fields.cacheReadPerM);
-  const cacheWrite = parseNum(fields.cacheWritePerM);
-  if (ctx !== undefined) spec.contextTokens = ctx;
-  if (maxOut !== undefined) spec.maxOutputTokens = maxOut;
-  if (imgIn !== undefined) spec.supportsImageInput = imgIn;
-  if (reasoning !== undefined) spec.supportsReasoning = reasoning;
-  if (input !== undefined) spec.inputPerM = input;
-  if (output !== undefined) spec.outputPerM = output;
-  if (cacheRead !== undefined) spec.cacheReadPerM = cacheRead;
-  if (cacheWrite !== undefined) spec.cacheWritePerM = cacheWrite;
-  return Object.keys(spec).length > 0 ? spec : undefined;
 }
 
 function CandidateModelInlineSpec({ candidate }: { candidate: CandidateModelView }) {
@@ -100,6 +91,11 @@ export function CandidateModelPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<ManualSpecFormFields>(emptyManualSpecForm());
   const [editingMapping, setEditingMapping] = useState<ModelsDevMapping | undefined>(undefined);
+  const [editingAutoCapability, setEditingAutoCapability] = useState<RouteCapabilityHint | undefined>(
+    undefined,
+  );
+  const [editingAutoPricing, setEditingAutoPricing] = useState<RoutePricingHint | undefined>(undefined);
+  const editingIdRef = useRef<string | null>(null);
 
   const loadCandidates = useCallback(async () => {
     if (!providerId) return;
@@ -133,16 +129,70 @@ export function CandidateModelPanel({
     try {
       await window.eco!.deleteCandidateModel(id);
       await loadCandidates();
-      if (editingId === id) setEditingId(null);
+      if (editingId === id) {
+        setEditingId(null);
+        editingIdRef.current = null;
+      }
     } catch (error) {
       console.error("Failed to delete candidate model:", error);
     }
   };
 
-  const handleStartEdit = (candidate: CandidateModelView) => {
-    setEditingId(candidate.id);
-    setEditingForm(manualSpecToFormFields(candidate.manualSpec));
+  const handleStartEdit = async (candidate: CandidateModelView) => {
+    const targetId = candidate.id;
+    editingIdRef.current = targetId;
+    setEditingId(targetId);
     setEditingMapping(candidate.modelsDevMapping);
+    setEditingForm(prefillManualSpecFormFromCandidate(candidate));
+    setEditingAutoCapability(catalogCapabilityHint(candidateCapabilityHint(candidate)));
+    setEditingAutoPricing(catalogPricingHint(candidatePricingHint(candidate)));
+
+    const hasResolved =
+      candidate.resolvedContextTokens !== undefined ||
+      candidate.resolvedMaxOutputTokens !== undefined ||
+      candidate.resolvedSupportsImageInput !== undefined ||
+      candidate.resolvedSupportsReasoning !== undefined ||
+      candidate.resolvedInputPerM !== undefined ||
+      candidate.resolvedOutputPerM !== undefined ||
+      candidate.resolvedCacheReadPerM !== undefined ||
+      candidate.resolvedCacheWritePerM !== undefined;
+
+    if (!hasResolved) {
+      try {
+        const hints = await lookupCandidateRouteHints(
+          providerId,
+          candidate.modelId,
+          candidate.modelsDevMapping,
+        );
+        if (editingIdRef.current !== targetId) {
+          return;
+        }
+        setEditingAutoCapability(catalogCapabilityHint(hints.capability));
+        setEditingAutoPricing(catalogPricingHint(hints.pricing));
+        setEditingForm(prefillManualSpecFormFromHints(hints.capability, hints.pricing));
+      } catch (error) {
+        console.error("Failed to resolve candidate model hints:", error);
+      }
+    }
+  };
+
+  const handleMappingChange = async (
+    candidate: CandidateModelView,
+    mapping: ModelsDevMapping | undefined,
+  ) => {
+    const targetId = candidate.id;
+    setEditingMapping(mapping);
+    try {
+      const hints = await lookupCandidateRouteHints(providerId, candidate.modelId, mapping);
+      if (editingIdRef.current !== targetId) {
+        return;
+      }
+      setEditingAutoCapability(catalogCapabilityHint(hints.capability));
+      setEditingAutoPricing(catalogPricingHint(hints.pricing));
+      setEditingForm(prefillManualSpecFormFromHints(hints.capability, hints.pricing));
+    } catch (error) {
+      console.error("Failed to resolve candidate model mapping:", error);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -157,12 +207,13 @@ export function CandidateModelPanel({
     };
     if (candidate.displayName) input.displayName = candidate.displayName;
     if (editingMapping) input.modelsDevMapping = editingMapping;
-    const manualSpecResult = formFieldsToManualSpec(editingForm);
+    const manualSpecResult = tryFormToManualSpec(editingForm);
     if (manualSpecResult) input.manualSpec = manualSpecResult;
     try {
       await window.eco!.saveCandidateModel(input);
       await loadCandidates();
       setEditingId(null);
+      editingIdRef.current = null;
     } catch (error) {
       console.error("Failed to save candidate model:", error);
     }
@@ -221,7 +272,10 @@ export function CandidateModelPanel({
                         <button
                           type="button"
                           className="mcp-icon-button"
-                          onClick={() => setEditingId(null)}
+                          onClick={() => {
+                            setEditingId(null);
+                            editingIdRef.current = null;
+                          }}
                         >
                           <X size={14} />
                         </button>
@@ -235,11 +289,16 @@ export function CandidateModelPanel({
                           options={modelsDevOptions}
                           loading={modelsDevLoading}
                           disabled={busy}
-                          onChange={(mapping) => setEditingMapping(mapping ?? undefined)}
+                          autoResolved={!editingMapping && Boolean(editingAutoCapability?.resolvedModelsDevMapping)}
+                          autoResolvedMapping={editingAutoCapability?.resolvedModelsDevMapping}
+                          autoResolvedLabel={editingAutoCapability?.resolvedModelsDevLabel}
+                          onChange={(mapping) => void handleMappingChange(candidate, mapping ?? undefined)}
                         />
                       </div>
                       <ModelManualSpecPanel
                         value={editingForm}
+                        {...(editingAutoCapability ? { autoCapability: editingAutoCapability } : {})}
+                        {...(editingAutoPricing ? { autoPricing: editingAutoPricing } : {})}
                         {...(busy !== undefined ? { disabled: busy } : {})}
                         onChange={(patch) => setEditingForm((prev) => ({ ...prev, ...patch }))}
                       />

@@ -125,6 +125,38 @@ test("resolveRatesForRoute prefers manual spec when input and output are set", (
   });
 });
 
+test("resolveRatesForRoute applies price multiplier to catalog rates", () => {
+  const lookup = {
+    providerKey: "anthropic",
+    modelId: "claude-sonnet-4",
+    rates: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  };
+  const result = resolveRatesForRoute(lookup, { priceMultiplier: 1.2 });
+  expect(result?.input).toBeCloseTo(3.6);
+  expect(result?.output).toBeCloseTo(18);
+  expect(result?.cacheRead).toBeCloseTo(0.36);
+  expect(result?.cacheWrite).toBeCloseTo(4.5);
+});
+
+test("resolveRatesForRoute applies multiplier after manual absolute prices", () => {
+  const lookup = {
+    providerKey: "anthropic",
+    modelId: "claude-sonnet-4",
+    rates: { input: 1, output: 2, cacheRead: 0.1 },
+  };
+  expect(
+    resolveRatesForRoute(lookup, {
+      inputPerM: 5,
+      outputPerM: 10,
+      priceMultiplier: 2,
+    }),
+  ).toEqual({
+    input: 10,
+    output: 20,
+    cacheRead: 0.2,
+  });
+});
+
 test("resolveRatesForRoute uses manual cache fields when set", () => {
   const lookup = {
     providerKey: "anthropic",

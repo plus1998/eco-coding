@@ -3,6 +3,7 @@ import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { createBuiltInAgentTemplates } from "../shared/agent-orchestration";
 import { normalizeUpstreamApiCompat } from "../shared/api-compat";
+import { normalizeStoredPriceMultiplier } from "../shared/manual-spec-pricing";
 import {
   AGENT_ROLES,
   type AgentRole,
@@ -54,6 +55,7 @@ interface RouteRow {
   manual_output_per_m: number | null;
   manual_cache_read_per_m: number | null;
   manual_cache_write_per_m: number | null;
+  manual_price_multiplier: number | null;
 }
 
 interface LegacyRouteRow {
@@ -78,6 +80,7 @@ interface CandidateModelRow {
   manual_output_per_m: number | null;
   manual_cache_read_per_m: number | null;
   manual_cache_write_per_m: number | null;
+  manual_price_multiplier: number | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -131,6 +134,7 @@ export class ProviderStore {
     this.migrateRoleRoutesApiCompat();
     this.migrateLegacyOpenaiApiCompatValues();
     this.migrateCandidateModelsTable();
+    this.migrateManualPriceMultiplier();
   }
 
   getSettings(): ModelSettingsSnapshot {
@@ -306,10 +310,10 @@ export class ProviderStore {
           profile_id, role, provider_id, model_id, api_compat, thinking_effort,
           models_dev_provider_key, models_dev_model_id,
           manual_context_tokens, manual_input_per_m, manual_output_per_m,
-          manual_cache_read_per_m, manual_cache_write_per_m,
+          manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(profile_id, role) DO UPDATE SET
           provider_id = excluded.provider_id,
           model_id = excluded.model_id,
@@ -322,6 +326,7 @@ export class ProviderStore {
           manual_output_per_m = excluded.manual_output_per_m,
           manual_cache_read_per_m = excluded.manual_cache_read_per_m,
           manual_cache_write_per_m = excluded.manual_cache_write_per_m,
+          manual_price_multiplier = excluded.manual_price_multiplier,
           updated_at = excluded.updated_at
       `)
       .run(
@@ -338,6 +343,7 @@ export class ProviderStore {
         manual?.outputPerM ?? null,
         manual?.cacheReadPerM ?? null,
         manual?.cacheWritePerM ?? null,
+        manual?.priceMultiplier ?? null,
         new Date().toISOString(),
       );
   }
@@ -348,7 +354,7 @@ export class ProviderStore {
         SELECT profile_id, role, provider_id, model_id, api_compat, thinking_effort,
                models_dev_provider_key, models_dev_model_id,
                manual_context_tokens, manual_input_per_m, manual_output_per_m,
-               manual_cache_read_per_m, manual_cache_write_per_m
+               manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier
         FROM role_routes
         WHERE profile_id = ?
         ORDER BY role
@@ -554,6 +560,22 @@ export class ProviderStore {
       .get(id) as RouteProfileRow | undefined;
   }
 
+  private migrateManualPriceMultiplier(): void {
+    const roleColumns = this.db.prepare("PRAGMA table_info(role_routes)").all() as Array<{ name: string }>;
+    if (!roleColumns.some((column) => column.name === "manual_price_multiplier")) {
+      this.db.exec("ALTER TABLE role_routes ADD COLUMN manual_price_multiplier REAL");
+    }
+    const candidateColumns = this.db
+      .prepare("PRAGMA table_info(provider_candidate_models)")
+      .all() as Array<{ name: string }>;
+    if (
+      candidateColumns.length > 0 &&
+      !candidateColumns.some((column) => column.name === "manual_price_multiplier")
+    ) {
+      this.db.exec("ALTER TABLE provider_candidate_models ADD COLUMN manual_price_multiplier REAL");
+    }
+  }
+
   // ─── Candidate Models ───────────────────────────────────────────────────────
 
   private migrateCandidateModelsTable(): void {
@@ -594,7 +616,7 @@ export class ProviderStore {
                manual_context_tokens, manual_max_output_tokens,
                manual_supports_image_input, manual_supports_reasoning,
                manual_input_per_m, manual_output_per_m,
-               manual_cache_read_per_m, manual_cache_write_per_m,
+               manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier,
                sort_order, created_at, updated_at
         FROM provider_candidate_models
         WHERE provider_id = ?
@@ -622,9 +644,9 @@ export class ProviderStore {
           manual_context_tokens, manual_max_output_tokens,
           manual_supports_image_input, manual_supports_reasoning,
           manual_input_per_m, manual_output_per_m,
-          manual_cache_read_per_m, manual_cache_write_per_m,
+          manual_cache_read_per_m, manual_cache_write_per_m, manual_price_multiplier,
           sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider_id, model_id) DO UPDATE SET
           display_name = excluded.display_name,
           models_dev_provider_key = excluded.models_dev_provider_key,
@@ -637,6 +659,7 @@ export class ProviderStore {
           manual_output_per_m = excluded.manual_output_per_m,
           manual_cache_read_per_m = excluded.manual_cache_read_per_m,
           manual_cache_write_per_m = excluded.manual_cache_write_per_m,
+          manual_price_multiplier = excluded.manual_price_multiplier,
           sort_order = excluded.sort_order,
           updated_at = excluded.updated_at
       `)
@@ -655,6 +678,7 @@ export class ProviderStore {
         manual?.outputPerM ?? null,
         manual?.cacheReadPerM ?? null,
         manual?.cacheWritePerM ?? null,
+        manual?.priceMultiplier ?? null,
         input.sortOrder ?? 0,
         now,
         now,
@@ -810,12 +834,14 @@ function parseManualSpecRow(row: RouteRow): RouteManualSpec | undefined {
   const outputPerM = parsePositiveNumber(row.manual_output_per_m);
   const cacheReadPerM = parsePositiveNumber(row.manual_cache_read_per_m);
   const cacheWritePerM = parsePositiveNumber(row.manual_cache_write_per_m);
+  const priceMultiplier = parseStoredPriceMultiplier(row.manual_price_multiplier);
   if (
     contextTokens === undefined &&
     inputPerM === undefined &&
     outputPerM === undefined &&
     cacheReadPerM === undefined &&
-    cacheWritePerM === undefined
+    cacheWritePerM === undefined &&
+    priceMultiplier === undefined
   ) {
     return undefined;
   }
@@ -825,6 +851,7 @@ function parseManualSpecRow(row: RouteRow): RouteManualSpec | undefined {
     ...(outputPerM !== undefined && { outputPerM }),
     ...(cacheReadPerM !== undefined && { cacheReadPerM }),
     ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+    ...(priceMultiplier !== undefined && { priceMultiplier }),
   };
 }
 
@@ -837,12 +864,14 @@ function normalizeManualSpec(value: RouteManualSpec | undefined): RouteManualSpe
   const outputPerM = parsePositiveNumber(value.outputPerM);
   const cacheReadPerM = parsePositiveNumber(value.cacheReadPerM);
   const cacheWritePerM = parsePositiveNumber(value.cacheWritePerM);
+  const priceMultiplier = parseStoredPriceMultiplier(value.priceMultiplier);
   if (
     contextTokens === undefined &&
     inputPerM === undefined &&
     outputPerM === undefined &&
     cacheReadPerM === undefined &&
-    cacheWritePerM === undefined
+    cacheWritePerM === undefined &&
+    priceMultiplier === undefined
   ) {
     return undefined;
   }
@@ -852,6 +881,7 @@ function normalizeManualSpec(value: RouteManualSpec | undefined): RouteManualSpe
     ...(outputPerM !== undefined && { outputPerM }),
     ...(cacheReadPerM !== undefined && { cacheReadPerM }),
     ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+    ...(priceMultiplier !== undefined && { priceMultiplier }),
   };
 }
 
@@ -868,6 +898,10 @@ function parsePositiveNumber(value: number | undefined | null): number | undefin
     return undefined;
   }
   return value > 0 ? value : undefined;
+}
+
+function parseStoredPriceMultiplier(value: number | undefined | null): number | undefined {
+  return normalizeStoredPriceMultiplier(parsePositiveNumber(value));
 }
 
 function normalizeProfileRoutes(routes: RoleRouteConfig[]): RoleRouteConfig[] {
@@ -934,6 +968,7 @@ function candidateRowToView(row: CandidateModelRow): CandidateModelView {
   const outputPerM = parsePositiveNumber(row.manual_output_per_m);
   const cacheReadPerM = parsePositiveNumber(row.manual_cache_read_per_m);
   const cacheWritePerM = parsePositiveNumber(row.manual_cache_write_per_m);
+  const priceMultiplier = parseStoredPriceMultiplier(row.manual_price_multiplier);
   const supportsImageInput =
     row.manual_supports_image_input === null || row.manual_supports_image_input === undefined
       ? undefined
@@ -949,6 +984,7 @@ function candidateRowToView(row: CandidateModelRow): CandidateModelView {
     outputPerM !== undefined ||
     cacheReadPerM !== undefined ||
     cacheWritePerM !== undefined ||
+    priceMultiplier !== undefined ||
     supportsImageInput !== undefined ||
     supportsReasoning !== undefined;
   const manualSpec: RouteManualSpec | undefined = hasManualSpec
@@ -961,6 +997,7 @@ function candidateRowToView(row: CandidateModelRow): CandidateModelView {
         ...(outputPerM !== undefined && { outputPerM }),
         ...(cacheReadPerM !== undefined && { cacheReadPerM }),
         ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+        ...(priceMultiplier !== undefined && { priceMultiplier }),
       }
     : undefined;
   const view: CandidateModelView = {
