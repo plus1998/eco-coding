@@ -41,8 +41,9 @@ Map<String, bool> deriveSubagentEnabledFromProfile(
       subagentEnabled[role] = false;
       continue;
     }
-    if (existing != null && existing.containsKey(role)) {
-      subagentEnabled[role] = existing[role] ?? true;
+    final existingValue = existing?[role];
+    if (existingValue is bool) {
+      subagentEnabled[role] = existingValue;
     }
   }
   return subagentEnabled;
@@ -86,9 +87,27 @@ bool isSubagentConfiguredInProfile(
   if (role == 'explore') return true;
   if (profile == null) return false;
   for (final agent in profile.agents) {
-    if (agent.agentKey == role) return agent.enabled;
+    if (agent.agentKey == role) {
+      return agent.enabled;
+    }
   }
   return false;
+}
+
+Map<String, bool> normalizedRuntimeSubagentEnabled(
+  Map<String, bool> subagentEnabled,
+) {
+  return normalizeSubagentAvailability(subagentEnabled);
+}
+
+bool isRuntimeSubagentEnabled(
+  Map<String, bool> subagentEnabled,
+  String role,
+) {
+  if (role == 'explore') {
+    return true;
+  }
+  return normalizedRuntimeSubagentEnabled(subagentEnabled)[role] ?? true;
 }
 
 bool isSubagentToggleable(

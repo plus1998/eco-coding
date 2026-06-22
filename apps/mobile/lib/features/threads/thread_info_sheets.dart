@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_usage_display.dart';
+import '../composer/composer_context_ring.dart';
 
 Future<void> showThreadBillingSheet({
   required BuildContext context,
@@ -95,7 +96,7 @@ class ThreadUsageFloatButtons extends StatelessWidget {
           trailing: occupancyPct != null ? '$occupancyPct%' : null,
           trailingColor: _contextPctColor(occupancyPct),
           leadingWidget: occupancyPct != null
-              ? _ContextOccupancyRing(pct: occupancyPct)
+              ? ComposerContextRing(pct: occupancyPct)
               : null,
           onTap: () => showThreadContextSheet(
             context: context,
@@ -183,88 +184,6 @@ class _ThreadInfoFloatPill extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ContextOccupancyRing extends StatelessWidget {
-  const _ContextOccupancyRing({required this.pct});
-
-  final int pct;
-
-  @override
-  Widget build(BuildContext context) {
-    const size = 14.0;
-    const strokeWidth = 2.0;
-    final radius = (size - strokeWidth) / 2;
-    final center = size / 2;
-    final circumference = 2 * 3.141592653589793 * radius;
-    final clampedPct = pct.clamp(0, 100);
-    final offset = circumference * (1 - clampedPct / 100);
-    final strokeColor = pct >= 95
-        ? EcoColors.danger
-        : (pct >= 85 ? const Color(0xFFFBBF24) : EcoColors.accentText);
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _RingPainter(
-          radius: radius,
-          center: center,
-          strokeWidth: strokeWidth,
-          progressOffset: offset,
-          circumference: circumference,
-          trackColor: ecoThemeExtras(context).borderSubtle,
-          progressColor: strokeColor,
-        ),
-      ),
-    );
-  }
-}
-
-class _RingPainter extends CustomPainter {
-  _RingPainter({
-    required this.radius,
-    required this.center,
-    required this.strokeWidth,
-    required this.progressOffset,
-    required this.circumference,
-    required this.trackColor,
-    required this.progressColor,
-  });
-
-  final double radius;
-  final double center;
-  final double strokeWidth;
-  final double progressOffset;
-  final double circumference;
-  final Color trackColor;
-  final Color progressColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-    paint.color = trackColor;
-    canvas.drawCircle(Offset(center, center), radius, paint);
-    if (progressOffset < circumference) {
-      paint.color = progressColor;
-      paint.strokeCap = StrokeCap.round;
-      canvas.drawArc(
-        Rect.fromCircle(center: Offset(center, center), radius: radius),
-        -1.5707963267948966,
-        2 * 3.141592653589793 * (1 - progressOffset / circumference),
-        false,
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter oldDelegate) {
-    return oldDelegate.progressOffset != progressOffset ||
-        oldDelegate.progressColor != progressColor;
   }
 }
 

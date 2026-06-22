@@ -327,6 +327,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             inputHint: _editingFollowUpId != null
                 ? '编辑引导消息…'
                 : (showLanding ? composerLandingPlaceholder : null),
+            contextSnapshot: session.contextSnapshot,
             workspaceDiff: workspaceDiffAsync.valueOrNull,
             diffLoading: workspaceDiffAsync.isLoading,
             onPickImage: _pickImage,

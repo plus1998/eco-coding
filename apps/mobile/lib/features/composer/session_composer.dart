@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_usage_models.dart';
 import '../../core/platform/system_speech_recognizer.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
@@ -29,6 +30,7 @@ class SessionComposer extends ConsumerStatefulWidget {
     required this.onRuntimeConfigChanged,
     required this.onChangesTap,
     this.inputHint,
+    this.contextSnapshot,
   });
 
   final TextEditingController controller;
@@ -48,6 +50,7 @@ class SessionComposer extends ConsumerStatefulWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onRuntimeConfigChanged;
   final VoidCallback? onChangesTap;
   final String? inputHint;
+  final ThreadContextSnapshot? contextSnapshot;
 
   @override
   ConsumerState<SessionComposer> createState() => _SessionComposerState();
@@ -148,126 +151,144 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
           busy: widget.diffLoading,
           onTap: widget.onChangesTap,
         ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: EcoColors.bgMain,
-            border: Border(top: BorderSide(color: eco.borderSubtle)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.attachments.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: SizedBox(
-                        height: 40,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: widget.attachments.length,
-                          separatorBuilder: (_, _) => const SizedBox(width: 8),
-                          itemBuilder: (context, index) => InputChip(
-                            label: Text('图片 ${index + 1}'),
-                            visualDensity: VisualDensity.compact,
-                            onDeleted: () => widget.onRemoveAttachment(index),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: EcoColors.composerContextBg,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.22),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (widget.attachments.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: SizedBox(
+                          height: 40,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: widget.attachments.length,
+                            separatorBuilder: (_, _) => const SizedBox(width: 8),
+                            itemBuilder: (context, index) => InputChip(
+                              label: Text('图片 ${index + 1}'),
+                              visualDensity: VisualDensity.compact,
+                              onDeleted: () => widget.onRemoveAttachment(index),
+                            ),
                           ),
                         ),
                       ),
+                    TextField(
+                      controller: widget.controller,
+                      focusNode: _focusNode,
+                      minLines: 1,
+                      maxLines: 6,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: _canSend ? (_) => _handleSend() : null,
+                      decoration: InputDecoration(
+                        hintText:
+                            widget.inputHint ??
+                            (widget.followUpMode
+                                ? '要求后续变更'
+                                : (widget.hasActivity ? '跟进' : '发送消息…')),
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        hintStyle: TextStyle(color: eco.textMuted),
+                      ),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.35,
+                        color: EcoColors.textHeading,
+                        backgroundColor: Colors.transparent,
+                      ),
                     ),
-                  TextField(
-                    controller: widget.controller,
-                    focusNode: _focusNode,
-                    minLines: 1,
-                    maxLines: 6,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: _canSend ? (_) => _handleSend() : null,
-                    decoration: InputDecoration(
-                      hintText:
-                          widget.inputHint ??
-                          (widget.followUpMode
-                              ? '要求后续变更'
-                              : (widget.hasActivity ? '跟进' : '发送消息…')),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                      hintStyle: TextStyle(color: eco.textMuted),
-                    ),
-                    style: const TextStyle(fontSize: 16, height: 1.35),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ComposerProfileControl(
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          onPressed: widget.onPickImage,
+                          icon: const Icon(Icons.add, size: 22),
+                          tooltip: '添加图片',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                        ),
+                        ComposerPlanModeIconButton(
                           runtimeConfig: widget.runtimeConfig,
                           threadId: widget.threadId,
                           canEdit: canEditConfig,
                           onChanged: widget.onRuntimeConfigChanged,
                         ),
-                      ),
-                      Container(
-                        width: 1,
-                        height: 18,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        color: eco.borderSubtle.withValues(alpha: 0.6),
-                      ),
-                      Expanded(
-                        child: ComposerOrchestrationControl(
+                        ComposerBashReviewIconButton(
+                          runtimeConfig: widget.runtimeConfig,
+                          threadId: widget.threadId,
+                          onChanged: widget.onRuntimeConfigChanged,
+                        ),
+                        const Spacer(),
+                        ComposerRouteSummary(
                           runtimeConfig: widget.runtimeConfig,
                           threadId: widget.threadId,
                           canEdit: canEditConfig,
                           onChanged: widget.onRuntimeConfigChanged,
+                          contextSnapshot: widget.contextSnapshot,
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: widget.onPickImage,
-                        icon: const Icon(Icons.add, size: 22),
-                        tooltip: '添加图片',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        onPressed: _handleSpeechInput,
-                        icon: _speechBusy
-                            ? const Icon(Icons.stop_circle_outlined, size: 22)
-                            : const Icon(Icons.mic_none, size: 22),
-                        tooltip: _speechBusy ? '停止语音输入' : '语音输入',
-                        visualDensity: VisualDensity.compact,
-                        color: _speechBusy ? eco.statusDenyText : null,
-                      ),
-                      ComposerPlanModeControl(
-                        runtimeConfig: widget.runtimeConfig,
-                        threadId: widget.threadId,
-                        canEdit: canEditConfig,
-                        onChanged: widget.onRuntimeConfigChanged,
-                      ),
-                      ComposerBashReviewControl(
-                        runtimeConfig: widget.runtimeConfig,
-                        threadId: widget.threadId,
-                        onChanged: widget.onRuntimeConfigChanged,
-                      ),
-                      const Spacer(),
-                      if (widget.followUpMode)
-                        _hasContent
-                            ? _SendButton(onSend: _canSend ? _handleSend : null)
-                            : _StopButton(onStop: _handleStop)
-                      else if (widget.isRunning)
-                        _StopButton(onStop: _handleStop)
-                      else
-                        _SendButton(onSend: _canSend ? _handleSend : null),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 2),
+                        IconButton(
+                          onPressed: _handleSpeechInput,
+                          icon: _speechBusy
+                              ? const Icon(Icons.stop_circle_outlined, size: 22)
+                              : const Icon(Icons.mic_none, size: 22),
+                          tooltip: _speechBusy ? '停止语音输入' : '语音输入',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          color: _speechBusy ? eco.statusDenyText : null,
+                        ),
+                        const SizedBox(width: 2),
+                        if (widget.followUpMode)
+                          _hasContent
+                              ? _SendButton(onSend: _canSend ? _handleSend : null)
+                              : _StopButton(onStop: _handleStop)
+                        else if (widget.isRunning)
+                          _StopButton(onStop: _handleStop)
+                        else
+                          _SendButton(onSend: _canSend ? _handleSend : null),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -284,21 +305,20 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onSend != null;
     return Material(
-      color: onSend != null ? EcoColors.composerSendBg : EcoColors.borderSubtle,
-      borderRadius: BorderRadius.circular(8),
+      color: enabled ? EcoColors.composerSendBg : EcoColors.borderSubtle,
+      shape: const CircleBorder(),
       child: InkWell(
         onTap: onSend,
-        borderRadius: BorderRadius.circular(8),
+        customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 34,
-          height: 34,
+          width: 36,
+          height: 36,
           child: Icon(
-            Icons.arrow_upward,
+            Icons.arrow_upward_rounded,
             size: 20,
-            color: onSend != null
-                ? EcoColors.composerSendText
-                : EcoColors.textMuted,
+            color: enabled ? EcoColors.composerSendText : EcoColors.textMuted,
           ),
         ),
       ),
@@ -314,15 +334,23 @@ class _StopButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: EcoColors.textPrimary,
-      borderRadius: BorderRadius.circular(8),
+      color: const Color(0xFF1D1D1F),
+      shape: const CircleBorder(),
       child: InkWell(
         onTap: onStop,
-        borderRadius: BorderRadius.circular(8),
+        customBorder: const CircleBorder(),
         child: const SizedBox(
-          width: 34,
-          height: 34,
-          child: Icon(Icons.stop_rounded, size: 18, color: EcoColors.bgMain),
+          width: 36,
+          height: 36,
+          child: Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.all(Radius.circular(2.5)),
+              ),
+              child: SizedBox(width: 12, height: 12),
+            ),
+          ),
         ),
       ),
     );
