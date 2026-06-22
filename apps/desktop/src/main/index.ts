@@ -6329,6 +6329,17 @@ function createThreadToolPermissionHandler(
       };
     }
     if (policy.action === "allow") {
+      const description = readBashDescriptionInput(request.input);
+      emitThreadEvent(threadId, "tool.started", `Tool: Bash · ${description ?? command}`, "tool", false, {
+        ...(request.agentId ? { agentId: request.agentId } : {}),
+        tool: {
+          name: "Bash",
+          detail: command,
+          toolUseId: request.toolUseId,
+          ...(description ? { description } : {}),
+          status: "running",
+        },
+      });
       return { behavior: "allow", updatedInput: request.input };
     }
 

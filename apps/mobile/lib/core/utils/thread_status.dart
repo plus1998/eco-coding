@@ -4,9 +4,7 @@ import '../models/thread_models.dart';
 import '../theme/eco_theme.dart';
 
 bool isThreadWaitingForApproval(ThreadSummary thread) {
-  if (thread.status != 'running') return false;
-  return RegExp(r'等待.*(批准|确认)|approval', caseSensitive: false)
-      .hasMatch(thread.message);
+  return thread.status == 'awaiting_plan';
 }
 
 bool isThreadBusy(ThreadSummary thread) {

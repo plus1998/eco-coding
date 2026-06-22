@@ -41,6 +41,7 @@ class ActivityFeedEntry {
     this.statusText,
     this.timeline = const [],
     this.bashRun,
+    this.toolUseId,
   });
 
   final String id;
@@ -59,6 +60,39 @@ class ActivityFeedEntry {
   final String? statusText;
   final List<SubagentTimelineEntry> timeline;
   final BashRunCardDisplay? bashRun;
+  final String? toolUseId;
+}
+
+List<ActivityItem> _resolveEffectiveActivityLines({
+  required List<ActivityItem> lines,
+  ThreadRunProjectionSnapshot? runProjection,
+  String? threadPrompt,
+  String? threadId,
+}) {
+  if (lines.any((line) => line.role == 'user')) {
+    return lines;
+  }
+  String? userPrompt;
+  String? userPromptId;
+  for (final item in runProjection?.timeline ?? const []) {
+    if (item.eventType == 'thread.user_prompt' && item.text.trim().isNotEmpty) {
+      userPrompt = item.text.trim();
+      userPromptId = item.id;
+      break;
+    }
+  }
+  userPrompt ??= threadPrompt?.trim();
+  if (userPrompt == null || userPrompt.isEmpty) {
+    return lines;
+  }
+  return [
+    ActivityItem(
+      id: userPromptId ?? 'user-prompt-${threadId ?? 'thread'}',
+      role: 'user',
+      message: userPrompt,
+    ),
+    ...lines,
+  ];
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
@@ -68,21 +102,13 @@ List<ActivityFeedEntry> buildActivityFeed({
   ThreadRunProjectionSnapshot? runProjection,
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
 }) {
-  var effectiveLines = lines;
-  if (!lines.any((line) => line.role == 'user') &&
-      threadPrompt != null &&
-      threadPrompt.trim().isNotEmpty) {
-    effectiveLines = [
-      ActivityItem(
-        id: 'legacy-${threadId ?? 'thread'}',
-        role: 'user',
-        message: threadPrompt,
-      ),
-      ...lines,
-    ];
-  }
-
-  final bashToolDescriptionIndex = buildBashToolDescriptionIndex(runProjection);
+  final effectiveLines = _resolveEffectiveActivityLines(
+    lines: lines,
+    runProjection: runProjection,
+    threadPrompt: threadPrompt,
+    threadId: threadId,
+  );
+  final bashApprovalByToolUseId = buildBashApprovalIndexByToolUseId(runProjection);
 
   final output = <ActivityFeedEntry>[];
   var narrative = '';
@@ -163,38 +189,13 @@ List<ActivityFeedEntry> buildActivityFeed({
     ToolActionLifecycle? lifecycle,
     String? subagentRole,
     BashRunCardDisplay? bashRun,
+    String? toolUseId,
   }) {
-    final actionKey = activityActionKey(
-      subagent: subagentRole,
-      label: label,
-      icon: icon,
-    );
-    var existingIndex = output.lastIndexWhere(
-      (entry) =>
-          entry.kind == ActivityFeedKind.action &&
-          activityActionKey(
-                subagent: entry.subagentRole,
-                label: entry.text,
-                icon: entry.actionIcon,
-              ) ==
-              actionKey,
-    );
-    if (existingIndex >= 0) {
-      final existing = output[existingIndex];
-      if (isGenericToolActionLabel(label) &&
-          isGenericToolActionLabel(existing.text) &&
-          existing.lifecycle == ToolActionLifecycle.completed) {
-        existingIndex = -1;
-      }
-    }
-    if (existingIndex < 0 && isGenericToolActionLabel(label)) {
+    var existingIndex = -1;
+    if (toolUseId != null && toolUseId.isNotEmpty) {
       existingIndex = output.lastIndexWhere(
         (entry) =>
-            entry.kind == ActivityFeedKind.action &&
-            entry.subagentRole == subagentRole &&
-            entry.actionIcon == icon &&
-            entry.lifecycle != ToolActionLifecycle.completed &&
-            entry.lifecycle != ToolActionLifecycle.failed,
+            entry.kind == ActivityFeedKind.action && entry.toolUseId == toolUseId,
       );
     }
     if (existingIndex >= 0) {
@@ -212,11 +213,12 @@ List<ActivityFeedEntry> buildActivityFeed({
       output[existingIndex] = ActivityFeedEntry(
         id: existing.id,
         kind: ActivityFeedKind.action,
-        text: resolveMergedToolActionLabel(existing.text, label),
+        text: label,
         actionIcon: icon,
         subagentRole: subagentRole ?? existing.subagentRole,
         lifecycle: nextLifecycle,
         bashRun: bashRun ?? existing.bashRun,
+        toolUseId: toolUseId ?? existing.toolUseId,
       );
       return;
     }
@@ -229,33 +231,28 @@ List<ActivityFeedEntry> buildActivityFeed({
         subagentRole: subagentRole,
         lifecycle: lifecycle,
         bashRun: bashRun,
+        toolUseId: toolUseId,
       ),
     );
   }
 
   BashRunCardDisplay? resolveActionBashRun(
-    ParsedActivityToolInvocation? invocation,
+    ThreadRunToolMetadata tool,
     String message,
-    ActivityItem line,
   ) {
-    if (invocation == null || invocation.toolName != 'Bash') return null;
-    return resolveBashRunCardDisplay(
-      toolName: invocation.toolName,
-      command: invocation.detail,
-      summaryText: message,
-      durationMs: invocation.durationMs,
-      description: resolveStructuredBashDescription(
-        tool: line.tool,
-        command: invocation.detail,
-        projectionIndex: bashToolDescriptionIndex,
-      ),
-    );
+    if (tool.name != 'Bash') return null;
+    return resolveBashRunCardDisplayFromTool(tool, summaryText: message);
   }
 
-  ToolActionLifecycle resolveToolLifecycle(String message) {
-    return isToolElapsedDuration(message)
-        ? ToolActionLifecycle.completed
-        : ToolActionLifecycle.running;
+  ToolActionLifecycle resolveStructuredToolLifecycle({
+    required ThreadRunToolMetadata tool,
+    ThreadRunBashApprovalMetadata? bashApproval,
+  }) {
+    final approvalLifecycle = bashApprovalPhaseToLifecycle(bashApproval?.phase);
+    if (approvalLifecycle != null) {
+      return approvalLifecycle;
+    }
+    return toolLifecycleFromMetadata(tool);
   }
 
   void upsertPhase(String summary, {String? detail}) {
@@ -372,50 +369,43 @@ List<ActivityFeedEntry> buildActivityFeed({
       continue;
     }
 
-    final reconnect = parseReconnectActivityMessage(message);
-    if (reconnect != null) {
+    if (line.apiError != null) {
       flushTextBuffers();
-      upsertPhase(reconnect.summary, detail: reconnect.detail);
+      output.add(
+        ActivityFeedEntry(
+          id: line.id,
+          kind: ActivityFeedKind.error,
+          text: line.apiError!.message,
+        ),
+      );
+      continue;
+    }
+
+    if (line.tool != null) {
+      flushTextBuffers();
+      final tool = line.tool!;
+      final bashApproval = tool.toolUseId != null
+          ? bashApprovalByToolUseId[tool.toolUseId!]
+          : null;
+      upsertAction(
+        id: line.id,
+        toolUseId: tool.toolUseId,
+        label: formatToolDisplayLabel(
+          bashApproval?.toolName ?? tool.name,
+          bashApproval?.detail ?? tool.detail,
+        ),
+        icon: iconForToolName(bashApproval?.toolName ?? tool.name),
+        lifecycle: resolveStructuredToolLifecycle(
+          tool: tool,
+          bashApproval: bashApproval,
+        ),
+        subagentRole: agentRole,
+        bashRun: resolveActionBashRun(tool, message),
+      );
       continue;
     }
 
     if (isThreadFollowUpActivityMessage(message)) {
-      continue;
-    }
-
-    final parsedApproval = parseBashApprovalActivityText(message);
-    if (parsedApproval != null) {
-      flushTextBuffers();
-      final invocation = parseActivityToolInvocation(message);
-      upsertAction(
-        id: line.id,
-        label: formatToolDisplayLabel(
-          parsedApproval.toolName,
-          parsedApproval.detail,
-        ),
-        icon: iconForToolName(parsedApproval.toolName),
-        lifecycle: parsedApproval.phase,
-        subagentRole: agentRole,
-        bashRun: resolveActionBashRun(invocation, message, line),
-      );
-      continue;
-    }
-
-    if (looksLikeToolActionMessage(message)) {
-      flushTextBuffers();
-      final invocation = parseActivityToolInvocation(message);
-      upsertAction(
-        id: line.id,
-        label: invocation != null
-            ? formatToolDisplayLabel(invocation.toolName, invocation.detail)
-            : parseToolActionDisplayLabel(message),
-        icon: invocation != null
-            ? iconForToolName(invocation.toolName)
-            : iconForActivityMessage(message),
-        lifecycle: resolveToolLifecycle(message),
-        subagentRole: agentRole,
-        bashRun: resolveActionBashRun(invocation, message, line),
-      );
       continue;
     }
 
@@ -474,48 +464,8 @@ List<ActivityFeedEntry> buildActivityFeed({
       runProjection: runProjection,
       subagentSessions: subagentSessions,
     );
-    _applyProjectionBashTitles(output, runProjection);
   }
   return output;
-}
-
-void _applyProjectionBashTitles(
-  List<ActivityFeedEntry> output,
-  ThreadRunProjectionSnapshot projection,
-) {
-  final titlesByCommand = buildBashToolDescriptionIndex(projection);
-
-  for (var index = 0; index < output.length; index++) {
-    final entry = output[index];
-    final bashRun = entry.bashRun;
-    if (entry.kind != ActivityFeedKind.action || bashRun == null) continue;
-    final command = bashRun.body?.trim();
-    if (command == null || command.isEmpty) continue;
-    final description = titlesByCommand[normalizeBashCommandKey(command)];
-    if (description == null || description == bashRun.title) continue;
-    output[index] = ActivityFeedEntry(
-      id: entry.id,
-      kind: entry.kind,
-      text: entry.text,
-      actionIcon: entry.actionIcon,
-      subagentRole: entry.subagentRole,
-      detail: entry.detail,
-      streaming: entry.streaming,
-      usageBadge: entry.usageBadge,
-      lifecycle: entry.lifecycle,
-      missionPrompt: entry.missionPrompt,
-      agentId: entry.agentId,
-      running: entry.running,
-      durationMs: entry.durationMs,
-      statusText: entry.statusText,
-      timeline: entry.timeline,
-      bashRun: BashRunCardDisplay(
-        title: description,
-        meta: bashRun.meta,
-        body: bashRun.body,
-      ),
-    );
-  }
 }
 
 void _syncProjectionSubagentCards(
@@ -562,11 +512,8 @@ void _enrichSubagentEntries(
     return;
   }
 
-  final agentsByRole =
-      runProjection != null ? groupSubagentAgentsByRole(runProjection) : {};
   final sessionsByAgentId = indexSubagentSessionsByAgentId(subagentSessions);
-  final roleUseIndex = <String, int>{};
-  final absorbedActionKeys = <String>{};
+  final absorbedToolUseIds = <String>{};
 
   for (var index = 0; index < output.length; index++) {
     final entry = output[index];
@@ -580,18 +527,6 @@ void _enrichSubagentEntries(
         runProjection != null) {
       agent = findProjectionAgentById(runProjection, entry.agentId!);
     }
-    if (agent == null) {
-      final agents = agentsByRole[role];
-      if (agents != null && agents.isNotEmpty) {
-        final useIndex = roleUseIndex[role] ?? 0;
-        if (useIndex < agents.length) {
-          agent = agents[useIndex];
-          roleUseIndex[role] = useIndex + 1;
-        }
-      }
-    } else {
-      roleUseIndex[role] = (roleUseIndex[role] ?? 0) + 1;
-    }
 
     final timing =
         agent != null ? sessionsByAgentId[agent.agentId] : null;
@@ -599,7 +534,7 @@ void _enrichSubagentEntries(
     final durationMs = resolveSubagentDurationMs(agent: agent, timing: timing);
     final timeline = agent != null
         ? buildSubagentTimelineFromProjection(agent.timeline)
-        : _collectFallbackTimeline(output, index, role);
+        : const <SubagentTimelineEntry>[];
     final statusText = agent != null
         ? resolveProjectionAgentStatusText(agent)
         : (running ? '工作中' : null);
@@ -616,14 +551,9 @@ void _enrichSubagentEntries(
             : resolveSubagentRunDisplayTitle(role));
 
     for (final item in timeline) {
-      if (item.icon != null) {
-        absorbedActionKeys.add(
-          activityActionKey(
-            subagent: role,
-            label: item.label,
-            icon: item.icon,
-          ),
-        );
+      final toolUseId = item.toolUseId;
+      if (toolUseId != null && toolUseId.isNotEmpty) {
+        absorbedToolUseIds.add(toolUseId);
       }
     }
 
@@ -641,49 +571,13 @@ void _enrichSubagentEntries(
     );
   }
 
-  if (absorbedActionKeys.isEmpty) return;
+  if (absorbedToolUseIds.isEmpty) return;
   output.removeWhere(
     (entry) =>
         entry.kind == ActivityFeedKind.action &&
-        entry.subagentRole != null &&
-        entry.actionIcon != null &&
-        absorbedActionKeys.contains(
-          activityActionKey(
-            subagent: entry.subagentRole,
-            label: entry.text,
-            icon: entry.actionIcon,
-          ),
-        ),
+        entry.toolUseId != null &&
+        absorbedToolUseIds.contains(entry.toolUseId),
   );
-}
-
-List<SubagentTimelineEntry> _collectFallbackTimeline(
-  List<ActivityFeedEntry> output,
-  int missionIndex,
-  String role,
-) {
-  final timeline = <SubagentTimelineEntry>[];
-  for (var index = missionIndex + 1; index < output.length; index++) {
-    final entry = output[index];
-    if (entry.kind == ActivityFeedKind.subagentMission ||
-        entry.kind == ActivityFeedKind.user ||
-        entry.kind == ActivityFeedKind.assistant ||
-        entry.kind == ActivityFeedKind.thinking) {
-      break;
-    }
-    if (entry.kind == ActivityFeedKind.action &&
-        normalizeAgentDisplayRole(entry.subagentRole) == role) {
-      timeline.add(
-        SubagentTimelineEntry(
-          id: entry.id,
-          label: entry.text,
-          icon: entry.actionIcon,
-          lifecycle: entry.lifecycle,
-        ),
-      );
-    }
-  }
-  return timeline;
 }
 
 bool _looksLikeApiError(String message) {

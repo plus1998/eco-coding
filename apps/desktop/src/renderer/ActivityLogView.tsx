@@ -46,7 +46,6 @@ import {
 } from "../shared/activity-display";
 import { formatDurationMs } from "./AppMessage";
 import {
-  buildActivityLogBlocks,
   buildSubagentMetricsByAgentId,
   buildSubagentTimingsByAgentId,
   formatDuration,
@@ -160,119 +159,21 @@ interface ActivityLogViewProps {
 }
 
 export function ActivityLogView(props: ActivityLogViewProps) {
-  if (props.projection?.sourceEventCount) {
+  if (!props.projection?.sourceEventCount) {
     return (
-      <ProjectionActivityLogView
-        projection={props.projection}
-        {...(props.thread && { thread: props.thread })}
-        {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
-        {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
-        {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
-      />
+      <div className="run-log run-log-empty">
+        <p className="run-log-empty-message">运行投影尚未就绪</p>
+      </div>
     );
   }
-  return <LegacyActivityLogView {...props} />;
-}
-
-function LegacyActivityLogView({
-  lines,
-  thread,
-  onRestorePrompt,
-  modelByRole,
-  usageByRole,
-  context,
-  subagentTimings,
-  subagentMetrics,
-  agentDisplayNames,
-  onPlannerLayoutChange,
-}: ActivityLogViewProps) {
-  const effectiveLines = useMemo(() => {
-    if (lines.some((line) => line.role === "user") || !thread?.prompt.trim()) {
-      return lines;
-    }
-    return [{ id: `legacy-${thread.id}`, role: "user", message: thread.prompt }, ...lines];
-  }, [lines, thread?.id, thread?.prompt]);
-
-  const subagentTimingsByAgentId = useMemo(
-    () => (subagentTimings ? buildSubagentTimingsByAgentId(subagentTimings) : undefined),
-    [subagentTimings],
-  );
-  const subagentMetricsByAgentId = useMemo(
-    () => (subagentMetrics ? buildSubagentMetricsByAgentId(subagentMetrics) : undefined),
-    [subagentMetrics],
-  );
-
-  const blocks = useMemo(
-    () =>
-      buildActivityLogBlocks(effectiveLines, {
-        ...(thread?.status && { status: thread.status }),
-        ...(thread?.createdAt && { createdAt: thread.createdAt }),
-        ...(subagentTimingsByAgentId && { subagentTimingsByAgentId }),
-      }),
-    [effectiveLines, subagentTimingsByAgentId, thread?.createdAt, thread?.status],
-  );
-
-  const mainFeedLayoutSignature = useMemo(
-    () =>
-      blocks
-        .map((block) => {
-          if (block.kind === "user-prompt") {
-            return `u:${block.lineId}`;
-          }
-          if (block.kind === "assistant-message") {
-            return `a:${block.text.length}:${block.streaming ? 1 : 0}`;
-          }
-          if (block.kind === "work-session" && block.inlineContent) {
-            return `p:${block.sessionKey ?? ""}:${block.children.length}:${block.running ? 1 : 0}`;
-          }
-          if (block.kind === "worktree-merge") {
-            return `w:${block.summary.fileCount}:${block.summary.files.length}`;
-          }
-          if (block.kind === "surfaced-detail") {
-            if (block.block.kind === "api-error") {
-              return `sf:ae:${block.block.statusCode ?? ""}:${block.block.message.length}`;
-            }
-            if (block.block.kind === "phase") {
-              return `sf:ph:${block.block.label}:${block.block.reconnectDetail?.length ?? 0}`;
-            }
-            return `sf:${block.block.kind}`;
-          }
-          return "";
-        })
-        .filter(Boolean)
-        .join("|"),
-    [blocks],
-  );
-
-  usePlannerLayoutChangeEffect(mainFeedLayoutSignature, onPlannerLayoutChange);
-
   return (
-    <div className="run-log">
-      {blocks.map((block, index) => (
-        <RunLogBlock
-          key={
-            block.kind === "work-session" && block.sessionKey
-              ? block.sessionKey
-              : block.kind === "subagent-run-group"
-                ? `subagent-group-${block.items.map((item) => item.sessionKey).join("-")}`
-                : block.kind === "user-prompt"
-                  ? `user-${block.lineId}`
-                  : `${block.kind}-${index}`
-          }
-          block={block}
-          {...(onRestorePrompt && { onRestorePrompt })}
-          {...(modelByRole && { modelByRole })}
-          {...(usageByRole && { usageByRole })}
-          {...(context && { context })}
-          {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
-          {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
-          {...(agentDisplayNames && { agentDisplayNames })}
-          {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
-          {...(thread?.id && { threadId: thread.id })}
-          {...(thread?.status && { threadStatus: thread.status })}
-        />
-      ))}
-    </div>
+    <ProjectionActivityLogView
+      projection={props.projection}
+      {...(props.thread && { thread: props.thread })}
+      {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
+      {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
+      {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
+    />
   );
 }
 

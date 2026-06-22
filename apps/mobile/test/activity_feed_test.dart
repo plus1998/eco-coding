@@ -37,11 +37,21 @@ void main() {
           id: '3',
           role: 'planner',
           message: 'Tool: Read · lib/auth.dart',
+          tool: ThreadRunToolMetadata(
+            name: 'Read',
+            detail: 'lib/auth.dart',
+            toolUseId: 'toolu_read_1',
+          ),
         ),
         ActivityItem(
           id: '4',
           role: 'coder',
           message: 'Tool: Grep · token',
+          tool: ThreadRunToolMetadata(
+            name: 'Grep',
+            detail: 'token',
+            toolUseId: 'toolu_grep_1',
+          ),
         ),
         ActivityItem(
           id: '5',
@@ -155,44 +165,72 @@ void main() {
     expect(feed.first.missionPrompt, 'check auth flow');
   });
 
-  test('bash approval merges into the same action row', () {
+  test('bash approval merges into the same action row by toolUseId', () {
     final feed = buildActivityFeed(
       lines: const [
         ActivityItem(
           id: '1',
           role: 'planner',
           message: '等待确认 Bash：npm test',
+          tool: ThreadRunToolMetadata(
+            name: 'Bash',
+            detail: 'npm test',
+            toolUseId: 'toolu_bash_1',
+            status: 'running',
+          ),
         ),
         ActivityItem(
           id: '2',
           role: 'planner',
-          message: 'Running npm test · Bash',
+          message: '已允许本次 Bash：npm test',
+          tool: ThreadRunToolMetadata(
+            name: 'Bash',
+            detail: 'npm test',
+            toolUseId: 'toolu_bash_1',
+            status: 'completed',
+          ),
         ),
       ],
       threadPrompt: '',
       threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'approval-1',
+            sequence: 1,
+            eventType: 'bash_approval.requested',
+            scope: 'main',
+            text: '等待确认 Bash：npm test',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'bashApproval': {
+                'toolUseId': 'toolu_bash_1',
+                'toolName': 'Bash',
+                'detail': 'npm test',
+                'phase': 'requested',
+              },
+            },
+          ),
+        ],
+      ),
     );
 
     final actions =
         feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
     expect(actions.length, 1);
     expect(actions.first.text, 'npm test');
+    expect(actions.first.toolUseId, 'toolu_bash_1');
   });
 
   test('subagent mission card gets duration and timeline from projection', () {
     final feed = buildActivityFeed(
-      lines: [
-        ActivityItem(
-          id: '1',
-          role: 'coder',
-          message:
-              '@mission {"role":"coder","summary":"实现登录","prompt":"add login"}',
-        ),
-        ActivityItem(
-          id: '2',
-          role: 'coder',
-          message: 'Reading src/auth.ts',
-        ),
+      lines: const [
+        ActivityItem(id: '1', role: 'user', message: '实现登录'),
       ],
       threadPrompt: '',
       threadId: 't1',
@@ -212,6 +250,7 @@ void main() {
             'startedAt': '2026-01-01T00:00:00.000Z',
             'durationMs': 4200,
             'delegationPrompt': 'add login',
+            'delegationSummary': '实现登录',
             'timeline': [
               {
                 'id': 'tl1',
@@ -222,7 +261,13 @@ void main() {
                 'at': '2026-01-01T00:00:01.000Z',
                 'role': 'coder',
                 'agentId': 'agent_coder_1',
-                'metadata': {'toolName': 'Read'},
+                'metadata': {
+                  'tool': {
+                    'name': 'Read',
+                    'detail': 'src/auth.ts',
+                    'toolUseId': 'toolu_read_1',
+                  },
+                },
               },
             ],
           },
@@ -241,10 +286,14 @@ void main() {
       ],
     );
 
-    expect(feed.length, 1);
-    final card = feed.first;
+    final missions = feed
+        .where((entry) => entry.kind == ActivityFeedKind.subagentMission)
+        .toList();
+    expect(missions.length, 1);
+    final card = missions.first;
     expect(card.kind, ActivityFeedKind.subagentMission);
     expect(card.agentId, 'agent_coder_1');
+    expect(card.text, '实现登录');
     expect(card.running, isTrue);
     expect(card.durationMs, greaterThan(0));
     expect(card.timeline.length, 1);
@@ -307,23 +356,37 @@ void main() {
     expect(feed.last.text, isEmpty);
   });
 
-  test('buildActivityFeed keeps separate generic web searches', () {
+  test('buildActivityFeed keeps separate generic web searches by toolUseId', () {
     final feed = buildActivityFeed(
       lines: const [
         ActivityItem(
           id: '1',
           role: 'planner',
           message: 'Tool: WebSearch',
+          tool: ThreadRunToolMetadata(
+            name: 'WebSearch',
+            toolUseId: 'toolu_search_1',
+          ),
         ),
         ActivityItem(
           id: '2',
           role: 'planner',
           message: 'Tool: WebSearch (2.1s)',
+          tool: ThreadRunToolMetadata(
+            name: 'WebSearch',
+            toolUseId: 'toolu_search_1',
+            status: 'completed',
+            durationMs: 2100,
+          ),
         ),
         ActivityItem(
           id: '3',
           role: 'planner',
           message: 'Tool: WebSearch',
+          tool: ThreadRunToolMetadata(
+            name: 'WebSearch',
+            toolUseId: 'toolu_search_2',
+          ),
         ),
       ],
     );
@@ -340,11 +403,23 @@ void main() {
           id: '1',
           role: 'planner',
           message: 'Tool: WebSearch · flutter keyboard dismiss',
+          tool: ThreadRunToolMetadata(
+            name: 'WebSearch',
+            detail: 'flutter keyboard dismiss',
+            toolUseId: 'toolu_search_1',
+          ),
         ),
         ActivityItem(
           id: '2',
           role: 'planner',
           message: 'Tool: WebSearch (1.2s)',
+          tool: ThreadRunToolMetadata(
+            name: 'WebSearch',
+            detail: 'flutter keyboard dismiss',
+            toolUseId: 'toolu_search_1',
+            status: 'completed',
+            durationMs: 1200,
+          ),
         ),
       ],
     );
@@ -362,6 +437,11 @@ void main() {
           id: '1',
           role: 'planner',
           message: 'Tool: Bash · npm test',
+          tool: ThreadRunToolMetadata(
+            name: 'Bash',
+            detail: 'npm test',
+            toolUseId: 'toolu_bash_1',
+          ),
         ),
       ],
     );
@@ -369,7 +449,7 @@ void main() {
     expect(feed.length, 1);
     expect(feed.first.kind, ActivityFeedKind.action);
     expect(feed.first.bashRun, isNotNull);
-    expect(feed.first.bashRun!.title, 'Run tests');
+    expect(feed.first.bashRun!.title, 'npm test');
     expect(feed.first.bashRun!.body, 'npm test');
   });
 
@@ -393,7 +473,7 @@ void main() {
     expect(feed.first.bashRun?.title, 'Run unit tests');
   });
 
-  test('buildActivityFeed applies structured tool description from projection', () {
+  test('buildActivityFeed without tool metadata does not render bash action cards', () {
     final feed = buildActivityFeed(
       lines: const [
         ActivityItem(
@@ -438,55 +518,7 @@ void main() {
       ),
     );
 
-    expect(feed.first.bashRun?.title, 'Run unit tests');
-  });
-
-  test('buildActivityFeed applies projection tool description when activity lacks tool metadata', () {
-    final feed = buildActivityFeed(
-      lines: const [
-        ActivityItem(
-          id: '1',
-          role: 'planner',
-          message: 'Tool: Bash · npm test',
-        ),
-      ],
-      runProjection: ThreadRunProjectionSnapshot(
-        threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 1,
-        agents: [
-          ThreadRunProjectionAgent(
-            agentId: 'agent_planner',
-            role: 'planner',
-            kind: 'main',
-            status: 'active',
-            startedAt: '2026-01-01T00:00:00.000Z',
-            durationMs: 1000,
-            timeline: [
-              ThreadRunProjectionTimelineItem(
-                id: 'bash-done',
-                sequence: 1,
-                eventType: 'tool.completed',
-                scope: 'main',
-                text: 'Tool: Bash · npm test',
-                at: '2026-01-01T00:00:01.000Z',
-                metadata: const {
-                  'tool': {
-                    'name': 'Bash',
-                    'detail': 'npm test',
-                    'toolUseId': 'toolu_bash_1',
-                    'description': 'Run unit tests',
-                  },
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    expect(feed.first.bashRun?.title, 'Run unit tests');
+    expect(feed.any((entry) => entry.kind == ActivityFeedKind.action), isFalse);
   });
 
   test('buildActivityFeed injects cards for concurrent projection subagents', () {

@@ -126,6 +126,8 @@ class ActivityItem {
     required this.role,
     required this.message,
     this.stream = false,
+    this.agentId,
+    this.apiError,
     this.tool,
   });
 
@@ -133,6 +135,8 @@ class ActivityItem {
   final String role;
   final String message;
   final bool stream;
+  final String? agentId;
+  final ThreadApiErrorInfo? apiError;
   final ThreadRunToolMetadata? tool;
 }
 
@@ -278,7 +282,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         pendingClarification: clarification,
         followUps: loadedFollowUps,
         thread: thread ?? state.thread,
-        runProjection: state.runProjection ?? projection,
+        runProjection: _pickNewerProjection(state.runProjection, projection),
         subagentSessions: state.subagentSessions.isNotEmpty
             ? state.subagentSessions
             : subagentSessions,
@@ -310,6 +314,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           role: line.role,
           message: line.message,
           stream: line.stream ?? false,
+          agentId: line.agentId ?? existing?.agentId,
+          apiError: line.apiError ?? existing?.apiError,
           tool: mergeActivityToolMetadata(existing?.tool, live.tool),
         );
         if (index >= 0) {
@@ -318,6 +324,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           activities.add(item);
         }
       } else if (live.message.isNotEmpty && !isUsageBadgeText(live.message)) {
+        final tool = live.tool;
         if (live.stream == true && activities.isNotEmpty) {
           final last = activities.last;
           if (last.stream && last.role == (live.role ?? last.role)) {
@@ -326,6 +333,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
               role: last.role,
               message: last.message + live.message,
               stream: true,
+              agentId: last.agentId,
+              apiError: last.apiError,
+              tool: mergeActivityToolMetadata(last.tool, tool),
             );
           } else {
             activities.add(
@@ -334,6 +344,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
                 role: live.role ?? 'assistant',
                 message: live.message,
                 stream: true,
+                tool: tool,
               ),
             );
           }
@@ -344,8 +355,26 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
               role: live.role ?? 'assistant',
               message: live.message,
               stream: live.stream ?? false,
+              tool: tool,
             ),
           );
+        }
+      } else if (live.tool != null) {
+        final toolUseId = live.tool!.toolUseId;
+        if (toolUseId != null && toolUseId.isNotEmpty) {
+          final index = activities.indexWhere((item) => item.tool?.toolUseId == toolUseId);
+          if (index >= 0) {
+            final existing = activities[index];
+            activities[index] = ActivityItem(
+              id: existing.id,
+              role: existing.role,
+              message: existing.message,
+              stream: existing.stream,
+              agentId: existing.agentId,
+              apiError: existing.apiError,
+              tool: mergeActivityToolMetadata(existing.tool, live.tool),
+            );
+          }
         }
       }
     }
@@ -395,7 +424,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
     if (live.type == 'thread.run_projection_updated') {
       if (live.projection != null) {
-        state = state.copyWith(runProjection: live.projection);
+        state = state.copyWith(
+          runProjection: _pickNewerProjection(state.runProjection, live.projection),
+        );
       } else {
         ref.read(desktopRpcProvider)?.getRunProjection(threadId).then((
           projection,
@@ -552,7 +583,22 @@ ThreadRunToolMetadata? mergeActivityToolMetadata(
     detail: incoming.detail ?? existing.detail,
     toolUseId: incoming.toolUseId ?? existing.toolUseId,
     description: incoming.description ?? existing.description,
+    output: incoming.output ?? existing.output,
+    durationMs: incoming.durationMs ?? existing.durationMs,
+    status: incoming.status ?? existing.status,
   );
+}
+
+ThreadRunProjectionSnapshot? _pickNewerProjection(
+  ThreadRunProjectionSnapshot? current,
+  ThreadRunProjectionSnapshot? incoming,
+) {
+  if (current == null) return incoming;
+  if (incoming == null) return current;
+  if (incoming.generatedAt.compareTo(current.generatedAt) >= 0) {
+    return incoming;
+  }
+  return current;
 }
 
 ActivityItem _activityItemFromLine(ThreadActivityLine line) {
@@ -561,6 +607,8 @@ ActivityItem _activityItemFromLine(ThreadActivityLine line) {
     role: line.role,
     message: line.message,
     stream: line.stream ?? false,
+    agentId: line.agentId,
+    apiError: line.apiError,
   );
 }
 

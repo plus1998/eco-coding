@@ -65,15 +65,15 @@ function selection(
   };
 }
 
-test("applySingleUsageSubagentLegacyFallback records one legacy record from single usage context", () => {
+test("applySingleUsageSubagentLegacyFallback keeps ledger projection selection", () => {
   const records: SubagentLegacyMetricsRecordInput[] = [];
-  const selectionOptions: unknown[] = [];
   const legacyBilling = billingSnapshot({ primarySource: "proxy" });
+  const billingSelection = selection({ snapshot: legacyBilling, legacySnapshot: legacyBilling });
 
   const applied = applySingleUsageSubagentLegacyFallback({
     threadId: "thr_single_legacy_fallback",
     context,
-    billingSelection: selection({ snapshot: legacyBilling, legacySnapshot: legacyBilling }),
+    billingSelection,
     legacyBilling,
     selectionOptions: { useLedgerProjection: true, plannerModelLabel: "Planner" },
     usage,
@@ -82,32 +82,22 @@ test("applySingleUsageSubagentLegacyFallback records one legacy record from sing
     requestKey: "proxy:coder:req_1",
     services: {
       recordSdkUsage: (_threadId, record) => records.push(record),
-      resolveBillingSnapshot: (_threadId, snapshot, options) => {
-        selectionOptions.push(options);
-        return selection({ snapshot, legacySnapshot: snapshot });
+      resolveBillingSnapshot: () => {
+        throw new Error("legacy billing fallback must not reselect snapshots");
       },
     },
   });
 
-  expect(records).toEqual([
-    {
-      role: "coder",
-      agentId: "agent_coder",
-      usage,
-      contextOccupied: 8_765,
-      contextLimit: 64_000,
-      billing,
-      modelId: "haiku",
-      requestKey: "proxy:coder:req_1",
-    },
-  ]);
-  expect(selectionOptions).toEqual([{ useLedgerProjection: false, plannerModelLabel: "Planner" }]);
-  expect(applied.recorded).toBe(true);
-  expect(applied.recordCount).toBe(1);
-  expect(applied.reason).toBe("ledger_projection_unavailable");
+  expect(records).toEqual([]);
+  expect(applied).toEqual({
+    billingSelection,
+    recorded: false,
+    recordCount: 0,
+    reason: "ledger_projection_primary",
+  });
 });
 
-test("applySingleUsageSubagentLegacyFallback skips old metrics without subagent context", () => {
+test("applySingleUsageSubagentLegacyFallback skips without subagent context", () => {
   const billingSelection = selection();
   const applied = applySingleUsageSubagentLegacyFallback({
     threadId: "thr_missing_context",
@@ -120,10 +110,10 @@ test("applySingleUsageSubagentLegacyFallback skips old metrics without subagent 
     requestKey: "proxy:coder:req_missing",
     services: {
       recordSdkUsage: () => {
-        throw new Error("missing context must not record legacy metrics");
+        throw new Error("legacy metrics must not be recorded");
       },
       resolveBillingSnapshot: () => {
-        throw new Error("missing context must not force legacy billing");
+        throw new Error("legacy billing fallback must not reselect snapshots");
       },
     },
   });
@@ -132,13 +122,14 @@ test("applySingleUsageSubagentLegacyFallback skips old metrics without subagent 
     billingSelection,
     recorded: false,
     recordCount: 0,
-    reason: "missing_subagent_context",
+    reason: "ledger_projection_primary",
   });
 });
 
-test("applySdkRunSubagentLegacyFallback records one legacy record for each SDK model row", () => {
+test("applySdkRunSubagentLegacyFallback keeps ledger projection selection for SDK rows", () => {
   const records: SubagentLegacyMetricsRecordInput[] = [];
   const legacyBilling = billingSnapshot({ primarySource: "sdk" });
+  const billingSelection = selection({ snapshot: legacyBilling, legacySnapshot: legacyBilling });
   const reviewerUsage: ParsedUsage = {
     inputTokens: 500,
     outputTokens: 100,
@@ -149,7 +140,7 @@ test("applySdkRunSubagentLegacyFallback records one legacy record for each SDK m
   const applied = applySdkRunSubagentLegacyFallback({
     threadId: "thr_sdk_legacy_fallback",
     context,
-    billingSelection: selection({ snapshot: legacyBilling, legacySnapshot: legacyBilling }),
+    billingSelection,
     legacyBilling,
     selectionOptions: { useLedgerProjection: true },
     models: [
@@ -161,35 +152,17 @@ test("applySdkRunSubagentLegacyFallback records one legacy record for each SDK m
     requestKey: "sdk-result:event_1",
     services: {
       recordSdkUsage: (_threadId, record) => records.push(record),
-      resolveBillingSnapshot: (_threadId, snapshot) => selection({ snapshot, legacySnapshot: snapshot }),
+      resolveBillingSnapshot: () => {
+        throw new Error("legacy billing fallback must not reselect snapshots");
+      },
     },
   });
 
-  expect(records).toEqual([
-    {
-      role: "coder",
-      agentId: "agent_coder",
-      parentToolUseId: "toolu_parent",
-      usage,
-      contextOccupied: 8_765,
-      contextLimit: 64_000,
-      billing,
-      modelId: "haiku",
-      requestKey: "sdk-result:event_1",
-    },
-    {
-      role: "reviewer",
-      agentId: "agent_coder",
-      parentToolUseId: "toolu_parent",
-      usage: reviewerUsage,
-      contextOccupied: 8_765,
-      contextLimit: 64_000,
-      billing,
-      modelId: "reviewer-haiku",
-      requestKey: "sdk-result:event_1",
-    },
-  ]);
-  expect(applied.recorded).toBe(true);
-  expect(applied.recordCount).toBe(2);
-  expect(applied.reason).toBe("ledger_projection_unavailable");
+  expect(records).toEqual([]);
+  expect(applied).toEqual({
+    billingSelection,
+    recorded: false,
+    recordCount: 0,
+    reason: "ledger_projection_primary",
+  });
 });

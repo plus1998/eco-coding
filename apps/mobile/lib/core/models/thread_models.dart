@@ -189,12 +189,36 @@ class CoderTodoItem {
   final String updatedAt;
 }
 
+class ThreadApiErrorInfo {
+  const ThreadApiErrorInfo({
+    required this.message,
+    this.statusCode,
+    this.code,
+    this.model,
+  });
+
+  factory ThreadApiErrorInfo.fromJson(Map<String, dynamic> json) =>
+      ThreadApiErrorInfo(
+        message: json['message'] as String? ?? '',
+        statusCode: json['statusCode'] as int?,
+        code: json['code'] as String?,
+        model: json['model'] as String?,
+      );
+
+  final String message;
+  final int? statusCode;
+  final String? code;
+  final String? model;
+}
+
 class ThreadActivityLine {
   const ThreadActivityLine({
     required this.id,
     required this.role,
     required this.message,
     this.stream,
+    this.agentId,
+    this.apiError,
   });
 
   factory ThreadActivityLine.fromJson(Map<String, dynamic> json) =>
@@ -203,12 +227,20 @@ class ThreadActivityLine {
         role: json['role'] as String? ?? 'assistant',
         message: json['message'] as String? ?? '',
         stream: json['stream'] as bool?,
+        agentId: json['agentId'] as String?,
+        apiError: json['apiError'] is Map<String, dynamic>
+            ? ThreadApiErrorInfo.fromJson(
+                json['apiError'] as Map<String, dynamic>,
+              )
+            : null,
       );
 
   final String id;
   final String role;
   final String message;
   final bool? stream;
+  final String? agentId;
+  final ThreadApiErrorInfo? apiError;
 }
 
 class ThreadPendingPlan {

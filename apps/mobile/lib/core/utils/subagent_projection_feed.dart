@@ -11,6 +11,7 @@ class SubagentTimelineEntry {
     this.lifecycle,
     this.streaming = false,
     this.isError = false,
+    this.toolUseId,
   });
 
   final String id;
@@ -19,6 +20,7 @@ class SubagentTimelineEntry {
   final ToolActionLifecycle? lifecycle;
   final bool streaming;
   final bool isError;
+  final String? toolUseId;
 }
 
 List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
@@ -30,41 +32,39 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
     if (item.eventType == 'request.started') continue;
     if (item.eventType == 'request.completed') continue;
 
-    final text = item.text.trim();
-    final mission = parseSubagentMissionMessage(text);
-    if (mission != null) continue;
+    final bashApproval = readBashApprovalMetadata(item.metadata);
+    if (bashApproval != null) {
+      output.add(
+        SubagentTimelineEntry(
+          id: item.id,
+          toolUseId: bashApproval.toolUseId,
+          label: formatToolDisplayLabel(
+            bashApproval.toolName,
+            bashApproval.detail,
+          ),
+          icon: iconForToolName(bashApproval.toolName),
+          lifecycle: bashApprovalPhaseToLifecycle(bashApproval.phase),
+        ),
+      );
+      continue;
+    }
 
     if (item.eventType == 'tool.started' ||
         item.eventType == 'tool.completed' ||
         item.eventType == 'tool.failed') {
-      final toolName = _resolveProjectionToolName(item);
-      final parsedApproval = parseBashApprovalActivityText(text);
-      if (parsedApproval != null) {
-        output.add(
-          SubagentTimelineEntry(
-            id: item.id,
-            label: formatToolDisplayLabel(
-              parsedApproval.toolName,
-              parsedApproval.detail,
-            ),
-            icon: iconForToolName(parsedApproval.toolName),
-            lifecycle: parsedApproval.phase,
-          ),
-        );
-        continue;
-      }
+      final tool = readProjectionToolMetadata(item.metadata);
+      if (tool == null) continue;
       output.add(
         SubagentTimelineEntry(
           id: item.id,
-          label: text.isNotEmpty
-              ? parseToolActionDisplayLabel(text)
-              : formatToolDisplayLabel(toolName, null),
-          icon: iconForToolName(toolName),
+          toolUseId: tool.toolUseId,
+          label: formatToolDisplayLabel(tool.name, tool.detail),
+          icon: iconForToolName(tool.name),
           lifecycle: item.eventType == 'tool.failed'
               ? ToolActionLifecycle.failed
               : item.eventType == 'tool.completed'
                   ? ToolActionLifecycle.completed
-                  : ToolActionLifecycle.running,
+                  : toolLifecycleFromMetadata(tool),
           isError: item.eventType == 'tool.failed',
         ),
       );
@@ -72,11 +72,15 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
     }
 
     if (item.eventType == 'api.error') {
-      if (text.isEmpty) continue;
+      final apiError = item.metadata?['apiError'];
+      final message = apiError is Map<String, dynamic>
+          ? (apiError['message'] as String?)?.trim()
+          : item.text.trim();
+      if (message == null || message.isEmpty) continue;
       output.add(
         SubagentTimelineEntry(
           id: item.id,
-          label: text,
+          label: message,
           isError: true,
         ),
       );
@@ -84,33 +88,8 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
     }
 
     if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
-      final parsedApproval = parseBashApprovalActivityText(text);
-      if (parsedApproval != null) {
-        output.add(
-          SubagentTimelineEntry(
-            id: item.id,
-            label: formatToolDisplayLabel(
-              parsedApproval.toolName,
-              parsedApproval.detail,
-            ),
-            icon: iconForToolName(parsedApproval.toolName),
-            lifecycle: parsedApproval.phase,
-          ),
-        );
-        continue;
-      }
+      final text = item.text.trim();
       if (text.isEmpty || item.eventType == 'message.delta') continue;
-      if (looksLikeToolActionMessage(text)) {
-        output.add(
-          SubagentTimelineEntry(
-            id: item.id,
-            label: parseToolActionDisplayLabel(text),
-            icon: iconForActivityMessage(text),
-            lifecycle: ToolActionLifecycle.running,
-          ),
-        );
-        continue;
-      }
       final preview = _firstReadableLine(text);
       if (preview.length >= 8 && !isActivityNoiseMessage(preview)) {
         output.add(
@@ -124,7 +103,7 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
     }
 
     if (item.eventType == 'thinking.final') {
-      final preview = _firstReadableLine(text);
+      final preview = _firstReadableLine(item.text);
       if (preview.isNotEmpty) {
         output.add(
           SubagentTimelineEntry(
@@ -172,13 +151,12 @@ String? resolveProjectionAgentStatusText(ThreadRunProjectionAgent agent) {
 }
 
 String _resolveProjectionToolName(ThreadRunProjectionTimelineItem item) {
-  final metadata = item.metadata;
-  final rawName = metadata?['toolName'];
-  if (rawName is String && rawName.trim().isNotEmpty) {
-    return rawName.trim();
+  final tool = readProjectionToolMetadata(item.metadata);
+  final name = tool?.name.trim();
+  if (name != null && name.isNotEmpty) {
+    return name;
   }
-  final match = RegExp(r'^Tool:\s*(\S+)', caseSensitive: false).firstMatch(item.text);
-  return match?.group(1) ?? 'Tool';
+  return 'Tool';
 }
 
 String _firstReadableLine(String text) {

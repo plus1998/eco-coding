@@ -136,11 +136,13 @@ class ThreadRunProjectionSnapshot {
     required this.generatedAt,
     required this.agents,
     required this.sourceEventCount,
+    this.timeline = const [],
   });
 
   factory ThreadRunProjectionSnapshot.fromJson(Map<String, dynamic> json) {
     final thread = json['thread'] as Map<String, dynamic>? ?? const {};
     final agentsRaw = json['agents'] as List<dynamic>? ?? const [];
+    final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
     return ThreadRunProjectionSnapshot(
       threadId: thread['threadId'] as String? ?? '',
       status: thread['status'] as String? ?? '',
@@ -153,6 +155,13 @@ class ThreadRunProjectionSnapshot {
             ),
           )
           .toList(),
+      timeline: timelineRaw
+          .map(
+            (entry) => ThreadRunProjectionTimelineItem.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -161,6 +170,7 @@ class ThreadRunProjectionSnapshot {
   final String generatedAt;
   final int sourceEventCount;
   final List<ThreadRunProjectionAgent> agents;
+  final List<ThreadRunProjectionTimelineItem> timeline;
 
   bool get hasData => sourceEventCount > 0;
 }

@@ -3,10 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { mergeStreamText } from "@eco/runtime";
-import {
-  isReconnectActivityMessage,
-  shouldClearReconnectActivity,
-} from "../shared/activity-display";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import type {
   AgentRole,
@@ -2219,18 +2215,6 @@ export class ConversationStore {
     return row ? rowToThread(row) : undefined;
   }
 
-  private clearReconnectActivityLines(threadId: string): void {
-    const rows = this.db
-      .prepare(`SELECT id, message FROM thread_activity WHERE thread_id = ?`)
-      .all(threadId) as Array<{ id: string; message: string }>;
-    const deleteStmt = this.db.prepare(`DELETE FROM thread_activity WHERE id = ?`);
-    for (const row of rows) {
-      if (isReconnectActivityMessage(row.message)) {
-        deleteStmt.run(row.id);
-      }
-    }
-  }
-
   private activityLineMatchesForMerge(
     last: ThreadActivityLine & { id: string },
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
@@ -2248,17 +2232,6 @@ export class ConversationStore {
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
     let last = this.getLastActivityLine(threadId);
-    if (isReconnectActivityMessage(line.message)) {
-      if (last && isReconnectActivityMessage(last.message)) {
-        this.db
-          .prepare(`UPDATE thread_activity SET message = ?, role = ? WHERE id = ?`)
-          .run(line.message, line.role, last.id);
-        return { ...last, message: line.message, role: line.role };
-      }
-    } else if (shouldClearReconnectActivity({ message: line.message, role: line.role })) {
-      this.clearReconnectActivityLines(threadId);
-      last = this.getLastActivityLine(threadId);
-    }
     if (!line.stream && last?.stream && this.activityLineMatchesForMerge(last, line)) {
       const merged = line.message.trim()
         ? mergeStreamText(last.message, line.message)
@@ -2847,15 +2820,6 @@ function shouldUpgradeThreadRunEvent(
   const existingTool = readThreadRunToolMetadata(existing.metadata);
   const incomingTool = readThreadRunToolMetadata(incoming.metadata);
   if (isRicherThreadRunToolMetadata(existingTool, incomingTool)) {
-    return true;
-  }
-
-  const existingMessage = existing.message.trim();
-  const incomingMessage = incoming.message.trim();
-  if (
-    incomingMessage.length > existingMessage.length &&
-    isSameToolReference(existingTool, incomingTool)
-  ) {
     return true;
   }
 

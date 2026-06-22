@@ -8,13 +8,9 @@ import {
   bashApprovalPhaseToLifecycle,
   clampActivityPreviewLine,
   compareToolActionLifecyclePriority,
-  formatMcpToolDisplayName,
   formatToolDisplayLabel,
   formatToolStatusPreview,
   resolveBashRunCardDisplay,
-  isMcpToolName,
-  parseBashApprovalActivityText,
-  parseToolActionDisplayLabel,
   readBashApprovalMetadata,
   toolStatusToLifecycle,
   type ToolActionLifecycle,
@@ -24,7 +20,6 @@ import {
   resolveSubagentRunDisplayTitle,
   type ActivityDetailBlock,
 } from "./activity-log";
-import { parseSubagentMissionMessage } from "@eco/runtime";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isRecordedUserPromptLiveEvent,
@@ -743,11 +738,6 @@ export function projectionItemToDetailBlock(
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
 
-  const mission = projectionMissionFromText(text);
-  if (mission) {
-    return mission;
-  }
-
   if (item.eventType === "agent.started") {
     const delegation = readProjectionDelegationMetadata(item);
     if (delegation) {
@@ -780,14 +770,6 @@ export function projectionItemToDetailBlock(
   }
 
   if (item.eventType === "message.delta" || item.eventType === "message.final") {
-    const parsedApproval = parseBashApprovalActivityText(text);
-    if (parsedApproval) {
-      return buildProjectionToolActionBlock(item, {
-        toolName: parsedApproval.toolName,
-        label: formatToolDisplayLabel(parsedApproval.toolName, parsedApproval.detail),
-        lifecycle: parsedApproval.phase,
-      });
-    }
     if (!text && item.eventType !== "message.delta") {
       return undefined;
     }
@@ -852,12 +834,6 @@ export function projectionItemToDetailBlock(
 
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
     const metadataTool = readProjectionToolMetadata(item);
-    if (metadataTool?.name === "Agent" || metadataTool?.name === "Task") {
-      const toolMission = projectionMissionFromText(text);
-      if (toolMission) {
-        return toolMission;
-      }
-    }
     const lifecycle = toolStatusToLifecycle(metadataTool?.status, item.eventType);
     return buildProjectionToolActionBlock(item, {
       toolName: resolveProjectionToolName(item),
@@ -964,10 +940,7 @@ function isProjectionTodoStatusItem(item: ThreadRunProjectionTimelineItem): bool
 }
 
 function isProjectionTodoToolActionItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return (
-    isProjectionTodoStatusItem(item) &&
-    (Boolean(readProjectionToolMetadata(item)) || /^Tool:/iu.test(item.text.trim()))
-  );
+  return isProjectionTodoStatusItem(item) && Boolean(readProjectionToolMetadata(item));
 }
 
 function readProjectionApiError(
@@ -1069,23 +1042,10 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
 
 function resolveProjectionToolName(item: ThreadRunProjectionTimelineItem): string {
   const metadataTool = readProjectionToolMetadata(item);
-  if (metadataTool) {
+  if (metadataTool?.name.trim()) {
     return metadataTool.name;
   }
-  const text = item.text.trim();
-  const permissionMatch = /^Permission denied for ([A-Za-z0-9_]+)(?::\s*(.*))?$/iu.exec(text);
-  if (permissionMatch?.[1]?.trim()) {
-    return permissionMatch[1].trim();
-  }
-  const failedMatch = /^Tool failed:\s*([^:]+)(?::\s*(.*))?$/iu.exec(text);
-  if (failedMatch?.[1]?.trim()) {
-    return failedMatch[1].trim();
-  }
-  const toolMatch = /^Tool:\s*([^:]+)(?::\s*(.*))?$/iu.exec(text);
-  if (toolMatch?.[1]?.trim()) {
-    return toolMatch[1].trim();
-  }
-  return text || "tool";
+  return "Tool";
 }
 
 function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem): string {
@@ -1093,16 +1053,7 @@ function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem)
   if (metadataTool) {
     return formatProjectionToolActionLabel(metadataTool);
   }
-  const text = item.text.trim();
-  if (!text) {
-    return item.eventType === "tool.completed" ? "工具完成" : "工具调用";
-  }
-  const label = text.replace(/^Tool:\s*/iu, "").trim();
-  const normalized = label.replace(/\s+\(\d+(?:\.\d+)?s\)$/iu, "").trim();
-  if (isMcpToolName(normalized)) {
-    return formatMcpToolDisplayName(normalized);
-  }
-  return parseToolActionDisplayLabel(normalized);
+  return item.eventType === "tool.completed" ? "工具完成" : "工具调用";
 }
 
 function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
@@ -1128,20 +1079,6 @@ function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineIte
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
   return formatToolDisplayLabel(tool.name, tool.detail);
-}
-
-function projectionMissionFromText(text: string): ActivityDetailBlock | undefined {
-  const mission = parseSubagentMissionMessage(text);
-  if (!mission) {
-    return undefined;
-  }
-  const subagent = normalizeAgentDisplayRole(mission.role) ?? mission.role;
-  return {
-    kind: "subagent-mission",
-    subagent,
-    summary: mission.summary,
-    ...(mission.prompt && { prompt: mission.prompt }),
-  };
 }
 
 function readProjectionDelegationMetadata(

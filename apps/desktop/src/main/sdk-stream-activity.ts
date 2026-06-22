@@ -118,10 +118,7 @@ export class SdkStreamActivityBridge {
     const recent = this.recentSdkTools.get(threadId) ?? [];
     const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
     const candidates = [...recent].reverse().filter((item) => item.at >= cutoff && !item.matchedAt);
-    const sdkMatch =
-      matchByToolUseId(candidates, parsed) ??
-      matchByToolNameAndDetail(candidates, parsed) ??
-      matchSummaryOnly(candidates, parsed);
+    const sdkMatch = matchByToolUseId(candidates, parsed);
     if (!sdkMatch) {
       return false;
     }
@@ -597,30 +594,13 @@ function shouldSuppressRedundantOtelPermissionDeniedLine(
     | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
   recentToolFailures: Map<string, SdkToolFailureRecord[]>,
 ): boolean {
-  const message = (typeof line === "string" ? line : line.message).trim();
-  if (!message) {
+  const toolUseId = typeof line !== "string" ? line.toolUseId?.trim() : undefined;
+  if (!toolUseId) {
     return false;
   }
   const recent = recentToolFailures.get(threadId) ?? [];
   const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-  const failures = recent.filter((item) => item.at >= cutoff);
-  if (failures.length === 0) {
-    return false;
-  }
-  if (message === "工具调用被拒绝") {
-    return true;
-  }
-  const shortMatch = message.match(/^Permission denied for ([A-Za-z0-9_]+)$/i);
-  if (shortMatch?.[1]) {
-    const toolName = shortMatch[1].toLowerCase();
-    return failures.some((item) => item.toolName.toLowerCase() === toolName);
-  }
-  const fullMatch = message.match(/^Permission denied for ([A-Za-z0-9_]+):/i);
-  if (fullMatch?.[1]) {
-    const toolName = fullMatch[1].toLowerCase();
-    return failures.some((item) => item.toolName.toLowerCase() === toolName);
-  }
-  return false;
+  return recent.some((item) => item.at >= cutoff && item.toolUseId === toolUseId);
 }
 
 function parseOtelToolLine(
@@ -690,31 +670,6 @@ function matchByToolUseId(
     return undefined;
   }
   return candidates.find((item) => item.toolUseId === parsed.toolUseId);
-}
-
-function matchByToolNameAndDetail(
-  candidates: SdkToolActivityRecord[],
-  parsed: ParsedOtelToolLine,
-): SdkToolActivityRecord | undefined {
-  return candidates.find((item) => {
-    if (item.toolName !== parsed.toolName) {
-      return false;
-    }
-    if (!parsed.detailKey) {
-      return true;
-    }
-    return item.detailKey === parsed.detailKey;
-  });
-}
-
-function matchSummaryOnly(
-  candidates: SdkToolActivityRecord[],
-  parsed: ParsedOtelToolLine,
-): SdkToolActivityRecord | undefined {
-  if (parsed.detailKey) {
-    return undefined;
-  }
-  return candidates.find((item) => item.toolName === parsed.toolName);
 }
 
 function resolveSdkToolDetailKey(toolName: string, input: unknown): string | undefined {

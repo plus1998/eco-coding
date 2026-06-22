@@ -558,6 +558,14 @@ test("buildThreadRunProjectionViewModel keeps pre-speech current action on the a
               role: "coder",
               agentId: "coder_agent_00000001",
               text: "Tool: Read · ActivityLogView.tsx",
+              metadata: {
+                tool: {
+                  name: "Read",
+                  detail: "ActivityLogView.tsx",
+                  toolUseId: "toolu_read_1",
+                  status: "running",
+                },
+              },
               sequence: 1,
             }),
           ],
@@ -668,7 +676,14 @@ test("buildThreadRunProjectionViewModel treats legacy todo updates as tool state
               role: "explore",
               agentId: "explore_agent_00000001",
               text: "Tool: WebFetch · https://weather.example",
-              metadata: { liveType: "todo.updated" },
+              metadata: {
+                liveType: "todo.updated",
+                tool: {
+                  name: "WebFetch",
+                  detail: "https://weather.example",
+                  toolUseId: "toolu_fetch_1",
+                },
+              },
               sequence: 1,
             }),
           ],
@@ -1328,33 +1343,33 @@ test("projectionItemToDetailBlock maps API errors and request ownership", () => 
   expect(mainRequest).toMatchObject({ kind: "model-request", role: "planner" });
 });
 
-test("projectionItemToDetailBlock maps planner Agent delegation to subagent mission", () => {
-  const mission = formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts");
+test("projectionItemToDetailBlock maps planner Agent tool.started with metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({
       id: "delegate-coder",
       eventType: "tool.started",
       scope: "main",
       role: "coder",
-      text: mission,
+      text: "Tool: Agent · coder",
       metadata: {
         liveType: "tool.started",
         tool: {
           name: "Agent",
           detail: "coder",
+          toolUseId: "toolu_agent_1",
+          status: "running",
         },
       },
     }),
   );
 
   expect(detail).toMatchObject({
-    kind: "subagent-mission",
+    kind: "action",
+    icon: "agent",
+    label: "coder",
+    lifecycle: "running",
     subagent: "coder",
-    prompt: "Implement export filters in src/api.ts",
   });
-  if (detail?.kind === "subagent-mission") {
-    expect(detail.summary).toContain("src/api.ts");
-  }
 });
 
 test("projectionItemToDetailBlock maps agent.started delegation metadata to subagent mission", () => {
@@ -1384,7 +1399,6 @@ test("projectionItemToDetailBlock maps agent.started delegation metadata to suba
 });
 
 test("buildThreadRunProjectionViewModel shows planner delegation on main feed", () => {
-  const mission = formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts");
   const view = buildThreadRunProjectionViewModel(
     projection({
       timeline: [
@@ -1393,11 +1407,16 @@ test("buildThreadRunProjectionViewModel shows planner delegation on main feed", 
           eventType: "tool.started",
           scope: "main",
           role: "coder",
-          text: mission,
+          text: "Tool: Agent · coder",
           sequence: 1,
           metadata: {
             liveType: "tool.started",
-            tool: { name: "Agent", detail: "coder" },
+            tool: {
+              name: "Agent",
+              detail: "coder",
+              toolUseId: "toolu_agent_1",
+              status: "running",
+            },
           },
         }),
       ],
@@ -1408,7 +1427,7 @@ test("buildThreadRunProjectionViewModel shows planner delegation on main feed", 
   expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
   const timelineEntry = view.mainFeedEntries[0];
   if (timelineEntry?.kind === "timeline") {
-    expect(projectionItemToDetailBlock(timelineEntry.item)?.kind).toBe("subagent-mission");
+    expect(projectionItemToDetailBlock(timelineEntry.item)?.kind).toBe("action");
   }
 });
 

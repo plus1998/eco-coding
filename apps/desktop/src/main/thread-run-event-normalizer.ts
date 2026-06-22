@@ -173,7 +173,7 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     return input.stream ? "message.delta" : "message.final";
   }
   if (input.liveType === "todo.updated") {
-    if (input.tool || /^Tool:/i.test(input.message)) {
+    if (input.tool) {
       return "tool.started";
     }
     return "thread.status";
@@ -182,7 +182,7 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     return "request.retry_scheduled";
   }
   if (input.liveType === "otel.activity") {
-    if (/^Requesting model/i.test(input.message)) {
+    if (input.metadata?.systemSubtype === "requesting") {
       return "request.started";
     }
     if (input.tool?.status === "failed") {
@@ -191,11 +191,8 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     if (input.tool?.status === "completed") {
       return "tool.completed";
     }
-    if (/^Tool failed:/i.test(input.message)) {
-      return "tool.failed";
-    }
-    if (input.tool || /^Tool:/i.test(input.message)) {
-      return "tool.completed";
+    if (input.tool) {
+      return input.tool.status === "running" ? "tool.started" : "tool.completed";
     }
     return input.stream ? "message.delta" : "message.final";
   }

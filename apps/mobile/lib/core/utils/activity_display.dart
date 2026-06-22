@@ -125,14 +125,43 @@ class ThreadRunBashApprovalMetadata {
   const ThreadRunBashApprovalMetadata({
     required this.toolUseId,
     required this.toolName,
+    this.phase,
     this.detail,
     this.description,
   });
 
   final String toolUseId;
   final String toolName;
+  final String? phase;
   final String? detail;
   final String? description;
+}
+
+ToolActionLifecycle? bashApprovalPhaseToLifecycle(String? phase) {
+  switch (phase) {
+    case 'requested':
+      return ToolActionLifecycle.approvalPending;
+    case 'approved':
+      return ToolActionLifecycle.approvalApproved;
+    case 'rejected':
+    case 'denied':
+      return ToolActionLifecycle.approvalRejected;
+    default:
+      return null;
+  }
+}
+
+ToolActionLifecycle toolLifecycleFromMetadata(ThreadRunToolMetadata tool) {
+  switch (tool.status) {
+    case 'completed':
+      return ToolActionLifecycle.completed;
+    case 'failed':
+      return ToolActionLifecycle.failed;
+    case 'running':
+      return ToolActionLifecycle.running;
+    default:
+      return ToolActionLifecycle.running;
+  }
 }
 
 ThreadRunBashApprovalMetadata? readBashApprovalMetadata(
@@ -143,14 +172,37 @@ ThreadRunBashApprovalMetadata? readBashApprovalMetadata(
   final toolUseId = (raw['toolUseId'] as String?)?.trim() ?? '';
   final toolName = (raw['toolName'] as String?)?.trim() ?? '';
   if (toolUseId.isEmpty || toolName.isEmpty) return null;
+  final phase = (raw['phase'] as String?)?.trim();
   final detail = (raw['detail'] as String?)?.trim();
   final description = (raw['description'] as String?)?.trim();
   return ThreadRunBashApprovalMetadata(
     toolUseId: toolUseId,
     toolName: toolName,
+    phase: phase?.isNotEmpty == true ? phase : null,
     detail: detail?.isNotEmpty == true ? detail : null,
     description: description?.isNotEmpty == true ? description : null,
   );
+}
+
+Map<String, ThreadRunBashApprovalMetadata> buildBashApprovalIndexByToolUseId(
+  ThreadRunProjectionSnapshot? projection,
+) {
+  final index = <String, ThreadRunBashApprovalMetadata>{};
+  if (projection == null) return index;
+  void scan(Iterable<ThreadRunProjectionTimelineItem> items) {
+    for (final item in items) {
+      final approval = readBashApprovalMetadata(item.metadata);
+      if (approval != null) {
+        index[approval.toolUseId] = approval;
+      }
+    }
+  }
+
+  scan(projection.timeline);
+  for (final agent in projection.agents) {
+    scan(agent.timeline);
+  }
+  return index;
 }
 
 String normalizeBashCommandKey(String command) {
@@ -164,51 +216,43 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(Map<String, dynamic>? json)
   final detail = (json['detail'] as String?)?.trim();
   final toolUseId = (json['toolUseId'] as String?)?.trim();
   final description = (json['description'] as String?)?.trim();
+  final output = (json['output'] as String?)?.trim();
+  final durationMs = json['durationMs'];
+  final status = (json['status'] as String?)?.trim();
   return ThreadRunToolMetadata(
     name: name,
     detail: detail?.isNotEmpty == true ? detail : null,
     toolUseId: toolUseId?.isNotEmpty == true ? toolUseId : null,
     description: description?.isNotEmpty == true ? description : null,
+    output: output?.isNotEmpty == true ? output : null,
+    durationMs: durationMs is int ? durationMs : null,
+    status: status?.isNotEmpty == true ? status : null,
   );
-}
-
-Map<String, String> buildBashToolDescriptionIndex(
-  ThreadRunProjectionSnapshot? projection,
-) {
-  final index = <String, String>{};
-  if (projection == null) return index;
-  for (final agent in projection.agents) {
-    for (final item in agent.timeline) {
-      final tool = readProjectionToolMetadata(item.metadata);
-      if (tool?.name != 'Bash') continue;
-      final description = tool?.description?.trim();
-      final detail = tool?.detail?.trim();
-      if (description == null ||
-          description.isEmpty ||
-          detail == null ||
-          detail.isEmpty) {
-        continue;
-      }
-      index[normalizeBashCommandKey(detail)] = description;
-    }
-  }
-  return index;
 }
 
 String? resolveStructuredBashDescription({
   ThreadRunToolMetadata? tool,
-  String? command,
-  Map<String, String> projectionIndex = const {},
 }) {
   final fromTool = tool?.name == 'Bash' ? tool?.description?.trim() : null;
   if (fromTool != null && fromTool.isNotEmpty) {
     return fromTool;
   }
-  final normalizedCommand = command?.trim();
-  if (normalizedCommand == null || normalizedCommand.isEmpty) {
-    return null;
-  }
-  return projectionIndex[normalizeBashCommandKey(normalizedCommand)];
+  return null;
+}
+
+BashRunCardDisplay? resolveBashRunCardDisplayFromTool(
+  ThreadRunToolMetadata tool, {
+  String? summaryText,
+}) {
+  if (tool.name != 'Bash') return null;
+  return resolveBashRunCardDisplay(
+    toolName: tool.name,
+    command: tool.detail,
+    summaryText: summaryText,
+    output: tool.output,
+    durationMs: tool.durationMs,
+    description: tool.description,
+  );
 }
 
 class ThreadRunToolMetadata {
@@ -217,12 +261,18 @@ class ThreadRunToolMetadata {
     this.detail,
     this.toolUseId,
     this.description,
+    this.output,
+    this.durationMs,
+    this.status,
   });
 
   final String name;
   final String? detail;
   final String? toolUseId;
   final String? description;
+  final String? output;
+  final int? durationMs;
+  final String? status;
 }
 
 ThreadRunToolMetadata? readProjectionToolMetadata(Map<String, dynamic>? metadata) {
@@ -704,13 +754,11 @@ String formatMeaningfulBashTitle({
   if (normalizedDescription != null && normalizedDescription.isNotEmpty) {
     return clampActivityPreviewLine(normalizedDescription, 48);
   }
-  final summary = _normalizeBashSummaryCandidate(summaryText);
-  if (summary.isNotEmpty &&
-      !_looksLikeShellCommand(summary) &&
-      !RegExp(r'^Tool:\s*', caseSensitive: false).hasMatch(summary)) {
-    return clampActivityPreviewLine(summary, 48);
+  final normalizedCommand = command?.trim();
+  if (normalizedCommand != null && normalizedCommand.isNotEmpty) {
+    return clampActivityPreviewLine(normalizedCommand, 48);
   }
-  return _deriveBashTitleFromCommand(command) ?? '运行命令';
+  return '运行命令';
 }
 
 BashRunCardDisplay? resolveBashRunCardDisplay({
