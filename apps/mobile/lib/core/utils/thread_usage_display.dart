@@ -1,4 +1,7 @@
+import 'package:flutter/material.dart';
+
 import '../models/thread_usage_models.dart';
+import 'model_id.dart';
 
 String formatCostUsd(double value) {
   if (value <= 0) {
@@ -114,18 +117,123 @@ String contextCardPlaceholder(String? status) {
 String roleDisplayLabel(String role) {
   switch (role) {
     case 'planner':
-      return 'Planner';
+      return 'Main Agent';
     case 'coder':
-      return 'Coder';
+      return '编码';
     case 'reviewer':
-      return 'Reviewer';
+      return '审查';
     case 'tester':
-      return 'Tester';
+      return '测试';
     case 'explore':
-      return 'Explore';
+      return '探索';
     case 'architect':
-      return 'Architect';
+      return '架构';
     default:
       return role;
   }
+}
+
+String formatRoleModelLabel(String role, String? modelId) {
+  final base = roleDisplayLabel(role);
+  final model = modelId?.trim();
+  if (model == null || model.isEmpty) {
+    return base;
+  }
+  return '$base · ${shortenModelId(model)}';
+}
+
+String shortAgentId(String agentId) {
+  if (agentId.length <= 8) {
+    return agentId;
+  }
+  return agentId.substring(0, 8);
+}
+
+const _subagentRoleShort = <String, String>{
+  'explore': '探索',
+  'architect': '架构',
+  'coder': '编码',
+  'reviewer': '审查',
+  'tester': '测试',
+};
+
+Color subagentAccentColor(String role) {
+  switch (role) {
+    case 'explore':
+      return const Color(0xFF38BDF8);
+    case 'architect':
+      return const Color(0xFFC084FC);
+    case 'coder':
+      return const Color(0xFF4ADE80);
+    case 'reviewer':
+      return const Color(0xFFFB923C);
+    case 'tester':
+      return const Color(0xFFF472B6);
+    default:
+      return const Color(0xFF64748B);
+  }
+}
+
+class FlatSubagentContextRow {
+  const FlatSubagentContextRow({
+    required this.key,
+    required this.role,
+    required this.title,
+    required this.snapshot,
+    this.accentColor,
+  });
+
+  final String key;
+  final String role;
+  final String title;
+  final ThreadRoleContextSnapshot snapshot;
+  final Color? accentColor;
+}
+
+List<FlatSubagentContextRow> buildFlatSubagentContextRows(
+  ThreadContextSnapshot context,
+) {
+  final subagentRoles = context.roles
+      .where((role) => role.role != 'planner')
+      .toList();
+
+  final instances = [...context.instances]
+      .where((instance) => instance.role != 'planner' && instance.occupied > 0)
+      .toList()
+    ..sort((left, right) => right.occupied.compareTo(left.occupied));
+
+  if (instances.isNotEmpty) {
+    return instances.map((instance) {
+      final roleLabel =
+          _subagentRoleShort[instance.role] ?? instance.role;
+      return FlatSubagentContextRow(
+        key: instance.agentId,
+        role: instance.role,
+        title: '$roleLabel #${shortAgentId(instance.agentId)}',
+        accentColor: subagentAccentColor(instance.role),
+        snapshot: ThreadRoleContextSnapshot(
+          role: instance.role,
+          occupied: instance.occupied,
+          limit: instance.limit,
+          occupancyPct: instance.occupancyPct,
+          limitsResolved: instance.limitsResolved,
+          modelId: instance.modelId,
+          segments: instance.segments,
+        ),
+      );
+    }).toList();
+  }
+
+  return subagentRoles.map((role) {
+    return FlatSubagentContextRow(
+      key: role.role,
+      role: role.role,
+      title: formatRoleModelLabel(role.role, role.modelId),
+      snapshot: role,
+    );
+  }).toList();
+}
+
+String formatBillingModelLabel(ThreadBillingModelSnapshot entry) {
+  return shortenModelId(entry.modelId);
 }

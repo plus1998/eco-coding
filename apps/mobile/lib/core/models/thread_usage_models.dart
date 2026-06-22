@@ -57,6 +57,46 @@ class ThreadRoleContextSnapshot {
   final List<ContextBreakdownSegment> segments;
 }
 
+class ThreadContextInstanceSnapshot {
+  const ThreadContextInstanceSnapshot({
+    required this.agentId,
+    required this.role,
+    required this.occupied,
+    required this.limit,
+    required this.occupancyPct,
+    required this.limitsResolved,
+    this.modelId,
+    this.segments = const [],
+  });
+
+  factory ThreadContextInstanceSnapshot.fromJson(Map<String, dynamic> json) =>
+      ThreadContextInstanceSnapshot(
+        agentId: json['agentId'] as String? ?? '',
+        role: json['role'] as String? ?? 'coder',
+        occupied: (json['occupied'] as num?)?.toInt() ?? 0,
+        limit: (json['limit'] as num?)?.toInt() ?? 0,
+        occupancyPct: (json['occupancyPct'] as num?)?.toInt() ?? 0,
+        limitsResolved: json['limitsResolved'] as bool? ?? false,
+        modelId: json['modelId'] as String?,
+        segments: (json['segments'] as List<dynamic>? ?? [])
+            .map(
+              (entry) => ContextBreakdownSegment.fromJson(
+                entry as Map<String, dynamic>,
+              ),
+            )
+            .toList(),
+      );
+
+  final String agentId;
+  final String role;
+  final int occupied;
+  final int limit;
+  final int occupancyPct;
+  final bool limitsResolved;
+  final String? modelId;
+  final List<ContextBreakdownSegment> segments;
+}
+
 class ThreadContextSnapshot {
   const ThreadContextSnapshot({
     required this.occupied,
@@ -67,6 +107,7 @@ class ThreadContextSnapshot {
     this.modelId,
     this.segments = const [],
     this.roles = const [],
+    this.instances = const [],
   });
 
   factory ThreadContextSnapshot.fromJson(Map<String, dynamic> json) =>
@@ -91,6 +132,13 @@ class ThreadContextSnapshot {
               ),
             )
             .toList(),
+        instances: (json['instances'] as List<dynamic>? ?? [])
+            .map(
+              (entry) => ThreadContextInstanceSnapshot.fromJson(
+                entry as Map<String, dynamic>,
+              ),
+            )
+            .toList(),
       );
 
   final int occupied;
@@ -101,6 +149,44 @@ class ThreadContextSnapshot {
   final String? modelId;
   final List<ContextBreakdownSegment> segments;
   final List<ThreadRoleContextSnapshot> roles;
+  final List<ThreadContextInstanceSnapshot> instances;
+}
+
+class ThreadBillingModelSnapshot {
+  const ThreadBillingModelSnapshot({
+    required this.modelId,
+    required this.roles,
+    required this.inputTokens,
+    required this.outputTokens,
+    required this.cacheReadTokens,
+    required this.cacheCreationTokens,
+    required this.ecoCostUsd,
+    this.reportedCostUsd,
+  });
+
+  factory ThreadBillingModelSnapshot.fromJson(Map<String, dynamic> json) =>
+      ThreadBillingModelSnapshot(
+        modelId: json['modelId'] as String? ?? '',
+        roles: (json['roles'] as List<dynamic>? ?? [])
+            .map((entry) => entry as String)
+            .toList(),
+        inputTokens: (json['inputTokens'] as num?)?.toInt() ?? 0,
+        outputTokens: (json['outputTokens'] as num?)?.toInt() ?? 0,
+        cacheReadTokens: (json['cacheReadTokens'] as num?)?.toInt() ?? 0,
+        cacheCreationTokens:
+            (json['cacheCreationTokens'] as num?)?.toInt() ?? 0,
+        ecoCostUsd: (json['ecoCostUsd'] as num?)?.toDouble() ?? 0,
+        reportedCostUsd: (json['reportedCostUsd'] as num?)?.toDouble(),
+      );
+
+  final String modelId;
+  final List<String> roles;
+  final int inputTokens;
+  final int outputTokens;
+  final int cacheReadTokens;
+  final int cacheCreationTokens;
+  final double ecoCostUsd;
+  final double? reportedCostUsd;
 }
 
 class ThreadBillingSnapshot {
@@ -115,6 +201,7 @@ class ThreadBillingSnapshot {
     this.outputTokens = 0,
     this.cacheReadTokens = 0,
     this.cacheCreationTokens = 0,
+    this.byModel = const [],
   });
 
   factory ThreadBillingSnapshot.fromJson(Map<String, dynamic> json) {
@@ -131,6 +218,13 @@ class ThreadBillingSnapshot {
       outputTokens: (totals['output'] as num?)?.toInt() ?? 0,
       cacheReadTokens: (totals['cacheRead'] as num?)?.toInt() ?? 0,
       cacheCreationTokens: (totals['cacheCreation'] as num?)?.toInt() ?? 0,
+      byModel: (json['byModel'] as List<dynamic>? ?? [])
+          .map(
+            (entry) => ThreadBillingModelSnapshot.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -144,6 +238,7 @@ class ThreadBillingSnapshot {
   final int outputTokens;
   final int cacheReadTokens;
   final int cacheCreationTokens;
+  final List<ThreadBillingModelSnapshot> byModel;
 }
 
 class ThreadUsageSnapshotResult {

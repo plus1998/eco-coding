@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/package_script_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/package_script_run.dart';
 import 'package_script_providers.dart';
 import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
@@ -403,15 +405,45 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   late Future<PackageScriptsListResult> _future;
   final ScrollController _outputScrollController = ScrollController();
   int _prevOutputLength = 0;
+  Map<String, String> _scriptArgsByName = {};
+  String? _editingScript;
+  final TextEditingController _argsInputController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _future = _loadScripts();
+    _loadScriptArgs();
+  }
+
+  Future<void> _loadScriptArgs() async {
+    final args = await readWorkspaceScriptArgs(widget.workspacePath);
+    if (!mounted) return;
+    setState(() => _scriptArgsByName = args);
+  }
+
+  Future<void> _commitScriptArgs(String scriptName, String nextArgs) async {
+    final saved = await saveScriptArgs(
+      widget.workspacePath,
+      scriptName,
+      nextArgs,
+    );
+    if (!mounted) return;
+    setState(() {
+      _scriptArgsByName = saved;
+      _editingScript = null;
+      _argsInputController.clear();
+    });
+  }
+
+  void _openArgsEditor(String scriptName) {
+    _argsInputController.text = _scriptArgsByName[scriptName] ?? '';
+    setState(() => _editingScript = scriptName);
   }
 
   @override
   void dispose() {
+    _argsInputController.dispose();
     _outputScrollController.dispose();
     super.dispose();
   }
@@ -429,7 +461,11 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     await _future;
   }
 
-  Future<void> _runScript(PackageScriptInfo script) async {
+  Future<void> _runScript(
+    PackageScriptInfo script, {
+    required String packageManager,
+    String? args,
+  }) async {
     final rpc = ref.read(desktopRpcProvider);
     final runState = ref.read(packageScriptRunProvider);
     if (rpc == null || (runState?.running ?? false)) {
@@ -439,6 +475,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
       final result = await rpc.startPackageScript(
         workspacePath: widget.workspacePath,
         script: script.name,
+        args: args,
       );
       if (!mounted) return;
       if (result.runId == null) {
@@ -543,30 +580,148 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                 (script) {
                                   final scriptRunning = isRunning &&
                                       runState?.script == script.name;
-                                  return ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    title: Text(script.name),
-                                    subtitle: Text(
-                                      script.command,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: eco.textMuted,
-                                        fontSize: 12,
+                                  final savedArgs =
+                                      _scriptArgsByName[script.name] ?? '';
+                                  final isEditingArgs =
+                                      _editingScript == script.name;
+                                  final displayCommand = savedArgs.isNotEmpty
+                                      ? formatRunCommand(
+                                          listing.packageManager,
+                                          script.name,
+                                          savedArgs,
+                                        )
+                                      : script.command;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: EcoColors.bgElevated,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: scriptRunning
+                                              ? EcoColors.accentText
+                                              : eco.borderSubtle,
+                                        ),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          10,
+                                          8,
+                                          10,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    script.name,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .titleSmall,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  tooltip: savedArgs.isNotEmpty
+                                                      ? '附加参数：$savedArgs'
+                                                      : '附加参数',
+                                                  icon: Icon(
+                                                    Icons.text_fields_rounded,
+                                                    size: 18,
+                                                    color: savedArgs.isNotEmpty ||
+                                                            isEditingArgs
+                                                        ? EcoColors.accentText
+                                                        : eco.textMuted,
+                                                  ),
+                                                  onPressed: isRunning
+                                                      ? null
+                                                      : () {
+                                                          if (isEditingArgs) {
+                                                            _commitScriptArgs(
+                                                              script.name,
+                                                              _argsInputController
+                                                                  .text,
+                                                            );
+                                                            return;
+                                                          }
+                                                          _openArgsEditor(
+                                                            script.name,
+                                                          );
+                                                        },
+                                                ),
+                                                IconButton(
+                                                  tooltip: '运行',
+                                                  icon: scriptRunning
+                                                      ? const SizedBox(
+                                                          width: 18,
+                                                          height: 18,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                        )
+                                                      : const Icon(
+                                                          Icons
+                                                              .play_arrow_rounded,
+                                                          size: 22,
+                                                        ),
+                                                  onPressed: isRunning
+                                                      ? null
+                                                      : () => _runScript(
+                                                            script,
+                                                            packageManager:
+                                                                listing
+                                                                    .packageManager,
+                                                            args: savedArgs
+                                                                    .isNotEmpty
+                                                                ? savedArgs
+                                                                : null,
+                                                          ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (isEditingArgs)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 8,
+                                                ),
+                                                child: TextField(
+                                                  controller: _argsInputController,
+                                                  autofocus: true,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    isDense: true,
+                                                    hintText: '附加参数',
+                                                    border: OutlineInputBorder(),
+                                                  ),
+                                                  enabled: !isRunning,
+                                                  onSubmitted: (value) =>
+                                                      _commitScriptArgs(
+                                                    script.name,
+                                                    value,
+                                                  ),
+                                                ),
+                                              )
+                                            else
+                                              Text(
+                                                displayCommand,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: eco.textMuted,
+                                                      fontSize: 12,
+                                                    ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                    trailing: scriptRunning
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Icon(Icons.play_arrow_rounded),
-                                    onTap: isRunning
-                                        ? null
-                                        : () => _runScript(script),
                                   );
                                 },
                               ),

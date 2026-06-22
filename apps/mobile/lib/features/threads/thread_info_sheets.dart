@@ -217,6 +217,17 @@ class _BillingSheet extends StatelessWidget {
                 label: '缓存写入',
                 value: '${billing!.cacheCreationTokens}',
               ),
+            if (billing!.byModel.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text('按模型', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              ...billing!.byModel.map(
+                (entry) => _MetricRow(
+                  label: formatBillingModelLabel(entry),
+                  value: formatCostUsd(entry.ecoCostUsd),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -276,22 +287,22 @@ class _ContextSheet extends StatelessWidget {
                     )
                   else ...[
                     _ContextRoleSection(
-                      title: roleDisplayLabel(
+                      title: formatRoleModelLabel(
                         resolvePlannerContext(contextSnapshot!).role,
+                        resolvePlannerContext(contextSnapshot!).modelId,
                       ),
                       role: resolvePlannerContext(contextSnapshot!),
                     ),
-                    ...contextSnapshot!.roles
-                        .where((role) => role.role != 'planner')
-                        .map(
-                          (role) => Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: _ContextRoleSection(
-                              title: roleDisplayLabel(role.role),
-                              role: role,
-                            ),
-                          ),
+                    ...buildFlatSubagentContextRows(contextSnapshot!).map(
+                      (row) => Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: _ContextRoleSection(
+                          title: row.title,
+                          role: row.snapshot,
+                          accentColor: row.accentColor,
                         ),
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -307,19 +318,22 @@ class _ContextRoleSection extends StatelessWidget {
   const _ContextRoleSection({
     required this.title,
     required this.role,
+    this.accentColor,
   });
 
   final String title;
   final ThreadRoleContextSnapshot role;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
+    final accent = accentColor;
     final pctColor = role.occupancyPct >= 95
         ? EcoColors.danger
         : (role.occupancyPct >= 85
             ? const Color(0xFFFBBF24)
-            : EcoColors.accentText);
+            : (accent ?? EcoColors.accentText));
     final visibleSegments =
         role.segments.where((segment) => segment.tokens > 0).toList();
 
@@ -336,6 +350,17 @@ class _ContextRoleSection extends StatelessWidget {
           children: [
             Row(
               children: [
+                if (accent != null) ...[
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: Text(
                     title,
