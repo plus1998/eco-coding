@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/eco_theme.dart';
+
 /// Same-hue shimmer: a soft highlight sweeps across [text] repeatedly.
 class ShimmerText extends StatefulWidget {
   const ShimmerText({
@@ -51,10 +53,10 @@ class _ShimmerTextState extends State<ShimmerText>
   @override
   Widget build(BuildContext context) {
     final highlight = widget.highlightColor ??
-        Color.lerp(widget.baseColor, Colors.white, 0.55)!;
+        Color.lerp(widget.baseColor, ecoColors(context).shimmerHighlight, 0.55)!;
     final resolvedStyle =
         (widget.style ?? Theme.of(context).textTheme.bodySmall)?.copyWith(
-              color: Colors.white,
+              color: widget.baseColor,
               fontWeight: FontWeight.w500,
             );
 

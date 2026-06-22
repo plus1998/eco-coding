@@ -305,23 +305,64 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
 
     if (!isMetricsOnlyEvent) {
+      final resolvedTool = _resolveLiveToolMetadata(live);
+      final toolUseId = resolvedTool?.toolUseId?.trim();
+
       if (live.activityLine != null) {
         final line = live.activityLine!;
-        final index = activities.indexWhere((a) => a.id == line.id);
-        final existing = index >= 0 ? activities[index] : null;
+        final indexById = activities.indexWhere((a) => a.id == line.id);
+        final indexByTool = toolUseId != null && toolUseId.isNotEmpty
+            ? activities.indexWhere((a) => a.tool?.toolUseId == toolUseId)
+            : -1;
+        final existingById = indexById >= 0 ? activities[indexById] : null;
+        final existingByTool =
+            indexByTool >= 0 ? activities[indexByTool] : null;
+        final existing = existingByTool ?? existingById;
         final item = ActivityItem(
-          id: line.id,
+          id: existing?.id ?? line.id,
           role: line.role,
           message: line.message,
           stream: line.stream ?? false,
-          agentId: line.agentId ?? existing?.agentId,
+          agentId: line.agentId ??
+              existing?.agentId ??
+              live.bashApproval?.agentId,
           apiError: line.apiError ?? existing?.apiError,
-          tool: mergeActivityToolMetadata(existing?.tool, live.tool),
+          tool: mergeActivityToolMetadata(existing?.tool, resolvedTool),
         );
-        if (index >= 0) {
-          activities[index] = item;
+        if (indexByTool >= 0) {
+          activities[indexByTool] = item;
+        } else if (indexById >= 0) {
+          activities[indexById] = item;
         } else {
           activities.add(item);
+        }
+      } else if (toolUseId != null &&
+          toolUseId.isNotEmpty &&
+          resolvedTool != null) {
+        final index =
+            activities.indexWhere((a) => a.tool?.toolUseId == toolUseId);
+        if (index >= 0) {
+          final existing = activities[index];
+          activities[index] = ActivityItem(
+            id: existing.id,
+            role: live.role ?? existing.role,
+            message: live.message.isNotEmpty ? live.message : existing.message,
+            stream: live.stream ?? existing.stream,
+            agentId: existing.agentId ?? live.bashApproval?.agentId,
+            apiError: existing.apiError,
+            tool: mergeActivityToolMetadata(existing.tool, resolvedTool),
+          );
+        } else if (live.message.isNotEmpty && !isUsageBadgeText(live.message)) {
+          activities.add(
+            ActivityItem(
+              id: 'tool-$toolUseId',
+              role: live.role ?? 'tool',
+              message: live.message,
+              stream: live.stream ?? false,
+              agentId: live.bashApproval?.agentId,
+              tool: resolvedTool,
+            ),
+          );
         }
       } else if (live.message.isNotEmpty && !isUsageBadgeText(live.message)) {
         final tool = live.tool;
@@ -358,23 +399,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
               tool: tool,
             ),
           );
-        }
-      } else if (live.tool != null) {
-        final toolUseId = live.tool!.toolUseId;
-        if (toolUseId != null && toolUseId.isNotEmpty) {
-          final index = activities.indexWhere((item) => item.tool?.toolUseId == toolUseId);
-          if (index >= 0) {
-            final existing = activities[index];
-            activities[index] = ActivityItem(
-              id: existing.id,
-              role: existing.role,
-              message: existing.message,
-              stream: existing.stream,
-              agentId: existing.agentId,
-              apiError: existing.apiError,
-              tool: mergeActivityToolMetadata(existing.tool, live.tool),
-            );
-          }
         }
       }
     }
@@ -459,6 +483,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       state = state.copyWith(
         thread: state.thread!.copyWith(title: updatedTitle),
       );
+    }
+
+    if (live.runtimeConfig != null) {
+      final config = live.runtimeConfig!;
+      if (state.thread != null) {
+        state = state.copyWith(
+          thread: state.thread!.copyWith(runtimeConfig: config),
+        );
+      }
+      ref.read(runtimeConfigProvider.notifier).state = config;
     }
 
     if (shouldUpdateThreadSummaryFromLiveEvent(live.type) &&
@@ -624,6 +658,16 @@ ThreadRunToolMetadata? mergeActivityToolMetadata(
     durationMs: incoming.durationMs ?? existing.durationMs,
     status: incoming.status ?? existing.status,
   );
+}
+
+ThreadRunToolMetadata? _resolveLiveToolMetadata(ThreadLiveEvent live) {
+  final fromApproval = live.bashApproval != null
+      ? toolMetadataFromBashApproval(
+          live.bashApproval!,
+          status: bashApprovalLiveTypeToToolStatus(live.type),
+        )
+      : null;
+  return mergeActivityToolMetadata(fromApproval, live.tool);
 }
 
 ThreadRunProjectionSnapshot? _pickNewerProjection(

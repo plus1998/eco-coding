@@ -19,10 +19,10 @@ class EcoMarkdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final baseColor = muted
         ? eco.textMuted.withValues(alpha: 0.85)
-        : EcoColors.textHeading;
+        : eco.textHeading;
     final baseStyle = muted
         ? Theme.of(context).textTheme.bodySmall
         : Theme.of(context).textTheme.bodyMedium;
@@ -62,11 +62,11 @@ class EcoMarkdown extends StatelessWidget {
         code: base?.copyWith(
           fontFamily: 'monospace',
           fontSize: (base.fontSize ?? 14) - 1,
-          color: muted ? eco.textSecondary : EcoColors.accentText,
-          backgroundColor: EcoColors.codeBg,
+          color: muted ? eco.textSecondary : eco.accentText,
+          backgroundColor: eco.codeBg,
         ),
         codeblockDecoration: BoxDecoration(
-          color: EcoColors.codeBg,
+          color: eco.codeBg,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: eco.borderSubtle),
         ),
@@ -77,7 +77,7 @@ class EcoMarkdown extends StatelessWidget {
           border: Border(top: BorderSide(color: eco.borderSubtle)),
         ),
         a: base?.copyWith(
-          color: muted ? eco.textSecondary : EcoColors.accentText,
+          color: muted ? eco.textSecondary : eco.accentText,
         ),
       ),
     );

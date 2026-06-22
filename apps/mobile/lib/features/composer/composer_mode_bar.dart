@@ -23,8 +23,8 @@ class ComposerModeBar extends ConsumerWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.cardSurface,
-        border: Border(top: BorderSide(color: ecoThemeExtras(context).borderSubtle)),
+        color: ecoColors(context).cardSurface,
+        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

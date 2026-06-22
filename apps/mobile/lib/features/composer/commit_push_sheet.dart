@@ -17,7 +17,7 @@ Future<bool?> showCommitPushSheet({
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -143,7 +143,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final diff = widget.diff;
 
     return SafeArea(
@@ -154,7 +154,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
             width: 36,
             height: 4,
             decoration: BoxDecoration(
-              color: eco.borderSubtle,
+              color: ecoColors(context).borderSubtle,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -174,7 +174,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                       Text(
                         '${diff.fileCount} 个文件 · +${diff.totalAdditions} -${diff.totalDeletions}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: eco.textMuted,
+                              color: ecoColors(context).textMuted,
                             ),
                       ),
                     ],
@@ -208,16 +208,16 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                       children: [
                         Text(
                           '+${file.additions}',
-                          style: const TextStyle(
-                            color: EcoColors.success,
+                          style: TextStyle(
+                            color: ecoColors(context).success,
                             fontSize: 12,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(
                           '-${file.deletions}',
-                          style: const TextStyle(
-                            color: EcoColors.danger,
+                          style: TextStyle(
+                            color: ecoColors(context).danger,
                             fontSize: 12,
                           ),
                         ),
@@ -252,7 +252,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                   const SizedBox(height: 8),
                   Text(
                     _error!,
-                    style: TextStyle(color: eco.statusDenyText, fontSize: 13),
+                    style: TextStyle(color: ecoColors(context).statusDenyText, fontSize: 13),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -268,12 +268,12 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                   child: FilledButton.icon(
                     onPressed: _committing ? null : _commitAndPush,
                     icon: _committing
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
                         : const Icon(Icons.cloud_upload_outlined),

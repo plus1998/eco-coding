@@ -48,6 +48,7 @@ const threadSummaryMessageExclusions = new Set([
   "thread.usage_updated",
   "thread.todos_updated",
   "thread.title_updated",
+  "thread.runtime_config_updated",
 ]);
 
 export function shouldUpdateThreadSummaryFromLiveEvent(eventType: string): boolean {

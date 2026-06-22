@@ -19,7 +19,7 @@ Future<void> showThreadTodoSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -44,7 +44,7 @@ Future<void> showWorkspaceDiffReviewSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -69,7 +69,7 @@ Future<void> showNpmScriptsSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -94,7 +94,7 @@ class _SheetHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Column(
@@ -153,7 +153,7 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return SafeArea(
       child: Column(
         children: [
@@ -217,7 +217,7 @@ class _TodoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final icon = _todoIcon(todo.status);
     final label = _todoStatusLabel(todo.status);
     final displayTitle = todo.status == 'running' &&
@@ -228,7 +228,7 @@ class _TodoRow extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.bgElevated,
+        color: eco.bgElevated,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: eco.borderSubtle),
       ),
@@ -237,7 +237,7 @@ class _TodoRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: _todoIconColor(todo.status)),
+            Icon(icon, size: 18, color: _todoIconColor(todo.status, eco)),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -279,16 +279,16 @@ IconData _todoIcon(String status) {
   }
 }
 
-Color _todoIconColor(String status) {
+Color _todoIconColor(String status, EcoColors colors) {
   switch (status) {
     case 'running':
-      return EcoColors.accentText;
+      return colors.accentText;
     case 'completed':
-      return EcoColors.success;
+      return colors.success;
     case 'blocked':
-      return EcoColors.danger;
+      return colors.danger;
     default:
-      return EcoColors.textMuted;
+      return colors.textMuted;
   }
 }
 
@@ -346,7 +346,7 @@ class _WorkspaceDiffReviewSheetState
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return SafeArea(
       child: Column(
         children: [
@@ -515,7 +515,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final runState = ref.watch(packageScriptRunProvider);
     final outputLength = runState?.output.length ?? 0;
     if (outputLength > _prevOutputLength) {
@@ -595,11 +595,11 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                     padding: const EdgeInsets.only(bottom: 8),
                                     child: DecoratedBox(
                                       decoration: BoxDecoration(
-                                        color: EcoColors.bgElevated,
+                                        color: eco.bgElevated,
                                         borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
                                           color: scriptRunning
-                                              ? EcoColors.accentText
+                                              ? eco.accentText
                                               : eco.borderSubtle,
                                         ),
                                       ),
@@ -633,7 +633,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                     size: 18,
                                                     color: savedArgs.isNotEmpty ||
                                                             isEditingArgs
-                                                        ? EcoColors.accentText
+                                                        ? eco.accentText
                                                         : eco.textMuted,
                                                   ),
                                                   onPressed: isRunning
@@ -768,7 +768,7 @@ class _PackageScriptOutputPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final commandText = runState.command.join(' ');
     final outputText = runState.output.isEmpty
         ? (runState.running ? '…' : '（无输出）')
@@ -776,7 +776,7 @@ class _PackageScriptOutputPanel extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.bgElevated,
+        color: eco.bgElevated,
         border: Border(top: BorderSide(color: eco.borderSubtle)),
       ),
       child: SizedBox(
@@ -791,14 +791,14 @@ class _PackageScriptOutputPanel extends StatelessWidget {
                   Icon(
                     Icons.terminal,
                     size: 16,
-                    color: runState.running ? EcoColors.accentText : eco.textMuted,
+                    color: runState.running ? eco.accentText : eco.textMuted,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       runState.script,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: EcoColors.textHeading,
+                            color: eco.textHeading,
                             fontWeight: FontWeight.w600,
                           ),
                     ),
@@ -807,13 +807,13 @@ class _PackageScriptOutputPanel extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: EcoColors.accentSoft,
+                        color: eco.accentSoft,
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
                         '运行中',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: EcoColors.accentText,
+                              color: eco.accentText,
                             ),
                       ),
                     )
@@ -822,8 +822,8 @@ class _PackageScriptOutputPanel extends StatelessWidget {
                       'exit ${runState.exitCode}',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: runState.exitCode == 0
-                                ? EcoColors.success
-                                : EcoColors.danger,
+                                ? eco.success
+                                : eco.danger,
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                     ),
@@ -832,7 +832,7 @@ class _PackageScriptOutputPanel extends StatelessWidget {
                     TextButton(
                       onPressed: onStop,
                       style: TextButton.styleFrom(
-                        foregroundColor: EcoColors.danger,
+                        foregroundColor: eco.danger,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,

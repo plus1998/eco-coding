@@ -67,7 +67,7 @@ class SetupWizardProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final steps = SetupWizardStep.values;
 
     return Column(
@@ -82,7 +82,7 @@ class SetupWizardProgress extends StatelessWidget {
                     height: 1,
                     margin: const EdgeInsets.only(bottom: 22),
                     color: isSetupWizardStepDone(steps[i - 1], overview)
-                        ? EcoColors.accent.withValues(alpha: 0.5)
+                        ? eco.accent.withValues(alpha: 0.5)
                         : eco.borderSubtle,
                   ),
                 ),
@@ -117,11 +117,11 @@ class _StepDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final fg = done
         ? eco.statusAllowText
         : active
-            ? EcoColors.accentText
+            ? eco.accentText
             : eco.textMuted;
 
     final dot = Column(
@@ -136,13 +136,13 @@ class _StepDot extends StatelessWidget {
             color: done
                 ? eco.statusAllowBg
                 : active
-                    ? EcoColors.accentSoft
+                    ? eco.accentSoft
                     : Colors.transparent,
             border: Border.all(
               color: done
-                  ? EcoColors.statusAllowBorder
+                  ? eco.statusAllowBorder
                   : active
-                      ? EcoColors.accent.withValues(alpha: 0.6)
+                      ? eco.accent.withValues(alpha: 0.6)
                       : eco.borderSubtle,
               width: active ? 1.5 : 1,
             ),
@@ -155,7 +155,7 @@ class _StepDot extends StatelessWidget {
                     height: 6,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: active ? EcoColors.accent : eco.textMuted,
+                      color: active ? eco.accent : eco.textMuted,
                     ),
                   ),
           ),

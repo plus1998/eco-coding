@@ -165,7 +165,7 @@ class ComposerRouteSheet extends ConsumerWidget {
                     return ListTile(
                       title: Text(entry.name),
                       trailing: isActive
-                          ? const Icon(Icons.check, color: EcoColors.accentText)
+                          ? Icon(Icons.check, color: ecoColors(context).accentText)
                           : null,
                       selected: isActive,
                       enabled: canEdit,
@@ -228,7 +228,7 @@ class ComposerContextTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final child = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -244,7 +244,7 @@ class ComposerContextTrigger extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: enabled ? EcoColors.textSecondary : eco.textMuted,
+                color: enabled ? ecoColors(context).textSecondary : ecoColors(context).textMuted,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -253,14 +253,14 @@ class ComposerContextTrigger extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: enabled ? EcoColors.textPrimary : eco.textMuted,
+                    color: enabled ? ecoColors(context).textPrimary : ecoColors(context).textMuted,
                     fontWeight: FontWeight.w500,
                     fontSize: 12,
                   ),
                 ),
               ),
               if (enabled && onTap != null)
-                Icon(Icons.expand_more, size: 14, color: eco.textMuted),
+                Icon(Icons.expand_more, size: 14, color: ecoColors(context).textMuted),
             ],
           ),
         ),
@@ -271,9 +271,9 @@ class ComposerContextTrigger extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.composerPillBg,
+        color: ecoColors(context).composerPillBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: EcoColors.composerPillBorder),
+        border: Border.all(color: ecoColors(context).composerPillBorder),
       ),
       child: child,
     );
@@ -296,7 +296,7 @@ class ComposerToolbarTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -310,20 +310,20 @@ class ComposerToolbarTrigger extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: enabled ? EcoColors.textSecondary : eco.textMuted,
+                color: enabled ? ecoColors(context).textSecondary : ecoColors(context).textMuted,
               ),
               const SizedBox(width: 5),
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: enabled ? EcoColors.textPrimary : eco.textMuted,
+                  color: enabled ? ecoColors(context).textPrimary : ecoColors(context).textMuted,
                   fontWeight: FontWeight.w500,
                   fontSize: 12,
                 ),
               ),
               if (enabled && onTap != null) ...[
                 const SizedBox(width: 2),
-                Icon(Icons.expand_more, size: 14, color: eco.textMuted),
+                Icon(Icons.expand_more, size: 14, color: ecoColors(context).textMuted),
               ],
             ],
           ),
@@ -398,7 +398,7 @@ class ComposerProfileControl extends ConsumerWidget {
 
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: EcoColors.bgMenu,
+      backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -418,7 +418,7 @@ class ComposerProfileControl extends ConsumerWidget {
                   return ListTile(
                     title: Text(profile.name),
                     trailing: isActive
-                        ? const Icon(Icons.check, color: EcoColors.accentText)
+                        ? Icon(Icons.check, color: ecoColors(context).accentText)
                         : null,
                     selected: isActive,
                     onTap: () {
@@ -504,7 +504,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
   }) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: EcoColors.bgMenu,
+      backgroundColor: ecoColors(context).bgMenu,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -526,14 +526,14 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: EcoColors.statusAllowBg,
+                    color: ecoColors(context).statusAllowBg,
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: EcoColors.statusAllowBorder),
+                    border: Border.all(color: ecoColors(context).statusAllowBorder),
                   ),
-                  child: const Text(
+                  child: Text(
                     '启用',
                     style: TextStyle(
-                      color: EcoColors.statusAllowText,
+                      color: ecoColors(context).statusAllowText,
                       fontSize: 11,
                     ),
                   ),
@@ -624,7 +624,7 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
       icon: Icon(
         planModeIcon(planModeEnabled),
         size: 22,
-        color: planModeEnabled ? EcoColors.accent : EcoColors.textSecondary,
+        color: planModeEnabled ? ecoColors(context).accent : ecoColors(context).textSecondary,
       ),
     );
   }
@@ -643,7 +643,7 @@ Future<void> showComposerPlanModeSheet(
 }) async {
   await showModalBottomSheet<void>(
     context: context,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -659,12 +659,12 @@ Future<void> showComposerPlanModeSheet(
               leading: Icon(
                 planModeIcon(option.value),
                 size: 20,
-                color: EcoColors.textSecondary,
+                color: ecoColors(context).textSecondary,
               ),
               title: Text(option.title),
               subtitle: Text(option.description),
               trailing: isActive
-                  ? const Icon(Icons.check, color: EcoColors.accentText)
+                  ? Icon(Icons.check, color: ecoColors(context).accentText)
                   : null,
               selected: isActive,
               onTap: () {
@@ -755,10 +755,10 @@ class ComposerRouteSummary extends ConsumerWidget {
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          icon: const Icon(
+          icon: Icon(
             Icons.dashboard_customize_outlined,
             size: 22,
-            color: EcoColors.textSecondary,
+            color: ecoColors(context).textSecondary,
           ),
         ),
       ],
@@ -775,7 +775,7 @@ class ComposerRouteSummary extends ConsumerWidget {
   }) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: EcoColors.bgMenu,
+      backgroundColor: ecoColors(context).bgMenu,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -819,7 +819,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
       visualDensity: VisualDensity.compact,
       icon: _BashReviewShieldIcon(
         mode: mode,
-        color: accent ? EcoColors.accent : EcoColors.textSecondary,
+        color: accent ? ecoColors(context).accent : ecoColors(context).textSecondary,
       ),
     );
   }
@@ -833,7 +833,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
   }) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: EcoColors.bgMenu,
+      backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -848,13 +848,13 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
               return ListTile(
                 leading: _BashReviewShieldIcon(
                   mode: option.value,
-                  color: EcoColors.textSecondary,
+                  color: ecoColors(context).textSecondary,
                   size: 20,
                 ),
                 title: Text(option.title),
                 subtitle: Text(option.description),
                 trailing: isActive
-                    ? const Icon(Icons.check, color: EcoColors.accentText)
+                    ? Icon(Icons.check, color: ecoColors(context).accentText)
                     : null,
                 selected: isActive,
                 onTap: () {
@@ -960,7 +960,7 @@ class ComposerBashReviewControl extends ConsumerWidget {
   }) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: EcoColors.bgMenu,
+      backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -976,7 +976,7 @@ class ComposerBashReviewControl extends ConsumerWidget {
                 title: Text(option.title),
                 subtitle: Text(option.description),
                 trailing: isActive
-                    ? const Icon(Icons.check, color: EcoColors.accentText)
+                    ? Icon(Icons.check, color: ecoColors(context).accentText)
                     : null,
                 selected: isActive,
                 onTap: () {
@@ -1006,7 +1006,7 @@ class _SheetHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
@@ -1015,7 +1015,7 @@ class _SheetHeader extends StatelessWidget {
             width: 36,
             height: 4,
             decoration: BoxDecoration(
-              color: eco.borderSubtle,
+              color: ecoColors(context).borderSubtle,
               borderRadius: BorderRadius.circular(2),
             ),
           ),

@@ -16,7 +16,7 @@ class WorkspaceDiffReviewView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final parsedFiles = mergeDiffFilesWithStats(
       patch: diff.patch,
       files: diff.files,
@@ -26,7 +26,7 @@ class WorkspaceDiffReviewView extends StatelessWidget {
       return Center(
         child: Text(
           '工作区暂无未提交变更',
-          style: TextStyle(color: eco.textMuted),
+          style: TextStyle(color: ecoColors(context).textMuted),
         ),
       );
     }
@@ -46,7 +46,7 @@ class WorkspaceDiffReviewView extends StatelessWidget {
             child: Text(
               'Diff 内容过长，部分文件可能未完整显示',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
+                    color: ecoColors(context).textMuted,
                   ),
             ),
           ),
@@ -102,16 +102,16 @@ class _ReviewHeader extends StatelessWidget {
             children: [
               Text(
                 '+$totalAdditions',
-                style: const TextStyle(
-                  color: EcoColors.success,
+                style: TextStyle(
+                  color: ecoColors(context).success,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 '-$totalDeletions',
-                style: const TextStyle(
-                  color: EcoColors.danger,
+                style: TextStyle(
+                  color: ecoColors(context).danger,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -147,12 +147,12 @@ class _DiffFileCardState extends State<_DiffFileCard> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.bgElevated,
+        color: ecoColors(context).bgElevated,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: eco.borderSubtle),
+        border: Border.all(color: ecoColors(context).borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -172,7 +172,7 @@ class _DiffFileCardState extends State<_DiffFileCard> {
                       child: Icon(
                         _expanded ? Icons.expand_less : Icons.expand_more,
                         size: 20,
-                        color: eco.textMuted,
+                        color: ecoColors(context).textMuted,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -192,7 +192,7 @@ class _DiffFileCardState extends State<_DiffFileCard> {
                             Text(
                               widget.file.directory,
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: eco.textMuted,
+                                    color: ecoColors(context).textMuted,
                                   ),
                             ),
                           ],
@@ -215,7 +215,7 @@ class _DiffFileCardState extends State<_DiffFileCard> {
                 child: Text(
                   '暂无 diff 内容',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textMuted,
+                        color: ecoColors(context).textMuted,
                       ),
                 ),
               )
@@ -237,7 +237,7 @@ class _DiffHunkSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -245,12 +245,12 @@ class _DiffHunkSection extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Row(
             children: [
-              Icon(Icons.expand_more, size: 18, color: eco.textMuted),
+              Icon(Icons.expand_more, size: 18, color: ecoColors(context).textMuted),
               const SizedBox(width: 4),
               Text(
                 hunk.rangeLabel,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: eco.textSecondary,
+                      color: ecoColors(context).textSecondary,
                       fontWeight: FontWeight.w500,
                     ),
               ),
@@ -262,7 +262,7 @@ class _DiffHunkSection extends StatelessWidget {
         DecoratedBox(
           decoration: BoxDecoration(
             border: Border(
-              top: BorderSide(color: eco.borderSubtle),
+              top: BorderSide(color: ecoColors(context).borderSubtle),
             ),
           ),
           child: Column(
@@ -283,13 +283,13 @@ class _DiffLineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     Color? background;
     switch (line.kind) {
       case DiffLineKind.addition:
-        background = EcoColors.statusAllowBg;
+        background = ecoColors(context).statusAllowBg;
       case DiffLineKind.deletion:
-        background = EcoColors.statusDenyBg;
+        background = ecoColors(context).statusDenyBg;
       case DiffLineKind.context:
         background = null;
     }
@@ -314,7 +314,7 @@ class _DiffLineRow extends StatelessWidget {
                   fontFamily: 'Menlo',
                   fontFamilyFallback: const ['monospace'],
                   fontSize: 11,
-                  color: eco.textMuted,
+                  color: ecoColors(context).textMuted,
                   height: 1.45,
                 ),
               ),
@@ -331,10 +331,10 @@ class _DiffLineRow extends StatelessWidget {
                   fontSize: 12,
                   height: 1.45,
                   color: line.kind == DiffLineKind.deletion
-                      ? EcoColors.statusDenyText
+                      ? ecoColors(context).statusDenyText
                       : line.kind == DiffLineKind.addition
-                          ? EcoColors.statusAllowText
-                          : EcoColors.textPrimary,
+                          ? ecoColors(context).statusAllowText
+                          : ecoColors(context).textPrimary,
                 ),
               ),
             ),
@@ -361,8 +361,8 @@ class _DiffStats extends StatelessWidget {
       children: [
         Text(
           '+$additions',
-          style: const TextStyle(
-            color: EcoColors.success,
+          style: TextStyle(
+            color: ecoColors(context).success,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -370,8 +370,8 @@ class _DiffStats extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           '-$deletions',
-          style: const TextStyle(
-            color: EcoColors.danger,
+          style: TextStyle(
+            color: ecoColors(context).danger,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),

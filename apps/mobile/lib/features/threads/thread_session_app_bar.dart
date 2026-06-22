@@ -33,7 +33,7 @@ class SessionTopFrostOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final height = sessionTopFrostHeight(context);
-    final peak = EcoColors.bgMain.withValues(alpha: sessionTopFrostPeakOpacity);
+    final peak = ecoColors(context).bgMain.withValues(alpha: sessionTopFrostPeakOpacity);
     return IgnorePointer(
       child: RepaintBoundary(
         child: SizedBox(
@@ -71,7 +71,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
   GitWorkingTreeStatus? gitStatus,
   bool showNewThreadAction = true,
 }) {
-  final eco = ecoThemeExtras(context);
+  final eco = ecoColors(context);
   final desktopLabel = ref.watch(selectedDesktopLabelProvider);
   final subtitle = threadSessionSubtitleLabel(
     projectName: projectName,
@@ -125,7 +125,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
+                    color: ecoColors(context).textMuted,
                     height: 1.2,
                   ),
             ),
@@ -171,15 +171,15 @@ class _SessionIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return IconButton(
       tooltip: tooltip,
       onPressed: onPressed,
       style: IconButton.styleFrom(
-        backgroundColor: EcoColors.bgElevated.withValues(alpha: 0.88),
-        foregroundColor: EcoColors.textHeading,
+        backgroundColor: ecoColors(context).bgElevated.withValues(alpha: 0.88),
+        foregroundColor: ecoColors(context).textHeading,
         shape: const CircleBorder(),
-        side: BorderSide(color: eco.borderSubtle.withValues(alpha: 0.7)),
+        side: BorderSide(color: ecoColors(context).borderSubtle.withValues(alpha: 0.7)),
         minimumSize: const Size(36, 36),
         fixedSize: const Size(36, 36),
         padding: EdgeInsets.zero,
@@ -202,12 +202,12 @@ class _SessionActionsPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.bgElevated.withValues(alpha: 0.88),
+        color: ecoColors(context).bgElevated.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: eco.borderSubtle.withValues(alpha: 0.7)),
+        border: Border.all(color: ecoColors(context).borderSubtle.withValues(alpha: 0.7)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -225,7 +225,7 @@ class _SessionActionsPill extends StatelessWidget {
             Container(
               width: 1,
               height: 18,
-              color: eco.borderSubtle.withValues(alpha: 0.7),
+              color: ecoColors(context).borderSubtle.withValues(alpha: 0.7),
             ),
           menuButton,
         ],

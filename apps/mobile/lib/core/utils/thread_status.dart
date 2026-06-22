@@ -15,6 +15,7 @@ bool shouldUpdateThreadSummaryFromLiveEvent(String eventType) {
     'thread.usage_updated',
     'thread.todos_updated',
     'thread.title_updated',
+    'thread.runtime_config_updated',
   };
   if (excluded.contains(eventType)) {
     return false;
@@ -77,17 +78,17 @@ bool hasThreadStatusIndicator(ThreadSummary thread) {
       thread.status == 'blocked';
 }
 
-Color threadStatusDotColor(String status) {
+Color threadStatusDotColor(String status, EcoColors colors) {
   switch (status) {
     case 'running':
-      return const Color(0xFF4ADE80);
+      return colors.statusRunning;
     case 'completed':
-      return const Color(0xFF60A5FA);
+      return colors.statusCompleted;
     case 'failed':
     case 'blocked':
-      return EcoColors.danger;
+      return colors.danger;
     default:
-      return EcoColors.textMuted;
+      return colors.textMuted;
   }
 }
 

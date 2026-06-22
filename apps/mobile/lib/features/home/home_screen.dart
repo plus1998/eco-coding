@@ -441,7 +441,7 @@ class _ConnectStepHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final done = isSetupWizardStepDone(step, overview);
 
     return Column(
@@ -459,7 +459,7 @@ class _ConnectStepHeader extends StatelessWidget {
           Text(
             step.subtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: eco.textMuted,
+                  color: ecoColors(context).textMuted,
                   height: 1.4,
                 ),
           ),
@@ -524,8 +524,8 @@ class _WizardNavBar extends StatelessWidget {
     }
 
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: EcoColors.borderSidebar)),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: ecoColors(context).borderSidebar)),
       ),
       child: SafeArea(
         top: false,
@@ -564,7 +564,7 @@ class _ServerStep extends StatelessWidget {
             labelText: 'Center Server',
             hintText: 'http://192.168.1.10:3128',
             suffixIcon: serverStep.state == SetupStepState.done
-                ? Icon(Icons.check_circle_outline, color: ecoThemeExtras(context).statusAllowText)
+                ? Icon(Icons.check_circle_outline, color: ecoColors(context).statusAllowText)
                 : null,
           ),
           keyboardType: TextInputType.url,
@@ -575,7 +575,7 @@ class _ServerStep extends StatelessWidget {
           Text(
             serverStep.hint!,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: ecoThemeExtras(context).statusDenyText,
+                  color: ecoColors(context).statusDenyText,
                 ),
           ),
         ],
@@ -632,7 +632,7 @@ class _LoginStep extends ConsumerWidget {
             Text(
               wsStep.hint ?? '连接异常',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: ecoThemeExtras(context).statusDenyText,
+                    color: ecoColors(context).statusDenyText,
                   ),
             ),
             const SizedBox(height: 8),
@@ -836,9 +836,9 @@ class _PcDeviceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Material(
-      color: selected ? eco.accentSoft : eco.cardSurface,
+      color: selected ? ecoColors(context).accentSoft : ecoColors(context).cardSurface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -849,8 +849,8 @@ class _PcDeviceTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: selected
-                  ? EcoColors.accent.withValues(alpha: 0.45)
-                  : eco.cardBorder,
+                  ? ecoColors(context).accent.withValues(alpha: 0.45)
+                  : ecoColors(context).cardBorder,
             ),
           ),
           child: Row(
@@ -858,7 +858,7 @@ class _PcDeviceTile extends StatelessWidget {
               Icon(
                 Icons.desktop_windows_outlined,
                 size: 20,
-                color: selected ? EcoColors.accentText : eco.textSecondary,
+                color: selected ? ecoColors(context).accentText : ecoColors(context).textSecondary,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -878,15 +878,15 @@ class _PcDeviceTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: switch (online) {
-                    null => eco.textMuted.withValues(alpha: 0.55),
-                    true => eco.online,
-                    false => eco.offline,
+                    null => ecoColors(context).textMuted.withValues(alpha: 0.55),
+                    true => ecoColors(context).online,
+                    false => ecoColors(context).offline,
                   },
                 ),
               ),
               if (selected) ...[
                 const SizedBox(width: 10),
-                Icon(Icons.check, size: 18, color: EcoColors.accentText),
+                Icon(Icons.check, size: 18, color: ecoColors(context).accentText),
               ],
             ],
           ),
@@ -907,20 +907,20 @@ class _AccountStatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: EcoColors.bgElevated,
+        color: ecoColors(context).bgElevated,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: eco.borderSubtle),
+        border: Border.all(color: ecoColors(context).borderSubtle),
       ),
       child: Row(
         children: [
           Icon(
             connected ? Icons.check_circle_outline : Icons.person_outline,
             size: 18,
-            color: connected ? eco.statusAllowText : eco.textSecondary,
+            color: connected ? ecoColors(context).statusAllowText : ecoColors(context).textSecondary,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -950,7 +950,7 @@ class _ScanFirstView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -964,15 +964,15 @@ class _ScanFirstView extends StatelessWidget {
                 height: 72,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: EcoColors.accentSoft,
+                  color: ecoColors(context).accentSoft,
                   border: Border.all(
-                    color: EcoColors.accent.withValues(alpha: 0.25),
+                    color: ecoColors(context).accent.withValues(alpha: 0.25),
                   ),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.qr_code_scanner_outlined,
                   size: 32,
-                  color: EcoColors.accentText,
+                  color: ecoColors(context).accentText,
                 ),
               ),
             ),
@@ -990,7 +990,7 @@ class _ScanFirstView extends StatelessWidget {
               '在 Desktop「连接」页生成二维码',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: eco.textMuted,
+                    color: ecoColors(context).textMuted,
                   ),
             ),
             const Spacer(flex: 3),
@@ -1031,7 +1031,7 @@ class _ReadyConnectionView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
     final stableOnline = selectedDesktop == null
         ? null
@@ -1068,9 +1068,9 @@ class _ReadyConnectionView extends ConsumerWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: switch (selectedOnline) {
-                        null => eco.textMuted.withValues(alpha: 0.55),
-                        true => eco.online,
-                        false => eco.offline,
+                        null => ecoColors(context).textMuted.withValues(alpha: 0.55),
+                        true => ecoColors(context).online,
+                        false => ecoColors(context).offline,
                       },
                     ),
                   ),
@@ -1125,13 +1125,13 @@ class _StepBlockedHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
         text,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: eco.textMuted,
+              color: ecoColors(context).textMuted,
             ),
       ),
     );

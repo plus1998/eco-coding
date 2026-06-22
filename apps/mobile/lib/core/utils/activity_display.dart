@@ -1,5 +1,6 @@
 import 'dart:ui' show Color;
 
+import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
 import 'subagent_session_timing.dart';
 
@@ -232,10 +233,67 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(Map<String, dynamic>? json)
 
 String? resolveStructuredBashDescription({
   ThreadRunToolMetadata? tool,
+  ThreadRunBashApprovalMetadata? bashApproval,
 }) {
   final fromTool = tool?.name == 'Bash' ? tool?.description?.trim() : null;
   if (fromTool != null && fromTool.isNotEmpty) {
     return fromTool;
+  }
+  final fromApproval = bashApproval?.description?.trim();
+  if (fromApproval != null && fromApproval.isNotEmpty) {
+    return fromApproval;
+  }
+  return null;
+}
+
+String formatStructuredToolActionLabel(
+  ThreadRunToolMetadata tool, {
+  ThreadRunBashApprovalMetadata? bashApproval,
+}) {
+  if (tool.name == 'Bash') {
+    final description = resolveStructuredBashDescription(
+      tool: tool,
+      bashApproval: bashApproval,
+    );
+    if (description != null) {
+      return description;
+    }
+  }
+  return formatToolDisplayLabel(
+    bashApproval?.toolName ?? tool.name,
+    bashApproval?.detail ?? tool.detail,
+  );
+}
+
+ThreadRunToolMetadata? toolMetadataFromBashApproval(
+  BashApprovalRequest request, {
+  String? status,
+}) {
+  final toolUseId = request.toolUseId.trim();
+  if (toolUseId.isEmpty) return null;
+  final toolName = request.filesystemTool?.trim().isNotEmpty == true
+      ? request.filesystemTool!.trim()
+      : 'Bash';
+  final detail = request.filesystemPath?.trim().isNotEmpty == true
+      ? request.filesystemPath!.trim()
+      : request.command.trim();
+  final description = request.description?.trim();
+  return ThreadRunToolMetadata(
+    name: toolName,
+    detail: detail.isNotEmpty ? detail : null,
+    toolUseId: toolUseId,
+    description: description?.isNotEmpty == true ? description : null,
+    status: status,
+  );
+}
+
+String? bashApprovalLiveTypeToToolStatus(String liveType) {
+  if (liveType == 'bash_approval.rejected' ||
+      liveType == 'bash_approval.denied') {
+    return 'failed';
+  }
+  if (liveType.startsWith('bash_approval.')) {
+    return 'running';
   }
   return null;
 }

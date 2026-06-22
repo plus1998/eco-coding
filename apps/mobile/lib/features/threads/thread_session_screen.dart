@@ -643,12 +643,12 @@ class _PlanApprovalBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final retryMode = failureMessage != null;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.accentSoft,
-        border: Border(top: BorderSide(color: eco.borderSubtle)),
+        color: ecoColors(context).accentSoft,
+        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
@@ -657,24 +657,24 @@ class _PlanApprovalBanner extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.fact_check_outlined,
                   size: 18,
-                  color: EcoColors.accentText,
+                  color: ecoColors(context).accentText,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     retryMode ? '执行失败，计划待确认' : '计划已生成，等待确认',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: EcoColors.accentText,
+                          color: ecoColors(context).accentText,
                         ),
                   ),
                 ),
                 TextButton(
                   onPressed: onViewPlan,
                   style: TextButton.styleFrom(
-                    foregroundColor: EcoColors.accentText,
+                    foregroundColor: ecoColors(context).accentText,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -690,7 +690,7 @@ class _PlanApprovalBanner extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: EcoColors.accentText,
+                      color: ecoColors(context).accentText,
                     ),
               ),
             ],
@@ -726,27 +726,27 @@ class _EditingFollowUpBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.accentSoft,
-        border: Border(top: BorderSide(color: eco.borderSubtle)),
+        color: ecoColors(context).accentSoft,
+        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            const Icon(
+            Icon(
               Icons.edit_note_outlined,
               size: 16,
-              color: EcoColors.accentText,
+              color: ecoColors(context).accentText,
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 '正在编辑引导消息',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: EcoColors.accentText,
+                      color: ecoColors(context).accentText,
                     ),
               ),
             ),
@@ -755,7 +755,7 @@ class _EditingFollowUpBanner extends StatelessWidget {
               icon: const Icon(Icons.close, size: 16),
               label: const Text('取消'),
               style: TextButton.styleFrom(
-                foregroundColor: EcoColors.accentText,
+                foregroundColor: ecoColors(context).accentText,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -787,11 +787,11 @@ class _FollowUpBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: eco.cardSurface,
-        border: Border(top: BorderSide(color: eco.borderSubtle)),
+        color: ecoColors(context).cardSurface,
+        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
@@ -802,7 +802,7 @@ class _FollowUpBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  Icon(Icons.forum_outlined, size: 16, color: eco.textMuted),
+                  Icon(Icons.forum_outlined, size: 16, color: ecoColors(context).textMuted),
                   const SizedBox(width: 6),
                   Text('引导消息', style: Theme.of(context).textTheme.labelLarge),
                 ],
@@ -816,9 +816,9 @@ class _FollowUpBar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: EcoColors.bgElevated,
+                    color: ecoColors(context).bgElevated,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: eco.borderSubtle),
+                    border: Border.all(color: ecoColors(context).borderSubtle),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
@@ -833,7 +833,7 @@ class _FollowUpBar extends StatelessWidget {
                               child: Icon(
                                 Icons.subdirectory_arrow_right_rounded,
                                 size: 16,
-                                color: eco.textMuted,
+                                color: ecoColors(context).textMuted,
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -915,13 +915,13 @@ class _FollowUpActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = !enabled
-        ? ecoThemeExtras(context).textMuted
-        : (danger ? EcoColors.danger : EcoColors.accentText);
+        ? ecoColors(context).textMuted
+        : (danger ? ecoColors(context).danger : ecoColors(context).accentText);
     return TextButton(
       onPressed: enabled ? onPressed : null,
       style: TextButton.styleFrom(
         foregroundColor: color,
-        disabledForegroundColor: ecoThemeExtras(context).textMuted,
+        disabledForegroundColor: ecoColors(context).textMuted,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,

@@ -418,9 +418,9 @@ List<ActivityFeedEntry> buildActivityFeed({
         id: line.id,
         lineIndex: lineIndex,
         toolUseId: tool.toolUseId,
-        label: formatToolDisplayLabel(
-          bashApproval?.toolName ?? tool.name,
-          bashApproval?.detail ?? tool.detail,
+        label: formatStructuredToolActionLabel(
+          tool,
+          bashApproval: bashApproval,
         ),
         icon: iconForToolName(bashApproval?.toolName ?? tool.name),
         lifecycle: resolveStructuredToolLifecycle(
@@ -934,7 +934,7 @@ class _UserPromptTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
@@ -944,15 +944,15 @@ class _UserPromptTile extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.88,
         ),
         decoration: BoxDecoration(
-          color: eco.userBubble,
+          color: ecoColors(context).userBubble,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: eco.borderSubtle),
+          border: Border.all(color: ecoColors(context).borderSubtle),
         ),
         child: Text(
           text,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 height: 1.45,
-                color: EcoColors.textPrimary,
+                color: ecoColors(context).textPrimary,
               ),
         ),
       ),
@@ -973,7 +973,7 @@ class _AssistantNarrativeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     if (text.isEmpty && usageBadge != null) {
       return _UsageBadgeLine(badge: usageBadge!);
     }
@@ -995,7 +995,7 @@ class _AssistantNarrativeTile extends StatelessWidget {
               child: Text(
                 '…',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: eco.textMuted,
+                      color: ecoColors(context).textMuted,
                     ),
               ),
             ),
@@ -1047,15 +1047,15 @@ class _ThinkingTileState extends State<_ThinkingTile> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     if (widget.streaming && !_hasBody) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
         child: ShimmerText(
           text: '正在思考',
           style: Theme.of(context).textTheme.bodySmall,
-          baseColor: eco.textMuted,
-          highlightColor: eco.textSecondary,
+          baseColor: ecoColors(context).textMuted,
+          highlightColor: ecoColors(context).textSecondary,
         ),
       );
     }
@@ -1063,7 +1063,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
     final preview = _hasBody ? thinkingPreviewLine(widget.text) : '';
     final showPreview = _hasBody && _collapsed && !widget.streaming;
     final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: eco.textMuted,
+          color: ecoColors(context).textMuted,
           fontWeight: FontWeight.w500,
           letterSpacing: 0.2,
         );
@@ -1072,9 +1072,9 @@ class _ThinkingTileState extends State<_ThinkingTile> {
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: eco.cardSurface.withValues(alpha: 0.55),
+          color: ecoColors(context).cardSurface.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: eco.borderSubtle.withValues(alpha: 0.8)),
+          border: Border.all(color: ecoColors(context).borderSubtle.withValues(alpha: 0.8)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1100,8 +1100,8 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                         ShimmerText(
                           text: '正在思考',
                           style: labelStyle,
-                          baseColor: eco.textMuted,
-                          highlightColor: eco.textSecondary,
+                          baseColor: ecoColors(context).textMuted,
+                          highlightColor: ecoColors(context).textSecondary,
                         )
                       else
                         Text('思考', style: labelStyle),
@@ -1116,7 +1116,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                                 .textTheme
                                 .bodySmall
                                 ?.copyWith(
-                                  color: eco.textMuted.withValues(alpha: 0.85),
+                                  color: ecoColors(context).textMuted.withValues(alpha: 0.85),
                                   height: 1.3,
                                 ),
                           ),
@@ -1129,7 +1129,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                               ? Icons.expand_less
                               : Icons.expand_more,
                           size: 18,
-                          color: eco.textMuted,
+                          color: ecoColors(context).textMuted,
                         ),
                       ],
                     ],
@@ -1161,11 +1161,11 @@ class _UsageBadgeLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Text(
       badge,
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: eco.textMuted,
+            color: ecoColors(context).textMuted,
             fontSize: 11,
             letterSpacing: 0.2,
           ),
@@ -1198,7 +1198,7 @@ class _ActionTile extends StatelessWidget {
       );
     }
 
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
       child: Row(
@@ -1206,7 +1206,7 @@ class _ActionTile extends StatelessWidget {
           Icon(
             _materialIcon(icon),
             size: 15,
-            color: eco.textMuted,
+            color: ecoColors(context).textMuted,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -1215,7 +1215,7 @@ class _ActionTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
+                    color: ecoColors(context).textMuted,
                     height: 1.35,
                   ),
             ),
@@ -1252,18 +1252,18 @@ class _BashRunCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final running = lifecycle == ToolActionLifecycle.running;
     final failed = lifecycle == ToolActionLifecycle.failed;
     final borderColor = failed
-        ? EcoColors.danger.withValues(alpha: 0.45)
+        ? ecoColors(context).danger.withValues(alpha: 0.45)
         : running
-            ? EcoColors.accent.withValues(alpha: 0.45)
-            : eco.borderSubtle;
+            ? ecoColors(context).accent.withValues(alpha: 0.45)
+            : ecoColors(context).borderSubtle;
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: eco.cardSurface,
+        color: ecoColors(context).cardSurface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: borderColor),
       ),
@@ -1277,14 +1277,14 @@ class _BashRunCard extends StatelessWidget {
                 Icon(
                   Icons.terminal,
                   size: 16,
-                  color: running ? EcoColors.accentText : eco.textMuted,
+                  color: running ? ecoColors(context).accentText : ecoColors(context).textMuted,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     display.title,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: EcoColors.textHeading,
+                          color: ecoColors(context).textHeading,
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -1293,7 +1293,7 @@ class _BashRunCard extends StatelessWidget {
                   Text(
                     display.meta!,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: eco.textMuted,
+                          color: ecoColors(context).textMuted,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                   ),
@@ -1301,13 +1301,13 @@ class _BashRunCard extends StatelessWidget {
             ),
           ),
           if (display.body != null && display.body!.isNotEmpty) ...[
-            Divider(height: 1, color: eco.borderSubtle),
+            Divider(height: 1, color: ecoColors(context).borderSubtle),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: SelectableText(
                 display.body!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: eco.textSecondary,
+                      color: ecoColors(context).textSecondary,
                       fontFamily: 'Menlo',
                       height: 1.45,
                     ),
@@ -1328,7 +1328,7 @@ class _PhaseTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -1337,7 +1337,7 @@ class _PhaseTile extends StatelessWidget {
           Text(
             text,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: eco.textMuted,
+                  color: ecoColors(context).textMuted,
                   fontStyle: FontStyle.italic,
                 ),
           ),
@@ -1347,7 +1347,7 @@ class _PhaseTile extends StatelessWidget {
               child: Text(
                 detail!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: eco.textMuted,
+                      color: ecoColors(context).textMuted,
                       height: 1.35,
                     ),
               ),
@@ -1423,7 +1423,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
     final trimmedPrompt = widget.prompt?.trim() ?? '';
     final trimmedSummary = widget.summary.trim();
@@ -1455,14 +1455,14 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
               color: widget.running
                   ? Color.alphaBlend(
                       borderColor.withValues(alpha: 0.08),
-                      eco.cardSurface,
+                      ecoColors(context).cardSurface,
                     )
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: Color.alphaBlend(
                   borderColor.withValues(alpha: widget.running ? 0.55 : 0.45),
-                  eco.borderSubtle,
+                  ecoColors(context).borderSubtle,
                 ),
               ),
             ),
@@ -1478,7 +1478,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                             resolveSubagentRunDisplayTitle(role),
                             style:
                                 Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      color: EcoColors.accentText,
+                                      color: ecoColors(context).accentText,
                                       fontWeight: FontWeight.w600,
                                     ),
                           ),
@@ -1488,7 +1488,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                               '#${shortSubagentAgentId(widget.agentId!)}',
                               style:
                                   Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        color: eco.textMuted,
+                                        color: ecoColors(context).textMuted,
                                         fontSize: 10,
                                       ),
                             ),
@@ -1501,8 +1501,8 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                         durationLabel,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: widget.running
-                                  ? EcoColors.accentText
-                                  : eco.textMuted,
+                                  ? ecoColors(context).accentText
+                                  : ecoColors(context).textMuted,
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                       ),
@@ -1515,21 +1515,21 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       ),
                       decoration: BoxDecoration(
                         color: widget.running
-                            ? EcoColors.accentSoft
-                            : eco.cardSurface,
+                            ? ecoColors(context).accentSoft
+                            : ecoColors(context).cardSurface,
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
                           color: widget.running
-                              ? EcoColors.accent.withValues(alpha: 0.45)
-                              : eco.borderSubtle,
+                              ? ecoColors(context).accent.withValues(alpha: 0.45)
+                              : ecoColors(context).borderSubtle,
                         ),
                       ),
                       child: Text(
                         widget.running ? '运行中' : '已完成',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: widget.running
-                                  ? EcoColors.accentText
-                                  : eco.textMuted,
+                                  ? ecoColors(context).accentText
+                                  : ecoColors(context).textMuted,
                               fontSize: 10,
                             ),
                       ),
@@ -1541,7 +1541,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       child: Icon(
                         Icons.expand_more,
                         size: 18,
-                        color: eco.textMuted,
+                        color: ecoColors(context).textMuted,
                       ),
                     ),
                   ],
@@ -1553,7 +1553,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     maxLines: _expanded ? null : 1,
                     overflow: _expanded ? null : TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textSecondary,
+                          color: ecoColors(context).textSecondary,
                           height: 1.35,
                         ),
                   ),
@@ -1562,7 +1562,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                 Text(
                   '任务目标',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: eco.textMuted,
+                        color: ecoColors(context).textMuted,
                         fontSize: 11,
                         letterSpacing: 0.3,
                       ),
@@ -1572,7 +1572,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                   Text(
                     '等待任务说明…',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
+                          color: ecoColors(context).textMuted,
                           fontStyle: FontStyle.italic,
                           height: 1.4,
                         ),
@@ -1588,14 +1588,14 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       overflow:
                           _expanded ? null : TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textSecondary,
+                            color: ecoColors(context).textSecondary,
                             height: 1.45,
                           ),
                     ),
                   ),
                 if (_expanded && widget.timeline.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  Divider(height: 1, color: eco.borderSubtle),
+                  Divider(height: 1, color: ecoColors(context).borderSubtle),
                   const SizedBox(height: 8),
                   ...widget.timeline.map(
                     (item) => _SubagentTimelineRow(entry: item),
@@ -1605,7 +1605,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                   Text(
                     '等待执行事件…',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
+                          color: ecoColors(context).textMuted,
                           fontStyle: FontStyle.italic,
                         ),
                   ),
@@ -1632,7 +1632,7 @@ class _SubagentTimelineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -1645,8 +1645,8 @@ class _SubagentTimelineRow extends StatelessWidget {
                 _materialIcon(entry.icon!),
                 size: 14,
                 color: entry.isError
-                    ? EcoColors.statusDenyText
-                    : eco.textMuted,
+                    ? ecoColors(context).statusDenyText
+                    : ecoColors(context).textMuted,
               ),
             )
           else
@@ -1658,8 +1658,8 @@ class _SubagentTimelineRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: entry.isError
-                      ? EcoColors.statusDenyText
-                      : eco.textMuted,
+                      ? ecoColors(context).statusDenyText
+                      : ecoColors(context).textMuted,
                 ),
               ),
             ),
@@ -1669,8 +1669,8 @@ class _SubagentTimelineRow extends StatelessWidget {
               entry.label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: entry.isError
-                        ? EcoColors.statusDenyText
-                        : eco.textMuted,
+                        ? ecoColors(context).statusDenyText
+                        : ecoColors(context).textMuted,
                     height: 1.35,
                   ),
             ),
@@ -1707,14 +1707,14 @@ class _ErrorTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: EcoColors.statusDenyBg,
+        color: ecoColors(context).statusDenyBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: EcoColors.statusDenyBorder),
+        border: Border.all(color: ecoColors(context).statusDenyBorder),
       ),
       child: Text(
         text,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: EcoColors.statusDenyText,
+              color: ecoColors(context).statusDenyText,
               height: 1.4,
             ),
       ),

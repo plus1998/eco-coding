@@ -20,12 +20,12 @@ Future<void> showProjectActionSheet({
 
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
     builder: (sheetContext) {
-      final eco = ecoThemeExtras(sheetContext);
+      final eco = ecoColors(sheetContext);
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -46,7 +46,7 @@ Future<void> showProjectActionSheet({
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
+                          color: ecoColors(context).textMuted,
                         ),
                   ),
                 ],
@@ -56,7 +56,7 @@ Future<void> showProjectActionSheet({
               leading: Icon(
                 isPinned ? Icons.push_pin_outlined : Icons.push_pin,
                 size: 20,
-                color: EcoColors.textSecondary,
+                color: ecoColors(context).textSecondary,
               ),
               title: Text(isPinned ? '取消置顶' : '置顶'),
               onTap: () async {
@@ -73,14 +73,14 @@ Future<void> showProjectActionSheet({
               },
             ),
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.delete_outline,
                 size: 20,
-                color: EcoColors.statusDenyText,
+                color: ecoColors(context).statusDenyText,
               ),
-              title: const Text(
+              title: Text(
                 '移除项目',
-                style: TextStyle(color: EcoColors.statusDenyText),
+                style: TextStyle(color: ecoColors(context).statusDenyText),
               ),
               onTap: () async {
                 Navigator.pop(sheetContext);

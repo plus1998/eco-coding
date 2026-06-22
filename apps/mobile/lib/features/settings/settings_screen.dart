@@ -4,7 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
-import '../../core/utils/center_server_auth.dart';
+import '../../core/providers/app_theme_provider.dart';
+import '../../core/theme/app_theme_preference.dart';
 import '../threads/thread_providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -59,6 +60,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               creds.userDisplayName ??
                                   creds.deviceName ??
                                   (signedIn ? '' : '请先完成 PC 连接'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '外观',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '与 PC 端使用相同的主题偏好键 eco.app-theme',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                const SizedBox(height: 8),
+                                SegmentedButton<AppThemePreference>(
+                                  segments: AppThemePreference.values
+                                      .map(
+                                        (preference) => ButtonSegment(
+                                          value: preference,
+                                          label: Text(preference.label),
+                                        ),
+                                      )
+                                      .toList(),
+                                  selected: {ref.watch(appThemePreferenceProvider)},
+                                  onSelectionChanged: (selection) {
+                                    ref
+                                        .read(appThemePreferenceProvider.notifier)
+                                        .setPreference(selection.first);
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         ),

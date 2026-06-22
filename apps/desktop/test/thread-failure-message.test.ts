@@ -47,6 +47,7 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores worktree cleanup notices", 
 test("shouldUpdateThreadSummaryFromLiveEvent ignores context and usage telemetry", () => {
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.context_updated")).toBe(false);
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.usage_updated")).toBe(false);
+  expect(shouldUpdateThreadSummaryFromLiveEvent("thread.runtime_config_updated")).toBe(false);
 });
 
 test("resolveRetryBannerDetail keeps blocked reason after context refresh message would have applied", () => {

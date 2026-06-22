@@ -170,24 +170,15 @@ void main() {
       lines: const [
         ActivityItem(
           id: '1',
-          role: 'planner',
-          message: '等待确认 Bash：npm test',
-          tool: ThreadRunToolMetadata(
-            name: 'Bash',
-            detail: 'npm test',
-            toolUseId: 'toolu_bash_1',
-            status: 'running',
-          ),
-        ),
-        ActivityItem(
-          id: '2',
-          role: 'planner',
+          role: 'tool',
           message: '已允许本次 Bash：npm test',
+          agentId: 'agent_coder_1',
           tool: ThreadRunToolMetadata(
             name: 'Bash',
             detail: 'npm test',
             toolUseId: 'toolu_bash_1',
-            status: 'completed',
+            description: 'Run unit tests',
+            status: 'running',
           ),
         ),
       ],
@@ -212,7 +203,8 @@ void main() {
                 'toolUseId': 'toolu_bash_1',
                 'toolName': 'Bash',
                 'detail': 'npm test',
-                'phase': 'requested',
+                'description': 'Run unit tests',
+                'phase': 'approved',
               },
             },
           ),
@@ -223,8 +215,9 @@ void main() {
     final actions =
         feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
     expect(actions.length, 1);
-    expect(actions.first.text, 'npm test');
+    expect(actions.first.text, 'Run unit tests');
     expect(actions.first.toolUseId, 'toolu_bash_1');
+    expect(actions.first.bashRun?.title, 'Run unit tests');
   });
 
   test('subagent mission card gets duration and timeline from projection', () {

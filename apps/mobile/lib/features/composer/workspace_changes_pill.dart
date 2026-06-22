@@ -21,13 +21,13 @@ class WorkspaceChangesPill extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Material(
-        color: EcoColors.composerPillBg,
+        color: eco.composerPillBg,
         shape: StadiumBorder(
-          side: BorderSide(color: EcoColors.composerPillBorder),
+          side: BorderSide(color: eco.composerPillBorder),
         ),
         child: InkWell(
           onTap: onTap,
@@ -52,7 +52,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                 Text(
                   '${diff!.fileCount} 个文件已更改',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: EcoColors.textPrimary,
+                        color: eco.textPrimary,
                         fontWeight: FontWeight.w500,
                       ),
                 ),
@@ -60,7 +60,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                 Text(
                   '+${diff!.totalAdditions}',
                   style: TextStyle(
-                    color: EcoColors.success,
+                    color: eco.success,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -69,7 +69,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                 Text(
                   '-${diff!.totalDeletions}',
                   style: TextStyle(
-                    color: EcoColors.danger,
+                    color: eco.danger,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),

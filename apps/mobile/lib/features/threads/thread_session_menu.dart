@@ -119,7 +119,9 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
                   onTap: () => entry.remove(),
                   behavior: HitTestBehavior.opaque,
                   child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: ecoColors(overlayContext).shadowScrim.withValues(
+                          alpha: 0.08,
+                        ),
                   ),
                 ),
               ),
@@ -202,17 +204,19 @@ class _ThreadSessionMenuCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Material(
       color: Colors.transparent,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: EcoColors.bgMenu,
+          color: eco.bgMenu,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: eco.borderSubtle),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.28),
+              color: eco.shadowScrim.withValues(
+                alpha: Theme.of(context).brightness == Brightness.dark ? 0.28 : 0.14,
+              ),
               blurRadius: 24,
               offset: const Offset(0, 8),
             ),
@@ -249,11 +253,11 @@ class _ThreadSessionMenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final enabled = entry.enabled;
     final color = !enabled
         ? eco.textMuted.withValues(alpha: 0.55)
-        : EcoColors.textPrimary;
+        : eco.textPrimary;
     final iconColor = !enabled
         ? eco.textMuted.withValues(alpha: 0.45)
         : eco.textSecondary;

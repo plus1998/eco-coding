@@ -15,7 +15,7 @@ Future<void> showComposerSettingsSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -41,7 +41,7 @@ class _ComposerSettingsSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final modelSettings = ref.watch(modelSettingsProvider);
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
 
     return SafeArea(
       child: Padding(

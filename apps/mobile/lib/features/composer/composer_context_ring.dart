@@ -16,14 +16,15 @@ class ComposerContextRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = ecoColors(context);
     final radius = (size - strokeWidth) / 2;
     final center = size / 2;
     final circumference = 2 * 3.141592653589793 * radius;
     final clampedPct = pct.clamp(0, 100);
     final offset = circumference * (1 - clampedPct / 100);
     final progressColor = pct >= 95
-        ? EcoColors.danger
-        : (pct >= 85 ? const Color(0xFFFBBF24) : EcoColors.accentText);
+        ? colors.danger
+        : (pct >= 85 ? colors.warnAccent : colors.accentText);
 
     return SizedBox(
       width: size,
@@ -35,7 +36,7 @@ class ComposerContextRing extends StatelessWidget {
           strokeWidth: strokeWidth,
           progressOffset: offset,
           circumference: circumference,
-          trackColor: ecoThemeExtras(context).borderSubtle,
+          trackColor: colors.borderSubtle,
           progressColor: progressColor,
         ),
       ),

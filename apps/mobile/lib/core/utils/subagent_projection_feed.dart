@@ -34,14 +34,17 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
 
     final bashApproval = readBashApprovalMetadata(item.metadata);
     if (bashApproval != null) {
+      final description = bashApproval.description?.trim();
       output.add(
         SubagentTimelineEntry(
           id: item.id,
           toolUseId: bashApproval.toolUseId,
-          label: formatToolDisplayLabel(
-            bashApproval.toolName,
-            bashApproval.detail,
-          ),
+          label: description != null && description.isNotEmpty
+              ? description
+              : formatToolDisplayLabel(
+                  bashApproval.toolName,
+                  bashApproval.detail,
+                ),
           icon: iconForToolName(bashApproval.toolName),
           lifecycle: bashApprovalPhaseToLifecycle(bashApproval.phase),
         ),
@@ -54,11 +57,14 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
         item.eventType == 'tool.failed') {
       final tool = readProjectionToolMetadata(item.metadata);
       if (tool == null) continue;
+      final description = tool.description?.trim();
       output.add(
         SubagentTimelineEntry(
           id: item.id,
           toolUseId: tool.toolUseId,
-          label: formatToolDisplayLabel(tool.name, tool.detail),
+          label: tool.name == 'Bash' && description != null && description.isNotEmpty
+              ? description
+              : formatToolDisplayLabel(tool.name, tool.detail),
           icon: iconForToolName(tool.name),
           lifecycle: item.eventType == 'tool.failed'
               ? ToolActionLifecycle.failed

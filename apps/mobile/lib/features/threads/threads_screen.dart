@@ -249,7 +249,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final project = widget.project;
     final threads = widget.threads;
     final isSelected = widget.isSelected;
@@ -260,16 +260,16 @@ class _ProjectSectionState extends State<_ProjectSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Material(
-          color: isSelected ? EcoColors.navActive : Colors.transparent,
+          color: isSelected ? ecoColors(context).navActive : Colors.transparent,
           child: InkWell(
             onTap: widget.onHeaderTap,
             onLongPress: widget.onHeaderLongPress,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: eco.borderSubtle),
+                  bottom: BorderSide(color: ecoColors(context).borderSubtle),
                   left: BorderSide(
-                    color: isSelected ? EcoColors.accent : Colors.transparent,
+                    color: isSelected ? ecoColors(context).accent : Colors.transparent,
                     width: 3,
                   ),
                 ),
@@ -286,7 +286,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
                             ? Icons.chevron_right
                             : Icons.expand_more,
                         size: 20,
-                        color: eco.textMuted,
+                        color: ecoColors(context).textMuted,
                       ),
                     ),
                     const SizedBox(width: 2),
@@ -297,8 +297,8 @@ class _ProjectSectionState extends State<_ProjectSection> {
                               Icons.push_pin,
                               size: 14,
                               color: isSelected
-                                  ? EcoColors.accentText
-                                  : eco.textMuted,
+                                  ? ecoColors(context).accentText
+                                  : ecoColors(context).textMuted,
                             )
                           : const SizedBox(width: 14),
                     ),
@@ -313,8 +313,8 @@ class _ProjectSectionState extends State<_ProjectSection> {
                                 : Icons.folder_open_outlined,
                         size: 18,
                         color: isSelected
-                            ? EcoColors.textPrimary
-                            : eco.textMuted,
+                            ? ecoColors(context).textPrimary
+                            : ecoColors(context).textMuted,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -335,8 +335,8 @@ class _ProjectSectionState extends State<_ProjectSection> {
                                       ?.copyWith(
                                         fontWeight: FontWeight.w500,
                                         color: isSelected
-                                            ? EcoColors.textHeading
-                                            : EcoColors.textPrimary,
+                                            ? ecoColors(context).textHeading
+                                            : ecoColors(context).textPrimary,
                                       ),
                                 ),
                               ),
@@ -356,7 +356,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
-                                  color: eco.textMuted,
+                                  color: ecoColors(context).textMuted,
                                   fontSize: 11,
                                 ),
                           ),
@@ -375,8 +375,8 @@ class _ProjectSectionState extends State<_ProjectSection> {
                         Icons.add_comment_outlined,
                         size: 18,
                         color: isSelected
-                            ? EcoColors.textPrimary
-                            : eco.textMuted,
+                            ? ecoColors(context).textPrimary
+                            : ecoColors(context).textMuted,
                       ),
                       onPressed: widget.onNewThread,
                     ),
@@ -407,7 +407,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
               child: Text(
                 '展开显示',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: EcoColors.accentText,
+                      color: ecoColors(context).accentText,
                     ),
               ),
             ),
@@ -418,7 +418,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
             child: Text(
               '暂无会话',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
+                    color: ecoColors(context).textMuted,
                   ),
             ),
           ),
@@ -438,19 +438,19 @@ class _ProjectMetaChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: EcoColors.composerPillBg,
+        color: ecoColors(context).composerPillBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: EcoColors.composerPillBorder),
+        border: Border.all(color: ecoColors(context).composerPillBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: EcoColors.textMuted),
+          Icon(icon, size: 11, color: ecoColors(context).textMuted),
           const SizedBox(width: 4),
           Text(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: EcoColors.textSecondary,
+                  color: ecoColors(context).textSecondary,
                   fontSize: 10,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -469,7 +469,7 @@ class _ThreadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final title = thread.title;
     final showStatus = hasThreadStatusIndicator(thread);
     final timeLabel = formatRelativeTime(threadStatusTime(thread));
@@ -481,7 +481,7 @@ class _ThreadTile extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: eco.borderSubtle.withValues(alpha: 0.6)),
+              bottom: BorderSide(color: ecoColors(context).borderSubtle.withValues(alpha: 0.6)),
             ),
           ),
           child: Padding(
@@ -508,7 +508,7 @@ class _ThreadTile extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: eco.textMuted,
+                                color: ecoColors(context).textMuted,
                               ),
                         ),
                       ],
@@ -540,20 +540,20 @@ class _ThreadTrailingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
 
     if (isThreadWaitingForApproval(thread)) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: EcoColors.statusAllowBg,
+          color: ecoColors(context).statusAllowBg,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: EcoColors.statusAllowBorder),
+          border: Border.all(color: ecoColors(context).statusAllowBorder),
         ),
-        child: const Text(
+        child: Text(
           '等待批准',
           style: TextStyle(
-            color: EcoColors.statusAllowText,
+            color: ecoColors(context).statusAllowText,
             fontSize: 11,
             fontWeight: FontWeight.w500,
           ),
@@ -567,7 +567,7 @@ class _ThreadTrailingIndicator extends StatelessWidget {
         height: 16,
         child: CircularProgressIndicator(
           strokeWidth: 2,
-          color: threadStatusDotColor('running'),
+          color: threadStatusDotColor('running', eco),
         ),
       );
     }
@@ -577,7 +577,7 @@ class _ThreadTrailingIndicator extends StatelessWidget {
         width: 8,
         height: 8,
         decoration: BoxDecoration(
-          color: threadStatusDotColor(thread.status),
+          color: threadStatusDotColor(thread.status, eco),
           shape: BoxShape.circle,
         ),
       );
@@ -588,7 +588,7 @@ class _ThreadTrailingIndicator extends StatelessWidget {
     return Text(
       timeLabel,
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: eco.textMuted,
+            color: ecoColors(context).textMuted,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
     );

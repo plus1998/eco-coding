@@ -30,6 +30,10 @@ void main() {
 
   test('shouldUpdateThreadSummaryFromLiveEvent ignores telemetry events', () {
     expect(shouldUpdateThreadSummaryFromLiveEvent('thread.usage_updated'), isFalse);
+    expect(
+      shouldUpdateThreadSummaryFromLiveEvent('thread.runtime_config_updated'),
+      isFalse,
+    );
     expect(shouldUpdateThreadSummaryFromLiveEvent('thread.awaiting_plan'), isTrue);
   });
 }

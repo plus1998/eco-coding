@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'core/models/eco_types.dart';
 import 'core/providers/app_providers.dart';
 import 'core/providers/app_session.dart';
+import 'core/providers/app_theme_provider.dart';
 import 'core/theme/eco_theme.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
@@ -108,11 +109,12 @@ class MainShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = ecoColors(context);
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: EcoColors.borderSidebar)),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.borderSidebar)),
         ),
         child: NavigationBar(
           selectedIndex: navigationShell.currentIndex,
@@ -142,9 +144,12 @@ class EcoApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appSessionProvider);
     final router = ref.watch(appRouterProvider);
+    final themePreference = ref.watch(appThemePreferenceProvider);
     return MaterialApp.router(
       title: 'Eco',
-      theme: buildEcoTheme(),
+      theme: buildEcoLightTheme(),
+      darkTheme: buildEcoDarkTheme(),
+      themeMode: themePreference.themeMode,
       scaffoldMessengerKey: _scaffoldMessengerKey,
       routerConfig: router,
       builder: (context, child) =>

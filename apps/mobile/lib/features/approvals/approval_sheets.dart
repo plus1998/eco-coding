@@ -152,9 +152,9 @@ Future<void> showBashApprovalSheet({
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: EcoColors.codeBg,
+                color: ecoColors(context).codeBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: EcoColors.borderSubtle),
+                border: Border.all(color: ecoColors(context).borderSubtle),
               ),
               child: SelectableText(
                 detail,
@@ -179,11 +179,12 @@ class _BashRiskBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = ecoColors(context);
     final color = switch (level) {
-      'critical' => EcoColors.danger,
-      'high' => const Color(0xFFF97316),
-      'low' => EcoColors.success,
-      _ => const Color(0xFFFBBF24),
+      'critical' => colors.danger,
+      'high' => colors.severityHigh,
+      'low' => colors.success,
+      _ => colors.severityDefault,
     };
     final label = switch (level) {
       'critical' => '严重',

@@ -164,7 +164,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final canEditConfig = !widget.isRunning;
     final speechAvailable =
         ref.watch(systemSpeechRecognizerAvailabilityProvider).valueOrNull ==
@@ -185,16 +185,26 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: EcoColors.composerContextBg,
+                color: ecoColors(context).composerContextBg,
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.22),
+                    color: ecoColors(context).shadowScrim.withValues(
+                      alpha:
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 0.22
+                              : 0.05,
+                    ),
                     blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
+                    color: ecoColors(context).shadowScrim.withValues(
+                      alpha:
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 0.12
+                              : 0.04,
+                    ),
                     blurRadius: 2,
                     offset: const Offset(0, 1),
                   ),
@@ -247,12 +257,12 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         focusedErrorBorder: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
-                        hintStyle: TextStyle(color: eco.textMuted),
+                        hintStyle: TextStyle(color: ecoColors(context).textMuted),
                       ),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         height: 1.35,
-                        color: EcoColors.textHeading,
+                        color: ecoColors(context).textHeading,
                         backgroundColor: Colors.transparent,
                       ),
                     ),
@@ -308,7 +318,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                            color: _speechBusy ? eco.statusDenyText : null,
+                            color: _speechBusy ? ecoColors(context).statusDenyText : null,
                           ),
                           const SizedBox(width: 2),
                         ],
@@ -344,7 +354,7 @@ class _SendButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = onSend != null;
     return Material(
-      color: enabled ? EcoColors.composerSendBg : EcoColors.borderSubtle,
+      color: enabled ? ecoColors(context).composerSendBg : ecoColors(context).borderSubtle,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onSend,
@@ -355,7 +365,7 @@ class _SendButton extends StatelessWidget {
           child: Icon(
             Icons.arrow_upward_rounded,
             size: 20,
-            color: enabled ? EcoColors.composerSendText : EcoColors.textMuted,
+            color: enabled ? ecoColors(context).composerSendText : ecoColors(context).textMuted,
           ),
         ),
       ),
@@ -370,19 +380,20 @@ class _StopButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = ecoColors(context);
     return Material(
-      color: const Color(0xFF1D1D1F),
+      color: colors.voiceRecordBg,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onStop,
         customBorder: const CircleBorder(),
-        child: const SizedBox(
+        child: SizedBox(
           width: 36,
           height: 36,
           child: Center(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: colors.onAccent,
                 borderRadius: BorderRadius.all(Radius.circular(2.5)),
               ),
               child: SizedBox(width: 12, height: 12),

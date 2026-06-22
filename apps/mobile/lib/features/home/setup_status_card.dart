@@ -17,7 +17,7 @@ class SetupStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
 
     return Card(
       margin: EdgeInsets.zero,
@@ -55,7 +55,7 @@ class SetupStatusCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: eco.statusAllowBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: EcoColors.statusAllowBorder),
+                  border: Border.all(color: eco.statusAllowBorder),
                 ),
                 child: Row(
                   children: [
@@ -87,7 +87,7 @@ class _SetupStepRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final (icon, color) = _iconForState(step, eco);
 
     return Padding(
@@ -137,12 +137,12 @@ class _SetupStepRow extends StatelessWidget {
     );
   }
 
-  (IconData, Color) _iconForState(SetupStep step, EcoThemeExtras eco) {
+  (IconData, Color) _iconForState(SetupStep step, EcoColors eco) {
     switch (step.state) {
       case SetupStepState.done:
         return (Icons.check_circle, eco.statusAllowText);
       case SetupStepState.inProgress:
-        return (Icons.hourglass_top, EcoColors.accentText);
+        return (Icons.hourglass_top, eco.accentText);
       case SetupStepState.error:
         return (Icons.error_outline, eco.statusDenyText);
       case SetupStepState.pending:

@@ -348,6 +348,7 @@ class BashApprovalRequest {
     this.description,
     this.filesystemTool,
     this.filesystemPath,
+    this.agentId,
   });
 
   factory BashApprovalRequest.fromJson(Map<String, dynamic> json) =>
@@ -362,6 +363,7 @@ class BashApprovalRequest {
         description: json['description'] as String?,
         filesystemTool: json['filesystemTool'] as String?,
         filesystemPath: json['filesystemPath'] as String?,
+        agentId: json['agentId'] as String?,
       );
 
   final String toolUseId;
@@ -374,6 +376,7 @@ class BashApprovalRequest {
   final String? description;
   final String? filesystemTool;
   final String? filesystemPath;
+  final String? agentId;
 }
 
 class ThreadPendingFollowUp {

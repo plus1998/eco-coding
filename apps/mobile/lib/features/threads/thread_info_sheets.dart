@@ -12,7 +12,7 @@ Future<void> showThreadBillingSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -38,7 +38,7 @@ Future<void> showThreadContextSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: EcoColors.bgMenu,
+    backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -72,16 +72,16 @@ class ThreadUsageFloatButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final costLabel = formatBillingPillCost(billing);
     final costColor = (billing?.ecoCostUsd ?? 0) > 0
-        ? EcoColors.success
+        ? eco.success
         : eco.textSecondary;
 
     return Material(
-      color: EcoColors.bgElevated.withValues(alpha: 0.5),
+      color: eco.bgElevated.withValues(alpha: 0.5),
       elevation: 2,
-      shadowColor: Colors.black.withValues(alpha: 0.35),
+      shadowColor: eco.shadowScrim.withValues(alpha: 0.35),
       borderRadius: BorderRadius.circular(999),
       child: Container(
         decoration: BoxDecoration(
@@ -151,7 +151,7 @@ class _BillingSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final plannerLabel = billing?.plannerModelLabel?.trim().isNotEmpty == true
         ? billing!.plannerModelLabel!
         : '主模型';
@@ -202,8 +202,8 @@ class _BillingSheet extends StatelessWidget {
               label: '节省',
               value: formatSavingsLine(billing!.savedUsd, billing!.savedPct),
               valueColor: billing!.savedUsd >= 0
-                  ? EcoColors.success
-                  : EcoColors.danger,
+                  ? eco.success
+                  : eco.danger,
             ),
             const SizedBox(height: 20),
             Text('Token 用量', style: Theme.of(context).textTheme.labelLarge),
@@ -246,7 +246,7 @@ class _ContextSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -327,19 +327,19 @@ class _ContextRoleSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     final accent = accentColor;
     final pctColor = role.occupancyPct >= 95
-        ? EcoColors.danger
+        ? eco.danger
         : (role.occupancyPct >= 85
-            ? const Color(0xFFFBBF24)
-            : (accent ?? EcoColors.accentText));
+            ? eco.warnAccent
+            : (accent ?? eco.accentText));
     final visibleSegments =
         role.segments.where((segment) => segment.tokens > 0).toList();
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: EcoColors.bgElevated,
+        color: eco.bgElevated,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: eco.borderSubtle),
       ),
@@ -445,7 +445,7 @@ class _MetricRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
+    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -477,7 +477,7 @@ class _MetricRow extends StatelessWidget {
             value,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: valueColor ??
-                      (emphasized ? EcoColors.success : EcoColors.textHeading),
+                      (emphasized ? eco.success : eco.textHeading),
                   fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
