@@ -20,8 +20,8 @@ const sessionToolbarIconSize = 18.0;
 const sessionToolbarButtonGap = 8.0;
 const sessionTopFrostBlurSigma = 20.0;
 const sessionTopFrostTintOpacity = 0.52;
-const sessionTopFrostTailExtension = 48.0;
-const sessionTopFrostTailOverlap = 8.0;
+/// Pull the first content row slightly under the frosted header fade.
+const sessionContentTopOverlap = 46.0;
 
 double _sessionTopFrostTintAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -29,7 +29,7 @@ double _sessionTopFrostTintAlpha(BuildContext context) {
 }
 
 double sessionContentTopPadding(BuildContext context) {
-  return MediaQuery.paddingOf(context).top + threadSessionToolbarHeight + 8;
+  return sessionToolbarFrostHeight(context) - sessionContentTopOverlap;
 }
 
 double sessionToolbarFrostHeight(BuildContext context) {
@@ -80,35 +80,6 @@ class SessionTopFrostGradient extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-/// Tint-only fade below the toolbar; blur stays in [SessionTopFrostGradient].
-class SessionTopFrostTail extends StatelessWidget {
-  const SessionTopFrostTail({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-
-    return IgnorePointer(
-      child: SizedBox(
-        height: sessionTopFrostTailExtension,
-        width: double.infinity,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                eco.bgMain.withValues(alpha: 0.08),
-                eco.bgMain.withValues(alpha: 0),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

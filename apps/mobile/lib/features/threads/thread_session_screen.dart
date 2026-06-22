@@ -233,14 +233,15 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                       : session.error != null
                           ? Center(child: Text(session.error!))
                           : showLanding
-                              ? Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.fromLTRB(
-                                      32,
-                                      sessionContentTopPadding(context),
-                                      32,
-                                      32,
-                                    ),
+                              ? Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    32,
+                                    sessionToolbarFrostHeight(context),
+                                    32,
+                                    32,
+                                  ),
+                                  child: Align(
+                                    alignment: Alignment.center,
                                     child: Text(
                                       landingHero,
                                       textAlign: TextAlign.center,
@@ -261,13 +262,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                                   billing: session.billing,
                                   threadStatus: thread?.status,
                                 ),
-                ),
-                Positioned(
-                  top: sessionToolbarFrostHeight(context) -
-                      sessionTopFrostTailOverlap,
-                  left: 0,
-                  right: 0,
-                  child: const SessionTopFrostTail(),
                 ),
               ],
             ),
