@@ -18,7 +18,13 @@ class ThreadsScreen extends ConsumerWidget {
     final projectsAsync = ref.watch(projectListProvider);
     final threadsByProject = ref.watch(threadsByProjectProvider);
     final selectedPath = ref.watch(selectedProjectPathProvider).valueOrNull;
-    final collapsedPaths = ref.watch(collapsedProjectPathsProvider);
+    ref.watch(collapsedProjectPathsProvider);
+    final collapsedNotifier = ref.read(collapsedProjectPathsProvider.notifier);
+
+    ref.listen(projectListProvider, (previous, next) {
+      next.whenData(collapsedNotifier.applyProjectDefaults);
+    });
+    projectsAsync.whenData(collapsedNotifier.applyProjectDefaults);
 
     return Scaffold(
       appBar: AppBar(
@@ -61,7 +67,7 @@ class ThreadsScreen extends ConsumerWidget {
                               normalizeProjectPath(project.path)] ??
                           const [];
                       final isSelected = selectedPath == project.path;
-                      final isCollapsed = collapsedPaths.contains(project.path);
+                      final isCollapsed = collapsedNotifier.isProjectCollapsed(project);
 
                       return _ProjectSection(
                         project: project,

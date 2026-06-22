@@ -78,12 +78,40 @@ EcoProject buildEcoProject({
   );
 }
 
-List<EcoProject> sortProjects(List<EcoProject> projects) {
+List<EcoProject> sortProjectsByActivity(
+  List<EcoProject> projects, {
+  required Map<String, List<ThreadSummary>> grouped,
+  String? currentWorkspacePath,
+  int? activityReferenceMs,
+}) {
+  final referenceMs =
+      activityReferenceMs ?? DateTime.now().millisecondsSinceEpoch;
+
+  int activityMsForProject(EcoProject project) {
+    final key = normalizeProjectPath(project.path);
+    final threads = grouped[key] ?? const <ThreadSummary>[];
+    var maxMs = 0;
+    for (final thread in threads) {
+      final ms = threadActivityTimeMs(thread);
+      if (ms > maxMs) {
+        maxMs = ms;
+      }
+    }
+    final isCurrent = currentWorkspacePath != null &&
+        normalizeProjectPath(currentWorkspacePath) == key;
+    if (isCurrent) {
+      return maxMs > referenceMs ? maxMs : referenceMs;
+    }
+    return maxMs;
+  }
+
   final sorted = List<EcoProject>.of(projects);
   sorted.sort((a, b) {
     if (a.isHome != b.isHome) {
       return a.isHome ? -1 : 1;
     }
+    final delta = activityMsForProject(b) - activityMsForProject(a);
+    if (delta != 0) return delta;
     return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   });
   return sorted;

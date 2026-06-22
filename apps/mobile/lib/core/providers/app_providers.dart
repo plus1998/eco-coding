@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/eco_types.dart';
 import '../network/eco_center_client.dart';
 import '../storage/credential_store.dart';
+import '../utils/device_display.dart';
 
 final credentialStoreProvider = Provider<CredentialStore>((ref) {
   return CredentialStore();
@@ -41,6 +42,23 @@ final ecoEventsProvider = StreamProvider<EcoEventEnvelope>((ref) {
 });
 
 final selectedDesktopIdProvider = StateProvider<String?>((ref) => null);
+
+final selectedDesktopLabelProvider = Provider<String?>((ref) {
+  final credentials = ref.watch(credentialsProvider).valueOrNull ??
+      ref.read(ecoCenterClientProvider).credentials;
+  final selectedId =
+      ref.watch(selectedDesktopIdProvider) ?? credentials.selectedDesktopId;
+  if (selectedId == null || selectedId.isEmpty) return null;
+  final presence = ref.watch(desktopPresenceProvider).valueOrNull;
+  if (presence != null) {
+    for (final device in presence) {
+      if (device.id == selectedId) {
+        return formatDesktopLabel(device, selectedId);
+      }
+    }
+  }
+  return shortenDeviceId(selectedId);
+});
 
 final serverReachableProvider = StateProvider<bool?>((ref) => null);
 

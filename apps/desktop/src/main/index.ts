@@ -2224,13 +2224,22 @@ function registerIpcHandlers(): void {
     if (!isBashApprovalResolvePayload(payload)) {
       throw new Error("Invalid Bash approval payload.");
     }
-    if (!getPendingBashApprovalByToolUseId(payload.toolUseId)) {
+    const pendingApproval = getPendingBashApprovalByToolUseId(payload.toolUseId);
+    if (!pendingApproval) {
       throw new Error("No pending Bash approval for this tool use.");
     }
     const ok = resolvePendingBashApproval(payload.toolUseId, payload.decision);
     if (!ok) {
       throw new Error("Failed to resolve Bash approval.");
     }
+    desktopEventCenter.publishThreadLiveEvent({
+      threadId: pendingApproval.threadId,
+      type: "bash_approval.resolved",
+      message: "状态已更新",
+      role: "tool",
+      stream: false,
+      bashApproval: pendingApproval,
+    });
     return { ok: true as const };
   });
 

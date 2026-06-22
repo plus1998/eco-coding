@@ -101,17 +101,77 @@ void main() {
     });
   });
 
-  group('sortProjects', () {
-    test('puts home first then sorts by name', () {
-      final sorted = sortProjects([
-        const EcoProject(path: repoPath, name: 'eco-coding'),
-        const EcoProject(path: homePath, name: homeProjectDisplayName, isHome: true),
-        const EcoProject(path: '/Users/test/alpha', name: 'alpha'),
+  group('sortProjectsByActivity', () {
+    test('keeps home first while sorting other projects by activity', () {
+      final grouped = groupThreadsByProject([
+        ThreadSummary(
+          id: 't1',
+          title: '',
+          prompt: '',
+          workspacePath: repoPath,
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-05T00:00:00.000Z',
+          message: '',
+        ),
+        ThreadSummary(
+          id: 't2',
+          title: '',
+          prompt: '',
+          workspacePath: '/Users/test/other',
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+          message: '',
+        ),
       ]);
 
-      expect(sorted.first.isHome, isTrue);
-      expect(sorted[1].name, 'alpha');
-      expect(sorted[2].name, 'eco-coding');
+      final sorted = sortProjectsByActivity(
+        [
+          const EcoProject(path: '/Users/test/other', name: 'other'),
+          const EcoProject(path: repoPath, name: 'eco-coding'),
+          const EcoProject(
+            path: homePath,
+            name: homeProjectDisplayName,
+            isHome: true,
+          ),
+        ],
+        grouped: grouped,
+        activityReferenceMs: DateTime.parse('2026-01-01T00:00:00.000Z')
+            .millisecondsSinceEpoch,
+      );
+
+      expect(sorted.map((project) => project.path).toList(), [
+        homePath,
+        repoPath,
+        '/Users/test/other',
+      ]);
+    });
+
+    test('prioritizes current PC workspace when it has no threads', () {
+      final sorted = sortProjectsByActivity(
+        [
+          const EcoProject(path: repoPath, name: 'eco-coding'),
+          const EcoProject(path: '/Users/test/stale', name: 'stale'),
+        ],
+        grouped: groupThreadsByProject([
+          ThreadSummary(
+            id: 'old',
+            title: '',
+            prompt: '',
+            workspacePath: '/Users/test/stale',
+            status: 'idle',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-03T00:00:00.000Z',
+            message: '',
+          ),
+        ]),
+        currentWorkspacePath: repoPath,
+        activityReferenceMs: DateTime.parse('2026-01-10T00:00:00.000Z')
+            .millisecondsSinceEpoch,
+      );
+
+      expect(sorted.first.path, repoPath);
     });
   });
 

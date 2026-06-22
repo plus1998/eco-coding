@@ -592,10 +592,12 @@ class ActivityFeedList extends StatelessWidget {
     super.key,
     required this.entries,
     required this.scrollController,
+    this.topPadding = 8,
   });
 
   final List<ActivityFeedEntry> entries;
   final ScrollController scrollController;
+  final double topPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -605,7 +607,7 @@ class ActivityFeedList extends StatelessWidget {
       child: ListView.builder(
         controller: scrollController,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        padding: EdgeInsets.fromLTRB(12, topPadding, 12, 12),
         itemCount: entries.length,
         itemBuilder: (context, index) => _ActivityFeedEntryTile(
           entry: entries[index],

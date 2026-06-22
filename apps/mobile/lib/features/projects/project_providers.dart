@@ -73,7 +73,11 @@ class ProjectListNotifier extends AsyncNotifier<List<EcoProject>> {
       );
     }
 
-    return sortProjects(projects);
+    return sortProjectsByActivity(
+      projects,
+      grouped: grouped,
+      currentWorkspacePath: currentWorkspace?.path,
+    );
   }
 
   Future<void> refresh() async {
@@ -147,11 +151,44 @@ final collapsedProjectPathsProvider =
 
 class CollapsedProjectPathsNotifier extends Notifier<Set<String>> {
   bool _loaded = false;
+  bool _defaultsApplied = false;
+  bool? _hasPersistedState;
 
   @override
   Set<String> build() {
     _load();
     return {};
+  }
+
+  bool isProjectCollapsed(EcoProject project) {
+    if (project.isHome && !_defaultsApplied) {
+      return true;
+    }
+    return state.contains(project.path);
+  }
+
+  Future<void> applyProjectDefaults(List<EcoProject> projects) async {
+    if (_defaultsApplied) return;
+    await _load();
+    if (_defaultsApplied) return;
+
+    if (_hasPersistedState == true) {
+      _defaultsApplied = true;
+      return;
+    }
+
+    EcoProject? homeProject;
+    for (final project in projects) {
+      if (project.isHome) {
+        homeProject = project;
+        break;
+      }
+    }
+    if (homeProject != null && !state.contains(homeProject.path)) {
+      state = {...state, homeProject.path};
+      await _persist(state);
+    }
+    _defaultsApplied = true;
   }
 
   Future<void> _load() async {
@@ -162,8 +199,10 @@ class CollapsedProjectPathsNotifier extends Notifier<Set<String>> {
 
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getStringList(_collapsedProjectsKey(desktopId));
+    _hasPersistedState = saved != null;
     if (saved != null) {
       state = saved.toSet();
+      _defaultsApplied = true;
     }
   }
 

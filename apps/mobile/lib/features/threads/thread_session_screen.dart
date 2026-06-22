@@ -1,11 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -19,7 +17,7 @@ import 'activity_feed.dart';
 import 'thread_info_sheets.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
-import 'thread_session_menu.dart';
+import 'thread_session_app_bar.dart';
 
 class ThreadSessionScreen extends ConsumerStatefulWidget {
   const ThreadSessionScreen({super.key, required this.threadId});
@@ -225,99 +223,78 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              thread?.title ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
-                  ),
-            ),
-            if (workspacePath.isNotEmpty)
-              GestureDetector(
-                onLongPress: () {
-                  Clipboard.setData(ClipboardData(text: workspacePath));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('工作目录已复制')),
-                  );
-                },
-                child: Text(
-                  '${workspaceDisplayName(workspacePath)} · $workspacePath',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: ecoThemeExtras(context).textMuted,
-                      ),
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: '编辑标题',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('标题编辑即将支持')),
-              );
-            },
-          ),
-          ThreadSessionMenuButton(
-            threadId: widget.threadId,
-            workspacePath: workspacePath,
-            runtimeConfig: runtimeConfig,
-            isRunning: isRunning,
-            gitStatus: gitStatus,
-          ),
-        ],
+      extendBodyBehindAppBar: true,
+      appBar: buildThreadSessionAppBar(
+        context,
+        ref,
+        title: thread?.title ?? '',
+        workspacePath: workspacePath,
+        threadId: widget.threadId,
+        projectName: project?.name,
+        runtimeConfig: runtimeConfig,
+        isRunning: isRunning,
+        gitStatus: gitStatus,
       ),
       body: Column(
         children: [
           Expanded(
-            child: session.loading
-                ? const Center(child: CircularProgressIndicator())
-                : session.error != null
-                    ? Center(child: Text(session.error!))
-                    : showLanding
-                        ? Center(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 32),
-                              child: Text(
-                                landingHero,
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      height: 1.35,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: session.loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : session.error != null
+                          ? Center(child: Text(session.error!))
+                          : showLanding
+                              ? Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                      32,
+                                      sessionContentTopPadding(context),
+                                      32,
+                                      32,
                                     ),
-                              ),
-                            ),
-                          )
-                        : Stack(
-                            children: [
-                              ActivityFeedList(
-                                entries: displayFeedEntries,
-                                scrollController: _scrollController,
-                              ),
-                              Positioned(
-                                right: 8,
-                                bottom: 8,
-                                child: ThreadUsageFloatButtons(
-                                  billing: session.billing,
-                                  threadStatus: thread?.status,
+                                    child: Text(
+                                      landingHero,
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.35,
+                                          ),
+                                    ),
+                                  ),
+                                )
+                              : Stack(
+                                  children: [
+                                    ActivityFeedList(
+                                      entries: displayFeedEntries,
+                                      scrollController: _scrollController,
+                                      topPadding: sessionContentTopPadding(
+                                        context,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      right: 8,
+                                      bottom: 8,
+                                      child: ThreadUsageFloatButtons(
+                                        billing: session.billing,
+                                        threadStatus: thread?.status,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
+                ),
+                const Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SessionTopFrostOverlay(),
+                ),
+              ],
+            ),
           ),
           if (queuedFollowUps.isNotEmpty)
             _FollowUpBar(
