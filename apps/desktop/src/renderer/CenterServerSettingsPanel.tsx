@@ -1,4 +1,4 @@
-import { ChevronLeft, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone } from "lucide-react";
+import { ChevronLeft, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import type {
@@ -12,7 +12,12 @@ import type {
   CenterServerSignInRequest,
   CenterServerSignUpRequest,
 } from "../shared/center-server";
-import { isCenterServerAuthCredentialError, isLocalhostCenterServerUrl } from "../shared/center-server";
+import {
+  CenterServerRemoveConnectionError,
+  classifyCenterServerAuthError,
+  isCenterServerReloginError,
+  isLocalhostCenterServerUrl,
+} from "../shared/center-server";
 
 interface CenterServerSettingsPanelProps {
   snapshot: CenterServerSettingsSnapshot;
@@ -27,6 +32,11 @@ interface CenterServerSettingsPanelProps {
   onRevokeBinding: (bindingId: string) => Promise<CenterServerDeviceBindingView>;
   onConnect: () => Promise<CenterServerSettingsSnapshot>;
   onDisconnect: () => Promise<CenterServerSettingsSnapshot>;
+  onRemoveConnection: (options?: { forceLocal?: boolean }) => Promise<{
+    settings: CenterServerSettingsSnapshot["settings"];
+    status: CenterServerSettingsSnapshot["status"];
+    notice?: string;
+  }>;
 }
 
 type PanelView = "list" | "edit-server" | "edit-account";
@@ -44,6 +54,7 @@ export function CenterServerSettingsPanel({
   onListPresence,
   onRevokeBinding,
   onDisconnect,
+  onRemoveConnection,
 }: CenterServerSettingsPanelProps) {
   const [view, setView] = useState<PanelView>("list");
   const [form, setForm] = useState<CenterServerSettingsInput>(() => viewToInput(snapshot.settings));
@@ -71,7 +82,7 @@ export function CenterServerSettingsPanel({
   const needsReauth =
     registered &&
     snapshot.status.state === "error" &&
-    isCenterServerAuthCredentialError(snapshot.status.lastError);
+    isCenterServerReloginError(snapshot.status.lastError);
   const serverUrl = form.serverUrl || snapshot.settings.serverUrl;
   const deviceLabel = snapshot.settings.deviceName || "远程服务";
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
@@ -256,6 +267,55 @@ export function CenterServerSettingsPanel({
     }
   }
 
+  function buildForceLocalConfirmMessage(error: unknown): string {
+    const recovery =
+      error instanceof CenterServerRemoveConnectionError
+        ? error.recovery
+        : classifyCenterServerAuthError(error instanceof Error ? error.message : String(error));
+    const detail = error instanceof Error ? error.message : String(error);
+    if (recovery === "account_unusable") {
+      return `账号已停用，无法在服务端完成注销：${detail}\n仍要删除本机配置吗？`;
+    }
+    if (recovery === "relogin") {
+      return `登录已失效，无法在服务端完成注销：${detail}\n仍要删除本机配置吗？`;
+    }
+    return `无法连接服务端完成注销：${detail}\n仍要删除本机配置吗？服务端可能仍保留该设备记录。`;
+  }
+
+  async function handleRemoveConnection(forceLocal = false) {
+    if (!forceLocal) {
+      const confirmed = window.confirm(
+        `确定删除「${deviceLabel}」连接？\n将断开远程服务、解绑已配对手机，需重新配置才能使用。`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setError(undefined);
+    setConnectionBusy(true);
+    try {
+      const result = await onRemoveConnection(forceLocal ? { forceLocal: true } : undefined);
+      setForm(viewToInput(result.settings));
+      setPairing(undefined);
+      setBindings([]);
+      setPresence([]);
+      setView("list");
+      if (result.notice) {
+        setError(result.notice);
+      }
+    } catch (caught) {
+      const forceConfirmed = window.confirm(buildForceLocalConfirmMessage(caught));
+      if (forceConfirmed) {
+        await handleRemoveConnection(true);
+        return;
+      }
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setConnectionBusy(false);
+    }
+  }
+
   function openSetup() {
     setError(undefined);
     setServerReachable(Boolean(snapshot.settings.serverUrl.trim()));
@@ -380,6 +440,20 @@ export function CenterServerSettingsPanel({
           </div>
         </div>
       )}
+
+      {registered ? (
+        <section className="cs-block">
+          <button
+            type="button"
+            className="cs-text-action is-muted"
+            disabled={actionBusy}
+            onClick={() => void handleRemoveConnection()}
+          >
+            <Trash2 size={14} strokeWidth={1.75} />
+            删除连接
+          </button>
+        </section>
+      ) : null}
 
       {registered && isLive ? (
         <section className="cs-block">

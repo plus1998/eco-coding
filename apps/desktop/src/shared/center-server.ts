@@ -114,6 +114,24 @@ export interface CenterServerTestConnectionResult {
   error?: string;
 }
 
+export interface CenterServerRemoveConnectionOptions {
+  forceLocal?: boolean;
+}
+
+export interface CenterServerRemoveConnectionResult extends CenterServerSettingsSnapshot {
+  notice?: string;
+}
+
+export class CenterServerRemoveConnectionError extends Error {
+  readonly recovery: CenterServerAuthRecovery;
+
+  constructor(message: string, recovery: CenterServerAuthRecovery) {
+    super(message);
+    this.name = "CenterServerRemoveConnectionError";
+    this.recovery = recovery;
+  }
+}
+
 export interface CenterServerDeviceBindingView {
   id: string;
   userId: string;
@@ -198,22 +216,79 @@ export function previewCenterServerSecret(value: string): string | undefined {
 
 export const CENTER_SERVER_REAUTH_MESSAGE = "登录已失效，请重新登录。";
 
-export function isCenterServerAuthCredentialError(message: string | undefined): boolean {
-  if (!message) {
-    return false;
+export type CenterServerAuthRecovery =
+  | "network"
+  | "device_inactive"
+  | "account_unusable"
+  | "relogin"
+  | "unknown";
+
+export function classifyCenterServerAuthError(message: string | undefined): CenterServerAuthRecovery {
+  if (!message?.trim()) {
+    return "unknown";
   }
   if (message === CENTER_SERVER_REAUTH_MESSAGE) {
-    return true;
+    return "relogin";
   }
   const lower = message.toLowerCase();
-  return (
-    lower.includes("refresh token") ||
-    lower.includes("invalid or expired") ||
+  if (
+    lower.includes("timed out") ||
+    lower.includes("network request failed") ||
+    lower.includes("econnrefused") ||
+    lower.includes("enotfound") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("request failed with http 5")
+  ) {
+    return "network";
+  }
+  if (
+    lower.includes("token user is not active") ||
+    lower.includes("refresh token subject is not active")
+  ) {
+    return "account_unusable";
+  }
+  if (
+    lower.includes("device is not active") ||
+    lower.includes("token device is not active") ||
+    lower.includes("refresh token device is not active")
+  ) {
+    return "device_inactive";
+  }
+  if (
+    lower.includes("refresh token is invalid or expired") ||
     lower.includes("credentials are missing") ||
     lower.includes("credentials are invalid") ||
-    lower.includes("device credentials") ||
-    lower.includes("device is not active") ||
+    lower.includes("device credentials are invalid") ||
+    lower.includes("device credentials are missing") ||
+    lower.includes("user session expired") ||
     lower.includes("not authorized") ||
     lower.includes("unauthorized")
-  );
+  ) {
+    return "relogin";
+  }
+  return "unknown";
+}
+
+export function isCenterServerAuthCredentialError(message: string | undefined): boolean {
+  const recovery = classifyCenterServerAuthError(message);
+  return recovery === "relogin" || recovery === "device_inactive" || recovery === "account_unusable";
+}
+
+export function isCenterServerReloginError(message: string | undefined): boolean {
+  return classifyCenterServerAuthError(message) === "relogin";
+}
+
+export function centerServerAuthRecoveryMessage(recovery: CenterServerAuthRecovery): string {
+  switch (recovery) {
+    case "network":
+      return "无法连接服务端，请检查网络后重试。";
+    case "device_inactive":
+      return "设备已在服务端注销或禁用，请重新配置连接。";
+    case "account_unusable":
+      return "账号已停用，请联系管理员。";
+    case "relogin":
+      return CENTER_SERVER_REAUTH_MESSAGE;
+    default:
+      return "连接失败，请稍后重试。";
+  }
 }

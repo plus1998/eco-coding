@@ -2958,6 +2958,15 @@ function App() {
     return snapshot;
   }
 
+  async function removeCenterServerConnection(options?: { forceLocal?: boolean }) {
+    if (!window.eco) {
+      return emptyCenterServerSettings;
+    }
+    const snapshot = await window.eco.removeCenterServerConnection(options);
+    setCenterServerSettings(snapshot);
+    return snapshot;
+  }
+
   function activateWorkspace(nextWorkspace: WorkspaceInfo) {
     setWorkspace(nextWorkspace);
     setSelectedProjectPath(nextWorkspace.path);
@@ -4094,6 +4103,7 @@ function App() {
                 onRevokeBinding={revokeCenterServerBinding}
                 onConnect={connectCenterServer}
                 onDisconnect={disconnectCenterServer}
+                onRemoveConnection={removeCenterServerConnection}
               />
             )}
 

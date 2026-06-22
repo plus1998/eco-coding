@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/eco_types.dart';
 import '../storage/credential_store.dart';
+import '../utils/center_server_auth.dart';
 import '../utils/device_profile.dart';
 
 typedef JsonMap = Map<String, dynamic>;
@@ -327,14 +328,36 @@ class EcoCenterClient {
     );
   }
 
-  Future<void> clearSession() async {
+  Future<String?> clearSession() async {
     disconnect();
+    String? notice;
+    final deviceId = _credentials.deviceId;
+    final serverUrl = _credentials.serverUrl;
+    if (deviceId != null && deviceId.isNotEmpty && serverUrl.isNotEmpty) {
+      try {
+        final accessToken = await _ensureDeviceAccessToken();
+        await _requestJson(
+          serverUrl: serverUrl,
+          path: '/v1/devices/$deviceId',
+          method: 'DELETE',
+          bearerToken: accessToken,
+        );
+      } catch (error) {
+        final recovery = _recoveryFromError(error);
+        if (recovery == CenterServerAuthRecovery.deviceInactive) {
+          notice = centerServerAuthRecoveryMessage(recovery);
+        } else {
+          notice = '本地已退出，但服务端注销未完成：${_exceptionMessage(error)}';
+        }
+      }
+    }
     _credentials = _credentials.copyWith(
       clearUserSession: true,
       clearDeviceCredentials: true,
       clearSelectedDesktop: true,
     );
     await _store.clearSession();
+    return notice;
   }
 
   Future<T> invoke<T>(
@@ -438,16 +461,16 @@ class EcoCenterClient {
       _startKeepalive();
       syncDeviceProfile().ignore();
     } catch (error) {
-      final message = error is EcoCenterException
-          ? error.message
-          : error.toString();
+      final message = _exceptionMessage(error);
+      final recovery = _recoveryFromError(error);
       _emitStatus(
         CenterServerConnectionStatus(
           state: EcoConnectionState.error,
           lastError: message,
+          authRecovery: recovery,
         ),
       );
-      if (!_intentionallyStopped) {
+      if (!_intentionallyStopped && !shouldStopCenterServerReconnect(recovery)) {
         _scheduleReconnect();
       }
       rethrow;
@@ -469,9 +492,13 @@ class EcoCenterClient {
       CenterServerConnectionStatus(
         state: EcoConnectionState.error,
         lastError: reason,
+        authRecovery: classifyCenterServerAuthError(reason),
       ),
     );
-    _scheduleReconnect();
+    final recovery = classifyCenterServerAuthError(reason);
+    if (!shouldStopCenterServerReconnect(recovery)) {
+      _scheduleReconnect();
+    }
   }
 
   void _handleSocketMessage(dynamic data) {
@@ -558,13 +585,20 @@ class EcoCenterClient {
       return _credentials.userAccessToken!;
     }
     if (_credentials.userRefreshToken != null) {
-      final refreshed = await _refreshTokens(
-        _credentials.userRefreshToken!,
-        _TokenScope.user,
-      );
-      return refreshed.accessToken;
+      try {
+        final refreshed = await _refreshTokens(
+          _credentials.userRefreshToken!,
+          _TokenScope.user,
+        );
+        return refreshed.accessToken;
+      } catch (error) {
+        throw _toAuthException(error, fallbackRecovery: CenterServerAuthRecovery.relogin);
+      }
     }
-    throw EcoCenterException('User session expired. Please sign in again.');
+    throw EcoCenterException(
+      'User session expired. Please sign in again.',
+      recovery: CenterServerAuthRecovery.relogin,
+    );
   }
 
   Future<String> _ensureDeviceAccessToken() async {
@@ -573,33 +607,49 @@ class EcoCenterClient {
       return _credentials.deviceAccessToken!;
     }
     if (_credentials.deviceRefreshToken != null) {
-      final refreshed = await _refreshTokens(
-        _credentials.deviceRefreshToken!,
-        _TokenScope.device,
-      );
-      return refreshed.accessToken;
+      try {
+        final refreshed = await _refreshTokens(
+          _credentials.deviceRefreshToken!,
+          _TokenScope.device,
+        );
+        return refreshed.accessToken;
+      } catch (error) {
+        if (!_credentials.hasDeviceCredentials ||
+            !isCenterServerAuthCredentialError(_exceptionMessage(error))) {
+          rethrow;
+        }
+        _credentials = _credentials.copyWith(clearDeviceSession: true);
+        await _store.save(_credentials);
+      }
     }
     if (_credentials.hasDeviceCredentials) {
-      final serverUrl = _requireServerUrl();
-      final response = await _requestJson(
-        serverUrl: serverUrl,
-        path: '/v1/devices/token',
-        method: 'POST',
-        body: {
-          'deviceId': _credentials.deviceId,
-          'deviceSecret': _credentials.deviceSecret,
-        },
-      );
-      final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
-      _credentials = _credentials.copyWith(
-        deviceRefreshToken: tokens.refreshToken,
-        deviceAccessToken: tokens.accessToken,
-        deviceAccessTokenExpiresAt: tokens.expiresAt,
-      );
-      await _store.save(_credentials);
-      return tokens.accessToken;
+      try {
+        final serverUrl = _requireServerUrl();
+        final response = await _requestJson(
+          serverUrl: serverUrl,
+          path: '/v1/devices/token',
+          method: 'POST',
+          body: {
+            'deviceId': _credentials.deviceId,
+            'deviceSecret': _credentials.deviceSecret,
+          },
+        );
+        final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
+        _credentials = _credentials.copyWith(
+          deviceRefreshToken: tokens.refreshToken,
+          deviceAccessToken: tokens.accessToken,
+          deviceAccessTokenExpiresAt: tokens.expiresAt,
+        );
+        await _store.save(_credentials);
+        return tokens.accessToken;
+      } catch (error) {
+        throw _toAuthException(error);
+      }
     }
-    throw EcoCenterException('Device credentials are missing.');
+    throw EcoCenterException(
+      'Device credentials are missing.',
+      recovery: CenterServerAuthRecovery.relogin,
+    );
   }
 
   Future<TokenBundle> _refreshTokens(
@@ -687,6 +737,38 @@ class EcoCenterClient {
       throw EcoCenterException('Center server URL is required.');
     }
     return _credentials.serverUrl;
+  }
+
+  String _exceptionMessage(Object error) {
+    return error is EcoCenterException ? error.message : error.toString();
+  }
+
+  CenterServerAuthRecovery _recoveryFromError(Object error) {
+    if (error is EcoCenterException && error.recovery != null) {
+      return error.recovery!;
+    }
+    return classifyCenterServerAuthError(_exceptionMessage(error));
+  }
+
+  EcoCenterException _toAuthException(
+    Object error, {
+    CenterServerAuthRecovery? fallbackRecovery,
+  }) {
+    final message = _exceptionMessage(error);
+    if (!isCenterServerAuthCredentialError(message)) {
+      if (error is EcoCenterException) {
+        return error;
+      }
+      return EcoCenterException(message);
+    }
+    final recovery = classifyCenterServerAuthError(message);
+    final resolved = recovery == CenterServerAuthRecovery.unknown
+        ? (fallbackRecovery ?? CenterServerAuthRecovery.relogin)
+        : recovery;
+    if (resolved == CenterServerAuthRecovery.relogin) {
+      return EcoCenterException(centerServerReauthMessage, recovery: resolved);
+    }
+    return EcoCenterException(message, recovery: resolved);
   }
 
   Future<void> dispose() async {

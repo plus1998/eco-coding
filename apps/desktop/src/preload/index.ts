@@ -19,6 +19,8 @@ import {
   type CenterServerDevicePresenceView,
   type CenterServerRegisterDesktopRequest,
   type CenterServerRegisterDesktopResult,
+  type CenterServerRemoveConnectionOptions,
+  type CenterServerRemoveConnectionResult,
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
@@ -389,6 +391,11 @@ const api = {
   },
   disconnectCenterServer(): Promise<CenterServerSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerDisconnect);
+  },
+  removeCenterServerConnection(
+    options?: CenterServerRemoveConnectionOptions,
+  ): Promise<CenterServerRemoveConnectionResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerRemoveConnection, options);
   },
   testCenterServerConnection(
     request: CenterServerTestConnectionRequest,

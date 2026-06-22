@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/utils/center_server_auth.dart';
 import '../threads/thread_providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -99,7 +100,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             leading: const Icon(Icons.logout),
                             onTap: () async {
                               final client = ref.read(ecoCenterClientProvider);
-                              await client.clearSession();
+                              final notice = await client.clearSession();
                               ref.invalidate(credentialsProvider);
                               ref.invalidate(bindingsProvider);
                               ref.invalidate(desktopPresenceProvider);
@@ -108,7 +109,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               if (context.mounted) {
                                 context.go('/connect');
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已退出登录')),
+                                  SnackBar(content: Text(notice ?? '已退出登录')),
                                 );
                               }
                             },

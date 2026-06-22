@@ -11,12 +11,17 @@ import {
   type CenterServerDeviceView,
   type CenterServerRegisterDesktopRequest,
   type CenterServerRegisterDesktopResult,
+  type CenterServerRemoveConnectionOptions,
+  type CenterServerRemoveConnectionResult,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
   type CenterServerSignUpRequest,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
   CENTER_SERVER_REAUTH_MESSAGE,
+  CenterServerRemoveConnectionError,
+  classifyCenterServerAuthError,
+  centerServerAuthRecoveryMessage,
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
 } from "../shared/center-server";
@@ -371,6 +376,40 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     }
   }
 
+  async removeConnection(
+    options: CenterServerRemoveConnectionOptions = {},
+  ): Promise<CenterServerRemoveConnectionResult> {
+    const forceLocal = options.forceLocal ?? false;
+    const settings = this.store.getSettingsWithSecrets();
+    let notice: string | undefined;
+    this.stop();
+
+    if (!forceLocal && settings.deviceId && settings.serverUrl) {
+      try {
+        const accessToken = await this.ensureAccessToken(settings);
+        await this.requestJson({
+          serverUrl: settings.serverUrl,
+          path: `/v1/devices/${encodeURIComponent(settings.deviceId)}`,
+          method: "DELETE",
+          bearerToken: accessToken,
+        });
+      } catch (error) {
+        const message = errorMessage(error);
+        const recovery = classifyCenterServerAuthError(message);
+        if (recovery === "device_inactive") {
+          notice = centerServerAuthRecoveryMessage(recovery);
+        } else {
+          throw new CenterServerRemoveConnectionError(message, recovery);
+        }
+      }
+    }
+
+    this.store.clearConnection();
+    this.setStatus({ state: "disabled" });
+    const snapshot = this.getSnapshot();
+    return notice ? { ...snapshot, notice } : snapshot;
+  }
+
   private connect(): Promise<void> {
     if (this.connectInFlight) {
       return this.connectInFlight;
@@ -530,8 +569,13 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         });
         return tokenResponse.tokens.accessToken;
       } catch (error) {
-        if (isCenterServerAuthCredentialError(errorMessage(error))) {
-          throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+        const message = errorMessage(error);
+        if (isCenterServerAuthCredentialError(message)) {
+          const recovery = classifyCenterServerAuthError(message);
+          if (recovery === "relogin") {
+            throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+          }
+          throw error instanceof Error ? error : new Error(message);
         }
         throw error;
       }

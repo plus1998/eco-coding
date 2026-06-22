@@ -310,7 +310,7 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "DELETE" && deviceIdFromPath) {
     const claims = await requireBearer(request, auth);
-    assertCapability(claims, "device:admin");
+    assertCanUpdateDevice(claims, deviceIdFromPath);
     const disabled = await devices.disableDevice({
       userId: claims.userId,
       deviceId: deviceIdFromPath,

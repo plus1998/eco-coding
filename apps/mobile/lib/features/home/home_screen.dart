@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/eco_types.dart';
 import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_session.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
@@ -62,6 +66,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _handleAccountUnusable(CenterServerAuthRecovery recovery) async {
+    final client = ref.read(ecoCenterClientProvider);
+    await client.clearSession();
+    ref.invalidate(credentialsProvider);
+    ref.invalidate(bindingsProvider);
+    ref.invalidate(desktopPresenceProvider);
+    ref.read(selectedDesktopIdProvider.notifier).state = null;
+    if (!mounted) return;
+    setState(() {
+      _wizardStep = SetupWizardStep.server;
+      _showManualSetup = true;
+    });
+    _showSnack(centerServerAuthRecoveryMessage(recovery));
   }
 
   @override
@@ -165,6 +184,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _maybeAutoAdvance(next, step);
         }
       }
+    });
+
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (status.state != EcoConnectionState.error) {
+          return;
+        }
+        final recovery =
+            status.authRecovery ?? classifyCenterServerAuthError(status.lastError);
+        if (!shouldStopCenterServerReconnect(recovery)) {
+          return;
+        }
+        if (recovery == CenterServerAuthRecovery.relogin) {
+          setState(() => _wizardStep = SetupWizardStep.login);
+          _showSnack(centerServerAuthRecoveryMessage(recovery));
+          return;
+        }
+        if (recovery == CenterServerAuthRecovery.accountUnusable) {
+          unawaited(_handleAccountUnusable(recovery));
+          return;
+        }
+        if (recovery == CenterServerAuthRecovery.deviceInactive) {
+          setState(() {
+            _wizardStep = SetupWizardStep.login;
+            _showManualSetup = true;
+          });
+          _showSnack(centerServerAuthRecoveryMessage(recovery));
+        }
+      });
     });
 
     return Scaffold(

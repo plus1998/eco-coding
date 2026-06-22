@@ -226,6 +226,18 @@ export class CenterServerStore {
       .run(new Date().toISOString());
   }
 
+  clearConnection(): void {
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET enabled = 0, server_url = '', device_id = '', device_name = ?, device_secret = '',
+             access_token = '', refresh_token = '', access_token_expires_at = '',
+             last_connected_at = '', last_error = '', updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(DEFAULT_DEVICE_NAME, new Date().toISOString());
+  }
+
   private getRow(): CenterServerConfigRow | undefined {
     return this.db
       .prepare(

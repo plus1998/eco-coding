@@ -140,6 +140,7 @@ Auth model:
 
 - Account access tokens can manage devices, bindings, presence, and audit logs.
 - Device access tokens are required for WebSocket and pairing flows.
+- `DELETE /v1/devices/:deviceId` accepts either an account token (`device:admin`) or the target device's own token (self-unregister).
 - Disabled devices immediately fail device token verification and their refresh tokens/bindings are revoked.
 
 ## WebSocket API

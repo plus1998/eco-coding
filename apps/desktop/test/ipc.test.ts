@@ -67,6 +67,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.centerServerCreatePairing).toBe("center-server:create-pairing");
   expect(IPC_CHANNELS.centerServerConnect).toBe("center-server:connect");
   expect(IPC_CHANNELS.centerServerDisconnect).toBe("center-server:disconnect");
+  expect(IPC_CHANNELS.centerServerRemoveConnection).toBe("center-server:remove-connection");
   expect(IPC_CHANNELS.centerServerTestConnection).toBe("center-server:test-connection");
   expect(IPC_CHANNELS.modelProviderTest).toBe("model-provider:test");
   expect(IPC_CHANNELS.modelRouteProfileTest).toBe("model-route-profile:test");

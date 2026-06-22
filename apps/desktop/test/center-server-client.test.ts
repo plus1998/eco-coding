@@ -4,6 +4,7 @@ import { CenterServerDesktopClient } from "../src/main/center-server-client";
 import type { CenterServerSettingsSecret, CenterServerStore } from "../src/main/center-server-store";
 import { DesktopEventCenter } from "../src/main/event-center";
 import type { CenterServerConnectionStatus, CenterServerSettingsView } from "../src/shared/center-server";
+import { CenterServerRemoveConnectionError } from "../src/shared/center-server";
 import { EVENT_CENTER_JSON_RPC_METHODS, IPC_CHANNELS } from "../src/shared/ipc";
 
 const fixedNow = () => new Date("2030-01-01T00:00:00.000Z");
@@ -676,6 +677,142 @@ test("center server client maps invalid device credentials to reauth message", a
   client.dispose();
 });
 
+test("center server client removeConnection deletes remote device and clears local config", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "valid_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+
+  const calls: string[] = [];
+  const fetchImpl = async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(`${init?.method ?? "GET"} ${url}`);
+    if (url.endsWith("/v1/devices/dev_1") && init?.method === "DELETE") {
+      return new Response(JSON.stringify({ device: { id: "dev_1", disabledAt: "2030-01-01T00:00:00.000Z" } }), {
+        status: 200,
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+  });
+
+  const result = await client.removeConnection();
+  expect(calls.some((call) => call.startsWith("DELETE"))).toBe(true);
+  expect(result.settings.serverUrl).toBe("");
+  expect(result.settings.hasDeviceSecret).toBe(false);
+  expect(result.status.state).toBe("disabled");
+  client.dispose();
+});
+
+test("center server client removeConnection skips delete when device is inactive", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "expired_access",
+    accessTokenExpiresAt: "2020-01-01T00:00:00.000Z",
+  });
+
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/devices/token")) {
+      return new Response(JSON.stringify({ error: "Device is not active." }), { status: 401 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+  });
+
+  const result = await client.removeConnection();
+  expect(result.settings.serverUrl).toBe("");
+  expect(result.notice).toContain("设备已在服务端注销");
+  client.dispose();
+});
+
+test("center server client removeConnection throws recoverable error when auth fails", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "expired_access",
+    accessTokenExpiresAt: "2020-01-01T00:00:00.000Z",
+  });
+
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/devices/token")) {
+      return new Response(JSON.stringify({ error: "Device credentials are invalid." }), { status: 401 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+  });
+
+  await expect(client.removeConnection()).rejects.toBeInstanceOf(CenterServerRemoveConnectionError);
+  expect(store.getSettingsWithSecrets().serverUrl).toBe("http://127.0.0.1:8787");
+  client.dispose();
+});
+
+test("center server client removeConnection forceLocal clears without network", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "valid_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+
+  const fetchImpl = async () => {
+    throw new Error("Network unavailable");
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+  });
+
+  const result = await client.removeConnection({ forceLocal: true });
+  expect(result.settings.serverUrl).toBe("");
+  client.dispose();
+});
+
 function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret> = {}): CenterServerStore {
   let settings: CenterServerSettingsSecret = {
     enabled: false,
@@ -744,6 +881,22 @@ function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret
         refreshToken: "",
         accessToken: "",
         accessTokenExpiresAt: "",
+      });
+    },
+    clearConnection() {
+      settings = normalizeFakeSettings({
+        enabled: false,
+        serverUrl: "",
+        deviceName: "Eco Desktop",
+        deviceId: "",
+        deviceSecret: "",
+        refreshToken: "",
+        accessToken: "",
+        accessTokenExpiresAt: "",
+        hasDeviceSecret: false,
+        hasRefreshToken: false,
+        lastConnectedAt: undefined,
+        lastError: undefined,
       });
     },
   };

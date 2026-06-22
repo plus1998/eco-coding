@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildCenterServerWebSocketUrl,
   CENTER_SERVER_REAUTH_MESSAGE,
+  classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
   validateCenterServerSettingsInput,
@@ -20,6 +21,24 @@ test("validateCenterServerSettingsInput requires URL when enabled", () => {
   expect(() => validateCenterServerSettingsInput({ enabled: true, serverUrl: "" })).toThrow(
     /Center server URL is required/,
   );
+});
+
+const authRecoveryCases: Array<[string, ReturnType<typeof classifyCenterServerAuthError>]> = [
+  ["Refresh token is invalid or expired.", "relogin"],
+  ["Device credentials are invalid.", "relogin"],
+  [CENTER_SERVER_REAUTH_MESSAGE, "relogin"],
+  ["Device is not active.", "device_inactive"],
+  ["Token device is not active.", "device_inactive"],
+  ["Refresh token device is not active.", "device_inactive"],
+  ["Token user is not active.", "account_unusable"],
+  ["Refresh token subject is not active.", "account_unusable"],
+  ["Connection timed out.", "network"],
+  ["Request failed with HTTP 503.", "network"],
+  ["Something else", "unknown"],
+];
+
+test.each(authRecoveryCases)("classifyCenterServerAuthError(%s)", (message, expected) => {
+  expect(classifyCenterServerAuthError(message)).toBe(expected);
 });
 
 test("isCenterServerAuthCredentialError detects refresh token failures", () => {

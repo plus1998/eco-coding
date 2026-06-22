@@ -2084,6 +2084,15 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(
+    IPC_CHANNELS.centerServerRemoveConnection,
+    async (options?: { forceLocal?: boolean }) => {
+      const snapshot = await centerServerClient.removeConnection(options);
+      emitSettingsUpdated();
+      return snapshot;
+    },
+  );
+
+  registerDesktopCommand(
     IPC_CHANNELS.centerServerTestConnection,
     async (payload: CenterServerTestConnectionRequest) => centerServerClient.testConnection(payload),
   );

@@ -298,6 +298,66 @@ test("desktop device token can revoke its own bindings but not other desktop bin
   }
 });
 
+test("desktop device token can delete itself but not another device", async () => {
+  const store = await createTestMongoStore("desktop_self_delete");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+  });
+  const devices = new DeviceService({ store });
+  const pairing = new PairingService({ store, pairingTtlSeconds: 300, devices, auth });
+  const rpc = new RpcGateway({
+    store,
+    presence: new MemoryPresenceStore(),
+    rpcTimeoutMs: 1000,
+  });
+  const client = createRouteClient({ store, auth, devices, pairing, rpc });
+
+  try {
+    const registered = await client.post<{
+      user: { id: string };
+      tokens: { accessToken: string };
+    }>("/v1/auth/register", {
+      email: "self-delete@example.com",
+      password: "correct horse battery staple",
+    });
+    const userAccessToken = registered.tokens.accessToken;
+
+    const desktopA = await client.post<{
+      device: { id: string };
+      deviceSecret: string;
+      tokens: { accessToken: string; refreshToken: string };
+    }>("/v1/devices/register", { kind: "desktop", name: "Studio A" }, userAccessToken);
+    const desktopB = await client.post<{
+      device: { id: string };
+      tokens: { accessToken: string };
+    }>("/v1/devices/register", { kind: "desktop", name: "Studio B" }, userAccessToken);
+
+    const disabled = await client.delete<{ device: { id: string; disabledAt: string } }>(
+      `/v1/devices/${desktopA.device.id}`,
+      desktopA.tokens.accessToken,
+    );
+    expect(disabled.device.disabledAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const refreshAfterDisable = await client.raw("POST", "/v1/auth/refresh", {
+      refreshToken: desktopA.tokens.refreshToken,
+    });
+    expect(refreshAfterDisable.status).toBeGreaterThanOrEqual(400);
+
+    const deniedCrossDevice = await client.raw(
+      "DELETE",
+      `/v1/devices/${desktopB.device.id}`,
+      undefined,
+      desktopA.tokens.accessToken,
+    );
+    expect(deniedCrossDevice.status).toBeGreaterThanOrEqual(400);
+  } finally {
+    await closeTestMongoStore(store);
+  }
+});
+
 test("rate limits protected HTTP entrypoints", async () => {
   const store = await createTestMongoStore("http_rate_limit");
   const auth = new AuthService({

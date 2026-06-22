@@ -102,6 +102,7 @@ export const IPC_CHANNELS = {
   centerServerRevokeBinding: "center-server:revoke-binding",
   centerServerConnect: "center-server:connect",
   centerServerDisconnect: "center-server:disconnect",
+  centerServerRemoveConnection: "center-server:remove-connection",
   centerServerTestConnection: "center-server:test-connection",
   centerServerStatusChanged: "center-server:status-changed",
   billingRefreshPricing: "billing:refresh-pricing",

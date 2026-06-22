@@ -1,3 +1,5 @@
+import '../utils/center_server_auth.dart';
+
 class EcoRpcConstants {
   static const jsonRpcVersion = '2.0';
   static const protocolVersion = 1;
@@ -24,11 +26,13 @@ class CenterServerConnectionStatus {
     required this.state,
     this.connectedAt,
     this.lastError,
+    this.authRecovery,
   });
 
   final EcoConnectionState state;
   final String? connectedAt;
   final String? lastError;
+  final CenterServerAuthRecovery? authRecovery;
 }
 
 class PublicUser {
@@ -222,10 +226,11 @@ class EcoEventEnvelope {
 }
 
 class EcoCenterException implements Exception {
-  EcoCenterException(this.message, {this.code});
+  EcoCenterException(this.message, {this.code, this.recovery});
 
   final String message;
   final int? code;
+  final CenterServerAuthRecovery? recovery;
 
   @override
   String toString() => message;

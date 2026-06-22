@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/providers/app_providers.dart';
@@ -168,7 +169,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
               ? '正在连接…'
               : null,
       hint: wsStepState() == SetupStepState.error
-          ? (wsError ?? 'WebSocket 未连接，请重新登录或下拉刷新')
+          ? _websocketErrorHint(connection?.authRecovery, wsError)
           : null,
     ),
     SetupStep(
@@ -213,3 +214,11 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     selectedDesktopId: effectiveSelectedDesktopId,
   );
 });
+
+String? _websocketErrorHint(CenterServerAuthRecovery? authRecovery, String? wsError) {
+  final recovery = authRecovery ?? classifyCenterServerAuthError(wsError);
+  if (recovery != CenterServerAuthRecovery.unknown) {
+    return centerServerAuthRecoveryMessage(recovery);
+  }
+  return wsError ?? 'WebSocket 未连接，请重新登录或下拉刷新';
+}
