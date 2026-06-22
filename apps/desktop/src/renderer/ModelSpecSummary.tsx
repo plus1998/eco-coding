@@ -11,7 +11,13 @@ import {
 } from "lucide-react";
 import type { CandidateModelView, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import type { ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
-import { listManualOverrideFields, manualSpecToForm } from "./agent-profile-manual-spec-form";
+import {
+  catalogCapabilityHint,
+  catalogPricingHint,
+  formatCatalogMappingLabel,
+  listManualOverrideFields,
+  manualSpecToForm,
+} from "./agent-profile-manual-spec-form";
 
 function formatTokenCount(value: number): string {
   if (value >= 1_000_000) {
@@ -254,6 +260,48 @@ export function ModelSpecSummary({
             ) : null,
           ].filter(Boolean)
         : null}
+    </div>
+  );
+}
+
+export function ModelsDevCatalogReferencePanel({
+  capability,
+  pricing,
+  mappingLabel,
+  compact = false,
+}: {
+  capability?: RouteCapabilityHint;
+  pricing?: RoutePricingHint;
+  mappingLabel?: string;
+  compact?: boolean;
+}) {
+  const catalogCapability = catalogCapabilityHint(capability);
+  const catalogPricing = catalogPricingHint(pricing);
+  const hasData = Boolean(catalogCapability || catalogPricing);
+
+  return (
+    <div
+      className={`model-manual-spec-catalog-ref${hasData ? "" : " model-manual-spec-catalog-ref-empty"}${compact ? " model-manual-spec-catalog-ref-compact" : ""}`}
+    >
+      <div className="model-manual-spec-catalog-ref-header">
+        <span className="model-manual-spec-catalog-ref-title">Models.dev 参考</span>
+        {mappingLabel ? (
+          <span className="model-manual-spec-catalog-ref-mapping" title="models.dev 映射">
+            {mappingLabel}
+          </span>
+        ) : null}
+      </div>
+      {hasData ? (
+        <ModelSpecSummary
+          compact
+          {...(catalogCapability ? { capability: catalogCapability } : {})}
+          {...(catalogPricing ? { pricing: catalogPricing } : {})}
+        />
+      ) : (
+        <p className="model-manual-spec-catalog-ref-hint">
+          选择 models.dev 映射后显示 catalog 正价与规格。
+        </p>
+      )}
     </div>
   );
 }

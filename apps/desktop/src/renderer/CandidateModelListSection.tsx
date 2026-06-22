@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Plus, Pencil, Trash2, X, RefreshCw } from "lucide-react";
 import type {
   CandidateModelInput,
@@ -20,8 +20,6 @@ import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import type { ModelsDevModelOption } from "../shared/ipc";
 import type { ManualSpecFormFields } from "./agent-profile-manual-spec-form";
 import {
-  catalogCapabilityHint,
-  catalogPricingHint,
   emptyManualSpecForm,
   prefillManualSpecFormFromCandidate,
   prefillManualSpecFormFromHints,
@@ -36,6 +34,11 @@ interface CandidateModelPanelProps {
   modelsDevLoading: boolean;
   busy: boolean | undefined;
   onRefreshModels: () => void;
+}
+
+export interface CandidateModelPanelHandle {
+  hasPendingEdits: () => boolean;
+  savePendingEdits: () => Promise<void>;
 }
 
 async function lookupCandidateRouteHints(
@@ -54,8 +57,8 @@ async function lookupCandidateRouteHints(
     window.eco!.getRoutePricing([route]),
   ]);
   return {
-    capability: capabilities[0],
-    pricing: pricing[0],
+    ...(capabilities[0] ? { capability: capabilities[0] } : {}),
+    ...(pricing[0] ? { pricing: pricing[0] } : {}),
   };
 }
 
@@ -76,15 +79,19 @@ function CandidateModelInlineSpec({ candidate }: { candidate: CandidateModelView
   );
 }
 
-export function CandidateModelPanel({
-  providerId,
-  models,
-  modelsLoading,
-  modelsDevOptions,
-  modelsDevLoading,
-  busy,
-  onRefreshModels,
-}: CandidateModelPanelProps) {
+export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, CandidateModelPanelProps>(
+  function CandidateModelPanel(
+    {
+      providerId,
+      models,
+      modelsLoading,
+      modelsDevOptions,
+      modelsDevLoading,
+      busy,
+      onRefreshModels,
+    },
+    ref,
+  ) {
   const [candidates, setCandidates] = useState<CandidateModelView[]>([]);
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -138,64 +145,52 @@ export function CandidateModelPanel({
     }
   };
 
+  const refreshEditingCatalogHints = useCallback(
+    async (
+      candidate: CandidateModelView,
+      mapping?: ModelsDevMapping,
+      options?: { replaceForm?: boolean },
+    ) => {
+      const targetId = candidate.id;
+      try {
+        const hints = await lookupCandidateRouteHints(providerId, candidate.modelId, mapping);
+        if (editingIdRef.current !== targetId) {
+          return;
+        }
+        setEditingAutoCapability(hints.capability);
+        setEditingAutoPricing(hints.pricing);
+        if (options?.replaceForm) {
+          setEditingForm(prefillManualSpecFormFromHints(hints.capability, hints.pricing));
+        }
+      } catch (error) {
+        console.error("Failed to resolve candidate model hints:", error);
+      }
+    },
+    [providerId],
+  );
+
   const handleStartEdit = async (candidate: CandidateModelView) => {
     const targetId = candidate.id;
     editingIdRef.current = targetId;
     setEditingId(targetId);
     setEditingMapping(candidate.modelsDevMapping);
     setEditingForm(prefillManualSpecFormFromCandidate(candidate));
-    setEditingAutoCapability(catalogCapabilityHint(candidateCapabilityHint(candidate)));
-    setEditingAutoPricing(catalogPricingHint(candidatePricingHint(candidate)));
-
-    const hasResolved =
-      candidate.resolvedContextTokens !== undefined ||
-      candidate.resolvedMaxOutputTokens !== undefined ||
-      candidate.resolvedSupportsImageInput !== undefined ||
-      candidate.resolvedSupportsReasoning !== undefined ||
-      candidate.resolvedInputPerM !== undefined ||
-      candidate.resolvedOutputPerM !== undefined ||
-      candidate.resolvedCacheReadPerM !== undefined ||
-      candidate.resolvedCacheWritePerM !== undefined;
-
-    if (!hasResolved) {
-      try {
-        const hints = await lookupCandidateRouteHints(
-          providerId,
-          candidate.modelId,
-          candidate.modelsDevMapping,
-        );
-        if (editingIdRef.current !== targetId) {
-          return;
-        }
-        setEditingAutoCapability(catalogCapabilityHint(hints.capability));
-        setEditingAutoPricing(catalogPricingHint(hints.pricing));
-        setEditingForm(prefillManualSpecFormFromHints(hints.capability, hints.pricing));
-      } catch (error) {
-        console.error("Failed to resolve candidate model hints:", error);
-      }
-    }
+    setEditingAutoCapability(undefined);
+    setEditingAutoPricing(undefined);
+    await refreshEditingCatalogHints(candidate, candidate.modelsDevMapping, {
+      replaceForm: !candidate.manualSpec,
+    });
   };
 
   const handleMappingChange = async (
     candidate: CandidateModelView,
     mapping: ModelsDevMapping | undefined,
   ) => {
-    const targetId = candidate.id;
     setEditingMapping(mapping);
-    try {
-      const hints = await lookupCandidateRouteHints(providerId, candidate.modelId, mapping);
-      if (editingIdRef.current !== targetId) {
-        return;
-      }
-      setEditingAutoCapability(catalogCapabilityHint(hints.capability));
-      setEditingAutoPricing(catalogPricingHint(hints.pricing));
-      setEditingForm(prefillManualSpecFormFromHints(hints.capability, hints.pricing));
-    } catch (error) {
-      console.error("Failed to resolve candidate model mapping:", error);
-    }
+    await refreshEditingCatalogHints(candidate, mapping, { replaceForm: true });
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (!editingId || !providerId) return;
     const candidate = candidates.find((c) => c.id === editingId);
     if (!candidate) return;
@@ -209,15 +204,25 @@ export function CandidateModelPanel({
     if (editingMapping) input.modelsDevMapping = editingMapping;
     const manualSpecResult = tryFormToManualSpec(editingForm);
     if (manualSpecResult) input.manualSpec = manualSpecResult;
-    try {
-      await window.eco!.saveCandidateModel(input);
-      await loadCandidates();
-      setEditingId(null);
-      editingIdRef.current = null;
-    } catch (error) {
-      console.error("Failed to save candidate model:", error);
-    }
-  };
+    await window.eco!.saveCandidateModel(input);
+    await loadCandidates();
+    setEditingId(null);
+    editingIdRef.current = null;
+  }, [candidates, editingForm, editingId, editingMapping, loadCandidates, providerId]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      hasPendingEdits: () => editingIdRef.current !== null,
+      savePendingEdits: async () => {
+        if (editingIdRef.current === null) {
+          return;
+        }
+        await handleSaveEdit();
+      },
+    }),
+    [handleSaveEdit],
+  );
 
   const alreadyAddedModelIds = new Set(candidates.map((c) => c.modelId));
   const availableModels = models.filter((m) => !alreadyAddedModelIds.has(m.id));
@@ -229,21 +234,23 @@ export function CandidateModelPanel({
         <div className="candidate-panel-header-actions">
           <button
             type="button"
-            className="model-inline-refresh"
+            className="mcp-icon-button candidate-panel-icon-btn"
             disabled={busy || loading}
             onClick={loadCandidates}
             title="刷新"
+            aria-label="刷新"
           >
             <RefreshCw size={14} className={loading ? "model-refresh-spin" : undefined} />
           </button>
           <button
             type="button"
-            className="settings-secondary-button candidate-model-add-btn"
+            className="mcp-icon-button candidate-panel-icon-btn"
             disabled={busy || modelsLoading}
             onClick={() => setPickerOpen(true)}
+            title="添加候选模型"
+            aria-label="添加候选模型"
           >
             <Plus size={14} />
-            添加
           </button>
         </div>
       </div>
@@ -251,7 +258,7 @@ export function CandidateModelPanel({
       <div className="candidate-panel-body">
         {candidates.length === 0 ? (
           <p className="candidate-models-empty">
-            暂无候选模型。点击"添加"从上游模型列表中选择。
+            暂无候选模型。点击右上角 + 从上游模型列表中添加。
           </p>
         ) : (
           <div className="candidate-models-list">
@@ -260,18 +267,26 @@ export function CandidateModelPanel({
                 {editingId === candidate.id ? (
                   <div className="candidate-model-edit">
                     <div className="candidate-model-edit-header">
-                      <span className="candidate-model-name">{candidate.modelId}</span>
+                      <div className="candidate-model-edit-title">
+                        <span className="candidate-model-edit-label">编辑</span>
+                        <span className="candidate-model-name">{candidate.modelId}</span>
+                      </div>
                       <div className="candidate-model-edit-actions">
                         <button
                           type="button"
-                          className="settings-secondary-button"
-                          onClick={handleSaveEdit}
+                          className="settings-secondary-button candidate-model-save-btn"
+                          onClick={() => {
+                            void handleSaveEdit().catch((error) => {
+                              console.error("Failed to save candidate model:", error);
+                            });
+                          }}
                         >
                           保存
                         </button>
                         <button
                           type="button"
                           className="mcp-icon-button"
+                          aria-label="取消编辑"
                           onClick={() => {
                             setEditingId(null);
                             editingIdRef.current = null;
@@ -282,8 +297,8 @@ export function CandidateModelPanel({
                       </div>
                     </div>
                     <div className="candidate-model-edit-fields">
-                      <div className="mcp-field">
-                        <span className="mcp-field-label">Models.dev 映射</span>
+                      <section className="candidate-model-edit-section">
+                        <h4 className="candidate-model-edit-section-title">Models.dev 映射</h4>
                         <ModelsDevModelSelectField
                           value={editingMapping}
                           options={modelsDevOptions}
@@ -294,11 +309,13 @@ export function CandidateModelPanel({
                           autoResolvedLabel={editingAutoCapability?.resolvedModelsDevLabel}
                           onChange={(mapping) => void handleMappingChange(candidate, mapping ?? undefined)}
                         />
-                      </div>
+                      </section>
                       <ModelManualSpecPanel
+                        variant="sidebar"
                         value={editingForm}
                         {...(editingAutoCapability ? { autoCapability: editingAutoCapability } : {})}
                         {...(editingAutoPricing ? { autoPricing: editingAutoPricing } : {})}
+                        {...(editingMapping ? { mapping: editingMapping } : {})}
                         {...(busy !== undefined ? { disabled: busy } : {})}
                         onChange={(patch) => setEditingForm((prev) => ({ ...prev, ...patch }))}
                       />
@@ -354,7 +371,8 @@ export function CandidateModelPanel({
       )}
     </aside>
   );
-}
+},
+);
 
 interface CandidateModelPickerModalProps {
   models: UpstreamModelOption[];

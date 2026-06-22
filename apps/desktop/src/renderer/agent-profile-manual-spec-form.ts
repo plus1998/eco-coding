@@ -1,4 +1,4 @@
-import type { RouteCapabilityHint, RouteManualSpec, RoutePricingHint } from "../shared/ipc";
+import type { ModelsDevMapping, RouteCapabilityHint, RouteManualSpec, RoutePricingHint } from "../shared/ipc";
 import {
   applyPriceMultiplierToPerMRates,
   normalizeStoredPriceMultiplier,
@@ -106,7 +106,7 @@ export function prefillManualSpecFormFromCandidate(
   };
 }
 
-/** 将 models.dev 查询结果预填到表单。 */
+/** 将 models.dev 查询结果预填到表单（含 catalog 正价）。 */
 export function prefillManualSpecFormFromHints(
   capability?: RouteCapabilityHint,
   pricing?: RoutePricingHint,
@@ -125,7 +125,11 @@ export function prefillManualSpecFormFromHints(
     maxOutputTokens: formatManualTokenValue(maxOutputTokens),
     supportsImageInput: booleanToTriState(supportsImageInput),
     supportsReasoning: booleanToTriState(supportsReasoning),
-    ...pricingFieldsFromManual(),
+    priceMultiplier: "1",
+    inputPerM: formatManualRateValue(catalogPrice?.rates?.inputPerM),
+    outputPerM: formatManualRateValue(catalogPrice?.rates?.outputPerM),
+    cacheReadPerM: formatManualRateValue(catalogPrice?.rates?.cacheReadPerM),
+    cacheWritePerM: formatManualRateValue(catalogPrice?.rates?.cacheWritePerM),
   };
 }
 
@@ -324,6 +328,19 @@ export function formatTokenCountHint(value?: number): string | undefined {
     return `${Math.round(value / 1000)}K`;
   }
   return String(value);
+}
+
+export function formatCatalogMappingLabel(
+  capability?: RouteCapabilityHint,
+  pricing?: RoutePricingHint,
+  mapping?: ModelsDevMapping,
+): string | undefined {
+  return (
+    capability?.resolvedModelsDevLabel ??
+    capability?.modelsDevLabel ??
+    pricing?.pricingLabel ??
+    (mapping ? `${mapping.providerKey}/${mapping.modelId}` : undefined)
+  );
 }
 
 export function catalogCapabilityHint(

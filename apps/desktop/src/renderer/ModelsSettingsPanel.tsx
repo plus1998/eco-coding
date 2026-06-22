@@ -21,6 +21,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -77,7 +78,7 @@ import {
   listSelectableAgentProfileSummaries,
 } from "./agent-profile-summary";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
-import { CandidateModelPanel } from "./CandidateModelListSection";
+import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import { buildPresetTemplateImportPlan } from "./preset-import";
@@ -2228,7 +2229,7 @@ function ProviderEditorModal({
   busy?: boolean | undefined;
   canDelete: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onDelete: () => void;
   onRefreshModels: () => void;
   onTest: () => void;
@@ -2237,8 +2238,22 @@ function ProviderEditorModal({
   const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
   const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(false);
+  const [candidateSaveError, setCandidateSaveError] = useState<string | undefined>(undefined);
+  const candidatePanelRef = useRef<CandidateModelPanelHandle>(null);
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
+
+  async function handleSaveProvider() {
+    setCandidateSaveError(undefined);
+    try {
+      if (isEditing && form.id) {
+        await candidatePanelRef.current?.savePendingEdits();
+      }
+      await onSave();
+    } catch (caught) {
+      setCandidateSaveError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
 
   useEffect(() => {
     if (!isEditing || !form.id) {
@@ -2441,10 +2456,14 @@ function ProviderEditorModal({
             </div>
 
             {error && <p className="settings-form-error">{error}</p>}
+            {candidateSaveError ? (
+              <p className="settings-form-error">{candidateSaveError}</p>
+            ) : null}
           </div>
 
           {isEditing && form.id ? (
             <CandidateModelPanel
+              ref={candidatePanelRef}
               providerId={form.id}
               models={models}
               modelsLoading={modelsLoading}
@@ -2475,7 +2494,12 @@ function ProviderEditorModal({
             <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
               取消
             </button>
-            <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
+            <button
+              type="button"
+              className="mcp-save-button"
+              disabled={busy}
+              onClick={() => void handleSaveProvider()}
+            >
               保存
             </button>
           </div>

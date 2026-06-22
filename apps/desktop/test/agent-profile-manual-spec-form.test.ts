@@ -120,7 +120,7 @@ test("prefillManualSpecFormFromCandidate fills resolved values for editing", () 
   expect(form.outputPerM).toBe("");
 });
 
-test("prefillManualSpecFormFromHints uses catalog values for capabilities only", () => {
+test("prefillManualSpecFormFromHints fills catalog capabilities and pricing", () => {
   const form = prefillManualSpecFormFromHints(
     {
       role: "planner",
@@ -146,9 +146,10 @@ test("prefillManualSpecFormFromHints uses catalog values for capabilities only",
   expect(form.contextTokens).toBe("128000");
   expect(form.maxOutputTokens).toBe("16384");
   expect(form.supportsImageInput).toBe("yes");
+  expect(form.inputPerM).toBe("2.5");
+  expect(form.outputPerM).toBe("10");
+  expect(form.cacheReadPerM).toBe("1.25");
   expect(form.priceMultiplier).toBe("1");
-  expect(form.inputPerM).toBe("");
-  expect(form.outputPerM).toBe("");
 });
 
 test("mergeEffectivePricingHint applies price multiplier to catalog rates", () => {

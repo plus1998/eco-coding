@@ -104,13 +104,15 @@ export function ModelsDevModelSelectField({
   function selectAuto() {
     onChange(undefined);
     setOpen(false);
-    inputRef.current?.focus();
+    setQuery("");
+    inputRef.current?.blur();
   }
 
   function selectOption(option: ModelsDevModelOption) {
     onChange({ providerKey: option.providerKey, modelId: option.modelId });
     setOpen(false);
-    inputRef.current?.focus();
+    setQuery("");
+    inputRef.current?.blur();
   }
 
   const autoMatchSummary =
@@ -173,6 +175,7 @@ export function ModelsDevModelSelectField({
               role="option"
               aria-selected={!value}
               className={`model-combobox-option${!value ? " is-selected" : ""}`}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={selectAuto}
             >
               <span className="model-combobox-option-label">
@@ -196,6 +199,7 @@ export function ModelsDevModelSelectField({
                     role="option"
                     aria-selected={selected}
                     className={`model-combobox-option${selected ? " is-selected" : ""}`}
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectOption(option)}
                   >
                     <span className="model-combobox-option-label">
