@@ -525,6 +525,11 @@ void main() {
     final feed = buildActivityFeed(
       lines: const [
         ActivityItem(id: '1', role: 'user', message: '并发子代理'),
+        ActivityItem(
+          id: '2',
+          role: 'planner',
+          message: '主代理先说明计划。',
+        ),
       ],
       runProjection: ThreadRunProjectionSnapshot(
         threadId: 't1',
@@ -537,7 +542,7 @@ void main() {
             role: 'explore',
             kind: 'subagent',
             status: 'active',
-            startedAt: '2026-01-01T00:00:00.000Z',
+            startedAt: '2026-01-01T00:00:00.500Z',
             durationMs: 1000,
             timeline: const [],
             delegationSummary: '梳理模块 A',
@@ -564,5 +569,63 @@ void main() {
       missions.map((entry) => entry.agentId).toSet(),
       {'agent_explore_1', 'agent_coder_1'},
     );
+    final exploreIndex = feed.indexWhere(
+      (entry) => entry.agentId == 'agent_explore_1',
+    );
+    final plannerIndex = feed.indexWhere(
+      (entry) => entry.kind == ActivityFeedKind.assistant,
+    );
+    expect(exploreIndex, lessThan(plannerIndex));
+  });
+
+  test('buildActivityFeed keeps subagent mission before later assistant text', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(id: '1', role: 'user', message: '修复登录'),
+        ActivityItem(
+          id: '2',
+          role: 'coder',
+          message:
+              '@mission {"role":"coder","summary":"实现登录","prompt":"add login"}',
+        ),
+        ActivityItem(
+          id: '3',
+          role: 'planner',
+          message: '子代理完成后我继续总结。',
+        ),
+      ],
+      runProjection: ThreadRunProjectionSnapshot.fromJson({
+        'thread': {
+          'threadId': 't1',
+          'status': 'running',
+          'generatedAt': '2026-01-01T00:00:00.000Z',
+        },
+        'sourceEventCount': 2,
+        'agents': [
+          {
+            'agentId': 'agent_coder_1',
+            'role': 'coder',
+            'kind': 'subagent',
+            'status': 'stopped',
+            'startedAt': '2026-01-01T00:00:01.000Z',
+            'endedAt': '2026-01-01T00:00:05.000Z',
+            'durationMs': 4000,
+            'delegationPrompt': 'add login',
+            'delegationSummary': '实现登录',
+            'timeline': [],
+          },
+        ],
+      }),
+    );
+
+    final missionIndex = feed.indexWhere(
+      (entry) => entry.kind == ActivityFeedKind.subagentMission,
+    );
+    final assistantIndex = feed.indexWhere(
+      (entry) => entry.kind == ActivityFeedKind.assistant,
+    );
+    expect(missionIndex, greaterThanOrEqualTo(0));
+    expect(assistantIndex, greaterThan(missionIndex));
+    expect(feed[missionIndex].agentId, 'agent_coder_1');
   });
 }

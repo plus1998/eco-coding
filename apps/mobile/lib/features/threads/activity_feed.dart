@@ -111,13 +111,20 @@ List<ActivityFeedEntry> buildActivityFeed({
   final bashApprovalByToolUseId = buildBashApprovalIndexByToolUseId(runProjection);
 
   final output = <ActivityFeedEntry>[];
+  final entrySourceLineIndex = <String, int>{};
   var narrative = '';
   String? narrativeId;
+  int? narrativeSourceLineIndex;
   var narrativeStreaming = false;
   var thinking = '';
   String? thinkingId;
+  int? thinkingSourceLineIndex;
   var thinkingStreaming = false;
   String? pendingUsageBadge;
+
+  void bindEntryToLine(String entryId, int lineIndex) {
+    entrySourceLineIndex[entryId] = lineIndex;
+  }
 
   void flushThinking({bool atEnd = false}) {
     final text = stripActivityStatusNoise(thinking).trim();
@@ -140,17 +147,22 @@ List<ActivityFeedEntry> buildActivityFeed({
         streaming: stillStreaming,
       );
     } else {
+      final entryId = thinkingId ?? 'thinking-${output.length}';
       output.add(
         ActivityFeedEntry(
-          id: thinkingId ?? 'thinking-${output.length}',
+          id: entryId,
           kind: ActivityFeedKind.thinking,
           text: text,
           streaming: stillStreaming,
         ),
       );
+      if (thinkingSourceLineIndex != null) {
+        bindEntryToLine(entryId, thinkingSourceLineIndex!);
+      }
     }
     thinking = '';
     thinkingId = null;
+    thinkingSourceLineIndex = null;
     thinkingStreaming = false;
   }
 
@@ -162,17 +174,22 @@ List<ActivityFeedEntry> buildActivityFeed({
       narrativeStreaming = false;
       return;
     }
+    final entryId = narrativeId ?? 'narrative-${output.length}';
     output.add(
       ActivityFeedEntry(
-        id: narrativeId ?? 'narrative-${output.length}',
+        id: entryId,
         kind: ActivityFeedKind.assistant,
         text: text,
         streaming: narrativeStreaming,
         usageBadge: pendingUsageBadge,
       ),
     );
+    if (narrativeSourceLineIndex != null) {
+      bindEntryToLine(entryId, narrativeSourceLineIndex!);
+    }
     narrative = '';
     narrativeId = null;
+    narrativeSourceLineIndex = null;
     narrativeStreaming = false;
     pendingUsageBadge = null;
   }
@@ -184,6 +201,7 @@ List<ActivityFeedEntry> buildActivityFeed({
 
   void upsertAction({
     required String id,
+    required int lineIndex,
     required String label,
     required ActivityActionIcon icon,
     ToolActionLifecycle? lifecycle,
@@ -234,6 +252,7 @@ List<ActivityFeedEntry> buildActivityFeed({
         toolUseId: toolUseId,
       ),
     );
+    bindEntryToLine(id, lineIndex);
   }
 
   BashRunCardDisplay? resolveActionBashRun(
@@ -255,7 +274,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     return toolLifecycleFromMetadata(tool);
   }
 
-  void upsertPhase(String summary, {String? detail}) {
+  void upsertPhase(String summary, {String? detail, required int lineIndex}) {
     final last = output.isNotEmpty ? output.last : null;
     if (last != null &&
         last.kind == ActivityFeedKind.phase &&
@@ -270,17 +289,20 @@ List<ActivityFeedEntry> buildActivityFeed({
       }
       return;
     }
+    final phaseId = 'phase-${output.length}';
     output.add(
       ActivityFeedEntry(
-        id: 'phase-${output.length}',
+        id: phaseId,
         kind: ActivityFeedKind.phase,
         text: summary,
         detail: detail,
       ),
     );
+    bindEntryToLine(phaseId, lineIndex);
   }
 
-  for (final line in effectiveLines) {
+  for (var lineIndex = 0; lineIndex < effectiveLines.length; lineIndex++) {
+    final line = effectiveLines[lineIndex];
     final cleaned = stripActivityStatusNoise(line.message);
     final message = stripSubagentBracketPrefix(cleaned);
     if ((message.isEmpty && line.role != 'thinking') ||
@@ -315,6 +337,7 @@ List<ActivityFeedEntry> buildActivityFeed({
               mission.prompt.isNotEmpty ? mission.prompt : null,
         ),
       );
+      bindEntryToLine(line.id, lineIndex);
       continue;
     }
 
@@ -330,6 +353,7 @@ List<ActivityFeedEntry> buildActivityFeed({
           text: line.message.trim(),
         ),
       );
+      bindEntryToLine(line.id, lineIndex);
       continue;
     }
 
@@ -349,6 +373,7 @@ List<ActivityFeedEntry> buildActivityFeed({
             subagentRole: agentRole,
           ),
         );
+        bindEntryToLine(line.id, lineIndex);
       }
       continue;
     }
@@ -356,6 +381,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     if (line.role == 'thinking') {
       flushNarrative();
       final text = line.stream ? message : message.trim();
+      thinkingSourceLineIndex ??= lineIndex;
       if (line.stream) {
         thinking =
             thinking.isEmpty ? text : mergeStreamText(thinking, text);
@@ -378,6 +404,7 @@ List<ActivityFeedEntry> buildActivityFeed({
           text: line.apiError!.message,
         ),
       );
+      bindEntryToLine(line.id, lineIndex);
       continue;
     }
 
@@ -389,6 +416,7 @@ List<ActivityFeedEntry> buildActivityFeed({
           : null;
       upsertAction(
         id: line.id,
+        lineIndex: lineIndex,
         toolUseId: tool.toolUseId,
         label: formatToolDisplayLabel(
           bashApproval?.toolName ?? tool.name,
@@ -418,6 +446,7 @@ List<ActivityFeedEntry> buildActivityFeed({
           text: message,
         ),
       );
+      bindEntryToLine(line.id, lineIndex);
       continue;
     }
 
@@ -430,6 +459,7 @@ List<ActivityFeedEntry> buildActivityFeed({
         line.role == 'assistant' ||
         line.role == 'main') {
       flushThinking();
+      narrativeSourceLineIndex ??= lineIndex;
       if (line.stream) {
         narrative += message;
         narrativeId ??= line.id;
@@ -444,6 +474,7 @@ List<ActivityFeedEntry> buildActivityFeed({
 
     if (shouldShowLineInMainFeed(role: line.role) && message.trim().isNotEmpty) {
       flushThinking();
+      narrativeSourceLineIndex ??= lineIndex;
       narrative += message;
       narrativeId ??= line.id;
       narrativeStreaming = line.stream;
@@ -458,11 +489,22 @@ List<ActivityFeedEntry> buildActivityFeed({
     subagentSessions: subagentSessions,
   );
   if (runProjection != null) {
-    _syncProjectionSubagentCards(output, runProjection);
+    _syncProjectionSubagentCards(
+      output,
+      runProjection,
+      effectiveLines,
+      entrySourceLineIndex,
+    );
     _enrichSubagentEntries(
       output,
       runProjection: runProjection,
       subagentSessions: subagentSessions,
+    );
+    _sortFeedEntriesByTriggerTime(
+      output,
+      entrySourceLineIndex,
+      effectiveLines,
+      runProjection,
     );
   }
   return output;
@@ -471,9 +513,13 @@ List<ActivityFeedEntry> buildActivityFeed({
 void _syncProjectionSubagentCards(
   List<ActivityFeedEntry> output,
   ThreadRunProjectionSnapshot projection,
+  List<ActivityItem> lines,
+  Map<String, int> entrySourceLineIndex,
 ) {
-  final subagents =
-      projection.agents.where((agent) => agent.kind == 'subagent').toList();
+  final subagents = projection.agents
+      .where((agent) => agent.kind == 'subagent')
+      .toList()
+    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
   if (subagents.isEmpty) return;
 
   final coveredAgentIds = <String>{
@@ -486,19 +532,224 @@ void _syncProjectionSubagentCards(
 
   for (final agent in subagents) {
     if (coveredAgentIds.contains(agent.agentId)) continue;
+
+    final claimIndex = _findUnclaimedMissionIndex(
+      output,
+      agent,
+      projection,
+      coveredAgentIds,
+    );
+    if (claimIndex >= 0) {
+      final entry = output[claimIndex];
+      output[claimIndex] = ActivityFeedEntry(
+        id: entry.id,
+        kind: entry.kind,
+        text: entry.text,
+        subagentRole: entry.subagentRole,
+        missionPrompt: entry.missionPrompt,
+        agentId: agent.agentId,
+        running: entry.running,
+        durationMs: entry.durationMs,
+        statusText: entry.statusText,
+        timeline: entry.timeline,
+        bashRun: entry.bashRun,
+        toolUseId: entry.toolUseId,
+      );
+      coveredAgentIds.add(agent.agentId);
+      continue;
+    }
+
     final delegation = readProjectionAgentDelegation(agent);
     final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
-    output.add(
-      ActivityFeedEntry(
-        id: 'projection-agent-${agent.agentId}',
-        kind: ActivityFeedKind.subagentMission,
-        text: delegation?.summary ?? resolveSubagentRunDisplayTitle(role),
-        subagentRole: role,
-        missionPrompt: delegation?.prompt,
-        agentId: agent.agentId,
-      ),
+    final cardId = 'projection-agent-${agent.agentId}';
+    final card = ActivityFeedEntry(
+      id: cardId,
+      kind: ActivityFeedKind.subagentMission,
+      text: delegation?.summary ?? resolveSubagentRunDisplayTitle(role),
+      subagentRole: role,
+      missionPrompt: delegation?.prompt,
+      agentId: agent.agentId,
     );
+    output.add(card);
+    final triggerLineIndex = _resolveAgentTriggerLineIndex(
+      agent,
+      lines,
+      projection,
+    );
+    if (triggerLineIndex != null) {
+      entrySourceLineIndex[cardId] = triggerLineIndex;
+    }
+    coveredAgentIds.add(agent.agentId);
   }
+}
+
+int _findUnclaimedMissionIndex(
+  List<ActivityFeedEntry> output,
+  ThreadRunProjectionAgent agent,
+  ThreadRunProjectionSnapshot projection,
+  Set<String> coveredAgentIds,
+) {
+  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
+  final occurrence = _projectionSubagentRoleOccurrence(projection, agent);
+  var seen = 0;
+  for (var index = 0; index < output.length; index++) {
+    final entry = output[index];
+    if (entry.kind != ActivityFeedKind.subagentMission) continue;
+    final entryAgentId = entry.agentId?.trim();
+    if (entryAgentId != null && entryAgentId.isNotEmpty) {
+      if (entryAgentId == agent.agentId) return index;
+      continue;
+    }
+    final entryRole =
+        normalizeAgentDisplayRole(entry.subagentRole) ?? entry.subagentRole ?? '';
+    if (entryRole != role) continue;
+    if (seen == occurrence) return index;
+    seen++;
+  }
+  return -1;
+}
+
+int _projectionSubagentRoleOccurrence(
+  ThreadRunProjectionSnapshot projection,
+  ThreadRunProjectionAgent agent,
+) {
+  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
+  final sameRoleAgents = projection.agents
+      .where((entry) => entry.kind == 'subagent')
+      .where(
+        (entry) => (normalizeAgentDisplayRole(entry.role) ?? entry.role) == role,
+      )
+      .toList()
+    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
+  for (var index = 0; index < sameRoleAgents.length; index++) {
+    if (sameRoleAgents[index].agentId == agent.agentId) {
+      return index;
+    }
+  }
+  return sameRoleAgents.length;
+}
+
+int? _resolveAgentTriggerLineIndex(
+  ThreadRunProjectionAgent agent,
+  List<ActivityItem> lines,
+  ThreadRunProjectionSnapshot projection,
+) {
+  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
+  final occurrence = _projectionSubagentRoleOccurrence(projection, agent);
+  var seen = 0;
+  for (var index = 0; index < lines.length; index++) {
+    final line = lines[index];
+    final mission = parseSubagentMissionMessage(line.message);
+    if (mission != null && isSubagentDisplayRole(mission.role)) {
+      final missionRole =
+          normalizeAgentDisplayRole(mission.role) ?? mission.role;
+      if (missionRole == role) {
+        if (seen == occurrence) return index;
+        seen++;
+      }
+      continue;
+    }
+    final lineRole = normalizeAgentDisplayRole(line.role);
+    if (lineRole != role) continue;
+    final message =
+        stripSubagentBracketPrefix(stripActivityStatusNoise(line.message)).trim();
+    if (message.length >= 8 &&
+        !message.startsWith('Tool:') &&
+        !message.startsWith('Reading ') &&
+        !message.startsWith('Running ')) {
+      if (seen == occurrence) return index;
+      seen++;
+    }
+  }
+  return null;
+}
+
+void _sortFeedEntriesByTriggerTime(
+  List<ActivityFeedEntry> output,
+  Map<String, int> entrySourceLineIndex,
+  List<ActivityItem> lines,
+  ThreadRunProjectionSnapshot projection,
+) {
+  final sortAtById = <String, String>{
+    for (final entry in output)
+      entry.id: _resolveFeedEntrySortAt(
+        entry,
+        entrySourceLineIndex,
+        lines,
+        projection,
+      ),
+  };
+  final stableIndex = <String, int>{
+    for (var index = 0; index < output.length; index++) output[index].id: index,
+  };
+  output.sort((left, right) {
+    final atDelta = sortAtById[left.id]!.compareTo(sortAtById[right.id]!);
+    if (atDelta != 0) return atDelta;
+    return stableIndex[left.id]!.compareTo(stableIndex[right.id]!);
+  });
+}
+
+String _resolveFeedEntrySortAt(
+  ActivityFeedEntry entry,
+  Map<String, int> entrySourceLineIndex,
+  List<ActivityItem> lines,
+  ThreadRunProjectionSnapshot projection,
+) {
+  final agentId = entry.agentId?.trim();
+  if (entry.kind == ActivityFeedKind.subagentMission &&
+      agentId != null &&
+      agentId.isNotEmpty) {
+    final agent = findProjectionAgentById(projection, agentId);
+    if (agent != null && agent.startedAt.trim().isNotEmpty) {
+      return agent.startedAt;
+    }
+  }
+  for (final item in projection.timeline) {
+    if (item.id == entry.id && item.at.trim().isNotEmpty) {
+      return item.at;
+    }
+  }
+  for (final agent in projection.agents) {
+    for (final item in agent.timeline) {
+      if (item.id == entry.id && item.at.trim().isNotEmpty) {
+        return item.at;
+      }
+    }
+  }
+  final lineIndex = entrySourceLineIndex[entry.id];
+  if (lineIndex != null) {
+    return _interpolateLineTriggeredAt(lineIndex, lines.length, projection);
+  }
+  return '9999-12-31T23:59:59.999Z';
+}
+
+String _interpolateLineTriggeredAt(
+  int lineIndex,
+  int lineCount,
+  ThreadRunProjectionSnapshot projection,
+) {
+  final anchors = <String>[];
+  for (final item in projection.timeline) {
+    final at = item.at.trim();
+    if (at.isNotEmpty) anchors.add(at);
+  }
+  for (final agent in projection.agents) {
+    final startedAt = agent.startedAt.trim();
+    if (startedAt.isNotEmpty) anchors.add(startedAt);
+    final endedAt = agent.endedAt?.trim();
+    if (endedAt != null && endedAt.isNotEmpty) anchors.add(endedAt);
+  }
+  if (anchors.isEmpty) {
+    final padded = lineIndex.toString().padLeft(4, '0');
+    return '1970-01-01T00:00:$padded.000Z';
+  }
+  anchors.sort();
+  if (lineCount <= 1) return anchors.first;
+  final ratio = lineIndex / (lineCount - 1);
+  final minMs = DateTime.parse(anchors.first).millisecondsSinceEpoch;
+  final maxMs = DateTime.parse(anchors.last).millisecondsSinceEpoch;
+  final ms = minMs + ((maxMs - minMs) * ratio).round();
+  return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true).toIso8601String();
 }
 
 void _enrichSubagentEntries(
@@ -514,6 +765,7 @@ void _enrichSubagentEntries(
 
   final sessionsByAgentId = indexSubagentSessionsByAgentId(subagentSessions);
   final absorbedToolUseIds = <String>{};
+  final roleOccurrence = <String, int>{};
 
   for (var index = 0; index < output.length; index++) {
     final entry = output[index];
@@ -526,6 +778,10 @@ void _enrichSubagentEntries(
         entry.agentId!.isNotEmpty &&
         runProjection != null) {
       agent = findProjectionAgentById(runProjection, entry.agentId!);
+    } else if (runProjection != null) {
+      final occurrence = roleOccurrence[role] ?? 0;
+      roleOccurrence[role] = occurrence + 1;
+      agent = findProjectionAgentForMission(runProjection, role, occurrence);
     }
 
     final timing =

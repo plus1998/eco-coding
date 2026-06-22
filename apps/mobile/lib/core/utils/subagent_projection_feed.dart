@@ -240,3 +240,23 @@ ThreadRunProjectionAgent? findProjectionAgentById(
   }
   return null;
 }
+
+ThreadRunProjectionAgent? findProjectionAgentForMission(
+  ThreadRunProjectionSnapshot projection,
+  String role,
+  int occurrence,
+) {
+  final normalizedRole = normalizeAgentDisplayRole(role) ?? role;
+  final agents = projection.agents
+      .where((agent) => agent.kind == 'subagent')
+      .where(
+        (agent) => (normalizeAgentDisplayRole(agent.role) ?? agent.role) ==
+            normalizedRole,
+      )
+      .toList()
+    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
+  if (occurrence < 0 || occurrence >= agents.length) {
+    return null;
+  }
+  return agents[occurrence];
+}
