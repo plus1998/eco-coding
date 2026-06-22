@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/models/thread_run_projection.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/agent_mission.dart';
@@ -1126,8 +1127,8 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                         const Spacer(),
                         Icon(
                           _expanded
-                              ? Icons.expand_less
-                              : Icons.expand_more,
+                              ? EcoIcons.expandUp
+                              : EcoIcons.expandDown,
                           size: 18,
                           color: ecoColors(context).textMuted,
                         ),
@@ -1225,20 +1226,7 @@ class _ActionTile extends StatelessWidget {
     );
   }
 
-  IconData _materialIcon(ActivityActionIcon icon) {
-    switch (icon) {
-      case ActivityActionIcon.search:
-        return Icons.search;
-      case ActivityActionIcon.edit:
-        return Icons.edit_outlined;
-      case ActivityActionIcon.terminal:
-        return Icons.terminal;
-      case ActivityActionIcon.agent:
-        return Icons.smart_toy_outlined;
-      case ActivityActionIcon.file:
-        return Icons.description_outlined;
-    }
-  }
+  IconData _materialIcon(ActivityActionIcon icon) => EcoIcons.activityAction(icon);
 }
 
 class _BashRunCard extends StatelessWidget {
@@ -1275,7 +1263,7 @@ class _BashRunCard extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  Icons.terminal,
+                  EcoIcons.terminal,
                   size: 16,
                   color: running ? ecoColors(context).accentText : ecoColors(context).textMuted,
                 ),
@@ -1539,7 +1527,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       turns: _expanded ? 0.5 : 0,
                       duration: const Duration(milliseconds: 150),
                       child: Icon(
-                        Icons.expand_more,
+                        EcoIcons.expandDown,
                         size: 18,
                         color: ecoColors(context).textMuted,
                       ),
@@ -1680,20 +1668,7 @@ class _SubagentTimelineRow extends StatelessWidget {
     );
   }
 
-  IconData _materialIcon(ActivityActionIcon icon) {
-    switch (icon) {
-      case ActivityActionIcon.search:
-        return Icons.search;
-      case ActivityActionIcon.edit:
-        return Icons.edit_outlined;
-      case ActivityActionIcon.terminal:
-        return Icons.terminal;
-      case ActivityActionIcon.agent:
-        return Icons.smart_toy_outlined;
-      case ActivityActionIcon.file:
-        return Icons.description_outlined;
-    }
-  }
+  IconData _materialIcon(ActivityActionIcon icon) => EcoIcons.activityAction(icon);
 }
 
 class _ErrorTile extends StatelessWidget {

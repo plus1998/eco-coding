@@ -5,6 +5,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/package_script_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/storage/package_script_args_storage.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/package_script_run.dart';
 import 'package_script_providers.dart';
@@ -267,15 +268,15 @@ class _TodoRow extends StatelessWidget {
 IconData _todoIcon(String status) {
   switch (status) {
     case 'running':
-      return Icons.radio_button_checked_outlined;
+      return EcoIcons.active;
     case 'completed':
-      return Icons.check_circle_outline;
+      return EcoIcons.checkCircle;
     case 'blocked':
-      return Icons.error_outline;
+      return EcoIcons.error;
     case 'cancelled':
-      return Icons.block;
+      return EcoIcons.blocked;
     default:
-      return Icons.circle_outlined;
+      return EcoIcons.pending;
   }
 }
 
@@ -629,7 +630,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                       ? '附加参数：$savedArgs'
                                                       : '附加参数',
                                                   icon: Icon(
-                                                    Icons.text_fields_rounded,
+                                                    EcoIcons.rename,
                                                     size: 18,
                                                     color: savedArgs.isNotEmpty ||
                                                             isEditingArgs
@@ -789,7 +790,7 @@ class _PackageScriptOutputPanel extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    Icons.terminal,
+                    EcoIcons.terminal,
                     size: 16,
                     color: runState.running ? eco.accentText : eco.textMuted,
                   ),
@@ -841,7 +842,7 @@ class _PackageScriptOutputPanel extends StatelessWidget {
                     ),
                   ],
                   IconButton(
-                    icon: const Icon(Icons.close, size: 18),
+                    icon: const Icon(EcoIcons.close, size: 18),
                     tooltip: '关闭输出',
                     onPressed: onClose,
                     padding: EdgeInsets.zero,

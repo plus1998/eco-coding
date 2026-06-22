@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_theme_provider.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/app_theme_preference.dart';
 import '../threads/thread_providers.dart';
 
@@ -130,12 +131,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ListTile(
                             title: const Text('切换 PC'),
                             subtitle: const Text('选择或绑定其他 Desktop 设备'),
-                            leading: const Icon(Icons.computer_outlined),
+                            leading: const Icon(EcoIcons.desktop),
                             onTap: () => context.push('/connect'),
                           ),
                           ListTile(
                             title: const Text('退出登录'),
-                            leading: const Icon(Icons.logout),
+                            leading: const Icon(EcoIcons.logout),
                             onTap: () async {
                               final client = ref.read(ecoCenterClientProvider);
                               final notice = await client.clearSession();

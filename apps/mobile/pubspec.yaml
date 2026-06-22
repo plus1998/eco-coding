@@ -23,6 +23,7 @@ dependencies:
   device_info_plus: ^11.5.0
   network_info_plus: ^6.1.4
   flutter_markdown: ^0.7.7+1
+  lucide_icons_flutter: ^3.1.14+2
 
 dev_dependencies:
   flutter_test:

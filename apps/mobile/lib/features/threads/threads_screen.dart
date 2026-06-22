@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/relative_time.dart';
 import '../../core/utils/thread_status.dart';
@@ -35,19 +36,19 @@ class ThreadsScreen extends ConsumerWidget {
           IconButton(
             tooltip: '切换 PC',
             onPressed: () => context.push('/connect'),
-            icon: const Icon(Icons.computer_outlined),
+            icon: const Icon(EcoIcons.desktop),
           ),
           IconButton(
             tooltip: '打开项目',
             onPressed: () => _showOpenProjectSheet(context, ref),
-            icon: const Icon(Icons.folder_open_outlined),
+            icon: const Icon(EcoIcons.folderOpen),
           ),
           IconButton(
             onPressed: () async {
               await ref.read(threadListProvider.notifier).refresh();
               await ref.read(projectListProvider.notifier).refresh();
             },
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(EcoIcons.refresh),
           ),
         ],
       ),
@@ -283,8 +284,8 @@ class _ProjectSectionState extends State<_ProjectSection> {
                       padding: const EdgeInsets.only(top: 2),
                       child: Icon(
                         isCollapsed
-                            ? Icons.chevron_right
-                            : Icons.expand_more,
+                            ? EcoIcons.chevronRight
+                            : EcoIcons.expandDown,
                         size: 20,
                         color: ecoColors(context).textMuted,
                       ),
@@ -294,7 +295,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
                       padding: const EdgeInsets.only(top: 1),
                       child: widget.isPinned
                           ? Icon(
-                              Icons.push_pin,
+                              EcoIcons.pin,
                               size: 14,
                               color: isSelected
                                   ? ecoColors(context).accentText
@@ -307,10 +308,10 @@ class _ProjectSectionState extends State<_ProjectSection> {
                       padding: const EdgeInsets.only(top: 1),
                       child: Icon(
                         project.isHome
-                            ? Icons.home_outlined
+                            ? EcoIcons.home
                             : isCollapsed
-                                ? Icons.folder_outlined
-                                : Icons.folder_open_outlined,
+                                ? EcoIcons.folder
+                                : EcoIcons.folderOpen,
                         size: 18,
                         color: isSelected
                             ? ecoColors(context).textPrimary
@@ -343,7 +344,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
                               if (shouldShowProjectBranch(project.branch)) ...[
                                 const SizedBox(width: 8),
                                 _ProjectMetaChip(
-                                  icon: Icons.call_split,
+                                  icon: EcoIcons.branch,
                                   label: project.branch!,
                                 ),
                               ],
@@ -372,7 +373,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
                         minHeight: 32,
                       ),
                       icon: Icon(
-                        Icons.add_comment_outlined,
+                        EcoIcons.newThread,
                         size: 18,
                         color: isSelected
                             ? ecoColors(context).textPrimary

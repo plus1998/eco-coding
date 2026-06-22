@@ -6,6 +6,7 @@ import 'core/models/eco_types.dart';
 import 'core/providers/app_providers.dart';
 import 'core/providers/app_session.dart';
 import 'core/providers/app_theme_provider.dart';
+import 'core/theme/eco_icons.dart';
 import 'core/theme/eco_theme.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
@@ -121,13 +122,13 @@ class MainShell extends StatelessWidget {
           onDestinationSelected: navigationShell.goBranch,
           destinations: const [
             NavigationDestination(
-              icon: Icon(Icons.chat_bubble_outline),
-              selectedIcon: Icon(Icons.chat_bubble),
+              icon: Icon(EcoIcons.sessions),
+              selectedIcon: Icon(EcoIcons.sessionsSelected),
               label: '会话',
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
+              icon: Icon(EcoIcons.settings),
+              selectedIcon: Icon(EcoIcons.settings),
               label: '设置',
             ),
           ],

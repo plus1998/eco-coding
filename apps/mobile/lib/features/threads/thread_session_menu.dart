@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../composer/commit_push_sheet.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
+import 'thread_session_app_bar.dart' show SessionToolbarIconButton;
 
 class ThreadSessionMenuButton extends ConsumerStatefulWidget {
   const ThreadSessionMenuButton({
@@ -44,19 +46,19 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
   List<_ThreadSessionMenuEntry> get _entries => [
         _ThreadSessionMenuEntry(
           value: 'todos',
-          icon: Icons.checklist_rounded,
+          icon: EcoIcons.todos,
           label: '任务进度',
           enabled: _hasThread,
         ),
         _ThreadSessionMenuEntry(
           value: 'review',
-          icon: Icons.rate_review_outlined,
+          icon: EcoIcons.codeReview,
           label: '代码审查',
           enabled: widget.workspacePath.isNotEmpty,
         ),
         _ThreadSessionMenuEntry(
           value: 'commit',
-          icon: Icons.publish_outlined,
+          icon: EcoIcons.commitPush,
           label: '提交与推送',
           enabled: !widget.isRunning &&
               widget.workspacePath.isNotEmpty &&
@@ -64,7 +66,7 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
         ),
         _ThreadSessionMenuEntry(
           value: 'pull',
-          icon: Icons.download_outlined,
+          icon: EcoIcons.pull,
           label: _canPull
               ? '拉取（落后 ${widget.gitStatus!.behindCount}）'
               : '拉取',
@@ -72,7 +74,7 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
         ),
         _ThreadSessionMenuEntry(
           value: 'scripts',
-          icon: Icons.terminal_outlined,
+          icon: EcoIcons.npmScripts,
           label: 'npm scripts',
           enabled: !widget.isRunning && widget.workspacePath.isNotEmpty,
         ),
@@ -80,13 +82,10 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
+    return SessionToolbarIconButton(
       key: _buttonKey,
+      icon: EcoIcons.more,
       tooltip: '更多',
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-      icon: const Icon(Icons.more_horiz_rounded, size: 20),
       onPressed: _showMenu,
     );
   }

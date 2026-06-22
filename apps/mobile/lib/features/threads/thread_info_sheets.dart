@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/thread_usage_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_usage_display.dart';
 
@@ -173,7 +174,7 @@ class _BillingSheet extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              const Icon(Icons.payments_outlined, size: 18),
+              const Icon(EcoIcons.usageCost, size: 18),
               const SizedBox(width: 8),
               Text('计费', style: Theme.of(context).textTheme.titleMedium),
             ],
@@ -271,7 +272,7 @@ class _ContextSheet extends StatelessWidget {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Icon(Icons.memory_outlined, size: 18),
+                      const Icon(EcoIcons.contextMemory, size: 18),
                       const SizedBox(width: 8),
                       Text(
                         '上下文',

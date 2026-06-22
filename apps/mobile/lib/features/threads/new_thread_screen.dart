@@ -122,11 +122,12 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                           ),
                         ),
                       ),
-                      const Positioned(
-                        top: 0,
+                      Positioned(
+                        top: sessionToolbarFrostHeight(context) -
+                            sessionTopFrostTailOverlap,
                         left: 0,
                         right: 0,
-                        child: SessionTopFrostOverlay(),
+                        child: const SessionTopFrostTail(),
                       ),
                     ],
                   ),

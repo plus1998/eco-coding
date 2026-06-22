@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/project_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import 'project_providers.dart';
 
@@ -54,7 +55,7 @@ Future<void> showProjectActionSheet({
             ),
             ListTile(
               leading: Icon(
-                isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                isPinned ? EcoIcons.pin : EcoIcons.pin,
                 size: 20,
                 color: ecoColors(context).textSecondary,
               ),
@@ -74,7 +75,7 @@ Future<void> showProjectActionSheet({
             ),
             ListTile(
               leading: Icon(
-                Icons.delete_outline,
+                EcoIcons.delete,
                 size: 20,
                 color: ecoColors(context).statusDenyText,
               ),

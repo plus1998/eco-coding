@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/git_models.dart';
 import '../../core/network/desktop_rpc.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../threads/thread_providers.dart';
 
@@ -243,7 +244,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.auto_awesome, size: 20),
+                          : const Icon(EcoIcons.sparkles, size: 20),
                       tooltip: 'AI 生成提交信息',
                     ),
                   ),
@@ -276,7 +277,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                               color: Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
-                        : const Icon(Icons.cloud_upload_outlined),
+                        : const Icon(EcoIcons.cloudUpload),
                     label: Text(_committing ? '处理中…' : '提交并推送'),
                   ),
                 ),

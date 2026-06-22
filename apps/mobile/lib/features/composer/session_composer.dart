@@ -5,6 +5,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/platform/system_speech_recognizer.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
@@ -272,7 +273,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                       children: [
                         IconButton(
                           onPressed: widget.onPickImage,
-                          icon: const Icon(Icons.add, size: 22),
+                          icon: const Icon(EcoIcons.add, size: 22),
                           tooltip: '添加图片',
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
@@ -307,10 +308,10 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                             onPressed: _handleSpeechInput,
                             icon: _speechBusy
                                 ? const Icon(
-                                    Icons.stop_circle_outlined,
+                                    EcoIcons.stop,
                                     size: 22,
                                   )
-                                : const Icon(Icons.mic_none, size: 22),
+                                : const Icon(EcoIcons.mic, size: 22),
                             tooltip: _speechBusy ? '停止语音输入' : '语音输入',
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
@@ -363,7 +364,7 @@ class _SendButton extends StatelessWidget {
           width: 36,
           height: 36,
           child: Icon(
-            Icons.arrow_upward_rounded,
+            EcoIcons.send,
             size: 20,
             color: enabled ? ecoColors(context).composerSendText : ecoColors(context).textMuted,
           ),

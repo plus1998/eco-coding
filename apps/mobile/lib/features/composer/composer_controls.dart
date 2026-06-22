@@ -6,6 +6,7 @@ import '../../core/constants/plan_mode_ui.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
@@ -165,7 +166,7 @@ class ComposerRouteSheet extends ConsumerWidget {
                     return ListTile(
                       title: Text(entry.name),
                       trailing: isActive
-                          ? Icon(Icons.check, color: ecoColors(context).accentText)
+                          ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
                           : null,
                       selected: isActive,
                       enabled: canEdit,
@@ -260,7 +261,7 @@ class ComposerContextTrigger extends StatelessWidget {
                 ),
               ),
               if (enabled && onTap != null)
-                Icon(Icons.expand_more, size: 14, color: ecoColors(context).textMuted),
+                Icon(EcoIcons.expandDown, size: 14, color: ecoColors(context).textMuted),
             ],
           ),
         ),
@@ -323,7 +324,7 @@ class ComposerToolbarTrigger extends StatelessWidget {
               ),
               if (enabled && onTap != null) ...[
                 const SizedBox(width: 2),
-                Icon(Icons.expand_more, size: 14, color: ecoColors(context).textMuted),
+                Icon(EcoIcons.expandDown, size: 14, color: ecoColors(context).textMuted),
               ],
             ],
           ),
@@ -366,7 +367,7 @@ class ComposerProfileControl extends ConsumerWidget {
     );
 
     return ComposerContextTrigger(
-      icon: Icons.dashboard_customize_outlined,
+      icon: EcoIcons.profile,
       label: label,
       enabled: canEdit,
       compact: compact,
@@ -418,7 +419,7 @@ class ComposerProfileControl extends ConsumerWidget {
                   return ListTile(
                     title: Text(profile.name),
                     trailing: isActive
-                        ? Icon(Icons.check, color: ecoColors(context).accentText)
+                        ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
                         : null,
                     selected: isActive,
                     onTap: () {
@@ -477,7 +478,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
         : '$enabledCount';
 
     return ComposerContextTrigger(
-      icon: Icons.groups_outlined,
+      icon: EcoIcons.subagents,
       label: compact ? summary : '编排 $summary',
       enabled: canEdit,
       compact: compact,
@@ -631,7 +632,7 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
 }
 
 IconData planModeIcon(bool planModeEnabled) {
-  return planModeEnabled ? Icons.format_list_bulleted : Icons.all_inclusive;
+  return planModeEnabled ? EcoIcons.planMode : EcoIcons.agentMode;
 }
 
 Future<void> showComposerPlanModeSheet(
@@ -664,7 +665,7 @@ Future<void> showComposerPlanModeSheet(
               title: Text(option.title),
               subtitle: Text(option.description),
               trailing: isActive
-                  ? Icon(Icons.check, color: ecoColors(context).accentText)
+                  ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
                   : null,
               selected: isActive,
               onTap: () {
@@ -756,7 +757,7 @@ class ComposerRouteSummary extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           icon: Icon(
-            Icons.dashboard_customize_outlined,
+            EcoIcons.profile,
             size: 22,
             color: ecoColors(context).textSecondary,
           ),
@@ -854,7 +855,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
                 title: Text(option.title),
                 subtitle: Text(option.description),
                 trailing: isActive
-                    ? Icon(Icons.check, color: ecoColors(context).accentText)
+                    ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
                     : null,
                 selected: isActive,
                 onTap: () {
@@ -891,9 +892,9 @@ class _BashReviewShieldIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = switch (mode) {
-      'auto' => Icons.shield_outlined,
-      'allow_all' => Icons.shield_moon_outlined,
-      _ => Icons.pan_tool_alt_outlined,
+      'auto' => EcoIcons.shieldAuto,
+      'allow_all' => EcoIcons.shieldAllowAll,
+      _ => EcoIcons.shieldManual,
     };
 
     if (mode != 'auto') {
@@ -906,10 +907,10 @@ class _BashReviewShieldIcon extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Icon(Icons.shield_outlined, size: size, color: color),
+          Icon(EcoIcons.shieldAuto, size: size, color: color),
           Positioned(
             bottom: size * 0.18,
-            child: Icon(Icons.terminal, size: size * 0.38, color: color),
+            child: Icon(EcoIcons.terminal, size: size * 0.38, color: color),
           ),
         ],
       ),
@@ -933,9 +934,9 @@ class ComposerBashReviewControl extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final current = bashReviewUi(runtimeConfig.bashReviewMode);
     final icon = switch (runtimeConfig.bashReviewMode) {
-      'auto' => Icons.shield_outlined,
-      'allow_all' => Icons.shield_moon_outlined,
-      _ => Icons.pan_tool_outlined,
+      'auto' => EcoIcons.shieldAuto,
+      'allow_all' => EcoIcons.shieldAllowAll,
+      _ => EcoIcons.shieldManual,
     };
 
     return ComposerToolbarTrigger(
@@ -976,7 +977,7 @@ class ComposerBashReviewControl extends ConsumerWidget {
                 title: Text(option.title),
                 subtitle: Text(option.description),
                 trailing: isActive
-                    ? Icon(Icons.check, color: ecoColors(context).accentText)
+                    ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
                     : null,
                 selected: isActive,
                 onTap: () {

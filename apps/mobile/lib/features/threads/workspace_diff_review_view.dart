@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/git_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/unified_diff.dart';
 
@@ -170,7 +171,7 @@ class _DiffFileCardState extends State<_DiffFileCard> {
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
                       child: Icon(
-                        _expanded ? Icons.expand_less : Icons.expand_more,
+                        _expanded ? EcoIcons.expandUp : EcoIcons.expandDown,
                         size: 20,
                         color: ecoColors(context).textMuted,
                       ),
@@ -245,7 +246,7 @@ class _DiffHunkSection extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Row(
             children: [
-              Icon(Icons.expand_more, size: 18, color: ecoColors(context).textMuted),
+              Icon(EcoIcons.expandDown, size: 18, color: ecoColors(context).textMuted),
               const SizedBox(width: 4),
               Text(
                 hunk.rangeLabel,

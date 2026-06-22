@@ -9,6 +9,7 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
@@ -261,11 +262,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                                   threadStatus: thread?.status,
                                 ),
                 ),
-                const Positioned(
-                  top: 0,
+                Positioned(
+                  top: sessionToolbarFrostHeight(context) -
+                      sessionTopFrostTailOverlap,
                   left: 0,
                   right: 0,
-                  child: SessionTopFrostOverlay(),
+                  child: const SessionTopFrostTail(),
                 ),
               ],
             ),
@@ -658,7 +660,7 @@ class _PlanApprovalBanner extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  Icons.fact_check_outlined,
+                  EcoIcons.planApproval,
                   size: 18,
                   color: ecoColors(context).accentText,
                 ),
@@ -737,7 +739,7 @@ class _EditingFollowUpBanner extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              Icons.edit_note_outlined,
+              EcoIcons.followUp,
               size: 16,
               color: ecoColors(context).accentText,
             ),
@@ -752,7 +754,7 @@ class _EditingFollowUpBanner extends StatelessWidget {
             ),
             TextButton.icon(
               onPressed: onCancel,
-              icon: const Icon(Icons.close, size: 16),
+              icon: const Icon(EcoIcons.close, size: 16),
               label: const Text('取消'),
               style: TextButton.styleFrom(
                 foregroundColor: ecoColors(context).accentText,
@@ -802,7 +804,7 @@ class _FollowUpBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  Icon(Icons.forum_outlined, size: 16, color: ecoColors(context).textMuted),
+                  Icon(EcoIcons.subthread, size: 16, color: ecoColors(context).textMuted),
                   const SizedBox(width: 6),
                   Text('引导消息', style: Theme.of(context).textTheme.labelLarge),
                 ],
@@ -831,7 +833,7 @@ class _FollowUpBar extends StatelessWidget {
                             Padding(
                               padding: const EdgeInsets.only(top: 2),
                               child: Icon(
-                                Icons.subdirectory_arrow_right_rounded,
+                                EcoIcons.indent,
                                 size: 16,
                                 color: ecoColors(context).textMuted,
                               ),
@@ -852,7 +854,7 @@ class _FollowUpBar extends StatelessWidget {
                             _FollowUpActionButton(
                               icon: escalateBusyId == item.id
                                   ? null
-                                  : Icons.subdirectory_arrow_right_rounded,
+                                  : EcoIcons.indent,
                               label: escalateBusyId == item.id ? '处理中…' : '引导',
                               loading: escalateBusyId == item.id,
                               enabled: canEscalate && !actionBusy,
@@ -862,7 +864,7 @@ class _FollowUpBar extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             _FollowUpActionButton(
-                              icon: Icons.edit_outlined,
+                              icon: EcoIcons.edit,
                               label: '修改',
                               enabled: !actionBusy,
                               onPressed:
@@ -872,7 +874,7 @@ class _FollowUpBar extends StatelessWidget {
                             _FollowUpActionButton(
                               icon: cancelBusyId == item.id
                                   ? null
-                                  : Icons.delete_outline_rounded,
+                                  : EcoIcons.delete,
                               label: cancelBusyId == item.id ? '删除中…' : '删除',
                               loading: cancelBusyId == item.id,
                               enabled: !actionBusy,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/git_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 
 class WorkspaceChangesPill extends StatelessWidget {
@@ -75,7 +76,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(Icons.chevron_right, size: 16, color: eco.textMuted),
+                Icon(EcoIcons.chevronRight, size: 16, color: eco.textMuted),
               ],
             ),
           ),

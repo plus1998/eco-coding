@@ -1,0 +1,100 @@
+import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../utils/activity_display.dart';
+
+/// Eco Mobile 语义化图标，统一映射到 Lucide Icons。
+///
+/// Lucide 在 AI / 开发场景下图标更丰富（bot、sparkles、git、terminal 等），
+/// 比 Material Icons 语义更准确。
+abstract final class EcoIcons {
+  // ── 导航 ──────────────────────────────────────────────
+  static const IconData sessions = LucideIcons.messageSquare;
+  static const IconData sessionsSelected = LucideIcons.messagesSquare;
+  static const IconData settings = LucideIcons.settings;
+
+  // ── 通用操作 ──────────────────────────────────────────
+  static const IconData back = LucideIcons.arrowLeft;
+  static const IconData close = LucideIcons.x;
+  static const IconData check = LucideIcons.check;
+  static const IconData checkCircle = LucideIcons.circleCheck;
+  static const IconData refresh = LucideIcons.refreshCw;
+  static const IconData more = LucideIcons.ellipsis;
+  static const IconData add = LucideIcons.plus;
+  static const IconData send = LucideIcons.arrowUp;
+  static const IconData expandDown = LucideIcons.chevronDown;
+  static const IconData expandUp = LucideIcons.chevronUp;
+  static const IconData chevronLeft = LucideIcons.chevronLeft;
+  static const IconData chevronRight = LucideIcons.chevronRight;
+
+  // ── 设备 / 连接 ───────────────────────────────────────
+  static const IconData desktop = LucideIcons.monitor;
+  static const IconData qrScan = LucideIcons.scanLine;
+  static const IconData user = LucideIcons.user;
+  static const IconData logout = LucideIcons.logOut;
+
+  // ── 文件 / 项目 ───────────────────────────────────────
+  static const IconData home = LucideIcons.home;
+  static const IconData folder = LucideIcons.folder;
+  static const IconData folderOpen = LucideIcons.folderOpen;
+  static const IconData pin = LucideIcons.pin;
+  static const IconData delete = LucideIcons.trash;
+  static const IconData file = LucideIcons.fileText;
+  static const IconData branch = LucideIcons.gitFork;
+  static const IconData newThread = LucideIcons.messageSquarePlus;
+
+  // ── AI / Agent ────────────────────────────────────────
+  static const IconData agent = LucideIcons.bot;
+  static const IconData sparkles = LucideIcons.sparkles;
+  static const IconData terminal = LucideIcons.terminal;
+  static const IconData terminalSquare = LucideIcons.squareTerminal;
+  static const IconData search = LucideIcons.search;
+  static const IconData edit = LucideIcons.penLine;
+  static const IconData mic = LucideIcons.mic;
+  static const IconData stop = LucideIcons.stopCircle;
+
+  // ── 会话工具栏 ────────────────────────────────────────
+  static const IconData todos = LucideIcons.listChecks;
+  static const IconData codeReview = LucideIcons.fileDiff;
+  static const IconData commitPush = LucideIcons.gitCommit;
+  static const IconData pull = LucideIcons.download;
+  static const IconData npmScripts = LucideIcons.squareTerminal;
+
+  // ── Composer 配置 ───────────────────────────────────────
+  static const IconData profile = LucideIcons.layoutDashboard;
+  static const IconData subagents = LucideIcons.users;
+  static const IconData planMode = LucideIcons.listTodo;
+  static const IconData agentMode = LucideIcons.infinity;
+  static const IconData shieldAuto = LucideIcons.shield;
+  static const IconData shieldAllowAll = LucideIcons.shieldOff;
+  static const IconData shieldManual = LucideIcons.hand;
+
+  // ── 线程 / 会话内容 ───────────────────────────────────
+  static const IconData planApproval = LucideIcons.clipboardCheck;
+  static const IconData followUp = LucideIcons.notebook;
+  static const IconData subthread = LucideIcons.messagesSquare;
+  static const IconData indent = LucideIcons.cornerDownRight;
+  static const IconData rename = LucideIcons.type;
+
+  // ── Git / 云端 ────────────────────────────────────────
+  static const IconData cloudUpload = LucideIcons.cloudUpload;
+
+  // ── 用量 / 状态 ───────────────────────────────────────
+  static const IconData usageCost = LucideIcons.coins;
+  static const IconData contextMemory = LucideIcons.cpu;
+  static const IconData error = LucideIcons.alertCircle;
+  static const IconData blocked = LucideIcons.ban;
+  static const IconData pending = LucideIcons.circle;
+  static const IconData active = LucideIcons.circleDot;
+  static const IconData waiting = LucideIcons.hourglass;
+
+  static IconData activityAction(ActivityActionIcon icon) {
+    return switch (icon) {
+      ActivityActionIcon.search => search,
+      ActivityActionIcon.edit => edit,
+      ActivityActionIcon.terminal => terminal,
+      ActivityActionIcon.agent => agent,
+      ActivityActionIcon.file => file,
+    };
+  }
+}

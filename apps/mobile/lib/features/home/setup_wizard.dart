@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import 'setup_status.dart';
 
@@ -149,7 +150,7 @@ class _StepDot extends StatelessWidget {
           ),
           child: Center(
             child: done
-                ? Icon(Icons.check, size: 14, color: fg)
+                ? Icon(EcoIcons.check, size: 14, color: fg)
                 : Container(
                     width: 6,
                     height: 6,

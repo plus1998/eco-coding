@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import 'setup_status.dart';
 
@@ -43,7 +44,7 @@ class SetupStatusCard extends StatelessWidget {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.refresh),
+                        : const Icon(EcoIcons.refresh),
                     tooltip: '刷新状态',
                   ),
               ],
@@ -59,7 +60,7 @@ class SetupStatusCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: eco.statusAllowText, size: 20),
+                    Icon(EcoIcons.checkCircle, color: eco.statusAllowText, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -140,13 +141,13 @@ class _SetupStepRow extends StatelessWidget {
   (IconData, Color) _iconForState(SetupStep step, EcoColors eco) {
     switch (step.state) {
       case SetupStepState.done:
-        return (Icons.check_circle, eco.statusAllowText);
+        return (EcoIcons.checkCircle, eco.statusAllowText);
       case SetupStepState.inProgress:
-        return (Icons.hourglass_top, eco.accentText);
+        return (EcoIcons.waiting, eco.accentText);
       case SetupStepState.error:
-        return (Icons.error_outline, eco.statusDenyText);
+        return (EcoIcons.error, eco.statusDenyText);
       case SetupStepState.pending:
-        return (Icons.radio_button_unchecked, eco.textMuted);
+        return (EcoIcons.pending, eco.textMuted);
     }
   }
 }

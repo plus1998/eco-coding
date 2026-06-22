@@ -8,6 +8,7 @@ import '../../core/models/eco_types.dart';
 import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_session.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
@@ -220,12 +221,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: const Text('连接 PC'),
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(Icons.arrow_back),
+                icon: const Icon(EcoIcons.back),
                 onPressed: actionBusy ? null : () => context.pop(),
               )
             : _showManualSetup && !overview.setupComplete
                 ? IconButton(
-                    icon: const Icon(Icons.qr_code_scanner),
+                    icon: const Icon(EcoIcons.qrScan),
                     tooltip: '返回扫码',
                     onPressed: actionBusy
                         ? null
@@ -241,7 +242,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.refresh),
+                : const Icon(EcoIcons.refresh),
             tooltip: '刷新状态',
           ),
         ],
@@ -564,7 +565,7 @@ class _ServerStep extends StatelessWidget {
             labelText: 'Center Server',
             hintText: 'http://192.168.1.10:3128',
             suffixIcon: serverStep.state == SetupStepState.done
-                ? Icon(Icons.check_circle_outline, color: ecoColors(context).statusAllowText)
+                ? Icon(EcoIcons.checkCircle, color: ecoColors(context).statusAllowText)
                 : null,
           ),
           keyboardType: TextInputType.url,
@@ -734,7 +735,7 @@ class _BindPcStep extends StatelessWidget {
               const SizedBox(width: 4),
               IconButton(
                 onPressed: busy ? null : onScan,
-                icon: const Icon(Icons.qr_code_scanner_outlined),
+                icon: const Icon(EcoIcons.qrScan),
                 tooltip: '扫码',
               ),
             ],
@@ -856,7 +857,7 @@ class _PcDeviceTile extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                Icons.desktop_windows_outlined,
+                EcoIcons.desktop,
                 size: 20,
                 color: selected ? ecoColors(context).accentText : ecoColors(context).textSecondary,
               ),
@@ -886,7 +887,7 @@ class _PcDeviceTile extends StatelessWidget {
               ),
               if (selected) ...[
                 const SizedBox(width: 10),
-                Icon(Icons.check, size: 18, color: ecoColors(context).accentText),
+                Icon(EcoIcons.check, size: 18, color: ecoColors(context).accentText),
               ],
             ],
           ),
@@ -918,7 +919,7 @@ class _AccountStatusRow extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            connected ? Icons.check_circle_outline : Icons.person_outline,
+            connected ? EcoIcons.checkCircle : EcoIcons.user,
             size: 18,
             color: connected ? ecoColors(context).statusAllowText : ecoColors(context).textSecondary,
           ),
@@ -970,7 +971,7 @@ class _ScanFirstView extends StatelessWidget {
                   ),
                 ),
                 child: Icon(
-                  Icons.qr_code_scanner_outlined,
+                  EcoIcons.qrScan,
                   size: 32,
                   color: ecoColors(context).accentText,
                 ),
@@ -1108,7 +1109,7 @@ class _ReadyConnectionView extends ConsumerWidget {
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: busy ? null : onScan,
-              icon: const Icon(Icons.qr_code_scanner_outlined, size: 18),
+              icon: const Icon(EcoIcons.qrScan, size: 18),
               label: const Text('绑定新 PC'),
             ),
           ],
