@@ -48,6 +48,7 @@ import {
   stripProtectedPlanModeAutoApprovedTools,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
+import { executionCoderPrompt, executionTesterPrompt, reviewerAgentPrompt } from "../src/prompts/index";
 import { createSdkStreamContext } from "../src/sdk-stream-events";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
@@ -480,9 +481,13 @@ test("execution architect prompt requires Coder Tasks section", () => {
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     prompt: expect.stringMatching(/runnable, verified code/),
   });
+  expect(executionCoderPrompt).toContain("AGENTS.md");
+  expect(executionCoderPrompt).toContain("root causes");
+  expect(executionCoderPrompt).toContain("git reset --hard");
   expect(definitions[ecoSubagentKeyForRole("tester")]).toMatchObject({
     prompt: expect.stringContaining("## Test Verdict"),
   });
+  expect(executionTesterPrompt).toContain("## Requirement Coverage");
 });
 
 test("reviewer prompt limits scope to current session workspace diff", () => {
@@ -491,6 +496,9 @@ test("reviewer prompt limits scope to current session workspace diff", () => {
     description: expect.stringContaining("High-risk"),
     prompt: expect.stringMatching(/git diff --name-only HEAD/),
   });
+  expect(reviewerAgentPrompt).toContain("confidence");
+  expect(reviewerAgentPrompt).toContain("code_location");
+  expect(reviewerAgentPrompt).toContain("missing test coverage");
   expect(executePhaseSystemAppend).toContain("Eco prepends");
   expect(executePhaseSystemAppend).toContain("changed file list");
   expect(executePhaseSystemAppend).toMatch(/runnable, verified code/);

@@ -243,12 +243,13 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
     {
       id: CODING_AGENT_TEMPLATE_IDS.coder,
       name: "Coder",
-      description: "Focused implementation agent for coding tasks.",
+      description: "Focused implementation agent with surgical diffs and narrow verification.",
       domain: "coding",
       prompt:
-        "Implement the assigned subtask only, verify the narrowest useful scope, and report changed files.",
+        "Implement the assigned subtask only, obey AGENTS.md for touched files, verify narrowly, and report changed files.",
       whenToUse: "Use after the task scope is clear and code edits are required.",
-      outputContract: "Return files changed, implementation summary, verification result, and blockers.",
+      outputContract:
+        "Return files changed, implementation summary, verification result, and blockers or follow-ups.",
       defaultTools: cloneToolPolicy(CODER_TOOLS),
       mcpServers: [],
       skills: [],
@@ -263,9 +264,11 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       name: "Reviewer",
       description: "Review agent for this session's changed files.",
       domain: "coding",
-      prompt: "Review only this session's changes, classify issues by severity, and do not implement fixes.",
+      prompt:
+        "Review only this session's changes, classify actionable findings by severity with confidence and line ranges, and do not implement fixes.",
       whenToUse: "Use after implementation when correctness, safety, or regression risk is meaningful.",
-      outputContract: "Return P0/P1/P2 sections and a PASS or BLOCKERS verdict.",
+      outputContract:
+        "Return P0/P1/P2 sections with confidence and code locations, then PASS or BLOCKERS with overall correctness.",
       defaultTools: cloneToolPolicy(REVIEW_TOOLS),
       mcpServers: [],
       skills: [],
@@ -280,9 +283,11 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       name: "Tester",
       description: "Verification agent for coding changes.",
       domain: "coding",
-      prompt: "Run the narrowest useful verification for the completed work and report failures clearly.",
+      prompt:
+        "Run the narrowest useful verification for the completed work, map each plan gate to evidence, and report failures clearly.",
       whenToUse: "Use after implementation and review when automated verification is useful.",
-      outputContract: "Return commands run, results, and a PASS or FAIL verdict.",
+      outputContract:
+        "Return commands run, requirement coverage, and a PASS or FAIL verdict.",
       defaultTools: cloneToolPolicy(TESTER_TOOLS),
       mcpServers: [],
       skills: [],
