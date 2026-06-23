@@ -967,7 +967,13 @@ function evaluateFilesystemToolPolicy(
   }
   const insideScope = isPathInsidePolicyScope(absolutePath, scopeRoot);
   if (isReadTool && filesystem.read !== "none" && !insideScope) {
-    return askFilesystemScope(input.tool_name, filePath, scopeRoot);
+    if (isReviewableExternalReadPath(absolutePath)) {
+      return askFilesystemScope(input.tool_name, filePath, scopeRoot);
+    }
+    return denyTool(
+      input.tool_name,
+      `Filesystem read path "${filePath}" is outside Eco workspace "${scopeRoot}".`,
+    );
   }
   if (
     isWriteTool &&
@@ -980,6 +986,15 @@ function evaluateFilesystemToolPolicy(
     );
   }
   return undefined;
+}
+
+function isReviewableExternalReadPath(absolutePath: string): boolean {
+  return (
+    absolutePath.includes("/.claude/skills/") ||
+    absolutePath.includes("/.codex/skills/") ||
+    absolutePath.includes("/.agents/skills/") ||
+    absolutePath.includes("/.cc-switch/skills/")
+  );
 }
 
 function askFilesystemScope(toolName: string, filePath: string, scopeRoot: string): HookJSONOutput {

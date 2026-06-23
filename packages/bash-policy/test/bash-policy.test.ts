@@ -25,6 +25,7 @@ describe("evaluateBashPolicy", () => {
     });
     expect(decision.action).toBe("ask");
     expect(decision.riskScore).toBe(100);
+    expect(decision.reason).toBe("File deletion requires approval");
   });
 
   test("allows rm -rf ./src in allow_all mode", () => {

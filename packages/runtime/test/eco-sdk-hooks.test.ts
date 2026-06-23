@@ -1496,7 +1496,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
   );
   expect(outsideRead.hookSpecificOutput).toMatchObject({
     hookEventName: "PreToolUse",
-    permissionDecision: "ask",
+    permissionDecision: "deny",
   });
   expect(outsideRead.hookSpecificOutput?.permissionDecisionReason).toContain("outside");
 

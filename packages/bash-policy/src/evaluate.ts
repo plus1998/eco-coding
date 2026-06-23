@@ -1,10 +1,10 @@
-import { parseShellCommand } from "./parser";
+import { collectCommandSegments, parseShellCommand } from "./parser";
 import { matchesAnyCommandPattern } from "./pattern-match";
 import { isInsidePath } from "./path-utils";
 import { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
 import { matchDeny } from "./rules/match";
 import { AUTO_APPROVAL_SCORE_THRESHOLD, riskLevelFromScore, scoreShellAst } from "./scorer";
-import type { BashPolicyDecision, BashPolicyInput, BashPolicyRules, BashReviewMode } from "./types";
+import type { BashPolicyDecision, BashPolicyInput, BashPolicyRules, BashReviewMode, ShellAst } from "./types";
 
 export function evaluateBashPolicy(
   input: BashPolicyInput,
@@ -41,13 +41,14 @@ export function evaluateBashPolicy(
 
   const riskScore = scoreShellAst(ast, rules);
   const riskLevel = riskLevelFromScore(riskScore);
-  return decideByMode(input.mode, riskScore, riskLevel);
+  return decideByMode(input.mode, riskScore, riskLevel, resolveAutoAskReason(ast));
 }
 
 function decideByMode(
   mode: BashReviewMode,
   riskScore: number,
   riskLevel: BashPolicyDecision["riskLevel"],
+  autoAskReason?: { reason: string; matchedRule: string },
 ): BashPolicyDecision {
   if (mode === "allow_all") {
     return {
@@ -64,8 +65,8 @@ function decideByMode(
         action: "ask",
         riskScore,
         riskLevel,
-        reason: `Command risk score ${riskScore} exceeds threshold ${AUTO_APPROVAL_SCORE_THRESHOLD}`,
-        matchedRule: "auto_threshold",
+        reason: autoAskReason?.reason ?? `Command risk score ${riskScore} exceeds threshold ${AUTO_APPROVAL_SCORE_THRESHOLD}`,
+        matchedRule: autoAskReason?.matchedRule ?? "auto_threshold",
       };
     }
     return {
@@ -83,6 +84,18 @@ function decideByMode(
     reason: "Bash requires user confirmation in always review mode",
     matchedRule: "always_mode",
   };
+}
+
+function resolveAutoAskReason(
+  ast: ShellAst,
+): { reason: string; matchedRule: string } | undefined {
+  for (const segment of collectCommandSegments(ast)) {
+    const program = segment.program.split("/").pop() ?? segment.program;
+    if (program === "rm") {
+      return { reason: "File deletion requires approval", matchedRule: "file_deletion" };
+    }
+  }
+  return undefined;
 }
 
 function denyDecision(score: number, reason: string, matchedRule: string): BashPolicyDecision {
