@@ -1914,20 +1914,28 @@ function mapTaskSystemMessageToEvents(
   sessionId: string,
   role: RuntimeAgentRole,
   uuid: string,
+  streamCtx?: SdkStreamContext,
 ): AgentEvent[] {
   const payload = buildSdkTodoUpdatedPayload(message);
   if (!payload) {
     return [];
   }
+  const streamMeta = readSdkMessageAttribution(message, streamCtx);
+  const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
 
   return [
     createAgentEvent({
       id: `${uuid}:todo`,
       threadId,
       agentId: sessionId,
-      role,
+      role: streamRole,
       type: "todo.updated",
-      payload,
+      payload: {
+        ...payload,
+        ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
+        ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
+        ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
+      },
     }),
   ];
 }
@@ -2106,7 +2114,7 @@ export function mapSdkMessageToEvents(
       return [];
     }
     if (message.subtype === "task_progress") {
-      return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
+      return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid, streamCtx);
     }
     if (
       message.subtype === "status" ||
@@ -2267,24 +2275,24 @@ function mapAssistantMessageToEvents(
     if (toolUseId && streamCtx?.emittedToolUseIds.has(toolUseId)) {
       continue;
     }
+    const streamMeta = readSdkMessageAttribution(message, streamCtx);
+    const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
 
     events.push(
       createAgentEvent({
         id: `${uuid}:tool:${index}`,
         threadId,
         agentId: sessionId,
-        role,
+        role: streamRole,
         type: "tool.started",
         payload: {
           type: "tool_use",
           tool_name: block.name,
           input: block.input,
           ...(toolUseId && { tool_use_id: toolUseId }),
-          ...(typeof message.parent_tool_use_id === "string" && {
-            parent_tool_use_id: message.parent_tool_use_id,
-          }),
-          ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
-          ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
+          ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
+          ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
           ...(block.name === "Agent" &&
             isRecord(block.input) &&
             typeof block.input.subagent_type === "string" && {

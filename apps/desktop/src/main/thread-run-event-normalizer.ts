@@ -233,9 +233,6 @@ function resolveThreadRunEventScope(input: {
     return "agent";
   }
   if (subagentRoleSet.has(input.role)) {
-    if (input.eventType.startsWith("tool.")) {
-      return "main";
-    }
     return "agent";
   }
   return "main";

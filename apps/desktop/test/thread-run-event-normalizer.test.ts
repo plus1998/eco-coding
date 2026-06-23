@@ -376,7 +376,7 @@ test("buildSubagentMissionAttributedRunEvent stamps agentId into @mission payloa
   expect(mission?.prompt).toContain("export filters");
 });
 
-test("buildThreadRunEventFromLiveEvent scopes unattributed subagent tools to main timeline", () => {
+test("buildThreadRunEventFromLiveEvent scopes unattributed subagent tools to agent timeline", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",
     eventId: "act_tool",
@@ -394,7 +394,7 @@ test("buildThreadRunEventFromLiveEvent scopes unattributed subagent tools to mai
 
   expect(event).toMatchObject({
     eventType: "tool.started",
-    scope: "main",
+    scope: "agent",
   });
 });
 

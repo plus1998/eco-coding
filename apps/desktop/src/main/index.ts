@@ -18,7 +18,6 @@ import {
   isDiscoveryFilesystemTool,
   isPathInsidePolicyScope,
   isReadFilesystemTool,
-  isSubagentRole,
   normalizeSdkSubagentType,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
@@ -6062,12 +6061,6 @@ function recordThreadRunEventFromLiveEvent(input: {
   let agentId = input.extras?.agentId?.trim() || input.extras?.bashApproval?.agentId?.trim();
   if (!agentId && parentToolUseId) {
     agentId = resolveAgentIdByParentToolUseId(input.threadId, parentToolUseId);
-  }
-  if (!agentId && isSubagentRole(input.role)) {
-    agentId = subagentMetricsRegistry.resolveAgentId(input.threadId, {
-      role: input.role,
-      ...(parentToolUseId && { parentToolUseId }),
-    });
   }
   const requestId =
     input.extras?.requestId?.trim() ||

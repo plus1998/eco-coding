@@ -86,7 +86,7 @@ test("buildThreadRunProjection isolates concurrent same-role subagents by agentI
   expect(projection.timeline).toEqual([]);
 });
 
-test("buildThreadRunProjection includes unattributed subagent tools on main timeline", () => {
+test("buildThreadRunProjection keeps unattributed subagent tools off main timeline", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
     status: "running",
@@ -97,7 +97,7 @@ test("buildThreadRunProjection includes unattributed subagent tools on main time
         id: "tool_read",
         sequence: 1,
         eventType: "tool.started",
-        scope: "main",
+        scope: "agent",
         role: "explore",
         message: "Tool: Read · src/main.ts",
         observedAt: "2026-01-01T00:00:03.000Z",
@@ -109,8 +109,55 @@ test("buildThreadRunProjection includes unattributed subagent tools on main time
     ],
   });
 
-  expect(projection.timeline).toHaveLength(1);
+  expect(projection.timeline).toHaveLength(0);
   expect(projection.agents[0]?.timeline).toHaveLength(0);
+  expect(projection.diagnostics[0]?.code).toBe("missing_agent_id");
+});
+
+test("buildThreadRunProjection replays parent-linked tools after agent.started", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: [
+      event({
+        id: "tool_read",
+        sequence: 1,
+        eventType: "tool.started",
+        scope: "agent",
+        role: "explore",
+        parentToolUseId: "toolu_delegate",
+        message: "Tool: Read · src/main.ts",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "agent_started",
+        sequence: 2,
+        eventType: "agent.started",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_a",
+        parentToolUseId: "toolu_delegate",
+        message: "Subagent explore started",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.timeline).toHaveLength(0);
+  expect(projection.diagnostics).toEqual([]);
+  expect(projection.agents).toHaveLength(1);
+  expect(projection.agents[0]?.agentId).toBe("explore_a");
+  expect(projection.agents[0]?.timeline).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: "tool_read",
+        agentId: "explore_a",
+        text: "Tool: Read · src/main.ts",
+      }),
+    ]),
+  );
 });
 
 test("buildThreadRunProjection surfaces role-only agent events as missing_agent_id", () => {

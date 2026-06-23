@@ -66,17 +66,91 @@ export function buildThreadRunProjection(
   const agentsById = new Map<string, ThreadRunProjectionAgent>();
   const eventsByAgentId = new Map<string, ThreadRunProjectionTimelineItem[]>();
   const agentsByParentToolUseId = buildAgentsByParentToolUseId(input.agents);
+  const discoveredAgentsById = new Map<string, AgentInstanceRecord>();
+  const pendingByParentToolUseId = new Map<string, ThreadRunEvent[]>();
+
+  const appendAgentTimelineItem = (agentId: string, item: ThreadRunProjectionTimelineItem): void => {
+    const rows = eventsByAgentId.get(agentId) ?? [];
+    rows.push(item);
+    eventsByAgentId.set(agentId, rows);
+  };
+
+  const flushPendingForParentToolUseId = (parentToolUseId: string): void => {
+    const pending = pendingByParentToolUseId.get(parentToolUseId);
+    if (!pending?.length) {
+      return;
+    }
+    const linked = agentsByParentToolUseId.get(parentToolUseId);
+    if (!linked) {
+      return;
+    }
+    for (const pendingEvent of pending) {
+      appendAgentTimelineItem(linked.agentId, eventToTimelineItem(pendingEvent, linked.agentId));
+    }
+    pendingByParentToolUseId.delete(parentToolUseId);
+  };
+
+  const registerAgentLinkFromStartedEvent = (event: ThreadRunEvent): void => {
+    if (event.eventType !== "agent.started" || !event.agentId) {
+      return;
+    }
+    const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
+    const discovered = agentRecordFromStartedEvent(event);
+    if (discovered) {
+      discoveredAgentsById.set(discovered.agentId, discovered);
+    }
+    if (!parentToolUseId) {
+      return;
+    }
+    if (!agentsByParentToolUseId.has(parentToolUseId)) {
+      const linked =
+        input.agents.find((agent) => agent.parentToolUseId?.trim() === parentToolUseId) ??
+        discovered ??
+        undefined;
+      if (linked) {
+        agentsByParentToolUseId.set(parentToolUseId, linked);
+      }
+    }
+    flushPendingForParentToolUseId(parentToolUseId);
+  };
 
   for (const event of events) {
     if (isMetricsOnlyThreadRunEvent(event)) {
       continue;
     }
+    if (event.eventType === "agent.started") {
+      registerAgentLinkFromStartedEvent(event);
+    }
     const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByParentToolUseId, diagnostics);
-    if ((event.scope === "agent" || event.scope === "both") && resolvedAgentId) {
-      const item = eventToTimelineItem(event, resolvedAgentId);
-      const rows = eventsByAgentId.get(resolvedAgentId) ?? [];
-      rows.push(item);
-      eventsByAgentId.set(resolvedAgentId, rows);
+    if (event.scope !== "agent" && event.scope !== "both") {
+      continue;
+    }
+    if (resolvedAgentId) {
+      appendAgentTimelineItem(resolvedAgentId, eventToTimelineItem(event, resolvedAgentId));
+      continue;
+    }
+    const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
+    if (parentToolUseId) {
+      const pending = pendingByParentToolUseId.get(parentToolUseId) ?? [];
+      pending.push(event);
+      pendingByParentToolUseId.set(parentToolUseId, pending);
+    }
+  }
+
+  for (const [parentToolUseId, pending] of pendingByParentToolUseId) {
+    const linked = agentsByParentToolUseId.get(parentToolUseId);
+    if (linked) {
+      for (const pendingEvent of pending) {
+        appendAgentTimelineItem(linked.agentId, eventToTimelineItem(pendingEvent, linked.agentId));
+      }
+      continue;
+    }
+    for (const pendingEvent of pending) {
+      diagnostics.push({
+        code: "missing_agent_id",
+        message: `Agent-scoped event is waiting for parent tool link ${parentToolUseId}.`,
+        eventId: pendingEvent.id,
+      });
     }
   }
 
@@ -84,7 +158,8 @@ export function buildThreadRunProjection(
   const contextByAgentId = buildContextByAgentId(input.context);
   const timingByAgentId = new Map((input.subagentTimings ?? []).map((timing) => [timing.agentId, timing]));
 
-  for (const agent of input.agents) {
+  const projectionAgents = mergeProjectionAgentRecords(input.agents, discoveredAgentsById);
+  for (const agent of projectionAgents) {
     const timelineItems = eventsByAgentId.get(agent.agentId) ?? [];
     const startedAt = agent.startedAt;
     const endedAt = agent.endedAt;
@@ -199,6 +274,7 @@ function resolveProjectionEventAgentId(
     if (linked) {
       return linked.agentId;
     }
+    return undefined;
   }
 
   if (!event.role || !subagentRoleSet.has(event.role)) {
@@ -223,6 +299,38 @@ function readEventParentToolUseId(event: ThreadRunEvent): string | undefined {
     return parentToolUseId.trim();
   }
   return undefined;
+}
+
+function agentRecordFromStartedEvent(event: ThreadRunEvent): AgentInstanceRecord | undefined {
+  if (event.eventType !== "agent.started" || !event.agentId) {
+    return undefined;
+  }
+  const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
+  return {
+    threadId: event.threadId,
+    agentId: event.agentId,
+    role: event.role ?? "coder",
+    kind: "subagent",
+    status: "active",
+    startedAt: event.observedAt,
+    updatedAt: event.observedAt,
+    ...(event.runAttemptId && { runAttemptId: event.runAttemptId }),
+    ...(parentToolUseId && { parentToolUseId }),
+  };
+}
+
+function mergeProjectionAgentRecords(
+  agents: readonly AgentInstanceRecord[],
+  discoveredAgentsById: ReadonlyMap<string, AgentInstanceRecord>,
+): AgentInstanceRecord[] {
+  const merged = new Map<string, AgentInstanceRecord>();
+  for (const agent of discoveredAgentsById.values()) {
+    merged.set(agent.agentId, agent);
+  }
+  for (const agent of agents) {
+    merged.set(agent.agentId, agent);
+  }
+  return [...merged.values()];
 }
 
 function buildUsageByAgentId(

@@ -473,3 +473,89 @@ test("maps message_delta usage to usage.recorded", () => {
   );
   expect(events.some((event) => event.type === "usage.recorded")).toBe(true);
 });
+
+test("assistant tool_use falls back to stream context parent_tool_use_id", () => {
+  const ctx = createSdkStreamContext();
+  ctx.parentToolUseId = "toolu_delegate";
+  ctx.activeSubagentRole = "explore";
+  const events = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "u_assistant",
+      session_id: "sess",
+      message: {
+        content: [{ type: "tool_use", name: "Read", id: "toolu_read", input: { file_path: "/a.ts" } }],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "tool.started",
+    role: "explore",
+  });
+  expect(events[0]?.payload).toMatchObject({
+    parent_tool_use_id: "toolu_delegate",
+    tool_name: "Read",
+  });
+});
+
+test("task_progress carries stream context parent_tool_use_id", () => {
+  const ctx = createSdkStreamContext();
+  ctx.parentToolUseId = "toolu_delegate";
+  ctx.activeSubagentRole = "explore";
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+      last_tool_name: "Read",
+      uuid: "sdk_task_1",
+      session_id: "session_1",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "todo.updated",
+    role: "explore",
+  });
+  expect(events[0]?.payload).toMatchObject({
+    parent_tool_use_id: "toolu_delegate",
+    sdkKind: "task_progress",
+  });
+});
+
+test("tool_progress and tool_use_summary carry parent_tool_use_id from message or context", () => {
+  const ctx = createSdkStreamContext();
+  ctx.parentToolUseId = "toolu_ctx";
+  ctx.activeSubagentRole = "coder";
+  const progress = mapSdkMessageToEvents(
+    {
+      type: "tool_progress",
+      uuid: "u_progress",
+      session_id: "sess",
+      tool_use_id: "toolu_read",
+      parent_tool_use_id: "toolu_msg",
+    },
+    "thr_1",
+    ctx,
+  );
+  expect(progress[0]?.payload).toMatchObject({ parent_tool_use_id: "toolu_msg" });
+
+  const summary = mapSdkMessageToEvents(
+    {
+      type: "tool_use_summary",
+      uuid: "u_summary",
+      session_id: "sess",
+    },
+    "thr_1",
+    ctx,
+  );
+  expect(summary[0]?.payload).toMatchObject({ parent_tool_use_id: "toolu_ctx" });
+});
