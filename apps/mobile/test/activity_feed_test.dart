@@ -62,54 +62,6 @@ void main() {
     expect(mission?.prompt, 'check auth flow');
   });
 
-  test('buildActivityFeed renders bash approval from projection metadata', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
-        threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 2,
-        agents: const [],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'approval-1',
-            sequence: 1,
-            eventType: 'bash_approval.requested',
-            scope: 'main',
-            text: '等待确认 Bash：npm test',
-            at: '2026-01-01T00:00:00.000Z',
-            metadata: const {
-              'bashApproval': {
-                'toolUseId': 'toolu_bash_1',
-                'toolName': 'Bash',
-                'detail': 'npm test',
-                'description': 'Run unit tests',
-                'phase': 'approved',
-              },
-            },
-          ),
-        ],
-      ),
-    );
-
-    final actions =
-        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
-    expect(actions.length, 1);
-    expect(actions.first.text, 'Run unit tests');
-    expect(actions.first.toolUseId, 'toolu_bash_1');
-    expect(actions.first.bashRun?.title, 'Run unit tests');
-    expect(
-      feed.any(
-        (entry) =>
-            entry.kind == ActivityFeedKind.assistant &&
-            entry.text.contains('等待确认'),
-      ),
-      isFalse,
-    );
-  });
-
   test('bash approval merges into the same action row by toolUseId', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
@@ -167,6 +119,154 @@ void main() {
     expect(actions.first.text, 'Run unit tests');
     expect(actions.first.toolUseId, 'toolu_bash_1');
     expect(actions.first.bashRun?.title, 'Run unit tests');
+  });
+
+  test('buildActivityFeed merges bash approval lifecycle into one completed card', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 3,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'approval-wait',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: '等待确认 Bash：npm test',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'liveType': 'bash_approval.requested',
+              'bashApproval': {
+                'toolUseId': 'toolu_bash_1',
+                'toolName': 'Bash',
+                'detail': 'npm test',
+                'description': 'Run unit tests',
+                'phase': 'requested',
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'approval-approved',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: '已允许本次 Bash：npm test',
+            at: '2026-01-01T00:00:00.500Z',
+            metadata: const {
+              'liveType': 'bash_approval.approved',
+              'bashApproval': {
+                'toolUseId': 'toolu_bash_1',
+                'toolName': 'Bash',
+                'detail': 'npm test',
+                'description': 'Run unit tests',
+                'phase': 'approved',
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'bash-completed',
+            sequence: 3,
+            eventType: 'tool.completed',
+            scope: 'main',
+            role: 'tool',
+            text: 'Tool: Bash · npm test',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: const {
+              'liveType': 'tool.completed',
+              'tool': {
+                'name': 'Bash',
+                'detail': 'npm test',
+                'toolUseId': 'toolu_bash_1',
+                'description': 'Run unit tests',
+                'status': 'completed',
+                'output': '36 pass',
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 1);
+    expect(actions.first.toolUseId, 'toolu_bash_1');
+    expect(actions.first.text, 'Run unit tests');
+    expect(actions.first.lifecycle, ToolActionLifecycle.completed);
+    expect(actions.first.bashRun?.body, '36 pass');
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.assistant &&
+            (entry.text.contains('等待确认') ||
+                entry.text.contains('已允许本次')),
+      ),
+      isFalse,
+    );
+  });
+
+  test('buildActivityFeed keeps bash approval out of assistant body after approval', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'approval-approved',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: '已允许本次 Bash：npm test',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'liveType': 'bash_approval.approved',
+              'bashApproval': {
+                'toolUseId': 'toolu_bash_1',
+                'toolName': 'Bash',
+                'detail': 'npm test',
+                'description': 'Run unit tests',
+                'phase': 'approved',
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'planner-note',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            text: '正在执行测试命令。',
+            at: '2026-01-01T00:00:00.500Z',
+          ),
+        ],
+      ),
+    );
+
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 1);
+    expect(actions.first.lifecycle, ToolActionLifecycle.approvalApproved);
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.assistant &&
+            entry.text.contains('已允许本次'),
+      ),
+      isFalse,
+    );
   });
 
   test('subagent mission card gets duration and timeline from projection', () {

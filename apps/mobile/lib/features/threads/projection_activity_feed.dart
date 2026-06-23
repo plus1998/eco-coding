@@ -428,9 +428,17 @@ bool _isProjectionContextCompactionItem(ThreadRunProjectionTimelineItem item) {
       item.eventType == 'context.compaction.failed';
 }
 
+bool _isProjectionBashApprovalItem(ThreadRunProjectionTimelineItem item) {
+  if (readBashApprovalMetadata(item.metadata) != null) return true;
+  final liveType = _projectionLiveType(item);
+  return liveType != null && liveType.startsWith('bash_approval.');
+}
+
 bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
   if (_isProjectionUserPromptItem(item)) return true;
-  if (_isProjectionInternalMessageText(item.text) ||
+  if (_isProjectionBashApprovalItem(item)) return false;
+  if (isLegacyBashApprovalActivityText(item.text) ||
+      _isProjectionInternalMessageText(item.text) ||
       isThreadFollowUpActivityMessage(item.text)) {
     return true;
   }
@@ -474,6 +482,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
 
   if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
     if (text.isEmpty && item.eventType != 'message.delta') return null;
+    if (isLegacyBashApprovalActivityText(text)) return null;
     if (parseClarificationAnswersSummary(text) != null) {
       return ActivityFeedEntry(
         id: item.id,
@@ -767,10 +776,26 @@ String? _projectionStreamDisplayKey(ThreadRunProjectionTimelineItem item) {
 
 bool _isStreamingRequestDisplayItem(ThreadRunProjectionTimelineItem item) {
   if (_projectionLiveType(item) == 'todo.updated') return false;
+  if (_isProjectionBashApprovalItem(item)) return false;
   return item.eventType == 'message.delta' ||
       item.eventType == 'message.final' ||
       item.eventType == 'thinking.delta' ||
       item.eventType == 'thinking.final';
+}
+
+ToolActionLifecycle? _resolveProjectionToolLifecycle(
+  ThreadRunProjectionTimelineItem item,
+) {
+  final bashApproval = readBashApprovalMetadata(item.metadata);
+  if (bashApproval != null) {
+    return bashApprovalPhaseToLifecycle(bashApproval.phase);
+  }
+  final tool = readProjectionToolMetadata(item.metadata);
+  if (tool != null) {
+    if (item.eventType == 'tool.failed') return ToolActionLifecycle.failed;
+    return toolLifecycleFromMetadata(tool);
+  }
+  return null;
 }
 
 int _compareTimelineItems(
@@ -808,16 +833,15 @@ int _compareProjectionLifecycleDisplayItems(
   ThreadRunProjectionTimelineItem left,
   ThreadRunProjectionTimelineItem right,
 ) {
-  final rank = {
-    'tool.failed': 4,
-    'tool.completed': 3,
-    'bash_approval.rejected': 2,
-    'bash_approval.approved': 2,
-    'bash_approval.requested': 1,
-    'tool.started': 1,
-  };
-  final leftRank = rank[left.eventType] ?? rank[_projectionLiveType(left)] ?? 0;
-  final rightRank = rank[right.eventType] ?? rank[_projectionLiveType(right)] ?? 0;
-  if (leftRank != rightRank) return leftRank - rightRank;
+  final leftLifecycle = _resolveProjectionToolLifecycle(left);
+  final rightLifecycle = _resolveProjectionToolLifecycle(right);
+  if (leftLifecycle != null &&
+      rightLifecycle != null &&
+      leftLifecycle != rightLifecycle) {
+    return compareToolActionLifecyclePriority(leftLifecycle, rightLifecycle);
+  }
+  final richness =
+      _projectionToolDisplayRichness(left) - _projectionToolDisplayRichness(right);
+  if (richness != 0) return richness;
   return _compareTimelineItems(left, right);
 }

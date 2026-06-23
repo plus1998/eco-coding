@@ -95,6 +95,7 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
     if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
       final text = item.text.trim();
       if (text.isEmpty || item.eventType == 'message.delta') continue;
+      if (isLegacyBashApprovalActivityText(text)) continue;
       final preview = _firstReadableLine(text);
       if (preview.length >= 8 && !isActivityNoiseMessage(preview)) {
         output.add(
