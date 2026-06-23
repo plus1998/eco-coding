@@ -56,8 +56,6 @@ export interface AgentRuntimeRunInput {
   resume?: EcoSdkResumeOptions;
   /** Stopped subagent sessions Eco may auto-Resume via PreToolUse. */
   resumableSubagents?: readonly ResumableSubagentRef[];
-  /** When set, used as the full model prompt instead of buildExecutionPromptWithFollowUp. */
-  executionPromptOverride?: string;
   /** Optional universal agent registry/profile used to generate SDK AgentDefinitions dynamically. */
   agentRegistry?: EcoAgentRuntimeConfig;
 }
@@ -74,7 +72,6 @@ export interface EcoPlanningContext {
 
 export interface AgentRuntimeDriver {
   run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
-  runExecution?(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent>;
   runQuestion?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
   runContinuation?(
     input: AgentRuntimeRunInput,
@@ -264,7 +261,6 @@ export * from "./subagent-availability";
 export * from "./agent-orchestration";
 export * from "./tool-permission-policy.js";
 export * from "./filesystem-scope-policy.js";
-export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
 export * from "./ask-user-question";
 export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";

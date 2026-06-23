@@ -350,7 +350,6 @@ import {
   registerPendingPlanApproval,
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
-import { hasPlanExecutionIntent, setPlanExecutionIntent, takePlanExecutionIntent } from "./plan-execution-intent";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
 import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
 import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
@@ -368,7 +367,6 @@ import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
-  resolvePlanningRunOutcome,
   resolveQuestionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
@@ -410,7 +408,6 @@ import {
   createWorkflowSettingsStore,
   isWorkflowSettingsSnapshot,
   normalizeWorkflowSettingsSnapshot,
-  orchestrationModeFromSnapshot,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
@@ -1119,11 +1116,6 @@ function disableThreadPlanMode(threadId: string): ThreadRuntimeConfig | undefine
   }
   conversationStore.saveThreadRuntimeConfig(threadId, next);
   return next;
-}
-
-/** @deprecated Use threadPlanModeEnabled. */
-function threadUsesManualOrchestration(threadId: string): boolean {
-  return threadPlanModeEnabled(threadId);
 }
 
 function registerDesktopCommand<Args extends unknown[], Result>(
@@ -2234,17 +2226,6 @@ function registerIpcHandlers(): void {
           attachments,
           roleRoutes,
         );
-      } else if (threadRuntime.planModeEnabled) {
-        void runCodingThreadPlanning(
-          thread,
-          workspace,
-          runtimeConfig,
-          prompt,
-          undefined,
-          undefined,
-          attachments,
-          roleRoutes,
-        );
       } else {
         void runCodingThreadAutonomous(
           thread,
@@ -3228,162 +3209,6 @@ async function runCodingThreadAutonomous(
   }
 }
 
-async function runCodingThreadPlanning(
-  thread: ThreadSummary,
-  workspace: WorkspaceInfo,
-  runtimeConfig: RuntimeConfig,
-  prompt: string,
-  existingWorktreePlan?: WorktreePlan,
-  resume?: EcoSdkResumeOptions,
-  attachments?: PromptImageAttachment[],
-  routesOverride?: readonly RuntimeRoleRouteConfig[],
-): Promise<void> {
-  const controller = new AbortController();
-  startActiveRun(thread.id, {
-    controller,
-    worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
-  });
-  resetSubagentContextWindows(thread.id);
-
-  try {
-    const { worktreePlan, cwd, isolated } = await resolveThreadWorktree(
-      workspace,
-      thread.id,
-      existingWorktreePlan,
-    );
-    activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
-    updateThread(thread.id, {
-      message: `Working in project directory: ${workspace.path}`,
-      status: "running",
-    });
-
-    const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
-
-    const planningOutcome = await runThreadRequestWithAutoRetry(
-      thread.id,
-      "planning",
-      controller.signal,
-      async () => {
-        return runThreadRequestWithRuntimeProxy({
-          threadId: thread.id,
-          attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
-          recordRouteFingerprint: recordThreadRouteFingerprint,
-          startRuntimeProxy,
-          onProxyReady: ({ proxy, plannerRoute }) => {
-            process.stderr.write(
-              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-            );
-            updateThread(thread.id, {
-              message: `Local model router ready: ${proxy.baseUrl}`,
-              status: "running",
-            });
-            process.stderr.write(
-              `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${proxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
-            );
-          },
-          run: async ({ proxy: attemptProxy, routes }) => {
-            const effectiveResume = resumeOptsForRun;
-            if (effectiveResume) {
-              await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
-            }
-
-            try {
-              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
-
-              return await consumeSdkRunEvents({
-                events: driver.run(
-                  buildSdkRunInput({
-                    threadId: thread.id,
-                    prompt,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routes,
-                    signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(thread.id, prompt, { skillsScope: "planning" }),
-                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                    ...(effectiveResume ? { resume: effectiveResume } : {}),
-                  }),
-                ),
-                threadId: thread.id,
-                worktreePath: cwd,
-                signal: controller.signal,
-                onUsageRecorded: onSdkUsageRecordedEvent,
-                captureSession: captureSdkSessionFromEvent,
-                emitActivity: emitSdkStreamActivity,
-                onEvent: (event) => {
-                  if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    if (
-                      !getPendingPlanApprovalForThread(thread.id) &&
-                      !hasPlanExecutionIntent(thread.id)
-                    ) {
-                      captureThreadPlanReady({
-                        threadId: thread.id,
-                        workspacePath: workspace.path,
-                        worktreePath: cwd,
-                        routesJson: JSON.stringify(routes),
-                        payload: event.payload,
-                        awaitingPlanMessage: "计划已生成，请确认是否执行。",
-                      });
-                    }
-                  }
-                },
-              });
-            } catch (error) {
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              return { ok: false, reason: errorMessage(error) };
-            }
-          },
-        });
-      },
-    );
-
-    const planningDecision = resolvePlanningRunOutcome(planningOutcome, {
-      hasPendingPlan:
-        Boolean(conversationStore.getPendingPlan(thread.id)) && !hasPlanExecutionIntent(thread.id),
-    });
-
-    if (
-      await applyMainThreadRunDecisionEffects({
-        threadId: thread.id,
-        decision: planningDecision,
-        onCancelled: async (reason) => {
-          cancelClarificationsForThread(thread.id, reason);
-          await handleRunCancelled(thread.id, worktreePlan);
-        },
-        onFailed: (reason) => {
-          cancelClarificationsForThread(thread.id, reason);
-          clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
-          markThreadInterrupted(thread.id, reason);
-        },
-      })
-    ) {
-      return;
-    }
-  } catch (error) {
-    cancelClarificationsForThread(thread.id, errorMessage(error));
-    markThreadInterrupted(thread.id, errorMessage(error));
-  } finally {
-    const executionIntent = takePlanExecutionIntent(thread.id);
-    const worktreePath = resolveThreadWorktreePath(thread.id);
-    await finalizeMainThreadRunCleanup({
-      threadId: thread.id,
-      worktreePath,
-      cancelClarificationsReason: "run finished",
-      idleFallbackMessage: "计划阶段已结束。",
-    });
-    if (executionIntent) {
-      void runCodingThreadExecution(
-        thread.id,
-        executionIntent.runtimeConfig,
-        executionIntent.roleRoutes ? { routesOverride: executionIntent.roleRoutes } : undefined,
-      );
-    }
-  }
-}
-
 async function runCodingThreadExecution(
   threadId: string,
   runtimeConfig: RuntimeConfig,
@@ -3464,8 +3289,8 @@ async function runCodingThreadExecution(
                 "execution",
               );
 
-              if (!driver.runExecution) {
-                throw new Error("Runtime driver does not support execution phase.");
+              if (!driver.runContinuation) {
+                throw new Error("Runtime driver does not support session continuation.");
               }
 
               const resume = options?.resume ?? resolveResumeOptions(threadId, executionCwd);
@@ -3476,13 +3301,8 @@ async function runCodingThreadExecution(
               }
               const followUp = options?.followUp?.trim();
               const runPrompt = followUp || pending.userPrompt;
-              let executionPromptOverride: string | undefined;
-              if (!resume && followUp && followUp !== pending.userPrompt.trim()) {
-                const activityLines = conversationStore.listActivityLines(threadId);
-                executionPromptOverride = buildAgentPromptWithContext(thread.prompt, followUp, activityLines);
-              }
               return await consumeSdkRunEvents({
-                events: driver.runExecution(
+                events: driver.runContinuation(
                   buildSdkRunInput({
                     threadId,
                     prompt: runPrompt,
@@ -3494,8 +3314,8 @@ async function runCodingThreadExecution(
                     agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
                     ...(resume ? { resume } : {}),
                     resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
-                    ...(executionPromptOverride && { executionPromptOverride }),
                   }),
+                  "execution",
                   planning,
                 ),
                 threadId,
@@ -3954,17 +3774,6 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
       runtimeConfig,
       agentPrompt,
       cwd !== workspace.path ? cwd : undefined,
-      resume,
-      undefined,
-      routesOverride,
-    );
-  } else if (threadPlanModeEnabled(threadId)) {
-    void runCodingThreadPlanning(
-      updated,
-      workspace,
-      runtimeConfig,
-      agentPrompt,
-      existingWorktreePlan,
       resume,
       undefined,
       routesOverride,
@@ -4484,11 +4293,9 @@ function createSdkDriver(
     throw new Error("Thread was not found.");
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
-  const planModeEnabled = threadConfig?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
-    orchestration: orchestrationModeFromSnapshot({ planModeEnabled }),
     hookContext: {
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
@@ -4836,19 +4643,6 @@ async function dispatchThreadContinueAction(input: {
         action.phase === "execution"
           ? await resolvePlanningContextForThread(threadId, workspace.path)
           : undefined;
-      if (!threadPlanModeEnabled(threadId) && action.phase !== "question") {
-        await runCodingThreadAutonomous(
-          updated,
-          workspace,
-          runtimeConfig,
-          agentPrompt,
-          existingWorktreePlan,
-          resumeOverride ?? resolveResumeOptions(threadId, cwd),
-          attachments,
-          roleRoutes,
-        );
-        return;
-      }
       await runThreadContinuation(
         updated,
         workspace,
@@ -4886,15 +4680,17 @@ async function dispatchThreadContinueAction(input: {
       conversationStore.clearSubagentSessions(threadId);
       subagentMetricsRegistry.clearThread(threadId);
     }
-    void runCodingThreadPlanning(
+    void runThreadContinuation(
       updated,
       workspace,
       runtimeConfig,
       agentPrompt,
+      "planning",
       existingWorktreePlan,
-      undefined,
       attachments,
       roleRoutes,
+      undefined,
+      resumeOverride,
     );
   }
 }
@@ -4911,111 +4707,6 @@ async function runThreadContinuation(
   planningContext?: EcoPlanningContext,
   resumeOverride?: EcoSdkResumeOptions,
 ): Promise<void> {
-  if (!threadPlanModeEnabled(thread.id) && mode !== "question") {
-    const controller = new AbortController();
-    startActiveRun(thread.id, {
-      controller,
-      worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
-    });
-    resetSubagentContextWindows(thread.id);
-    let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
-    let cwd = workspace.path;
-    const taskRuntime =
-      mode === "execution"
-        ? createThreadSdkTaskRuntime({
-            threadId: thread.id,
-            store: {
-              listTodos: (id) => conversationStore.listCoderTodos(id),
-              replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
-            },
-            emitTodoList,
-          })
-        : undefined;
-    const taskRunHooks = taskRuntime?.taskRunHooks;
-    try {
-      const resolved = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
-      worktreePlan = resolved.worktreePlan;
-      cwd = resolved.cwd;
-      activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
-      const resumeOpts = resumeOverride ?? resolveResumeOptions(thread.id, cwd);
-      if (!resumeOpts) {
-        markThreadInterrupted(thread.id, "无法恢复 SDK 会话，请重新发送完整需求。");
-        return;
-      }
-      const outcome = await runThreadRequestWithAutoRetry(
-        thread.id,
-        runAttemptPhaseFromThreadMode(mode),
-        controller.signal,
-        async () => {
-          return runThreadRequestWithRuntimeProxy({
-            threadId: thread.id,
-            attachments,
-            resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
-            recordRouteFingerprint: recordThreadRouteFingerprint,
-            startRuntimeProxy,
-            run: async ({ proxy: attemptProxy, routes }) => {
-              const driver = createSdkDriver(
-                thread.id,
-                attemptProxy,
-                taskRunHooks?.hookContextExtras,
-                "execution",
-              );
-              return await consumeSdkRunEvents({
-                events: driver.runContinuation(
-                  buildSdkRunInput({
-                    threadId: thread.id,
-                    prompt: followUp,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routes,
-                    signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(thread.id, followUp),
-                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                    resume: resumeOpts,
-                  }),
-                  mode,
-                  planningContext,
-                ),
-                threadId: thread.id,
-                worktreePath: cwd,
-                signal: controller.signal,
-                onUsageRecorded: onSdkUsageRecordedEvent,
-                captureSession: captureSdkSessionFromEvent,
-                emitActivity: emitSdkStreamActivity,
-                onEvent: (event) => {
-                  taskRuntime?.handleEvent(event);
-                },
-              });
-            },
-          });
-        },
-      );
-      const decision = resolveExecutionRunOutcome(outcome);
-      if (
-        await applyMainThreadRunDecisionEffects({
-          threadId: thread.id,
-          decision,
-          onCancelled: async () => {
-            taskRunHooks?.stopIfUnhandled("cancelled");
-            await handleRunCancelled(thread.id, worktreePlan);
-          },
-          onFailed: (reason) => {
-            taskRunHooks?.stopIfUnhandled("blocked");
-            markThreadInterrupted(thread.id, reason);
-          },
-        })
-      ) {
-        return;
-      }
-      taskRunHooks?.stopIfUnhandled("completed");
-      await completeCodingThreadRun(thread.id, worktreePlan);
-    } finally {
-      finishActiveRun(thread.id);
-      afterRunContextRefresh(thread.id, cwd);
-    }
-    return;
-  }
-
   const controller = new AbortController();
   startActiveRun(thread.id, {
     controller,
@@ -6423,18 +6114,6 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       });
       const decision = await registerPendingPlanApproval(threadId, approvalRequest);
       if (decision === "approved") {
-        const approval = resolveThreadPlanApprovalRuntime(threadId, {
-          getThread: (id) => conversationStore.getThread(id),
-          hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
-          getPendingPlan: (id) => conversationStore.getPendingPlan(id),
-          getPendingPlanApproval: (id) => getPendingPlanApprovalForThread(id),
-          resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
-          resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
-        });
-        setPlanExecutionIntent(threadId, {
-          runtimeConfig: approval.runtimeConfig,
-          roleRoutes: approval.roleRoutes,
-        });
         emitThreadEvent(threadId, "plan_approval.approved", "已批准计划。", "user", false, {
           planApproval: approvalRequest,
         });

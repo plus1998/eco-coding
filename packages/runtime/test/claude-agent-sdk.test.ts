@@ -7,11 +7,8 @@ import {
   applyEcoSdkSettings,
   applyResumeToQueryOptions,
   applySessionStoreToQueryOptions,
-  buildExecutePhasePrompt,
-  buildExecutePhaseSystemAppend,
-  buildExecuteResumePrompt,
-  buildExecutionPromptWithFollowUp,
-  buildPlanningPhasePrompt,
+  buildAutonomousOrchestratorAppend,
+  buildAutonomousPlanContinuationPrompt,
   buildQuestionAnswerPrompt,
   buildSdkProcessEnv,
   ClaudeAgentSdkDriver,
@@ -26,7 +23,6 @@ import {
   createSessionCapturedEvent,
   createToolPermissionDeniedEvent,
   deleteClaudeAgentSdkSession,
-  executePhaseSystemAppend,
   extractSdkRunFailure,
   formatAgentEventDisplay,
   formatAgentEventLine,
@@ -37,7 +33,6 @@ import {
   isSdkInitMessage,
   mapSdkMessageToEvents,
   mergeAllowedTools,
-  planningPhaseSystemAppend,
   questionAnswerSystemAppend,
   readSdkSessionId,
   readSdkUserMessageCheckpointId,
@@ -459,7 +454,7 @@ test("creates native SDK subagent definitions", () => {
   });
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     skills: ["pdf"],
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Skill"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch", "Skill"],
   });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).not.toHaveProperty("skills");
   expect((definitions[ecoSubagentKeyForRole("reviewer")] as { tools: string[] }).tools).not.toContain(
@@ -499,44 +494,26 @@ test("reviewer prompt limits scope to current session workspace diff", () => {
   expect(reviewerAgentPrompt).toContain("confidence");
   expect(reviewerAgentPrompt).toContain("code_location");
   expect(reviewerAgentPrompt).toContain("missing test coverage");
-  expect(executePhaseSystemAppend).toContain("Eco prepends");
-  expect(executePhaseSystemAppend).toContain("changed file list");
-  expect(executePhaseSystemAppend).toMatch(/runnable, verified code/);
-  expect(executePhaseSystemAppend).toContain("Completion audit");
-  expect(executePhaseSystemAppend).toContain("Plan fidelity");
 });
 
-test("builds phased orchestration prompts", () => {
-  const userPrompt = "Add rich text editor styles";
-  const analysis = "## 分析结果\n\nNeed to extend styles.css";
-  const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
+test("autonomous orchestrator append does not force a fixed subagent pipeline", () => {
+  const append = buildAutonomousOrchestratorAppend();
+  expect(append).toContain("Do not force a fixed subagent order");
+  expect(append).not.toContain("Coders (parallel)");
+  expect(append).not.toContain("TaskCreate");
+});
 
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("native Plan Mode");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("ExitPlanMode");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do not use Write/Edit/MultiEdit");
-  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode integration");
-  expect(planningPhaseSystemAppend).toContain("native Plan Mode workflow");
-  expect(planningPhaseSystemAppend).not.toContain("Finalization rule");
-  expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("mcp__eco_plan__finalize_plan");
-  expect(executePhaseSystemAppend).toContain("TaskCreate");
-  expect(executePhaseSystemAppend).toContain("TaskUpdate");
-  expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
-  expect(executePhaseSystemAppend).toContain("Do not restate the full approved plan");
-  expect(executePhaseSystemAppend).toContain("Architect (targeted)");
-  expect(executePhaseSystemAppend).toContain("Default: skip architect");
-  expect(executePhaseSystemAppend).toContain("Context Digest / Architecture Decision");
-  expect(executePhaseSystemAppend).toContain("Do not ask architect to re-explore the project");
-  expect(executePhaseSystemAppend).toContain("Do not call architect for routine task listing");
-  expect(executePhaseSystemAppend).not.toContain(`explore: ${ecoSubagentKeyForRole("explore")}`);
-  expect(executePhaseSystemAppend).toContain("Coders (parallel)");
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("system-reminder");
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Pipeline —");
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Fidelity:");
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan, { planUserEdited: true })).toContain(
-    "edited this plan in Eco",
-  );
+test("buildAutonomousPlanContinuationPrompt carries approved plan context", () => {
+  const prompt = buildAutonomousPlanContinuationPrompt({
+    userPrompt: "Add feature X",
+    analysis: "Needs tests",
+    plan: "Do the thing",
+    planUserEdited: true,
+    followUp: "also add unit tests",
+  });
+  expect(prompt).toContain("approved your submitted plan");
+  expect(prompt).toContain("Do the thing");
+  expect(prompt).toContain("also add unit tests");
 });
 
 test("planning explore uses only codebase read tools while architect keeps network lookup", () => {
@@ -567,20 +544,20 @@ test("question explore subagent uses only codebase read tools", () => {
   expect(definitions).not.toHaveProperty("explore");
 });
 
-test("execution subagents include read-only Explore and avoid network tools except writable coder", () => {
-  const definitions = createExecutionAgentDefinitions(routes);
+test("autonomous subagents scope tools: explore read-only, coder writable, others read+bash+network", () => {
+  const definitions = createAutonomousAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     model: "claude-haiku-explore",
     tools: ["Read", "Glob", "Grep"],
   });
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
   });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash", "WebSearch", "WebFetch"],
   });
   expect(definitions[ecoSubagentKeyForRole("tester")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash", "WebSearch", "WebFetch"],
   });
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     tools: [
@@ -602,12 +579,9 @@ test("execution subagents include read-only Explore and avoid network tools exce
   const architectTools = (definitions[ecoSubagentKeyForRole("architect")] as { tools: string[] }).tools;
   const reviewerTools = (definitions[ecoSubagentKeyForRole("reviewer")] as { tools: string[] }).tools;
   const testerTools = (definitions[ecoSubagentKeyForRole("tester")] as { tools: string[] }).tools;
-  expect(architectTools).not.toContain("WebSearch");
-  expect(architectTools).not.toContain("WebFetch");
-  expect(reviewerTools).not.toContain("WebSearch");
-  expect(reviewerTools).not.toContain("WebFetch");
-  expect(testerTools).not.toContain("WebSearch");
-  expect(testerTools).not.toContain("WebFetch");
+  expect(architectTools).toContain("WebSearch");
+  expect(reviewerTools).toContain("WebSearch");
+  expect(testerTools).toContain("WebSearch");
 });
 
 test("createExecutionAgentDefinitions omits every disabled role", () => {
@@ -629,70 +603,6 @@ test("createExecutionAgentDefinitions skips architect when no route is configure
   const definitions = createExecutionAgentDefinitions(partialRoutes);
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("architect"));
   expect(definitions).toHaveProperty(ecoSubagentKeyForRole("coder"));
-});
-
-test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", () => {
-  const append = buildExecutePhaseSystemAppend({
-    explore: true,
-    architect: true,
-    coder: true,
-    reviewer: false,
-    tester: false,
-  });
-  expect(append).not.toContain(`Agent(${ecoSubagentKeyForRole("reviewer")})`);
-  expect(append).not.toContain(`Agent(${ecoSubagentKeyForRole("tester")})`);
-  expect(append).toContain("Reviewer subagent is disabled");
-  expect(append).toContain("Tester subagent is disabled");
-  expect(append).toContain("Coders (parallel)");
-});
-
-test("buildExecutePhaseSystemAppend executes directly when coder is disabled", () => {
-  const append = buildExecutePhaseSystemAppend({
-    explore: true,
-    architect: false,
-    coder: false,
-    reviewer: false,
-    tester: false,
-  });
-  expect(append).toContain("## Implementation Tasks");
-  expect(append).toContain("Direct implementation");
-  expect(append).toContain(`Do NOT call Agent(${ecoSubagentKeyForRole("coder")})`);
-  expect(append).not.toContain('Parse "## Coder Tasks"');
-  expect(append).not.toContain(`Each item becomes one Agent(${ecoSubagentKeyForRole("coder")}) delegation`);
-  expect(append).not.toContain("Coders (parallel)");
-});
-
-test("buildExecutePhaseSystemAppend states hands-on rights when the main agent can write", () => {
-  const append = buildExecutePhaseSystemAppend(
-    { explore: true, architect: true, coder: true, reviewer: true, tester: true },
-    { canEditFiles: true, canRunBash: true },
-  );
-  expect(append).toContain("you may edit files");
-  expect(append).toContain("Hands-on boundary");
-  expect(append).toContain("You may edit files directly");
-  expect(append).toContain("You may run shell commands via Bash");
-  expect(append).toContain("git reset --hard");
-  expect(append).not.toContain("pure orchestrator");
-});
-
-test("buildExecutePhaseSystemAppend states delegation-only boundary when writes are disabled", () => {
-  const append = buildExecutePhaseSystemAppend(
-    { explore: true, architect: true, coder: true, reviewer: true, tester: true },
-    { canEditFiles: false, canRunBash: false },
-  );
-  expect(append).toContain("pure orchestrator");
-  expect(append).toContain("Filesystem writes (Write/Edit) are DISABLED for you");
-  expect(append).toContain("Bash is DISABLED for you");
-  expect(append).toContain(`Agent(${ecoSubagentKeyForRole("coder")})`);
-  expect(append).not.toContain("you may edit files");
-});
-
-test("buildExecutePhasePrompt honors an explicit capability", () => {
-  const prompt = buildExecutePhasePrompt("Do the thing", "analysis", "plan", {
-    capability: { canEditFiles: false, canRunBash: false },
-  });
-  expect(prompt).toContain("pure orchestrator");
-  expect(prompt).not.toContain("you may edit files");
 });
 
 test("inferActivityRole does not map SDK built-in Agent(Explore) to Eco Explore", () => {
@@ -1456,66 +1366,6 @@ test("createSessionCapturedEvent and init message helpers", () => {
   expect(event.payload).toEqual({ sessionId: "sess-abc", cwd: "/tmp/worktree" });
 });
 
-test("buildExecutionPromptWithFollowUp appends User follow-up on resume", () => {
-  const prompt = buildExecutionPromptWithFollowUp(
-    { userPrompt: "Add feature X", analysis: "Needs tests", plan: "Do the thing" },
-    "also add unit tests",
-    { isResume: true },
-  );
-  expect(prompt).toContain("User follow-up:");
-  expect(prompt).toContain("also add unit tests");
-  expect(prompt).not.toContain("Do the thing");
-  expect(prompt).toContain("approved plan already submitted");
-});
-
-test("buildExecutionPromptWithFollowUp omits duplicate follow-up matching original task", () => {
-  const prompt = buildExecutionPromptWithFollowUp(
-    { userPrompt: "same task", analysis: "a", plan: "p" },
-    "same task",
-    { isResume: true },
-  );
-  expect(prompt).not.toContain("User follow-up:");
-});
-
-test("buildExecuteResumePrompt references approved plan by default when resuming", () => {
-  const prompt = buildExecuteResumePrompt({
-    userPrompt: "Add feature X",
-    analysis: "Needs tests",
-    plan: "Do the thing",
-    approvedPlanFile: ".claude/plans/thr_1.md",
-  });
-  expect(prompt).toContain("phase 2 execution");
-  expect(prompt).toContain("approved plan already submitted");
-  expect(prompt).not.toContain("Do the thing");
-  expect(prompt).not.toContain("Add feature X");
-  expect(prompt).toContain(".claude/plans/thr_1.md");
-  expect(prompt).not.toContain("from our conversation above");
-});
-
-test("buildExecuteResumePrompt can inline edited approved plan once", () => {
-  const prompt = buildExecuteResumePrompt(
-    {
-      userPrompt: "Add feature X",
-      analysis: "Needs tests",
-      plan: "Edited plan",
-      approvedPlanFile: ".claude/plans/thr_1.md",
-      planUserEdited: true,
-    },
-    { includePlanText: true },
-  );
-  expect(prompt).toContain("Edited plan");
-  expect(prompt).toContain("Add feature X");
-  expect(prompt).toContain("user edited this plan");
-  expect(
-    buildExecuteResumePrompt({
-      userPrompt: "x",
-      analysis: "y",
-      plan: "Edited",
-      planUserEdited: true,
-    }),
-  ).toContain("approved/on-disk plan");
-});
-
 test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route models", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
   const driver = new ClaudeAgentSdkDriver({
@@ -1564,11 +1414,12 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   })) {
     // drain
   }
-  for await (const _event of driver.runExecution(
+  for await (const _event of driver.runContinuation(
     {
       ...runInput,
       signal: new AbortController().signal,
     },
+    "execution",
     {
       userPrompt: "Inspect and implement",
       analysis: "Needs execution",
@@ -1578,13 +1429,16 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
     // drain
   }
 
-  const planningAgents = capturedOptions[0]?.agents as Record<string, { model?: string }> | undefined;
-  expect(Object.keys(planningAgents ?? {}).sort()).toEqual([
+  const autonomousAgents = capturedOptions[0]?.agents as Record<string, { model?: string }> | undefined;
+  expect(Object.keys(autonomousAgents ?? {}).sort()).toEqual([
     ecoSubagentKeyForRole("architect"),
+    ecoSubagentKeyForRole("coder"),
     ecoSubagentKeyForRole("explore"),
+    ecoSubagentKeyForRole("reviewer"),
+    ecoSubagentKeyForRole("tester"),
   ]);
-  expect(planningAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
-  expect(planningAgents?.[ecoSubagentKeyForRole("architect")]?.model).toBe("claude-sonnet-architect");
+  expect(autonomousAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
+  expect(autonomousAgents?.[ecoSubagentKeyForRole("architect")]?.model).toBe("claude-sonnet-architect");
 
   const questionAgents = capturedOptions[1]?.agents as Record<string, { model?: string }> | undefined;
   expect(Object.keys(questionAgents ?? {})).toEqual([ecoSubagentKeyForRole("explore")]);
@@ -1592,22 +1446,19 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
 
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
-  expect(capturedOptions[2]?.allowedTools).not.toContain("WebSearch");
-  expect(capturedOptions[2]?.allowedTools).not.toContain("WebFetch");
+  expect(capturedOptions[2]?.allowedTools).toContain("WebSearch");
 
-  const executionAgents = capturedOptions[2]?.agents as Record<string, { model?: string }> | undefined;
-  expect(Object.keys(executionAgents ?? {}).sort()).toEqual([
+  const continuationAgents = capturedOptions[2]?.agents as Record<string, { model?: string }> | undefined;
+  expect(Object.keys(continuationAgents ?? {}).sort()).toEqual([
     ecoSubagentKeyForRole("architect"),
     ecoSubagentKeyForRole("coder"),
     ecoSubagentKeyForRole("explore"),
     ecoSubagentKeyForRole("reviewer"),
     ecoSubagentKeyForRole("tester"),
   ]);
-  expect(executionAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
-  expect(executionAgents?.[ecoSubagentKeyForRole("coder")]?.model).toBe("qwen-coder-anthropic");
-  expect(executionAgents?.[ecoSubagentKeyForRole("reviewer")]?.model).toBe("claude-sonnet-reviewer");
-  expect(executionAgents).not.toHaveProperty("Explore");
-  expect(executionAgents).not.toHaveProperty("coder");
+  expect(continuationAgents?.[ecoSubagentKeyForRole("coder")]?.model).toBe("qwen-coder-anthropic");
+  expect(continuationAgents).not.toHaveProperty("Explore");
+  expect(continuationAgents).not.toHaveProperty("coder");
 });
 
 test("ClaudeAgentSdkDriver forwards universal agent registry without coding prompt wrappers", async () => {
@@ -1795,7 +1646,6 @@ test("ClaudeAgentSdkDriver treats profile guidance as main-agent guidance", asyn
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
-    orchestration: "autonomous",
     loadSdk: async () => ({
       query: ({ prompt, options }) => {
         const callIndex = capturedQueries.length + 1;
@@ -1955,21 +1805,14 @@ test("ClaudeAgentSdkDriver wires SDK Bash confirmation callback", async () => {
     }),
   });
 
-  for await (const _event of driver.runExecution(
-    {
-      threadId: "thr_bash_confirm",
-      prompt: "Run checks",
-      workspacePath: "/tmp/workspace",
-      worktreePath: "/tmp/worktree",
-      routes,
-      signal: new AbortController().signal,
-    },
-    {
-      userPrompt: "Run checks",
-      analysis: "Need shell verification.",
-      plan: "Run the verification command.",
-    },
-  )) {
+  for await (const _event of driver.run({
+    threadId: "thr_bash_confirm",
+    prompt: "Run checks",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
     // drain
   }
 
@@ -2079,14 +1922,17 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   });
 
   const events: Array<{ type: string; payload?: unknown }> = [];
-  for await (const event of driver.run({
-    threadId: "thr_plan_tool",
-    prompt: "Add markdown rendering",
-    workspacePath: "/tmp/workspace",
-    worktreePath: "/tmp/worktree",
-    routes,
-    signal: new AbortController().signal,
-  })) {
+  for await (const event of driver.runContinuation(
+    {
+      threadId: "thr_plan_tool",
+      prompt: "Add markdown rendering",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    "planning",
+  )) {
     events.push({ type: event.type, payload: event.payload });
   }
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
@@ -2147,14 +1993,17 @@ test("ClaudeAgentSdkDriver planning captures plan from deferred_tool_use result 
   });
 
   const events: Array<{ type: string; payload?: unknown }> = [];
-  for await (const event of driver.run({
-    threadId: "thr_plan_deferred",
-    prompt: "Add markdown rendering",
-    workspacePath: "/tmp/workspace",
-    worktreePath: "/tmp/worktree",
-    routes,
-    signal: new AbortController().signal,
-  })) {
+  for await (const event of driver.runContinuation(
+    {
+      threadId: "thr_plan_deferred",
+      prompt: "Add markdown rendering",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    "planning",
+  )) {
     events.push({ type: event.type, payload: event.payload });
   }
 
@@ -2195,14 +2044,17 @@ test("ClaudeAgentSdkDriver planning completes after PermissionRequest approval",
   });
 
   const events: Array<{ type: string; payload?: unknown }> = [];
-  for await (const event of driver.run({
-    threadId: "thr_plan_bridge",
-    prompt: "Add markdown rendering",
-    workspacePath: "/tmp/workspace",
-    worktreePath: "/tmp/worktree",
-    routes,
-    signal: new AbortController().signal,
-  })) {
+  for await (const event of driver.runContinuation(
+    {
+      threadId: "thr_plan_bridge",
+      prompt: "Add markdown rendering",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    "planning",
+  )) {
     events.push({ type: event.type, payload: event.payload });
   }
 
@@ -2243,7 +2095,7 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
     }),
   });
 
-  for await (const _event of driver.runExecution(
+  for await (const _event of driver.runContinuation(
     {
       threadId: "thr_exec_resume",
       prompt: "",
@@ -2253,6 +2105,7 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
       resume: { resumeSessionId: "sess-plan" },
       signal: new AbortController().signal,
     },
+    "execution",
     {
       userPrompt: "Add markdown rendering",
       analysis: "Approved",
@@ -2279,7 +2132,6 @@ test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", 
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
-    orchestration: "autonomous",
     loadSdk: async () => ({
       query: ({ options }) => {
         capturedOptions.push(options);
@@ -2350,14 +2202,17 @@ test("ClaudeAgentSdkDriver planning completes without ExitPlanMode", async () =>
   });
 
   const events: Array<{ type: string }> = [];
-  for await (const event of driver.run({
-    threadId: "thr_plan_missing",
-    prompt: "Plan this feature",
-    workspacePath: "/tmp/workspace",
-    worktreePath: "/tmp/worktree",
-    routes,
-    signal: new AbortController().signal,
-  })) {
+  for await (const event of driver.runContinuation(
+    {
+      threadId: "thr_plan_missing",
+      prompt: "Plan this feature",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    "planning",
+  )) {
     events.push({ type: event.type });
   }
 

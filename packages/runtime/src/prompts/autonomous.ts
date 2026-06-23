@@ -1,28 +1,23 @@
 /** Short orchestrator rules for autonomous mode — routing lives in subagent descriptions. */
 
-import { ecoSubagentKeyForRole, SDK_GENERAL_PURPOSE_AGENT_KEY } from "../subagent-availability.js";
-import { formatMandatoryEcoSubagentRule } from "./subagent-pipeline.js";
-
-const ecoExplore = ecoSubagentKeyForRole("explore");
-const ecoCoder = ecoSubagentKeyForRole("coder");
-const ecoReviewer = ecoSubagentKeyForRole("reviewer");
-const ecoTester = ecoSubagentKeyForRole("tester");
+import { formatMandatoryEcoSubagentRule, formatAvailableSubagentsLine } from "./subagent-pipeline.js";
+import { defaultSubagentAvailability, SDK_GENERAL_PURPOSE_AGENT_KEY } from "../subagent-availability.js";
 
 export const autonomousOrchestratorAppend = [
-  [
-    "Eco autonomous orchestration: you are the Planner. Judge task scope and delegate with Eco Agent keys:",
-    `explore=${ecoExplore}, coder=${ecoCoder}, reviewer=${ecoReviewer}, tester=${ecoTester}.`,
-  ].join(" "),
+  "Eco orchestration: you are the main agent for this thread.",
   formatMandatoryEcoSubagentRule(),
+  formatAvailableSubagentsLine(defaultSubagentAvailability()),
   [
-    "Clarify vs plan (separate tools): After exploration, use AskUserQuestion for material ambiguity",
-    "(preferences, scope, tradeoffs) that the repo cannot resolve — do not substitute a full plan for targeted questions.",
-    "Do not call ExitPlanMode or finalize_plan in this mode; handle the task directly after the spec is clear.",
+    "Delegate to enabled Eco subagents only when their descriptions fit the task.",
+    "Do not force a fixed subagent order or mandatory review/test passes.",
   ].join(" "),
-  `SDK Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) is available for complex multi-step work that requires both exploration and action; it inherits the main conversation model and all tools.`,
-  `Low risk: ${ecoExplore} → ${ecoCoder} → ${ecoTester}. Medium: add your own read-only review before ${ecoTester} (do not call ${ecoReviewer}).`,
-  `High risk: ${ecoExplore} → ${ecoCoder} → ${ecoReviewer} → ${ecoTester}.`,
-  "Do not declare the task complete until implementation, review (when used), and verification evidence match the requested scope.",
+  [
+    "Clarify vs plan: use AskUserQuestion for material ambiguity",
+    "(preferences, scope, tradeoffs) that the repo cannot resolve.",
+    "Use ExitPlanMode only when a formal plan needs user approval before implementation.",
+  ].join(" "),
+  `SDK Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) is available for complex multi-step work that requires both exploration and action.`,
+  "Do not declare the task complete until the requested scope is implemented and you have proportionate verification evidence.",
   "Do not use the SDK Workflow tool.",
 ].join("\n");
 
@@ -40,7 +35,7 @@ export function buildAutonomousPlanContinuationPrompt(input: {
   const lines = [
     "<system-reminder>",
     "The user approved your submitted plan. Continue in the same session and implement it.",
-    "Use the Eco Agent keys as needed; do not restart planning from scratch unless blocked.",
+    "Use enabled Eco subagents when helpful; do not restart planning from scratch unless blocked.",
     "</system-reminder>",
     "",
     input.planUserEdited

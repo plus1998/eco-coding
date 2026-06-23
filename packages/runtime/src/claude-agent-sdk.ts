@@ -53,24 +53,15 @@ import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./suba
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
 export { SubagentLaunchRegistry, type SubagentLaunchRecord } from "./eco-sdk-hooks.js";
 
-import { buildAutonomousOrchestratorAppend } from "./prompts/autonomous.js";
+import {
+  buildAutonomousOrchestratorAppend,
+  buildAutonomousPlanContinuationPrompt,
+} from "./prompts/autonomous.js";
 import { buildMainAgentHandsOnBoundaryAppend } from "./prompts/subagent-pipeline.js";
 import {
-  buildAnalyzePhasePrompt,
-  buildAutonomousPlanContinuationPrompt,
-  buildExecuteBuildSwitchAppend,
-  buildExecutePhasePrompt,
-  buildExecutePhaseSystemAppend,
-  buildExecuteResumePrompt,
-  buildExecutionPromptWithFollowUp,
-  buildPlanningContinuationPrompt,
-  buildPlanningPhasePrompt,
-  buildPlanningPhaseSystemAppend,
-  buildPlanPhasePrompt,
   buildQuestionAnswerPrompt,
   buildQuestionAnswerSystemAppend,
   ecoBasePromptAppend,
-  executePhaseSystemAppend,
   executionArchitectDescription,
   executionArchitectPrompt,
   executionCoderDescription,
@@ -81,13 +72,11 @@ import {
   exploreAgentPrompt,
   planningArchitectDescription,
   planningArchitectPrompt,
-  planningPhaseSystemAppend,
   questionAnswerSystemAppend,
   reviewerAgentPrompt,
 } from "./prompts/index.js";
 import {
   defaultSubagentAvailability,
-  type EcoOrchestrationMode,
   ecoSubagentKeyForRole,
   effectiveSubagentAvailability,
   filterAgentDefinitions,
@@ -104,7 +93,7 @@ import {
 import type { ThinkingEffort } from "./thinking-options.js";
 import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
 
-export { type EcoOrchestrationMode, isSubagentRole, SUBAGENT_ROLES, type SubagentRole };
+export { isSubagentRole, SUBAGENT_ROLES, type SubagentRole };
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -149,16 +138,8 @@ const defaultAllowedTools = [
   "Bash",
   ...networkAllowedTools,
 ] as const;
-const executionAllowedTools = [
-  "Agent",
-  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
-  SDK_SKILL_TOOL_NAME,
-  ...SDK_TASK_PROGRESS_TOOL_NAMES,
-  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
-  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
-  "Bash",
-] as const;
-const planningAllowedTools = [
+const planningDisallowedSdkTools = [...SDK_FILESYSTEM_WRITE_TOOL_NAMES, "Bash"] as const;
+const planningContinuationAllowedTools = [
   "Agent",
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
@@ -166,12 +147,6 @@ const planningAllowedTools = [
   ...networkAllowedTools,
   "AskUserQuestion",
 ] as const;
-/**
- * SDK `disallowedTools` bare names remove tools from model context (availability layer).
- * Plan phase keeps read tools; write tools and Bash are stripped so the model does not attempt shell commands.
- * See docs/agent-sdk-tools-and-permissions.md
- */
-const planningDisallowedSdkTools = [...SDK_FILESYSTEM_WRITE_TOOL_NAMES, "Bash"] as const;
 // Plan submission tools are user-approval boundaries; never let SDK allow-rules auto-approve them.
 const protectedPlanModeToolNames = ["EnterPlanMode", "ExitPlanMode", "mcp__eco_plan__finalize_plan"] as const;
 const questionAllowedTools = [
@@ -183,13 +158,11 @@ const questionAllowedTools = [
 ] as const;
 const exploreSubagentTools = ["Read", "Glob", "Grep"] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
-const executionReadOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES] as const;
 const readOnlySubagentBashTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   "Bash",
   ...networkAllowedTools,
 ] as const;
-const executionReadOnlySubagentBashTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, "Bash"] as const;
 const executionCoderTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
@@ -237,25 +210,6 @@ function buildUniversalQuestionPrompt(userPrompt: string): string {
     userPrompt.trim(),
     "",
     "Answer directly. Use available Eco subagents only when they improve the answer.",
-  ].join("\n");
-}
-
-function buildUniversalPlanningPrompt(userPrompt: string): string {
-  return [
-    "User request:",
-    userPrompt.trim(),
-    "",
-    "You are in Eco planning mode.",
-    "Use available Eco subagents when they improve the analysis.",
-    "",
-    "Before proposing a plan, explore the repository to ground your understanding. Then ensure the goal, success criteria, scope, constraints, and key tradeoffs are clear.",
-    "Use `AskUserQuestion` proactively when high-impact ambiguity remains — do not guess. Ask after exploring, not before.",
-    "Each question must materially change the plan, confirm an assumption, or choose between meaningful tradeoffs. Include enough context for an informed decision.",
-    "",
-    "If the next actions are clear, present a decision-complete Markdown plan and call `ExitPlanMode`.",
-    "The `ExitPlanMode` tool input must include the same complete Markdown plan in the `plan` field. Do not call `ExitPlanMode` with `{}` or only `allowedPrompts`.",
-    "Do not use Write/Edit/MultiEdit to create a plan file; Eco captures the submitted plan from `ExitPlanMode`.",
-    "Do not execute the plan in this phase.",
   ].join("\n");
 }
 
@@ -319,42 +273,6 @@ function buildUniversalExecutionPromptWithFollowUp(
 
   lines.push("", "Use the active Eco orchestration profile and its listed subagents as needed.");
   lines.push(formatResumableSubagentsAppend(planning.resumableSubagents ?? []));
-  return lines.join("\n");
-}
-
-function buildUniversalPlanContinuationPrompt(input: {
-  userPrompt: string;
-  analysis: string;
-  plan: string;
-  planUserEdited?: boolean;
-  followUp?: string;
-}): string {
-  const lines = [
-    "<system-reminder>",
-    "The user approved your submitted plan. Continue in the same Eco session using the active profile.",
-    "</system-reminder>",
-    "",
-    input.planUserEdited
-      ? "The user edited the plan in Eco before approval. Treat the approved plan below as authoritative."
-      : "Use the approved plan already submitted in this session.",
-  ];
-  if (input.planUserEdited) {
-    lines.push(
-      "",
-      "Original user request:",
-      input.userPrompt.trim(),
-      "",
-      "Approved analysis:",
-      input.analysis.trim() || "(none)",
-      "",
-      "Approved plan:",
-      input.plan.trim() || "(none)",
-    );
-  }
-  const followUp = input.followUp?.trim();
-  if (followUp && followUp !== input.userPrompt.trim()) {
-    lines.push("", "Latest user message:", followUp);
-  }
   return lines.join("\n");
 }
 
@@ -448,8 +366,6 @@ export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
-  /** Default: autonomous (single session, agent picks subagents). Use manual for plan mode. */
-  orchestration?: EcoOrchestrationMode;
   /**
    * When true, move cwd/git/platform context out of the cached system prompt prefix
    * so identical append text can share prompt cache across worktrees.
@@ -595,62 +511,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
   async *run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    if (this.options.orchestration === "autonomous") {
-      yield* this.runAutonomous(input);
-      return;
-    }
-
-    yield* this.runPlanning(input);
-  }
-
-  async *runExecution(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent> {
-    const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
-    yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
-    const isResume = Boolean(input.resume?.resumeSessionId);
-    const planFile = planning.planFilePath?.trim()
-      ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
-      : undefined;
-    const resumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
-    const prompt =
-      input.executionPromptOverride ??
-      (universalProfile
-        ? buildUniversalExecutionPromptWithFollowUp(
-            {
-              ...planning,
-              ...(planFile ? { approvedPlanFile: planFile } : {}),
-              ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
-            },
-            input.prompt,
-            { isResume, includePlanOnResume: planning.planUserEdited === true },
-          )
-        : buildExecutionPromptWithFollowUp(
-            {
-              ...planning,
-              ...(planFile ? { approvedPlanFile: planFile } : {}),
-              ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
-            },
-            input.prompt,
-            {
-              isResume,
-              availability,
-              capability: handsOn,
-              includePlanOnResume: planning.planUserEdited === true,
-            },
-          ));
-    yield* this.runSingleSession(input, {
-      prompt,
-      permissionMode: "acceptEdits",
-      allowedTools: [...executionAllowedTools],
-      phaseAppend: `${
-        universalProfile
-          ? `${buildUniversalPhaseAppend("execute")}\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalDelegateOptions)}`
-          : buildExecutePhaseSystemAppend(availability, handsOn)
-      }${resumableAppend}`,
-      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-      availability,
-    });
+    yield* this.runAutonomous(input);
   }
 
   async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
@@ -732,104 +593,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    if (this.options.orchestration === "autonomous") {
-      if (mode === "question") {
-        const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-        yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
-        yield* this.runSingleSession(input, {
-          prompt: universalProfile
-            ? buildUniversalQuestionPrompt(input.prompt)
-            : buildQuestionAnswerPrompt(input.prompt, availability),
-          permissionMode: readOnlyPermissionMode,
-          allowedTools: [...questionAllowedTools],
-          phaseAppend: universalProfile
-            ? buildUniversalPhaseAppend("answer")
-            : buildQuestionAnswerSystemAppend(availability),
-          agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-          availability,
-        });
-        return;
-      }
-
-      const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-      const continuationPrompt =
-        mode === "execution" && planning
-          ? universalProfile
-            ? buildUniversalPlanContinuationPrompt({
-                userPrompt: planning.userPrompt,
-                analysis: planning.analysis,
-                plan: planning.plan,
-                ...(planning.planUserEdited ? { planUserEdited: true } : {}),
-                followUp: input.prompt,
-              })
-            : buildAutonomousPlanContinuationPrompt({
-                userPrompt: planning.userPrompt,
-                analysis: planning.analysis,
-                plan: planning.plan,
-                ...(planning.planUserEdited ? { planUserEdited: true } : {}),
-                followUp: input.prompt,
-              })
-          : input.prompt;
-      yield createPhaseBoundaryEvent(
-        input.threadId,
-        mode === "execution" ? "execute" : "plan",
-        mode === "execution" ? "【续聊】继续执行" : "【续聊】继续对话",
-      );
-      const autonomousHandsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
-      yield* this.runSingleSession(input, {
-        prompt: continuationPrompt,
-        permissionMode: "acceptEdits",
-        allowedTools: [...autonomousAllowedTools],
-        phaseAppend: `${
-          universalProfile
-            ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
-            : buildAutonomousOrchestratorAppend()
-        }\n${buildMainAgentHandsOnBoundaryAppend(
-          autonomousHandsOn,
-          availability,
-          universalProfile ? universalDelegateOptions : {},
-        )}`,
-        agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-        availability,
-      });
-      return;
-    }
-
-    if (mode === "planning") {
-      const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-      yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
-      const planningResumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
-      const planningPhaseAppend = `${
-        universalProfile ? buildUniversalPhaseAppend("plan") : buildPlanningPhaseSystemAppend(availability)
-      }${planningResumableAppend}`;
-      const planningTranscript = yield* this.runSingleSession(input, {
-        prompt: universalProfile
-          ? buildUniversalPlanningContinuationPrompt(input.prompt)
-          : buildPlanningContinuationPrompt(input.prompt, availability),
-        permissionMode: "plan",
-        planningPhase: true,
-        allowedTools: [...planningAllowedTools],
-        phaseAppend: planningPhaseAppend,
-        agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-        availability,
-      });
-      if (input.signal.aborted) {
-        return;
-      }
-      const finalizedPlan =
-        planningTranscript.finalizedPlan ??
-        resolvePlanningFinalizedPlanFromTranscript(planningTranscript.transcript);
-      if (finalizedPlan) {
-        yield createPlanReadyEvent(input.threadId, {
-          userPrompt: input.prompt,
-          analysis: finalizedPlan.analysis,
-          plan: finalizedPlan.plan,
-          ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
-        });
-      }
-      return;
-    }
-
     if (mode === "question") {
       const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
@@ -837,7 +600,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         prompt: universalProfile
           ? buildUniversalQuestionPrompt(input.prompt)
           : buildQuestionAnswerPrompt(input.prompt, availability),
-        permissionMode: "default",
+        permissionMode: readOnlyPermissionMode,
         allowedTools: [...questionAllowedTools],
         phaseAppend: universalProfile
           ? buildUniversalPhaseAppend("answer")
@@ -850,39 +613,69 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
-    yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
     const planFile = planning?.planFilePath?.trim()
       ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
       : undefined;
-    const executionPrompt = planning
-      ? universalProfile
-        ? buildUniversalExecutionPromptWithFollowUp(
-            { ...planning, ...(planFile ? { approvedPlanFile: planFile } : {}) },
-            input.prompt,
-            {
-            isResume: true,
-            includePlanOnResume: false,
-          })
-        : buildExecutionPromptWithFollowUp(
-            { ...planning, ...(planFile ? { approvedPlanFile: planFile } : {}) },
-            input.prompt,
-            {
-            isResume: true,
-            availability,
-            capability: handsOn,
-            includePlanOnResume: false,
-          })
-      : input.prompt;
-    yield* this.runSingleSession(input, {
-      prompt: executionPrompt,
-      permissionMode: "acceptEdits",
-      allowedTools: [...executionAllowedTools],
-      phaseAppend: universalProfile
-        ? `${buildUniversalPhaseAppend("execute")}\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalDelegateOptions)}`
-        : buildExecutePhaseSystemAppend(availability, handsOn),
-      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
+    const continuationPrompt =
+      mode === "execution" && planning
+        ? universalProfile
+          ? buildUniversalExecutionPromptWithFollowUp(
+              {
+                ...planning,
+                ...(planFile ? { approvedPlanFile: planFile } : {}),
+                ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
+              },
+              input.prompt,
+              { isResume: true, includePlanOnResume: planning.planUserEdited === true },
+            )
+          : buildAutonomousPlanContinuationPrompt({
+              userPrompt: planning.userPrompt,
+              analysis: planning.analysis,
+              plan: planning.plan,
+              ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+              followUp: input.prompt,
+            })
+        : mode === "planning" && universalProfile
+          ? buildUniversalPlanningContinuationPrompt(input.prompt)
+          : input.prompt;
+    yield createPhaseBoundaryEvent(
+      input.threadId,
+      mode === "execution" ? "execute" : "plan",
+      mode === "execution" ? "【续聊】继续执行" : "【续聊】继续对话",
+    );
+    const planningContinuation = mode === "planning";
+    const sessionResult = yield* this.runSingleSession(input, {
+      prompt: continuationPrompt,
+      permissionMode: planningContinuation ? "plan" : "acceptEdits",
+      ...(planningContinuation ? { planningPhase: true } : {}),
+      allowedTools: planningContinuation
+        ? [...planningContinuationAllowedTools]
+        : [...autonomousAllowedTools],
+      phaseAppend: `${
+        universalProfile
+          ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
+          : buildAutonomousOrchestratorAppend()
+      }\n${buildMainAgentHandsOnBoundaryAppend(
+        handsOn,
+        availability,
+        universalProfile ? universalDelegateOptions : {},
+      )}`,
+      agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
+    if (planningContinuation) {
+      const finalizedPlan =
+        sessionResult.finalizedPlan ??
+        resolvePlanningFinalizedPlanFromTranscript(sessionResult.transcript);
+      if (finalizedPlan) {
+        yield createPlanReadyEvent(input.threadId, {
+          userPrompt: input.prompt,
+          analysis: finalizedPlan.analysis,
+          plan: finalizedPlan.plan,
+          ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
+        });
+      }
+    }
   }
 
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
@@ -899,40 +692,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
-  }
-
-  private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-    yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
-    const planningPhaseAppend = universalProfile
-      ? buildUniversalPhaseAppend("plan")
-      : buildPlanningPhaseSystemAppend(availability);
-    const planningTranscript = yield* this.runSingleSession(input, {
-      prompt: universalProfile
-        ? buildUniversalPlanningPrompt(input.prompt)
-        : buildPlanningPhasePrompt(input.prompt, availability),
-      permissionMode: "plan",
-      planningPhase: true,
-      allowedTools: [...planningAllowedTools],
-      phaseAppend: planningPhaseAppend,
-      agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-      availability,
-    });
-    if (input.signal.aborted) {
-      return;
-    }
-    const finalizedPlan =
-      planningTranscript.finalizedPlan ??
-      resolvePlanningFinalizedPlanFromTranscript(planningTranscript.transcript);
-    if (finalizedPlan) {
-      yield createPlanReadyEvent(input.threadId, {
-        userPrompt: input.prompt,
-        analysis: finalizedPlan.analysis,
-        plan: finalizedPlan.plan,
-        ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
-      });
-    }
   }
 
   private async *runSingleSession(
@@ -1289,12 +1048,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 }
 
 /** @deprecated Use createExecutionAgentDefinitions */
+/** @deprecated Use createAutonomousAgentDefinitions */
 export function createAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability?: SubagentAvailability,
 ): Record<string, unknown> {
-  return createExecutionAgentDefinitions(routes, agentSkills, availability);
+  return createAutonomousAgentDefinitions(routes, agentSkills, availability);
 }
 
 function createExploreAgentDefinition(
@@ -1364,51 +1124,6 @@ export function createQuestionAgentDefinitions(
 /** @deprecated Import from ./prompts/execution-agents.js */
 export { reviewerAgentPrompt };
 
-export function createExecutionAgentDefinitions(
-  routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
-  availability: SubagentAvailability = normalizeSubagentAvailability(),
-): Record<string, unknown> {
-  const effective = effectiveSubagentAvailability(availability, routes);
-  const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const definitions: Record<string, unknown> = {
-    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-  };
-  if (isSubagentEnabled(effective, "architect")) {
-    definitions[ecoSubagentKeyForRole("architect")] = {
-      description: executionArchitectDescription,
-      ...agentDefinitionToolFields("architect", executionReadOnlySubagentTools, agentSkills),
-      prompt: executionArchitectPrompt,
-      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
-    };
-  }
-  if (isSubagentEnabled(effective, "coder")) {
-    definitions[ecoSubagentKeyForRole("coder")] = {
-      description: executionCoderDescription,
-      ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
-      prompt: executionCoderPrompt,
-      model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
-    };
-  }
-  if (isSubagentEnabled(effective, "reviewer")) {
-    definitions[ecoSubagentKeyForRole("reviewer")] = {
-      description: autonomousReviewerDescription,
-      ...agentDefinitionToolFields("reviewer", executionReadOnlySubagentBashTools, agentSkills),
-      prompt: reviewerAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
-    };
-  }
-  if (isSubagentEnabled(effective, "tester")) {
-    definitions[ecoSubagentKeyForRole("tester")] = {
-      description: executionTesterDescription,
-      ...agentDefinitionToolFields("tester", executionReadOnlySubagentBashTools, agentSkills),
-      prompt: executionTesterPrompt,
-      model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
-    };
-  }
-  return definitions;
-}
-
 const autonomousReviewerDescription = [
   "High-risk code review only: cross-module changes, security, or data-sensitive paths.",
   "Review ONLY this session's workspace changes (not full repo history).",
@@ -1458,6 +1173,15 @@ export function createAutonomousAgentDefinitions(
     };
   }
   return definitions;
+}
+
+/** @deprecated Use createAutonomousAgentDefinitions */
+export function createExecutionAgentDefinitions(
+  routes: readonly ResolvedModelRoute[],
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
+  availability: SubagentAvailability = normalizeSubagentAvailability(),
+): Record<string, unknown> {
+  return createAutonomousAgentDefinitions(routes, agentSkills, availability);
 }
 
 export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
@@ -1705,21 +1429,14 @@ function drainToolPermissionDecisionEvents(
 }
 
 export {
-  buildAnalyzePhasePrompt,
-  buildExecuteBuildSwitchAppend,
-  buildExecutePhasePrompt,
-  buildExecutePhaseSystemAppend,
-  buildExecuteResumePrompt,
-  buildExecutionPromptWithFollowUp,
-  buildPlanningPhasePrompt,
-  buildPlanningPhaseSystemAppend,
-  buildPlanPhasePrompt,
   buildQuestionAnswerPrompt,
   buildQuestionAnswerSystemAppend,
-  executePhaseSystemAppend,
-  planningPhaseSystemAppend,
   questionAnswerSystemAppend,
 };
+export {
+  buildAutonomousOrchestratorAppend,
+  buildAutonomousPlanContinuationPrompt,
+} from "./prompts/autonomous.js";
 
 export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {
   return createAgentEvent({
