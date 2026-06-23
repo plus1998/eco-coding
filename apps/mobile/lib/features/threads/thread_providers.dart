@@ -321,6 +321,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         contextSnapshot: state.contextSnapshot ?? bootstrap.usage.context,
         loading: false,
       );
+      if (thread?.status == 'awaiting_plan' && bootstrap.pendingPlan == null) {
+        _loadPendingPlanFromRpc();
+      }
       _loadUsageDeferred();
     } catch (error) {
       state = state.copyWith(loading: false, error: error.toString());
@@ -498,7 +501,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         if (pendingPlanActive &&
             thread.status != 'awaiting_plan' &&
             thread.status != 'running') {
-          state = state.copyWith(clearPlan: true, thread: thread);
+          ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
+            if (!mounted) return;
+            state = state.copyWith(
+              pendingPlan: plan,
+              clearPlan: plan == null,
+              thread: thread,
+            );
+          });
           return;
         }
         if ((thread.status == 'awaiting_plan' || thread.status == 'running') &&
@@ -561,9 +571,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (rpc == null) return;
     final bootstrap = await rpc.sessionBootstrap(threadId);
     final thread = bootstrap.thread ?? await _resolveThreadSummary(rpc);
+    final pendingPlan =
+        bootstrap.pendingPlan ?? await rpc.getPendingPlan(threadId);
+    if (!mounted) return;
     state = state.copyWith(
-      pendingPlan: bootstrap.pendingPlan,
-      clearPlan: bootstrap.pendingPlan == null,
+      pendingPlan: pendingPlan,
+      clearPlan: pendingPlan == null,
       pendingBash: bootstrap.pendingBash,
       clearBash: bootstrap.pendingBash == null,
       pendingClarification: bootstrap.pendingClarification,

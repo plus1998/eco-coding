@@ -207,6 +207,8 @@ class _UserPromptTileState extends State<_UserPromptTile> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.88;
+    const horizontalPadding = 28.0;
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
           height: 1.45,
           color: eco.textPrimary,
@@ -214,33 +216,34 @@ class _UserPromptTileState extends State<_UserPromptTile> {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.88,
-        ),
-        decoration: BoxDecoration(
-          color: eco.userBubble,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: eco.borderSubtle),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final bodyMaxWidth = constraints.maxWidth;
-            final canExpand = _textExceedsLineLimit(
-              text: widget.text,
-              style: textStyle,
-              maxWidth: bodyMaxWidth > 0 ? bodyMaxWidth : constraints.maxWidth,
-              maxLines: _collapsedMaxLines,
-              textDirection: Directionality.of(context),
-            );
-            final showCollapsed = canExpand && !_expanded;
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: eco.userBubble,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: eco.borderSubtle),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final bodyMaxWidth = (constraints.maxWidth - horizontalPadding)
+                  .clamp(0.0, maxBubbleWidth - horizontalPadding);
+              final canExpand = _textExceedsLineLimit(
+                text: widget.text,
+                style: textStyle,
+                maxWidth: bodyMaxWidth,
+                maxLines: _collapsedMaxLines,
+                textDirection: Directionality.of(context),
+              );
+              final showCollapsed = canExpand && !_expanded;
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
+              return IntrinsicWidth(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                 Stack(
                   children: [
                     AnimatedSize(
@@ -280,28 +283,31 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                       ),
                   ],
                 ),
-                if (canExpand)
-                  Align(
-                    alignment: Alignment.center,
-                    child: TextButton(
-                      onPressed: () => setState(() => _expanded = !_expanded),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
+                    if (canExpand)
+                      Align(
+                        alignment: Alignment.center,
+                        child: TextButton(
+                          onPressed: () => setState(() => _expanded = !_expanded),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: Text(
+                            _expanded ? '收起' : '展开全文',
+                            style:
+                                Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: eco.textMuted,
+                                    ),
+                          ),
+                        ),
                       ),
-                      child: Text(
-                        _expanded ? '收起' : '展开全文',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: eco.textMuted,
-                            ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -320,20 +326,23 @@ class _ClarificationAnswerTile extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
+      child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.88,
         ),
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: eco.userBubble,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: eco.borderSubtle),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: eco.userBubble,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: eco.borderSubtle),
+          ),
+          child: IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
             Text(
               '澄清回答',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -360,8 +369,10 @@ class _ClarificationAnswerTile extends StatelessWidget {
                       height: 1.45,
                     ),
               ),
+              ],
             ],
-          ],
+            ),
+          ),
         ),
       ),
     );

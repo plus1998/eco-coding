@@ -15,8 +15,12 @@ Future<void> showPlanApprovalSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    isDismissible: false,
+    enableDrag: false,
     builder: (context) {
-      return _ScrollableSheetFrame(
+      return PopScope(
+        canPop: false,
+        child: _ScrollableSheetFrame(
         maxHeightFactor: 0.92,
         footer: Column(
           mainAxisSize: MainAxisSize.min,
@@ -64,6 +68,7 @@ Future<void> showPlanApprovalSheet({
             EcoMarkdown(text: plan.plan),
           ],
         ),
+      ),
       );
     },
   );

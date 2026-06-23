@@ -17,3 +17,14 @@ export function buildThreadPendingPlanView(
     worktreePath: pending.worktreePath,
   };
 }
+
+export function buildThreadPlanLivePayload(
+  pending: Pick<ThreadPendingPlan, "userPrompt" | "analysis" | "plan" | "planFilePath">,
+): Pick<ThreadPendingPlan, "userPrompt" | "analysis" | "plan" | "planFilePath"> {
+  return {
+    userPrompt: pending.userPrompt,
+    analysis: pending.analysis,
+    plan: pending.plan,
+    ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
+  };
+}

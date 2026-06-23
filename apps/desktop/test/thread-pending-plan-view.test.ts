@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildThreadPendingPlanView,
+  buildThreadPlanLivePayload,
   type ThreadPendingPlanInternal,
 } from "../src/main/thread-pending-plan-view";
 
@@ -28,4 +29,12 @@ test("buildThreadPendingPlanView strips internal routing fields from IPC view", 
     worktreePath: "/repo/.worktrees/thr_plan",
   });
   expect(buildThreadPendingPlanView(pendingPlan)).not.toHaveProperty("routesJson");
+});
+
+test("buildThreadPlanLivePayload omits routesJson for live events", () => {
+  expect(buildThreadPlanLivePayload(pendingPlan)).toEqual({
+    userPrompt: "Build billing ledger",
+    analysis: "Need a stable domain model.",
+    plan: "1. Capture usage\n2. Project billing",
+  });
 });

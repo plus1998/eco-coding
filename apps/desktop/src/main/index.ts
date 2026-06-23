@@ -342,7 +342,7 @@ import {
   restoreThreadMetricsFromStore,
 } from "./thread-metrics-runtime";
 import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
-import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
+import { buildThreadPendingPlanView, buildThreadPlanLivePayload } from "./thread-pending-plan-view";
 import {
   cancelPlanApprovalsForThread,
   getPendingPlanApprovalForThread,
@@ -5833,7 +5833,15 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
-  emitThreadEvent(threadId, `thread.${patch.status}`, message, "system");
+  const pendingPlan = patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
+  emitThreadEvent(
+    threadId,
+    `thread.${patch.status}`,
+    message,
+    "system",
+    false,
+    pendingPlan ? { plan: buildThreadPlanLivePayload(pendingPlan) } : undefined,
+  );
 }
 
 function patchThreadSummary(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {

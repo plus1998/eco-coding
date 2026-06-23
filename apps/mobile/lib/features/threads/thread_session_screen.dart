@@ -39,6 +39,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   String? _shownApprovalKey;
+  bool _planApprovalSheetOpen = false;
   bool _followUpBusy = false;
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
@@ -51,7 +52,20 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(runtimeConfigProvider.notifier).state = null;
+      _maybeShowApprovalSheet(ref.read(threadSessionProvider(widget.threadId)));
     });
+  }
+
+  void _maybeShowApprovalSheet(ThreadSessionState session) {
+    if (!_needsApprovalSheet(session)) {
+      return;
+    }
+    final key = _approvalKey(session);
+    if (key == null || key == _shownApprovalKey) {
+      return;
+    }
+    _shownApprovalKey = key;
+    _showApprovalSheets(session);
   }
 
   @override
@@ -180,7 +194,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         final key = nextApprovalKey;
         if (key != null && key != _shownApprovalKey) {
           _shownApprovalKey = key;
-          _showApprovalSheets(next);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showApprovalSheets(
+              ref.read(threadSessionProvider(widget.threadId)),
+            );
+          });
         }
       }
       final previousFeed = previous == null
@@ -521,12 +540,28 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final thread = session.thread;
     if (session.pendingPlan != null &&
         session.pendingPlan!.threadId == thread?.id) {
+      if (_planApprovalSheetOpen) return;
+      _planApprovalSheetOpen = true;
       showPlanApprovalSheet(
         context: context,
         plan: session.pendingPlan!,
         onApprove: () => _handlePlanApproval(approve: true),
         onDismiss: () => _handlePlanApproval(approve: false),
-      );
+      ).whenComplete(() {
+        _planApprovalSheetOpen = false;
+        if (!mounted) return;
+        final current = ref.read(threadSessionProvider(widget.threadId));
+        if (!_needsApprovalSheet(current)) {
+          return;
+        }
+        _shownApprovalKey = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _maybeShowApprovalSheet(
+            ref.read(threadSessionProvider(widget.threadId)),
+          );
+        });
+      });
     } else if (session.pendingBash != null &&
         session.pendingBash!.threadId == thread?.id) {
       showBashApprovalSheet(

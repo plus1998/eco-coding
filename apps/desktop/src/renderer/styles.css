@@ -4212,6 +4212,7 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-user-prompt-content {
+  width: fit-content;
   max-width: 85%;
   min-width: 0;
 }

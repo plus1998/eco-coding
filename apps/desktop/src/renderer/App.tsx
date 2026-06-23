@@ -733,7 +733,13 @@ function App() {
         return;
       }
 
-      if (event.type === "thread.execution_failed" && window.eco) {
+      if (
+        (event.type === "thread.awaiting_plan" ||
+          event.type === "thread.execution_failed" ||
+          event.type === "plan_approval.requested") &&
+        !event.plan &&
+        window.eco
+      ) {
         void window.eco.getPendingPlan(event.threadId).then((plan) => {
           if (plan) {
             setPendingPlan(plan);
@@ -1840,6 +1846,15 @@ function App() {
   }, [runProjectionLayoutSignature, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
+    if (!showPlanApproval || !activeThread) {
+      return;
+    }
+    scrollActivityFeedToEnd(true);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(true));
+    return () => cancelAnimationFrame(frame);
+  }, [activeThread?.id, scrollActivityFeedToEnd, showPlanApproval]);
+
+  useLayoutEffect(() => {
     if (
       !canRetryThread ||
       showPlanApproval ||
@@ -1948,9 +1963,11 @@ function App() {
     if (subagentMetrics) {
       setSubagentMetricsByThread((current) => ({ ...current, [threadId]: subagentMetrics }));
     }
-    setPendingPlan(plan);
-    setPendingClarification(clarification);
-    setPendingBashApproval(bashApproval);
+    if (threadId === selectedThreadId) {
+      setPendingPlan(plan);
+      setPendingClarification(clarification);
+      setPendingBashApproval(bashApproval);
+    }
     setFollowUpsByThread((current) => ({ ...current, [threadId]: sortThreadFollowUps(followUps.followUps) }));
     setTodosByThread((current) => ({ ...current, [threadId]: todos }));
     if (usageSnapshot.billing) {
