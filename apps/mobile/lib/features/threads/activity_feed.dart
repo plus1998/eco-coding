@@ -1354,7 +1354,7 @@ class _ActionTile extends StatelessWidget {
   IconData _materialIcon(ActivityActionIcon icon) => EcoIcons.activityAction(icon);
 }
 
-class _BashRunCard extends StatelessWidget {
+class _BashRunCard extends StatefulWidget {
   const _BashRunCard({
     required this.display,
     this.lifecycle,
@@ -1364,8 +1364,17 @@ class _BashRunCard extends StatelessWidget {
   final ToolActionLifecycle? lifecycle;
 
   @override
+  State<_BashRunCard> createState() => _BashRunCardState();
+}
+
+class _BashRunCardState extends State<_BashRunCard> {
+  static const _collapsedBodyLines = 2;
+  bool _bodyExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
+    final display = widget.display;
+    final lifecycle = widget.lifecycle;
     final running = lifecycle == ToolActionLifecycle.running;
     final failed = lifecycle == ToolActionLifecycle.failed;
     final borderColor = failed
@@ -1417,13 +1426,11 @@ class _BashRunCard extends StatelessWidget {
             Divider(height: 1, color: ecoColors(context).borderSubtle),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: SelectableText(
-                display.body!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textSecondary,
-                      fontFamily: 'Menlo',
-                      height: 1.45,
-                    ),
+              child: _ExpandableBashOutput(
+                text: display.body!,
+                expanded: _bodyExpanded,
+                maxCollapsedLines: _collapsedBodyLines,
+                onToggle: () => setState(() => _bodyExpanded = !_bodyExpanded),
               ),
             ),
           ],
@@ -1431,6 +1438,98 @@ class _BashRunCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ExpandableBashOutput extends StatelessWidget {
+  const _ExpandableBashOutput({
+    required this.text,
+    required this.expanded,
+    required this.maxCollapsedLines,
+    required this.onToggle,
+  });
+
+  final String text;
+  final bool expanded;
+  final int maxCollapsedLines;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: eco.textSecondary,
+          fontFamily: 'Menlo',
+          height: 1.45,
+        );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final exceedsCollapsedLimit = _textExceedsLineLimit(
+          text: text,
+          style: style,
+          maxWidth: constraints.maxWidth,
+          maxLines: maxCollapsedLines,
+          textDirection: Directionality.of(context),
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedSize(
+              duration: const Duration(milliseconds: 150),
+              curve: Curves.easeOut,
+              alignment: Alignment.topLeft,
+              child: expanded
+                  ? SelectableText(text, style: style)
+                  : Text(
+                      text,
+                      maxLines: maxCollapsedLines,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+            ),
+            if (exceedsCollapsedLimit) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: onToggle,
+                  child: Text(
+                    expanded ? '收起' : '展开',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: eco.accentText,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+bool _textExceedsLineLimit({
+  required String text,
+  required TextStyle? style,
+  required double maxWidth,
+  required int maxLines,
+  required TextDirection textDirection,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    maxLines: maxLines,
+    textDirection: textDirection,
+  )..layout(maxWidth: maxWidth);
+  return painter.didExceedMaxLines;
 }
 
 class _PhaseTile extends StatelessWidget {
