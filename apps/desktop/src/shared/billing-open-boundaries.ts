@@ -39,17 +39,16 @@ export function collectBillingOpenBoundaryNotes(billing: ThreadBillingSnapshot):
   const notes: BillingOpenBoundaryNote[] = [];
   const sources = billing.sourceBreakdown;
   const proxyTokens = sourceTokenTotal(sources?.proxy);
-  const otelTokens = sourceTokenTotal(sources?.otel);
   const sdkTokens = sourceTokenTotal(sources?.sdk);
   const hasProxy = proxyTokens > 0;
-  const hasSdkOtel = otelTokens > 0 || sdkTokens > 0;
+  const hasSdk = sdkTokens > 0;
   const diagnostics = billing.diagnostics ?? [];
 
-  if (!hasProxy && hasSdkOtel) {
+  if (!hasProxy && hasSdk) {
     notes.push({
       id: "B17",
       message:
-        "未检测到 Proxy 计费事件：请确认 Agent baseUrl 指向本地 Proxy，否则用量可能仅来自 OTel/SDK 且难以逐笔归属。",
+        "未检测到 Proxy 计费事件：请确认 Agent baseUrl 指向本地 Proxy，否则用量可能仅来自 SDK 且难以逐笔归属。",
     });
   }
 

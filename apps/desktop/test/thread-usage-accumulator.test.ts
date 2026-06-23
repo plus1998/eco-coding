@@ -12,16 +12,16 @@ test("ThreadUsageAccumulator tracks four billing metrics", () => {
     threadId: "t1",
     role: "coder",
     delta,
-    otelCostUsd: 0.5,
+    sourceReportedCostUsd: 0.5,
     actualRates: haikuRates,
     plannerRates: sonnetRates,
     modelId: "haiku",
-    requestKey: "otel:coder:100000:10000:0:0:haiku",
+    requestKey: "sdk:coder:100000:10000:0:0:haiku",
     plannerModelLabel: "sonnet · Anthropic",
   });
 
   const billing = accumulator.getSnapshot("t1");
-  expect(billing?.otelCostUsd).toBe(0.5);
+  expect(billing?.sourceReportedCostUsd).toBe(0.5);
   expect(billing?.plannerTokenCostUsd).toBeCloseTo(0.45);
   expect(billing?.ecoCostUsd).toBeCloseTo(0.12);
   expect(billing?.savedUsd).toBeCloseTo(0.33);
@@ -34,7 +34,7 @@ test("ThreadUsageAccumulator deduplicates by requestKey", () => {
     threadId: "t1",
     role: "planner" as const,
     delta: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    otelCostUsd: 0.01,
+    sourceReportedCostUsd: 0.01,
     actualRates: sonnetRates,
     plannerRates: sonnetRates,
     requestKey: "dup-key",
@@ -42,7 +42,7 @@ test("ThreadUsageAccumulator deduplicates by requestKey", () => {
   accumulator.recordUsage(input);
   accumulator.recordUsage(input);
   const billing = accumulator.getSnapshot("t1");
-  expect(billing?.otelCostUsd).toBe(0.01);
+  expect(billing?.sourceReportedCostUsd).toBe(0.01);
   expect(billing?.totalTokens.input).toBe(1000);
 });
 
@@ -65,7 +65,7 @@ test("ThreadUsageAccumulator serialize and restore round-trip", () => {
   const fresh = new ThreadUsageAccumulator();
   fresh.restoreState("t1", serialized!);
   const billing = fresh.getSnapshot("t1");
-  expect(billing?.otelCostUsd).toBe(0);
+  expect(billing?.sourceReportedCostUsd).toBe(0);
   expect(billing?.totalTokens.input).toBe(1000);
   expect(billing?.plannerModelLabel).toBe("opus · Anthropic");
 });
@@ -89,13 +89,13 @@ test("ThreadUsageAccumulator recordRunUsage bills cache at models.dev rates", ()
         plannerRates: sonnetRates,
       },
     ],
-    otelCostUsd: 0.18,
+    sourceReportedCostUsd: 0.18,
   });
 
   const billing = accumulator.getSnapshot("t1");
   expect(billing?.totalTokens.cacheRead).toBe(230_827);
   expect(billing?.ecoCostBreakdown?.cacheReadUsd).toBeCloseTo(0.0692481, 4);
-  expect(billing?.otelCostUsd).toBe(0.18);
+  expect(billing?.sourceReportedCostUsd).toBe(0.18);
 });
 
 test("ThreadUsageAccumulator recordRunUsage attributes per-model role", () => {
@@ -149,21 +149,10 @@ test("ThreadUsageAccumulator preserves dynamic Agent Profile roles", () => {
   expect(billing?.byModel?.[0]?.roles).toEqual(["source_verifier"]);
 });
 
-test("ThreadUsageAccumulator keeps separate source totals for proxy otel and sdk", () => {
+test("ThreadUsageAccumulator keeps separate source totals for proxy and sdk", () => {
   const accumulator = new ThreadUsageAccumulator();
   const delta = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
 
-  accumulator.recordUsage({
-    threadId: "t1",
-    role: "coder",
-    source: "otel",
-    delta,
-    otelCostUsd: 0.2,
-    actualRates: haikuRates,
-    plannerRates: sonnetRates,
-    modelId: "haiku",
-    requestKey: "otel:1",
-  });
   accumulator.recordUsage({
     threadId: "t1",
     role: "coder",
@@ -189,13 +178,12 @@ test("ThreadUsageAccumulator keeps separate source totals for proxy otel and sdk
         sdkCostUsd: 0.19,
       },
     ],
-    otelCostUsd: 0.19,
+    sourceReportedCostUsd: 0.19,
   });
 
   const billing = accumulator.getSnapshot("t1");
   expect(billing?.primarySource).toBe("proxy");
   expect(billing?.totalTokens.input).toBe(10_000);
-  expect(billing?.sourceBreakdown?.otel?.reportedCostUsd).toBeCloseTo(0.2);
   expect(billing?.sourceBreakdown?.sdk?.reportedCostUsd).toBeCloseTo(0.19);
   expect(billing?.sourceBreakdown?.proxy?.ecoCostUsd).toBeCloseTo(0.012);
 });

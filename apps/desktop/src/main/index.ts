@@ -20,8 +20,8 @@ import {
   isReadFilesystemTool,
   isSubagentRole,
   normalizeSdkSubagentType,
-  type OtelActivityLine,
-  type OtelUsageUpdate,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
   type ParsedUsage,
   type PlanReadyPayload,
   pathContainsGlobMeta,
@@ -197,7 +197,7 @@ import {
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
-import { activityStreamKey, resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
+import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
 import { buildAgentAuditExportArchive } from "./agent-audit-export";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
@@ -287,8 +287,6 @@ import { checkMcpServerConnection } from "./mcp-checker";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { launchInExternalTerminal } from "./open-external-terminal";
-import { localOtelReceiver } from "./otel-receiver";
-import { resolveOtelUsageBilling } from "./otel-usage-billing";
 import { PackageJsonWatcher } from "./package-json-watcher";
 import { PackageScriptRunner } from "./package-script-runner";
 import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
@@ -711,10 +709,6 @@ app.whenReady().then(async () => {
     sdkSessionStore = undefined;
     closeSdkSessionStore = undefined;
   }
-  await localOtelReceiver.start({
-    onActivity: emitOtelActivity,
-    onUsage: emitOtelUsage,
-  });
   backfillThreadRuntimeConfigs();
   recoverOrphanedRunningThreads();
   currentWorkspace = await ensureHomeProject();
@@ -4464,10 +4458,6 @@ function createSdkDriver(
   runPhase: SubagentRunPhase = "execution",
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
 ): ClaudeAgentSdkDriver {
-  const endpoint = localOtelReceiver.getEndpoint();
-  if (!endpoint) {
-    throw new Error("Local OTel receiver is not ready.");
-  }
   const storedThread = conversationStore.getThread(threadId);
   if (!storedThread) {
     throw new Error("Thread was not found.");
@@ -4498,7 +4488,6 @@ function createSdkDriver(
       : (phase, detail) => {
           logContextSnapshot(phase, { threadId, ...detail });
         },
-    otel: { endpoint, threadId },
     ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
   });
 }
@@ -5179,7 +5168,7 @@ async function runThreadContinuation(
   }
 }
 
-/** OTel does not stream assistant text; SDK drives narrative, tool, and todo activity. */
+/** SDK drives narrative, tool, todo, and billing activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   if (event.type === "tool.started" && isRecord(event.payload)) {
     const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
@@ -5191,7 +5180,10 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
           : typeof event.payload.agent_type === "string"
             ? event.payload.agent_type
             : "";
-      const role = normalizeSdkSubagentType(rawRole);
+      const role = normalizeSdkSubagentType(rawRole) ??
+        (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
+          ? rawRole
+          : undefined);
       subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
     }
@@ -5246,64 +5238,8 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   );
 }
 
-function emitOtelActivity(line: OtelActivityLine): void {
-  if (/^Compacting context/i.test(line.message)) {
-    contextLifecycle.noteOtelCompaction(line.threadId);
-    emitContextCompactionStatus(line.threadId, { stage: "started", trigger: "auto" });
-    return;
-  }
-  if (sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line)) {
-    return;
-  }
-  const otelAgentId = resolveOtelActivityAgentId(line.threadId, line, {
-    metricsRegistry: subagentMetricsRegistry,
-  });
-  const eventType = line.apiError ? "thread.api_error" : "otel.activity";
-  emitThreadEvent(line.threadId, eventType, line.message, line.role, line.stream ?? false, {
-    ...(otelAgentId && { agentId: otelAgentId }),
-    ...(line.apiError && { apiError: line.apiError }),
-    ...(line.toolName && {
-      tool: {
-        name: line.toolName,
-        ...(line.toolDetail && { detail: line.toolDetail }),
-        ...(line.toolUseId && { toolUseId: line.toolUseId }),
-        ...(line.durationMs !== undefined && { durationMs: line.durationMs }),
-        ...(line.toolStatus && { status: line.toolStatus }),
-      },
-    }),
-  });
-}
-
 function noteUsageBillingObservation(threadId: string, observation: UsageBillingObservation): void {
   activeRunBillingState.appendObservation(threadId, observation);
-}
-
-function emitOtelUsage(usage: OtelUsageUpdate): void {
-  const runAttemptId = agentLifecycle.usageRunAttemptId(usage.threadId);
-  const plannerAgentId = agentLifecycle.usagePlannerAgentId(usage.threadId);
-  const currentRequestSeq = activeRunBillingState.otelRequestSeq(usage.threadId);
-  const resolved = resolveOtelUsageBilling({
-    usage,
-    ...(currentRequestSeq !== undefined && { currentRequestSeq }),
-    ...(runAttemptId && { runAttemptId }),
-    ...(plannerAgentId && { plannerAgentId }),
-  });
-  activeRunBillingState.recordOtelRequest(usage.threadId, {
-    nextRequestSeq: resolved.nextRequestSeq,
-  });
-
-  if (resolved.observation) {
-    noteUsageBillingObservation(usage.threadId, resolved.observation);
-  }
-
-  usageLedgerCoordinator.trackUsageUpdate(
-    usage.threadId,
-    processUsageBilling(resolved.billingInput)
-      .then(() => undefined)
-      .catch((error) => {
-        process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
-      }),
-  );
 }
 
 async function emitProxyUsage(
@@ -5384,7 +5320,7 @@ function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): vo
   emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, {
     ...event.payload,
     billing,
-    totalCostUsd: billing.otelCostUsd,
+    totalCostUsd: billing.sourceReportedCostUsd,
   });
 }
 
@@ -6127,6 +6063,12 @@ function recordThreadRunEventFromLiveEvent(input: {
   if (!agentId && parentToolUseId) {
     agentId = resolveAgentIdByParentToolUseId(input.threadId, parentToolUseId);
   }
+  if (!agentId && isSubagentRole(input.role)) {
+    agentId = subagentMetricsRegistry.resolveAgentId(input.threadId, {
+      role: input.role,
+      ...(parentToolUseId && { parentToolUseId }),
+    });
+  }
   const requestId =
     input.extras?.requestId?.trim() ||
     resolveLiveRequestId(input.threadId, {
@@ -6192,8 +6134,7 @@ function resolveLiveEventStreamKey(input: {
   if (
     input.stream ||
     input.type === "message.delta" ||
-    input.type === "thinking.delta" ||
-    input.type === "otel.activity"
+    input.type === "thinking.delta"
   ) {
     return activityStreamKey(input.threadId, input.agentId, input.role);
   }
@@ -6208,8 +6149,7 @@ function resolveLiveRequestId(
     !input.type.startsWith("request.") &&
     input.type !== "thread.api_error" &&
     !input.stream &&
-    input.type !== "message.delta" &&
-    input.type !== "otel.activity"
+    input.type !== "message.delta"
   ) {
     return undefined;
   }
@@ -6363,7 +6303,7 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
     message: "运行投影已更新",
     role: "system",
     stream: false,
-    projection,
+    projection: trimProjectionForFeed(projection),
   };
   desktopEventCenter.publishThreadLiveEvent(payload);
 }
@@ -6922,7 +6862,12 @@ function emitUpstreamConnectionErrorActivity(
     return;
   }
   lastConnectionErrorEmitByThread.set(threadId, { at: now, message });
-  emitThreadEvent(threadId, "otel.activity", message, role, false);
+  emitThreadEvent(threadId, "thread.api_error", message, role, false, {
+    apiError: {
+      message: detail,
+      ...(statusCode !== undefined && { statusCode }),
+    },
+  });
 }
 
 function adoptLiveProviderRequestId(

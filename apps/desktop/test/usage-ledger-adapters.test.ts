@@ -58,8 +58,8 @@ test("buildSingleUsageLedgerEvent keeps idempotency stable when attribution chan
   const base = {
     threadId: "thr_adapter",
     role: "coder" as const,
-    source: "otel" as const,
-    sourceEventId: "otel:request:1",
+    source: "sdk" as const,
+    sourceEventId: "sdk:request:1",
     usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheCreationTokens: 0 },
     modelId: "coder-model",
     observedAt: "2026-01-01T00:00:00.000Z",

@@ -74,7 +74,7 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   runtimeRoutes: readonly RuntimeRoute[];
   lookupPricing: UsageBillingPricingLookup;
   source?: BillingUsageSource;
-  otelCostUsd?: number;
+  sourceReportedCostUsd?: number;
   modelId?: string;
   messageId?: string;
   runAttemptId?: string;
@@ -84,7 +84,7 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   requestKey?: string;
   sourceEventId?: string;
   providerRequestId?: string;
-  otelDedupId?: string;
+  sourceDedupId?: string;
   routeRole?: RuntimeAgentRole;
   attributionPending?: boolean;
   aliasModelId?: string;
@@ -94,7 +94,7 @@ export interface ResolveSingleUsageBillingArtifactsInput {
 export async function resolveSingleUsageBillingArtifacts(
   input: ResolveSingleUsageBillingArtifactsInput,
 ): Promise<SingleUsageBillingArtifacts> {
-  const source = input.source ?? "otel";
+  const source = input.source ?? "sdk";
   const plannerRoute = input.runtimeRoutes.find((route) => route.role === "planner");
 
   let usageRoute: ResolvedUsageRoute | undefined;
@@ -134,7 +134,7 @@ export async function resolveSingleUsageBillingArtifacts(
       cacheReadTokens: input.usage.cacheReadTokens,
       cacheCreationTokens: input.usage.cacheCreationTokens,
       ...(input.modelId && { modelId: input.modelId }),
-      ...(input.otelDedupId && { dedupId: input.otelDedupId }),
+      ...(input.sourceDedupId && { dedupId: input.sourceDedupId }),
     });
 
   const requestBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
@@ -173,7 +173,7 @@ export async function resolveSingleUsageBillingArtifacts(
       ecoCostUsd: requestBilling.ecoCostUsd,
       plannerTokenCostUsd: requestBilling.plannerTokenCostUsd,
       savedUsd,
-      otelCostUsd: input.otelCostUsd ?? 0,
+      sourceReportedCostUsd: input.sourceReportedCostUsd ?? 0,
     },
     actualRates,
     plannerRates,
@@ -193,14 +193,14 @@ export async function resolveSingleUsageBillingArtifacts(
       ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
       ...(input.messageId && { sdkMessageId: input.messageId }),
       ...(resolvedModelId && { modelId: resolvedModelId }),
-      ...(input.otelCostUsd !== undefined && { reportedCostUsd: input.otelCostUsd }),
+      ...(input.sourceReportedCostUsd !== undefined && { reportedCostUsd: input.sourceReportedCostUsd }),
       metadata: {
         path: "processUsageBilling",
         ...(input.routeRole && { [USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY]: input.routeRole }),
         [USAGE_LEDGER_BILLING_ROLE_METADATA_KEY]: billingRole,
         ...(input.aliasModelId && { [USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY]: input.aliasModelId }),
         ...(input.providerId && { [USAGE_LEDGER_PROVIDER_ID_METADATA_KEY]: input.providerId }),
-        ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
+        ...(input.sourceDedupId && { sourceDedupId: input.sourceDedupId }),
       },
     }),
     parsedUsage,

@@ -265,18 +265,6 @@ export * from "./agent-orchestration";
 export * from "./tool-permission-policy.js";
 export * from "./filesystem-scope-policy.js";
 export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
-export {
-  buildBuiltinOtelEnv,
-  mergeResourceAttributes,
-  type EcoBuiltinOtelOptions,
-} from "./otel-env";
-export {
-  parseOtelLogsPayload,
-  parseOtelTracesPayload,
-  type OtelActivityLine,
-  type OtelActivityRole,
-  type OtelUsageUpdate,
-} from "./otel-activity";
 export * from "./ask-user-question";
 export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";
@@ -285,7 +273,7 @@ export {
   formatApiErrorActivitySummary,
   formatApiErrorUserMessage,
   parseLegacyApiErrorActivityMessage,
-  parseOtelApiErrorAttribute,
+  parseSdkApiErrorAttribute,
   type ThreadApiErrorInfo,
 } from "./api-error";
 export {

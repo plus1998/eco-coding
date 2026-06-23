@@ -6,7 +6,7 @@ export interface ContextLifecycleMonitor {
   shouldCompact: ContextWindowMonitor["shouldCompact"];
   markCompactInFlight: ContextWindowMonitor["markCompactInFlight"];
   markCompactCompleted: ContextWindowMonitor["markCompactCompleted"];
-  noteOtelCompaction: ContextWindowMonitor["noteOtelCompaction"];
+  noteCompactionObserved: ContextWindowMonitor["noteCompactionObserved"];
 }
 
 export interface ContextLifecycleServiceInput {
@@ -32,7 +32,7 @@ export interface ContextLifecycleService {
   afterRunRefresh(threadId: string, worktreePath?: string): void;
   schedulePostRunCompactionIfNeeded(threadId: string, worktreePath: string): Promise<boolean>;
   markCompactInFlight(threadId: string): void;
-  noteOtelCompaction(threadId: string): void;
+  noteCompactionObserved(threadId: string): void;
   handleSdkContextEvent(input: {
     threadId: string;
     eventId: string;
@@ -70,8 +70,8 @@ export function createContextLifecycleService(
     markCompactInFlight(threadId) {
       input.monitor.markCompactInFlight(threadId);
     },
-    noteOtelCompaction(threadId) {
-      input.monitor.noteOtelCompaction(threadId);
+    noteCompactionObserved(threadId) {
+      input.monitor.noteCompactionObserved(threadId);
     },
     handleSdkContextEvent(event) {
       if (!isRecord(event.payload)) {
@@ -90,7 +90,7 @@ export function createContextLifecycleService(
         return false;
       }
       if (payload.type === "system" && payload.subtype === "status" && payload.status === "compacting") {
-        input.monitor.noteOtelCompaction(event.threadId);
+        input.monitor.noteCompactionObserved(event.threadId);
       }
       return false;
     },

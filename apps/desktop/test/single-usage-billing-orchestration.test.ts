@@ -72,7 +72,7 @@ test("resolveSingleUsageBillingOrchestration skips zero token records without re
       outputTokens: 0,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      source: "otel",
+      source: "sdk",
     }),
     runtimeRoutes: routes,
     lookupPricing,
@@ -81,19 +81,18 @@ test("resolveSingleUsageBillingOrchestration skips zero token records without re
   expect(resolved).toBeNull();
 });
 
-test("resolveSingleUsageBillingOrchestration keeps cost-only otel records", async () => {
+test("resolveSingleUsageBillingOrchestration keeps cost-only sdk records", async () => {
   const resolved = await resolveSingleUsageBillingOrchestration({
     request: request({
-      source: "otel",
+      source: "sdk",
       role: "planner",
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
-      otelCostUsd: 0.01,
+      sourceReportedCostUsd: 0.01,
       updateContext: false,
-      requestKey: "otel:planner:0:0:0:0:1",
-      otelDedupId: "1",
+      requestKey: "sdk:planner:0:0:0:0:1",
     }),
     runtimeRoutes: routes,
     lookupPricing,
@@ -101,8 +100,8 @@ test("resolveSingleUsageBillingOrchestration keeps cost-only otel records", asyn
 
   expect(resolved).not.toBeNull();
   expect(resolved?.effectsInput.updateContext).toBe(false);
-  expect(resolved?.effectsInput.otelCostUsd).toBe(0.01);
-  expect(resolved?.requestBillingLog.otelCostUsd).toBe(0.01);
+  expect(resolved?.effectsInput.sourceReportedCostUsd).toBe(0.01);
+  expect(resolved?.requestBillingLog.sourceReportedCostUsd).toBe(0.01);
 });
 
 test("resolveSingleUsageBillingOrchestration builds effects input with default context update", async () => {

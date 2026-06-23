@@ -37,7 +37,6 @@ import type {
   EcoSdkResumeOptions,
   EcoSdkSessionOptions,
 } from "./index";
-import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import {
   applySubagentUsageAttribution,
   createSdkStreamContext,
@@ -455,8 +454,6 @@ export interface ClaudeAgentSdkDriverOptions {
    * so identical append text can share prompt cache across worktrees.
    */
   excludeDynamicSections?: boolean;
-  /** When set, SDK CLI exports OTel to this local endpoint (eco-coding ingests for UI/logs). */
-  otel?: EcoBuiltinOtelOptions;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   /** SDK callback hooks context (AskUserQuestion, reviewer scope, task tracking, notifications). */
   hookContext?: EcoHookContext;
@@ -1104,7 +1101,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
         ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
-        ...(this.options.otel ? { otel: { ...this.options.otel, threadId: input.threadId } } : {}),
       }),
       settings: {},
     };
@@ -1491,7 +1487,6 @@ function filterDynamicDefinitionsForPhase(
 export interface BuildSdkProcessEnvOptions {
   apiKey: string;
   baseUrl: string;
-  otel?: EcoBuiltinOtelOptions;
   thinkingEffort?: ThinkingEffort;
 }
 
@@ -1506,10 +1501,6 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
   env.ANTHROPIC_API_KEY = options.apiKey;
   env.ANTHROPIC_BASE_URL = options.baseUrl.replace(/\/+$/, "");
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "eco-coding";
-
-  if (options.otel) {
-    Object.assign(env, buildBuiltinOtelEnv(options.otel));
-  }
 
   applyThinkingToProcessEnv(env, options.thinkingEffort);
   env.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
@@ -1979,6 +1970,38 @@ function mapCompactBoundaryToEvents(
   ];
 }
 
+function readSdkMessageAttribution(
+  message: Record<string, unknown>,
+  streamCtx?: SdkStreamContext,
+): {
+  parentToolUseId?: string;
+  subagentType?: string;
+  agentType?: string;
+} {
+  const parentFromMessage =
+    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id.trim() : "";
+  const parentFromCtx =
+    typeof streamCtx?.parentToolUseId === "string" ? streamCtx.parentToolUseId.trim() : "";
+  return {
+    ...(parentFromMessage && { parentToolUseId: parentFromMessage }),
+    ...(!parentFromMessage && parentFromCtx && { parentToolUseId: parentFromCtx }),
+    ...(typeof message.subagent_type === "string" && { subagentType: message.subagent_type }),
+    ...(typeof message.agent_type === "string" && { agentType: message.agent_type }),
+  };
+}
+
+function resolveSdkMessageStreamRole(
+  message: Record<string, unknown>,
+  streamCtx: SdkStreamContext | undefined,
+  fallback: RuntimeAgentRole,
+): RuntimeAgentRole {
+  const fromMessage = inferRole(message);
+  if (fromMessage !== "planner") {
+    return fromMessage;
+  }
+  return streamCtx?.activeSubagentRole ?? fallback;
+}
+
 export function mapSdkMessageToEvents(
   message: unknown,
   threadId: string,
@@ -2032,18 +2055,21 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "tool_progress") {
+    const streamMeta = readSdkMessageAttribution(message, streamCtx);
+    const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     const toolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id : uuid;
     return [
       createAgentEvent({
         id: `${uuid}:tool-progress:${toolUseId}`,
         threadId,
         agentId: sessionId,
-        role,
+        role: streamRole,
         type: "tool.started",
         payload: {
           ...message,
-          ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
-          ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
+          ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
+          ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
         },
       }),
     ];
@@ -2114,14 +2140,21 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "tool_use_summary") {
+    const streamMeta = readSdkMessageAttribution(message, streamCtx);
+    const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     return [
       createAgentEvent({
         id: `${uuid}:tool-summary`,
         threadId,
         agentId: sessionId,
-        role,
+        role: streamRole,
         type: "tool.completed",
-        payload: message,
+        payload: {
+          ...message,
+          ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
+          ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
+          ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
+        },
       }),
     ];
   }

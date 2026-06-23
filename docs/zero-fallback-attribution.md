@@ -52,18 +52,17 @@ PreToolUse(Agent) ──parentToolUseId──► SubagentLaunchRegistry
 - [x] `filterAbsorbedSubagentDelegations` 改为 `parentToolUseId` 级过滤，废除 role Set
 - [x] `SubagentStart` 时写入 agent-scoped `@mission`（`buildSubagentMissionAttributedRunEvent`，payload 含 `agentId`）
 
-### Phase 3 — 事件强制 agentId（P1）【部分完成】
+### Phase 3 — 事件强制 agentId（P1）【已完成】
 
 - [x] `recordThreadRunEventFromLiveEvent`：从 `parent_tool_use_id` 解析 `agentId` / `parentToolUseId`
 - [x] `emitSdkStreamActivity`：SDK 事件携带 `parent_tool_use_id` 进 metadata
 - [x] `resolveProjectionEventAgentId`：废除 role+时间窗启发式，改用 `parentToolUseId` 精确匹配
 - [x] `resolveActivityAgentId`：废除 sole-active 兜底
 - [x] 移动端移除 `_findUnclaimedMissionIndex` / `_projectionSubagentRoleOccurrence`
-- [ ] OTel activity 行携带 `parentToolUseId`（OTLP span 暂无该字段，待上游支持）
+- [x] 移除 OTel activity/usage 管道；工具与 narrative 100% 由 SDK 流驱动
+- [x] `mapSdkMessageToEvents`：`tool_use_summary` / `tool_progress` 贯通 `parent_tool_use_id` 与 stream role
 
 ### Phase 4 — requestId 贯通（P1）【已完成】
-
-- [x] `ThreadLiveRequestRegistry`：proxy 收到请求时分配 id，上游 `x-request-id` 到达后 adopt；`resolve` 仅认 `agentId` 精确匹配或主线程无 `agentId` 的 role 作用域，禁止 role 猜测与 last-active 兜底；`sameScope` 禁止 role-only 与 agent-scoped 互覆盖；adopt 时 `rekeyThreadRunRequestId` 回写已落库的 placeholder id，避免 synthetic/provider 双 span
 - [x] `recordThreadRunEventFromLiveEvent` / SDK stream emit 携带 registry 中的 `requestId`
 - [x] 废除 `req:${threadId}:${eventId}` 合成
 - [x] projection / view 废除 `stream:${streamKey}` 合成，仅认 `event.requestId`
@@ -108,5 +107,5 @@ PreToolUse(Agent) ──parentToolUseId──► SubagentLaunchRegistry
 | 2026-06-23 | Phase 6 | 移动端 buildProjectionActivityFeed：有 projection 时脱离 activity lines |
 | 2026-06-23 | Phase 6 | 移动端废除 live legacy 回退；空态 + projection 主动拉取 |
 | 2026-06-23 | Phase 6 | 移动端 session 废除 activities 双写；feed 纯 projection 驱动 |
-| 2026-06-23 | Phase 6 | desktop 停更 live activity 双写；run event streamKey 改 activityStreamKey |
+| 2026-06-23 | Phase 3 | 完全移除 OTel activity/usage 管道；工具与计费仅走 SDK + Proxy |
 | 2026-06-23 | Phase 6 | 删除 legacy activity-log / buildLegacyActivityFeed / parseBashApproval 解析 |

@@ -107,14 +107,6 @@ function sameUsageTotals(left: ParsedUsage, right: ParsedUsage): boolean {
   );
 }
 
-export function nextOtelRequestDedupId(currentSeq: number | undefined): {
-  seq: number;
-  dedupId: string;
-} {
-  const seq = (currentSeq ?? 0) + 1;
-  return { seq, dedupId: String(seq) };
-}
-
 export function shouldUpdateContextFromUsageSource(
   source: BillingUsageSource | undefined,
   role?: RuntimeAgentRole,

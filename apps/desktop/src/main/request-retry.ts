@@ -8,7 +8,7 @@ export type RequestAttemptResult = { ok: true } | { ok: false; reason: string; a
 import {
   formatApiErrorUserMessage,
   parseLegacyApiErrorActivityMessage,
-  parseOtelApiErrorAttribute,
+  parseSdkApiErrorAttribute,
 } from "@eco/runtime";
 
 export { isQuotaOrRateLimitFailure } from "../shared/request-errors";
@@ -96,9 +96,9 @@ export function formatUserFacingRequestError(reason: string): string {
   if (legacyApiError) {
     return formatApiErrorUserMessage(legacyApiError);
   }
-  const otelApiError = parseOtelApiErrorAttribute(text);
-  if (otelApiError) {
-    return formatApiErrorUserMessage(otelApiError);
+  const structuredApiError = parseSdkApiErrorAttribute(text);
+  if (structuredApiError) {
+    return formatApiErrorUserMessage(structuredApiError);
   }
 
   return text;

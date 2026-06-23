@@ -253,14 +253,12 @@ function buildThreadBillingSnapshot(input: {
       pricingResolved: false,
     };
   }
-  const sdkOrOtelReported =
-    input.sourceBreakdown.otel?.reportedCostUsd ??
-    input.sourceBreakdown.sdk?.reportedCostUsd ??
-    0;
+  const sdkReported =
+    input.sourceBreakdown.sdk?.reportedCostUsd ?? 0;
   return {
     totalTokens: primary.totalTokens,
     ...computeThreadBillingTotals(
-      sdkOrOtelReported,
+      sdkReported,
       primary.plannerTokenCostUsd,
       primary.ecoCostUsd,
     ),
@@ -775,7 +773,7 @@ function shouldSkipDuplicateBillableEvent(
   event: UsageLedgerEvent,
   proxyIndex: ProxyBillableIndex,
 ): boolean {
-  if (event.source !== "sdk" && event.source !== "otel") {
+  if (event.source !== "sdk") {
     return false;
   }
   if (event.requestKey && proxyIndex.requestKeys.has(event.requestKey)) {

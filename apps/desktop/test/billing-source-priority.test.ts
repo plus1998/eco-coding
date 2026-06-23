@@ -5,8 +5,8 @@ import {
 } from "../src/main/billing-source-priority";
 
 test("resolveBillingSourcePriority prefers proxy when proxy breakdown exists", () => {
-  expect(resolveBillingSourcePriority({ sdk: {}, proxy: {} })).toEqual(["proxy", "sdk", "otel"]);
-  expect(resolveBillingSourcePriority({ sdk: {} })).toEqual(["sdk", "proxy", "otel"]);
+  expect(resolveBillingSourcePriority({ sdk: {}, proxy: {} })).toEqual(["proxy", "sdk"]);
+  expect(resolveBillingSourcePriority({ sdk: {} })).toEqual(["sdk", "proxy"]);
 });
 
 test("selectPrimaryBillingSource chooses proxy before sdk when both exist", () => {

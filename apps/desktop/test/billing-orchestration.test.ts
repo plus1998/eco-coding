@@ -5,7 +5,6 @@ import {
   buildUsageSnapshotForRole,
   isSdkIncrementalStreamUsage,
   isSubagentBillingRole,
-  nextOtelRequestDedupId,
   sdkPayloadHasModelUsage,
   shouldBillAssistantSubagentUsage,
   shouldUpdateContextFromUsageSource,
@@ -94,7 +93,7 @@ test("assistant fallback is not blocked by unrelated or unattributed authoritati
       usage,
       observedAuthoritativeUsage: [
         {
-          source: "otel",
+          source: "sdk",
           role: "coder",
           agentId: "agent_coder",
           usage,
@@ -111,18 +110,13 @@ test("assistant fallback is not blocked by unrelated or unattributed authoritati
       usage,
       observedAuthoritativeUsage: [
         {
-          source: "otel",
+          source: "sdk",
           role: "explore",
           usage,
         },
       ],
     }),
   ).toBe(true);
-});
-
-test("nextOtelRequestDedupId increments run-scoped sequence", () => {
-  expect(nextOtelRequestDedupId(undefined)).toEqual({ seq: 1, dedupId: "1" });
-  expect(nextOtelRequestDedupId(1)).toEqual({ seq: 2, dedupId: "2" });
 });
 
 test("buildUsageRequestKey includes dedupId to avoid token fingerprint collisions", () => {
@@ -148,8 +142,6 @@ test("shouldUpdateContextFromUsageSource accepts SDK and proxy subagent usage", 
   expect(shouldUpdateContextFromUsageSource("proxy", "researcher")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("proxy", "planner")).toBe(false);
   expect(shouldUpdateContextFromUsageSource("proxy")).toBe(false);
-  expect(shouldUpdateContextFromUsageSource("otel")).toBe(false);
-  expect(shouldUpdateContextFromUsageSource("otel", "explore")).toBe(false);
 });
 
 test("buildUsageSnapshotForRole uses the matching role window instead of display occupancy", () => {
@@ -203,7 +195,7 @@ test("buildUsageSnapshotForRole can suppress aggregate SDK context fallback", ()
   expect(snapshot.contextLimit).toBeUndefined();
 });
 
-test("OTel incremental billing attributes subagent role separately from planner", () => {
+test("SDK incremental billing attributes subagent role separately from planner", () => {
   const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
   const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
   const accumulator = new ThreadUsageAccumulator();
@@ -213,7 +205,7 @@ test("OTel incremental billing attributes subagent role separately from planner"
     threadId: "t1",
     role: "planner",
     delta: { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    otelCostUsd: 0.5,
+    sourceReportedCostUsd: 0.5,
     actualRates: sonnetRates,
     plannerRates: sonnetRates,
     requestKey: buildUsageRequestKey({
@@ -230,7 +222,7 @@ test("OTel incremental billing attributes subagent role separately from planner"
     threadId: "t1",
     role: "coder",
     delta,
-    otelCostUsd: 2.1,
+    sourceReportedCostUsd: 2.1,
     actualRates: haikuRates,
     plannerRates: sonnetRates,
     modelId: "haiku",
@@ -246,16 +238,16 @@ test("OTel incremental billing attributes subagent role separately from planner"
   });
 
   const billing = accumulator.getSnapshot("t1");
-  expect(billing?.otelCostUsd).toBeCloseTo(2.6);
+  expect(billing?.sourceReportedCostUsd).toBeCloseTo(2.6);
   expect(billing?.byRole?.planner?.inputTokens).toBe(10_000);
   expect(billing?.byRole?.coder?.inputTokens).toBe(50_000);
   expect(billing?.ecoCostUsd).toBeGreaterThan(billing?.byRole?.planner?.ecoCostUsd ?? 0);
 });
 
-test("SDK result and OTel tokens stay separate without doubling headline totals", () => {
+test("proxy and SDK result tokens stay separate without doubling headline totals", () => {
   const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
   const accumulator = new ThreadUsageAccumulator();
-  const otelDelta = {
+  const proxyDelta = {
     inputTokens: 100_000,
     outputTokens: 10_000,
     cacheReadTokens: 800_000,
@@ -265,11 +257,11 @@ test("SDK result and OTel tokens stay separate without doubling headline totals"
   accumulator.recordUsage({
     threadId: "t1",
     role: "coder",
-    delta: otelDelta,
-    otelCostUsd: 3.5,
+    source: "proxy",
+    delta: proxyDelta,
     actualRates: sonnetRates,
     plannerRates: sonnetRates,
-    requestKey: "otel:coder:100000:10000:800000:0:haiku:1",
+    requestKey: "proxy:coder:100000:10000:800000:0:haiku:1",
   });
 
   const before = accumulator.getSnapshot("t1");
@@ -283,22 +275,22 @@ test("SDK result and OTel tokens stay separate without doubling headline totals"
       {
         role: "planner",
         modelId: "claude-opus-4",
-        usage: otelDelta,
+        usage: proxyDelta,
         actualRates: sonnetRates,
         plannerRates: sonnetRates,
       },
     ],
-    otelCostUsd: 3.5,
+    sourceReportedCostUsd: 3.5,
   });
 
   const after = accumulator.getSnapshot("t1");
-  expect(after?.primarySource).toBe("sdk");
+  expect(after?.primarySource).toBe("proxy");
   expect(after?.totalTokens.input).toBe(100_000);
-  expect(after?.sourceBreakdown?.otel?.totalTokens.input).toBe(100_000);
+  expect(after?.sourceBreakdown?.proxy?.totalTokens.input).toBe(100_000);
   expect(after?.sourceBreakdown?.sdk?.totalTokens.input).toBe(100_000);
 });
 
-test("assistant subagent fallback bills when OTel unavailable", () => {
+test("assistant subagent fallback bills when authoritative SDK usage is missing", () => {
   const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
   const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
   const accumulator = new ThreadUsageAccumulator();

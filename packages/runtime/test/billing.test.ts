@@ -51,7 +51,7 @@ test("computeSavings is zero when costs match", () => {
 
 test("computeThreadBillingTotals aggregates four metrics", () => {
   const totals = computeThreadBillingTotals(2.1695, 3.82, 1.245);
-  expect(totals.otelCostUsd).toBe(2.1695);
+  expect(totals.sourceReportedCostUsd).toBe(2.1695);
   expect(totals.savedUsd).toBeCloseTo(2.575);
 });
 

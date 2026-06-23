@@ -17,7 +17,7 @@ export interface SingleUsageBillingRequest {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  otelCostUsd?: number;
+  sourceReportedCostUsd?: number;
   modelId?: string;
   messageId?: string;
   runAttemptId?: string;
@@ -26,7 +26,7 @@ export interface SingleUsageBillingRequest {
   requestKey?: string;
   sourceEventId?: string;
   providerRequestId?: string;
-  otelDedupId?: string;
+  sourceDedupId?: string;
   updateContext?: boolean;
   reconciliationOnly?: boolean;
   fillSdkPrimaryForSubagent?: boolean;
@@ -63,7 +63,7 @@ export async function resolveSingleUsageBillingOrchestration(
     delta.outputTokens === 0 &&
     delta.cacheReadTokens === 0 &&
     delta.cacheCreationTokens === 0 &&
-    request.otelCostUsd === undefined
+    request.sourceReportedCostUsd === undefined
   ) {
     return null;
   }
@@ -75,7 +75,7 @@ export async function resolveSingleUsageBillingOrchestration(
     runtimeRoutes: input.runtimeRoutes,
     lookupPricing: input.lookupPricing,
     ...(request.source && { source: request.source }),
-    ...(request.otelCostUsd !== undefined && { otelCostUsd: request.otelCostUsd }),
+    ...(request.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: request.sourceReportedCostUsd }),
     ...(request.modelId && { modelId: request.modelId }),
     ...(request.messageId && { messageId: request.messageId }),
     ...(request.runAttemptId && { runAttemptId: request.runAttemptId }),
@@ -85,7 +85,7 @@ export async function resolveSingleUsageBillingOrchestration(
     ...(request.requestKey && { requestKey: request.requestKey }),
     ...(request.sourceEventId && { sourceEventId: request.sourceEventId }),
     ...(request.providerRequestId && { providerRequestId: request.providerRequestId }),
-    ...(request.otelDedupId && { otelDedupId: request.otelDedupId }),
+    ...(request.sourceDedupId && { sourceDedupId: request.sourceDedupId }),
     ...(request.routeRole && { routeRole: request.routeRole }),
     ...(request.attributionPending && { attributionPending: true }),
     ...(request.aliasModelId && { aliasModelId: request.aliasModelId }),
@@ -102,7 +102,7 @@ export async function resolveSingleUsageBillingOrchestration(
       updateContext,
       ...(request.agentId && { agentId: request.agentId }),
       ...(request.messageId && { messageId: request.messageId }),
-      ...(request.otelCostUsd !== undefined && { otelCostUsd: request.otelCostUsd }),
+      ...(request.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: request.sourceReportedCostUsd }),
       ...(request.reconciliationOnly && { reconciliationOnly: true }),
       ...(request.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
     },

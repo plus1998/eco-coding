@@ -340,7 +340,7 @@ function LedgerEventRows({
         {sortedShadow.length > 0 ? (
           <ExpandableBillingSection
             title="校验源"
-            summary={`${sortedShadow.length} 笔 SDK/OTel，不计入主账`}
+            summary={`${sortedShadow.length} 笔 SDK shadow，不计入主账`}
             className="usage-breakdown-shadow-events"
           >
             <LedgerEventList
@@ -389,11 +389,11 @@ function LedgerEventRows({
       {sortedShadow.length > 0 ? (
         <ExpandableBillingSection
           title="校验源"
-          summary={`${sortedShadow.length} 笔 SDK/OTel shadow，不计入主账`}
+          summary={`${sortedShadow.length} 笔 SDK shadow，不计入主账`}
           className="usage-breakdown-shadow-events"
         >
           <p className="usage-breakdown-events-hint">
-            以下为对账校验记录，每条请求可能重复出现在 Proxy / SDK / OTel；仅主账计入顶部用量。
+            以下为对账校验记录，每条请求可能重复出现在 Proxy / SDK；仅主账计入顶部用量。
           </p>
           <LedgerEventList
             events={sortedShadow}

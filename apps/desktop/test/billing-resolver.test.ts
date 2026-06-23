@@ -10,7 +10,7 @@ import {
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { ModelSettingsSnapshot } from "../src/shared/ipc";
 
-test("resolvePublicModelId maps OTel SDK alias to upstream model id", () => {
+test("resolvePublicModelId maps SDK alias to upstream model id", () => {
   const provider = createProvider();
   const routes = [
     { role: "planner" as const, provider, modelId: "claude-opus-4-7" },

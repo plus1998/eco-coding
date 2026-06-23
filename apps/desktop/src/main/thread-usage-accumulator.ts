@@ -31,8 +31,8 @@ export interface RecordUsageInput {
   threadId: string;
   role: RuntimeAgentRole;
   delta: ParsedUsage;
-  /** Cost reported by the source itself, when available (SDK/OTel estimate). */
-  otelCostUsd?: number;
+  /** Cost reported by the source itself, when available (SDK estimate). */
+  sourceReportedCostUsd?: number;
   actualRates: ModelCostRates | null;
   plannerRates: ModelCostRates | null;
   modelId?: string;
@@ -59,7 +59,7 @@ export interface RecordRunUsageInput {
   requestKey: string;
   models: RecordRunUsageModel[];
   /** Total cost reported by the SDK, used only for comparison. */
-  otelCostUsd?: number;
+  sourceReportedCostUsd?: number;
   plannerModelLabel?: string;
   source?: BillingUsageSource;
 }
@@ -93,7 +93,7 @@ type ThreadUsageAccumulatorState = {
   /** Legacy aggregate retained for old persisted snapshots. New billing reads from sources. */
   byRole: Partial<Record<RuntimeAgentRole, ParsedUsage>>;
   total: ParsedUsage;
-  otelCostUsd: number;
+  sourceReportedCostUsd: number;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   ecoCostBreakdown: TokenCostBreakdown;
@@ -111,7 +111,7 @@ type ThreadUsageAccumulatorState = {
 export interface SerializedThreadUsageState {
   byRole: Partial<Record<RuntimeAgentRole, ParsedUsage>>;
   total: ParsedUsage;
-  otelCostUsd: number;
+  sourceReportedCostUsd: number;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   ecoCostBreakdown: TokenCostBreakdown;
@@ -141,13 +141,13 @@ export class ThreadUsageAccumulator {
     if (input.requestKey && !input.reconciliationOnly) {
       state.seenRequestKeys.add(input.requestKey);
     } else if (input.requestKey && input.reconciliationOnly) {
-      const sdkKey = input.requestKey.replace(/^(proxy|otel):/, "sdk:");
+      const sdkKey = input.requestKey.replace(/^proxy:/, "sdk:");
       if (state.seenRequestKeys.has(input.requestKey) || state.seenRequestKeys.has(sdkKey)) {
         return this.toSnapshot(state, input.plannerModelLabel);
       }
     }
 
-    const source = input.source ?? "otel";
+    const source = input.source ?? "sdk";
     const sourceState = getOrCreateSourceState(state, source);
     const billing = computeRequestBilling(input.delta, input.actualRates, input.plannerRates);
     applyUsageContribution(sourceState, {
@@ -155,9 +155,9 @@ export class ThreadUsageAccumulator {
       usage: input.delta,
       billing,
       ...(input.modelId && { modelId: input.modelId }),
-      ...(input.otelCostUsd !== undefined && {
-        sourceReportedCostUsd: input.otelCostUsd,
-        modelReportedCostUsd: input.otelCostUsd,
+      ...(input.sourceReportedCostUsd !== undefined && {
+        sourceReportedCostUsd: input.sourceReportedCostUsd,
+        modelReportedCostUsd: input.sourceReportedCostUsd,
       }),
     });
 
@@ -203,17 +203,6 @@ export class ThreadUsageAccumulator {
     return this.toSnapshot(state, input.plannerModelLabel);
   }
 
-  recordOtelCostOnly(threadId: string, otelCostUsd: number, plannerModelLabel?: string): ThreadBillingSnapshot {
-    const state = this.getOrCreateState(threadId);
-    if (Number.isFinite(otelCostUsd)) {
-      getOrCreateSourceState(state, "otel").reportedCostUsd += otelCostUsd;
-    }
-    if (plannerModelLabel) {
-      state.plannerModelLabel = plannerModelLabel;
-    }
-    return this.toSnapshot(state, plannerModelLabel);
-  }
-
   getSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot | undefined {
     const state = this.states.get(threadId);
     if (!state) {
@@ -234,7 +223,7 @@ export class ThreadUsageAccumulator {
     return {
       byRole: state.byRole,
       total: state.total,
-      otelCostUsd: state.otelCostUsd,
+      sourceReportedCostUsd: state.sourceReportedCostUsd,
       plannerTokenCostUsd: state.plannerTokenCostUsd,
       ecoCostUsd: state.ecoCostUsd,
       ecoCostBreakdown: state.ecoCostBreakdown,
@@ -250,10 +239,11 @@ export class ThreadUsageAccumulator {
   }
 
   restoreState(threadId: string, data: SerializedThreadUsageState): void {
+    const legacy = data as SerializedThreadUsageState & { otelCostUsd?: number };
     this.states.set(threadId, {
       byRole: data.byRole,
       total: data.total,
-      otelCostUsd: data.otelCostUsd,
+      sourceReportedCostUsd: data.sourceReportedCostUsd ?? legacy.otelCostUsd ?? 0,
       plannerTokenCostUsd: data.plannerTokenCostUsd,
       ecoCostUsd: data.ecoCostUsd,
       ecoCostBreakdown: data.ecoCostBreakdown,
@@ -274,7 +264,7 @@ export class ThreadUsageAccumulator {
       state = {
         byRole: {},
         total: createEmptyUsage(),
-        otelCostUsd: 0,
+        sourceReportedCostUsd: 0,
         plannerTokenCostUsd: 0,
         ecoCostUsd: 0,
         ecoCostBreakdown: emptyCostBreakdown(),
@@ -304,12 +294,9 @@ export class ThreadUsageAccumulator {
       if (!primary || !primaryState) {
         return this.toLegacySnapshot(state, label);
       }
-      const sdkOrOtelReported =
-        sourceBreakdown.otel?.reportedCostUsd ??
-        sourceBreakdown.sdk?.reportedCostUsd ??
-        0;
+      const sdkReported = sourceBreakdown.sdk?.reportedCostUsd ?? 0;
       const totals = computeThreadBillingTotals(
-        sdkOrOtelReported,
+        sdkReported,
         primary.plannerTokenCostUsd,
         primary.ecoCostUsd,
       );
@@ -337,7 +324,7 @@ export class ThreadUsageAccumulator {
   ): ThreadBillingSnapshot {
     const byRole = buildRoleSnapshot(state.byRole, state.roleEcoCostUsd, state.roleModelIds);
     const totals = computeThreadBillingTotals(
-      state.otelCostUsd,
+      state.sourceReportedCostUsd,
       state.plannerTokenCostUsd,
       state.ecoCostUsd,
     );
@@ -449,8 +436,8 @@ function addRole(roles: RuntimeAgentRole[], role: RuntimeAgentRole): void {
 }
 
 function resolveReportedRunCost(input: RecordRunUsageInput): number | undefined {
-  if (input.otelCostUsd !== undefined && Number.isFinite(input.otelCostUsd)) {
-    return input.otelCostUsd;
+  if (input.sourceReportedCostUsd !== undefined && Number.isFinite(input.sourceReportedCostUsd)) {
+    return input.sourceReportedCostUsd;
   }
   const total = input.models.reduce(
     (sum, model) => sum + (model.sdkCostUsd !== undefined && Number.isFinite(model.sdkCostUsd) ? model.sdkCostUsd : 0),
@@ -578,7 +565,7 @@ function modelSnapshotTotal(entry: ThreadBillingModelSnapshot): number {
 
 export function buildUsageRequestKey(record: UsageRequestRecord): string {
   return [
-    "otel",
+    "usage",
     record.role,
     record.inputTokens,
     record.outputTokens,

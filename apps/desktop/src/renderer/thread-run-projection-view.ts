@@ -347,9 +347,6 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   if (liveType && isThreadFollowUpLiveEvent(liveType)) {
     return true;
   }
-  if (isProjectionOtelToolDurationSummary(item)) {
-    return true;
-  }
   if (
     item.eventType === "agent.started" ||
     item.eventType === "agent.stopped" ||
@@ -364,24 +361,6 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   const text = item.text.trim();
   return (
     !text || text === "状态已更新" || isProjectionLifecycleText(text) || isProjectionUsageNoiseText(text)
-  );
-}
-
-function isProjectionOtelToolDurationSummary(item: ThreadRunProjectionTimelineItem): boolean {
-  if (
-    (item.eventType !== "tool.started" && item.eventType !== "tool.completed") ||
-    projectionLiveType(item) !== "otel.activity"
-  ) {
-    return false;
-  }
-  const metadataTool = readProjectionToolMetadata(item);
-  if (metadataTool?.durationMs !== undefined) {
-    return true;
-  }
-  const text = item.text.trim();
-  return (
-    /^Tool:\s*[^·]+?\s+\(\d+(?:\.\d+)?s\)$/i.test(text) ||
-    /^Tool:\s*Agent\s*·\s*.+\s+\(\d+(?:\.\d+)?s\)$/i.test(text)
   );
 }
 

@@ -5,7 +5,7 @@ import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 function makeBilling(overrides: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnapshot {
   return {
     totalTokens: { input: 1000, output: 100, cacheRead: 0, cacheCreation: 0 },
-    otelCostUsd: 0,
+    sourceReportedCostUsd: 0,
     plannerTokenCostUsd: 0,
     ecoCostUsd: 0.01,
     savedUsd: 0,

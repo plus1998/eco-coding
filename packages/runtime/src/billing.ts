@@ -31,7 +31,7 @@ export interface RequestBillingDelta {
 }
 
 export interface ThreadBillingTotals {
-  otelCostUsd: number;
+  sourceReportedCostUsd: number;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   savedUsd: number;
@@ -125,13 +125,13 @@ export function computeSavings(plannerTokenCostUsd: number, ecoCostUsd: number):
 }
 
 export function computeThreadBillingTotals(
-  otelCostUsd: number,
+  sourceReportedCostUsd: number,
   plannerTokenCostUsd: number,
   ecoCostUsd: number,
 ): ThreadBillingTotals {
   const { savedUsd, savedPct } = computeSavings(plannerTokenCostUsd, ecoCostUsd);
   return {
-    otelCostUsd,
+    sourceReportedCostUsd,
     plannerTokenCostUsd,
     ecoCostUsd,
     savedUsd,

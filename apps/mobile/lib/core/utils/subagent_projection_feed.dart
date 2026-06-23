@@ -55,21 +55,26 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
         item.eventType == 'tool.completed' ||
         item.eventType == 'tool.failed') {
       final tool = readProjectionToolMetadata(item.metadata);
-      if (tool == null) continue;
-      final description = tool.description?.trim();
+      final label = tool != null
+          ? (tool.name == 'Bash' &&
+                  tool.description?.trim().isNotEmpty == true
+              ? tool.description!.trim()
+              : formatToolDisplayLabel(tool.name, tool.detail))
+          : parseToolActionDisplayLabel(item.text);
+      if (label.trim().isEmpty) continue;
       output.add(
         SubagentTimelineEntry(
           id: item.id,
-          toolUseId: tool.toolUseId,
-          label: tool.name == 'Bash' && description != null && description.isNotEmpty
-              ? description
-              : formatToolDisplayLabel(tool.name, tool.detail),
-          icon: iconForToolName(tool.name),
+          toolUseId: tool?.toolUseId,
+          label: label,
+          icon: iconForToolName(tool?.name ?? label),
           lifecycle: item.eventType == 'tool.failed'
               ? ToolActionLifecycle.failed
               : item.eventType == 'tool.completed'
                   ? ToolActionLifecycle.completed
-                  : toolLifecycleFromMetadata(tool),
+                  : tool != null
+                      ? toolLifecycleFromMetadata(tool)
+                      : ToolActionLifecycle.running,
           isError: item.eventType == 'tool.failed',
         ),
       );

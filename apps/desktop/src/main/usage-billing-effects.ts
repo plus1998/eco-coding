@@ -57,7 +57,7 @@ export interface ApplySingleUsageBillingEffectsInput {
   updateContext: boolean;
   agentId?: string;
   messageId?: string;
-  otelCostUsd?: number;
+  sourceReportedCostUsd?: number;
   reconciliationOnly?: boolean;
   fillSdkPrimaryForSubagent?: boolean;
 }
@@ -136,7 +136,7 @@ export async function applySingleUsageBillingEffects(
     threadId: input.threadId,
     artifacts,
     ...(input.agentId && { agentId: input.agentId }),
-    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
+    ...(input.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: input.sourceReportedCostUsd }),
     ...(input.reconciliationOnly && { reconciliationOnly: true }),
     ...(input.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
   });
@@ -166,7 +166,7 @@ export async function applySingleUsageBillingEffects(
     badge: formatUsageBadge(artifacts.parsedUsage),
     payload: {
       usage: snapshot,
-      totalCostUsd: billing.otelCostUsd,
+      totalCostUsd: billing.sourceReportedCostUsd,
       billing,
       ...(artifacts.parsedUsage.modelId && { modelId: artifacts.parsedUsage.modelId }),
     },
@@ -275,7 +275,7 @@ export async function applySdkRunBillingEffects(
     badge: formatUsageBadge(input.contextUsage),
     payload: {
       usage: snapshot,
-      totalCostUsd: billing.otelCostUsd,
+      totalCostUsd: billing.sourceReportedCostUsd,
       billing,
       ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
     },

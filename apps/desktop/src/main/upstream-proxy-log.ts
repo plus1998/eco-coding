@@ -36,7 +36,7 @@ export interface UpstreamProxyCallBilling {
   ecoCostUsd: number;
   plannerTokenCostUsd: number;
   savedUsd: number;
-  otelCostUsd: number;
+  sourceReportedCostUsd: number;
 }
 
 export type UpstreamProxyOperation = "messages" | "count_tokens" | "other";
@@ -274,8 +274,8 @@ export function formatUpstreamProxyCallLog(summary: UpstreamProxyCallLog): strin
     if (summary.billing.savedUsd > 0) {
       billingParts.push(`节省 ${formatCostUsd(summary.billing.savedUsd)}`);
     }
-    if (summary.billing.otelCostUsd > 0) {
-      billingParts.push(`OTel 报告 ${formatCostUsd(summary.billing.otelCostUsd)}`);
+    if (summary.billing.sourceReportedCostUsd > 0) {
+      billingParts.push(`SDK 报告 ${formatCostUsd(summary.billing.sourceReportedCostUsd)}`);
     }
     lines.push(`  计费 ${billingParts.join(" · ")}`);
   } else if (summary.ok && summary.tokens) {

@@ -15,7 +15,7 @@ function makeBilling(
 ): ThreadBillingSnapshot {
   return {
     totalTokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 },
-    otelCostUsd: 0,
+    sourceReportedCostUsd: 0,
     plannerTokenCostUsd: 0,
     ecoCostUsd: 0,
     savedUsd: 0,
@@ -45,8 +45,8 @@ test("reconcileUsageLedgerWithBilling matches source token totals", () => {
     buildSingleUsageLedgerEvent({
       threadId: "thr_reconcile",
       role: "coder",
-      source: "otel",
-      sourceEventId: "otel:1",
+      source: "sdk",
+      sourceEventId: "sdk:1",
       usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 1, cacheCreationTokens: 0 },
       modelId: "coder-model",
       agentId: "agent_coder_a",
@@ -67,7 +67,7 @@ test("reconcileUsageLedgerWithBilling matches source token totals", () => {
   const result = reconcileUsageLedgerWithBilling(
     events,
     makeBilling({
-      otel: sourceSnapshot("otel", { input: 10, output: 2, cacheRead: 1, cacheCreation: 0 }, 0.01),
+      sdk: sourceSnapshot("sdk", { input: 10, output: 2, cacheRead: 1, cacheCreation: 0 }, 0.01),
       proxy: sourceSnapshot("proxy", { input: 20, output: 4, cacheRead: 2, cacheCreation: 1 }, 0.02),
     }),
   );
@@ -80,8 +80,8 @@ test("reconcileUsageLedgerWithBilling reports token mismatches", () => {
   const event = buildSingleUsageLedgerEvent({
     threadId: "thr_reconcile",
     role: "coder",
-    source: "otel",
-    sourceEventId: "otel:1",
+    source: "sdk",
+    sourceEventId: "sdk:1",
     usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 1, cacheCreationTokens: 0 },
     modelId: "coder-model",
     agentId: "agent_coder_a",
@@ -90,7 +90,7 @@ test("reconcileUsageLedgerWithBilling reports token mismatches", () => {
   const result = reconcileUsageLedgerWithBilling(
     [event],
     makeBilling({
-      otel: sourceSnapshot("otel", { input: 9, output: 2, cacheRead: 1, cacheCreation: 0 }),
+      sdk: sourceSnapshot("sdk", { input: 9, output: 2, cacheRead: 1, cacheCreation: 0 }),
     }),
   );
 
@@ -98,7 +98,7 @@ test("reconcileUsageLedgerWithBilling reports token mismatches", () => {
   expect(result.issues).toContainEqual(
     expect.objectContaining({
       type: "token_mismatch",
-      source: "otel",
+      source: "sdk",
       field: "inputTokens",
       delta: 1,
     }),
@@ -171,8 +171,8 @@ test("reconcileUsageLedgerWithBilling reports missing ledger source and unattrib
   const event = buildSingleUsageLedgerEvent({
     threadId: "thr_reconcile",
     role: "coder",
-    source: "otel",
-    sourceEventId: "otel:1",
+    source: "sdk",
+    sourceEventId: "sdk:1",
     usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheCreationTokens: 0 },
     modelId: "coder-model",
   });
@@ -180,13 +180,13 @@ test("reconcileUsageLedgerWithBilling reports missing ledger source and unattrib
   const result = reconcileUsageLedgerWithBilling(
     [event],
     makeBilling({
-      otel: sourceSnapshot("otel", { input: 10, output: 2, cacheRead: 0, cacheCreation: 0 }),
+      proxy: sourceSnapshot("proxy", { input: 10, output: 2, cacheRead: 0, cacheCreation: 0 }),
       sdk: sourceSnapshot("sdk", { input: 10, output: 2, cacheRead: 0, cacheCreation: 0 }),
     }),
   );
 
   expect(result.issues).toContainEqual(
-    expect.objectContaining({ type: "missing_ledger_source", source: "sdk" }),
+    expect.objectContaining({ type: "missing_ledger_source", source: "proxy" }),
   );
   expect(result.issues).toContainEqual(
     expect.objectContaining({ type: "unattributed_usage", count: 1 }),

@@ -6,7 +6,7 @@ import type { BillingProjectionReconciliationResult } from "../src/main/billing-
 function billing(input: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnapshot {
   return {
     totalTokens: input.totalTokens ?? { input: 100, output: 20, cacheRead: 0, cacheCreation: 0 },
-    otelCostUsd: input.otelCostUsd ?? 0,
+    sourceReportedCostUsd: input.sourceReportedCostUsd ?? 0,
     plannerTokenCostUsd: input.plannerTokenCostUsd ?? 0.01,
     ecoCostUsd: input.ecoCostUsd ?? 0.005,
     savedUsd: input.savedUsd ?? 0.005,

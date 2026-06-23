@@ -3,7 +3,6 @@ import type { UsageBillingObservation } from "./billing-orchestration";
 import { appendUsageBillingObservation } from "./usage-billing-observations";
 
 interface ActiveRunBillingState {
-  otelRequestSeq?: number;
   proxyRequestSeq?: number;
   usageObservations: UsageBillingObservation[];
   lastProxyContextByRole: Partial<Record<RuntimeAgentRole, number>>;
@@ -38,21 +37,6 @@ export class ActiveRunBillingStateStore {
   listObservations(threadId: string): UsageBillingObservation[] | undefined {
     const observations = this.states.get(threadId)?.usageObservations;
     return observations && observations.length > 0 ? [...observations] : undefined;
-  }
-
-  otelRequestSeq(threadId: string): number | undefined {
-    return this.states.get(threadId)?.otelRequestSeq;
-  }
-
-  recordOtelRequest(
-    threadId: string,
-    input: { nextRequestSeq: number },
-  ): void {
-    const state = this.states.get(threadId);
-    if (!state) {
-      return;
-    }
-    state.otelRequestSeq = input.nextRequestSeq;
   }
 
   proxyRequestSeq(threadId: string): number | undefined {

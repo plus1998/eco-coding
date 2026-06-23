@@ -276,7 +276,7 @@ export class ContextWindowMonitor {
     return this.toSnapshot(state);
   }
 
-  noteOtelCompaction(threadId: string): void {
+  noteCompactionObserved(threadId: string): void {
     const state = this.states.get(threadId);
     if (state) {
       state.compactInFlight = true;

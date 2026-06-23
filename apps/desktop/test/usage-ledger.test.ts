@@ -86,8 +86,8 @@ test("projectUsageLedger aggregates totals by role agent and model", () => {
 test("projectUsageLedger preserves unattributed events for audit", () => {
   const event = makeUsageEvent({
     id: "evt_unattributed",
-    sourceEventId: "otel:req-3",
-    source: "otel",
+    sourceEventId: "sdk:req-3",
+    source: "sdk",
     agentId: undefined,
     attribution: { status: "unattributed", reason: "parent_tool_use_unmapped" },
   });

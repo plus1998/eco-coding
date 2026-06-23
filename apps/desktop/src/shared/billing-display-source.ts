@@ -41,7 +41,7 @@ function applyBillingDisplaySourceRow(
   displaySource: BillingUsageSource,
   sourceRow: ThreadBillingSourceSnapshot,
 ): ThreadBillingSnapshot {
-  const otelCostUsd = sourceRow.reportedCostUsd ?? billing.otelCostUsd;
+  const sourceReportedCostUsd = sourceRow.reportedCostUsd ?? billing.sourceReportedCostUsd;
   const usingPrimaryDisplay = displaySource === billing.primarySource;
   const { ecoCostBreakdown, plannerCostBreakdown, ...billingBase } = billing;
   return {
@@ -49,7 +49,7 @@ function applyBillingDisplaySourceRow(
     displaySource,
     totalTokens: sourceRow.totalTokens,
     ...computeThreadBillingTotals(
-      otelCostUsd,
+      sourceReportedCostUsd,
       sourceRow.plannerTokenCostUsd,
       sourceRow.ecoCostUsd,
     ),

@@ -214,11 +214,11 @@ test("applySingleUsageBillingEffects requests verified ledger projection by defa
   const artifacts = await resolveSingleUsageBillingArtifacts({
     threadId: "thr_effects_selection",
     role: "planner",
-    source: "otel",
+    source: "sdk",
     usage: usage(),
     runtimeRoutes: routes,
     lookupPricing,
-    requestKey: "otel:planner:req_1",
+    requestKey: "sdk:planner:req_1",
   });
 
   await applySingleUsageBillingEffects(services, {
@@ -233,7 +233,7 @@ test("applySingleUsageBillingEffects requests verified ledger projection by defa
       plannerModelLabel: "Claude Sonnet · Test Provider",
     },
   ]);
-  expect(emitted[0]?.payload.billing.primarySource).toBe("otel");
+  expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
 });
 
 test("applySdkStreamPartialBillingEffects records partial ledger and context side effects only", async () => {
@@ -414,7 +414,7 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
   });
   expect(legacySubagentUsageCalls).toHaveLength(0);
   expect(billing.primarySource).toBe("sdk");
-  expect(billing.otelCostUsd).toBe(0.01);
+  expect(billing.sourceReportedCostUsd).toBe(0.01);
   expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
   expect(emitted[0]?.payload.modelId).toBe("haiku");
 });
@@ -625,6 +625,6 @@ test("applySdkRunBillingEffects does not backfill legacy subagent metrics when l
   expect(entry?.usage.outputTokens).toBe(0);
   expect(entry?.ecoCostUsd).toBe(0);
   expect(billing.primarySource).toBe("sdk");
-  expect(billing.otelCostUsd).toBe(0.03);
+  expect(billing.sourceReportedCostUsd).toBe(0.03);
   expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });

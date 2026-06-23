@@ -1,4 +1,9 @@
-import { normalizeSdkSubagentType, type AgentEvent } from "@eco/runtime";
+import {
+  normalizeSdkSubagentType,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
+  type AgentEvent,
+} from "@eco/runtime";
 import { inferActivityRole } from "@eco/runtime/sdk";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
@@ -21,11 +26,14 @@ function readParentToolUseId(payload: unknown): string | undefined {
 }
 
 function readBillingRole(role: string): RuntimeAgentRole | undefined {
+  const trimmed = role.trim();
+  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY || trimmed === SDK_PLAN_AGENT_KEY) {
+    return trimmed;
+  }
   const normalized = normalizeSdkSubagentType(role);
   if (normalized) {
     return normalized;
   }
-  const trimmed = role.trim();
   if (!trimmed || isReservedActivityRole(trimmed)) {
     return undefined;
   }
@@ -92,24 +100,6 @@ export function resolveActivityAgentId(
   }
 
   return undefined;
-}
-
-/** Resolve sub-agent instance id for OTel tool / narrative activity lines. */
-export function resolveOtelActivityAgentId(
-  threadId: string,
-  line: { role: string; message: string },
-  options: {
-    metricsRegistry?: SubagentMetricsRegistry;
-  },
-): string | undefined {
-  const billingRole = readBillingRole(line.role);
-  if (!billingRole || !options.metricsRegistry) {
-    return undefined;
-  }
-
-  return options.metricsRegistry.resolveAgentId(threadId, {
-    role: billingRole,
-  });
 }
 
 export function activityStreamKey(threadId: string, agentId?: string, role?: string): string {

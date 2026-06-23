@@ -162,7 +162,7 @@ export function resolveUsageRoute(
     const route = byModelId[0]!;
     if (roleRoute && route.role !== role) {
       const plannerRoute = routes.find((entry) => entry.role === "planner");
-      // SDK/OTel often reports the planner upstream id for subagent calls — prefer the billing role's route.
+      // SDK often reports the planner upstream id for subagent calls — prefer the billing role's route.
       if (plannerRoute && route.modelId === plannerRoute.modelId && role !== "planner") {
         return toResolved(roleRoute);
       }
@@ -172,7 +172,7 @@ export function resolveUsageRoute(
     return toResolved(route);
   }
 
-  // SDK/OTel often reports the planner upstream id for every role; prefer this role's route.
+  // SDK often reports the planner upstream id for every role; prefer this role's route.
   if (byModelId.length > 1 && roleRoute) {
     const roleMatch = byModelId.find((route) => route.role === role);
     if (roleMatch) {
@@ -193,7 +193,7 @@ export function resolveUsageRoute(
   return undefined;
 }
 
-/** Resolve SDK alias / OTel model to the upstream id shown in UI and billing snapshots. */
+/** Resolve SDK alias model to the upstream id shown in UI and billing snapshots. */
 export function resolvePublicModelId(
   role: RuntimeAgentRole,
   requestedModel: string | undefined,

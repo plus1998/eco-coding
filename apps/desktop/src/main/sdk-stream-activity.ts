@@ -2,33 +2,12 @@ import {
   mergeStreamText,
   resolveSkillDisplayName,
   type AgentEvent,
-  type OtelActivityLine,
 } from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { activityStreamKey } from "./activity-agent-id.js";
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
-
-export interface SdkToolActivityRecord {
-  toolName: string;
-  toolUseId?: string;
-  detailKey?: string;
-  role?: string;
-  agentId?: string;
-  hadDetail: boolean;
-  at: number;
-  matchedAt?: number;
-}
-
-interface SdkToolFailureRecord {
-  toolName: string;
-  toolUseId?: string;
-  at: number;
-}
-
-const STREAM_THROTTLE_MS = 50;
-const OTEL_TOOL_DEDUP_MS = 60_000;
 
 interface PendingStreamDelta {
   role: string;
@@ -48,15 +27,13 @@ export type SdkActivityEmit = (
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> },
 ) => void;
 
+const STREAM_THROTTLE_MS = 50;
+
 export class SdkStreamActivityBridge {
-  private readonly recentSdkTools = new Map<string, SdkToolActivityRecord[]>();
-  private readonly recentToolFailures = new Map<string, SdkToolFailureRecord[]>();
   private readonly pendingDeltas = new Map<string, PendingStreamDelta>();
   private readonly lastStreamLine = new Map<string, { role: string; message: string; agentId?: string }>();
 
   resetThread(threadId: string): void {
-    this.recentSdkTools.delete(threadId);
-    this.recentToolFailures.delete(threadId);
     for (const key of [...this.lastStreamLine.keys()]) {
       if (key.startsWith(`${threadId}:`)) {
         this.lastStreamLine.delete(key);
@@ -71,75 +48,6 @@ export class SdkStreamActivityBridge {
         this.pendingDeltas.delete(key);
       }
     }
-  }
-
-  noteSdkToolActivity(threadId: string, payload: unknown, agentId?: string, role?: string): void {
-    if (!payload || typeof payload !== "object") {
-      return;
-    }
-    const record = payload as Record<string, unknown>;
-    if (record.type !== "tool_use" || typeof record.tool_name !== "string") {
-      return;
-    }
-    const toolName = record.tool_name;
-    const detailKey = resolveSdkToolDetailKey(toolName, record.input);
-    const detail =
-      record.input !== undefined &&
-      record.input !== null &&
-      (typeof record.input !== "object" || Object.keys(record.input as object).length > 0);
-    const entry: SdkToolActivityRecord = {
-      toolName,
-      ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
-      ...(detailKey && { detailKey }),
-      ...(role && { role }),
-      ...(agentId && { agentId }),
-      hadDetail: Boolean(detail),
-      at: Date.now(),
-    };
-    const list = this.recentSdkTools.get(threadId) ?? [];
-    list.push(entry);
-    const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-    this.recentSdkTools.set(threadId, list.filter((item) => item.at >= cutoff).slice(-40));
-  }
-
-  shouldSuppressOtelToolLine(
-    threadId: string,
-    line:
-      | string
-      | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
-  ): boolean {
-    if (shouldSuppressRedundantOtelPermissionDeniedLine(threadId, line, this.recentToolFailures)) {
-      return true;
-    }
-    const parsed = parseOtelToolLine(line);
-    if (!parsed) {
-      return false;
-    }
-    const recent = this.recentSdkTools.get(threadId) ?? [];
-    const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-    const candidates = [...recent].reverse().filter((item) => item.at >= cutoff && !item.matchedAt);
-    const sdkMatch = matchByToolUseId(candidates, parsed);
-    if (!sdkMatch) {
-      return false;
-    }
-    sdkMatch.matchedAt = Date.now();
-    return true;
-  }
-
-  private noteSdkToolFailure(threadId: string, payload: unknown): void {
-    const metadata = resolveSdkToolPermissionDeniedMetadata(payload);
-    if (!metadata?.name) {
-      return;
-    }
-    const entry: SdkToolFailureRecord = {
-      toolName: metadata.name,
-      ...(metadata.toolUseId && { toolUseId: metadata.toolUseId }),
-      at: Date.now(),
-    };
-    const list = this.recentToolFailures.get(threadId) ?? [];
-    list.push(entry);
-    const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-    this.recentToolFailures.set(threadId, list.filter((item) => item.at >= cutoff).slice(-20));
   }
 
   handleEvent(
@@ -157,14 +65,9 @@ export class SdkStreamActivityBridge {
     }
 
     if (event.type === "tool.started") {
-      this.noteSdkToolActivity(threadId, event.payload, activityAgentId, String(event.role));
       if (isSdkToolInputPlaceholder(event.payload)) {
         return;
       }
-    }
-
-    if (event.type === "tool.failed") {
-      this.noteSdkToolFailure(threadId, event.payload);
     }
 
     if (event.type === "agent.started") {
@@ -578,125 +481,6 @@ function pathBasename(filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || filePath;
-}
-
-interface ParsedOtelToolLine {
-  toolName: string;
-  detailKey?: string;
-  toolUseId?: string;
-  durationMs?: number;
-}
-
-function shouldSuppressRedundantOtelPermissionDeniedLine(
-  threadId: string,
-  line:
-    | string
-    | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
-  recentToolFailures: Map<string, SdkToolFailureRecord[]>,
-): boolean {
-  const toolUseId = typeof line !== "string" ? line.toolUseId?.trim() : undefined;
-  if (!toolUseId) {
-    return false;
-  }
-  const recent = recentToolFailures.get(threadId) ?? [];
-  const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-  return recent.some((item) => item.at >= cutoff && item.toolUseId === toolUseId);
-}
-
-function parseOtelToolLine(
-  line:
-    | string
-    | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
-): ParsedOtelToolLine | undefined {
-  if (typeof line !== "string" && line.toolName?.trim()) {
-    const promotedMcpToolName = promoteMcpWrapperToolName(line.toolName, line.toolDetail);
-    const detailKey = promotedMcpToolName ? undefined : normalizeToolDetailKey(line.toolDetail);
-    return {
-      toolName: promotedMcpToolName ?? line.toolName.trim(),
-      ...(detailKey && { detailKey }),
-      ...(line.toolUseId?.trim() && { toolUseId: line.toolUseId.trim() }),
-      ...(line.durationMs !== undefined && { durationMs: line.durationMs }),
-    };
-  }
-  const message = typeof line === "string" ? line : line.message;
-  const match = message.trim().match(/^Tool:\s*(.+?)(?:\s*·\s*(.+))?$/);
-  const rawToolName = match?.[1]?.trim();
-  if (!rawToolName) {
-    return undefined;
-  }
-  const toolName = stripOtelDurationSuffix(rawToolName);
-  if (!toolName) {
-    return undefined;
-  }
-  const durationMs = parseDurationSuffixMs(message);
-  const rawDetail = match?.[2]?.trim();
-  const strippedDetail = rawDetail ? stripOtelDurationSuffix(rawDetail) : undefined;
-  const promotedMcpToolName = promoteMcpWrapperToolName(toolName, strippedDetail);
-  const detailKey = promotedMcpToolName ? undefined : normalizeToolDetailKey(strippedDetail);
-  return {
-    toolName: promotedMcpToolName ?? toolName,
-    ...(detailKey && { detailKey }),
-    ...(durationMs !== undefined && { durationMs }),
-  };
-}
-
-function promoteMcpWrapperToolName(toolName: string, detail: string | undefined): string | undefined {
-  const name = toolName.trim();
-  const toolDetail = detail?.trim();
-  if (name !== "mcp_tool" || !toolDetail?.startsWith("mcp__")) {
-    return undefined;
-  }
-  return toolDetail;
-}
-
-function stripOtelDurationSuffix(value: string): string {
-  return value.replace(/\s+\(\d+(?:\.\d+)?s\)$/i, "").trim();
-}
-
-function parseDurationSuffixMs(value: string): number | undefined {
-  const match = value.match(/\((\d+(?:\.\d+)?)s\)\s*$/i);
-  if (!match?.[1]) {
-    return undefined;
-  }
-  const seconds = Number(match[1]);
-  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
-}
-
-function matchByToolUseId(
-  candidates: SdkToolActivityRecord[],
-  parsed: ParsedOtelToolLine,
-): SdkToolActivityRecord | undefined {
-  if (!parsed.toolUseId) {
-    return undefined;
-  }
-  return candidates.find((item) => item.toolUseId === parsed.toolUseId);
-}
-
-function resolveSdkToolDetailKey(toolName: string, input: unknown): string | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return undefined;
-  }
-  const record = input as Record<string, unknown>;
-  if (toolName === "Agent") {
-    return normalizeToolDetailKey(readString(record.subagent_type) ?? readString(record.agent_type));
-  }
-  return normalizeToolDetailKey(resolveSdkToolDisplayDetail(toolName, record));
-}
-
-function normalizeToolDetailKey(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const normalized = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
-  const roleLabels: Record<string, string> = {
-    explore: "探索",
-    architect: "架构",
-    coder: "编码",
-    reviewer: "审查",
-    tester: "测试",
-  };
-  return (roleLabels[normalized] ?? normalized).toLowerCase();
 }
 
 function readString(value: unknown): string | undefined {

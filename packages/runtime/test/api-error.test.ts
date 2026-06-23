@@ -4,14 +4,14 @@ import {
   formatApiErrorActivitySummary,
   formatApiErrorUserMessage,
   parseLegacyApiErrorActivityMessage,
-  parseOtelApiErrorAttribute,
+  parseSdkApiErrorAttribute,
 } from "../src/api-error";
 
 const screenshotRaw =
   '502 {"error":{"message":"Upstream request failed","type":"upstream_error"}}event: response.failed\ndata: {"type":"response.failed","response":{"error":{"code":"upstream_error","message":"Upstream request failed"}}}';
 
-test("parseOtelApiErrorAttribute extracts 502 upstream_error from SDK error attribute", () => {
-  const parsed = parseOtelApiErrorAttribute(screenshotRaw, "eco-reviewer-61324f8113a3");
+test("parseSdkApiErrorAttribute extracts 502 upstream_error from SDK error attribute", () => {
+  const parsed = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer-61324f8113a3");
   expect(parsed).toEqual({
     model: "eco-reviewer-61324f8113a3",
     statusCode: 502,
@@ -21,7 +21,7 @@ test("parseOtelApiErrorAttribute extracts 502 upstream_error from SDK error attr
 });
 
 test("formatApiErrorActivitySummary keeps short API error prefix for logging", () => {
-  const parsed = parseOtelApiErrorAttribute(screenshotRaw);
+  const parsed = parseSdkApiErrorAttribute(screenshotRaw);
   expect(formatApiErrorActivitySummary(parsed!)).toBe(
     "API error · 502 · 上游模型服务暂时不可用，请稍后重试或切换 Provider。",
   );
@@ -35,8 +35,8 @@ test("parseLegacyApiErrorActivityMessage handles cleaned activity lines", () => 
   expect(parsed?.message).toContain("上游模型服务暂时不可用");
 });
 
-test("parseOtelApiErrorAttribute maps model_not_found", () => {
-  const parsed = parseOtelApiErrorAttribute(
+test("parseSdkApiErrorAttribute maps model_not_found", () => {
+  const parsed = parseSdkApiErrorAttribute(
     '404 {"error":{"message":"model not found","code":"model_not_found"}}',
   );
   expect(parsed?.code).toBe("model_not_found");
@@ -46,7 +46,7 @@ test("parseOtelApiErrorAttribute maps model_not_found", () => {
 });
 
 test("apiErrorDedupeKey collapses identical failures", () => {
-  const first = parseOtelApiErrorAttribute(screenshotRaw, "eco-reviewer");
-  const second = parseOtelApiErrorAttribute(screenshotRaw, "eco-reviewer");
+  const first = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer");
+  const second = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer");
   expect(apiErrorDedupeKey(first!)).toBe(apiErrorDedupeKey(second!));
 });

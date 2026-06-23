@@ -58,7 +58,7 @@ function billing(input: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnaps
       cacheRead: input.totalTokens?.cacheRead ?? 5,
       cacheCreation: input.totalTokens?.cacheCreation ?? 1,
     },
-    otelCostUsd: input.otelCostUsd ?? 0,
+    sourceReportedCostUsd: input.sourceReportedCostUsd ?? 0,
     plannerTokenCostUsd: input.plannerTokenCostUsd ?? 0,
     ecoCostUsd: input.ecoCostUsd ?? 0.01,
     savedUsd: input.savedUsd ?? 0,

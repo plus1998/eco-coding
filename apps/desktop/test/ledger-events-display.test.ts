@@ -27,12 +27,12 @@ test("partitionLedgerEventsForDisplay splits primary proxy from shadow sources",
   const events = [
     makeEvent({ id: "p1", source: "proxy", inputTokens: 5000 }),
     makeEvent({ id: "s1", source: "sdk", inputTokens: 5000 }),
-    makeEvent({ id: "o1", source: "otel", inputTokens: 5000 }),
+    makeEvent({ id: "s2", source: "sdk", inputTokens: 2000 }),
     makeEvent({ id: "p2", source: "proxy", inputTokens: 3000 }),
   ];
   const { primaryEvents, shadowEvents } = partitionLedgerEventsForDisplay(events, "proxy");
   expect(primaryEvents.map((event) => event.id)).toEqual(["p1", "p2"]);
-  expect(shadowEvents.map((event) => event.id)).toEqual(["s1", "o1"]);
+  expect(shadowEvents.map((event) => event.id)).toEqual(["s1", "s2"]);
   expect(sumLedgerEventTokens(primaryEvents).total).toBe(8200);
 });
 

@@ -142,8 +142,8 @@ test("projectBillingFromUsageLedger exposes unattributed unresolved usage", () =
   const event = buildSingleUsageLedgerEvent({
     threadId: "thr_projector",
     role: "coder",
-    source: "otel",
-    sourceEventId: "otel:unattributed",
+    source: "sdk",
+    sourceEventId: "sdk:unattributed",
     usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 },
     modelId: "unknown-model",
   });

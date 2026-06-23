@@ -444,7 +444,6 @@ bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
   }
   final liveType = _projectionLiveType(item);
   if (liveType != null && _isThreadFollowUpLiveEvent(liveType)) return true;
-  if (_isProjectionOtelToolDurationSummary(item)) return true;
   if (item.eventType == 'agent.started' ||
       item.eventType == 'agent.stopped' ||
       item.eventType == 'agent.abandoned' ||
@@ -612,22 +611,6 @@ String? _projectionLiveType(ThreadRunProjectionTimelineItem item) {
 
 bool _isThreadFollowUpLiveEvent(String liveType) {
   return liveType.startsWith('thread.follow_up.');
-}
-
-bool _isProjectionOtelToolDurationSummary(ThreadRunProjectionTimelineItem item) {
-  if ((item.eventType != 'tool.started' && item.eventType != 'tool.completed') ||
-      _projectionLiveType(item) != 'otel.activity') {
-    return false;
-  }
-  final tool = readProjectionToolMetadata(item.metadata);
-  if (tool?.durationMs != null) return true;
-  final text = item.text.trim();
-  return RegExp(r'^Tool:\s*[^·]+?\s+\(\d+(?:\.\d+)?s\)$', caseSensitive: false)
-          .hasMatch(text) ||
-      RegExp(
-        r'^Tool:\s*Agent\s*·\s*.+\s+\(\d+(?:\.\d+)?s\)$',
-        caseSensitive: false,
-      ).hasMatch(text);
 }
 
 bool _isProjectionUsageNoiseText(String text) {

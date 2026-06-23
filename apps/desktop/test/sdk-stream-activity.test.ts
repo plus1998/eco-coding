@@ -1,96 +1,6 @@
 import { expect, test } from "bun:test";
 import { SdkStreamActivityBridge } from "../src/main/sdk-stream-activity";
 
-test("suppresses redundant OTel tool line after SDK tool start with matching toolUseId", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.noteSdkToolActivity("thr_1", {
-    type: "tool_use",
-    tool_name: "Read",
-    tool_use_id: "toolu_read_1",
-    streaming: true,
-  });
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: Read",
-      role: "planner",
-      toolName: "Read",
-      toolUseId: "toolu_read_1",
-    }),
-  ).toBe(true);
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: Read · styles.css",
-      role: "planner",
-      toolName: "Read",
-      toolDetail: "styles.css",
-      toolUseId: "toolu_read_2",
-    }),
-  ).toBe(false);
-});
-
-test("suppresses OTel duration summaries after detailed SDK subagent tool start", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.started",
-      role: "explore",
-      agentId: "agent_weather",
-      payload: {
-        type: "tool_use",
-        tool_name: "WebSearch",
-        tool_use_id: "toolu_search_1",
-        input: { query: "广州天气" },
-      },
-    },
-    () => {},
-    undefined,
-    { activityAgentId: "agent_weather" },
-  );
-
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: WebSearch (5.9s)",
-      role: "planner",
-      toolName: "WebSearch",
-      toolUseId: "toolu_search_1",
-      durationMs: 5900,
-    }),
-  ).toBe(true);
-});
-
-test("suppresses OTel tool summaries by structured tool metadata", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.started",
-      role: "explore",
-      agentId: "agent_weather",
-      payload: {
-        type: "tool_use",
-        tool_name: "WebFetch",
-        tool_use_id: "toolu_fetch_1",
-        input: { url: "https://weather.example/guangzhou" },
-      },
-    },
-    () => {},
-    undefined,
-    { activityAgentId: "agent_weather" },
-  );
-
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: WebFetch · https://weather.example/guangzhou (8.3s)",
-      role: "planner",
-      toolName: "WebFetch",
-      toolDetail: "https://weather.example/guangzhou",
-      toolUseId: "toolu_fetch_1",
-      durationMs: 8300,
-    }),
-  ).toBe(true);
-});
-
 test("emits structured SDK tool metadata with tool started activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{
@@ -254,53 +164,6 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
-test("suppresses redundant OTLP permission denied lines after SDK tool.failed by toolUseId", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.failed",
-      role: "tool",
-      agentId: "agent_researcher",
-      payload: {
-        type: "tool_permission_denied",
-        tool_name: "Write",
-        tool_use_id: "tool_denied",
-        message: 'Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
-        actor: "eco_researcher",
-      },
-    },
-    () => {},
-    undefined,
-    { activityAgentId: "agent_researcher" },
-  );
-
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Permission denied for Write",
-      role: "tool",
-      toolName: "Write",
-      toolUseId: "tool_denied",
-    }),
-  ).toBe(true);
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: 'Permission denied for Write: Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
-      role: "tool",
-      toolName: "Write",
-      toolUseId: "tool_denied",
-    }),
-  ).toBe(true);
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Permission denied for Bash",
-      role: "tool",
-      toolName: "Bash",
-      toolUseId: "tool_other",
-    }),
-  ).toBe(false);
-});
-
 test("defers streaming tool placeholder until input is complete", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];
@@ -353,35 +216,6 @@ test("defers streaming tool placeholder until input is complete", () => {
   expect(emitted).toHaveLength(1);
   expect(emitted[0]?.message).toBe("Tool: mcp__eco_plan__finalize_plan");
   expect(emitted[0]?.tool?.name).toBe("mcp__eco_plan__finalize_plan");
-});
-
-test("suppresses MCP OTel wrapper after concrete SDK MCP tool", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.started",
-      role: "planner",
-      payload: {
-        type: "tool_use",
-        tool_name: "mcp__eco_plan__finalize_plan",
-        tool_use_id: "toolu_plan",
-        input: { analysis: "done", plan: "ship it" },
-      },
-    },
-    () => {},
-  );
-
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: mcp_tool · mcp__eco_plan__finalize_plan (0.0s)",
-      role: "planner",
-      toolName: "mcp_tool",
-      toolDetail: "mcp__eco_plan__finalize_plan",
-      toolUseId: "toolu_plan",
-      durationMs: 0,
-    }),
-  ).toBe(true);
 });
 
 test("emits structured SDK tool metadata without parsing display text", () => {
@@ -560,70 +394,6 @@ test("emits structured SDK tool metadata for task progress activity", () => {
   ]);
 });
 
-test("suppresses OTel Agent elapsed summaries after SDK subagent delegation", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.started",
-      role: "planner",
-      payload: {
-        type: "tool_use",
-        tool_name: "Agent",
-        tool_use_id: "toolu_agent_1",
-        input: {
-          subagent_type: "eco_explore",
-          description: "查询广州天气",
-        },
-      },
-    },
-    () => {},
-  );
-
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: Agent · eco_explore (29.6s)",
-      role: "planner",
-      toolName: "Agent",
-      toolDetail: "eco_explore",
-      toolUseId: "toolu_agent_1",
-      durationMs: 29600,
-    }),
-  ).toBe(true);
-});
-
-test("suppresses OTel Agent elapsed summaries when SDK metadata includes prompt detail", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "tool.started",
-      role: "planner",
-      payload: {
-        type: "tool_use",
-        tool_name: "Agent",
-        tool_use_id: "toolu_agent_2",
-        input: {
-          subagent_type: "eco_explore",
-          prompt: "查询广州今天的天气并返回来源",
-        },
-      },
-    },
-    () => {},
-  );
-
-  expect(
-    bridge.shouldSuppressOtelToolLine("thr_1", {
-      message: "Tool: Agent · 探索 (29.6s)",
-      role: "planner",
-      toolName: "Agent",
-      toolDetail: "探索",
-      toolUseId: "toolu_agent_2",
-      durationMs: 29600,
-    }),
-  ).toBe(true);
-});
-
 test("keeps parallel subagent narrative streams isolated by agentId", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; role: string; agentId?: string }> = [];
@@ -736,14 +506,4 @@ test("emits finalize text when only an empty placeholder preceded it", () => {
     { type: "message.delta", message: "", role: "planner", stream: true },
     { type: "message.delta", message: "广州今天中雨，25-31C。", role: "planner", stream: false },
   ]);
-});
-
-test("allows OTel tool line with detail when SDK only showed name", () => {
-  const bridge = new SdkStreamActivityBridge();
-  bridge.noteSdkToolActivity("thr_1", {
-    type: "tool_use",
-    tool_name: "Grep",
-    tool_use_id: "toolu_1",
-  });
-  expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: Grep · pattern")).toBe(false);
 });

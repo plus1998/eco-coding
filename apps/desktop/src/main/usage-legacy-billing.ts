@@ -13,7 +13,7 @@ export interface RecordLegacySingleUsageBillingInput {
   threadId: string;
   artifacts: SingleUsageBillingArtifacts;
   agentId?: string;
-  otelCostUsd?: number;
+  sourceReportedCostUsd?: number;
   reconciliationOnly?: boolean;
   fillSdkPrimaryForSubagent?: boolean;
 }
@@ -50,7 +50,7 @@ export function recordLegacySingleUsageBilling(
     role: artifacts.billingRole,
     source: artifacts.source,
     delta: artifacts.delta,
-    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
+    ...(input.sourceReportedCostUsd !== undefined && { sourceReportedCostUsd: input.sourceReportedCostUsd }),
     actualRates: artifacts.actualRates,
     plannerRates: artifacts.plannerRates,
     ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
@@ -95,7 +95,7 @@ export function recordLegacySdkRunBilling(
     source: "sdk",
     requestKey: input.requestKey,
     models: [...input.models],
-    ...(input.totalCostUsd !== undefined && { otelCostUsd: input.totalCostUsd }),
+    ...(input.totalCostUsd !== undefined && { sourceReportedCostUsd: input.totalCostUsd }),
     ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
   });
 }

@@ -21,7 +21,7 @@ function makeBilling(
 
   return {
     totalTokens: total,
-    otelCostUsd: 0,
+    sourceReportedCostUsd: 0,
     plannerTokenCostUsd: 0,
     ecoCostUsd: Object.values(byRole).reduce((sum, entry) => sum + entry.ecoCostUsd, 0),
     savedUsd: 0,
@@ -119,8 +119,8 @@ test("buildBillingTokenBreakdown does not supplement roles from non-primary sour
   billing.primarySource = "sdk";
   billing.byRole = {};
   billing.sourceBreakdown = {
-    otel: {
-      source: "otel",
+    sdk: {
+      source: "sdk",
       totalTokens: { input: 4000, output: 400, cacheRead: 0, cacheCreation: 0 },
       plannerTokenCostUsd: 0,
       ecoCostUsd: 0.03,
@@ -255,8 +255,8 @@ test("buildBillingTokenBreakdown uses primary byRole only when supplemental sour
       pricingResolved: true,
       byRole: billing.byRole,
     },
-    otel: {
-      source: "otel",
+    sdk: {
+      source: "sdk",
       totalTokens: { input: 10000, output: 1000, cacheRead: 0, cacheCreation: 0 },
       plannerTokenCostUsd: 0.1,
       ecoCostUsd: 0.1,

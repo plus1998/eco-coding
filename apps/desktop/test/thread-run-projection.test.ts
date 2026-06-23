@@ -86,6 +86,33 @@ test("buildThreadRunProjection isolates concurrent same-role subagents by agentI
   expect(projection.timeline).toEqual([]);
 });
 
+test("buildThreadRunProjection includes unattributed subagent tools on main timeline", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [agent({ agentId: "explore_a", role: "explore" })],
+    events: [
+      event({
+        id: "tool_read",
+        sequence: 1,
+        eventType: "tool.started",
+        scope: "main",
+        role: "explore",
+        message: "Tool: Read · src/main.ts",
+        observedAt: "2026-01-01T00:00:03.000Z",
+        metadata: {
+          liveType: "tool.started",
+          tool: { name: "Read", detail: "src/main.ts", toolUseId: "toolu_read_1" },
+        },
+      }),
+    ],
+  });
+
+  expect(projection.timeline).toHaveLength(1);
+  expect(projection.agents[0]?.timeline).toHaveLength(0);
+});
+
 test("buildThreadRunProjection surfaces role-only agent events as missing_agent_id", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
@@ -260,7 +287,7 @@ test("buildThreadRunProjection derives request span timing from stream events", 
 test("buildThreadRunProjection attaches usage and context by agentId", () => {
   const billing: ThreadBillingSnapshot = {
     totalTokens: { input: 10, output: 5, cacheRead: 0, cacheCreation: 0 },
-    otelCostUsd: 0,
+    sourceReportedCostUsd: 0,
     plannerTokenCostUsd: 0,
     ecoCostUsd: 0.01,
     savedUsd: 0,

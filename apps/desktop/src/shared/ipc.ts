@@ -1060,7 +1060,7 @@ export interface ThreadModelUsageEntry {
   costUsd?: number;
 }
 
-export type BillingUsageSource = "proxy" | "otel" | "sdk";
+export type BillingUsageSource = "proxy" | "sdk";
 
 export interface TokenCostBreakdown {
   inputUsd: number;
@@ -1078,7 +1078,7 @@ export interface ThreadBillingModelSnapshot {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   ecoCostUsd: number;
-  /** Cost reported by the source itself, when available (SDK/OTel estimate). */
+  /** Cost reported by the source itself, when available (SDK estimate). */
   reportedCostUsd?: number;
 }
 
@@ -1092,7 +1092,7 @@ export interface ThreadBillingSourceSnapshot {
   };
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
-  /** Cost reported by the source itself, when available (SDK/OTel estimate). */
+  /** Cost reported by the source itself, when available (SDK estimate). */
   reportedCostUsd?: number;
   pricingResolved: boolean;
   byModel?: ThreadBillingModelSnapshot[];
@@ -1158,7 +1158,7 @@ export interface ThreadBillingSnapshot {
     cacheRead: number;
     cacheCreation: number;
   };
-  otelCostUsd: number;
+  sourceReportedCostUsd: number;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   savedUsd: number;

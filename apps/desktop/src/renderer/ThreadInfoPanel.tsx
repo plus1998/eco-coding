@@ -120,7 +120,7 @@ function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBilli
     billing.totalTokens.cacheCreation;
   return (
     total > 0 ||
-    billing.otelCostUsd > 0 ||
+    billing.sourceReportedCostUsd > 0 ||
     billing.plannerTokenCostUsd > 0 ||
     billing.ecoCostUsd > 0
   );
@@ -128,7 +128,6 @@ function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBilli
 
 const billingSourceLabels: Record<BillingUsageSource, string> = {
   proxy: "Proxy",
-  otel: "OTel",
   sdk: "SDK",
 };
 
@@ -193,7 +192,7 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
   if (!sources) {
     return null;
   }
-  const rows = (["proxy", "otel", "sdk"] as BillingUsageSource[])
+  const rows = (["proxy", "sdk"] as BillingUsageSource[])
     .map((source) => sources[source])
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   if (rows.length === 0) {

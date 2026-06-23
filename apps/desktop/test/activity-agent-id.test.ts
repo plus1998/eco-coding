@@ -174,6 +174,29 @@ test("resolveActivityAgentId maps parent tool use when activity role is tool", (
   expect(agentId).toBe("agent_coder_a");
 });
 
+test("resolveActivityAgentId accepts SDK general-purpose billing role", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  registry.noteTaskToolUse("thr_1", "toolu_task_gp", "general-purpose");
+  registry.linkToolUseToAgent("thr_1", "toolu_task_gp", "agent_gp_1");
+
+  const agentId = resolveActivityAgentId(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "general-purpose",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        parent_tool_use_id: "toolu_task_gp",
+        subagent_type: "general-purpose",
+      },
+    },
+    { metricsRegistry: registry },
+  );
+
+  expect(agentId).toBe("agent_gp_1");
+});
+
 test("resolveActivityAgentId accepts distinct session id registered in metrics", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   registry.onSubagentStart("thr_1", { agentId: "agent_coder_solo", role: "coder" });

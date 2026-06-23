@@ -148,8 +148,8 @@ function extractJsonPayload(text: string): { jsonText?: string; remainder: strin
   return { remainder: text.trim() };
 }
 
-/** Parse SDK/OTLP `error` attribute once at telemetry ingress. */
-export function parseOtelApiErrorAttribute(
+/** Parse SDK structured `error` attribute from stream/tool payloads. */
+export function parseSdkApiErrorAttribute(
   raw: string,
   model?: string,
 ): ThreadApiErrorInfo | null {
@@ -272,5 +272,5 @@ export function parseLegacyApiErrorActivityMessage(message: string): ThreadApiEr
       ...(model && { model }),
     };
   }
-  return parseOtelApiErrorAttribute(payload, model);
+  return parseSdkApiErrorAttribute(payload, model);
 }

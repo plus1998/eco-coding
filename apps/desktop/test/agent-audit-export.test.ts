@@ -47,7 +47,7 @@ const thread: ThreadSummary = {
 
 const billing: ThreadBillingSnapshot = {
   totalTokens: { input: 100, output: 20, cacheRead: 0, cacheCreation: 0 },
-  otelCostUsd: 0,
+  sourceReportedCostUsd: 0,
   plannerTokenCostUsd: 0.02,
   ecoCostUsd: 0.01,
   savedUsd: 0.01,

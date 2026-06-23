@@ -229,17 +229,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   Timer? _projectionRefreshTimer;
 
   void _scheduleProjectionRefresh() {
-    if (state.runProjection?.hasData == true) {
-      return;
-    }
     _projectionRefreshTimer?.cancel();
-    _projectionRefreshTimer = Timer(const Duration(milliseconds: 120), () {
+    _projectionRefreshTimer = Timer(const Duration(milliseconds: 150), () {
       unawaited(_refreshProjectionFromRpc());
     });
   }
 
   Future<void> _refreshProjectionFromRpc() async {
-    if (!mounted || state.runProjection?.hasData == true) {
+    if (!mounted) {
       return;
     }
     final rpc = ref.read(desktopRpcProvider);
@@ -341,8 +338,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (eventThreadId != threadId) return;
 
     final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
+    final isActiveThread = _isActiveThreadStatus(state.thread?.status);
 
-    if (!isMetricsOnlyEvent && state.runProjection?.hasData != true) {
+    if (isActiveThread && !isMetricsOnlyEvent) {
       _scheduleProjectionRefresh();
     }
 
@@ -393,14 +391,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           runProjection: _pickNewerProjection(state.runProjection, live.projection),
         );
       } else {
-        ref.read(desktopRpcProvider)?.getRunProjection(threadId, mode: 'feed').then((
-          projection,
-        ) {
-          if (!mounted) return;
-          if (projection != null) {
-            state = state.copyWith(runProjection: projection);
-          }
-        });
+        _scheduleProjectionRefresh();
       }
     }
     if (live.type == 'thread.subagent_timing_updated') {
@@ -413,6 +404,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           if (!mounted) return;
           state = state.copyWith(subagentSessions: sessions);
         });
+      }
+      if (_isActiveThreadStatus(state.thread?.status)) {
+        _scheduleProjectionRefresh();
       }
     }
 
@@ -665,4 +659,8 @@ bool _isMetricsOnlyThreadLiveEvent(String liveType) {
       liveType == 'thread.todos_updated' ||
       liveType == 'thread.title_updated' ||
       liveType == 'thread.run_projection_updated';
+}
+
+bool _isActiveThreadStatus(String? status) {
+  return status == 'running' || status == 'awaiting_plan';
 }

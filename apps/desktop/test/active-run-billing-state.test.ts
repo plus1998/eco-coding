@@ -40,12 +40,6 @@ test("ActiveRunBillingStateStore tracks request sequences and proxy context cach
   const store = new ActiveRunBillingStateStore();
   store.startRun("thr_state");
 
-  expect(store.otelRequestSeq("thr_state")).toBeUndefined();
-  store.recordOtelRequest("thr_state", { nextRequestSeq: 1 });
-  expect(store.otelRequestSeq("thr_state")).toBe(1);
-  store.recordOtelRequest("thr_state", { nextRequestSeq: 2 });
-  expect(store.otelRequestSeq("thr_state")).toBe(2);
-
   expect(store.proxyRequestSeq("thr_state")).toBeUndefined();
   store.recordProxyRequest("thr_state", {
     nextRequestSeq: 1,

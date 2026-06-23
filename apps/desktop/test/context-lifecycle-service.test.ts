@@ -31,7 +31,7 @@ function createMonitor(input: { shouldCompact?: boolean } = {}) {
         instances: [],
       };
     },
-    noteOtelCompaction(threadId) {
+    noteCompactionObserved(threadId) {
       calls.compacting.push(threadId);
     },
   };
@@ -158,7 +158,7 @@ test("handleSdkContextEvent records compact boundary and compacting status", () 
   expect(live).toEqual(["thr_compact"]);
 });
 
-test("service exposes compact in-flight and otel compaction markers", () => {
+test("service exposes compact in-flight and compaction markers", () => {
   const { monitor, calls } = createMonitor();
   const service = createContextLifecycleService({
     monitor,
@@ -171,7 +171,7 @@ test("service exposes compact in-flight and otel compaction markers", () => {
   });
 
   service.markCompactInFlight("thr_compact");
-  service.noteOtelCompaction("thr_compact");
+  service.noteCompactionObserved("thr_compact");
 
   expect(calls.inFlight).toEqual(["thr_compact"]);
   expect(calls.compacting).toEqual(["thr_compact"]);

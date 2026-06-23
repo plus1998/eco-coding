@@ -4,7 +4,7 @@ export type RunAttemptPhase = "planning" | "execution" | "question" | "continuat
 export type RunAttemptStatus = "running" | "completed" | "failed" | "cancelled";
 export type AgentInstanceKind = "planner" | "subagent";
 export type AgentInstanceStatus = "launching" | "active" | "stopped" | "abandoned";
-export type UsageLedgerSource = "sdk" | "proxy" | "otel";
+export type UsageLedgerSource = "sdk" | "proxy";
 export type UsageLedgerKind = "request_final" | "request_partial" | "assistant_fallback" | "context";
 export type UsageAttributionStatus = "attributed" | "pending" | "unattributed";
 

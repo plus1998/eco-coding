@@ -92,7 +92,7 @@ test("formatUpstreamProxyCallLog renders human-readable multiline text", () => {
       ecoCostUsd: 0.01,
       plannerTokenCostUsd: 0.02,
       savedUsd: 0.01,
-      otelCostUsd: 0,
+      sourceReportedCostUsd: 0,
     },
   });
 

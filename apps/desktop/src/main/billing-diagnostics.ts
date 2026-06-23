@@ -84,7 +84,7 @@ function appendLedgerAttributionDiagnostics(
       type: "shadow_reconciliation",
       severity: "info",
       count: shadowUnattributed.length,
-      message: `校验源 ${shadowUnattributed.length} 笔 SDK/OTel shadow 对账记录（无 agent 归属，不计入主账，可忽略）。`,
+      message: `校验源 ${shadowUnattributed.length} 笔 SDK shadow 对账记录（无 agent 归属，不计入主账，可忽略）。`,
     });
   }
 }

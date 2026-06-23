@@ -93,6 +93,7 @@ export function buildThreadRunEventFromLiveEvent(
     role: input.role,
     message: input.message,
     ...(input.agentId && { agentId: input.agentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(input.tool && { tool: input.tool }),
   });
   const streamState = resolveThreadRunEventStreamState(input);
@@ -208,21 +209,6 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
   if (input.liveType === "thread.auto_retry" || input.liveType === "thread.retry") {
     return "request.retry_scheduled";
   }
-  if (input.liveType === "otel.activity") {
-    if (input.metadata?.systemSubtype === "requesting") {
-      return "request.started";
-    }
-    if (input.tool?.status === "failed") {
-      return "tool.failed";
-    }
-    if (input.tool?.status === "completed") {
-      return "tool.completed";
-    }
-    if (input.tool) {
-      return input.tool.status === "started" ? "tool.started" : "tool.completed";
-    }
-    return input.stream ? "message.delta" : "message.final";
-  }
   if (input.liveType.startsWith("thread.")) {
     return "thread.status";
   }
@@ -233,6 +219,7 @@ function resolveThreadRunEventScope(input: {
   eventType: ThreadRunEventType;
   role: string;
   agentId?: string;
+  parentToolUseId?: string;
   message?: string;
   tool?: ThreadRunToolMetadata;
 }): ThreadRunEventScope {
@@ -242,7 +229,13 @@ function resolveThreadRunEventScope(input: {
   if (isPlannerSubagentDelegationEvent(input)) {
     return "main";
   }
-  if (input.agentId || subagentRoleSet.has(input.role)) {
+  if (input.agentId || input.parentToolUseId) {
+    return "agent";
+  }
+  if (subagentRoleSet.has(input.role)) {
+    if (input.eventType.startsWith("tool.")) {
+      return "main";
+    }
     return "agent";
   }
   return "main";

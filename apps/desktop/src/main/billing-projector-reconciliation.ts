@@ -175,7 +175,7 @@ function compareThreadCosts(
     legacy.plannerTokenCostUsd,
     issues,
   );
-  compareCost("otelCostUsd", projection.otelCostUsd, legacy.otelCostUsd, issues);
+  compareCost("sourceReportedCostUsd", projection.sourceReportedCostUsd, legacy.sourceReportedCostUsd, issues);
 }
 
 function compareSubagentMetrics(

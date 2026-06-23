@@ -983,42 +983,6 @@ test("buildThreadRunProjectionViewModel keeps final main agent text after empty 
   }
 });
 
-test("buildThreadRunProjectionViewModel hides planner OTel tool duration summaries from main feed", () => {
-  const view = buildThreadRunProjectionViewModel(
-    projection({
-      timeline: [
-        item({
-          id: "otel-websearch-duration",
-          eventType: "tool.started",
-          role: "planner",
-          text: "Tool: WebSearch (5.9s)",
-          metadata: { liveType: "otel.activity" },
-        }),
-      ],
-    }),
-  );
-
-  expect(view.mainFeedEntries).toEqual([]);
-});
-
-test("buildThreadRunProjectionViewModel hides planner OTel agent elapsed summaries from main feed", () => {
-  const view = buildThreadRunProjectionViewModel(
-    projection({
-      timeline: [
-        item({
-          id: "otel-agent-duration",
-          eventType: "tool.started",
-          role: "planner",
-          text: "Tool: Agent · eco_explore (29.6s)",
-          metadata: { liveType: "otel.activity" },
-        }),
-      ],
-    }),
-  );
-
-  expect(view.mainFeedEntries).toEqual([]);
-});
-
 test("buildThreadRunProjectionViewModel collapses agent card stream rows without losing final echo", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
@@ -1823,14 +1787,14 @@ test("buildThreadRunProjectionViewModel hides subagent bash approvals from main 
 test("projectionItemToDetailBlock prefers structured tool metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({
-      id: "otel-webfetch",
+      id: "sdk-webfetch",
       eventType: "tool.completed",
       scope: "agent",
       role: "explore",
       agentId: "agent_weather",
       text: "Tool: WebFetch",
       metadata: {
-        liveType: "otel.activity",
+        liveType: "tool.completed",
         tool: {
           name: "WebFetch",
           detail: "https://weather.example/guangzhou",
@@ -1948,7 +1912,7 @@ test("projectionItemToDetailBlock formats MCP tool metadata", () => {
       role: "planner",
       text: "Tool: mcp_tool · mcp__eco_plan__finalize_plan (0.0s)",
       metadata: {
-        liveType: "otel.activity",
+        liveType: "tool.completed",
         tool: {
           name: "mcp_tool",
           detail: "mcp__eco_plan__finalize_plan",
@@ -2037,18 +2001,16 @@ test("buildThreadRunProjectionViewModel drops redundant permission denied lines 
           },
         }),
         item({
-          id: "otel-deny-short",
+          id: "deny-short",
           sequence: 2,
           role: "system",
           text: "Permission denied for Write",
-          metadata: { liveType: "otel.activity" },
         }),
         item({
-          id: "otel-reject",
+          id: "reject",
           sequence: 3,
           role: "system",
           text: "工具调用被拒绝",
-          metadata: { liveType: "otel.activity" },
         }),
       ],
     }),

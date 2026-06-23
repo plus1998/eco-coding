@@ -8,7 +8,7 @@ import {
 function billingSnapshot(input: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnapshot {
   return {
     totalTokens: { input: 100, output: 20, cacheRead: 0, cacheCreation: 0 },
-    otelCostUsd: 0,
+    sourceReportedCostUsd: 0,
     plannerTokenCostUsd: 1,
     ecoCostUsd: 0.02,
     savedUsd: 0.98,

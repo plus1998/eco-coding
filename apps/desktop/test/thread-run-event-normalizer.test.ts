@@ -242,11 +242,11 @@ test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messa
   });
 });
 
-test("buildThreadRunEventFromLiveEvent preserves structured OTel tool metadata", () => {
+test("buildThreadRunEventFromLiveEvent preserves structured SDK tool completed metadata", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",
-    eventId: "otel_tool",
-    liveType: "otel.activity",
+    eventId: "sdk_tool",
+    liveType: "tool.completed",
     role: "explore",
     agentId: "agent_explore_a",
     stream: false,
@@ -266,49 +266,13 @@ test("buildThreadRunEventFromLiveEvent preserves structured OTel tool metadata",
     scope: "agent",
     streamState: "none",
     metadata: {
-      liveType: "otel.activity",
+      liveType: "tool.completed",
       tool: {
         name: "WebFetch",
         detail: "https://weather.example/guangzhou",
         toolUseId: "toolu_fetch_1",
         durationMs: 8300,
         status: "completed",
-      },
-    },
-  });
-});
-
-test("buildThreadRunEventFromLiveEvent maps structured OTel tool failure without text parsing", () => {
-  const event = buildThreadRunEventFromLiveEvent({
-    threadId: "thr_1",
-    eventId: "otel_tool_failed",
-    liveType: "otel.activity",
-    role: "explore",
-    agentId: "agent_explore_a",
-    stream: false,
-    message: "WebFetch timeout",
-    tool: {
-      name: "WebFetch",
-      detail: "https://weather.example/guangzhou",
-      toolUseId: "toolu_fetch_1",
-      durationMs: 1200,
-      status: "failed",
-    },
-    observedAt: "2026-01-01T00:00:00.000Z",
-  });
-
-  expect(event).toMatchObject({
-    eventType: "tool.failed",
-    scope: "agent",
-    streamState: "none",
-    metadata: {
-      liveType: "otel.activity",
-      tool: {
-        name: "WebFetch",
-        detail: "https://weather.example/guangzhou",
-        toolUseId: "toolu_fetch_1",
-        durationMs: 1200,
-        status: "failed",
       },
     },
   });
@@ -410,6 +374,28 @@ test("buildSubagentMissionAttributedRunEvent stamps agentId into @mission payloa
   const mission = parseSubagentMissionMessage(event.message);
   expect(mission?.agentId).toBe("agent_coder_a");
   expect(mission?.prompt).toContain("export filters");
+});
+
+test("buildThreadRunEventFromLiveEvent scopes unattributed subagent tools to main timeline", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_tool",
+    liveType: "tool.started",
+    role: "explore",
+    stream: false,
+    message: "Tool: Read · src/main.ts",
+    tool: {
+      name: "Read",
+      detail: "src/main.ts",
+      toolUseId: "toolu_read_1",
+    },
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    eventType: "tool.started",
+    scope: "main",
+  });
 });
 
 test("buildThreadRunEventFromLiveEvent keeps planner Agent delegation on main timeline", () => {
