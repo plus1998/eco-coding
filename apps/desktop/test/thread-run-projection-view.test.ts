@@ -12,6 +12,7 @@ import {
   isProjectionUserPromptItem,
   isThreadContextCompactionInFlight,
   projectionItemToDetailBlock,
+  buildSubagentMissionTextByAgentId,
   resolveSubagentCardMissionText,
 } from "../src/renderer/thread-run-projection-view";
 
@@ -1441,6 +1442,169 @@ test("resolveSubagentCardMissionText falls back to agent.started timeline metada
       ],
     }),
   ).toBe("Review export filters in src/api.ts");
+});
+
+test("resolveSubagentCardMissionText falls back to main timeline @mission by parentToolUseId", () => {
+  expect(
+    resolveSubagentCardMissionText(
+      {
+        agentId: "agent_coder_a",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        durationMs: 0,
+        parentToolUseId: "toolu_agent_1",
+        timeline: [],
+      },
+      {
+        mainTimeline: [
+          item({
+            id: "delegate-coder",
+            eventType: "tool.started",
+            scope: "main",
+            role: "coder",
+            text: formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts"),
+            sequence: 1,
+            metadata: {
+              liveType: "tool.started",
+              tool: {
+                name: "Agent",
+                detail: "coder",
+                toolUseId: "toolu_agent_1",
+                status: "running",
+              },
+            },
+          }),
+        ],
+        subagentAgents: [
+          {
+            agentId: "agent_coder_a",
+            role: "coder",
+            kind: "subagent",
+            status: "active",
+            startedAt: "2026-01-01T00:00:01.000Z",
+            durationMs: 0,
+            parentToolUseId: "toolu_agent_1",
+            timeline: [],
+          },
+        ],
+      },
+    ),
+  ).toBe("Implement export filters in src/api.ts");
+});
+
+test("resolveSubagentCardMissionText falls back to activity lines @mission", () => {
+  expect(
+    resolveSubagentCardMissionText(
+      {
+        agentId: "agent_coder_a",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        durationMs: 0,
+        timeline: [],
+      },
+      {
+        subagentAgents: [
+          {
+            agentId: "agent_coder_a",
+            role: "coder",
+            kind: "subagent",
+            status: "active",
+            startedAt: "2026-01-01T00:00:01.000Z",
+            durationMs: 0,
+            timeline: [],
+          },
+        ],
+        activityLines: [
+          { id: "u1", role: "user", message: "go" },
+          { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+          {
+            id: "2",
+            role: "planner",
+            message: formatSubagentMissionMessage(
+              "coder",
+              "Implement export filters.\nFiles: src/api.ts",
+            ),
+          },
+        ],
+      },
+    ),
+  ).toBe("Implement export filters.\nFiles: src/api.ts");
+});
+
+test("buildSubagentMissionTextByAgentId links parallel same-role missions via agentId lines", () => {
+  const missionByAgentId = buildSubagentMissionTextByAgentId({
+    subagentAgents: [
+      {
+        agentId: "agent_a",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        durationMs: 0,
+        timeline: [],
+      },
+      {
+        agentId: "agent_b",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:02.000Z",
+        durationMs: 0,
+        timeline: [],
+      },
+    ],
+    mainTimeline: [],
+    activityLines: [
+      { id: "u1", role: "user", message: "go" },
+      {
+        id: "1",
+        role: "planner",
+        message: formatSubagentMissionMessage("coder", "Implement billing API"),
+      },
+      {
+        id: "2",
+        role: "planner",
+        message: formatSubagentMissionMessage("coder", "Implement context API"),
+      },
+      { id: "3", role: "coder", message: "Tool: Read · billing.ts", agentId: "agent_a" },
+      { id: "4", role: "coder", message: "Tool: Read · context.ts", agentId: "agent_b" },
+    ],
+  });
+
+  expect(missionByAgentId.get("agent_a")).toBe("Implement billing API");
+  expect(missionByAgentId.get("agent_b")).toBe("Implement context API");
+});
+
+test("buildSubagentMissionTextByAgentId prefers explicit agentId in @mission payload", () => {
+  const missionByAgentId = buildSubagentMissionTextByAgentId({
+    subagentAgents: [
+      {
+        agentId: "agent_a",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        durationMs: 0,
+        timeline: [],
+      },
+    ],
+    mainTimeline: [
+      item({
+        id: "mission",
+        eventType: "tool.started",
+        scope: "main",
+        role: "coder",
+        text: formatSubagentMissionMessage("coder", "Scoped mission", { agentId: "agent_a" }),
+      }),
+    ],
+    activityLines: [],
+  });
+
+  expect(missionByAgentId.get("agent_a")).toBe("Scoped mission");
 });
 
 test("buildThreadRunProjectionViewModel shows planner delegation on main feed", () => {

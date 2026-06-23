@@ -9,11 +9,13 @@ class SubagentMissionPayload {
     required this.role,
     required this.summary,
     required this.prompt,
+    this.agentId,
   });
 
   final String role;
   final String summary;
   final String prompt;
+  final String? agentId;
 }
 
 SubagentMissionPayload? parseSubagentMissionMessage(String message) {
@@ -32,10 +34,12 @@ SubagentMissionPayload? parseSubagentMissionMessage(String message) {
       return null;
     }
     final normalizedRole = _normalizeMissionRole(role);
+    final agentId = parsed['agentId'];
     return SubagentMissionPayload(
       role: normalizedRole,
       summary: summary.trim(),
       prompt: parsed['prompt'] is String ? (parsed['prompt'] as String).trim() : '',
+      agentId: agentId is String && agentId.trim().isNotEmpty ? agentId.trim() : null,
     );
   } catch (_) {
     return null;

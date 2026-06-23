@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -65,6 +66,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       }
       _lastKeyboardInset = inset;
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshFollowUps());
+    }
   }
 
   void _scrollToBottom({bool animated = true}) {

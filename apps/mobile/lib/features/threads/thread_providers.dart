@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/models/eco_types.dart' show EcoEventEnvelope;
+import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
@@ -234,6 +236,20 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       next.whenData(_handleEvent);
     });
 
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (status.state != EcoConnectionState.connected) {
+          return;
+        }
+        final wasConnected =
+            previous?.valueOrNull?.state == EcoConnectionState.connected;
+        if (wasConnected) {
+          return;
+        }
+        unawaited(_refreshFollowUpsFromRpc());
+      });
+    });
+
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
       state = state.copyWith(loading: false, error: '未选择 PC');
@@ -296,10 +312,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   }
 
   void _handleEvent(EcoEventEnvelope event) {
-    if (event.threadId != threadId) return;
     final payload = event.payload;
     if (payload is! Map<String, dynamic>) return;
     final live = ThreadLiveEvent.fromJson(payload);
+    final eventThreadId = resolveThreadEventThreadId(
+      envelopeThreadId: event.threadId,
+      payloadThreadId: live.threadId,
+    );
+    if (eventThreadId != threadId) return;
 
     var activities = [...state.activities];
     final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
@@ -407,15 +427,17 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       activities: activities,
     );
 
-    if (live.followUp != null) {
-      state = state.copyWith(
-        followUps: mergeThreadFollowUp(state.followUps, live.followUp!),
-      );
-    } else if (event.kind == 'thread.follow_up') {
-      ref.read(desktopRpcProvider)?.followUpList(threadId).then((followUps) {
-        if (!mounted) return;
-        state = state.copyWith(followUps: followUps);
-      });
+    if (isFollowUpThreadLiveEvent(
+      kind: event.kind,
+      liveType: live.type,
+      hasFollowUp: live.followUp != null,
+    )) {
+      if (live.followUp != null) {
+        state = state.copyWith(
+          followUps: mergeThreadFollowUp(state.followUps, live.followUp!),
+        );
+      }
+      unawaited(_refreshFollowUpsFromRpc());
     }
 
     if (live.billing != null) {
@@ -577,6 +599,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         state = state.copyWith(thread: thread);
       });
     }
+  }
+
+  Future<void> _refreshFollowUpsFromRpc() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    try {
+      final followUps = await rpc.followUpList(threadId);
+      if (!mounted) return;
+      state = state.copyWith(followUps: followUps);
+    } catch (_) {}
   }
 
   Future<void> refreshPending() async {

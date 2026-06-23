@@ -21,6 +21,53 @@ ThreadPendingFollowUp followUp(
 }
 
 void main() {
+  test('isFollowUpThreadLiveEvent matches follow-up topics and payloads', () {
+    expect(
+      isFollowUpThreadLiveEvent(
+        kind: 'thread.follow_up',
+        liveType: 'thread.follow_up.queued',
+      ),
+      isTrue,
+    );
+    expect(
+      isFollowUpThreadLiveEvent(
+        kind: 'thread.lifecycle',
+        liveType: 'thread.follow_up.applied',
+      ),
+      isTrue,
+    );
+    expect(
+      isFollowUpThreadLiveEvent(
+        kind: 'thread.stream',
+        liveType: 'thread.running',
+        hasFollowUp: true,
+      ),
+      isTrue,
+    );
+    expect(
+      isFollowUpThreadLiveEvent(
+        kind: 'thread.stream',
+        liveType: 'thread.running',
+      ),
+      isFalse,
+    );
+  });
+
+  test('resolveThreadEventThreadId prefers envelope thread id', () {
+    expect(
+      resolveThreadEventThreadId(
+        envelopeThreadId: 'thr_envelope',
+        payloadThreadId: 'thr_payload',
+      ),
+      'thr_envelope',
+    );
+    expect(
+      resolveThreadEventThreadId(payloadThreadId: 'thr_payload'),
+      'thr_payload',
+    );
+    expect(resolveThreadEventThreadId(), isNull);
+  });
+
   test('isLiveFollowUpThreadStatus only opens running and queued UI', () {
     expect(isLiveFollowUpThreadStatus('running'), isTrue);
     expect(isLiveFollowUpThreadStatus('queued'), isTrue);

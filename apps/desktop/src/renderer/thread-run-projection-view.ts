@@ -1,4 +1,5 @@
 import type {
+  ThreadActivityLine,
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
@@ -1181,8 +1182,15 @@ export function readProjectionAgentDelegation(
   };
 }
 
-/** Mission body for subagent cards — mirrors mobile projection + timeline fallbacks. */
-export function resolveSubagentCardMissionText(agent: ThreadRunProjectionAgent): string {
+/** Mission body for subagent cards — agentId-first attribution with parentToolUseId bridge. */
+export function resolveSubagentCardMissionText(
+  agent: ThreadRunProjectionAgent,
+  context: {
+    mainTimeline?: readonly ThreadRunProjectionTimelineItem[];
+    subagentAgents?: readonly ThreadRunProjectionAgent[];
+    activityLines?: readonly ThreadActivityLine[];
+  } = {},
+): string {
   const delegation = readProjectionAgentDelegation(agent);
   if (delegation) {
     const text = resolveMissionDisplayText(delegation.prompt?.trim() || delegation.summary);
@@ -1204,11 +1212,160 @@ export function resolveSubagentCardMissionText(agent: ThreadRunProjectionAgent):
     }
     const mission = parseSubagentMissionMessage(item.text);
     if (mission) {
+      if (mission.agentId?.trim() && mission.agentId.trim() !== agent.agentId) {
+        continue;
+      }
+      if (item.agentId?.trim() && item.agentId.trim() !== agent.agentId) {
+        continue;
+      }
       const text = resolveMissionDisplayText(mission.prompt || mission.summary);
       if (text) {
         return text;
       }
     }
   }
+
+  const subagentAgents =
+    context.subagentAgents?.filter((entry) => entry.kind === "subagent") ?? [agent];
+  const missionByAgentId = buildSubagentMissionTextByAgentId({
+    subagentAgents,
+    mainTimeline: context.mainTimeline ?? [],
+    activityLines: context.activityLines ?? [],
+  });
+  const indexed = missionByAgentId.get(agent.agentId);
+  if (indexed) {
+    return indexed;
+  }
+
   return "";
+}
+
+/** Resolve mission text keyed by subagent agentId (parallel-safe when lines carry agentId). */
+export function buildSubagentMissionTextByAgentId(input: {
+  subagentAgents: readonly ThreadRunProjectionAgent[];
+  mainTimeline: readonly ThreadRunProjectionTimelineItem[];
+  activityLines: readonly ThreadActivityLine[];
+}): Map<string, string> {
+  const map = new Map<string, string>();
+  const assigned = new Set<string>();
+
+  const assign = (agentId: string | undefined, text: string) => {
+    const trimmedId = agentId?.trim();
+    const trimmedText = text.trim();
+    if (!trimmedId || !trimmedText || assigned.has(trimmedId)) {
+      return;
+    }
+    map.set(trimmedId, trimmedText);
+    assigned.add(trimmedId);
+  };
+
+  for (let lineIndex = 0; lineIndex < input.activityLines.length; lineIndex += 1) {
+    const line = input.activityLines[lineIndex];
+    if (!line) {
+      continue;
+    }
+    const mission = parseSubagentMissionMessage(line.message);
+    if (!mission) {
+      continue;
+    }
+    const missionRole = normalizeAgentDisplayRole(mission.role) ?? mission.role;
+    const text = resolveMissionDisplayText(mission.prompt || mission.summary);
+    if (!text) {
+      continue;
+    }
+    if (mission.agentId?.trim()) {
+      assign(mission.agentId, text);
+      continue;
+    }
+    let linked = false;
+    for (let index = lineIndex + 1; index < input.activityLines.length; index += 1) {
+      const next = input.activityLines[index];
+      if (!next) {
+        break;
+      }
+      if (parseSubagentMissionMessage(next.message)) {
+        continue;
+      }
+      const nextRole = normalizeAgentDisplayRole(next.role);
+      if (nextRole && nextRole !== missionRole) {
+        break;
+      }
+      const nextAgentId = next.agentId?.trim();
+      if (!nextAgentId || assigned.has(nextAgentId)) {
+        continue;
+      }
+      if (!nextRole || nextRole === missionRole) {
+        assign(nextAgentId, text);
+        linked = true;
+        break;
+      }
+    }
+    if (linked) {
+      continue;
+    }
+    const soleRoleAgent = input.subagentAgents.filter(
+      (entry) => (normalizeAgentDisplayRole(entry.role) ?? entry.role) === missionRole,
+    );
+    if (soleRoleAgent.length === 1) {
+      const onlyAgent = soleRoleAgent[0];
+      if (onlyAgent && !assigned.has(onlyAgent.agentId)) {
+        assign(onlyAgent.agentId, text);
+      }
+    }
+  }
+
+  for (const agent of input.subagentAgents) {
+    if (assigned.has(agent.agentId)) {
+      continue;
+    }
+    const parentToolUseId = agent.parentToolUseId?.trim();
+    if (!parentToolUseId) {
+      continue;
+    }
+    for (const item of input.mainTimeline) {
+      const toolUseId =
+        readProjectionToolMetadata(item)?.toolUseId?.trim() ??
+        readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
+      if (toolUseId !== parentToolUseId) {
+        continue;
+      }
+      const mission = parseSubagentMissionMessage(item.text);
+      if (!mission) {
+        break;
+      }
+      if (mission.agentId?.trim() && mission.agentId.trim() !== agent.agentId) {
+        break;
+      }
+      const text = resolveMissionDisplayText(mission.prompt || mission.summary);
+      if (text) {
+        assign(agent.agentId, text);
+      }
+      break;
+    }
+  }
+
+  for (const item of input.mainTimeline) {
+    const mission = parseSubagentMissionMessage(item.text);
+    if (!mission) {
+      continue;
+    }
+    const text = resolveMissionDisplayText(mission.prompt || mission.summary);
+    if (!text) {
+      continue;
+    }
+    if (mission.agentId?.trim()) {
+      assign(mission.agentId, text);
+      continue;
+    }
+    const missionRole = normalizeAgentDisplayRole(mission.role) ?? mission.role;
+    const candidate = input.subagentAgents
+      .filter((entry) => (normalizeAgentDisplayRole(entry.role) ?? entry.role) === missionRole)
+      .filter((entry) => !assigned.has(entry.agentId))
+      .sort((left, right) => left.startedAt.localeCompare(right.startedAt))[0];
+    if (candidate) {
+      assign(candidate.agentId, text);
+    }
+  }
+
+  return map;
 }

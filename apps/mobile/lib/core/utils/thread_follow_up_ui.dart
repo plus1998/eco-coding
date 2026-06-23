@@ -1,5 +1,30 @@
 import '../models/thread_models.dart';
 
+bool isFollowUpThreadLiveEvent({
+  required String kind,
+  required String liveType,
+  bool hasFollowUp = false,
+}) {
+  return kind == 'thread.follow_up' ||
+      liveType.startsWith('thread.follow_up.') ||
+      hasFollowUp;
+}
+
+String? resolveThreadEventThreadId({
+  String? envelopeThreadId,
+  String? payloadThreadId,
+}) {
+  final envelope = envelopeThreadId?.trim();
+  if (envelope != null && envelope.isNotEmpty) {
+    return envelope;
+  }
+  final payload = payloadThreadId?.trim();
+  if (payload != null && payload.isNotEmpty) {
+    return payload;
+  }
+  return null;
+}
+
 bool isLiveFollowUpThreadStatus(String? status) {
   return status == 'running' || status == 'queued';
 }

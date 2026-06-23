@@ -25,6 +25,13 @@ test("round-trips mission messages", () => {
   expect(parsed?.prompt).toContain("src/api.ts");
 });
 
+test("round-trips optional agentId in mission messages", () => {
+  const message = formatSubagentMissionMessage("coder", "Implement billing", {
+    agentId: "agent_billing",
+  });
+  expect(parseSubagentMissionMessage(message)?.agentId).toBe("agent_billing");
+});
+
 test("resolveMissionDisplayText unwraps @mission payloads", () => {
   const message = formatSubagentMissionMessage("coder", "Implement login flow");
   expect(resolveMissionDisplayText(message)).toBe("Implement login flow");

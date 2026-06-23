@@ -5,6 +5,8 @@ export interface SubagentMissionPayload {
   role: string;
   summary: string;
   prompt: string;
+  /** Present when the delegating runtime already knows the subagent instance id. */
+  agentId?: string;
 }
 
 const MISSION_PREFIX = "@mission ";
@@ -101,11 +103,17 @@ export function summarizeAgentObjective(role: string, prompt: string): string {
   return isSubagentRole(role) ? ROLE_DEFAULT_SUMMARY[role] : clampSummary(trimmed);
 }
 
-export function formatSubagentMissionMessage(role: string, prompt: string): string {
+export function formatSubagentMissionMessage(
+  role: string,
+  prompt: string,
+  options?: { agentId?: string },
+): string {
+  const agentId = options?.agentId?.trim();
   const payload: SubagentMissionPayload = {
     role,
     summary: summarizeAgentObjective(role, prompt),
     prompt: prompt.trim().slice(0, 12_000),
+    ...(agentId && { agentId }),
   };
   return `${MISSION_PREFIX}${JSON.stringify(payload)}`;
 }
@@ -120,10 +128,12 @@ export function parseSubagentMissionMessage(message: string): SubagentMissionPay
     if (typeof parsed.role !== "string" || typeof parsed.summary !== "string") {
       return null;
     }
+    const agentId = typeof parsed.agentId === "string" ? parsed.agentId.trim() : "";
     return {
       role: normalizeMissionRole(parsed.role),
       summary: parsed.summary.trim(),
       prompt: typeof parsed.prompt === "string" ? parsed.prompt.trim() : "",
+      ...(agentId && { agentId }),
     };
   } catch {
     return null;

@@ -172,6 +172,7 @@ export function ActivityLogView(props: ActivityLogViewProps) {
   return (
     <ProjectionActivityLogView
       projection={props.projection}
+      lines={props.lines}
       {...(props.thread && { thread: props.thread })}
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}
@@ -183,6 +184,7 @@ export function ActivityLogView(props: ActivityLogViewProps) {
 
 function ProjectionActivityLogView({
   projection,
+  lines,
   thread,
   onRestorePrompt,
   onPlannerLayoutChange,
@@ -190,6 +192,7 @@ function ProjectionActivityLogView({
   agentThemes,
 }: {
   projection: ThreadRunProjectionSnapshot;
+  lines: ThreadActivityLine[];
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -247,6 +250,8 @@ function ProjectionActivityLogView({
         <ProjectionMainFeedEntry
           key={entry.key}
           entry={entry}
+          projection={projection}
+          activityLines={lines}
           requestSpansById={requestSpansById}
           expandedAgentKeys={expandedAgentKeys}
           onToggleAgent={(agentId) => {
@@ -293,6 +298,8 @@ function wrapRunLogFeedEntry(
 
 function ProjectionMainFeedEntry({
   entry,
+  projection,
+  activityLines,
   requestSpansById,
   expandedAgentKeys,
   onToggleAgent,
@@ -301,6 +308,8 @@ function ProjectionMainFeedEntry({
   agentThemes,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
+  projection: ThreadRunProjectionSnapshot;
+  activityLines: ThreadActivityLine[];
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
@@ -321,6 +330,8 @@ function ProjectionMainFeedEntry({
     return wrapRunLogFeedEntry(
       <ProjectionSubagentRunRow
         agent={entry.card.agent}
+        projection={projection}
+        activityLines={activityLines}
         requestSpansById={requestSpansById}
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
@@ -427,6 +438,8 @@ function ProjectionAgentEchoShell({
 
 function ProjectionSubagentRunRow({
   agent,
+  projection,
+  activityLines,
   requestSpansById,
   expanded,
   onToggle,
@@ -434,6 +447,8 @@ function ProjectionSubagentRunRow({
   agentThemes,
 }: {
   agent: ThreadRunProjectionAgent;
+  projection: ThreadRunProjectionSnapshot;
+  activityLines: ThreadActivityLine[];
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expanded: boolean;
   onToggle: () => void;
@@ -473,7 +488,11 @@ function ProjectionSubagentRunRow({
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
-  const missionText = resolveSubagentCardMissionText(agent);
+  const missionText = resolveSubagentCardMissionText(agent, {
+    mainTimeline: projection.timeline,
+    subagentAgents: projection.agents,
+    activityLines,
+  });
   const hasTimelineDetails = agent.timeline.some(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
   );
