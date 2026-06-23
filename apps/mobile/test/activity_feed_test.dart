@@ -299,10 +299,12 @@ void main() {
           ThreadRunProjectionTimelineItem(
             id: 'user-1',
             sequence: 0,
-            eventType: 'thread.user_prompt',
+            eventType: 'thread.status',
             scope: 'main',
+            role: 'user',
             text: '并发子代理',
             at: '2026-01-01T00:00:00.000Z',
+            metadata: const {'liveType': 'thread.user_prompt'},
           ),
           ThreadRunProjectionTimelineItem(
             id: 'planner-1',
@@ -371,10 +373,12 @@ void main() {
           {
             'id': 'user-1',
             'sequence': 0,
-            'eventType': 'thread.user_prompt',
+            'eventType': 'thread.status',
             'scope': 'main',
+            'role': 'user',
             'text': '修复登录',
             'at': '2026-01-01T00:00:00.000Z',
+            'metadata': {'liveType': 'thread.user_prompt'},
           },
           {
             'id': 'planner-1',
@@ -497,5 +501,44 @@ void main() {
     expect(reconnectEntries, hasLength(1));
     expect(reconnectEntries.first.text, '重连 2/5');
     expect(reconnectEntries.first.detail, 'upstream error');
+  });
+
+  test('buildActivityFeed treats recorded user prompts as right-aligned user bubbles', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '请继续实现登录页',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'prompt',
+            sequence: 0,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            text: '请继续实现登录页',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {'liveType': 'thread.user_prompt'},
+          ),
+        ],
+      ),
+    );
+
+    final userEntries =
+        feed.where((entry) => entry.kind == ActivityFeedKind.user).toList();
+    expect(userEntries, hasLength(1));
+    expect(userEntries.first.text, '请继续实现登录页');
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.phase &&
+            entry.text == '请继续实现登录页',
+      ),
+      isFalse,
+    );
   });
 }

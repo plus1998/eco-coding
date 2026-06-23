@@ -493,6 +493,10 @@ bool isLegacyBashApprovalActivityText(String message) {
   ).hasMatch(trimmed);
 }
 
+bool isRecordedUserPromptLiveEvent(String? liveType) {
+  return liveType == 'thread.user_prompt';
+}
+
 bool isUserPromptActivityLine({required String role, required String message}) {
   if (role != 'user') return false;
   final text = message.trim();

@@ -198,8 +198,10 @@ List<ThreadRunProjectionTimelineItem> _mainProjectionTimelineItems(
 }
 
 bool _isProjectionUserPromptItem(ThreadRunProjectionTimelineItem item) {
-  return item.eventType == 'thread.user_prompt' &&
-      item.text.trim().isNotEmpty &&
+  if (!isRecordedUserPromptLiveEvent(_projectionLiveType(item))) {
+    return false;
+  }
+  return item.text.trim().isNotEmpty &&
       !isThreadFollowUpActivityMessage(item.text);
 }
 
@@ -427,7 +429,7 @@ bool _isProjectionContextCompactionItem(ThreadRunProjectionTimelineItem item) {
 }
 
 bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
-  if (_isProjectionUserPromptItem(item)) return false;
+  if (_isProjectionUserPromptItem(item)) return true;
   if (_isProjectionInternalMessageText(item.text) ||
       isThreadFollowUpActivityMessage(item.text)) {
     return true;
