@@ -1604,6 +1604,97 @@ test("buildThreadRunProjectionViewModel hides absorbed planner Agent delegation 
   expect(view.mainFeedEntries[0]?.kind).toBe("agent-card");
 });
 
+test("buildThreadRunProjectionViewModel does not echo attributed @mission from agent timeline", () => {
+  const missionText = formatSubagentMissionMessage("explore", "Gather CPU info", {
+    agentId: "agent_explore_a",
+  });
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: "agent_explore_a",
+          role: "explore",
+          kind: "subagent",
+          status: "active",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          parentToolUseId: "toolu_agent_1",
+          delegationPrompt: "Gather CPU info",
+          delegationSummary: "Gather CPU info",
+          timeline: [
+            item({
+              id: "mission-echo",
+              eventType: "message.final",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_a",
+              text: missionText,
+              at: "2026-01-01T00:00:01.100Z",
+              sequence: 2,
+            }),
+            item({
+              id: "agent-speech",
+              eventType: "message.final",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_a",
+              text: "Checking CPU topology.",
+              at: "2026-01-01T00:00:02.000Z",
+              sequence: 3,
+            }),
+          ],
+        },
+      ],
+      timeline: [],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual([
+    "agent-card",
+    "agent-echo",
+  ]);
+  const echo = view.mainFeedEntries[1];
+  expect(echo?.kind).toBe("agent-echo");
+  if (echo?.kind === "agent-echo") {
+    expect(echo.item.text).toBe("Checking CPU topology.");
+  }
+});
+
+test("buildThreadRunProjectionViewModel absorbs main feed @mission stamped with agentId", () => {
+  const missionText = formatSubagentMissionMessage("explore", "Gather GPU info", {
+    agentId: "agent_explore_b",
+  });
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: "agent_explore_b",
+          role: "explore",
+          kind: "subagent",
+          status: "active",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          delegationPrompt: "Gather GPU info",
+          delegationSummary: "Gather GPU info",
+          timeline: [],
+        },
+      ],
+      timeline: [
+        item({
+          id: "mission-main",
+          eventType: "message.final",
+          scope: "main",
+          role: "explore",
+          text: missionText,
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("agent-card");
+});
+
 test("projectionItemToDetailBlock omits tool role badge and resolves icon from tool name", () => {
   const detail = projectionItemToDetailBlock(
     item({

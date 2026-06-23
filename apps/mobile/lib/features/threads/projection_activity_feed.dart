@@ -207,6 +207,7 @@ bool _isProjectionUserPromptItem(ThreadRunProjectionTimelineItem item) {
 
 bool _isAgentEchoTimelineItem(ThreadRunProjectionTimelineItem item) {
   if (_projectionLiveType(item) == 'todo.updated') return false;
+  if (parseSubagentMissionMessage(item.text) != null) return false;
   if (item.eventType != 'message.delta' &&
       item.eventType != 'message.final' &&
       item.eventType != 'thinking.delta' &&
@@ -236,17 +237,30 @@ List<ThreadRunProjectionTimelineItem> _filterAbsorbedSubagentDelegations(
     subagentCards,
     requestSpansById,
   );
+  final subagentAgentIds = subagentCards.map((card) => card.agent.agentId).toSet();
   for (final card in subagentCards) {
     final parentToolUseId = card.agent.parentToolUseId?.trim();
     if (parentToolUseId != null && parentToolUseId.isNotEmpty) {
       absorbedToolUseIds.add(parentToolUseId);
     }
   }
-  if (absorbedToolUseIds.isEmpty) return timeline;
+  if (absorbedToolUseIds.isEmpty && subagentAgentIds.isEmpty) return timeline;
 
   return timeline.where((item) {
     final mission = parseSubagentMissionMessage(item.text);
     if (mission != null) {
+      final missionAgentId = mission.agentId?.trim();
+      if (missionAgentId != null &&
+          missionAgentId.isNotEmpty &&
+          subagentAgentIds.contains(missionAgentId)) {
+        return false;
+      }
+      final itemAgentId = item.agentId?.trim();
+      if (itemAgentId != null &&
+          itemAgentId.isNotEmpty &&
+          subagentAgentIds.contains(itemAgentId)) {
+        return false;
+      }
       final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId
               ?.trim() ??
           readBashApprovalMetadata(item.metadata)?.toolUseId.trim();

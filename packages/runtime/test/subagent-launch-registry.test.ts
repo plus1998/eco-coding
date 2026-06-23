@@ -77,6 +77,39 @@ test("SubagentLaunchRegistry takeForSubagentStart refuses ambiguous same-role la
   expect(registry.peek("toolu_b")).toBeDefined();
 });
 
+test("SubagentLaunchRegistry takeForSubagentStart falls back to FIFO when SDK parent id mismatches PreToolUse", () => {
+  const registry = new SubagentLaunchRegistry();
+  registry.register({
+    parentToolUseId: "toolu_a",
+    role: "explore",
+    prompt: "Task A",
+  });
+  registry.register({
+    parentToolUseId: "toolu_b",
+    role: "explore",
+    prompt: "Task B",
+  });
+
+  expect(
+    registry.takeForSubagentStart({
+      role: "explore",
+      parentToolUseId: "sdk-mismatched-id-1",
+    }),
+  ).toMatchObject({
+    parentToolUseId: "toolu_a",
+    prompt: "Task A",
+  });
+  expect(
+    registry.takeForSubagentStart({
+      role: "explore",
+      parentToolUseId: "sdk-mismatched-id-2",
+    }),
+  ).toMatchObject({
+    parentToolUseId: "toolu_b",
+    prompt: "Task B",
+  });
+});
+
 test("SubagentLaunchRegistry resolves SubagentStart through linked SDK task id", () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({

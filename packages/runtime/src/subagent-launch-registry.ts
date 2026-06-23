@@ -10,11 +10,16 @@ export interface SubagentLaunchRecord {
 export class SubagentLaunchRegistry {
   private readonly launches = new Map<string, SubagentLaunchRecord>();
   private readonly parentToolUseIdByTaskId = new Map<string, string>();
+  /** Registration order for FIFO fallback when SubagentStart parent id mismatches PreToolUse. */
+  private readonly registrationOrder: string[] = [];
 
   register(record: SubagentLaunchRecord): void {
     const parentToolUseId = record.parentToolUseId.trim();
     if (!parentToolUseId) {
       return;
+    }
+    if (!this.launches.has(parentToolUseId)) {
+      this.registrationOrder.push(parentToolUseId);
     }
     this.launches.set(parentToolUseId, {
       ...record,
@@ -52,6 +57,7 @@ export class SubagentLaunchRegistry {
       return undefined;
     }
     this.launches.delete(record.parentToolUseId);
+    this.removeRegistrationOrder(record.parentToolUseId);
     for (const [taskId, linkedParentToolUseId] of this.parentToolUseIdByTaskId) {
       if (linkedParentToolUseId === record.parentToolUseId) {
         this.parentToolUseIdByTaskId.delete(taskId);
@@ -61,10 +67,11 @@ export class SubagentLaunchRegistry {
   }
 
   /**
-   * Resolve a pending launch for SubagentStart. This intentionally requires the
-   * SDK-provided parent tool id, or a task/agent id previously linked from
-   * TaskCreated. Role-only matching is not deterministic under parallel
-   * same-role subagents.
+   * Resolve a pending launch for SubagentStart. Prefer the SDK-provided parent
+   * tool id, then task/agent ids linked from TaskCreated. When the SDK parent id
+   * does not match the PreToolUse registration (observed with parallel Agent
+   * delegations), fall back to the oldest pending launch for the same role in
+   * registration order.
    */
   takeForSubagentStart(input: {
     parentToolUseId?: string;
@@ -74,7 +81,11 @@ export class SubagentLaunchRegistry {
   }): SubagentLaunchRecord | undefined {
     const explicitId = input.parentToolUseId?.trim();
     if (explicitId) {
-      return this.take(explicitId);
+      const direct = this.take(explicitId);
+      if (direct) {
+        return direct;
+      }
+      return this.takeOldestPendingForRole(input.role);
     }
     for (const candidate of [input.taskId, input.agentId]) {
       const taskId = candidate?.trim();
@@ -92,5 +103,22 @@ export class SubagentLaunchRegistry {
       return this.take(parentToolUseId);
     }
     return undefined;
+  }
+
+  private takeOldestPendingForRole(role: RuntimeAgentRole): SubagentLaunchRecord | undefined {
+    for (const parentToolUseId of this.registrationOrder) {
+      const record = this.launches.get(parentToolUseId);
+      if (record?.role === role) {
+        return this.take(parentToolUseId);
+      }
+    }
+    return undefined;
+  }
+
+  private removeRegistrationOrder(parentToolUseId: string): void {
+    const index = this.registrationOrder.indexOf(parentToolUseId);
+    if (index >= 0) {
+      this.registrationOrder.splice(index, 1);
+    }
   }
 }

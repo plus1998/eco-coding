@@ -342,6 +342,72 @@ void main() {
     );
   });
 
+  test('buildActivityFeed does not echo attributed @mission in main feed', () {
+    const missionText =
+        '@mission {"role":"explore","summary":"Gather CPU info","prompt":"Gather CPU info","agentId":"agent_explore_a"}';
+    final feed = buildActivityFeed(
+      runProjection: ThreadRunProjectionSnapshot.fromJson({
+        'thread': {
+          'threadId': 't1',
+          'status': 'running',
+          'generatedAt': '2026-01-01T00:00:00.000Z',
+        },
+        'sourceEventCount': 2,
+        'agents': [
+          {
+            'agentId': 'agent_explore_a',
+            'role': 'explore',
+            'kind': 'subagent',
+            'status': 'active',
+            'startedAt': '2026-01-01T00:00:01.000Z',
+            'durationMs': 1000,
+            'delegationPrompt': 'Gather CPU info',
+            'delegationSummary': 'Gather CPU info',
+            'timeline': [
+              {
+                'id': 'mission-echo',
+                'sequence': 2,
+                'eventType': 'message.final',
+                'scope': 'agent',
+                'text': missionText,
+                'at': '2026-01-01T00:00:01.100Z',
+                'role': 'explore',
+                'agentId': 'agent_explore_a',
+              },
+              {
+                'id': 'agent-speech',
+                'sequence': 3,
+                'eventType': 'message.final',
+                'scope': 'agent',
+                'text': 'Checking CPU topology.',
+                'at': '2026-01-01T00:00:02.000Z',
+                'role': 'explore',
+                'agentId': 'agent_explore_a',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(
+      feed.where((entry) => entry.kind == ActivityFeedKind.subagentMission).length,
+      1,
+    );
+    expect(
+      feed.any((entry) => entry.text.contains('@mission')),
+      isFalse,
+    );
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.assistant &&
+            entry.text == 'Checking CPU topology.',
+      ),
+      isTrue,
+    );
+  });
+
   test('buildActivityFeed renders bash action cards from history text', () {
     final feed = buildActivityFeed(
       runProjection: ThreadRunProjectionSnapshot(

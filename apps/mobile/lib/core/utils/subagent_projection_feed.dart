@@ -1,6 +1,7 @@
 import '../models/thread_run_projection.dart';
 import 'subagent_session_timing.dart';
 import 'activity_display.dart';
+import 'agent_mission.dart';
 
 class SubagentTimelineEntry {
   const SubagentTimelineEntry({
@@ -101,6 +102,7 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
       final text = item.text.trim();
       if (text.isEmpty || item.eventType == 'message.delta') continue;
       if (isLegacyBashApprovalActivityText(text)) continue;
+      if (parseSubagentMissionMessage(text) != null) continue;
       final preview = _firstReadableLine(text);
       if (preview.length >= 8 && !isActivityNoiseMessage(preview)) {
         output.add(
@@ -131,6 +133,7 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
 String? resolveProjectionAgentStatusText(ThreadRunProjectionAgent agent) {
   for (final item in agent.timeline.reversed) {
     if (item.eventType == 'message.final' || item.eventType == 'message.delta') {
+      if (parseSubagentMissionMessage(item.text) != null) continue;
       final line = _firstReadableLine(item.text);
       if (line.isNotEmpty && !isActivityNoiseMessage(line)) {
         return line;

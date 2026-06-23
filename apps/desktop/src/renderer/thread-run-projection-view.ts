@@ -172,18 +172,27 @@ function filterAbsorbedSubagentDelegations(
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
   const absorbedToolUseIds = collectAgentTimelineToolUseIds(subagentCards, requestSpansById);
+  const subagentAgentIds = new Set(subagentCards.map((card) => card.agent.agentId));
   for (const card of subagentCards) {
     const parentToolUseId = card.agent.parentToolUseId?.trim();
     if (parentToolUseId) {
       absorbedToolUseIds.add(parentToolUseId);
     }
   }
-  if (absorbedToolUseIds.size === 0) {
+  if (absorbedToolUseIds.size === 0 && subagentAgentIds.size === 0) {
     return [...timeline];
   }
   return timeline.filter((item) => {
     const mission = parseSubagentMissionMessage(item.text);
     if (mission) {
+      const missionAgentId = mission.agentId?.trim();
+      if (missionAgentId && subagentAgentIds.has(missionAgentId)) {
+        return false;
+      }
+      const itemAgentId = item.agentId?.trim();
+      if (itemAgentId && subagentAgentIds.has(itemAgentId)) {
+        return false;
+      }
       const toolUseId =
         readProjectionToolMetadata(item)?.toolUseId?.trim() ??
         readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
@@ -709,6 +718,9 @@ function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean
   if (isProjectionTodoStatusItem(item)) {
     return false;
   }
+  if (parseSubagentMissionMessage(item.text)) {
+    return false;
+  }
   if (
     item.eventType !== "message.delta" &&
     item.eventType !== "message.final" &&
@@ -946,6 +958,9 @@ function findLatestAgentSpeechSummary(
       continue;
     }
     if (isProjectionTodoStatusItem(item)) {
+      continue;
+    }
+    if (parseSubagentMissionMessage(item.text)) {
       continue;
     }
     if (item.eventType === "message.delta" || item.eventType === "message.final") {
