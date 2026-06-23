@@ -156,6 +156,31 @@ export class AgentLifecycleService {
     return record;
   }
 
+  linkSubagentParentToolUse(input: {
+    threadId: string;
+    agentId: string;
+    parentToolUseId: string;
+  }): AgentInstanceRecord | undefined {
+    const agentId = input.agentId.trim();
+    const parentToolUseId = input.parentToolUseId.trim();
+    if (!agentId || !parentToolUseId) {
+      return undefined;
+    }
+    const state = this.threads.get(input.threadId);
+    const existing = state?.activeAgents.get(agentId);
+    if (!existing) {
+      return undefined;
+    }
+    const now = this.now();
+    const updated: AgentInstanceRecord = {
+      ...existing,
+      parentToolUseId,
+      updatedAt: now,
+    };
+    this.upsertAgent(input.threadId, updated);
+    return updated;
+  }
+
   stopSubagent(input: { threadId: string; agentId: string; role: RuntimeAgentRole }): void {
     const state = this.threads.get(input.threadId);
     const existing = state?.activeAgents.get(input.agentId);

@@ -160,6 +160,60 @@ test("buildThreadRunProjection replays parent-linked tools after agent.started",
   );
 });
 
+test("buildThreadRunProjection replays pending tools after stream-delayed mission link", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [agent({ agentId: "explore_a", role: "explore" })],
+    events: [
+      event({
+        id: "agent_started",
+        sequence: 1,
+        eventType: "agent.started",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_a",
+        message: "Subagent explore started",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "tool_read",
+        sequence: 2,
+        eventType: "tool.started",
+        scope: "agent",
+        role: "explore",
+        parentToolUseId: "call_00_delegate",
+        message: "Tool: Read · src/main.ts",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "mission",
+        sequence: 3,
+        eventType: "message.final",
+        scope: "agent",
+        role: "explore",
+        agentId: "explore_a",
+        parentToolUseId: "call_00_delegate",
+        message: "@mission explore: scan src",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.timeline).toHaveLength(0);
+  expect(projection.diagnostics).toEqual([]);
+  expect(projection.agents[0]?.timeline).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: "tool_read",
+        agentId: "explore_a",
+        text: "Tool: Read · src/main.ts",
+      }),
+    ]),
+  );
+});
+
 test("buildThreadRunProjection surfaces role-only agent events as missing_agent_id", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",

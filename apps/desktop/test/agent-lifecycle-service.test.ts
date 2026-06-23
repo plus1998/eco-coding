@@ -111,6 +111,26 @@ test("AgentLifecycleService prefers explicit parentToolUseId over role FIFO", ()
   expect(store.getAgent("thr_explicit_parent", "agent_coder_b")?.parentToolUseId).toBe("toolu_b");
 });
 
+test("AgentLifecycleService links parent tool use after stream-delayed delegation", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_stream_link", phase: "execution", retryIndex: 0 });
+  service.startSubagent({
+    threadId: "thr_stream_link",
+    agentId: "agent_explore",
+    role: "explore",
+  });
+
+  const linked = service.linkSubagentParentToolUse({
+    threadId: "thr_stream_link",
+    agentId: "agent_explore",
+    parentToolUseId: "call_00_delegate",
+  });
+
+  expect(linked?.parentToolUseId).toBe("call_00_delegate");
+  expect(store.getAgent("thr_stream_link", "agent_explore")?.parentToolUseId).toBe("call_00_delegate");
+});
+
 test("AgentLifecycleService records dynamic subagents by runtime role", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);

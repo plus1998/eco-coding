@@ -90,26 +90,30 @@ export function buildThreadRunProjection(
     pendingByParentToolUseId.delete(parentToolUseId);
   };
 
-  const registerAgentLinkFromStartedEvent = (event: ThreadRunEvent): void => {
-    if (event.eventType !== "agent.started" || !event.agentId) {
+  const registerAgentParentLink = (event: ThreadRunEvent, parentToolUseId: string): void => {
+    const agentId = event.agentId?.trim();
+    if (!agentId) {
       return;
     }
-    const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
-    const discovered = agentRecordFromStartedEvent(event);
-    if (discovered) {
-      discoveredAgentsById.set(discovered.agentId, discovered);
-    }
-    if (!parentToolUseId) {
-      return;
+    if (event.eventType === "agent.started") {
+      const discovered = agentRecordFromStartedEvent(event);
+      if (discovered) {
+        discoveredAgentsById.set(discovered.agentId, discovered);
+      }
     }
     if (!agentsByParentToolUseId.has(parentToolUseId)) {
       const linked =
-        input.agents.find((agent) => agent.parentToolUseId?.trim() === parentToolUseId) ??
-        discovered ??
-        undefined;
-      if (linked) {
-        agentsByParentToolUseId.set(parentToolUseId, linked);
-      }
+        input.agents.find((candidate) => candidate.agentId === agentId) ??
+        input.agents.find((candidate) => candidate.parentToolUseId?.trim() === parentToolUseId) ??
+        discoveredAgentsById.get(agentId) ??
+        agentRecordFromStartedEvent(event) ??
+        agentRecordFromDelegationLink(event, parentToolUseId);
+      const withParent =
+        linked.parentToolUseId?.trim() === parentToolUseId
+          ? linked
+          : { ...linked, parentToolUseId, updatedAt: event.observedAt };
+      discoveredAgentsById.set(agentId, withParent);
+      agentsByParentToolUseId.set(parentToolUseId, withParent);
     }
     flushPendingForParentToolUseId(parentToolUseId);
   };
@@ -118,8 +122,14 @@ export function buildThreadRunProjection(
     if (isMetricsOnlyThreadRunEvent(event)) {
       continue;
     }
-    if (event.eventType === "agent.started") {
-      registerAgentLinkFromStartedEvent(event);
+    const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
+    if (parentToolUseId && event.agentId?.trim()) {
+      registerAgentParentLink(event, parentToolUseId);
+    } else if (event.eventType === "agent.started" && event.agentId) {
+      const discovered = agentRecordFromStartedEvent(event);
+      if (discovered) {
+        discoveredAgentsById.set(discovered.agentId, discovered);
+      }
     }
     const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByParentToolUseId, diagnostics);
     if (event.scope !== "agent" && event.scope !== "both") {
@@ -129,7 +139,6 @@ export function buildThreadRunProjection(
       appendAgentTimelineItem(resolvedAgentId, eventToTimelineItem(event, resolvedAgentId));
       continue;
     }
-    const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
     if (parentToolUseId) {
       const pending = pendingByParentToolUseId.get(parentToolUseId) ?? [];
       pending.push(event);
@@ -316,6 +325,27 @@ function agentRecordFromStartedEvent(event: ThreadRunEvent): AgentInstanceRecord
     updatedAt: event.observedAt,
     ...(event.runAttemptId && { runAttemptId: event.runAttemptId }),
     ...(parentToolUseId && { parentToolUseId }),
+  };
+}
+
+function agentRecordFromDelegationLink(
+  event: ThreadRunEvent,
+  parentToolUseId: string,
+): AgentInstanceRecord | undefined {
+  const agentId = event.agentId?.trim();
+  if (!agentId) {
+    return undefined;
+  }
+  return {
+    threadId: event.threadId,
+    agentId,
+    role: event.role ?? "coder",
+    kind: "subagent",
+    status: "active",
+    startedAt: event.observedAt,
+    updatedAt: event.observedAt,
+    parentToolUseId,
+    ...(event.runAttemptId && { runAttemptId: event.runAttemptId }),
   };
 }
 

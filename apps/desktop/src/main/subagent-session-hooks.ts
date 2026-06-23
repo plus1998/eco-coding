@@ -128,6 +128,11 @@ export function createSubagentSessionHooks(
         ...(missionKey && { missionKey }),
       });
       options?.metricsRegistry?.linkToolUseToAgent(threadId, parentToolUseId, input.agentId);
+      options?.lifecycle?.linkSubagentParentToolUse({
+        threadId,
+        agentId: input.agentId,
+        parentToolUseId,
+      });
       options?.onProxyAttributionSettled?.({
         agentId: input.agentId,
         role,
