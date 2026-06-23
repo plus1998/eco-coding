@@ -459,4 +459,43 @@ void main() {
     expect(feed, isNotEmpty);
     expect(feed.first.text, 'preview only');
   });
+
+  test('buildActivityFeed maps reconnect activity to collapsible phase', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'reconnect-1',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            text:
+                '【连接失败】HTTP 500：upstream error: do request failed (request id: abc)',
+            at: '2026-01-01T00:00:00.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'reconnect-2',
+            sequence: 2,
+            eventType: 'request.retry_scheduled',
+            scope: 'main',
+            text: '【自动重试 2/5】upstream error',
+            at: '2026-01-01T00:00:00.001Z',
+          ),
+        ],
+      ),
+    );
+
+    final reconnectEntries =
+        feed.where((entry) => entry.reconnecting).toList(growable: false);
+    expect(reconnectEntries, hasLength(1));
+    expect(reconnectEntries.first.text, '重连 2/5');
+    expect(reconnectEntries.first.detail, 'upstream error');
+  });
 }

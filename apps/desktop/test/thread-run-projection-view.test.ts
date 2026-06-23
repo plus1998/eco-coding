@@ -1118,6 +1118,33 @@ test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta 
   expect(rows[0]?.eventType).toBe("message.delta");
 });
 
+test("projectionItemToDetailBlock maps reconnect activity to collapsible phase", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "reconnect-1",
+      eventType: "message.final",
+      scope: "main",
+      text: "【连接失败】HTTP 500：upstream error: do request failed",
+    }),
+  );
+  expect(detail).toMatchObject({
+    kind: "phase",
+    label: "连接失败 · HTTP 500",
+    reconnecting: true,
+    reconnectDetail: "upstream error: do request failed",
+  });
+});
+
+test("buildProjectionDisplayTimelineItems keeps only the latest reconnect status", () => {
+  const timeline = [
+    item({ id: "r1", sequence: 1, eventType: "message.final", text: "【连接失败】HTTP 500：first" }),
+    item({ id: "r2", sequence: 2, eventType: "request.retry_scheduled", text: "【自动重试 1/5】reason" }),
+    item({ id: "r3", sequence: 3, eventType: "request.retry_scheduled", text: "【自动重试 2/5】reason" }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["r3"]);
+});
+
 test("buildProjectionDisplayTimelineItems collapses duplicate tool rows by toolUseId", () => {
   const rows = buildProjectionDisplayTimelineItems(
     [

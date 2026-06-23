@@ -312,8 +312,17 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
   final latestStreamDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
   final latestToolDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
   final latestLifecycleDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
+  final latestReconnectDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
 
   for (final item in timeline) {
+    final reconnectKey = _projectionReconnectDisplayKey(item);
+    if (reconnectKey != null) {
+      final current = latestReconnectDisplayByKey[reconnectKey];
+      if (current == null || _compareTimelineItems(current, item) <= 0) {
+        latestReconnectDisplayByKey[reconnectKey] = item;
+      }
+    }
+
     final lifecycleKey = _projectionToolLifecycleKey(item);
     if (lifecycleKey != null) {
       final current = latestLifecycleDisplayByKey[lifecycleKey];
@@ -342,6 +351,11 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
 
   final displayItems = <ThreadRunProjectionTimelineItem>[];
   for (final item in timeline) {
+    final reconnectKey = _projectionReconnectDisplayKey(item);
+    if (reconnectKey != null &&
+        latestReconnectDisplayByKey[reconnectKey]?.id != item.id) {
+      continue;
+    }
     final lifecycleKey = _projectionToolLifecycleKey(item);
     if (lifecycleKey != null &&
         latestLifecycleDisplayByKey[lifecycleKey]?.id != item.id) {
@@ -440,6 +454,17 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   String? agentRole,
 }) {
   final text = item.text.trim();
+  final reconnect = parseReconnectActivityMessage(text);
+  if (reconnect != null) {
+    return ActivityFeedEntry(
+      id: item.id,
+      kind: ActivityFeedKind.phase,
+      text: reconnect.summary,
+      detail: reconnect.detail,
+      reconnecting: true,
+    );
+  }
+
   final bashApproval = readBashApprovalMetadata(item.metadata);
   if (bashApproval != null && item.scope != 'agent') {
     return _buildProjectionToolActionEntry(item, bashApproval: bashApproval);
@@ -712,6 +737,10 @@ String? _projectionToolDisplayKey(ThreadRunProjectionTimelineItem item) {
   final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId?.trim();
   if (toolUseId == null || toolUseId.isEmpty) return null;
   return 'tool:$toolUseId';
+}
+
+String? _projectionReconnectDisplayKey(ThreadRunProjectionTimelineItem item) {
+  return isReconnectActivityMessage(item.text.trim()) ? 'reconnect' : null;
 }
 
 String? _projectionStreamDisplayKey(ThreadRunProjectionTimelineItem item) {

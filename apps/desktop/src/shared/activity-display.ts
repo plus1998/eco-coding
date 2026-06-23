@@ -33,7 +33,7 @@ export function parseReconnectActivityMessage(message: string): ParsedReconnectA
   if (autoRetry?.[1] && autoRetry[2]) {
     const detail = autoRetry[3]?.trim();
     return {
-      summary: `正在重新连接 ${autoRetry[1]}/${autoRetry[2]}`,
+      summary: `重连 ${autoRetry[1]}/${autoRetry[2]}`,
       ...(detail && { detail }),
     };
   }
@@ -66,7 +66,7 @@ export function parseReconnectActivityMessage(message: string): ParsedReconnectA
   if (legacyRetry?.[1] && legacyRetry[2]) {
     const detail = legacyRetry[3]?.trim();
     return {
-      summary: `正在重新连接 ${legacyRetry[1]}/${legacyRetry[2]}`,
+      summary: `重连 ${legacyRetry[1]}/${legacyRetry[2]}`,
       ...(detail && { detail }),
     };
   }

@@ -44,6 +44,7 @@ class ActivityFeedEntry {
     this.timeline = const [],
     this.bashRun,
     this.toolUseId,
+    this.reconnecting = false,
   });
 
   final String id;
@@ -63,6 +64,7 @@ class ActivityFeedEntry {
   final List<SubagentTimelineEntry> timeline;
   final BashRunCardDisplay? bashRun;
   final String? toolUseId;
+  final bool reconnecting;
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -160,6 +162,12 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           bashRun: entry.bashRun,
         );
       case ActivityFeedKind.phase:
+        if (entry.reconnecting) {
+          return _ReconnectPhaseTile(
+            summary: entry.text,
+            detail: entry.detail,
+          );
+        }
         return _PhaseTile(text: entry.text, detail: entry.detail);
       case ActivityFeedKind.subagentMission:
         return _SubagentMissionTile(
@@ -661,6 +669,130 @@ class _PhaseTile extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReconnectPhaseTile extends StatefulWidget {
+  const _ReconnectPhaseTile({
+    required this.summary,
+    this.detail,
+  });
+
+  final String summary;
+  final String? detail;
+
+  @override
+  State<_ReconnectPhaseTile> createState() => _ReconnectPhaseTileState();
+}
+
+class _ReconnectPhaseTileState extends State<_ReconnectPhaseTile>
+    with SingleTickerProviderStateMixin {
+  var _expanded = false;
+  late final AnimationController _spinController;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    if (!_isFailure) {
+      _spinController.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  bool get _isFailure => widget.summary.startsWith('连接失败');
+
+  bool get _hasDetail => widget.detail != null && widget.detail!.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final summaryColor = _isFailure ? eco.statusDenyText : eco.textSecondary;
+    final iconColor = _isFailure ? eco.statusDenyText : eco.textMuted;
+
+    final summaryRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_isFailure)
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(Icons.error_outline, size: 16, color: iconColor),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: RotationTransition(
+              turns: _spinController,
+              child: Icon(Icons.refresh, size: 16, color: iconColor),
+            ),
+          ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            widget.summary,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: summaryColor,
+                  fontWeight: FontWeight.w500,
+                  height: 1.35,
+                ),
+          ),
+        ),
+        if (_hasDetail)
+          Icon(
+            _expanded ? Icons.expand_less : Icons.expand_more,
+            size: 18,
+            color: eco.textMuted,
+          ),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _hasDetail
+              ? () => setState(() => _expanded = !_expanded)
+              : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                summaryRow,
+                if (_hasDetail && _expanded)
+                  Container(
+                    margin: const EdgeInsets.only(left: 24, top: 6),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: eco.codeBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: eco.borderSubtle),
+                    ),
+                    child: SelectableText(
+                      widget.detail!.trim(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textMuted,
+                            fontFamily: 'monospace',
+                            height: 1.4,
+                          ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -8,7 +8,7 @@ import {
 test("parseReconnectActivityMessage maps auto-retry to collapsible summary", () => {
   const parsed = parseReconnectActivityMessage("【自动重试 2/5】5 秒后重试：fetch failed");
   expect(parsed).toEqual({
-    summary: "正在重新连接 2/5",
+    summary: "重连 2/5",
     detail: "5 秒后重试：fetch failed",
   });
   expect(isReconnectActivityMessage("【自动重试 2/5】fetch failed")).toBe(true);

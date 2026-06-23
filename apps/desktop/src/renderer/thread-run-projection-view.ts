@@ -10,6 +10,7 @@ import {
   compareToolActionLifecyclePriority,
   formatToolDisplayLabel,
   formatToolStatusPreview,
+  parseReconnectActivityMessage,
   resolveBashRunCardDisplay,
   readBashApprovalMetadata,
   toolStatusToLifecycle,
@@ -420,7 +421,16 @@ export function buildProjectionDisplayTimelineItems(
   const latestStreamDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestToolDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestLifecycleDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  const latestReconnectDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   for (const item of timeline) {
+    const reconnectKey = projectionReconnectDisplayKey(item);
+    if (reconnectKey) {
+      const current = latestReconnectDisplayByKey.get(reconnectKey);
+      if (!current || compareTimelineItems(current, item) <= 0) {
+        latestReconnectDisplayByKey.set(reconnectKey, item);
+      }
+    }
+
     const lifecycleKey = projectionToolLifecycleKey(item);
     if (lifecycleKey) {
       const current = latestLifecycleDisplayByKey.get(lifecycleKey);
@@ -448,6 +458,10 @@ export function buildProjectionDisplayTimelineItems(
 
   const displayItems: ThreadRunProjectionTimelineItem[] = [];
   for (const item of timeline) {
+    const reconnectKey = projectionReconnectDisplayKey(item);
+    if (reconnectKey && latestReconnectDisplayByKey.get(reconnectKey)?.id !== item.id) {
+      continue;
+    }
     const lifecycleKey = projectionToolLifecycleKey(item);
     if (lifecycleKey && latestLifecycleDisplayByKey.get(lifecycleKey)?.id !== item.id) {
       continue;
@@ -581,6 +595,10 @@ function projectionRequestSpan(
 
 function projectionRequestSpanId(item: ThreadRunProjectionTimelineItem): string | undefined {
   return item.requestId?.trim() || undefined;
+}
+
+function projectionReconnectDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  return parseReconnectActivityMessage(item.text.trim()) ? "reconnect" : undefined;
 }
 
 function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -788,6 +806,15 @@ export function projectionItemToDetailBlock(
   item: ThreadRunProjectionTimelineItem,
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
+  const reconnect = parseReconnectActivityMessage(text);
+  if (reconnect) {
+    return {
+      kind: "phase",
+      label: reconnect.summary,
+      reconnecting: true,
+      ...(reconnect.detail && { reconnectDetail: reconnect.detail }),
+    };
+  }
 
   if (item.eventType === "agent.started") {
     const delegation = readProjectionDelegationMetadata(item);

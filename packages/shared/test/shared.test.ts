@@ -90,6 +90,9 @@ test("validates remote command args", () => {
     validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"]),
   ).toEqual({ ok: true });
   expect(
+    validateRemoteCommandArgs("thread:run-projection-get", ["feed:thr_1"]),
+  ).toEqual({ ok: true });
+  expect(
     validateRemoteCommandArgs("thread:run-projection-get", ["thr_1", "feed"]),
   ).toEqual({ ok: true });
   expect(

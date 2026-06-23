@@ -814,7 +814,7 @@ ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
   if (autoRetry != null) {
     final detail = autoRetry.group(3)?.trim();
     return ParsedReconnectActivity(
-      summary: '正在重新连接 ${autoRetry.group(1)}/${autoRetry.group(2)}',
+      summary: '重连 ${autoRetry.group(1)}/${autoRetry.group(2)}',
       detail: detail == null || detail.isEmpty ? null : detail,
     );
   }
@@ -838,6 +838,10 @@ ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
   }
 
   return null;
+}
+
+bool isReconnectActivityMessage(String message) {
+  return parseReconnectActivityMessage(message) != null;
 }
 
 class ParsedReconnectActivity {

@@ -15,6 +15,13 @@ test("parseThreadRunProjectionGetRequest accepts feed mode as second string arg"
   });
 });
 
+test("parseThreadRunProjectionGetRequest accepts feed mode encoded in single string arg", () => {
+  expect(parseThreadRunProjectionGetRequest("feed:thr_1")).toEqual({
+    threadId: "thr_1",
+    mode: "feed",
+  });
+});
+
 test("parseThreadRunProjectionGetRequest accepts feed mode object", () => {
   expect(
     parseThreadRunProjectionGetRequest({

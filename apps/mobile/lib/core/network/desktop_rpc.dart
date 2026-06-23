@@ -112,14 +112,12 @@ class DesktopRpc {
     String threadId, {
     String mode = 'full',
   }) async {
-    final args = <dynamic>[threadId];
-    if (mode == 'feed') {
-      args.add('feed');
-    }
+    // Remote registry accepts a single string arg; encode feed mode in the string.
+    final arg = mode == 'feed' ? 'feed:$threadId' : threadId;
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
       'thread:run-projection-get',
-      args,
+      [arg],
     );
     if (result is! Map<String, dynamic>) return null;
     return ThreadRunProjectionSnapshot.fromJson(result);
