@@ -87,10 +87,16 @@ test("validates remote command args", () => {
     validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"]),
   ).toEqual({ ok: true });
   expect(
+    validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:run-projection-get", ["thr_1", "feed"]),
+  ).toEqual({ ok: true });
+  expect(
     validateRemoteCommandArgs("thread:run-projection-get", [
       { threadId: "thr_1", mode: "feed" },
     ]),
-  ).toEqual({ ok: true });
+  ).toMatchObject({ ok: false });
   expect(
     validateRemoteCommandArgs("thread:get-usage-snapshot", ["thr_1"]),
   ).toEqual({ ok: true });

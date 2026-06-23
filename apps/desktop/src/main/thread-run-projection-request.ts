@@ -7,9 +7,11 @@ export interface ThreadRunProjectionGetRequest {
 
 export function parseThreadRunProjectionGetRequest(
   payload: unknown,
+  modeArg?: unknown,
 ): ThreadRunProjectionGetRequest {
   if (typeof payload === "string") {
-    return { threadId: payload.trim(), mode: "full" };
+    const mode = modeArg === "feed" ? "feed" : "full";
+    return { threadId: payload.trim(), mode };
   }
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     const record = payload as Record<string, unknown>;

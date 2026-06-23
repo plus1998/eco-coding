@@ -1338,8 +1338,8 @@ function registerIpcHandlers(): void {
     return conversationStore.listActivityLines(threadId);
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (payload: unknown) => {
-    const request = parseThreadRunProjectionGetRequest(payload);
+  registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (payload: unknown, modeArg?: unknown) => {
+    const request = parseThreadRunProjectionGetRequest(payload, modeArg);
     if (!request.threadId) {
       return undefined;
     }

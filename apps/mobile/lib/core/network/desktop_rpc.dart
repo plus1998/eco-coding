@@ -112,13 +112,14 @@ class DesktopRpc {
     String threadId, {
     String mode = 'full',
   }) async {
-    final payload = mode == 'feed'
-        ? {'threadId': threadId, 'mode': 'feed'}
-        : threadId;
+    final args = <dynamic>[threadId];
+    if (mode == 'feed') {
+      args.add('feed');
+    }
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
       'thread:run-projection-get',
-      [payload],
+      args,
     );
     if (result is! Map<String, dynamic>) return null;
     return ThreadRunProjectionSnapshot.fromJson(result);

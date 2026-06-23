@@ -5,6 +5,7 @@ export type RemoteCommandArgKind = "any" | "array" | "boolean" | "number" | "obj
 export interface RemoteCommandArgSchema {
   kind: RemoteCommandArgKind;
   requiredKeys?: readonly string[];
+  optional?: boolean;
 }
 
 export interface RemoteCommandDefinition {
@@ -40,7 +41,8 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     stringArg(),
   ]),
   command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [
-    { kind: "any" },
+    stringArg(),
+    optionalStringArg(),
   ]),
   command("thread:subagent-sessions-list", "List thread subagent sessions", "read", RPC_INVOKE, [
     stringArg(),
@@ -132,13 +134,22 @@ export function validateRemoteCommandArgs(
     return { ok: false, message: `Remote command is not registered: ${channel}` };
   }
   const actualArgs = args ?? [];
-  if (actualArgs.length !== definition.args.length) {
+  const requiredArgCount = definition.args.filter((arg) => !arg.optional).length;
+  const maxArgCount = definition.args.length;
+  if (actualArgs.length < requiredArgCount || actualArgs.length > maxArgCount) {
+    const expected =
+      requiredArgCount === maxArgCount
+        ? `${requiredArgCount}`
+        : `${requiredArgCount} to ${maxArgCount}`;
     return {
       ok: false,
-      message: `Remote command ${channel} expects ${definition.args.length} args, got ${actualArgs.length}.`,
+      message: `Remote command ${channel} expects ${expected} args, got ${actualArgs.length}.`,
     };
   }
   for (const [index, schema] of definition.args.entries()) {
+    if (index >= actualArgs.length) {
+      continue;
+    }
     const value = actualArgs[index];
     if (!matchesArgSchema(value, schema)) {
       return {
@@ -180,6 +191,10 @@ function command(
 
 function stringArg(): RemoteCommandArgSchema {
   return { kind: "string" };
+}
+
+function optionalStringArg(): RemoteCommandArgSchema {
+  return { kind: "string", optional: true };
 }
 
 function objectArg(requiredKeys: readonly string[]): RemoteCommandArgSchema {
