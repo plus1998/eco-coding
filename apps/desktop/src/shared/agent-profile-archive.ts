@@ -57,5 +57,5 @@ export function parseAgentProfileArchiveBundle(value: string): AgentProfileArchi
   if (typeof record.id === "string") {
     return { profiles: [record as unknown as OrchestrationProfile], templates: [] };
   }
-  throw new Error("导入文件没有包含 Agent Profiles。");
+  throw new Error("导入文件没有包含智能体配置。");
 }

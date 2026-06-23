@@ -154,10 +154,10 @@ export function ComposerRoutePopover({
       ref={panelRef}
       className="composer-codex-popover composer-route-popover"
       role="dialog"
-      aria-label="切换 Agent Profile"
+      aria-label="切换智能体配置"
       style={panelStyle}
     >
-      <p className="composer-codex-popover-title">Agent Profile</p>
+      <p className="composer-codex-popover-title">智能体配置</p>
       <ul
         ref={listRef}
         className="composer-route-popover-list"
@@ -178,7 +178,7 @@ export function ComposerRoutePopover({
         ))}
       </ul>
       {profileSummaries.length === 0 ? (
-        <p className="composer-route-popover-empty">尚未配置可运行的 Agent Profile</p>
+        <p className="composer-route-popover-empty">尚未配置可运行的智能体配置</p>
       ) : null}
       {onSaveCurrentProfile ? (
         <button
@@ -204,7 +204,7 @@ export function ComposerRoutePopover({
         }}
       >
         <Settings2 size={14} />
-        打开 Agent Builder
+        打开智能体构建器
         <ChevronRight size={14} />
       </button>
     </div>,
@@ -326,8 +326,8 @@ export function ComposerRoutePopoverTrigger({
         .join(" ")}
       onClick={onToggle}
       disabled={disabled}
-      title={profileName ? `当前方案：${profileName}` : "切换 Agent Profile"}
-      aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换 Agent Profile"}
+      title={profileName ? `当前方案：${profileName}` : "切换智能体配置"}
+      aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换智能体配置"}
       aria-expanded={open}
     >
       <LayoutTemplate size={15} aria-hidden className="composer-context-trigger-icon" />

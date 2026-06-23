@@ -901,7 +901,10 @@ function parsePositiveNumber(value: number | undefined | null): number | undefin
 }
 
 function parseStoredPriceMultiplier(value: number | undefined | null): number | undefined {
-  return normalizeStoredPriceMultiplier(parsePositiveNumber(value));
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  return normalizeStoredPriceMultiplier(value);
 }
 
 function normalizeProfileRoutes(routes: RoleRouteConfig[]): RoleRouteConfig[] {

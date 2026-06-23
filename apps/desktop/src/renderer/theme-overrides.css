@@ -106,6 +106,10 @@
   font-size: 14px;
 }
 
+.settings-page .mcp-server-meta {
+  color: var(--text-muted);
+}
+
 .settings-page .mcp-icon-button {
   color: var(--text-muted);
 }
@@ -174,6 +178,29 @@
   color: var(--danger);
 }
 
+.settings-page .mcp-check-status.is-ok {
+  color: var(--status-allow-text);
+}
+
+.settings-page .mcp-check-status.is-error {
+  color: var(--status-deny-text);
+}
+
+.settings-page .mcp-check-status.is-checking {
+  color: var(--text-muted);
+}
+
+.settings-page .mcp-secondary-button {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-secondary-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-elevated-hover);
+}
+
 .settings-page .mcp-save-button {
   background: var(--accent);
   color: #fff;
@@ -186,6 +213,50 @@
 .settings-page .mcp-uninstall-button {
   border-color: rgba(215, 0, 21, 0.35);
   color: var(--danger);
+}
+
+.settings-page .mcp-check-card {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.settings-page .mcp-check-card.is-ok {
+  border-color: var(--status-allow-border);
+  background: var(--status-allow-bg);
+}
+
+.settings-page .mcp-check-card.is-error {
+  border-color: var(--status-deny-border);
+  background: var(--status-deny-bg);
+}
+
+.settings-page .mcp-check-card-heading {
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-check-card.is-ok .mcp-check-card-heading svg {
+  color: var(--status-allow-text);
+}
+
+.settings-page .mcp-check-card.is-error .mcp-check-card-heading svg {
+  color: var(--status-deny-text);
+}
+
+.settings-page .mcp-check-card-meta {
+  color: var(--text-muted);
+}
+
+.settings-page .mcp-check-card-meta span {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.theme-dark .settings-page .mcp-check-card-meta span {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-page .mcp-check-card-detail {
+  color: var(--text-secondary);
 }
 
 /* Models tabs — segmented control */

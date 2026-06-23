@@ -219,7 +219,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     getAgentProfileById(input.settings, requestedProfileId) ??
     getAgentProfileById(input.settings, getDefaultAgentProfileId(input.settings));
   if (!agentProfile) {
-    throw new Error("至少添加一套 Agent Profile。");
+    throw new Error("至少添加一套智能体配置。");
   }
   return {
     routeProfileId: agentProfile.id,

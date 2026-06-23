@@ -50,6 +50,7 @@ import {
   deriveSubagentEnabledFromProfile,
   getDefaultAgentProfileId,
   type LinkAgentsSkillsResult,
+  type McpServerCheckResult,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
@@ -229,7 +230,7 @@ const settingsNavGroups: SettingsNavGroup[] = [
   {
     label: "集成",
     sections: [
-      { id: "providers", label: "Provider", icon: Settings2 },
+      { id: "providers", label: "模型服务商", icon: Settings2 },
       { id: "mcp", label: "MCP", icon: Plug },
       { id: "sessionSync", label: "会话同步", icon: Database },
       { id: "centerServer", label: "连接", icon: Cloud },
@@ -238,7 +239,7 @@ const settingsNavGroups: SettingsNavGroup[] = [
   {
     label: "编码",
     sections: [
-      { id: "models", label: "Agent Builder", icon: SlidersHorizontal },
+      { id: "models", label: "智能体构建器", icon: SlidersHorizontal },
       { id: "skills", label: "Skills", icon: Sparkles },
       { id: "git", label: "Git", icon: GitBranch },
     ],
@@ -2764,14 +2765,14 @@ function App() {
 
   async function saveComposerSelectionAsProfile() {
     if (!window.eco?.saveOrchestrationProfile || !window.eco?.getModelSettings) {
-      setError("Agent Profile 保存接口不可用。");
+      setError("智能体配置保存接口不可用。");
       return;
     }
     if (!composerRuntimeConfig || !selectedRuntimeProfile) {
       return;
     }
     const defaultName = `${selectedRuntimeProfile.name} Copy`;
-    const name = window.prompt("保存为 Agent Profile", defaultName);
+    const name = window.prompt("保存为智能体配置", defaultName);
     if (!name?.trim()) {
       return;
     }
@@ -2867,6 +2868,13 @@ function App() {
     } finally {
       setIsSavingSettings(false);
     }
+  }
+
+  async function checkMcpServer(input: McpServerConfigInput): Promise<McpServerCheckResult> {
+    if (!window.eco) {
+      throw new Error("Eco desktop API is not available.");
+    }
+    return window.eco.checkMcpServer(input);
   }
 
   async function saveSessionSyncSettings(input: SessionSyncSettingsInput) {
@@ -3685,7 +3693,7 @@ function App() {
             <p className="composer-hint">
               请先在
               <button type="button" className="link-button" onClick={openProviderSettings}>
-                Provider
+                模型服务商
               </button>
               中配置模型（API Key 可选）
             </p>
@@ -3822,7 +3830,7 @@ function App() {
                     <div className="thread-retry-banner-actions">
                       {alternateAgentProfiles.length > 0 ? (
                         <label className="thread-retry-banner-route-picker">
-                          <span>Agent Profile</span>
+                          <span>智能体配置</span>
                           <select
                             className="mcp-field-input"
                             value={retryAgentProfileId}
@@ -4115,6 +4123,7 @@ function App() {
                 busy={isSavingSettings}
                 onSave={saveMcpServer}
                 onDelete={deleteMcpServer}
+                onCheck={checkMcpServer}
               />
             )}
 
@@ -4158,7 +4167,7 @@ function App() {
                   onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                 />
               ) : (
-                <p className="settings-empty-hint">正在加载 Provider 配置…</p>
+                <p className="settings-empty-hint">正在加载模型服务商配置…</p>
               ))}
 
             {settingsSection === "models" &&

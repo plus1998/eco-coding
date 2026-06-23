@@ -82,6 +82,7 @@ export const IPC_CHANNELS = {
   mcpSettingsGet: "mcp-settings:get",
   mcpServerSave: "mcp-server:save",
   mcpServerDelete: "mcp-server:delete",
+  mcpServerCheck: "mcp-server:check",
   skillsList: "skills:list",
   skillsLinkAgents: "skills:link-agents",
   workflowSettingsGet: "workflow-settings:get",
@@ -176,6 +177,7 @@ export {
   isThreadPlanLiveEvent,
 } from "./event-center";
 export type {
+  McpServerCheckResult,
   McpServerConfigInput,
   McpServerConfigView,
   McpSettingsSnapshot,

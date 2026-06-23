@@ -39,6 +39,25 @@ export interface McpSettingsSnapshot {
   servers: McpServerConfigView[];
 }
 
+export interface McpServerCheckResult {
+  ok: boolean;
+  serverName: string;
+  transport: McpTransport;
+  checkedAt: string;
+  durationMs: number;
+  message: string;
+  details?: string;
+  protocolVersion?: string;
+  capabilities: string[];
+  toolsCount?: number;
+  toolNames?: string[];
+  serverInfo?: {
+    name?: string;
+    title?: string;
+    version?: string;
+  };
+}
+
 export interface McpSdkConfig {
   mcpServers: Record<string, unknown>;
   allowedTools: string[];

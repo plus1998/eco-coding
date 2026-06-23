@@ -408,7 +408,7 @@ class ComposerProfileControl extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _SheetHeader(title: '选择 Agent Profile'),
+            _SheetHeader(title: '选择智能体配置'),
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,

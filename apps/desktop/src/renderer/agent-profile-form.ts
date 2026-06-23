@@ -172,7 +172,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
   });
   return {
     id: createUniqueProfileId("user.custom.profile", options.existingIds ?? []),
-    name: createUniqueProfileName("Custom Agent Profile", options.existingNames ?? []),
+    name: createUniqueProfileName("自定义智能体配置", options.existingNames ?? []),
     preset: "custom",
     source: "user",
     mainName: "Main Agent",
@@ -291,16 +291,16 @@ export function buildOrchestrationProfileFromForm(
   const id = form.id.trim();
   const name = form.name.trim();
   if (!id) {
-    throw new Error("Agent Profile id 不能为空。");
+    throw new Error("智能体配置 id 不能为空。");
   }
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
-    throw new Error("Agent Profile id 只能包含字母、数字、点、下划线和短横线。");
+    throw new Error("智能体配置 id 只能包含字母、数字、点、下划线和短横线。");
   }
   if (id.startsWith("builtin.")) {
-    throw new Error("内置 Agent Profile id 不可用于用户配置。");
+    throw new Error("内置智能体配置 id 不可用于用户配置。");
   }
   if (!name) {
-    throw new Error("Agent Profile 名称不能为空。");
+    throw new Error("智能体配置名称不能为空。");
   }
   assertCandidateModelSelected("主 Agent", form.mainCandidateModelId);
   assertCandidateModelSelected("Explore", form.builtinExploreCandidateModelId);
@@ -502,7 +502,7 @@ function buildModelRef(
   const provider = providerId.trim();
   const model = modelId.trim();
   if (!provider || !model) {
-    throw new Error("Agent Profile 中的每个 Agent 都必须配置 provider 和模型。");
+    throw new Error("智能体配置中的每个 Agent 都必须配置 provider 和模型。");
   }
   const thinkingEffort = options?.thinkingEffort?.trim();
   const apiCompat = options?.apiCompat?.trim();

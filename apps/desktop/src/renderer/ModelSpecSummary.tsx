@@ -342,7 +342,7 @@ export function CandidateModelSpecPanel({ candidate }: { candidate?: CandidateMo
       </div>
       {!mappingLabel ? (
         <p className="candidate-model-spec-panel-hint candidate-model-spec-panel-hint-warn">
-          请在 Provider 候选模型中配置 models.dev 映射。
+          请在模型服务商候选模型中配置 models.dev 映射。
         </p>
       ) : null}
       {hasSummary ? (

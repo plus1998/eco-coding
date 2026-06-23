@@ -38,6 +38,7 @@ import {
   type ListUpstreamModelsRequest,
   type ListUpstreamModelsResult,
   type McpServerConfigInput,
+  type McpServerCheckResult,
   type McpServerConfigView,
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
@@ -289,6 +290,9 @@ const api = {
   },
   deleteMcpServer(serverId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.mcpServerDelete, serverId);
+  },
+  checkMcpServer(server: McpServerConfigInput): Promise<McpServerCheckResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mcpServerCheck, server);
   },
   listSkills(workspacePath?: string): Promise<SkillsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsList, workspacePath);

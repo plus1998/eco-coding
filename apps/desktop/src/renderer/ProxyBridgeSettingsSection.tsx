@@ -43,7 +43,7 @@ export function ProxyBridgeSettingsSection({ settings, disabled, onSave }: Proxy
             }
           }}
         />
-        <span className="mcp-field-hint">失焦后自动保存。Provider 连通性测试仅在填写此项时附带该标识。</span>
+        <span className="mcp-field-hint">失焦后自动保存。模型服务商连通性测试仅在填写此项时附带该标识。</span>
       </label>
     </section>
   );

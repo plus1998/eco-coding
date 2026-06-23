@@ -3324,6 +3324,23 @@ html[data-window-focused="true"] .codex-sidebar {
   word-break: break-all;
 }
 
+.mcp-server-summary {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcp-server-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .mcp-server-actions {
   display: flex;
   align-items: center;
@@ -3353,6 +3370,43 @@ html[data-window-focused="true"] .codex-sidebar {
 .mcp-icon-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.mcp-check-status {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  max-width: min(360px, 52vw);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mcp-check-status svg {
+  flex-shrink: 0;
+}
+
+.mcp-check-status.is-ok {
+  color: #22c55e;
+}
+
+.mcp-check-status.is-error {
+  color: #f87171;
+}
+
+.mcp-check-status.is-checking {
+  color: #a3a3a3;
+}
+
+.mcp-spin {
+  animation: mcp-spin 0.9s linear infinite;
+}
+
+@keyframes mcp-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mcp-toggle {
@@ -3629,6 +3683,38 @@ html[data-window-focused="true"] .codex-sidebar {
   margin-bottom: 12px;
 }
 
+.mcp-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mcp-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 9px 16px;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: transparent;
+  color: #e5e5e5;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mcp-secondary-button:hover:not(:disabled) {
+  background: #262626;
+  border-color: #525252;
+}
+
+.mcp-secondary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .mcp-save-button {
   align-self: flex-start;
   padding: 10px 24px;
@@ -3648,6 +3734,78 @@ html[data-window-focused="true"] .codex-sidebar {
 .mcp-save-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.mcp-check-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #171717;
+  color: #d4d4d4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mcp-check-card.is-ok {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.mcp-check-card.is-error {
+  border-color: rgba(248, 113, 113, 0.38);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.mcp-check-card.is-checking {
+  flex-direction: row;
+  align-items: center;
+}
+
+.mcp-check-card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #f5f5f5;
+  font-weight: 500;
+}
+
+.mcp-check-card-heading svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.mcp-check-card.is-ok .mcp-check-card-heading svg {
+  color: #22c55e;
+}
+
+.mcp-check-card.is-error .mcp-check-card-heading svg {
+  color: #f87171;
+}
+
+.mcp-check-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #a3a3a3;
+  font-size: 12px;
+}
+
+.mcp-check-card-meta span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mcp-check-card-detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 
 .mcp-form textarea {

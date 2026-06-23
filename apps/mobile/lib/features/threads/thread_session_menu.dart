@@ -382,7 +382,7 @@ Future<void> openCommitPushFromMenu({
   if (profileId.isEmpty) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先在 Composer 设置中选择 Agent Profile')),
+        const SnackBar(content: Text('请先在 Composer 设置中选择智能体配置')),
       );
     }
     return;

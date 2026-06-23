@@ -24,7 +24,7 @@ const bashReviewUiOptions = [
   BashReviewUiOption(
     value: 'allow_all',
     title: '完全访问权限',
-    description: '自动批准 Bash 命令（仍需 Agent Profile 允许 Bash 工具）',
+    description: '自动批准 Bash 命令（仍需智能体配置允许 Bash 工具）',
   ),
 ];
 

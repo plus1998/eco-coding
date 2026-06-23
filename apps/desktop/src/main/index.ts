@@ -280,6 +280,7 @@ import {
   normalizeGitSettingsSnapshot,
 } from "./git-settings-store";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
+import { checkMcpServerConnection } from "./mcp-checker";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { launchInExternalTerminal } from "./open-external-terminal";
@@ -1808,6 +1809,10 @@ function registerIpcHandlers(): void {
     const server = mcpStore.saveServer(payload);
     emitSettingsUpdated();
     return server;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.mcpServerCheck, async (payload: McpServerConfigInput) => {
+    return checkMcpServerConnection(payload);
   });
 
   registerDesktopCommand(IPC_CHANNELS.skillsList, async (workspacePath: unknown) => {

@@ -73,7 +73,7 @@ class ComposerModeBar extends ConsumerWidget {
                 return DropdownMenu<String>(
                   initialSelection: runtimeConfig.agentProfileId ??
                       runtimeConfig.routeProfileId,
-                  label: const Text('Agent Profile'),
+                  label: const Text('智能体配置'),
                   expandedInsets: EdgeInsets.zero,
                   dropdownMenuEntries: profiles
                       .map(

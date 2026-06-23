@@ -1,4 +1,13 @@
-import { ChevronLeft, Plus, Settings2, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  CircleAlert,
+  CircleCheck,
+  LoaderCircle,
+  Plus,
+  Radar,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import {
   mcpServerToInput,
@@ -7,13 +16,19 @@ import {
   serializeMcpArgsList,
   serializeMcpEnvEntries,
 } from "../shared/mcp";
-import type { McpServerConfigInput, McpServerConfigView, McpTransport } from "../shared/ipc";
+import type {
+  McpServerCheckResult,
+  McpServerConfigInput,
+  McpServerConfigView,
+  McpTransport,
+} from "../shared/ipc";
 
 interface McpSettingsPanelProps {
   servers: McpServerConfigView[];
   busy?: boolean | undefined;
   onSave: (input: McpServerConfigInput) => Promise<void>;
   onDelete: (serverId: string) => Promise<void>;
+  onCheck: (input: McpServerConfigInput) => Promise<McpServerCheckResult>;
 }
 
 const emptyForm: McpServerConfigInput = {
@@ -30,12 +45,20 @@ const emptyForm: McpServerConfigInput = {
 
 type McpPanelView = "list" | "edit";
 
-export function McpSettingsPanel({ servers, busy, onSave, onDelete }: McpSettingsPanelProps) {
+type McpCheckState =
+  | { status: "checking" }
+  | { status: "ok"; result: McpServerCheckResult }
+  | { status: "error"; result: McpServerCheckResult };
+
+const editorCheckKey = "__editor__";
+
+export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: McpSettingsPanelProps) {
   const [view, setView] = useState<McpPanelView>("list");
   const [form, setForm] = useState<McpServerConfigInput>(emptyForm);
   const [args, setArgs] = useState<string[]>([]);
   const [envEntries, setEnvEntries] = useState<Array<{ key: string; value: string }>>([]);
   const [error, setError] = useState<string>();
+  const [checkStates, setCheckStates] = useState<Record<string, McpCheckState>>({});
 
   useEffect(() => {
     if (view !== "edit") {
@@ -100,6 +123,37 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete }: McpSetting
     }
   }
 
+  function buildCurrentFormPayload(): McpServerConfigInput {
+    return {
+      ...form,
+      argsJson: serializeMcpArgsList(args),
+      envJson: serializeMcpEnvEntries(envEntries),
+    };
+  }
+
+  async function handleCheck(key: string, input: McpServerConfigInput) {
+    setError(undefined);
+    setCheckStates((current) => ({ ...current, [key]: { status: "checking" } }));
+    try {
+      const result = await onCheck(input);
+      setCheckStates((current) => ({
+        ...current,
+        [key]: { status: result.ok ? "ok" : "error", result },
+      }));
+    } catch (caught) {
+      const result: McpServerCheckResult = {
+        ok: false,
+        serverName: input.name.trim() || "未命名 MCP",
+        transport: input.transport,
+        checkedAt: new Date().toISOString(),
+        durationMs: 0,
+        message: caught instanceof Error ? caught.message : String(caught),
+        capabilities: [],
+      };
+      setCheckStates((current) => ({ ...current, [key]: { status: "error", result } }));
+    }
+  }
+
   if (view === "edit") {
     return (
       <McpServerEditor
@@ -114,6 +168,8 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete }: McpSetting
         onBack={closeEditor}
         onSave={handleSave}
         onDelete={handleDelete}
+        onCheck={() => void handleCheck(editorCheckKey, buildCurrentFormPayload())}
+        checkState={checkStates[editorCheckKey]}
       />
     );
   }
@@ -152,8 +208,28 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete }: McpSetting
           <ul className="mcp-server-list">
             {servers.map((server) => (
               <li key={server.id} className="mcp-server-row">
-                <span className="mcp-server-name">{server.name}</span>
+                <div className="mcp-server-summary">
+                  <span className="mcp-server-name">{server.name}</span>
+                  <span className="mcp-server-meta">
+                    {server.transport}
+                    <McpCheckStatus state={checkStates[server.id]} />
+                  </span>
+                </div>
                 <div className="mcp-server-actions">
+                  <button
+                    type="button"
+                    className="mcp-icon-button"
+                    onClick={() => void handleCheck(server.id, mcpServerToInput(server))}
+                    aria-label={`检测 ${server.name}`}
+                    title="检测连接"
+                    disabled={busy || checkStates[server.id]?.status === "checking"}
+                  >
+                    {checkStates[server.id]?.status === "checking" ? (
+                      <LoaderCircle size={18} className="mcp-spin" />
+                    ) : (
+                      <Radar size={18} />
+                    )}
+                  </button>
                   <button
                     type="button"
                     className="mcp-icon-button"
@@ -194,6 +270,8 @@ function McpServerEditor({
   onBack,
   onSave,
   onDelete,
+  onCheck,
+  checkState,
 }: {
   form: McpServerConfigInput;
   setForm: Dispatch<SetStateAction<McpServerConfigInput>>;
@@ -206,6 +284,8 @@ function McpServerEditor({
   onBack: () => void;
   onSave: () => void;
   onDelete: () => void;
+  onCheck: () => void;
+  checkState?: McpCheckState | undefined;
 }) {
   const isEditing = Boolean(form.id);
   const titleName = form.name.trim() || "新服务器";
@@ -412,10 +492,91 @@ function McpServerEditor({
 
         {error && <p className="settings-form-error">{error}</p>}
 
-        <button type="button" className="mcp-save-button" onClick={() => void onSave()} disabled={busy}>
-          保存
-        </button>
+        {checkState && <McpCheckCard state={checkState} />}
+
+        <div className="mcp-editor-actions">
+          <button
+            type="button"
+            className="mcp-secondary-button"
+            onClick={() => void onCheck()}
+            disabled={busy || checkState?.status === "checking"}
+          >
+            {checkState?.status === "checking" ? (
+              <LoaderCircle size={16} className="mcp-spin" />
+            ) : (
+              <Radar size={16} />
+            )}
+            检测连接
+          </button>
+          <button type="button" className="mcp-save-button" onClick={() => void onSave()} disabled={busy}>
+            保存
+          </button>
+        </div>
       </div>
     </>
   );
+}
+
+function McpCheckStatus({ state }: { state?: McpCheckState | undefined }) {
+  if (!state) {
+    return null;
+  }
+  if (state.status === "checking") {
+    return (
+      <span className="mcp-check-status is-checking">
+        <LoaderCircle size={13} className="mcp-spin" />
+        检测中
+      </span>
+    );
+  }
+  const result = state.result;
+  return (
+    <span
+      className={result.ok ? "mcp-check-status is-ok" : "mcp-check-status is-error"}
+      title={result.details || result.message}
+    >
+      {result.ok ? <CircleCheck size={13} /> : <CircleAlert size={13} />}
+      {formatCheckSummary(result)}
+    </span>
+  );
+}
+
+function McpCheckCard({ state }: { state: McpCheckState }) {
+  if (state.status === "checking") {
+    return (
+      <div className="mcp-check-card is-checking">
+        <LoaderCircle size={16} className="mcp-spin" />
+        <span>正在启动并握手...</span>
+      </div>
+    );
+  }
+  const result = state.result;
+  return (
+    <div className={result.ok ? "mcp-check-card is-ok" : "mcp-check-card is-error"}>
+      <div className="mcp-check-card-heading">
+        {result.ok ? <CircleCheck size={16} /> : <CircleAlert size={16} />}
+        <span>{result.message}</span>
+      </div>
+      <div className="mcp-check-card-meta">
+        <span>{result.transport}</span>
+        <span>{result.durationMs}ms</span>
+        {result.protocolVersion && <span>协议 {result.protocolVersion}</span>}
+        {result.serverInfo?.name && <span>{result.serverInfo.name}</span>}
+      </div>
+      {result.toolNames && result.toolNames.length > 0 && (
+        <p className="mcp-check-card-detail">工具：{result.toolNames.join(", ")}</p>
+      )}
+      {!result.ok && result.details && <p className="mcp-check-card-detail">{result.details}</p>}
+    </div>
+  );
+}
+
+function formatCheckSummary(result: McpServerCheckResult): string {
+  if (!result.ok) {
+    return `失败 · ${result.message}`;
+  }
+  if (typeof result.toolsCount === "number") {
+    return `通过 · ${result.toolsCount} 个工具 · ${result.durationMs}ms`;
+  }
+  return `通过 · ${result.durationMs}ms`;
 }

@@ -101,14 +101,14 @@ export type ModelsSettingsTab =
   | "evaluation";
 
 const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
-  { id: "subagents", label: "Agent Library" },
-  { id: "routes", label: "Agent Profile" },
+  { id: "subagents", label: "智能体库" },
+  { id: "routes", label: "智能体配置" },
   { id: "presets", label: "场景预设" },
   { id: "evaluation", label: "效果评测" },
 ];
 
 const PROVIDER_SETTINGS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
-  { id: "providers", label: "Provider" },
+  { id: "providers", label: "模型服务商" },
   { id: "proxyBridge", label: "代理桥" },
 ];
 
@@ -264,7 +264,7 @@ export function ModelsSettingsPanel({
 
   const exportAgentProfiles = useCallback(async (profileIds?: string[]) => {
     if (!window.eco?.exportOrchestrationProfiles) {
-      setProfileArchiveMessage({ kind: "error", message: "Agent Profile 导出接口不可用。" });
+      setProfileArchiveMessage({ kind: "error", message: "智能体配置导出接口不可用。" });
       return;
     }
     setProfileArchiveBusy(true);
@@ -276,7 +276,7 @@ export function ModelsSettingsPanel({
       }
       setProfileArchiveMessage({
         kind: "success",
-        message: `已导出 ${result.exported} 个 Agent Profile${result.path ? `：${result.path}` : ""}`,
+        message: `已导出 ${result.exported} 个智能体配置${result.path ? `：${result.path}` : ""}`,
       });
     } catch (caught) {
       setProfileArchiveMessage({
@@ -290,7 +290,7 @@ export function ModelsSettingsPanel({
 
   const importAgentProfiles = useCallback(async () => {
     if (!window.eco?.importOrchestrationProfiles) {
-      setProfileArchiveMessage({ kind: "error", message: "Agent Profile 导入接口不可用。" });
+      setProfileArchiveMessage({ kind: "error", message: "智能体配置导入接口不可用。" });
       return;
     }
     setProfileArchiveBusy(true);
@@ -306,8 +306,8 @@ export function ModelsSettingsPanel({
         kind: "success",
         message:
           result.errors.length > 0
-            ? `已导入 ${result.imported} 个 Agent Profile，${result.errors.length} 个失败`
-            : `已导入 ${result.imported} 个 Agent Profile`,
+            ? `已导入 ${result.imported} 个智能体配置，${result.errors.length} 个失败`
+            : `已导入 ${result.imported} 个智能体配置`,
       });
     } catch (caught) {
       setProfileArchiveMessage({
@@ -330,7 +330,7 @@ export function ModelsSettingsPanel({
       if (!provider) {
         setPresetProfileMessage({
           kind: "error",
-          message: "请先在 Provider 设置中配置至少一个启用且带默认模型的 Provider。",
+          message: "请先在模型服务商设置中配置至少一个启用且带默认模型的模型服务商。",
         });
         return;
       }
@@ -373,7 +373,7 @@ export function ModelsSettingsPanel({
             : "已复用现有子代理模板副本";
         setPresetProfileMessage({
           kind: "success",
-          message: `${templateMessage}并创建 Agent Profile「${profile.name}」，默认使用 ${provider.name} / ${provider.defaultModel}。`,
+          message: `${templateMessage}并创建智能体配置「${profile.name}」，默认使用 ${provider.name} / ${provider.defaultModel}。`,
         });
       } catch (caught) {
         setPresetProfileMessage({
@@ -559,7 +559,7 @@ export function ModelsSettingsPanel({
 
   async function openAgentProfileVersions(profile: OrchestrationProfile) {
     if (!window.eco?.listOrchestrationProfileVersions) {
-      setProfileArchiveMessage({ kind: "error", message: "Agent Profile 版本接口不可用。" });
+      setProfileArchiveMessage({ kind: "error", message: "智能体配置版本接口不可用。" });
       return;
     }
     setAgentProfileVersionBusy(true);
@@ -594,7 +594,7 @@ export function ModelsSettingsPanel({
       setAgentProfileVersionModal({ profile: restored, versions });
       setProfileArchiveMessage({
         kind: "success",
-        message: `已恢复 Agent Profile「${restored.name}」到 v${version}`,
+        message: `已恢复智能体配置「${restored.name}」到 v${version}`,
       });
     } catch (caught) {
       setAgentProfileVersionModal({
@@ -635,7 +635,7 @@ export function ModelsSettingsPanel({
     if (!window.eco?.deleteOrchestrationProfile || !canEditStoredAgentProfile(profile)) {
       return;
     }
-    if (!window.confirm(`确定删除 Agent Profile「${profile.name}」？`)) {
+    if (!window.confirm(`确定删除智能体配置「${profile.name}」？`)) {
       return;
     }
     onSavingChange?.(true);
@@ -681,12 +681,12 @@ export function ModelsSettingsPanel({
       return;
     }
     if (settings.providers.length <= 1) {
-      setModalError("至少保留一个 Provider。");
+      setModalError("至少保留一个模型服务商。");
       return;
     }
-    const providerName = providerForm.name.trim() || "Provider";
+    const providerName = providerForm.name.trim() || "模型服务商";
     if (
-      !window.confirm(`确定删除 Provider「${providerName}」？引用它的 Agent Profile 将改用其他 Provider。`)
+      !window.confirm(`确定删除模型服务商「${providerName}」？引用它的智能体配置将改用其他模型服务商。`)
     ) {
       return;
     }
@@ -762,11 +762,11 @@ export function ModelsSettingsPanel({
         const durationHint = durations.length > 0 ? `，耗时 ${durations[0]}` : "";
         const dedupeHint =
           uniqueModels.size < result.passed
-            ? `（${uniqueModels.size} 组 Provider+模型，共 ${result.passed} 个 Agent）`
+            ? `（${uniqueModels.size} 组模型服务商+模型，共 ${result.passed} 个 Agent）`
             : "";
         setAgentProfileTestMessage({
           kind: "success",
-          message: `Agent Profile「${profile.name}」全部 ${result.passed} 个 Agent 已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
+          message: `智能体配置「${profile.name}」全部 ${result.passed} 个 Agent 已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
         });
       } else {
         const failedLabels = result.results
@@ -775,7 +775,7 @@ export function ModelsSettingsPanel({
           .join("；");
         setAgentProfileTestMessage({
           kind: "error",
-          message: `Agent Profile「${profile.name}」${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
+          message: `智能体配置「${profile.name}」${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
         });
       }
     } catch (caught) {
@@ -792,7 +792,7 @@ export function ModelsSettingsPanel({
     if (!window.eco?.testProviderConnection) {
       return;
     }
-    const providerName = target.name.trim() || "Provider";
+    const providerName = target.name.trim() || "模型服务商";
     if (!target.baseUrl.trim()) {
       showProviderTestMessage("error", "请先填写 baseURL。");
       return;
@@ -890,18 +890,18 @@ export function ModelsSettingsPanel({
 
       {mode === "providerSettings" ? (
         <header className="mcp-page-header">
-          <h1>Provider</h1>
+          <h1>模型服务商</h1>
         </header>
       ) : (
         <header className="settings-page-header">
-          <h1>Agent Builder</h1>
+          <h1>智能体构建器</h1>
         </header>
       )}
 
       <div
         className="models-settings-tabs"
         role="tablist"
-        aria-label={mode === "providerSettings" ? "Provider 设置分类" : "模型设置分类"}
+        aria-label={mode === "providerSettings" ? "模型服务商设置分类" : "模型设置分类"}
       >
         {(mode === "providerSettings" ? PROVIDER_SETTINGS_TAB_ITEMS : MODELS_TAB_ITEMS).map((tab) => (
           <button
@@ -940,15 +940,15 @@ export function ModelsSettingsPanel({
       {activeTab === "providers" && (
         <section className="mcp-list-section">
           <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">Provider</span>
+            <span className="mcp-list-toolbar-label">模型服务商</span>
             <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
               <Plus size={16} />
-              添加 Provider
+              添加模型服务商
             </button>
           </div>
 
           {providerOptions.length === 0 ? (
-            <p className="mcp-list-empty">尚未添加 Provider</p>
+            <p className="mcp-list-empty">尚未添加模型服务商</p>
           ) : (
             <ul className="mcp-server-list">
               {providerOptions.map((provider) => (
@@ -1031,7 +1031,7 @@ export function ModelsSettingsPanel({
                 onClick={openCreateAgentProfile}
               >
                 <Plus size={16} />
-                添加 Agent Profile
+                添加智能体配置
               </button>
             </div>
           </div>
@@ -1040,7 +1040,7 @@ export function ModelsSettingsPanel({
           ) : null}
 
           {selectableProfileSummaries.length === 0 ? (
-            <p className="mcp-list-empty">尚未添加可运行的 Agent Profile</p>
+            <p className="mcp-list-empty">尚未添加可运行的智能体配置</p>
           ) : (
             <ul className="mcp-server-list">
               {selectableProfileSummaries.map((summary) => {
@@ -1319,7 +1319,7 @@ function AgentProfileEditorModal({
   onSave: () => void;
 }) {
   const modalTitle =
-    mode === "edit" ? "编辑 Agent Profile" : mode === "copy" ? "复制为 Agent Profile" : "新建 Agent Profile";
+    mode === "edit" ? "编辑智能体配置" : mode === "copy" ? "复制为智能体配置" : "新建智能体配置";
   const modalBadge = mode === "edit" ? "编辑" : mode === "copy" ? "副本" : "新建";
   const modalHint =
     mode === "edit"
@@ -1538,13 +1538,13 @@ function AgentProfileEditorModal({
 
               <section
                 className="models-agent-profile-canvas"
-                aria-label="Agent Profile 画布"
+                aria-label="智能体配置画布"
                 onDragOver={handleCanvasDragOver}
                 onDrop={handleCanvasDrop}
               >
                 <div className="models-agent-profile-builder-head">
                   <div>
-                    <h3 className="models-route-profile-section-title">Agent Profile 画布</h3>
+                    <h3 className="models-route-profile-section-title">智能体配置画布</h3>
                     <p className="models-agent-profile-builder-subtitle">
                       主 Agent、Explore 和 {form.agents.length} 个子代理节点
                     </p>
@@ -1564,7 +1564,7 @@ function AgentProfileEditorModal({
                     <span className="models-agent-profile-node-type">Main Agent</span>
                     <span className="models-agent-profile-node-title">{form.mainName}</span>
                     <span className="models-agent-profile-node-model">
-                      {(activeProvider?.name ?? form.mainProviderId) || "未选 Provider"} /{" "}
+                      {(activeProvider?.name ?? form.mainProviderId) || "未选模型服务商"} /{" "}
                       {form.mainModelId || "未选模型"}
                     </span>
                     <span className="models-agent-profile-node-footer">
@@ -1586,7 +1586,7 @@ function AgentProfileEditorModal({
                         <span className="models-agent-profile-node-type">内置代理</span>
                         <span className="models-agent-profile-node-title">Explore</span>
                         <span className="models-agent-profile-node-model">
-                          {(builtinExploreProvider?.name ?? form.builtinExploreProviderId) || "未选 Provider"}{" "}
+                          {(builtinExploreProvider?.name ?? form.builtinExploreProviderId) || "未选模型服务商"}{" "}
                           / {form.builtinExploreModelId || "未选模型"}
                         </span>
                         <span className="models-agent-profile-node-footer">
@@ -1599,7 +1599,7 @@ function AgentProfileEditorModal({
                     {form.agents.length === 0 ? (
                       <div className="models-agent-profile-empty-drop">
                         <span>拖入子代理节点</span>
-                        <small>子代理节点只绑定 Provider 和模型。</small>
+                        <small>子代理节点只绑定模型服务商和模型。</small>
                       </div>
                     ) : (
                       <div className="models-agent-profile-node-grid">
@@ -1621,7 +1621,7 @@ function AgentProfileEditorModal({
                                 <span className="models-agent-profile-node-title">{nodeTitle}</span>
                                 <span className="models-agent-profile-node-key">{agent.agentKey}</span>
                                 <span className="models-agent-profile-node-model">
-                                  {(provider?.name ?? agent.providerId) || "未选 Provider"} /{" "}
+                                  {(provider?.name ?? agent.providerId) || "未选模型服务商"} /{" "}
                                   {agent.modelId || "未选模型"}
                                 </span>
                                 <span className="models-agent-profile-node-footer">
@@ -1703,7 +1703,7 @@ function CandidateModelSelectField({
       {loading ? (
         <span className="mcp-field-hint">加载中...</span>
       ) : candidates.length === 0 ? (
-        <span className="mcp-field-hint candidate-model-empty-hint">请先在 Provider 中添加候选模型</span>
+        <span className="mcp-field-hint candidate-model-empty-hint">请先在模型服务商中添加候选模型</span>
       ) : (
         <select
           className="mcp-field-input"
@@ -1836,7 +1836,7 @@ function ProfileNodeCandidateModelFields({
     <div className="profile-node-model-fields">
       <div className="models-agent-template-form-grid">
         <label className="mcp-field">
-          <span className="mcp-field-label">Provider</span>
+          <span className="mcp-field-label">模型服务商</span>
           <select
             className="mcp-field-input"
             value={providerId}
@@ -2254,7 +2254,7 @@ function ProviderEditorModal({
   onTest: () => void;
 }) {
   const isEditing = Boolean(form.id);
-  const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
+  const title = isEditing ? `编辑 ${form.name.trim() || "模型服务商"}` : "新建模型服务商";
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
   const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(false);
   const [candidateSaveError, setCandidateSaveError] = useState<string | undefined>(undefined);
@@ -2450,7 +2450,7 @@ function ProviderEditorModal({
             </label>
 
             <label className="mcp-field models-toggle-field">
-              <span className="mcp-field-label">启用此 Provider</span>
+              <span className="mcp-field-label">启用此模型服务商</span>
               <label className="mcp-toggle mcp-toggle-sm" title={form.enabled ? "已启用" : "已禁用"}>
                 <input
                   type="checkbox"
@@ -2501,7 +2501,7 @@ function ProviderEditorModal({
               className="mcp-uninstall-button"
               onClick={onDelete}
               disabled={busy || !canDelete}
-              title={canDelete ? undefined : "至少保留一个 Provider"}
+              title={canDelete ? undefined : "至少保留一个模型服务商"}
             >
               <Trash2 size={16} />
               删除
@@ -2716,7 +2716,7 @@ function PresetOverview({
             </div>
 
             <div className="models-preset-focus">
-              <span>默认 Agent Profile</span>
+              <span>默认智能体配置</span>
               <p>{primaryExample?.title ?? preset.modelSuggestion.main}</p>
             </div>
 
@@ -2727,7 +2727,7 @@ function PresetOverview({
                 className="models-section-button"
                 disabled={busy}
                 onClick={() => onCopyPreset(preset)}
-                title={`从 ${formatAgentDomainLabel(preset.id)} 创建 Agent Profile`}
+                title={`从 ${formatAgentDomainLabel(preset.id)} 创建智能体配置`}
               >
                 <Plus size={14} />
                 {copyingPresetId === preset.id ? "创建中" : "复制为 Profile"}
