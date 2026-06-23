@@ -39,4 +39,30 @@ export class SubagentLaunchRegistry {
     this.launches.delete(record.parentToolUseId);
     return record;
   }
+
+  /**
+   * Resolve a pending launch for SubagentStart. Prefers explicit parentToolUseId;
+   * otherwise consumes only when a single pending launch is unambiguous for the role.
+   */
+  takeForSubagentStart(input: {
+    parentToolUseId?: string;
+    role: RuntimeAgentRole;
+  }): SubagentLaunchRecord | undefined {
+    const explicitId = input.parentToolUseId?.trim();
+    if (explicitId) {
+      return this.take(explicitId);
+    }
+    const pending = [...this.launches.values()];
+    if (pending.length === 0) {
+      return undefined;
+    }
+    if (pending.length === 1) {
+      return this.take(pending[0]!.parentToolUseId);
+    }
+    const roleMatches = pending.filter((entry) => entry.role === input.role);
+    if (roleMatches.length === 1) {
+      return this.take(roleMatches[0]!.parentToolUseId);
+    }
+    return undefined;
+  }
 }

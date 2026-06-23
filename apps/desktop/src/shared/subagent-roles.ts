@@ -1,4 +1,9 @@
-import { isSubagentRole, normalizeSdkSubagentType } from "@eco/runtime";
+import {
+  isSubagentRole,
+  normalizeSdkSubagentType,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
+} from "@eco/runtime";
 
 /** Fixed Chinese labels for sub-agent roles in activity cards and context UI. */
 export const SUBAGENT_ROLE_SHORT: Record<string, string> = {
@@ -92,6 +97,9 @@ export function resolveSubagentSessionRole(agentType: string | undefined): strin
     return undefined;
   }
   const trimmed = agentType.trim();
+  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY || trimmed === SDK_PLAN_AGENT_KEY) {
+    return trimmed;
+  }
   const fromSdk = normalizeSdkSubagentType(trimmed);
   if (fromSdk) {
     return fromSdk;

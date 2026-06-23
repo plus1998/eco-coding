@@ -1303,15 +1303,22 @@ export function createSubagentStartHook(handlers: {
       return {};
     }
     const started = input as SubagentStartHookInput;
-    const agentType = normalizeSdkSubagentType(started.agent_type) ?? started.agent_type;
+    const agentType =
+      normalizeSdkBuiltinOrEcoAgentRole(started.agent_type) ??
+      normalizeSdkSubagentType(started.agent_type) ??
+      started.agent_type;
     const parentToolUseId = resolveSubagentStartParentToolUseId(started, toolUseID);
-    const launch = parentToolUseId ? handlers.subagentLaunchRegistry?.take(parentToolUseId) : undefined;
+    const launch = handlers.subagentLaunchRegistry?.takeForSubagentStart({
+      role: agentType,
+      ...(parentToolUseId && { parentToolUseId }),
+    });
+    const resolvedParentToolUseId = launch?.parentToolUseId ?? parentToolUseId;
     const prompt = launch?.prompt?.trim() || undefined;
     const todoId = launch?.todoIdHint?.trim() || undefined;
     const payload = {
       agentId: started.agent_id,
       agentType,
-      ...(parentToolUseId && { parentToolUseId }),
+      ...(resolvedParentToolUseId && { parentToolUseId: resolvedParentToolUseId }),
       ...(prompt && { prompt }),
       ...(todoId && { todoId }),
     };
