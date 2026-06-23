@@ -600,8 +600,15 @@ function App() {
         );
       }
 
-      if (event.type === "clarification.requested" && event.clarification) {
-        setPendingClarification(event.clarification);
+      if (event.type.startsWith("clarification.")) {
+        if (event.type === "clarification.requested" && event.clarification) {
+          setPendingClarification(event.clarification);
+        }
+        if (window.eco) {
+          void window.eco.getPendingClarification(event.threadId).then((clarification) => {
+            setPendingClarification(clarification);
+          });
+        }
       }
 
       if (event.type === "bash_approval.requested" && event.bashApproval) {

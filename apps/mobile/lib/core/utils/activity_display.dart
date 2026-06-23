@@ -497,6 +497,44 @@ bool isRecordedUserPromptLiveEvent(String? liveType) {
   return liveType == 'thread.user_prompt';
 }
 
+const clarificationAnswerPrefix = '澄清回答：';
+
+class ClarificationAnswerRow {
+  const ClarificationAnswerRow({
+    required this.question,
+    required this.answer,
+  });
+
+  final String question;
+  final String answer;
+}
+
+List<ClarificationAnswerRow>? parseClarificationAnswersSummary(String text) {
+  final trimmed = text.trim();
+  if (!trimmed.startsWith(clarificationAnswerPrefix)) {
+    return null;
+  }
+
+  final rest = trimmed.substring(clarificationAnswerPrefix.length).trim();
+  if (rest.isEmpty) {
+    return const [];
+  }
+
+  final parts = rest
+      .split('；')
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty);
+
+  return parts.map((part) {
+    final segments = part.split(RegExp(r'\s*→\s*'));
+    final question = segments.first.trim().isEmpty
+        ? part.trim()
+        : segments.first.trim();
+    final answer = segments.skip(1).join(' → ').trim();
+    return ClarificationAnswerRow(question: question, answer: answer);
+  }).toList();
+}
+
 bool isUserPromptActivityLine({required String role, required String message}) {
   if (role != 'user') return false;
   final text = message.trim();

@@ -17,6 +17,7 @@ import 'projection_activity_feed.dart';
 
 enum ActivityFeedKind {
   user,
+  clarificationAnswer,
   assistant,
   thinking,
   action,
@@ -143,6 +144,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     switch (entry.kind) {
       case ActivityFeedKind.user:
         return _UserPromptTile(text: entry.text);
+      case ActivityFeedKind.clarificationAnswer:
+        return _ClarificationAnswerTile(text: entry.text);
       case ActivityFeedKind.assistant:
         return _AssistantNarrativeTile(
           text: entry.text,
@@ -187,13 +190,28 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   }
 }
 
-class _UserPromptTile extends StatelessWidget {
+class _UserPromptTile extends StatefulWidget {
   const _UserPromptTile({required this.text});
 
   final String text;
 
   @override
+  State<_UserPromptTile> createState() => _UserPromptTileState();
+}
+
+class _UserPromptTileState extends State<_UserPromptTile> {
+  static const _collapsedMaxLines = 5;
+
+  var _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          height: 1.45,
+          color: eco.textPrimary,
+        );
+
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
@@ -203,16 +221,147 @@ class _UserPromptTile extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.88,
         ),
         decoration: BoxDecoration(
-          color: ecoColors(context).userBubble,
+          color: eco.userBubble,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: ecoColors(context).borderSubtle),
+          border: Border.all(color: eco.borderSubtle),
         ),
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                height: 1.45,
-                color: ecoColors(context).textPrimary,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bodyMaxWidth = constraints.maxWidth;
+            final canExpand = _textExceedsLineLimit(
+              text: widget.text,
+              style: textStyle,
+              maxWidth: bodyMaxWidth > 0 ? bodyMaxWidth : constraints.maxWidth,
+              maxLines: _collapsedMaxLines,
+              textDirection: Directionality.of(context),
+            );
+            final showCollapsed = canExpand && !_expanded;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  children: [
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.topRight,
+                      child: Text(
+                        widget.text,
+                        maxLines: showCollapsed ? _collapsedMaxLines : null,
+                        overflow:
+                            showCollapsed ? TextOverflow.ellipsis : null,
+                        style: textStyle,
+                      ),
+                    ),
+                    if (showCollapsed)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: 40,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: const BorderRadius.vertical(
+                              bottom: Radius.circular(8),
+                            ),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                eco.userBubble.withValues(alpha: 0),
+                                eco.userBubble,
+                              ],
+                              stops: const [0, 0.72],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                if (canExpand)
+                  Align(
+                    alignment: Alignment.center,
+                    child: TextButton(
+                      onPressed: () => setState(() => _expanded = !_expanded),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: Text(
+                        _expanded ? '收起' : '展开全文',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: eco.textMuted,
+                            ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ClarificationAnswerTile extends StatelessWidget {
+  const _ClarificationAnswerTile({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = parseClarificationAnswersSummary(text) ?? const [];
+    final eco = ecoColors(context);
+
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.88,
+        ),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: eco.userBubble,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: eco.borderSubtle),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '澄清回答',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: eco.textMuted,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            for (var index = 0; index < rows.length; index++) ...[
+              if (index > 0) const SizedBox(height: 10),
+              Text(
+                rows[index].question,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: eco.textMuted,
+                      height: 1.35,
+                    ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                rows[index].answer.isEmpty ? '（未选择）' : rows[index].answer,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: eco.textPrimary,
+                      height: 1.45,
+                    ),
+              ),
+            ],
+          ],
         ),
       ),
     );

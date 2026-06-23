@@ -474,6 +474,13 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
 
   if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
     if (text.isEmpty && item.eventType != 'message.delta') return null;
+    if (parseClarificationAnswersSummary(text) != null) {
+      return ActivityFeedEntry(
+        id: item.id,
+        kind: ActivityFeedKind.clarificationAnswer,
+        text: item.text,
+      );
+    }
     return ActivityFeedEntry(
       id: item.id,
       kind: ActivityFeedKind.assistant,

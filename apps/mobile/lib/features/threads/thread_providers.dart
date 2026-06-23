@@ -608,7 +608,17 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     await ref
         .read(desktopRpcProvider)
         ?.submitClarification(toolUseId: toolUseId, selections: selections);
-    state = state.copyWith(clearClarification: true);
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      state = state.copyWith(clearClarification: true);
+      return;
+    }
+    final clarification = await rpc.getPendingClarification(threadId);
+    if (!mounted) return;
+    state = state.copyWith(
+      pendingClarification: clarification,
+      clearClarification: clarification == null,
+    );
   }
 }
 

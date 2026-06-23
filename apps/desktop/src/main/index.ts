@@ -2274,6 +2274,13 @@ function registerIpcHandlers(): void {
     if (!ok) {
       throw new Error("Failed to dismiss clarification.");
     }
+    desktopEventCenter.publishThreadLiveEvent({
+      threadId: request.threadId,
+      type: "clarification.answered",
+      message: "状态已更新",
+      role: "tool",
+      stream: false,
+    });
     return { ok: true as const };
   });
 
@@ -2281,7 +2288,8 @@ function registerIpcHandlers(): void {
     if (!isClarificationSubmitPayload(payload)) {
       throw new Error("Invalid clarification payload.");
     }
-    if (!getPendingClarificationByToolUseId(payload.toolUseId)) {
+    const request = getPendingClarificationByToolUseId(payload.toolUseId);
+    if (!request) {
       throw new Error("No pending clarification for this tool use.");
     }
     const ok = submitClarification(payload.toolUseId, {
@@ -2291,6 +2299,13 @@ function registerIpcHandlers(): void {
     if (!ok) {
       throw new Error("Failed to submit clarification.");
     }
+    desktopEventCenter.publishThreadLiveEvent({
+      threadId: request.threadId,
+      type: "clarification.answered",
+      message: "状态已更新",
+      role: "tool",
+      stream: false,
+    });
     return { ok: true as const };
   });
 

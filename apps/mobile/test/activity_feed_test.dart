@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:eco_mobile/core/models/git_models.dart';
@@ -6,6 +7,7 @@ import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
+import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
 
@@ -540,5 +542,122 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('parseClarificationAnswersSummary extracts question answer rows', () {
+    final rows = parseClarificationAnswersSummary(
+      '澄清回答：是否自动分配？ → 自动启用；导出范围 → 已启用、备选',
+    );
+    expect(rows, isNotNull);
+    expect(rows, hasLength(2));
+    expect(rows![0].question, '是否自动分配？');
+    expect(rows[0].answer, '自动启用');
+    expect(rows[1].question, '导出范围');
+    expect(rows[1].answer, '已启用、备选');
+    expect(parseClarificationAnswersSummary('普通助手回复'), isNull);
+  });
+
+  test('buildActivityFeed renders clarification answers as right-aligned cards', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'clarification-answer',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            text: '澄清回答：是否自动分配？ → 自动启用',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+        ],
+      ),
+    );
+
+    final answers = feed
+        .where((entry) => entry.kind == ActivityFeedKind.clarificationAnswer)
+        .toList();
+    expect(answers, hasLength(1));
+    expect(
+      feed.any((entry) => entry.kind == ActivityFeedKind.assistant),
+      isFalse,
+    );
+  });
+
+  testWidgets('ActivityFeedList collapses long user prompts to five lines', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+
+    final longText = List.filled(12, '这是一段较长的用户输入内容').join('\n');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            child: ActivityFeedList(
+              entries: [
+                ActivityFeedEntry(
+                  id: 'user-long',
+                  kind: ActivityFeedKind.user,
+                  text: longText,
+                ),
+              ],
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('展开全文'), findsOneWidget);
+
+    await tester.tap(find.text('展开全文'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('收起'), findsOneWidget);
+  });
+
+  testWidgets('ActivityFeedList keeps short user prompts fully visible', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'user-short',
+                kind: ActivityFeedKind.user,
+                text: '短消息',
+              ),
+            ],
+            scrollController: scrollController,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('展开全文'), findsNothing);
+    expect(find.text('短消息'), findsOneWidget);
   });
 }
