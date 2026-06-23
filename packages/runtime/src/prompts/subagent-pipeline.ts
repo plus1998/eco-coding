@@ -40,6 +40,8 @@ export function buildMainAgentHandsOnBoundaryAppend(
             `- Delegate multi-file or parallelizable implementation to ${coderTarget}; keep the review/verify pipeline for substantial changes.`,
           ]
         : []),
+      "- Do not revert changes you did not make. If you see unexpected edits you did not make, STOP and report them.",
+      "- Never use destructive git commands (`git reset --hard`, `git checkout --`) unless explicitly requested.",
     );
   } else {
     lines.push(
@@ -124,6 +126,7 @@ export function buildExecuteBuildSwitchAppend(
     delegationRule,
     buildMainAgentHandsOnBoundaryAppend(capability, availability),
     "Follow the approved plan and the execution pipeline. Do not restart planning from scratch unless blocked.",
+    "Plan fidelity: implement the approved end state — do not substitute a narrower, safer, or easier-to-pass subset.",
     "</system-reminder>",
   ].join("\n");
 }
@@ -202,7 +205,15 @@ export function buildExecutePhaseSystemAppend(
     buildExecuteBuildSwitchAppend(availability, capability),
     "",
     executeCoreGoalAppend,
-    "Final response: keep it concise. State what changed, verification result, and blockers only.",
+    "Persistence: keep driving the pipeline until implementation, review (when enabled), and verification are done.",
+    "Do not yield to the user while P0/P1 review blockers remain, required tests are unrun, or approved-plan deliverables lack evidence.",
+    "Completion audit (before final response): map each approved-plan deliverable, test gate, and invariant to evidence",
+    "(reviewer verdict, tester coverage, commands run, or files changed). Weak or missing evidence = not complete — continue work.",
+    "Final response verbosity:",
+    "- Small change (roughly ≤10 lines): 2–5 sentences; no section headers; reference paths only.",
+    "- Medium change (few files/one area): ≤6 bullets or short paragraphs; at most 1–2 tiny snippets.",
+    "- Large/multi-file change: summarize per file or area; do not paste long diffs or before/after blocks.",
+    "Always state what changed, verification result, and blockers only.",
     `Do not restate the full approved plan, full ${taskListName} list, long diffs, or tool logs in the final response.`,
     "",
     formatAvailableSubagentsLine(executionSubagentAvailability(availability)),
@@ -353,6 +364,11 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "- If the user may lack context to choose, explicitly include a \"need more context\" or \"explain first\" option.",
     "- Offer only meaningful multiple-choice options; do not include filler choices that are obviously wrong or irrelevant.",
     "- In rare cases where an important question cannot be expressed with reasonable multiple-choice options (extreme ambiguity), ask it directly without the tool.",
+    "",
+    "## Plan quality",
+    "- Skip heavy planning for the simplest requests (single obvious localized change); otherwise use Plan Mode substantively.",
+    "- Good steps are verifiable and specific (e.g. \"Add CLI entry with file args\", \"Handle code blocks and links in HTML template\").",
+    "- Bad steps are vague filler (e.g. \"Create CLI tool\", \"Make styles look good\") — no single-step plans or padding.",
     "",
     formatAvailableSubagentsLine(availability, { allowPlanAgent: true }),
   ]

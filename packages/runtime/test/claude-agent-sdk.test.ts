@@ -502,6 +502,8 @@ test("reviewer prompt limits scope to current session workspace diff", () => {
   expect(executePhaseSystemAppend).toContain("Eco prepends");
   expect(executePhaseSystemAppend).toContain("changed file list");
   expect(executePhaseSystemAppend).toMatch(/runnable, verified code/);
+  expect(executePhaseSystemAppend).toContain("Completion audit");
+  expect(executePhaseSystemAppend).toContain("Plan fidelity");
 });
 
 test("builds phased orchestration prompts", () => {
@@ -531,6 +533,7 @@ test("builds phased orchestration prompts", () => {
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("system-reminder");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Pipeline —");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Fidelity:");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan, { planUserEdited: true })).toContain(
     "edited this plan in Eco",
   );
@@ -668,6 +671,7 @@ test("buildExecutePhaseSystemAppend states hands-on rights when the main agent c
   expect(append).toContain("Hands-on boundary");
   expect(append).toContain("You may edit files directly");
   expect(append).toContain("You may run shell commands via Bash");
+  expect(append).toContain("git reset --hard");
   expect(append).not.toContain("pure orchestrator");
 });
 

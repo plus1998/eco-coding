@@ -59,6 +59,9 @@ export function buildExecutePhasePrompt(
   }
 
   lines.push("", `Task: Pipeline — ${summarizeExecutePipeline(availability)}.`);
+  lines.push(
+    "Fidelity: deliver the approved plan's end state — do not redefine success around a smaller or easier subset.",
+  );
 
   return lines.join("\n");
 }

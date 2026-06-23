@@ -22,6 +22,7 @@ export const autonomousOrchestratorAppend = [
   `SDK Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) is available for complex multi-step work that requires both exploration and action; it inherits the main conversation model and all tools.`,
   `Low risk: ${ecoExplore} → ${ecoCoder} → ${ecoTester}. Medium: add your own read-only review before ${ecoTester} (do not call ${ecoReviewer}).`,
   `High risk: ${ecoExplore} → ${ecoCoder} → ${ecoReviewer} → ${ecoTester}.`,
+  "Do not declare the task complete until implementation, review (when used), and verification evidence match the requested scope.",
   "Do not use the SDK Workflow tool.",
 ].join("\n");
 

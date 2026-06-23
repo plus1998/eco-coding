@@ -32,6 +32,8 @@ test("planning system append keeps only Eco boundaries for native Plan Mode", ()
   expect(append).toContain("Asking questions");
   expect(append).toContain("materially change the plan");
   expect(append).toContain("Bias toward questions over guessing");
+  expect(append).toContain("Plan quality");
+  expect(append).toContain("Good steps are verifiable");
 });
 
 test("planningPhaseSystemAppend does not include legacy template text", () => {
@@ -96,6 +98,7 @@ test("orchestrator prompts require eco subagent keys when delegating", () => {
   const autonomous = buildAutonomousOrchestratorAppend();
   expect(autonomous).toContain(ecoSubagentKeyForRole("coder"));
   expect(autonomous).toContain(formatMandatoryEcoSubagentRule());
+  expect(autonomous).toContain("Do not declare the task complete");
   expect(autonomous).not.toContain("Plan Mode exception");
   expect(autonomous).not.toContain("explore → coder");
 });
