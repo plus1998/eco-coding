@@ -384,6 +384,7 @@ function App() {
   const projectOrderInitializedRef = useRef(false);
   const prevThreadStatusByIdRef = useRef(new Map<string, ThreadStatus>());
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
+  const selectedThreadIdRef = useRef<string | undefined>(undefined);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
@@ -468,6 +469,10 @@ function App() {
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
   useEffect(() => {
+    selectedThreadIdRef.current = selectedThreadId;
+  }, [selectedThreadId]);
+
+  useEffect(() => {
     if (!window.eco) {
       setError("Electron preload API is unavailable. Run the desktop app with bun run dev:electron.");
       return undefined;
@@ -504,6 +509,7 @@ function App() {
     });
 
     let threadListRefreshTimer: number | undefined;
+    let runProjectionFullRefreshTimer: number | undefined;
     const ensureThreadListed = (threadId: string) => {
       setThreads((current) => {
         if (current.some((thread) => thread.id === threadId)) {
@@ -518,6 +524,35 @@ function App() {
         }, 120);
         return current;
       });
+    };
+    const scheduleSelectedRunProjectionFullRefresh = (threadId: string) => {
+      if (
+        selectedThreadIdRef.current !== threadId ||
+        typeof window.eco?.getThreadRunProjection !== "function"
+      ) {
+        return;
+      }
+      if (runProjectionFullRefreshTimer !== undefined) {
+        window.clearTimeout(runProjectionFullRefreshTimer);
+      }
+      runProjectionFullRefreshTimer = window.setTimeout(() => {
+        runProjectionFullRefreshTimer = undefined;
+        if (
+          selectedThreadIdRef.current !== threadId ||
+          typeof window.eco?.getThreadRunProjection !== "function"
+        ) {
+          return;
+        }
+        void window.eco.getThreadRunProjection(threadId).then((projection) => {
+          if (!projection || selectedThreadIdRef.current !== threadId) {
+            return;
+          }
+          setRunProjectionByThread((current) => ({
+            ...current,
+            [threadId]: projection,
+          }));
+        });
+      }, 300);
     };
 
     const unsubscribe = window.eco.onThreadEvent((event) => {
@@ -537,6 +572,7 @@ function App() {
           ...current,
           [event.threadId]: event.projection!,
         }));
+        scheduleSelectedRunProjectionFullRefresh(event.threadId);
         return;
       }
 
@@ -750,6 +786,9 @@ function App() {
     return () => {
       if (threadListRefreshTimer !== undefined) {
         window.clearTimeout(threadListRefreshTimer);
+      }
+      if (runProjectionFullRefreshTimer !== undefined) {
+        window.clearTimeout(runProjectionFullRefreshTimer);
       }
       unsubscribe();
     };
