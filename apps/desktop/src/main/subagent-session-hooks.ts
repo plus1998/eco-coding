@@ -106,6 +106,50 @@ export function createSubagentSessionHooks(
       });
       options?.onTimingChanged?.();
     },
+    onDelegationLinked(input) {
+      const role = resolveSubagentSessionRole(input.agentType) as RuntimeAgentRole | undefined;
+      if (!role) {
+        return;
+      }
+      const prompt = input.prompt.trim();
+      const parentToolUseId = input.parentToolUseId.trim();
+      const todoId = input.todoId?.trim() || undefined;
+      if (!prompt || !parentToolUseId) {
+        return;
+      }
+      const missionKey =
+        role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
+      store.upsertSubagentSessionActive({
+        threadId,
+        role,
+        agentId: input.agentId,
+        phase,
+        ...(todoId && { todoId }),
+        ...(missionKey && { missionKey }),
+      });
+      options?.metricsRegistry?.linkToolUseToAgent(threadId, parentToolUseId, input.agentId);
+      options?.onProxyAttributionSettled?.({
+        agentId: input.agentId,
+        role,
+        parentToolUseId,
+      });
+      const runAttemptId = options?.lifecycle?.currentRunAttemptId(threadId);
+      appendSubagentMissionAttributedEvent(store, {
+        threadId,
+        agentId: input.agentId,
+        role,
+        prompt,
+        ...(runAttemptId && { runAttemptId }),
+        parentToolUseId,
+      });
+      options?.onSubagentBillingStamp?.({
+        agentId: input.agentId,
+        role,
+        parentToolUseId,
+        ...(runAttemptId && { runAttemptId }),
+      });
+      options?.onTimingChanged?.();
+    },
     onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
       const role = resolveSubagentSessionRole(input.agentType) as RuntimeAgentRole | undefined;

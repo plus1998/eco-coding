@@ -2189,7 +2189,7 @@ test("buildEcoSdkHooks launch hook attributes SDK built-in Agent delegations", a
   expect(taskTools).toEqual([{ toolUseId: "tool_builtin", role: SDK_GENERAL_PURPOSE_AGENT_KEY }]);
 });
 
-test("createSubagentStartHook does not resolve launch prompt without SubagentStart toolUseID", async () => {
+test("createSubagentStartHook defers launch until stream parent_tool_use_id when hook ids mismatch", async () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_coder",
@@ -2199,6 +2199,7 @@ test("createSubagentStartHook does not resolve launch prompt without SubagentSta
   });
 
   const starts: Array<Record<string, unknown>> = [];
+  const delegations: Array<Record<string, unknown>> = [];
   const startHook = createSubagentStartHook({
     subagentLaunchRegistry: registry,
     subagentSessions: {
@@ -2206,6 +2207,9 @@ test("createSubagentStartHook does not resolve launch prompt without SubagentSta
       threadId: "thr_single_launch",
       onStart(input) {
         starts.push(input);
+      },
+      onDelegationLinked(input) {
+        delegations.push(input);
       },
       onStop() {},
       resolveResume: () => undefined,
@@ -2230,10 +2234,17 @@ test("createSubagentStartHook does not resolve launch prompt without SubagentSta
       agentType: "coder",
     },
   ]);
+  expect(delegations).toEqual([]);
   expect(registry.peek("toolu_coder")).toBeDefined();
+
+  const linked = registry.resolveFromStreamParentToolUseId("toolu_coder");
+  expect(linked).toMatchObject({
+    agentId: "agent_coder_a",
+    launch: { parentToolUseId: "toolu_coder", prompt: "Implement export filters" },
+  });
 });
 
-test("createSubagentStartHook resolves launch via FIFO when SubagentStart parent id mismatches PreToolUse", async () => {
+test("createSubagentStartHook resolves launch via parent_tool_use_id when callback mismatches", async () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_agent_a",
@@ -2267,7 +2278,8 @@ test("createSubagentStartHook resolves launch via FIFO when SubagentStart parent
       agent_type: "explore",
       session_id: "s1",
       cwd: "/tmp",
-    } satisfies SubagentStartHookInput,
+      parent_tool_use_id: "toolu_agent_a",
+    } as SubagentStartHookInput & { parent_tool_use_id: string },
     "976064d8-4f4c-4746-a2d7-e78e49d7a2bd",
     { signal: new AbortController().signal },
   );
@@ -2278,7 +2290,8 @@ test("createSubagentStartHook resolves launch via FIFO when SubagentStart parent
       agent_type: "explore",
       session_id: "s1",
       cwd: "/tmp",
-    } satisfies SubagentStartHookInput,
+      parent_tool_use_id: "toolu_agent_b",
+    } as SubagentStartHookInput & { parent_tool_use_id: string },
     "13ae346a-8e35-4790-97aa-b0f0376c8821",
     { signal: new AbortController().signal },
   );
@@ -2290,6 +2303,56 @@ test("createSubagentStartHook resolves launch via FIFO when SubagentStart parent
       parentToolUseId: "toolu_agent_a",
       prompt: "Gather CPU info",
     },
+    {
+      agentId: "agent_explore_b",
+      agentType: "explore",
+      parentToolUseId: "toolu_agent_b",
+      prompt: "Gather GPU info",
+    },
+  ]);
+});
+
+test("createSubagentStartHook resolves launch via unique prompt when ids mismatch", async () => {
+  const registry = new SubagentLaunchRegistry();
+  registry.register({
+    parentToolUseId: "toolu_agent_a",
+    role: "explore",
+    prompt: "Gather CPU info",
+  });
+  registry.register({
+    parentToolUseId: "toolu_agent_b",
+    role: "explore",
+    prompt: "Gather GPU info",
+  });
+
+  const starts: Array<Record<string, unknown>> = [];
+  const startHook = createSubagentStartHook({
+    subagentLaunchRegistry: registry,
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_prompt_match",
+      onStart(input) {
+        starts.push(input);
+      },
+      onStop() {},
+      resolveResume: () => undefined,
+    },
+  });
+
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_explore_b",
+      agent_type: "explore",
+      session_id: "s1",
+      cwd: "/tmp",
+      prompt: "Gather GPU info",
+    } as SubagentStartHookInput & { prompt: string },
+    "sdk-mismatched-callback",
+    { signal: new AbortController().signal },
+  );
+
+  expect(starts).toEqual([
     {
       agentId: "agent_explore_b",
       agentType: "explore",

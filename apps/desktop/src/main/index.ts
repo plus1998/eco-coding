@@ -329,6 +329,10 @@ import { createSubagentHandoffService, type SubagentHandoffService } from "./sub
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
+import {
+  clearThreadSubagentLaunchRegistry,
+  getThreadSubagentLaunchRegistry,
+} from "./subagent-launch-registry-store.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
@@ -504,6 +508,15 @@ let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
 let ecoCompactService: EcoCompactService;
 let subagentHandoffService: SubagentHandoffService;
+
+type SubagentDelegationLinker = (input: {
+  agentId: string;
+  agentType: string;
+  parentToolUseId: string;
+  prompt: string;
+  todoId?: string;
+}) => void;
+const subagentDelegationLinkersByThread = new Map<string, SubagentDelegationLinker>();
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -4398,6 +4411,7 @@ function buildSdkHookContextExtras(
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, input?.role);
     },
   };
+  const subagentLaunchRegistry = getThreadSubagentLaunchRegistry(threadId);
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
@@ -4424,8 +4438,11 @@ function buildSdkHookContextExtras(
     contextMonitor,
     handoffService: subagentHandoffService,
   });
+  if (subagentSessions.onDelegationLinked) {
+    subagentDelegationLinkersByThread.set(threadId, subagentSessions.onDelegationLinked.bind(subagentSessions));
+  }
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
-  return { ...rest, subagentSessions, subagentAttribution };
+  return { ...rest, subagentSessions, subagentAttribution, subagentLaunchRegistry };
 }
 
 async function withThreadSdkDriver(
@@ -4528,6 +4545,8 @@ function clearThreadRuntimeMemory(threadId: string): void {
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
   subagentMetricsRegistry.clearThread(threadId);
+  clearThreadSubagentLaunchRegistry(threadId);
+  subagentDelegationLinkersByThread.delete(threadId);
   const timer = runProjectionEmitTimers.get(threadId);
   if (timer) {
     clearTimeout(timer);
@@ -5173,6 +5192,23 @@ async function runThreadContinuation(
 }
 
 /** SDK drives narrative, tool, todo, and billing activity. */
+function tryResolveStreamSubagentDelegation(threadId: string, parentToolUseId: string): void {
+  const linked = getThreadSubagentLaunchRegistry(threadId).resolveFromStreamParentToolUseId(
+    parentToolUseId,
+  );
+  if (!linked) {
+    return;
+  }
+  subagentDelegationLinkersByThread.get(threadId)?.({
+    agentId: linked.agentId,
+    agentType: linked.launch.role,
+    parentToolUseId: linked.launch.parentToolUseId,
+    prompt: linked.launch.prompt,
+    ...(linked.launch.todoIdHint && { todoId: linked.launch.todoIdHint }),
+  });
+}
+
+/** SDK drives narrative, tool, todo, and billing activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   if (event.type === "tool.started" && isRecord(event.payload)) {
     const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
@@ -5206,6 +5242,9 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
     metricsRegistry: subagentMetricsRegistry,
   });
   const sdkParentToolUseId = readSdkEventParentToolUseId(event);
+  if (sdkParentToolUseId) {
+    tryResolveStreamSubagentDelegation(threadId, sdkParentToolUseId);
+  }
   sdkStreamBridge.handleEvent(
     threadId,
     event,

@@ -100,6 +100,14 @@ export interface EcoSubagentSessionHooks {
     todoId?: string;
   }): void;
   onStop(input: { agentId: string; agentType: string }): void;
+  /** SDK stream paired parent_tool_use_id with a SubagentStart agent id. */
+  onDelegationLinked?(input: {
+    agentId: string;
+    agentType: string;
+    parentToolUseId: string;
+    prompt: string;
+    todoId?: string;
+  }): void;
   resolveResume(input: SubagentResumeResolveInput): string | undefined;
   todoIdHint?: () => string | undefined;
   onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
@@ -1165,6 +1173,28 @@ export function resolveSubagentStartParentToolUseId(
   return resolveHookToolUseId(input as unknown as Record<string, unknown>, toolUseID);
 }
 
+/** All parent tool ids SubagentStart may carry; parent_tool_use_id is the delegating Agent tool. */
+export function collectSubagentStartParentToolUseIdCandidates(
+  input: SubagentStartHookInput,
+  toolUseID: string | undefined,
+): string[] {
+  const record = input as unknown as Record<string, unknown>;
+  const candidates: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed && !candidates.includes(trimmed)) {
+      candidates.push(trimmed);
+    }
+  };
+  push(record.parent_tool_use_id);
+  push(toolUseID);
+  push(record.tool_use_id);
+  return candidates;
+}
+
 function resolveHookToolUseId(
   input: Record<string, unknown>,
   toolUseID: string | undefined,
@@ -1185,6 +1215,11 @@ function readTaskIdFromSubagentStart(input: SubagentStartHookInput): string | un
   const extended = input as SubagentStartHookInput & { task_id?: string };
   const taskId = typeof extended.task_id === "string" ? extended.task_id.trim() : "";
   return taskId || undefined;
+}
+
+function readPromptFromSubagentStart(input: SubagentStartHookInput): string | undefined {
+  const prompt = readAgentDelegationPrompt(input as unknown as Record<string, unknown>);
+  return prompt || undefined;
 }
 
 function readAgentDelegationPrompt(toolInput: Record<string, unknown>): string {
@@ -1338,14 +1373,24 @@ export function createSubagentStartHook(handlers: {
       normalizeSdkBuiltinOrEcoAgentRole(started.agent_type) ??
       normalizeSdkSubagentType(started.agent_type) ??
       started.agent_type;
-    const parentToolUseId = resolveSubagentStartParentToolUseId(started, toolUseID);
-    const launch = handlers.subagentLaunchRegistry?.takeForSubagentStart({
+    const parentToolUseIdCandidates = collectSubagentStartParentToolUseIdCandidates(started, toolUseID);
+    const delegationPrompt = readPromptFromSubagentStart(started);
+    const launchFromHook = handlers.subagentLaunchRegistry?.takeForSubagentStart({
       role: agentType,
       agentId: started.agent_id,
       ...(taskId && { taskId }),
-      ...(parentToolUseId && { parentToolUseId }),
+      parentToolUseIds: parentToolUseIdCandidates,
+      ...(delegationPrompt && { prompt: delegationPrompt }),
     });
-    const resolvedParentToolUseId = launch?.parentToolUseId ?? parentToolUseId;
+    const streamPair =
+      !launchFromHook && started.agent_id.trim()
+        ? handlers.subagentLaunchRegistry?.noteSubagentAwaitingStream(started.agent_id, agentType)
+        : undefined;
+    const launch = launchFromHook ?? streamPair?.launch;
+    if (launch && started.agent_id.trim()) {
+      handlers.subagentLaunchRegistry?.linkTask(started.agent_id, launch.parentToolUseId);
+    }
+    const resolvedParentToolUseId = launch?.parentToolUseId;
     const prompt = launch?.prompt?.trim() || undefined;
     const todoId = launch?.todoIdHint?.trim() || undefined;
     const payload = {

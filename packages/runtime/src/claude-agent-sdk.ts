@@ -51,6 +51,7 @@ import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
+export { SubagentLaunchRegistry, type SubagentLaunchRecord } from "./eco-sdk-hooks.js";
 
 import { buildAutonomousOrchestratorAppend } from "./prompts/autonomous.js";
 import { buildMainAgentHandsOnBoundaryAppend } from "./prompts/subagent-pipeline.js";
