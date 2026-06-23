@@ -2,14 +2,14 @@ import type { RouteManualSpec } from "./ipc";
 
 export function resolvePriceMultiplier(spec?: Pick<RouteManualSpec, "priceMultiplier">): number {
   const value = spec?.priceMultiplier;
-  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
     return 1;
   }
   return value;
 }
 
 export function normalizeStoredPriceMultiplier(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
     return undefined;
   }
   return value === 1 ? undefined : value;

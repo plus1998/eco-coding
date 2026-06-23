@@ -268,9 +268,7 @@ export function mergeEffectivePricingHint(
   const rates = applyPriceMultiplierToPerMRates(baseRates, resolvePriceMultiplier(manualSpec));
   const hasRates =
     rates?.inputPerM !== undefined &&
-    rates.outputPerM !== undefined &&
-    rates.inputPerM > 0 &&
-    rates.outputPerM > 0;
+    rates.outputPerM !== undefined;
   const pricingResolved =
     hasManualPricingOverride(manualSpec) || auto?.pricingResolved === true;
 
@@ -299,7 +297,7 @@ export function formatManualRateValue(value?: number): string {
 }
 
 export function formatPriceMultiplierFormValue(value?: number): string {
-  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
     return "1";
   }
   return String(value);
@@ -311,7 +309,7 @@ export function parsePriceMultiplierFormValue(value: string): number {
     return 1;
   }
   const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return 1;
   }
   return parsed;
@@ -463,7 +461,7 @@ function isPriceMultiplierOverride(value: string): boolean {
     return false;
   }
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed > 0;
+  return Number.isFinite(parsed) && parsed >= 0;
 }
 
 function parsePriceMultiplierInput(
@@ -481,9 +479,9 @@ function parsePriceMultiplierInput(
     return undefined;
   }
   const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是正数。`);
+      throw new Error(`${options.fieldLabel}必须是非负数。`);
     }
     return undefined;
   }
