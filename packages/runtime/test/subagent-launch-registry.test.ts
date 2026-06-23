@@ -25,7 +25,7 @@ test("SubagentLaunchRegistry take removes launch by parentToolUseId", () => {
   });
 });
 
-test("SubagentLaunchRegistry takeForSubagentStart resolves single pending launch without parentToolUseId", () => {
+test("SubagentLaunchRegistry takeForSubagentStart requires parentToolUseId for a single pending launch", () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_coder",
@@ -33,17 +33,11 @@ test("SubagentLaunchRegistry takeForSubagentStart resolves single pending launch
     prompt: "Implement API",
   });
 
-  expect(
-    registry.takeForSubagentStart({
-      role: "coder",
-    }),
-  ).toMatchObject({
-    parentToolUseId: "toolu_coder",
-    prompt: "Implement API",
-  });
+  expect(registry.takeForSubagentStart({ role: "coder" })).toBeUndefined();
+  expect(registry.peek("toolu_coder")).toBeDefined();
 });
 
-test("SubagentLaunchRegistry takeForSubagentStart resolves unique role match without parentToolUseId", () => {
+test("SubagentLaunchRegistry takeForSubagentStart refuses unique role match without parentToolUseId", () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_explore",
@@ -56,15 +50,9 @@ test("SubagentLaunchRegistry takeForSubagentStart resolves unique role match wit
     prompt: "Implement API",
   });
 
-  expect(
-    registry.takeForSubagentStart({
-      role: "coder",
-    }),
-  ).toMatchObject({
-    parentToolUseId: "toolu_coder",
-    prompt: "Implement API",
-  });
+  expect(registry.takeForSubagentStart({ role: "coder" })).toBeUndefined();
   expect(registry.peek("toolu_explore")).toBeDefined();
+  expect(registry.peek("toolu_coder")).toBeDefined();
 });
 
 test("SubagentLaunchRegistry takeForSubagentStart refuses ambiguous same-role launches", () => {

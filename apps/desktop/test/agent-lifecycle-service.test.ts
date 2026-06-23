@@ -56,7 +56,7 @@ test("AgentLifecycleService records run attempts and planner agent lifecycle", (
   expect(service.usagePlannerAgentId("thr_lifecycle")).toBe("planner:attempt_execution_0");
 });
 
-test("AgentLifecycleService links interleaved subagents by role-aware parent tool use", () => {
+test("AgentLifecycleService requires explicit parent tool use for interleaved subagents", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);
   service.startRunAttempt({ threadId: "thr_lifecycle", phase: "execution", retryIndex: 0 });
@@ -67,6 +67,7 @@ test("AgentLifecycleService links interleaved subagents by role-aware parent too
     threadId: "thr_lifecycle",
     agentId: "agent_coder",
     role: "coder",
+    parentToolUseId: "toolu_coder",
     missionKey: "implement",
     todoId: "todo-1",
   });
@@ -74,6 +75,7 @@ test("AgentLifecycleService links interleaved subagents by role-aware parent too
     threadId: "thr_lifecycle",
     agentId: "agent_explore",
     role: "explore",
+    parentToolUseId: "toolu_explore",
   });
 
   const coder = store.getAgent("thr_lifecycle", "agent_coder");
@@ -119,6 +121,7 @@ test("AgentLifecycleService records dynamic subagents by runtime role", () => {
     threadId: "thr_dynamic_lifecycle",
     agentId: "agent_researcher",
     role: "researcher",
+    parentToolUseId: "toolu_research",
     missionKey: "market research",
   });
 

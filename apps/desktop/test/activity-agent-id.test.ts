@@ -62,6 +62,7 @@ test("resolveActivityAgentId falls back to parent tool use mapping", () => {
 
 test("activityStreamKey isolates parallel subagent streams", () => {
   expect(activityStreamKey("thr_1", "agent_a", "coder")).toBe("thr_1:agent_a");
+  expect(activityStreamKey("thr_1", undefined, "coder", "toolu_parent")).toBe("thr_1:parent:toolu_parent");
   expect(activityStreamKey("thr_1", undefined, "planner")).toBe("thr_1:planner");
 });
 
@@ -115,9 +116,17 @@ test("resolveActivityAgentId requires parent mapping for dynamic runtime roles",
 test("resolveActivityAgentId resolves parallel coders via parent tool use", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   registry.noteTaskToolUse("thr_1", "toolu_task_a");
-  registry.onSubagentStart("thr_1", { agentId: "agent_coder_a", role: "coder" });
+  registry.onSubagentStart("thr_1", {
+    agentId: "agent_coder_a",
+    role: "coder",
+    parentToolUseId: "toolu_task_a",
+  });
   registry.noteTaskToolUse("thr_1", "toolu_task_b");
-  registry.onSubagentStart("thr_1", { agentId: "agent_coder_b", role: "coder" });
+  registry.onSubagentStart("thr_1", {
+    agentId: "agent_coder_b",
+    role: "coder",
+    parentToolUseId: "toolu_task_b",
+  });
 
   const agentA = resolveActivityAgentId(
     "thr_1",

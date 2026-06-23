@@ -55,7 +55,7 @@ export class SdkStreamActivityBridge {
     event: AgentEventLike,
     emit: SdkActivityEmit,
     emitUsage?: (threadId: string, event: AgentEventLike) => void,
-    options?: { activityAgentId?: string },
+    options?: { activityAgentId?: string; parentToolUseId?: string },
   ): void {
     const activityAgentId = options?.activityAgentId;
 
@@ -102,7 +102,7 @@ export class SdkStreamActivityBridge {
     const role = String(display?.role ?? event.role);
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
-    const streamKey = activityStreamKey(threadId, activityAgentId, role);
+    const streamKey = activityStreamKey(threadId, activityAgentId, role, options?.parentToolUseId);
 
     if (event.payload && isEcoStreamFinalize(event.payload)) {
       this.flushPending(threadId, emit);

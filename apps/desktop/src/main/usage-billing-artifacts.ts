@@ -26,6 +26,7 @@ import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
 import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 import {
   PROXY_PENDING_ATTRIBUTION_REASON,
+  PROXY_PENDING_PARENT_UNMAPPED_REASON,
   USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
   USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
   USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY,
@@ -140,9 +141,12 @@ export async function resolveSingleUsageBillingArtifacts(
   const requestBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
   const { savedUsd } = computeSavings(requestBilling.plannerTokenCostUsd, requestBilling.ecoCostUsd);
   const ledgerAgentId = input.agentId ?? (billingRole === "planner" ? input.plannerAgentId : undefined);
+  const pendingAttributionReason = input.parentToolUseId
+    ? PROXY_PENDING_PARENT_UNMAPPED_REASON
+    : PROXY_PENDING_ATTRIBUTION_REASON;
   const ledgerAttribution: UsageAttribution | undefined =
     source === "proxy" && input.attributionPending && !ledgerAgentId
-      ? { status: "pending", reason: PROXY_PENDING_ATTRIBUTION_REASON }
+      ? { status: "pending", reason: pendingAttributionReason }
       : undefined;
   const parsedUsage: ParsedUsage = {
     inputTokens: input.usage.inputTokens,

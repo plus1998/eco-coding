@@ -34,13 +34,7 @@ interface ThreadLifecycleState {
   currentPlannerAgentId?: string;
   lastAttemptId?: string;
   lastPlannerAgentId?: string;
-  pendingToolUses: PendingToolUse[];
   activeAgents: Map<string, AgentInstanceRecord>;
-}
-
-interface PendingToolUse {
-  toolUseId: string;
-  role?: RuntimeAgentRole;
 }
 
 export class AgentLifecycleService {
@@ -129,24 +123,9 @@ export class AgentLifecycleService {
     delete state.currentAttempt;
     delete state.currentPlannerAgentId;
     state.activeAgents.clear();
-    state.pendingToolUses = [];
   }
 
-  noteTaskToolUse(threadId: string, toolUseId: string, role?: RuntimeAgentRole): void {
-    const state = this.getOrCreateThread(threadId);
-    const pendingRole = role?.trim() || undefined;
-    const existing = state.pendingToolUses.find((pending) => pending.toolUseId === toolUseId);
-    if (existing) {
-      if (!existing.role && pendingRole) {
-        existing.role = pendingRole;
-      }
-      return;
-    }
-    state.pendingToolUses.push({
-      toolUseId,
-      ...(pendingRole && { role: pendingRole }),
-    });
-  }
+  noteTaskToolUse(_threadId: string, _toolUseId: string, _role?: RuntimeAgentRole): void {}
 
   startSubagent(input: {
     threadId: string;
@@ -158,8 +137,7 @@ export class AgentLifecycleService {
   }): AgentInstanceRecord | undefined {
     const state = this.getOrCreateThread(input.threadId);
     const now = this.now();
-    const parentToolUseId =
-      input.parentToolUseId?.trim() || consumePendingToolUseId(state, input.role);
+    const parentToolUseId = input.parentToolUseId?.trim() || undefined;
     const record: AgentInstanceRecord = {
       threadId: input.threadId,
       agentId: input.agentId,
@@ -230,7 +208,6 @@ export class AgentLifecycleService {
     if (state) {
       delete state.currentAttempt;
       delete state.currentPlannerAgentId;
-      state.pendingToolUses = [];
       state.activeAgents.clear();
     }
 
@@ -267,7 +244,6 @@ export class AgentLifecycleService {
     let state = this.threads.get(threadId);
     if (!state) {
       state = {
-        pendingToolUses: [],
         activeAgents: new Map(),
       };
       this.threads.set(threadId, state);
@@ -290,17 +266,4 @@ export class AgentLifecycleService {
     this.sequence += 1;
     return `attempt_${input.phase}_${input.retryIndex}_${Date.now()}_${this.sequence}`;
   }
-}
-
-function consumePendingToolUseId(
-  state: ThreadLifecycleState,
-  role: RuntimeAgentRole,
-): string | undefined {
-  const roleIndex = state.pendingToolUses.findIndex((pending) => pending.role === role);
-  const index = roleIndex >= 0 ? roleIndex : state.pendingToolUses.findIndex((pending) => !pending.role);
-  if (index < 0) {
-    return undefined;
-  }
-  const [pending] = state.pendingToolUses.splice(index, 1);
-  return pending?.toolUseId;
 }

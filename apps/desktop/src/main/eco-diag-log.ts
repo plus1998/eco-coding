@@ -85,7 +85,6 @@ export function formatSubagentResolveReason(input: {
   explicitSubagentId?: string;
   parentToolUseId?: string;
   linkedFromParent?: string;
-  singletonActive?: string;
   activeCount?: number;
   isSubagentRole: boolean;
 }): string {
@@ -98,19 +97,10 @@ export function formatSubagentResolveReason(input: {
   if (input.linkedFromParent) {
     return "parent_tool_use_id";
   }
-  if (input.singletonActive) {
-    return "single_active_agent";
-  }
-  if ((input.activeCount ?? 0) > 1) {
-    return "ambiguous_multiple_active";
-  }
-  if ((input.activeCount ?? 0) === 0) {
-    return "no_active_subagent";
-  }
   if (input.parentToolUseId) {
     return "parent_tool_use_unmapped";
   }
-  return "unresolved";
+  return "missing_structured_agent_id";
 }
 
 export type SubagentResolveDiag = {

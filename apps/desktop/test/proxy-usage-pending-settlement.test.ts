@@ -6,7 +6,7 @@ import { resolveProxyUsageBilling } from "../src/main/proxy-usage-billing";
 import { resolveSingleUsageBillingArtifacts } from "../src/main/usage-billing-artifacts";
 import {
   ProxyUsagePendingRegistry,
-  PROXY_PENDING_ATTRIBUTION_REASON,
+  PROXY_PENDING_PARENT_UNMAPPED_REASON,
 } from "../src/main/proxy-usage-pending-settlement";
 import {
   UsageLedgerCoordinator,
@@ -106,6 +106,7 @@ test("pending proxy ledger event settles on onSubagentStart", async () => {
       usage: usage(),
     },
     resolver: registry,
+    stampedParentToolUseId: "toolu_coder_a",
   });
   const artifacts = await resolveSingleUsageBillingArtifacts({
     threadId: "thr_pending_settle",
@@ -118,12 +119,15 @@ test("pending proxy ledger event settles on onSubagentStart", async () => {
     sourceEventId: resolved.requestKey,
     modelId: "haiku",
     routeRole: resolved.billingInput.routeRole,
+    ...(resolved.billingInput.parentToolUseId && {
+      parentToolUseId: resolved.billingInput.parentToolUseId,
+    }),
     attributionPending: true,
   });
 
   expect(artifacts.ledgerEvent.attribution).toEqual({
     status: "pending",
-    reason: PROXY_PENDING_ATTRIBUTION_REASON,
+    reason: PROXY_PENDING_PARENT_UNMAPPED_REASON,
   });
   coordinator.appendEvents([artifacts.ledgerEvent]);
   coordinator.registerProxyPendingAttribution("thr_pending_settle", {
@@ -132,12 +136,18 @@ test("pending proxy ledger event settles on onSubagentStart", async () => {
     routeRole: "coder",
     billingRole: "coder",
     observedAt: artifacts.ledgerEvent.observedAt,
+    parentToolUseId: "toolu_coder_a",
   });
 
-  registry.onSubagentStart("thr_pending_settle", { agentId: "agent_coder_a", role: "coder" });
+  registry.onSubagentStart("thr_pending_settle", {
+    agentId: "agent_coder_a",
+    role: "coder",
+    parentToolUseId: "toolu_coder_a",
+  });
   const settled = coordinator.settleProxyPendingForSubagentStart("thr_pending_settle", {
     agentId: "agent_coder_a",
     role: "coder",
+    parentToolUseId: "toolu_coder_a",
   });
 
   expect(settled).toBe(1);
@@ -151,7 +161,7 @@ test("pending proxy ledger event settles on onSubagentStart", async () => {
   expect(projection.byAgent.agent_coder_a?.inputTokens).toBe(10_000);
 });
 
-test("ProxyUsagePendingRegistry consumes earliest pending per role for concurrent coders", () => {
+test("ProxyUsagePendingRegistry consumes pending usage by parent tool use", () => {
   const registry = new ProxyUsagePendingRegistry();
   registry.register("thr_dual", {
     eventId: "evt_a",
@@ -159,6 +169,7 @@ test("ProxyUsagePendingRegistry consumes earliest pending per role for concurren
     routeRole: "coder",
     billingRole: "coder",
     observedAt: "2026-01-01T00:00:01.000Z",
+    parentToolUseId: "toolu_a",
   });
   registry.register("thr_dual", {
     eventId: "evt_b",
@@ -166,10 +177,11 @@ test("ProxyUsagePendingRegistry consumes earliest pending per role for concurren
     routeRole: "coder",
     billingRole: "coder",
     observedAt: "2026-01-01T00:00:02.000Z",
+    parentToolUseId: "toolu_b",
   });
 
-  const first = registry.consumeNextForRole("thr_dual", "coder", "agent_coder_a");
-  const second = registry.consumeNextForRole("thr_dual", "coder", "agent_coder_b");
+  const second = registry.consumeForParentToolUse("thr_dual", "toolu_b", "agent_coder_b");
+  const first = registry.consumeForParentToolUse("thr_dual", "toolu_a", "agent_coder_a");
 
   expect(first?.eventId).toBe("evt_a");
   expect(second?.eventId).toBe("evt_b");
@@ -211,13 +223,14 @@ test("settleProxyPendingTimeouts marks remaining pending as unattributed", async
   expect(events[0]?.attribution.reason).toBe("pending_agent_settlement_timeout");
 });
 
-test("settleProxyPendingTimeouts attributes pending when active agent exists for role", async () => {
+test("settleProxyPendingTimeouts attributes pending when parent tool use resolves", async () => {
   const ledger = new InMemoryUsageLedger();
   const coordinator = new UsageLedgerCoordinator({
     store: createCoordinatorStore(ledger),
     metrics: {
       listEntries: () => [],
-      resolveAgentId: () => "agent_researcher_a",
+      resolveAgentId: (_threadId, input) =>
+        input.parentToolUseId === "toolu_researcher" ? "agent_researcher_a" : undefined,
     },
   });
   const artifacts = await resolveSingleUsageBillingArtifacts({
@@ -231,6 +244,7 @@ test("settleProxyPendingTimeouts attributes pending when active agent exists for
     sourceEventId: "proxy:researcher:timeout",
     modelId: "haiku",
     routeRole: "researcher",
+    parentToolUseId: "toolu_researcher",
     attributionPending: true,
   });
 
@@ -241,6 +255,7 @@ test("settleProxyPendingTimeouts attributes pending when active agent exists for
     routeRole: "researcher",
     billingRole: "researcher",
     observedAt: artifacts.ledgerEvent.observedAt,
+    parentToolUseId: "toolu_researcher",
   });
 
   expect(coordinator.settleProxyPendingTimeouts("thr_timeout_resolve")).toBe(1);

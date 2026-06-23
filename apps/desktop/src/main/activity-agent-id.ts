@@ -102,9 +102,17 @@ export function resolveActivityAgentId(
   return undefined;
 }
 
-export function activityStreamKey(threadId: string, agentId?: string, role?: string): string {
+export function activityStreamKey(
+  threadId: string,
+  agentId?: string,
+  role?: string,
+  parentToolUseId?: string,
+): string {
   if (agentId?.trim()) {
     return `${threadId}:${agentId.trim()}`;
+  }
+  if (parentToolUseId?.trim()) {
+    return `${threadId}:parent:${parentToolUseId.trim()}`;
   }
   return `${threadId}:${role ?? "planner"}`;
 }

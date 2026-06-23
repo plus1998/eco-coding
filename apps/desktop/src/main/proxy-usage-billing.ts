@@ -27,6 +27,7 @@ export interface ProxyUsageBillingInput {
   reconciliationOnly: true;
   fillSdkPrimaryForSubagent: boolean;
   agentId?: string;
+  parentToolUseId?: string;
   routeRole?: RuntimeAgentRole;
   attributionPending?: boolean;
   aliasModelId?: string;
@@ -114,6 +115,7 @@ export function resolveProxyUsageBilling(
       reconciliationOnly: true,
       fillSdkPrimaryForSubagent: false,
       routeRole: info.role,
+      ...(input.stampedParentToolUseId && { parentToolUseId: input.stampedParentToolUseId }),
       ...(info.aliasModelId && { aliasModelId: info.aliasModelId }),
       ...(info.providerId && { providerId: info.providerId }),
       ...(attributionPending && { attributionPending: true }),

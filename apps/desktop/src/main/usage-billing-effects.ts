@@ -103,6 +103,9 @@ export async function applySingleUsageBillingEffects(
       routeRole: readRouteRole(artifacts.ledgerEvent),
       billingRole: readBillingRole(artifacts.ledgerEvent),
       observedAt: artifacts.ledgerEvent.observedAt,
+      ...(artifacts.ledgerEvent.parentToolUseId && {
+        parentToolUseId: artifacts.ledgerEvent.parentToolUseId,
+      }),
     });
   }
 

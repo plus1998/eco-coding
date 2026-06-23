@@ -30,7 +30,11 @@ test.skipIf(!sqliteAvailable)("resolves agent via parent tool_use_id and persist
   const threadId = "thr_subagent_metrics";
 
   registry.noteTaskToolUse(threadId, "toolu_task_1");
-  registry.onSubagentStart(threadId, { agentId: "agent_explore_a", role: "explore" });
+  registry.onSubagentStart(threadId, {
+    agentId: "agent_explore_a",
+    role: "explore",
+    parentToolUseId: "toolu_task_1",
+  });
 
   const resolved = registry.resolveAgentId(threadId, {
     role: "explore",
@@ -78,7 +82,11 @@ test("resolveAgentId maps parent tool_use_id even when event role is planner", (
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_parent_planner";
   registry.noteTaskToolUse(threadId, "toolu_task_2");
-  registry.onSubagentStart(threadId, { agentId: "agent_explore_b", role: "explore" });
+  registry.onSubagentStart(threadId, {
+    agentId: "agent_explore_b",
+    role: "explore",
+    parentToolUseId: "toolu_task_2",
+  });
   expect(
     registry.resolveAgentId(threadId, {
       role: "planner",
@@ -100,7 +108,11 @@ test("SubagentMetricsRegistry emits diagnostics through injected port", () => {
   const threadId = "thr_injected_diag";
 
   registry.noteTaskToolUse(threadId, "toolu_task_1", "coder");
-  registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
+  registry.onSubagentStart(threadId, {
+    agentId: "agent_coder_a",
+    role: "coder",
+    parentToolUseId: "toolu_task_1",
+  });
   registry.onSubagentStop(threadId, { agentId: "agent_coder_a", role: "coder" });
 
   expect(taskTools).toEqual([
@@ -131,7 +143,7 @@ test("SubagentMetricsRegistry emits diagnostics through injected port", () => {
   ]);
 });
 
-test("resolveAgentId consumes queued parent tool_use ids in subagent start order", () => {
+test("resolveAgentId does not consume queued parent tool_use ids without explicit parent", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_parallel_queue";
 
@@ -140,21 +152,11 @@ test("resolveAgentId consumes queued parent tool_use ids in subagent start order
   registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
   registry.onSubagentStart(threadId, { agentId: "agent_coder_b", role: "coder" });
 
-  expect(
-    registry.resolveAgentId(threadId, {
-      role: "coder",
-      parentToolUseId: "toolu_task_a",
-    }),
-  ).toBe("agent_coder_a");
-  expect(
-    registry.resolveAgentId(threadId, {
-      role: "coder",
-      parentToolUseId: "toolu_task_b",
-    }),
-  ).toBe("agent_coder_b");
+  expect(registry.resolveAgentId(threadId, { role: "coder", parentToolUseId: "toolu_task_a" })).toBeUndefined();
+  expect(registry.resolveAgentId(threadId, { role: "coder", parentToolUseId: "toolu_task_b" })).toBeUndefined();
 });
 
-test("resolveAgentId matches queued parent tool_use ids by role when starts are interleaved", () => {
+test("resolveAgentId does not match queued parent tool_use ids by role", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_parallel_role_queue";
 
@@ -163,18 +165,8 @@ test("resolveAgentId matches queued parent tool_use ids by role when starts are 
   registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
   registry.onSubagentStart(threadId, { agentId: "agent_explore_a", role: "explore" });
 
-  expect(
-    registry.resolveAgentId(threadId, {
-      role: "planner",
-      parentToolUseId: "toolu_task_coder",
-    }),
-  ).toBe("agent_coder_a");
-  expect(
-    registry.resolveAgentId(threadId, {
-      role: "planner",
-      parentToolUseId: "toolu_task_explore",
-    }),
-  ).toBe("agent_explore_a");
+  expect(registry.resolveAgentId(threadId, { role: "planner", parentToolUseId: "toolu_task_coder" })).toBeUndefined();
+  expect(registry.resolveAgentId(threadId, { role: "planner", parentToolUseId: "toolu_task_explore" })).toBeUndefined();
 });
 
 test("resolveAgentId links explicit parentToolUseId even when subagent starts out of order", () => {
@@ -213,7 +205,11 @@ test("resolveAgentId matches dynamic runtime roles", () => {
   const threadId = "thr_dynamic_role_queue";
 
   registry.noteTaskToolUse(threadId, "toolu_research", "researcher");
-  registry.onSubagentStart(threadId, { agentId: "agent_researcher", role: "researcher" });
+  registry.onSubagentStart(threadId, {
+    agentId: "agent_researcher",
+    role: "researcher",
+    parentToolUseId: "toolu_research",
+  });
 
   expect(
     registry.resolveAgentId(threadId, {
@@ -326,12 +322,12 @@ test("recordSdkUsage is idempotent per agent request and model", () => {
   expect(entry?.lastRequestKey).toBe("sdk-result:evt_1");
 });
 
-test.skipIf(!sqliteAvailable)("falls back to sole active subagent for role", async () => {
+test.skipIf(!sqliteAvailable)("does not resolve role-only usage to a sole active subagent", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-resolve-"));
   const store = await createConversationStore(path.join(dir, "eco.sqlite"));
   const registry = new SubagentMetricsRegistry(store);
   const threadId = "thr_resolve";
 
   registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
-  expect(registry.resolveAgentId(threadId, { role: "coder" })).toBe("agent_coder_a");
+  expect(registry.resolveAgentId(threadId, { role: "coder" })).toBeUndefined();
 });

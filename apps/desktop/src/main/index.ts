@@ -4401,8 +4401,12 @@ function buildSdkHookContextExtras(
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
-    onProxyAttributionSettled: ({ agentId, role }) => {
-      usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, { agentId, role });
+    onProxyAttributionSettled: ({ agentId, role, parentToolUseId }) => {
+      usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, {
+        agentId,
+        role,
+        ...(parentToolUseId && { parentToolUseId }),
+      });
     },
     onSubagentBillingStamp: ({ agentId, role, parentToolUseId, runAttemptId }) => {
       proxyBillingStampRegistry.register(threadId, {
@@ -5233,7 +5237,12 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       );
     },
     undefined,
-    activityAgentId ? { activityAgentId } : undefined,
+    activityAgentId || sdkParentToolUseId
+      ? {
+          ...(activityAgentId && { activityAgentId }),
+          ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
+        }
+      : undefined,
   );
 }
 

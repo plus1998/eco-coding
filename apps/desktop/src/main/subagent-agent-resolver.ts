@@ -3,8 +3,7 @@ import type { RuntimeAgentRole } from "../shared/ipc";
 export type SubagentAgentResolveMissReason =
   | "no_thread_state"
   | "parent_tool_use_unmapped"
-  | "ambiguous_multiple_active"
-  | "no_active_subagent";
+  | "missing_structured_agent_id";
 
 export interface SubagentAgentResolveInput {
   role: RuntimeAgentRole;
@@ -13,7 +12,6 @@ export interface SubagentAgentResolveInput {
   linkedParentAgentId?: string;
   hasThreadState: boolean;
   activeAgentIds?: readonly string[];
-  stoppedAgentIdsForRole?: readonly string[];
 }
 
 export interface SubagentAgentResolveResult {
@@ -40,25 +38,15 @@ export function resolveSubagentAgentId(
   }
 
   const activeAgentIds = input.activeAgentIds ?? [];
-  if (activeAgentIds.length === 1 && activeAgentIds[0]) {
-    return { agentId: activeAgentIds[0] };
-  }
-  if (activeAgentIds.length > 1) {
+  if (input.parentToolUseId) {
     return {
-      missReason: input.parentToolUseId
-        ? "parent_tool_use_unmapped"
-        : "ambiguous_multiple_active",
+      missReason: "parent_tool_use_unmapped",
       activeAgentIds,
     };
   }
 
-  const stoppedAgentIdsForRole = input.stoppedAgentIdsForRole ?? [];
-  if (stoppedAgentIdsForRole.length === 1 && stoppedAgentIdsForRole[0]) {
-    return { agentId: stoppedAgentIdsForRole[0] };
-  }
-
   return {
-    missReason: input.parentToolUseId ? "parent_tool_use_unmapped" : "no_active_subagent",
+    missReason: "missing_structured_agent_id",
     activeAgentIds,
   };
 }

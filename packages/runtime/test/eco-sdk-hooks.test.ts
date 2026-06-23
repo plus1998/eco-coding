@@ -2076,7 +2076,7 @@ test("buildEcoSdkHooks launch hook attributes SDK built-in Agent delegations", a
   expect(taskTools).toEqual([{ toolUseId: "tool_builtin", role: SDK_GENERAL_PURPOSE_AGENT_KEY }]);
 });
 
-test("createSubagentStartHook resolves launch prompt without SubagentStart toolUseID when unambiguous", async () => {
+test("createSubagentStartHook does not resolve launch prompt without SubagentStart toolUseID", async () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_coder",
@@ -2115,11 +2115,9 @@ test("createSubagentStartHook resolves launch prompt without SubagentStart toolU
     {
       agentId: "agent_coder_a",
       agentType: "coder",
-      parentToolUseId: "toolu_coder",
-      prompt: "Implement export filters",
-      todoId: "todo-1",
     },
   ]);
+  expect(registry.peek("toolu_coder")).toBeDefined();
 });
 
 test("buildEcoSdkHooks registers expected hook events", () => {

@@ -20,7 +20,11 @@ export function createSubagentSessionHooks(
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
     onTimingChanged?: () => void;
-    onProxyAttributionSettled?: (input: { agentId: string; role: RuntimeAgentRole }) => void;
+    onProxyAttributionSettled?: (input: {
+      agentId: string;
+      role: RuntimeAgentRole;
+      parentToolUseId?: string;
+    }) => void;
     onSubagentBillingStamp?: (input: {
       agentId: string;
       role: RuntimeAgentRole;
@@ -61,6 +65,7 @@ export function createSubagentSessionHooks(
       options?.onProxyAttributionSettled?.({
         agentId: input.agentId,
         role,
+        ...(parentToolUseId && { parentToolUseId }),
       });
       const lifecycleRecord = options?.lifecycle?.startSubagent({
         threadId,

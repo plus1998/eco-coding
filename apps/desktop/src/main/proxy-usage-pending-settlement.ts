@@ -1,7 +1,8 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 
-export const PROXY_PENDING_ATTRIBUTION_REASON = "no_active_subagent";
+export const PROXY_PENDING_ATTRIBUTION_REASON = "missing_structured_agent_id";
+export const PROXY_PENDING_PARENT_UNMAPPED_REASON = "parent_tool_use_unmapped";
 export const PROXY_PENDING_TIMEOUT_REASON = "pending_agent_settlement_timeout";
 export const USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY = "routeRole";
 export const USAGE_LEDGER_BILLING_ROLE_METADATA_KEY = "billingRole";
@@ -14,6 +15,7 @@ export interface ProxyUsagePendingEntry {
   routeRole: RuntimeAgentRole;
   billingRole: RuntimeAgentRole;
   observedAt: string;
+  parentToolUseId?: string;
 }
 
 export interface ProxyUsagePendingSettlementUpdate {
@@ -32,16 +34,20 @@ export class ProxyUsagePendingRegistry {
     this.byThread.set(threadId, queue);
   }
 
-  consumeNextForRole(
+  consumeForParentToolUse(
     threadId: string,
-    role: RuntimeAgentRole,
+    parentToolUseId: string,
     agentId: string,
   ): ProxyUsagePendingSettlementUpdate | undefined {
     const queue = this.byThread.get(threadId);
     if (!queue || queue.length === 0) {
       return undefined;
     }
-    const index = queue.findIndex((entry) => entry.billingRole === role);
+    const parent = parentToolUseId.trim();
+    if (!parent) {
+      return undefined;
+    }
+    const index = queue.findIndex((entry) => entry.parentToolUseId === parent);
     if (index < 0) {
       return undefined;
     }
@@ -86,6 +92,7 @@ export class ProxyUsagePendingRegistry {
         routeRole: readRouteRole(event),
         billingRole: readBillingRole(event),
         observedAt: event.observedAt,
+        ...(event.parentToolUseId && { parentToolUseId: event.parentToolUseId }),
       });
     }
   }

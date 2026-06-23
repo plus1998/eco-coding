@@ -20,7 +20,7 @@ import {
   type SubagentMetricsEntry,
   SubagentMetricsState,
 } from "./subagent-metrics-state";
-import { SubagentToolUseIndex, type LinkPendingSubagentToolUseResult } from "./subagent-tool-use-index";
+import { SubagentToolUseIndex } from "./subagent-tool-use-index";
 
 export type {
   SubagentContextObservationInput,
@@ -54,15 +54,8 @@ export class SubagentMetricsRegistry {
     const now = Date.now();
     const start = state.metrics.start(input, now);
     const explicitParentToolUseId = input.parentToolUseId?.trim();
-    let toolUseLink: LinkPendingSubagentToolUseResult;
     if (explicitParentToolUseId) {
       state.toolUses.link(explicitParentToolUseId, input.agentId);
-      toolUseLink = {
-        toolUseId: explicitParentToolUseId,
-        mappedCount: state.toolUses.mappedCount,
-      };
-    } else {
-      toolUseLink = state.toolUses.linkNextPendingForRole(input.role, input.agentId);
     }
     this.persistEntry(threadId, start.entry);
     this.diagnostics.logLifecycle({
@@ -71,7 +64,7 @@ export class SubagentMetricsRegistry {
       role: input.role,
       agentId: input.agentId,
       activeCount: start.activeCount,
-      toolUseLinks: toolUseLink.mappedCount,
+      toolUseLinks: state.toolUses.mappedCount,
     });
   }
 
@@ -134,7 +127,6 @@ export class SubagentMetricsRegistry {
     const linkedParentAgentId =
       input.parentToolUseId && state ? state.toolUses.resolve(input.parentToolUseId) : undefined;
     const activeAgentIds = state ? state.metrics.activeAgentIds(input.role) : undefined;
-    const stoppedAgentIdsForRole = state ? state.metrics.agentIdsForRole(input.role) : undefined;
     const result = resolveSubagentAgentId({
       role: input.role,
       ...(input.subagentAgentId && { explicitAgentId: input.subagentAgentId }),
@@ -142,7 +134,6 @@ export class SubagentMetricsRegistry {
       ...(linkedParentAgentId && { linkedParentAgentId }),
       hasThreadState: Boolean(state),
       ...(activeAgentIds && { activeAgentIds }),
-      ...(stoppedAgentIdsForRole && { stoppedAgentIdsForRole }),
     });
 
     if (result.agentId) {

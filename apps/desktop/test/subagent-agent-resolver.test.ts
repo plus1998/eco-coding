@@ -42,17 +42,20 @@ test("resolveSubagentAgentId reports missing thread state", () => {
   ).toEqual({ missReason: "no_thread_state", activeAgentIds: [] });
 });
 
-test("resolveSubagentAgentId falls back to the sole active agent for the role", () => {
+test("resolveSubagentAgentId refuses role-only sole active fallback", () => {
   expect(
     resolveSubagentAgentId({
       role: "coder",
       hasThreadState: true,
       activeAgentIds: ["agent_coder_a"],
     }),
-  ).toEqual({ agentId: "agent_coder_a" });
+  ).toEqual({
+    missReason: "missing_structured_agent_id",
+    activeAgentIds: ["agent_coder_a"],
+  });
 });
 
-test("resolveSubagentAgentId treats multiple active agents as ambiguous", () => {
+test("resolveSubagentAgentId refuses role-only multiple active fallback", () => {
   expect(
     resolveSubagentAgentId({
       role: "coder",
@@ -60,7 +63,7 @@ test("resolveSubagentAgentId treats multiple active agents as ambiguous", () => 
       activeAgentIds: ["agent_coder_a", "agent_coder_b"],
     }),
   ).toEqual({
-    missReason: "ambiguous_multiple_active",
+    missReason: "missing_structured_agent_id",
     activeAgentIds: ["agent_coder_a", "agent_coder_b"],
   });
 });
@@ -79,24 +82,12 @@ test("resolveSubagentAgentId treats an unmapped parent with multiple active agen
   });
 });
 
-test("resolveSubagentAgentId falls back to the sole stopped agent for the role", () => {
-  expect(
-    resolveSubagentAgentId({
-      role: "reviewer",
-      hasThreadState: true,
-      activeAgentIds: [],
-      stoppedAgentIdsForRole: ["agent_reviewer_done"],
-    }),
-  ).toEqual({ agentId: "agent_reviewer_done" });
-});
-
-test("resolveSubagentAgentId reports no active subagent when no fallback is available", () => {
+test("resolveSubagentAgentId reports missing structured id when no parent is available", () => {
   expect(
     resolveSubagentAgentId({
       role: "tester",
       hasThreadState: true,
       activeAgentIds: [],
-      stoppedAgentIdsForRole: [],
     }),
-  ).toEqual({ missReason: "no_active_subagent", activeAgentIds: [] });
+  ).toEqual({ missReason: "missing_structured_agent_id", activeAgentIds: [] });
 });

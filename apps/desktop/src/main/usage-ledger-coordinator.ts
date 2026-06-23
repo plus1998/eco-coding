@@ -45,7 +45,7 @@ export interface UsageLedgerCoordinatorMetrics {
   listEntries(threadId: string): SubagentMetricsEntry[];
   resolveAgentId?(
     threadId: string,
-    input: { role: RuntimeAgentRole },
+    input: { role: RuntimeAgentRole; parentToolUseId?: string },
   ): string | undefined;
 }
 
@@ -186,13 +186,17 @@ export class UsageLedgerCoordinator {
 
   settleProxyPendingForSubagentStart(
     threadId: string,
-    input: { agentId: string; role: RuntimeAgentRole },
+    input: { agentId: string; role: RuntimeAgentRole; parentToolUseId?: string },
   ): number {
+    const parentToolUseId = input.parentToolUseId?.trim();
+    if (!parentToolUseId) {
+      return 0;
+    }
     let settledCount = 0;
     while (true) {
-      const update = this.proxyPendingRegistry.consumeNextForRole(
+      const update = this.proxyPendingRegistry.consumeForParentToolUse(
         threadId,
-        input.role,
+        parentToolUseId,
         input.agentId,
       );
       if (!update) {
@@ -208,6 +212,7 @@ export class UsageLedgerCoordinator {
         threadId: shortThreadId(threadId),
         role: input.role,
         agentId: input.agentId,
+        parentToolUseId: parentToolUseId.slice(-12),
         settledCount,
       });
     }
@@ -222,7 +227,12 @@ export class UsageLedgerCoordinator {
     let settledCount = 0;
     let timedOutCount = 0;
     for (const entry of pending) {
-      const resolvedAgentId = this.metrics.resolveAgentId?.(threadId, { role: entry.billingRole });
+      const resolvedAgentId = entry.parentToolUseId
+        ? this.metrics.resolveAgentId?.(threadId, {
+            role: entry.billingRole,
+            parentToolUseId: entry.parentToolUseId,
+          })
+        : undefined;
       if (resolvedAgentId) {
         const applied = this.applyProxyAttributionUpdate({
           eventId: entry.eventId,

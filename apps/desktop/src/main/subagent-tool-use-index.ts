@@ -10,11 +10,6 @@ export interface NoteSubagentToolUseResult {
   pendingCount: number;
 }
 
-export interface LinkPendingSubagentToolUseResult {
-  toolUseId?: string;
-  mappedCount: number;
-}
-
 export class SubagentToolUseIndex {
   private readonly toolUseToAgentId = new Map<string, string>();
   private readonly pendingToolUses: PendingToolUse[] = [];
@@ -49,40 +44,8 @@ export class SubagentToolUseIndex {
     this.removePending(toolUseId);
   }
 
-  linkNextPendingForRole(role: RuntimeAgentRole, agentId: string): LinkPendingSubagentToolUseResult {
-    const toolUseId = this.consumeForRole(role);
-    if (toolUseId) {
-      this.link(toolUseId, agentId);
-    }
-    return {
-      ...(toolUseId && { toolUseId }),
-      mappedCount: this.mappedCount,
-    };
-  }
-
   resolve(toolUseId: string): string | undefined {
     return this.toolUseToAgentId.get(toolUseId);
-  }
-
-  consumeForRole(role: RuntimeAgentRole): string | undefined {
-    while (this.pendingToolUses.length > 0) {
-      let index = this.pendingToolUses.findIndex(
-        (pending) => pending.role === role && !this.toolUseToAgentId.has(pending.toolUseId),
-      );
-      if (index < 0) {
-        index = this.pendingToolUses.findIndex(
-          (pending) => !pending.role && !this.toolUseToAgentId.has(pending.toolUseId),
-        );
-      }
-      if (index < 0) {
-        return undefined;
-      }
-      const [pending] = this.pendingToolUses.splice(index, 1);
-      if (pending) {
-        return pending.toolUseId;
-      }
-    }
-    return undefined;
   }
 
   private removePending(toolUseId: string): void {
