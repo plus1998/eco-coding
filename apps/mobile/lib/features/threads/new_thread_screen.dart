@@ -60,13 +60,12 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
           modelSettings: modelSettings.valueOrNull,
           workflow: workflow.valueOrNull,
         );
-    final workspaceDiffAsync = workspacePath.isNotEmpty
-        ? ref.watch(workspaceDiffProvider(workspacePath))
-        : const AsyncValue<WorkspaceDiffResult?>.data(null);
     final gitStatusAsync = workspacePath.isNotEmpty
         ? ref.watch(gitStatusProvider(workspacePath))
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
+    final workspaceChanges = gitStatus?.toChangesSummary();
+    final changesLoading = gitStatusAsync.isLoading || gitStatusAsync.isReloading;
     final projectsAsync = ref.watch(projectListProvider);
     EcoProject? project;
     for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {
@@ -134,8 +133,8 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                   isRunning: _starting,
                   hasActivity: false,
                   inputHint: composerLandingPlaceholder,
-                  workspaceDiff: workspaceDiffAsync.valueOrNull,
-                  diffLoading: workspaceDiffAsync.isReloading,
+                  workspaceChanges: workspaceChanges,
+                  changesLoading: changesLoading,
                   onPickImage: _pickImage,
                   onRemoveAttachment: (index) =>
                       setState(() => _attachments.removeAt(index)),
@@ -190,7 +189,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
         runtimeConfig: runtimeConfig,
       );
       ref.invalidate(threadListProvider);
-      ref.invalidate(projectListProvider);
+      ref.invalidate(projectWorkspaceContextProvider);
       if (mounted) {
         context.go('/threads/${thread.id}');
       }

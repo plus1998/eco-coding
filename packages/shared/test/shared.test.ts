@@ -48,7 +48,12 @@ test("registers explicit remote command definitions", () => {
     "workflow-settings:save",
   );
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(
-    expect.arrayContaining(["thread:run-projection-get", "thread:subagent-sessions-list"]),
+    expect.arrayContaining([
+      "thread:get",
+      "thread:session-bootstrap",
+      "thread:run-projection-get",
+      "thread:subagent-sessions-list",
+    ]),
   );
 
   const approvePlan = getRemoteCommandDefinition("thread:approve-plan");
@@ -75,6 +80,17 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("thread:follow-up-cancel", ["fup_1"])).toMatchObject({
     ok: false,
   });
+  expect(
+    validateRemoteCommandArgs("thread:get", ["thr_1"]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:run-projection-get", [
+      { threadId: "thr_1", mode: "feed" },
+    ]),
+  ).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("thread:get-usage-snapshot", ["thr_1"]),
   ).toEqual({ ok: true });

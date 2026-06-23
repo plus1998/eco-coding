@@ -39,6 +39,8 @@ export const IPC_CHANNELS = {
   threadStart: "thread:start",
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
+  threadGet: "thread:get",
+  threadSessionBootstrap: "thread:session-bootstrap",
   threadActivityList: "thread:activity-list",
   threadRunProjectionGet: "thread:run-projection-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
@@ -1191,6 +1193,16 @@ export interface ThreadBillingSnapshot {
 export interface ThreadUsageSnapshotResult {
   billing?: ThreadBillingSnapshot;
   context?: ThreadContextSnapshot;
+}
+
+export interface ThreadSessionBootstrapResult {
+  thread?: ThreadSummary;
+  followUps: ThreadPendingFollowUp[];
+  pendingPlan?: ThreadPendingPlan;
+  pendingBash?: BashApprovalRequest;
+  pendingClarification?: ClarificationRequest;
+  subagentSessions: ThreadSubagentSessionTiming[];
+  usage: ThreadUsageSnapshotResult;
 }
 
 export interface AgentProfilePerformanceRunSnapshot {

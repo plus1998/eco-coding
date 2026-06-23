@@ -23,8 +23,8 @@ class SessionComposer extends ConsumerStatefulWidget {
     this.followUpMode = false,
     this.sendBusy = false,
     required this.hasActivity,
-    required this.workspaceDiff,
-    required this.diffLoading,
+    required this.workspaceChanges,
+    required this.changesLoading,
     required this.onPickImage,
     required this.onRemoveAttachment,
     required this.onSend,
@@ -45,8 +45,8 @@ class SessionComposer extends ConsumerStatefulWidget {
   final bool followUpMode;
   final bool sendBusy;
   final bool hasActivity;
-  final WorkspaceDiffResult? workspaceDiff;
-  final bool diffLoading;
+  final WorkspaceChangesSummary? workspaceChanges;
+  final bool changesLoading;
   final VoidCallback onPickImage;
   final void Function(int index) onRemoveAttachment;
   final VoidCallback onSend;
@@ -175,8 +175,8 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       mainAxisSize: MainAxisSize.min,
       children: [
         WorkspaceChangesPill(
-          diff: widget.workspaceDiff,
-          busy: widget.diffLoading,
+          summary: widget.workspaceChanges,
+          busy: widget.changesLoading,
           onTap: widget.onChangesTap,
         ),
         SafeArea(

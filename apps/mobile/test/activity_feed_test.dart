@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:eco_mobile/core/models/git_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
@@ -411,5 +412,51 @@ void main() {
     expect(missionIndex, greaterThanOrEqualTo(0));
     expect(assistantIndex, greaterThan(missionIndex));
     expect(feed[missionIndex].agentId, 'agent_coder_1');
+  });
+
+  test('GitWorkingTreeStatus exposes workspace changes summary', () {
+    const status = GitWorkingTreeStatus(
+      workspacePath: '/tmp/repo',
+      isGitRepository: true,
+      hasGitCommits: true,
+      dirtyFileCount: 3,
+      insertions: 12,
+      deletions: 4,
+      canCommit: true,
+      aheadCount: 0,
+      behindCount: 0,
+    );
+
+    expect(status.toChangesSummary().fileCount, 3);
+    expect(status.toChangesSummary().totalAdditions, 12);
+    expect(status.toChangesSummary().hasChanges, isTrue);
+  });
+
+  test('buildActivityFeed still renders truncated projection text', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'evt_truncated',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            text: 'preview only',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {'textTruncated': true},
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, isNotEmpty);
+    expect(feed.first.text, 'preview only');
   });
 }

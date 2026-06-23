@@ -44,6 +44,35 @@ class GitWorkingTreeStatus {
   final int aheadCount;
   final int behindCount;
   final String? remoteOriginUrl;
+
+  bool get hasChanges => dirtyFileCount > 0;
+
+  WorkspaceChangesSummary toChangesSummary() => WorkspaceChangesSummary(
+        fileCount: dirtyFileCount,
+        totalAdditions: insertions,
+        totalDeletions: deletions,
+      );
+}
+
+class WorkspaceChangesSummary {
+  const WorkspaceChangesSummary({
+    required this.fileCount,
+    required this.totalAdditions,
+    required this.totalDeletions,
+  });
+
+  factory WorkspaceChangesSummary.fromDiff(WorkspaceDiffResult diff) =>
+      WorkspaceChangesSummary(
+        fileCount: diff.fileCount,
+        totalAdditions: diff.totalAdditions,
+        totalDeletions: diff.totalDeletions,
+      );
+
+  final int fileCount;
+  final int totalAdditions;
+  final int totalDeletions;
+
+  bool get hasChanges => fileCount > 0;
 }
 
 class WorkspaceDiffFile {

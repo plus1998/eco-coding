@@ -21,6 +21,25 @@ class DesktopRpc {
         .toList();
   }
 
+  Future<ThreadSummary?> getThread(String threadId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:get',
+      [threadId],
+    );
+    if (result is! Map<String, dynamic>) return null;
+    return ThreadSummary.fromJson(result);
+  }
+
+  Future<ThreadSessionBootstrapResult> sessionBootstrap(String threadId) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'thread:session-bootstrap',
+      [threadId],
+    );
+    return ThreadSessionBootstrapResult.fromJson(result);
+  }
+
   Future<ThreadSummary> startThread({
     required String workspacePath,
     required String prompt,
@@ -89,11 +108,17 @@ class DesktopRpc {
         .toList();
   }
 
-  Future<ThreadRunProjectionSnapshot?> getRunProjection(String threadId) async {
+  Future<ThreadRunProjectionSnapshot?> getRunProjection(
+    String threadId, {
+    String mode = 'full',
+  }) async {
+    final payload = mode == 'feed'
+        ? {'threadId': threadId, 'mode': 'feed'}
+        : threadId;
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
       'thread:run-projection-get',
-      [threadId],
+      [payload],
     );
     if (result is! Map<String, dynamic>) return null;
     return ThreadRunProjectionSnapshot.fromJson(result);

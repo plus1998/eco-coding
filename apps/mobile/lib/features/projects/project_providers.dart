@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/network/desktop_rpc.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
@@ -18,16 +17,101 @@ String _pinnedProjectsKey(String desktopId) =>
 
 String _hiddenProjectsKey(String desktopId) => 'eco.hidden_projects.$desktopId';
 
+class ProjectWorkspaceContext {
+  const ProjectWorkspaceContext({
+    required this.homeProjectPath,
+    this.currentWorkspace,
+  });
+
+  final String homeProjectPath;
+  final WorkspaceInfo? currentWorkspace;
+}
+
 final threadsByProjectProvider =
     Provider<Map<String, List<ThreadSummary>>>((ref) {
   final threads = ref.watch(threadListProvider).valueOrNull ?? const [];
   return groupThreadsByProject(threads);
 });
 
-final projectListProvider =
-    AsyncNotifierProvider<ProjectListNotifier, List<EcoProject>>(
-  ProjectListNotifier.new,
-);
+final projectWorkspaceContextProvider =
+    FutureProvider<ProjectWorkspaceContext>((ref) async {
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) {
+    return const ProjectWorkspaceContext(homeProjectPath: '');
+  }
+
+  var homePath = '';
+  try {
+    homePath = await rpc.getHomeProjectPath();
+  } catch (_) {
+    // Older Center Server builds may not expose workspace:get-home-path yet.
+  }
+
+  WorkspaceInfo? currentWorkspace;
+  try {
+    currentWorkspace = await rpc.getCurrentWorkspace();
+  } catch (_) {
+    currentWorkspace = null;
+  }
+
+  return ProjectWorkspaceContext(
+    homeProjectPath: homePath,
+    currentWorkspace: currentWorkspace,
+  );
+});
+
+/// Projects derived from [threadListProvider] + workspace context.
+/// Thread list updates only recompute locally; no per-project inspect RPCs.
+final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
+  final threadsAsync = ref.watch(threadListProvider);
+  final contextAsync = ref.watch(projectWorkspaceContextProvider);
+  final selectedPath = ref.watch(selectedProjectPathProvider).valueOrNull;
+
+  if (threadsAsync.isLoading || !threadsAsync.hasValue) {
+    if (threadsAsync.hasError) {
+      return AsyncValue.error(threadsAsync.error!, threadsAsync.stackTrace!);
+    }
+    return const AsyncValue.loading();
+  }
+  if (contextAsync.isLoading || !contextAsync.hasValue) {
+    if (contextAsync.hasError) {
+      return AsyncValue.error(contextAsync.error!, contextAsync.stackTrace!);
+    }
+    return const AsyncValue.loading();
+  }
+
+  final threads = threadsAsync.requireValue;
+  final context = contextAsync.requireValue;
+  return AsyncValue.data(
+    assembleProjectsFromThreads(
+      threads: threads,
+      homeProjectPath: context.homeProjectPath,
+      currentWorkspace: context.currentWorkspace,
+      currentWorkspacePath: selectedPath ?? context.currentWorkspace?.path,
+    ),
+  );
+});
+
+Future<void> refreshProjectsAndThreads(WidgetRef ref) async {
+  ref.invalidate(threadListProvider);
+  ref.invalidate(projectWorkspaceContextProvider);
+  await ref.read(threadListProvider.future);
+  await ref.read(projectWorkspaceContextProvider.future);
+}
+
+Future<WorkspaceInfo> openProjectPath(WidgetRef ref, String path) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) {
+    throw StateError('未选择 PC');
+  }
+  final workspace = await rpc.openWorkspacePath(path);
+  await ref.read(hiddenProjectPathsProvider.notifier).unhide(path);
+  await ref.read(selectedProjectPathProvider.notifier).select(path);
+  await ref.read(collapsedProjectPathsProvider.notifier).expand(path);
+  ref.invalidate(projectWorkspaceContextProvider);
+  await ref.read(projectWorkspaceContextProvider.future);
+  return workspace;
+}
 
 final displayProjectsProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   final projectsAsync = ref.watch(projectListProvider);
@@ -47,81 +131,6 @@ final displayProjectsProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   });
 });
 
-class ProjectListNotifier extends AsyncNotifier<List<EcoProject>> {
-  @override
-  Future<List<EcoProject>> build() async {
-    final rpc = ref.watch(desktopRpcProvider);
-    if (rpc == null) return [];
-
-    ref.listen(threadListProvider, (_, _) {
-      ref.invalidateSelf();
-    });
-
-    return _loadProjects(rpc);
-  }
-
-  Future<List<EcoProject>> _loadProjects(DesktopRpc rpc) async {
-    final threads = await rpc.listThreads();
-    var homePath = '';
-    try {
-      homePath = await rpc.getHomeProjectPath();
-    } catch (_) {
-      // Older Center Server builds may not expose workspace:get-home-path yet.
-    }
-    final currentWorkspace = await rpc.getCurrentWorkspace();
-
-    final paths = collectProjectPaths(
-      homeProjectPath: homePath,
-      currentWorkspace: currentWorkspace,
-      threads: threads,
-    );
-    final grouped = groupThreadsByProject(threads);
-
-    final projects = <EcoProject>[];
-    for (final path in paths) {
-      WorkspaceInfo? inspected;
-      try {
-        inspected = await rpc.inspectWorkspace(path);
-      } catch (_) {
-        inspected = currentWorkspace?.path == path ? currentWorkspace : null;
-      }
-      final normalizedPath = normalizeProjectPath(path);
-      projects.add(
-        buildEcoProject(
-          path: normalizedPath,
-          homeProjectPath: homePath,
-          inspected: inspected,
-          threadCount: grouped[normalizedPath]?.length ?? 0,
-        ),
-      );
-    }
-
-    return sortProjectsByActivity(
-      projects,
-      grouped: grouped,
-      currentWorkspacePath: currentWorkspace?.path,
-    );
-  }
-
-  Future<void> refresh() async {
-    ref.invalidate(threadListProvider);
-    ref.invalidateSelf();
-  }
-
-  Future<WorkspaceInfo> openProjectPath(String path) async {
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) {
-      throw StateError('未选择 PC');
-    }
-    final workspace = await rpc.openWorkspacePath(path);
-    await ref.read(hiddenProjectPathsProvider.notifier).unhide(path);
-    await ref.read(selectedProjectPathProvider.notifier).select(path);
-    await ref.read(collapsedProjectPathsProvider.notifier).expand(path);
-    state = AsyncData(await _loadProjects(rpc));
-    return workspace;
-  }
-}
-
 final selectedProjectPathProvider =
     AsyncNotifierProvider<SelectedProjectPathNotifier, String?>(
   SelectedProjectPathNotifier.new,
@@ -139,15 +148,8 @@ class SelectedProjectPathNotifier extends AsyncNotifier<String?> {
       return saved;
     }
 
-    final rpc = ref.watch(desktopRpcProvider);
-    if (rpc == null) return null;
-
-    try {
-      final current = await rpc.getCurrentWorkspace();
-      return current?.path;
-    } catch (_) {
-      return null;
-    }
+    final context = await ref.watch(projectWorkspaceContextProvider.future);
+    return context.currentWorkspace?.path;
   }
 
   Future<void> select(String path) async {

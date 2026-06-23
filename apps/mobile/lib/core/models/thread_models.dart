@@ -407,6 +407,69 @@ class ThreadPendingFollowUp {
   final String priority;
 }
 
+class ThreadSessionBootstrapResult {
+  const ThreadSessionBootstrapResult({
+    this.thread,
+    this.followUps = const [],
+    this.pendingPlan,
+    this.pendingBash,
+    this.pendingClarification,
+    this.subagentSessions = const [],
+    this.usage = const ThreadUsageSnapshotResult(),
+  });
+
+  factory ThreadSessionBootstrapResult.fromJson(Map<String, dynamic> json) {
+    final followUpsRaw = json['followUps'] as List<dynamic>? ?? const [];
+    final sessionsRaw = json['subagentSessions'] as List<dynamic>? ?? const [];
+    final usageRaw = json['usage'];
+    return ThreadSessionBootstrapResult(
+      thread: json['thread'] is Map<String, dynamic>
+          ? ThreadSummary.fromJson(json['thread'] as Map<String, dynamic>)
+          : null,
+      followUps: followUpsRaw
+          .map(
+            (entry) => ThreadPendingFollowUp.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+      pendingPlan: json['pendingPlan'] is Map<String, dynamic>
+          ? ThreadPendingPlan.fromJson(
+              json['pendingPlan'] as Map<String, dynamic>,
+            )
+          : null,
+      pendingBash: json['pendingBash'] is Map<String, dynamic>
+          ? BashApprovalRequest.fromJson(
+              json['pendingBash'] as Map<String, dynamic>,
+            )
+          : null,
+      pendingClarification: json['pendingClarification'] is Map<String, dynamic>
+          ? ClarificationRequest.fromJson(
+              json['pendingClarification'] as Map<String, dynamic>,
+            )
+          : null,
+      subagentSessions: sessionsRaw
+          .map(
+            (entry) => ThreadSubagentSessionTiming.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+      usage: usageRaw is Map<String, dynamic>
+          ? ThreadUsageSnapshotResult.fromJson(usageRaw)
+          : const ThreadUsageSnapshotResult(),
+    );
+  }
+
+  final ThreadSummary? thread;
+  final List<ThreadPendingFollowUp> followUps;
+  final ThreadPendingPlan? pendingPlan;
+  final BashApprovalRequest? pendingBash;
+  final ClarificationRequest? pendingClarification;
+  final List<ThreadSubagentSessionTiming> subagentSessions;
+  final ThreadUsageSnapshotResult usage;
+}
+
 class ThreadLiveEvent {
   const ThreadLiveEvent({
     required this.threadId,

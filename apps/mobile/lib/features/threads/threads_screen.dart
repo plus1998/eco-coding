@@ -10,7 +10,6 @@ import '../../core/utils/relative_time.dart';
 import '../../core/utils/thread_status.dart';
 import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
-import 'thread_providers.dart';
 
 class ThreadsScreen extends ConsumerWidget {
   const ThreadsScreen({super.key});
@@ -45,8 +44,7 @@ class ThreadsScreen extends ConsumerWidget {
           ),
           IconButton(
             onPressed: () async {
-              await ref.read(threadListProvider.notifier).refresh();
-              await ref.read(projectListProvider.notifier).refresh();
+              await refreshProjectsAndThreads(ref);
             },
             icon: const Icon(EcoIcons.refresh),
           ),
@@ -58,10 +56,7 @@ class ThreadsScreen extends ConsumerWidget {
                   return const Center(child: Text('暂无项目，点击右上角打开项目'));
                 }
                 return RefreshIndicator(
-                  onRefresh: () async {
-                    await ref.read(threadListProvider.notifier).refresh();
-                    await ref.read(projectListProvider.notifier).refresh();
-                  },
+                  onRefresh: () => refreshProjectsAndThreads(ref),
                   child: ListView.builder(
                     itemCount: projects.length,
                     itemBuilder: (context, index) {
@@ -135,7 +130,7 @@ class ThreadsScreen extends ConsumerWidget {
           onOpen: (path) async {
             Navigator.pop(sheetContext);
             try {
-              await ref.read(projectListProvider.notifier).openProjectPath(path);
+              await openProjectPath(ref, path);
               messenger.showSnackBar(
                 const SnackBar(content: Text('项目已打开')),
               );

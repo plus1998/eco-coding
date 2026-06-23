@@ -78,6 +78,45 @@ EcoProject buildEcoProject({
   );
 }
 
+/// Build project rows for the list screen without per-project inspect RPCs.
+List<EcoProject> assembleProjectsFromThreads({
+  required List<ThreadSummary> threads,
+  required String homeProjectPath,
+  WorkspaceInfo? currentWorkspace,
+  String? currentWorkspacePath,
+}) {
+  final paths = collectProjectPaths(
+    homeProjectPath: homeProjectPath,
+    currentWorkspace: currentWorkspace,
+    threads: threads,
+  );
+  final grouped = groupThreadsByProject(threads);
+  final projects = <EcoProject>[];
+
+  for (final path in paths) {
+    final normalizedPath = normalizeProjectPath(path);
+    WorkspaceInfo? inspected;
+    if (currentWorkspace != null &&
+        normalizeProjectPath(currentWorkspace.path) == normalizedPath) {
+      inspected = currentWorkspace;
+    }
+    projects.add(
+      buildEcoProject(
+        path: normalizedPath,
+        homeProjectPath: homeProjectPath,
+        inspected: inspected,
+        threadCount: grouped[normalizedPath]?.length ?? 0,
+      ),
+    );
+  }
+
+  return sortProjectsByActivity(
+    projects,
+    grouped: grouped,
+    currentWorkspacePath: currentWorkspacePath ?? currentWorkspace?.path,
+  );
+}
+
 int projectActivityTimeMs(
   EcoProject project, {
   required Map<String, List<ThreadSummary>> grouped,
@@ -252,6 +291,9 @@ String _basename(String path) {
   if (segments.isEmpty) return path;
   return segments.last;
 }
+
+/// Display name for a workspace path without loading the full project list.
+String workspaceDisplayName(String path) => _basename(path);
 
 /// Landing hero copy aligned with [apps/desktop/src/renderer/App.tsx].
 String landingHeroText({

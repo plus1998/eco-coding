@@ -27,6 +27,8 @@ const APPROVAL_DECIDE = ["rpc:invoke", "approval:decide"] as const;
 
 export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:list", "List threads", "read", RPC_INVOKE, []),
+  command("thread:get", "Get thread", "read", RPC_INVOKE, [stringArg()]),
+  command("thread:session-bootstrap", "Bootstrap thread session", "read", RPC_INVOKE, [stringArg()]),
   command("thread:start", "Start thread", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "prompt", "runtimeConfig"]),
   ]),
@@ -37,7 +39,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:get-usage-snapshot", "Get thread usage snapshot", "read", RPC_INVOKE, [
     stringArg(),
   ]),
-  command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [stringArg()]),
+  command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [
+    { kind: "any" },
+  ]),
   command("thread:subagent-sessions-list", "List thread subagent sessions", "read", RPC_INVOKE, [
     stringArg(),
   ]),

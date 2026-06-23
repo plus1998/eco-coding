@@ -16,7 +16,6 @@ import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/session_composer.dart';
-import '../projects/project_providers.dart';
 import 'activity_feed.dart';
 import 'thread_info_sheets.dart';
 import 'thread_menu_sheets.dart';
@@ -134,36 +133,24 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(threadSessionProvider(widget.threadId));
-    final modelSettings = ref.watch(modelSettingsProvider);
-    final workflow = ref.watch(workflowSettingsProvider);
     final runtimeConfig = ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
-        buildDefaultRuntimeConfig(
-          modelSettings: modelSettings.valueOrNull,
-          workflow: workflow.valueOrNull,
-        );
+        buildDefaultRuntimeConfig();
     final thread = session.thread;
     final workspacePath = thread?.workspacePath ?? '';
-    final projectsAsync = ref.watch(projectListProvider);
-    EcoProject? project;
-    for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {
-      if (item.path == workspacePath) {
-        project = item;
-        break;
-      }
-    }
+    final projectName = workspacePath.isEmpty
+        ? null
+        : workspaceDisplayName(workspacePath);
     final landingHero = landingHeroText(
       workspacePath: workspacePath.isEmpty ? null : workspacePath,
-      isHomeProject: project?.isHome ?? false,
-      projectName: project?.name,
+      projectName: projectName,
     );
-    final workspaceDiffAsync = workspacePath.isNotEmpty
-        ? ref.watch(workspaceDiffProvider(workspacePath))
-        : const AsyncValue<WorkspaceDiffResult?>.data(null);
-    final gitStatusAsync = workspacePath.isNotEmpty
+    final gitStatusAsync = workspacePath.isNotEmpty && !session.loading
         ? ref.watch(gitStatusProvider(workspacePath))
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
+    final workspaceChanges = gitStatus?.toChangesSummary();
+    final changesLoading = gitStatusAsync.isLoading || gitStatusAsync.isReloading;
     final isRunning = _isRunning(thread);
     final showLanding = !session.loading &&
         session.error == null &&
@@ -224,7 +211,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         title: thread?.title ?? '',
         workspacePath: workspacePath,
         threadId: widget.threadId,
-        projectName: project?.name,
+        projectName: projectName,
         runtimeConfig: runtimeConfig,
         isRunning: isRunning,
         gitStatus: gitStatus,
@@ -319,8 +306,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                       : (showLanding ? composerLandingPlaceholder : null),
                   contextSnapshot: session.contextSnapshot,
                   threadStatus: thread?.status,
-                  workspaceDiff: workspaceDiffAsync.valueOrNull,
-                  diffLoading: workspaceDiffAsync.isReloading,
+                  workspaceChanges: workspaceChanges,
+                  changesLoading: changesLoading,
                   onPickImage: _pickImage,
                   onRemoveAttachment: (index) =>
                       setState(() => _attachments.removeAt(index)),
@@ -583,11 +570,8 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(threadSessionProvider(threadId));
-    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final thread = session.thread;
-    final runtimeConfig = thread?.runtimeConfig ??
-        buildDefaultRuntimeConfig(modelSettings: modelSettings);
-    final agentProfile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
+    final agentProfile = null as OrchestrationProfile?;
     final feedEntries = buildActivityFeed(
       threadPrompt: thread?.prompt,
       threadId: threadId,

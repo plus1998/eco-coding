@@ -147,6 +147,7 @@ import {
   type ThreadStartRequest,
   type ThreadStatus,
   type ThreadSummary,
+  type ThreadSessionBootstrapResult,
   type ThreadUpdateRuntimeConfigRequest,
   type ThreadUsageLedgerEventView,
   type ThreadUsageSnapshot,
@@ -371,6 +372,13 @@ import {
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
 import { buildThreadRunProjection } from "./thread-run-projection";
+import { trimProjectionForFeed } from "./thread-run-projection-feed";
+import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
+import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
+import {
+  buildThreadUsageSnapshotResult,
+  type ThreadUsageSnapshotRuntimeServices,
+} from "./thread-usage-snapshot-runtime";
 import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
 import {
   buildDriverRoutes,
@@ -897,6 +905,20 @@ function hydrateThreads(threads: ThreadSummary[]): ThreadSummary[] {
   return threads.map(ensureThreadRuntimeConfig);
 }
 
+function buildThreadUsageSnapshotServices(): ThreadUsageSnapshotRuntimeServices {
+  return {
+    getLegacyBilling: (threadId) => threadUsageAccumulator.getSnapshot(threadId),
+    resolveBillingSnapshot: (threadId, legacyBilling, options) =>
+      usageLedgerCoordinator.resolveBillingSnapshot(threadId, legacyBilling, options),
+    enrichBillingSnapshot: (threadId, billing) =>
+      usageLedgerCoordinator.enrichBillingSnapshot(threadId, billing),
+    projectBillingSnapshot: (threadId, plannerModelLabel) =>
+      usageLedgerCoordinator.projectBillingSnapshot(threadId, plannerModelLabel),
+    getThreadStatus: (threadId) => conversationStore.getThread(threadId)?.status,
+    getDisplayContextSnapshot: (threadId) => contextScheduler.getDisplaySnapshot(threadId),
+  };
+}
+
 function backfillThreadRuntimeConfigs(): void {
   hydrateThreads(conversationStore.listThreads());
 }
@@ -1218,6 +1240,32 @@ function registerIpcHandlers(): void {
     hydrateThreads(conversationStore.listThreads()),
   );
 
+  registerDesktopCommand(IPC_CHANNELS.threadGet, async (threadId: unknown) => {
+    const id = typeof threadId === "string" ? threadId.trim() : "";
+    if (!id) {
+      return undefined;
+    }
+    const thread = conversationStore.getThread(id);
+    return thread ? ensureThreadRuntimeConfig(thread) : undefined;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadSessionBootstrap, async (threadId: unknown) => {
+    const id = typeof threadId === "string" ? threadId.trim() : "";
+    return buildThreadSessionBootstrap(id, {
+      getThread: (targetId) => {
+        const thread = conversationStore.getThread(targetId);
+        return thread ? ensureThreadRuntimeConfig(thread) : undefined;
+      },
+      listFollowUps: (targetId) => conversationStore.listThreadFollowUps(targetId),
+      getPendingPlan: (targetId) => conversationStore.getPendingPlan(targetId),
+      getPendingBashApproval: (targetId) => getPendingBashApprovalForThread(targetId),
+      getPendingClarification: (targetId) => getPendingClarificationForThread(targetId),
+      listSubagentSessionTimings: (targetId) =>
+        buildSubagentSessionTimings(conversationStore.listSubagentSessions(targetId)),
+      usageSnapshotServices: buildThreadUsageSnapshotServices(),
+    }) satisfies ThreadSessionBootstrapResult;
+  });
+
   registerDesktopCommand(IPC_CHANNELS.threadDelete, async (payload: unknown) => {
     const threadId = typeof payload === "string" ? payload.trim() : "";
     if (!threadId) {
@@ -1290,11 +1338,16 @@ function registerIpcHandlers(): void {
     return conversationStore.listActivityLines(threadId);
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (threadId: string) => {
-    if (typeof threadId !== "string" || !threadId.trim()) {
+  registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (payload: unknown) => {
+    const request = parseThreadRunProjectionGetRequest(payload);
+    if (!request.threadId) {
       return undefined;
     }
-    return buildCurrentThreadRunProjection(threadId.trim());
+    const projection = buildCurrentThreadRunProjection(request.threadId);
+    if (!projection) {
+      return undefined;
+    }
+    return request.mode === "feed" ? trimProjectionForFeed(projection) : projection;
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadSubagentSessionsList, async (threadId: string) => {
@@ -2275,33 +2328,7 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return {} satisfies ThreadUsageSnapshotResult;
     }
-    const id = threadId.trim();
-    const legacyBilling = threadUsageAccumulator.getSnapshot(id);
-    const selectionOptions = resolveBillingSnapshotSelectionOptions({
-      ...(legacyBilling?.plannerModelLabel && { plannerModelLabel: legacyBilling.plannerModelLabel }),
-    });
-    let billingBase: ThreadBillingSnapshot | undefined;
-    if (legacyBilling) {
-      const billingSelection = usageLedgerCoordinator.resolveBillingSnapshot(
-        id,
-        legacyBilling,
-        selectionOptions,
-      );
-      billingBase = usageLedgerCoordinator.enrichBillingSnapshot(id, billingSelection.snapshot);
-    } else {
-      const ledgerBilling = usageLedgerCoordinator.projectBillingSnapshot(id);
-      billingBase = ledgerBilling
-        ? usageLedgerCoordinator.enrichBillingSnapshot(id, ledgerBilling)
-        : undefined;
-    }
-    const billing = billingBase
-      ? enrichBillingDisplaySource(billingBase, conversationStore.getThread(id)?.status)
-      : undefined;
-    const context = contextScheduler.getDisplaySnapshot(id);
-    return {
-      ...(billing && { billing }),
-      ...(context && { context }),
-    } satisfies ThreadUsageSnapshotResult;
+    return buildThreadUsageSnapshotResult(threadId.trim(), buildThreadUsageSnapshotServices());
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadUsageLedgerEventsList, async (threadId: unknown) => {

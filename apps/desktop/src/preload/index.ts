@@ -94,6 +94,7 @@ import {
   type ThreadSubagentMetricsSummary,
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
+  type ThreadSessionBootstrapResult,
   type ThreadUpdateRuntimeConfigRequest,
   type ThreadUsageSnapshotResult,
   type ThreadUsageLedgerEventView,
@@ -499,14 +500,22 @@ const api = {
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);
   },
+  getThread(threadId: string): Promise<ThreadSummary | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadGet, threadId);
+  },
+  sessionBootstrap(threadId: string): Promise<ThreadSessionBootstrapResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadSessionBootstrap, threadId);
+  },
   deleteThread(threadId: string): Promise<ThreadDeleteResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadDelete, threadId);
   },
   listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
   },
-  getThreadRunProjection(threadId: string): Promise<ThreadRunProjectionSnapshot | undefined> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionGet, threadId);
+  getThreadRunProjection(
+    threadIdOrRequest: string | { threadId: string; mode?: "feed" | "full" },
+  ): Promise<ThreadRunProjectionSnapshot | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionGet, threadIdOrRequest);
   },
   listSubagentSessions(threadId: string): Promise<ThreadSubagentSessionTiming[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentSessionsList, threadId);

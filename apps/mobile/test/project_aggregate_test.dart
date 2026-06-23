@@ -101,6 +101,38 @@ void main() {
     });
   });
 
+  group('assembleProjectsFromThreads', () {
+    test('builds projects from threads without inspectWorkspace', () {
+      final projects = assembleProjectsFromThreads(
+        threads: [
+          ThreadSummary(
+            id: 't1',
+            title: 'One',
+            prompt: '',
+            workspacePath: repoPath,
+            status: 'idle',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            message: '',
+          ),
+        ],
+        homeProjectPath: homePath,
+        currentWorkspace: const WorkspaceInfo(
+          path: repoPath,
+          name: 'eco-coding',
+          isGitRepository: true,
+          branch: 'main',
+        ),
+      );
+
+      expect(projects.map((project) => project.path), contains(repoPath));
+      final repo = projects.firstWhere((project) => project.path == repoPath);
+      expect(repo.name, 'eco-coding');
+      expect(repo.branch, 'main');
+      expect(repo.threadCount, 1);
+    });
+  });
+
   group('sortProjectsByActivity', () {
     test('keeps home first while sorting other projects by activity', () {
       final grouped = groupThreadsByProject([

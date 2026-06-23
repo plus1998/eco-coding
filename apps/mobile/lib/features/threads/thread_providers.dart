@@ -247,7 +247,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       return;
     }
     try {
-      final projection = await rpc.getRunProjection(threadId);
+      final projection = await rpc.getRunProjection(threadId, mode: 'feed');
       if (!mounted || projection == null) {
         return;
       }
@@ -288,52 +288,40 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       return;
     }
 
+    final cachedThread = _threadFromCacheSync();
+    if (cachedThread != null) {
+      state = state.copyWith(thread: cachedThread);
+    }
+
     try {
-      ThreadRunProjectionSnapshot? projection;
-      List<ThreadSubagentSessionTiming> subagentSessions = const [];
-      ThreadBillingSnapshot? billing;
-      ThreadContextSnapshot? contextSnapshot;
-      try {
-        projection = await rpc.getRunProjection(threadId);
-      } catch (_) {}
-      final followUps = await rpc.followUpList(threadId);
-      final threads = await rpc.listThreads();
-      ThreadSummary? thread;
-      for (final candidate in threads) {
-        if (candidate.id == threadId) {
-          thread = candidate;
-          break;
-        }
-      }
-
-      final plan = await rpc.getPendingPlan(threadId);
-      final bash = await rpc.getPendingBashApproval(threadId);
-      final clarification = await rpc.getPendingClarification(threadId);
-      try {
-        subagentSessions = await rpc.listSubagentSessions(threadId);
-      } catch (_) {}
-      try {
-        final usage = await rpc.getThreadUsageSnapshot(threadId);
-        billing = usage.billing;
-        contextSnapshot = usage.context;
-      } catch (_) {}
-
-      final loadedFollowUps = _mergeThreadFollowUps(followUps, state.followUps);
+      final results = await Future.wait([
+        rpc.sessionBootstrap(threadId),
+        rpc.getRunProjection(threadId, mode: 'feed'),
+      ]);
+      final bootstrap = results[0] as ThreadSessionBootstrapResult;
+      final projection = results[1] as ThreadRunProjectionSnapshot?;
+      final thread =
+          bootstrap.thread ?? cachedThread ?? await rpc.getThread(threadId);
+      final loadedFollowUps = _mergeThreadFollowUps(
+        bootstrap.followUps,
+        state.followUps,
+      );
 
       state = ThreadSessionState(
-        pendingPlan: plan,
-        pendingBash: bash,
-        pendingClarification: clarification,
+        pendingPlan: bootstrap.pendingPlan,
+        pendingBash: bootstrap.pendingBash,
+        pendingClarification: bootstrap.pendingClarification,
         followUps: loadedFollowUps,
         thread: thread ?? state.thread,
         runProjection: _pickNewerProjection(state.runProjection, projection),
         subagentSessions: state.subagentSessions.isNotEmpty
             ? state.subagentSessions
-            : subagentSessions,
-        billing: state.billing ?? billing,
-        contextSnapshot: state.contextSnapshot ?? contextSnapshot,
+            : bootstrap.subagentSessions,
+        billing: state.billing ?? bootstrap.usage.billing,
+        contextSnapshot: state.contextSnapshot ?? bootstrap.usage.context,
         loading: false,
       );
+      _loadUsageDeferred();
     } catch (error) {
       state = state.copyWith(loading: false, error: error.toString());
     }
@@ -402,7 +390,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           runProjection: _pickNewerProjection(state.runProjection, live.projection),
         );
       } else {
-        ref.read(desktopRpcProvider)?.getRunProjection(threadId).then((
+        ref.read(desktopRpcProvider)?.getRunProjection(threadId, mode: 'feed').then((
           projection,
         ) {
           if (!mounted) return;
@@ -539,30 +527,51 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     } catch (_) {}
   }
 
+  ThreadSummary? _threadFromCacheSync() {
+    final cached = ref.read(threadListProvider).valueOrNull;
+    if (cached == null) return null;
+    for (final candidate in cached) {
+      if (candidate.id == threadId) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  Future<ThreadSummary?> _resolveThreadSummary(DesktopRpc rpc) async {
+    return _threadFromCacheSync() ?? rpc.getThread(threadId);
+  }
+
+  void _loadUsageDeferred() {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    unawaited(
+      rpc.getThreadUsageSnapshot(threadId).then((usage) {
+        if (!mounted) return;
+        state = state.copyWith(
+          billing: usage.billing ?? state.billing,
+          contextSnapshot: usage.context ?? state.contextSnapshot,
+        );
+      }),
+    );
+  }
+
   Future<void> refreshPending() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
-    final threads = await rpc.listThreads();
-    ThreadSummary? thread;
-    for (final candidate in threads) {
-      if (candidate.id == threadId) {
-        thread = candidate;
-        break;
-      }
-    }
-    final plan = await rpc.getPendingPlan(threadId);
-    final bash = await rpc.getPendingBashApproval(threadId);
-    final clarification = await rpc.getPendingClarification(threadId);
-    final followUps = await rpc.followUpList(threadId);
+    final bootstrap = await rpc.sessionBootstrap(threadId);
+    final thread = bootstrap.thread ?? await _resolveThreadSummary(rpc);
     state = state.copyWith(
-      pendingPlan: plan,
-      clearPlan: plan == null,
-      pendingBash: bash,
-      clearBash: bash == null,
-      pendingClarification: clarification,
-      clearClarification: clarification == null,
-      followUps: followUps,
+      pendingPlan: bootstrap.pendingPlan,
+      clearPlan: bootstrap.pendingPlan == null,
+      pendingBash: bootstrap.pendingBash,
+      clearBash: bootstrap.pendingBash == null,
+      pendingClarification: bootstrap.pendingClarification,
+      clearClarification: bootstrap.pendingClarification == null,
+      followUps: bootstrap.followUps,
       thread: thread ?? state.thread,
+      billing: bootstrap.usage.billing ?? state.billing,
+      contextSnapshot: bootstrap.usage.context ?? state.contextSnapshot,
     );
   }
 

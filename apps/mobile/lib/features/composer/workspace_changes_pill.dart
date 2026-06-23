@@ -7,18 +7,18 @@ import '../../core/theme/eco_theme.dart';
 class WorkspaceChangesPill extends StatelessWidget {
   const WorkspaceChangesPill({
     super.key,
-    required this.diff,
+    required this.summary,
     this.busy = false,
     this.onTap,
   });
 
-  final WorkspaceDiffResult? diff;
+  final WorkspaceChangesSummary? summary;
   final bool busy;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    if (diff == null || !diff!.hasChanges) {
+    if (summary == null || !summary!.hasChanges) {
       return const SizedBox.shrink();
     }
 
@@ -51,7 +51,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                     ),
                   ),
                 Text(
-                  '${diff!.fileCount} 个文件已更改',
+                  '${summary!.fileCount} 个文件已更改',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: eco.textPrimary,
                         fontWeight: FontWeight.w500,
@@ -59,7 +59,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '+${diff!.totalAdditions}',
+                  '+${summary!.totalAdditions}',
                   style: TextStyle(
                     color: eco.success,
                     fontSize: 13,
@@ -68,7 +68,7 @@ class WorkspaceChangesPill extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '-${diff!.totalDeletions}',
+                  '-${summary!.totalDeletions}',
                   style: TextStyle(
                     color: eco.danger,
                     fontSize: 13,
