@@ -12,6 +12,7 @@ import {
   isProjectionUserPromptItem,
   isThreadContextCompactionInFlight,
   projectionItemToDetailBlock,
+  resolveSubagentCardMissionText,
 } from "../src/renderer/thread-run-projection-view";
 
 function item(
@@ -1396,6 +1397,50 @@ test("projectionItemToDetailBlock maps agent.started delegation metadata to suba
     prompt: "Review export filters in src/api.ts",
     agentId: "coder_a",
   });
+});
+
+test("resolveSubagentCardMissionText prefers delegation prompt over summary", () => {
+  expect(
+    resolveSubagentCardMissionText({
+      agentId: "coder_a",
+      role: "coder",
+      kind: "subagent",
+      status: "active",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      durationMs: 0,
+      delegationPrompt: "Implement export filters in src/api.ts",
+      delegationSummary: "实现：export filters",
+      timeline: [],
+    }),
+  ).toBe("Implement export filters in src/api.ts");
+});
+
+test("resolveSubagentCardMissionText falls back to agent.started timeline metadata", () => {
+  expect(
+    resolveSubagentCardMissionText({
+      agentId: "coder_a",
+      role: "coder",
+      kind: "subagent",
+      status: "active",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      durationMs: 0,
+      timeline: [
+        item({
+          id: "agent-started",
+          eventType: "agent.started",
+          scope: "agent",
+          role: "coder",
+          agentId: "coder_a",
+          text: "Subagent coder started",
+          metadata: {
+            lifecycle: "started",
+            delegationPrompt: "Review export filters in src/api.ts",
+            delegationSummary: "审查：export filters",
+          },
+        }),
+      ],
+    }),
+  ).toBe("Review export filters in src/api.ts");
 });
 
 test("buildThreadRunProjectionViewModel shows planner delegation on main feed", () => {

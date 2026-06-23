@@ -207,6 +207,74 @@ Map<String, ThreadRunBashApprovalMetadata> buildBashApprovalIndexByToolUseId(
   return index;
 }
 
+Map<String, ThreadRunToolMetadata> buildToolIndexByToolUseId(
+  ThreadRunProjectionSnapshot? projection,
+) {
+  final index = <String, ThreadRunToolMetadata>{};
+  if (projection == null) return index;
+  void scan(Iterable<ThreadRunProjectionTimelineItem> items) {
+    for (final item in items) {
+      final tool = readProjectionToolMetadata(item.metadata);
+      final toolUseId = tool?.toolUseId?.trim();
+      if (tool == null || toolUseId == null || toolUseId.isEmpty) continue;
+      index[toolUseId] = tool;
+    }
+  }
+
+  scan(projection.timeline);
+  for (final agent in projection.agents) {
+    scan(agent.timeline);
+  }
+  return index;
+}
+
+ThreadRunBashApprovalMetadata? findBashApprovalForParsed(
+  ParsedBashApprovalActivityText parsed,
+  Map<String, ThreadRunBashApprovalMetadata> index,
+) {
+  final normalizedDetail = parsed.detail?.trim();
+  ThreadRunBashApprovalMetadata? fallback;
+  for (final approval in index.values) {
+    if (approval.toolName != parsed.toolName) continue;
+    if (normalizedDetail == null || normalizedDetail.isEmpty) {
+      fallback ??= approval;
+      continue;
+    }
+    final approvalDetail = approval.detail?.trim();
+    if (approvalDetail == normalizedDetail) return approval;
+    if (approvalDetail != null &&
+        normalizeBashCommandKey(approvalDetail) ==
+            normalizeBashCommandKey(normalizedDetail)) {
+      return approval;
+    }
+  }
+  return fallback;
+}
+
+ThreadRunToolMetadata? findProjectionToolForInvocation(
+  ParsedActivityToolInvocation invocation,
+  Map<String, ThreadRunToolMetadata> toolIndex,
+) {
+  final normalizedDetail = invocation.detail?.trim();
+  ThreadRunToolMetadata? fallback;
+  for (final tool in toolIndex.values) {
+    if (tool.name != invocation.toolName) continue;
+    if (normalizedDetail == null || normalizedDetail.isEmpty) {
+      fallback ??= tool;
+      continue;
+    }
+    final toolDetail = tool.detail?.trim();
+    if (toolDetail == normalizedDetail) return tool;
+    if (tool.name == 'Bash' &&
+        toolDetail != null &&
+        normalizeBashCommandKey(toolDetail) ==
+            normalizeBashCommandKey(normalizedDetail)) {
+      return tool;
+    }
+  }
+  return fallback;
+}
+
 String normalizeBashCommandKey(String command) {
   return command.trim().replaceAll(RegExp(r'\s+'), ' ');
 }

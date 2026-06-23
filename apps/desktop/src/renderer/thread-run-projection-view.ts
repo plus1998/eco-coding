@@ -15,7 +15,7 @@ import {
   toolStatusToLifecycle,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
-import { parseSubagentMissionMessage } from "@eco/runtime";
+import { parseSubagentMissionMessage, resolveMissionDisplayText } from "@eco/runtime";
 import {
   iconForToolName,
   resolveSubagentRunDisplayTitle,
@@ -1179,4 +1179,36 @@ export function readProjectionAgentDelegation(
     summary: summary || prompt.slice(0, 200),
     ...(prompt && { prompt }),
   };
+}
+
+/** Mission body for subagent cards — mirrors mobile projection + timeline fallbacks. */
+export function resolveSubagentCardMissionText(agent: ThreadRunProjectionAgent): string {
+  const delegation = readProjectionAgentDelegation(agent);
+  if (delegation) {
+    const text = resolveMissionDisplayText(delegation.prompt?.trim() || delegation.summary);
+    if (text) {
+      return text;
+    }
+  }
+  for (const item of agent.timeline) {
+    if (item.eventType === "agent.started") {
+      const timelineDelegation = readProjectionDelegationMetadata(item);
+      if (timelineDelegation) {
+        const text = resolveMissionDisplayText(
+          timelineDelegation.prompt?.trim() || timelineDelegation.summary,
+        );
+        if (text) {
+          return text;
+        }
+      }
+    }
+    const mission = parseSubagentMissionMessage(item.text);
+    if (mission) {
+      const text = resolveMissionDisplayText(mission.prompt || mission.summary);
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return "";
 }

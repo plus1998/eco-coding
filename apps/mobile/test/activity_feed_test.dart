@@ -173,6 +173,67 @@ void main() {
     expect(feed.first.missionPrompt, 'check auth flow');
   });
 
+  test('buildActivityFeed renders bash approval from history text without tool metadata', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(id: '1', role: 'user', message: '下载模型'),
+        ActivityItem(
+          id: '2',
+          role: 'tool',
+          message: '等待确认 Bash：npm test',
+        ),
+        ActivityItem(
+          id: '3',
+          role: 'tool',
+          message: '已允许本次 Bash：npm test',
+        ),
+      ],
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'approval-1',
+            sequence: 1,
+            eventType: 'bash_approval.requested',
+            scope: 'main',
+            text: '等待确认 Bash：npm test',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'bashApproval': {
+                'toolUseId': 'toolu_bash_1',
+                'toolName': 'Bash',
+                'detail': 'npm test',
+                'description': 'Run unit tests',
+                'phase': 'approved',
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 1);
+    expect(actions.first.text, 'Run unit tests');
+    expect(actions.first.toolUseId, 'toolu_bash_1');
+    expect(actions.first.bashRun?.title, 'Run unit tests');
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.assistant &&
+            entry.text.contains('等待确认'),
+      ),
+      isFalse,
+    );
+  });
+
   test('bash approval merges into the same action row by toolUseId', () {
     final feed = buildActivityFeed(
       lines: const [
@@ -474,7 +535,7 @@ void main() {
     expect(feed.first.bashRun?.title, 'Run unit tests');
   });
 
-  test('buildActivityFeed without tool metadata does not render bash action cards', () {
+  test('buildActivityFeed renders bash action cards from history text', () {
     final feed = buildActivityFeed(
       lines: const [
         ActivityItem(
@@ -519,7 +580,12 @@ void main() {
       ),
     );
 
-    expect(feed.any((entry) => entry.kind == ActivityFeedKind.action), isFalse);
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 1);
+    expect(actions.first.text, 'Run unit tests');
+    expect(actions.first.toolUseId, 'toolu_bash_1');
+    expect(actions.first.bashRun?.title, 'Run unit tests');
   });
 
   test('buildActivityFeed injects cards for concurrent projection subagents', () {

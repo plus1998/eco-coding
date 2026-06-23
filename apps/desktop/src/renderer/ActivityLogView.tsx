@@ -63,6 +63,7 @@ import {
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
   resolveProjectionAgentStatusText,
+  resolveSubagentCardMissionText,
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
@@ -464,18 +465,15 @@ function ProjectionSubagentRunRow({
   const delegation = readProjectionAgentDelegation(agent);
   const rawStatus = resolveProjectionAgentStatusText(agent);
   const statusText =
-    delegation?.summary ??
-    (rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
+    rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
       ? rawStatus
       : agent.status === "active" || agent.status === "launching"
         ? "工作中"
-        : "点击查看执行详情");
+        : "点击查看执行详情";
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
-  const missionText = delegation
-    ? resolveMissionDisplayText(delegation.prompt?.trim() || delegation.summary)
-    : "";
+  const missionText = resolveSubagentCardMissionText(agent);
   const hasTimelineDetails = agent.timeline.some(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
   );
@@ -795,6 +793,7 @@ function SubagentRunCardButton({
   onToggle: () => void;
 }) {
   const kindBadge = resolveSubagentKindBadge(role);
+  const resolvedMissionText = missionText ? resolveMissionDisplayText(missionText) : "";
 
   return (
     <button
@@ -840,11 +839,11 @@ function SubagentRunCardButton({
             />
           </span>
         </div>
-        {missionText ? (
+        {resolvedMissionText ? (
           <>
             <p className="subagent-run-mission-tag">任务目标</p>
             <ExpandableMissionText
-              text={resolveMissionDisplayText(missionText)}
+              text={resolvedMissionText}
               expanded={expanded}
               className="subagent-run-mission-preview"
             />

@@ -111,6 +111,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     threadId: threadId,
   );
   final bashApprovalByToolUseId = buildBashApprovalIndexByToolUseId(runProjection);
+  final toolByToolUseId = buildToolIndexByToolUseId(runProjection);
 
   final output = <ActivityFeedEntry>[];
   final entrySourceLineIndex = <String, int>{};
@@ -218,6 +219,24 @@ List<ActivityFeedEntry> buildActivityFeed({
             entry.kind == ActivityFeedKind.action && entry.toolUseId == toolUseId,
       );
     }
+    if (existingIndex < 0 && (toolUseId == null || toolUseId.isEmpty)) {
+      final actionKey = activityActionKey(
+        subagent: subagentRole,
+        label: label,
+        icon: icon,
+      );
+      existingIndex = output.lastIndexWhere(
+        (entry) =>
+            entry.kind == ActivityFeedKind.action &&
+            (entry.toolUseId == null || entry.toolUseId!.isEmpty) &&
+            activityActionKey(
+              subagent: entry.subagentRole,
+              label: entry.text,
+              icon: entry.actionIcon,
+            ) ==
+                actionKey,
+      );
+    }
     if (existingIndex >= 0) {
       final existing = output[existingIndex];
       ToolActionLifecycle? nextLifecycle = lifecycle;
@@ -274,6 +293,78 @@ List<ActivityFeedEntry> buildActivityFeed({
       return approvalLifecycle;
     }
     return toolLifecycleFromMetadata(tool);
+  }
+
+  void upsertParsedBashApproval({
+    required String id,
+    required int lineIndex,
+    required ParsedBashApprovalActivityText parsed,
+    String? subagentRole,
+  }) {
+    final bashApproval = findBashApprovalForParsed(
+      parsed,
+      bashApprovalByToolUseId,
+    );
+    final command = bashApproval?.detail ?? parsed.detail;
+    final label = bashApproval?.description?.trim().isNotEmpty == true
+        ? bashApproval!.description!.trim()
+        : formatToolDisplayLabel(parsed.toolName, command);
+    final lifecycle = bashApprovalPhaseToLifecycle(bashApproval?.phase) ??
+        parsed.phase;
+    upsertAction(
+      id: id,
+      lineIndex: lineIndex,
+      toolUseId: bashApproval?.toolUseId,
+      label: label,
+      icon: iconForToolName(parsed.toolName),
+      lifecycle: lifecycle,
+      subagentRole: subagentRole,
+      bashRun: parsed.toolName == 'Bash'
+          ? resolveBashRunCardDisplay(
+              toolName: 'Bash',
+              command: command,
+              description: bashApproval?.description,
+            )
+          : null,
+    );
+  }
+
+  void upsertParsedToolInvocation({
+    required String id,
+    required int lineIndex,
+    required ParsedActivityToolInvocation invocation,
+    String? subagentRole,
+  }) {
+    final projectionTool = findProjectionToolForInvocation(
+      invocation,
+      toolByToolUseId,
+    );
+    final tool = projectionTool ??
+        ThreadRunToolMetadata(
+          name: invocation.toolName,
+          detail: invocation.detail,
+          durationMs: invocation.durationMs,
+          status: invocation.durationMs != null ? 'completed' : 'running',
+        );
+    final bashApproval = tool.toolUseId != null
+        ? bashApprovalByToolUseId[tool.toolUseId!]
+        : null;
+    upsertAction(
+      id: id,
+      lineIndex: lineIndex,
+      toolUseId: tool.toolUseId,
+      label: formatStructuredToolActionLabel(
+        tool,
+        bashApproval: bashApproval,
+      ),
+      icon: iconForToolName(bashApproval?.toolName ?? tool.name),
+      lifecycle: resolveStructuredToolLifecycle(
+        tool: tool,
+        bashApproval: bashApproval,
+      ),
+      subagentRole: subagentRole,
+      bashRun: resolveActionBashRun(tool, invocation.rawMessage),
+    );
   }
 
   void upsertPhase(String summary, {String? detail, required int lineIndex}) {
@@ -431,6 +522,30 @@ List<ActivityFeedEntry> buildActivityFeed({
         ),
         subagentRole: agentRole,
         bashRun: resolveActionBashRun(tool, message),
+      );
+      continue;
+    }
+
+    final parsedApproval = parseBashApprovalActivityText(message);
+    if (parsedApproval != null) {
+      flushTextBuffers();
+      upsertParsedBashApproval(
+        id: line.id,
+        lineIndex: lineIndex,
+        parsed: parsedApproval,
+        subagentRole: agentRole,
+      );
+      continue;
+    }
+
+    final parsedInvocation = parseActivityToolInvocation(message);
+    if (parsedInvocation != null) {
+      flushTextBuffers();
+      upsertParsedToolInvocation(
+        id: line.id,
+        lineIndex: lineIndex,
+        invocation: parsedInvocation,
+        subagentRole: agentRole,
       );
       continue;
     }
