@@ -202,7 +202,7 @@ function ProjectionActivityLogView({
   const layoutSignature = useMemo(
     () =>
       [
-        showThreadPrompt ? `prompt:${thread?.id ?? ""}:${thread?.prompt.length ?? 0}` : "",
+        showThreadPrompt ? `prompt:${thread?.id ?? ""}` : "",
         ...viewModel.mainFeedEntries.map((entry) => {
           if (entry.kind === "timeline" || entry.kind === "agent-echo") {
             return `${entry.key}:${entry.item.text.length}`;
@@ -210,16 +210,15 @@ function ProjectionActivityLogView({
           const lastItem = entry.card.agent.timeline.at(-1);
           return [
             entry.key,
-            entry.card.agent.status,
-            entry.card.agent.durationMs,
-            entry.card.statusText?.length ?? 0,
+            entry.card.agent.timeline.length,
             lastItem?.id ?? "",
+            lastItem?.text.length ?? 0,
           ].join(":");
         }),
       ]
         .filter(Boolean)
         .join("|"),
-    [showThreadPrompt, thread?.id, thread?.prompt, viewModel.mainFeedEntries],
+    [showThreadPrompt, thread?.id, viewModel.mainFeedEntries],
   );
 
   usePlannerLayoutChangeEffect(layoutSignature, onPlannerLayoutChange);
@@ -498,7 +497,7 @@ function ProjectionSubagentRunRow({
         expanded={expanded}
         onToggle={onToggle}
       />
-      {hasDetails ? (
+      {expanded && hasDetails ? (
         <div className="work-session-details-compact">
           <div className="work-session-details-compact-inner">
             <ProjectionSubagentRunInstanceStrip agent={agent} />
@@ -769,35 +768,9 @@ function ExpandableMissionText({
   expanded: boolean;
   className?: string;
 }) {
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const [heights, setHeights] = useState<{ collapsed: number; expanded: number } | null>(null);
-
-  useLayoutEffect(() => {
-    const element = textRef.current;
-    if (!element) {
-      return;
-    }
-    const previousMaxHeight = element.style.maxHeight;
-    element.style.maxHeight = "none";
-    const fullHeight = element.scrollHeight;
-    element.style.maxHeight = previousMaxHeight;
-    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 20;
-    setHeights({
-      collapsed: Math.ceil(lineHeight * 2),
-      expanded: fullHeight,
-    });
-  }, [text]);
-
-  const maxHeight = heights ? (expanded ? heights.expanded : heights.collapsed) : undefined;
-
   return (
     <div className={`run-log-expandable-text-wrap${expanded ? " is-expanded" : ""}`}>
-      <p
-        ref={textRef}
-        className={["run-log-expandable-text", className].filter(Boolean).join(" ")}
-        title={text}
-        style={maxHeight !== undefined ? { maxHeight } : undefined}
-      >
+      <p className={["run-log-expandable-text", className].filter(Boolean).join(" ")} title={text}>
         {text}
       </p>
     </div>

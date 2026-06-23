@@ -1681,7 +1681,7 @@ function App() {
     const agentSignature = runProjection.agents
       .map((agent) => {
         const lastAgentItem = agent.timeline.at(-1);
-        return `${agent.agentId}:${agent.status}:${agent.durationMs}:${lastAgentItem?.id ?? ""}`;
+        return `${agent.agentId}:${agent.status}:${agent.timeline.length}:${lastAgentItem?.id ?? ""}:${lastAgentItem?.text.length ?? 0}`;
       })
       .join(",");
     return [

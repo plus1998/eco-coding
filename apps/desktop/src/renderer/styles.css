@@ -4872,8 +4872,17 @@ html[data-window-focused="true"] .codex-sidebar {
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
-  max-height: 3.1em;
-  transition: max-height 0.34s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.run-log-expandable-text-wrap:not(.is-expanded) .run-log-expandable-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.run-log-expandable-text-wrap.is-expanded .run-log-expandable-text {
+  display: block;
+  overflow: visible;
 }
 
 .run-log-expandable-text-wrap:not(.is-expanded)::after {

@@ -1181,21 +1181,23 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                           height: 1.4,
                         ),
                   )
+                else if (_expanded)
+                  Text(
+                    fullText,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: ecoColors(context).textSecondary,
+                          height: 1.45,
+                        ),
+                  )
                 else
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                    alignment: Alignment.topLeft,
-                    child: Text(
-                      fullText,
-                      maxLines: _expanded ? null : 2,
-                      overflow:
-                          _expanded ? null : TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: ecoColors(context).textSecondary,
-                            height: 1.45,
-                          ),
-                    ),
+                  Text(
+                    fullText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: ecoColors(context).textSecondary,
+                          height: 1.45,
+                        ),
                   ),
                 if (_expanded && widget.timeline.isNotEmpty) ...[
                   const SizedBox(height: 10),
