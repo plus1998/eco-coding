@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2, Plus } from "lucide-react";
+import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2, Plus, Sparkles } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -73,6 +73,7 @@ export function GitCommitDialog({
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchError, setBranchError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  const [generatingMessage, setGeneratingMessage] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
   const configuredSubagentRoles = useMemo(() => {
@@ -111,6 +112,7 @@ export function GitCommitDialog({
     setMessage("");
     setIncludeUnstaged(true);
     setError(undefined);
+    setGeneratingMessage(false);
     setModelMenuOpen(false);
     setBranchMenuOpen(false);
     setBranchCreateMode(false);
@@ -176,6 +178,37 @@ export function GitCommitDialog({
       setBranchBusy(false);
     }
   }, [onCreateBranch, newBranchName, branchBusy, closeBranchMenu]);
+
+  const handleGenerateMessage = useCallback(async () => {
+    if (!window.eco || generatingMessage || submitting || busy || disabled) {
+      return;
+    }
+    setGeneratingMessage(true);
+    setError(undefined);
+    try {
+      const result = await window.eco.generateGitCommitMessage({
+        workspacePath,
+        profileId,
+        includeUnstaged,
+        ...(selectedRole && { role: selectedRole }),
+      });
+      setMessage(result.message);
+      setModelMenuOpen(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setGeneratingMessage(false);
+    }
+  }, [
+    generatingMessage,
+    submitting,
+    busy,
+    disabled,
+    workspacePath,
+    profileId,
+    includeUnstaged,
+    selectedRole,
+  ]);
 
   const runAction = useCallback(
     async (action: CommitDialogAction) => {
@@ -272,10 +305,12 @@ export function GitCommitDialog({
   const canCommit = Boolean(gitStatus?.canCommit) && !disabled;
   const canPushOnly = canPush && (gitStatus?.aheadCount ?? 0) > 0;
   const branchLabel = gitStatus?.branch ?? "detached";
-  const branchPickerDisabled = submitting || busy || branchBusy;
+  const branchPickerDisabled = submitting || busy || branchBusy || generatingMessage;
   const showBranchPicker =
     Boolean(gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch);
-  const modelPickerDisabled = submitting || busy || disabled || modelOptions.length === 0;
+  const modelPickerDisabled =
+    submitting || busy || disabled || generatingMessage || modelOptions.length === 0;
+  const messageFieldDisabled = submitting || busy || disabled || generatingMessage;
   const showModelPicker = message.trim().length === 0;
 
   return createPortal(
@@ -295,124 +330,133 @@ export function GitCommitDialog({
         }}
       >
         <header className="git-commit-popover-header">
-          <div className="git-commit-popover-header-pickers">
-            {showBranchPicker ? (
-              <div className="git-commit-branch-select-wrap">
-                <button
-                  type="button"
-                  className="git-commit-popover-branch git-commit-popover-branch-trigger"
-                  disabled={branchPickerDisabled}
-                  aria-expanded={branchMenuOpen}
-                  aria-haspopup="listbox"
-                  aria-label="切换分支"
-                  onClick={() => {
-                    setModelMenuOpen(false);
-                    setBranchMenuOpen((current) => {
-                      const next = !current;
-                      if (!next) {
-                        setBranchCreateMode(false);
-                        setNewBranchName("");
-                        setBranchError(undefined);
-                      }
-                      return next;
-                    });
-                  }}
-                >
-                  <GitBranch size={14} strokeWidth={1.75} aria-hidden />
-                  <span className="git-commit-popover-branch-label">{branchLabel}</span>
-                  <ChevronDown
-                    size={12}
-                    strokeWidth={2}
-                    className={branchMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
-                    aria-hidden
-                  />
-                </button>
-                {branchMenuOpen ? (
-                  <div className="git-commit-branch-menu" role="listbox" aria-label="提交到">
-                    {branchCreateMode ? (
-                      <div className="git-commit-branch-create">
-                        <div className="git-commit-branch-menu-header">新分支</div>
-                        <input
-                          className="git-commit-branch-create-input"
-                          value={newBranchName}
-                          placeholder="分支名称…"
-                          disabled={branchBusy}
-                          autoFocus
-                          onChange={(event) => {
-                            setNewBranchName(event.target.value);
-                            setBranchError(undefined);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              void handleCreateBranch();
-                            }
-                            if (event.key === "Escape") {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setBranchCreateMode(false);
-                              setNewBranchName("");
+          <div className="git-commit-popover-header-row">
+            <div className="git-commit-popover-header-branch">
+              {showBranchPicker ? (
+                <div className="git-commit-branch-select-wrap">
+                  <button
+                    type="button"
+                    className="git-commit-popover-branch git-commit-popover-branch-trigger"
+                    disabled={branchPickerDisabled}
+                    aria-expanded={branchMenuOpen}
+                    aria-haspopup="listbox"
+                    aria-label="切换分支"
+                    onClick={() => {
+                      setModelMenuOpen(false);
+                      setBranchMenuOpen((current) => {
+                        const next = !current;
+                        if (!next) {
+                          setBranchCreateMode(false);
+                          setNewBranchName("");
+                          setBranchError(undefined);
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    <GitBranch size={15} strokeWidth={1.75} aria-hidden />
+                    <span className="git-commit-popover-branch-label">{branchLabel}</span>
+                    <ChevronDown
+                      size={13}
+                      strokeWidth={2}
+                      className={branchMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
+                      aria-hidden
+                    />
+                  </button>
+                  {branchMenuOpen ? (
+                    <div className="git-commit-branch-menu" role="listbox" aria-label="提交到">
+                      {branchCreateMode ? (
+                        <div className="git-commit-branch-create">
+                          <div className="git-commit-branch-menu-header">新分支</div>
+                          <input
+                            className="git-commit-branch-create-input"
+                            value={newBranchName}
+                            placeholder="分支名称…"
+                            disabled={branchBusy}
+                            autoFocus
+                            onChange={(event) => {
+                              setNewBranchName(event.target.value);
                               setBranchError(undefined);
-                            }
-                          }}
-                        />
-                        {branchError ? <p className="git-commit-branch-create-error">{branchError}</p> : null}
-                      </div>
-                    ) : (
-                      <>
-                        <div className="git-commit-branch-menu-header">提交到</div>
-                        <ul className="git-commit-branch-menu-list">
-                          {gitStatus!.branches.map((branch) => {
-                            const isActive = branch === gitStatus?.branch;
-                            return (
-                              <li key={branch}>
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void handleCreateBranch();
+                              }
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setBranchCreateMode(false);
+                                setNewBranchName("");
+                                setBranchError(undefined);
+                              }
+                            }}
+                          />
+                          {branchError ? <p className="git-commit-branch-create-error">{branchError}</p> : null}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="git-commit-branch-menu-header">提交到</div>
+                          <ul className="git-commit-branch-menu-list">
+                            {gitStatus!.branches.map((branch) => {
+                              const isActive = branch === gitStatus?.branch;
+                              return (
+                                <li key={branch}>
+                                  <button
+                                    type="button"
+                                    role="option"
+                                    aria-selected={isActive}
+                                    className={isActive ? "is-active" : undefined}
+                                    disabled={branchBusy}
+                                    onClick={() => void handleSelectBranch(branch)}
+                                  >
+                                    <GitBranch size={14} strokeWidth={1.75} aria-hidden />
+                                    <span className="git-commit-branch-menu-label">{branch}</span>
+                                    {isActive ? <Check size={14} aria-hidden /> : null}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                            {onCreateBranch ? (
+                              <li>
                                 <button
                                   type="button"
-                                  role="option"
-                                  aria-selected={isActive}
-                                  className={isActive ? "is-active" : undefined}
+                                  className="git-commit-branch-menu-create"
                                   disabled={branchBusy}
-                                  onClick={() => void handleSelectBranch(branch)}
+                                  onClick={() => {
+                                    setBranchCreateMode(true);
+                                    setNewBranchName("");
+                                    setBranchError(undefined);
+                                  }}
                                 >
-                                  <GitBranch size={14} strokeWidth={1.75} aria-hidden />
-                                  <span className="git-commit-branch-menu-label">{branch}</span>
-                                  {isActive ? <Check size={14} aria-hidden /> : null}
+                                  <Plus size={14} strokeWidth={2} aria-hidden />
+                                  <span className="git-commit-branch-menu-label">新分支</span>
                                 </button>
                               </li>
-                            );
-                          })}
-                          {onCreateBranch ? (
-                            <li>
-                              <button
-                                type="button"
-                                className="git-commit-branch-menu-create"
-                                disabled={branchBusy}
-                                onClick={() => {
-                                  setBranchCreateMode(true);
-                                  setNewBranchName("");
-                                  setBranchError(undefined);
-                                }}
-                              >
-                                <Plus size={14} strokeWidth={2} aria-hidden />
-                                <span className="git-commit-branch-menu-label">新分支</span>
-                              </button>
-                            </li>
-                          ) : null}
-                        </ul>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="git-commit-popover-branch">
-                <GitBranch size={14} strokeWidth={1.75} aria-hidden />
-                <span>{branchLabel}</span>
-                <ChevronDown size={12} strokeWidth={2} aria-hidden />
-              </div>
-            )}
+                            ) : null}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="git-commit-popover-branch">
+                  <GitBranch size={15} strokeWidth={1.75} aria-hidden />
+                  <span>{branchLabel}</span>
+                  <ChevronDown size={13} strokeWidth={2} aria-hidden />
+                </div>
+              )}
+            </div>
 
-            {showModelPicker ? (
+            <div className="git-commit-popover-stats" aria-label="变更行数">
+              <span className="git-commit-stat-add">+{insertions}</span>
+              <span className="git-commit-stat-del">-{deletions}</span>
+            </div>
+          </div>
+
+          {showModelPicker ? (
+            <div className="git-commit-popover-header-model">
               <div className="git-commit-model-select-wrap">
                 <button
                   type="button"
@@ -433,7 +477,7 @@ export function GitCommitDialog({
                   )}
                   <span className="git-commit-popover-branch-label">{modelLabel}</span>
                   <ChevronDown
-                    size={12}
+                    size={13}
                     strokeWidth={2}
                     className={modelMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
                     aria-hidden
@@ -464,37 +508,48 @@ export function GitCommitDialog({
                   </ul>
                 ) : null}
               </div>
-            ) : null}
-          </div>
-
-          <div className="git-commit-popover-stats" aria-label="变更行数">
-            <span className="git-commit-stat-add">+{insertions}</span>
-            <span className="git-commit-stat-del">-{deletions}</span>
-          </div>
+            </div>
+          ) : null}
         </header>
 
         <div className="git-commit-popover-body">
-          <textarea
-            className="git-commit-popover-message"
-            value={message}
-            placeholder="提交信息（留空将自动生成）…"
-            rows={3}
-            disabled={submitting || busy || disabled}
-            onChange={(event) => {
-              const next = event.target.value;
-              setMessage(next);
-              if (next.trim().length > 0) {
-                setModelMenuOpen(false);
-              }
-            }}
-            autoFocus
-          />
+          <div className="git-commit-popover-message-wrap">
+            <textarea
+              className="git-commit-popover-message"
+              value={message}
+              placeholder="提交信息（留空则 AI 生成）"
+              rows={3}
+              disabled={messageFieldDisabled}
+              onChange={(event) => {
+                const next = event.target.value;
+                setMessage(next);
+                if (next.trim().length > 0) {
+                  setModelMenuOpen(false);
+                }
+              }}
+              autoFocus
+            />
+            <button
+              type="button"
+              className="git-commit-popover-message-generate"
+              aria-label="AI 生成提交信息"
+              title="AI 生成提交信息"
+              disabled={messageFieldDisabled || !canCommit}
+              onClick={() => void handleGenerateMessage()}
+            >
+              {generatingMessage ? (
+                <Loader2 size={16} className="spinning" aria-hidden />
+              ) : (
+                <Sparkles size={16} strokeWidth={1.75} aria-hidden />
+              )}
+            </button>
+          </div>
 
           <label className="git-commit-popover-checkbox">
             <input
               type="checkbox"
               checked={includeUnstaged}
-              disabled={submitting || busy || disabled}
+              disabled={messageFieldDisabled}
               onChange={(event) => setIncludeUnstaged(event.target.checked)}
             />
             <span>包含未暂存的更改</span>
@@ -508,24 +563,34 @@ export function GitCommitDialog({
             <button
               type="button"
               className="git-commit-popover-action"
-              disabled={!canCommit || submitting || busy}
+              disabled={!canCommit || submitting || busy || generatingMessage}
               onClick={() => void runAction("commit")}
             >
-              <GitCommitHorizontal size={15} strokeWidth={1.75} aria-hidden />
-              <span>提交</span>
-              <kbd className="git-commit-popover-shortcut">⌘↩</kbd>
-              {submitting ? <Loader2 size={14} className="spinning git-commit-popover-spinner" aria-hidden /> : null}
+              <span className="git-commit-popover-action-icon" aria-hidden>
+                <GitCommitHorizontal size={16} strokeWidth={1.75} />
+              </span>
+              <span className="git-commit-popover-action-label">提交</span>
+              <span className="git-commit-popover-action-trailing" aria-hidden>
+                {submitting ? (
+                  <Loader2 size={14} className="spinning git-commit-popover-spinner" />
+                ) : (
+                  <kbd className="git-commit-popover-shortcut">⌘↩</kbd>
+                )}
+              </span>
             </button>
           </li>
           <li>
             <button
               type="button"
               className="git-commit-popover-action"
-              disabled={!canCommit || submitting || busy}
+              disabled={!canCommit || submitting || busy || generatingMessage}
               onClick={() => void runAction("commit-push")}
             >
-              <CloudUpload size={15} strokeWidth={1.75} aria-hidden />
-              <span>提交并推送</span>
+              <span className="git-commit-popover-action-icon" aria-hidden>
+                <CloudUpload size={16} strokeWidth={1.75} />
+              </span>
+              <span className="git-commit-popover-action-label">提交并推送</span>
+              <span className="git-commit-popover-action-trailing" aria-hidden />
             </button>
           </li>
           <li>
@@ -535,8 +600,11 @@ export function GitCommitDialog({
               disabled={!canPushOnly || submitting || busy}
               onClick={() => void runAction("push")}
             >
-              <CloudUpload size={15} strokeWidth={1.75} aria-hidden />
-              <span>推送</span>
+              <span className="git-commit-popover-action-icon" aria-hidden>
+                <CloudUpload size={16} strokeWidth={1.75} />
+              </span>
+              <span className="git-commit-popover-action-label">推送</span>
+              <span className="git-commit-popover-action-trailing" aria-hidden />
             </button>
           </li>
         </ul>

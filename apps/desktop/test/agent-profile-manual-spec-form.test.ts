@@ -51,6 +51,22 @@ test("tryFormToManualSpec ignores invalid partial input", () => {
   expect(tryFormToManualSpec(form)).toEqual({ contextTokens: 256_000, inputPerM: 3 });
 });
 
+test("formToManualSpec preserves zero pricing as free", () => {
+  const form = emptyManualSpecForm();
+  form.inputPerM = "0";
+  form.outputPerM = "0";
+  form.cacheReadPerM = "0";
+  form.cacheWritePerM = "0";
+  form.priceMultiplier = "0";
+  expect(formToManualSpec(form, { strict: true })).toEqual({
+    priceMultiplier: 0,
+    inputPerM: 0,
+    outputPerM: 0,
+    cacheReadPerM: 0,
+    cacheWritePerM: 0,
+  });
+});
+
 test("countManualOverrides and listManualOverrideFields", () => {
   const form = emptyManualSpecForm();
   form.contextTokens = "200000";
@@ -166,4 +182,18 @@ test("mergeEffectivePricingHint applies price multiplier to catalog rates", () =
   expect(merged?.rates?.inputPerM).toBeCloseTo(3);
   expect(merged?.rates?.outputPerM).toBeCloseTo(12);
   expect(merged?.rates?.cacheReadPerM).toBeCloseTo(0.3);
+});
+
+test("mergeEffectivePricingHint treats price multiplier zero as free", () => {
+  const merged = mergeEffectivePricingHint(
+    {
+      role: "planner",
+      modelId: "gpt-4o",
+      providerName: "OpenAI",
+      pricingResolved: true,
+      rates: { inputPerM: 2, outputPerM: 8, cacheReadPerM: 0.2 },
+    },
+    { priceMultiplier: 0 },
+  );
+  expect(merged?.rates).toEqual({ inputPerM: 0, outputPerM: 0, cacheReadPerM: 0 });
 });

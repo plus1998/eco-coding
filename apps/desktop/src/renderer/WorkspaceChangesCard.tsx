@@ -42,7 +42,7 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
       >
         <div className="workspace-changes-header">
           <div className="workspace-changes-header-main">
-            <FileDiff size={16} className="workspace-changes-icon" aria-hidden />
+            <FileDiff size={18} className="workspace-changes-icon" aria-hidden />
             <div className="workspace-changes-title-wrap">
               <span className="workspace-changes-title">已编辑 {fileCount} 个文件</span>
               <span className="workspace-changes-totals" aria-label="变更行数">

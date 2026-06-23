@@ -112,6 +112,22 @@ test("manualSpecToRates returns rates when input and output are set", () => {
   });
 });
 
+test("manualSpecToRates preserves zero prices as free", () => {
+  expect(
+    manualSpecToRates({
+      inputPerM: 0,
+      outputPerM: 0,
+      cacheReadPerM: 0,
+      cacheWritePerM: 0,
+    }),
+  ).toEqual({
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  });
+});
+
 test("resolveRatesForRoute prefers manual spec when input and output are set", () => {
   const lookup = {
     providerKey: "anthropic",
@@ -136,6 +152,20 @@ test("resolveRatesForRoute applies price multiplier to catalog rates", () => {
   expect(result?.output).toBeCloseTo(18);
   expect(result?.cacheRead).toBeCloseTo(0.36);
   expect(result?.cacheWrite).toBeCloseTo(4.5);
+});
+
+test("resolveRatesForRoute treats price multiplier zero as free", () => {
+  const lookup = {
+    providerKey: "anthropic",
+    modelId: "claude-sonnet-4",
+    rates: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  };
+  expect(resolveRatesForRoute(lookup, { priceMultiplier: 0 })).toEqual({
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  });
 });
 
 test("resolveRatesForRoute applies multiplier after manual absolute prices", () => {

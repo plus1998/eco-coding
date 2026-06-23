@@ -10,10 +10,12 @@ test("resolvePriceMultiplier defaults to 1", () => {
   expect(resolvePriceMultiplier(undefined)).toBe(1);
   expect(resolvePriceMultiplier({})).toBe(1);
   expect(resolvePriceMultiplier({ priceMultiplier: 2 })).toBe(2);
+  expect(resolvePriceMultiplier({ priceMultiplier: 0 })).toBe(0);
 });
 
 test("normalizeStoredPriceMultiplier omits default multiplier", () => {
   expect(normalizeStoredPriceMultiplier(1)).toBeUndefined();
+  expect(normalizeStoredPriceMultiplier(0)).toBe(0);
   expect(normalizeStoredPriceMultiplier(1.25)).toBe(1.25);
 });
 

@@ -92,3 +92,37 @@ test.skipIf(!sqliteAvailable)(
     expect(settings.routeProfiles[0]?.name).toBe("默认编程");
   },
 );
+
+test.skipIf(!sqliteAvailable)("candidate model manual pricing preserves zero values", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-candidate-zero-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const provider = store.saveProvider({
+    name: "P",
+    baseUrl: "https://api.example.com",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+
+  const saved = store.saveCandidateModel({
+    providerId: provider.id,
+    modelId: "free-model",
+    manualSpec: {
+      inputPerM: 0,
+      outputPerM: 0,
+      cacheReadPerM: 0,
+      cacheWritePerM: 0,
+      priceMultiplier: 0,
+    },
+  });
+
+  expect(saved.manualSpec).toEqual({
+    inputPerM: 0,
+    outputPerM: 0,
+    cacheReadPerM: 0,
+    cacheWritePerM: 0,
+    priceMultiplier: 0,
+  });
+  expect(store.listCandidateModels(provider.id)[0]?.manualSpec).toEqual(saved.manualSpec);
+});

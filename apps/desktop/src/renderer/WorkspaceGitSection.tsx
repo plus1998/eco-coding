@@ -350,7 +350,7 @@ export function WorkspaceGitSection({
             aria-label="查看工作区变更"
             onClick={() => void openChangesDrawer()}
           >
-            <PlusSquare size={14} aria-hidden />
+            <PlusSquare size={16} aria-hidden />
             <span>变更</span>
             <span className="thread-info-workspace-git-stats" aria-label="变更行数">
               {gitBusy ? (
@@ -372,7 +372,7 @@ export function WorkspaceGitSection({
               : "thread-info-workspace-git-row thread-info-workspace-git-picker-row"
           }
         >
-          <GitBranch size={14} aria-hidden />
+          <GitBranch size={16} aria-hidden />
           {showBranchPicker ? (
             <div ref={branchWrapRef} className="thread-info-workspace-git-branch-wrap">
               <button
@@ -399,7 +399,7 @@ export function WorkspaceGitSection({
               >
                 <span className="thread-info-workspace-git-picker-label">{branchLabel}</span>
                 <ChevronDown
-                  size={12}
+                  size={13}
                   className={
                     branchMenuOpen
                       ? "thread-info-workspace-git-chevron open"
@@ -466,7 +466,7 @@ export function WorkspaceGitSection({
                                       disabled={branchBusy}
                                       onClick={() => void handleSelectBranch(branch)}
                                     >
-                                      <GitBranch size={14} aria-hidden />
+                                      <GitBranch size={16} aria-hidden />
                                       <span className="thread-info-workspace-git-branch-menu-label">
                                         {branch}
                                       </span>
@@ -514,7 +514,7 @@ export function WorkspaceGitSection({
               disabled={gitBusy || commitDisabled}
               onClick={() => setCommitDialogOpen(true)}
             >
-              <GitCommitHorizontal size={14} aria-hidden />
+              <GitCommitHorizontal size={16} aria-hidden />
               <span>提交或推送</span>
             </button>
           </li>
@@ -533,7 +533,7 @@ export function WorkspaceGitSection({
                   : "当前分支已与远程同步"
               }
             >
-              <CloudDownload size={14} aria-hidden />
+              <CloudDownload size={16} aria-hidden />
               <span>{pullBusy ? "拉取中…" : "拉取"}</span>
             </button>
           </li>
@@ -553,7 +553,7 @@ export function WorkspaceGitSection({
               disabled={scriptsDisabled}
               onClick={onOpenScriptsDialog}
             >
-              <Play size={14} aria-hidden />
+              <Play size={16} aria-hidden />
               <span>npm scripts</span>
             </button>
           </li>

@@ -88,7 +88,7 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
       >
         <span className="thread-info-workspace-git-graph-title">图形</span>
         <ChevronDown
-          size={12}
+          size={13}
           className={expanded ? "thread-info-workspace-git-chevron open" : "thread-info-workspace-git-chevron"}
           aria-hidden
         />

@@ -1,4 +1,10 @@
-import type { ModelsDevMapping, RouteCapabilityHint, RouteManualSpec, RoutePricingHint } from "../shared/ipc";
+import type {
+  ModelsDevMapping,
+  RouteCapabilityHint,
+  RouteManualSpec,
+  RoutePricingHint,
+  RoutePricingRates,
+} from "../shared/ipc";
 import {
   applyPriceMultiplierToPerMRates,
   normalizeStoredPriceMultiplier,
@@ -265,14 +271,20 @@ export function mergeEffectivePricingHint(
           ...(cacheWritePerM !== undefined && { cacheWritePerM }),
         }
       : undefined;
-  const rates = applyPriceMultiplierToPerMRates(baseRates, resolvePriceMultiplier(manualSpec));
-  const hasRates =
-    rates?.inputPerM !== undefined &&
-    rates.outputPerM !== undefined;
+  const scaledRates = applyPriceMultiplierToPerMRates(baseRates, resolvePriceMultiplier(manualSpec));
+  const rates: RoutePricingRates | undefined =
+    scaledRates?.inputPerM !== undefined && scaledRates.outputPerM !== undefined
+      ? {
+          inputPerM: scaledRates.inputPerM,
+          outputPerM: scaledRates.outputPerM,
+          ...(scaledRates.cacheReadPerM !== undefined && { cacheReadPerM: scaledRates.cacheReadPerM }),
+          ...(scaledRates.cacheWritePerM !== undefined && { cacheWritePerM: scaledRates.cacheWritePerM }),
+        }
+      : undefined;
   const pricingResolved =
     hasManualPricingOverride(manualSpec) || auto?.pricingResolved === true;
 
-  if (!hasRates && !auto) {
+  if (!rates && !auto) {
     return undefined;
   }
 
@@ -280,7 +292,7 @@ export function mergeEffectivePricingHint(
     role: auto?.role ?? ("planner" as const),
     modelId: auto?.modelId ?? "",
     providerName: auto?.providerName ?? "",
-    ...(hasRates && {
+    ...(rates && {
       rates,
     }),
     pricingResolved,

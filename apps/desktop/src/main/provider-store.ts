@@ -830,10 +830,10 @@ function normalizeModelsDevMapping(
 
 function parseManualSpecRow(row: RouteRow): RouteManualSpec | undefined {
   const contextTokens = parsePositiveInt(row.manual_context_tokens);
-  const inputPerM = parsePositiveNumber(row.manual_input_per_m);
-  const outputPerM = parsePositiveNumber(row.manual_output_per_m);
-  const cacheReadPerM = parsePositiveNumber(row.manual_cache_read_per_m);
-  const cacheWritePerM = parsePositiveNumber(row.manual_cache_write_per_m);
+  const inputPerM = parseNonNegativeNumber(row.manual_input_per_m);
+  const outputPerM = parseNonNegativeNumber(row.manual_output_per_m);
+  const cacheReadPerM = parseNonNegativeNumber(row.manual_cache_read_per_m);
+  const cacheWritePerM = parseNonNegativeNumber(row.manual_cache_write_per_m);
   const priceMultiplier = parseStoredPriceMultiplier(row.manual_price_multiplier);
   if (
     contextTokens === undefined &&
@@ -860,10 +860,10 @@ function normalizeManualSpec(value: RouteManualSpec | undefined): RouteManualSpe
     return undefined;
   }
   const contextTokens = parsePositiveInt(value.contextTokens);
-  const inputPerM = parsePositiveNumber(value.inputPerM);
-  const outputPerM = parsePositiveNumber(value.outputPerM);
-  const cacheReadPerM = parsePositiveNumber(value.cacheReadPerM);
-  const cacheWritePerM = parsePositiveNumber(value.cacheWritePerM);
+  const inputPerM = parseNonNegativeNumber(value.inputPerM);
+  const outputPerM = parseNonNegativeNumber(value.outputPerM);
+  const cacheReadPerM = parseNonNegativeNumber(value.cacheReadPerM);
+  const cacheWritePerM = parseNonNegativeNumber(value.cacheWritePerM);
   const priceMultiplier = parseStoredPriceMultiplier(value.priceMultiplier);
   if (
     contextTokens === undefined &&
@@ -893,11 +893,11 @@ function parsePositiveInt(value: number | undefined | null): number | undefined 
   return rounded > 0 ? rounded : undefined;
 }
 
-function parsePositiveNumber(value: number | undefined | null): number | undefined {
+function parseNonNegativeNumber(value: number | undefined | null): number | undefined {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return undefined;
   }
-  return value > 0 ? value : undefined;
+  return value >= 0 ? value : undefined;
 }
 
 function parseStoredPriceMultiplier(value: number | undefined | null): number | undefined {
@@ -967,10 +967,10 @@ function candidateRowToView(row: CandidateModelRow): CandidateModelView {
   const modelsDevMapping = parseModelsDevMapping(row.models_dev_provider_key, row.models_dev_model_id);
   const contextTokens = parsePositiveInt(row.manual_context_tokens);
   const maxOutputTokens = parsePositiveInt(row.manual_max_output_tokens);
-  const inputPerM = parsePositiveNumber(row.manual_input_per_m);
-  const outputPerM = parsePositiveNumber(row.manual_output_per_m);
-  const cacheReadPerM = parsePositiveNumber(row.manual_cache_read_per_m);
-  const cacheWritePerM = parsePositiveNumber(row.manual_cache_write_per_m);
+  const inputPerM = parseNonNegativeNumber(row.manual_input_per_m);
+  const outputPerM = parseNonNegativeNumber(row.manual_output_per_m);
+  const cacheReadPerM = parseNonNegativeNumber(row.manual_cache_read_per_m);
+  const cacheWritePerM = parseNonNegativeNumber(row.manual_cache_write_per_m);
   const priceMultiplier = parseStoredPriceMultiplier(row.manual_price_multiplier);
   const supportsImageInput =
     row.manual_supports_image_input === null || row.manual_supports_image_input === undefined

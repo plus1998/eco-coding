@@ -90,7 +90,7 @@ export function WorkspaceDiffDrawer({
               onClick={onClose}
               aria-label="关闭"
             >
-              <X size={14} aria-hidden />
+              <X size={16} aria-hidden />
             </button>
           </div>
         </header>
@@ -139,7 +139,7 @@ export function WorkspaceDiffDrawer({
                             disabled={discardBusy}
                             onClick={() => void onDiscardPath(file.path)}
                           >
-                            <RotateCcw size={11} aria-hidden />
+                            <RotateCcw size={13} aria-hidden />
                           </button>
                         ) : null}
                       </li>

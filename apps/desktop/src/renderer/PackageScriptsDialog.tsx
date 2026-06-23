@@ -459,16 +459,17 @@ export function PackageScriptsDialog({
                       </button>
                       <button
                         type="button"
-                        className="package-scripts-run-btn"
+                        className="package-scripts-action-btn"
+                        aria-label={isRunning ? `${entry.name} ${runningActionLabel}` : `${entry.name} ${runActionLabel}`}
+                        title={isRunning ? runningActionLabel : runActionLabel}
                         disabled={busy || Boolean(runningScript)}
                         onClick={() => void onRun(entry.name, savedArgs || undefined, runTarget)}
                       >
                         {isRunning ? (
-                          <Loader2 size={13} className="spinning" aria-hidden />
+                          <Loader2 size={14} className="spinning" aria-hidden />
                         ) : (
-                          <Play size={13} aria-hidden />
+                          <Play size={14} aria-hidden />
                         )}
-                        <span>{isRunning ? runningActionLabel : runActionLabel}</span>
                       </button>
                     </div>
                   </li>
