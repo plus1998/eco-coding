@@ -45,7 +45,7 @@ export function createSubagentSessionHooks(
         return;
       }
       const prompt = input.prompt?.trim() ?? "";
-      const todoId = input.todoId ?? options?.todoIdHint?.();
+      const todoId = input.todoId?.trim() || undefined;
       const missionKey =
         role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
       store.upsertSubagentSessionActive({

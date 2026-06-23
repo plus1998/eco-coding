@@ -76,3 +76,33 @@ test("SubagentLaunchRegistry takeForSubagentStart refuses ambiguous same-role la
   expect(registry.peek("toolu_a")).toBeDefined();
   expect(registry.peek("toolu_b")).toBeDefined();
 });
+
+test("SubagentLaunchRegistry resolves SubagentStart through linked SDK task id", () => {
+  const registry = new SubagentLaunchRegistry();
+  registry.register({
+    parentToolUseId: "toolu_a",
+    role: "coder",
+    prompt: "Task A",
+  });
+  registry.register({
+    parentToolUseId: "toolu_b",
+    role: "coder",
+    prompt: "Task B",
+  });
+
+  expect(registry.linkTask("agent_b", "toolu_b")).toMatchObject({
+    parentToolUseId: "toolu_b",
+  });
+
+  expect(
+    registry.takeForSubagentStart({
+      role: "coder",
+      agentId: "agent_b",
+    }),
+  ).toMatchObject({
+    parentToolUseId: "toolu_b",
+    prompt: "Task B",
+  });
+  expect(registry.peek("toolu_b")).toBeUndefined();
+  expect(registry.peek("toolu_a")).toBeDefined();
+});

@@ -1162,21 +1162,29 @@ export function resolveSubagentStartParentToolUseId(
   input: SubagentStartHookInput,
   toolUseID: string | undefined,
 ): string | undefined {
+  return resolveHookToolUseId(input as unknown as Record<string, unknown>, toolUseID);
+}
+
+function resolveHookToolUseId(
+  input: Record<string, unknown>,
+  toolUseID: string | undefined,
+): string | undefined {
   const fromCallback = typeof toolUseID === "string" ? toolUseID.trim() : "";
   if (fromCallback) {
     return fromCallback;
   }
-  const extended = input as SubagentStartHookInput & {
-    parent_tool_use_id?: string;
-    tool_use_id?: string;
-  };
-  const fromParentField =
-    typeof extended.parent_tool_use_id === "string" ? extended.parent_tool_use_id.trim() : "";
+  const fromParentField = typeof input.parent_tool_use_id === "string" ? input.parent_tool_use_id.trim() : "";
   if (fromParentField) {
     return fromParentField;
   }
-  const fromToolField = typeof extended.tool_use_id === "string" ? extended.tool_use_id.trim() : "";
+  const fromToolField = typeof input.tool_use_id === "string" ? input.tool_use_id.trim() : "";
   return fromToolField || undefined;
+}
+
+function readTaskIdFromSubagentStart(input: SubagentStartHookInput): string | undefined {
+  const extended = input as SubagentStartHookInput & { task_id?: string };
+  const taskId = typeof extended.task_id === "string" ? extended.task_id.trim() : "";
+  return taskId || undefined;
 }
 
 function readAgentDelegationPrompt(toolInput: Record<string, unknown>): string {
@@ -1279,8 +1287,11 @@ export function createTaskToolPreToolHook(taskTracker: EcoTaskTrackerHooks): Hoo
   };
 }
 
-export function createTaskCreatedHook(taskTracker: EcoTaskTrackerHooks): HookCallback {
-  return async (input) => {
+export function createTaskCreatedHook(
+  taskTracker: EcoTaskTrackerHooks,
+  subagentLaunchRegistry?: SubagentLaunchRegistry,
+): HookCallback {
+  return async (input, toolUseID) => {
     if (input.hook_event_name !== "TaskCreated") {
       return {};
     }
@@ -1290,6 +1301,10 @@ export function createTaskCreatedHook(taskTracker: EcoTaskTrackerHooks): HookCal
       subject: created.task_subject,
       ...(created.task_description ? { description: created.task_description } : {}),
     });
+    const parentToolUseId = resolveHookToolUseId(created as unknown as Record<string, unknown>, toolUseID);
+    if (parentToolUseId) {
+      subagentLaunchRegistry?.linkTask(created.task_id, parentToolUseId);
+    }
     return {};
   };
 }
@@ -1318,6 +1333,7 @@ export function createSubagentStartHook(handlers: {
       return {};
     }
     const started = input as SubagentStartHookInput;
+    const taskId = readTaskIdFromSubagentStart(started);
     const agentType =
       normalizeSdkBuiltinOrEcoAgentRole(started.agent_type) ??
       normalizeSdkSubagentType(started.agent_type) ??
@@ -1325,6 +1341,8 @@ export function createSubagentStartHook(handlers: {
     const parentToolUseId = resolveSubagentStartParentToolUseId(started, toolUseID);
     const launch = handlers.subagentLaunchRegistry?.takeForSubagentStart({
       role: agentType,
+      agentId: started.agent_id,
+      ...(taskId && { taskId }),
       ...(parentToolUseId && { parentToolUseId }),
     });
     const resolvedParentToolUseId = launch?.parentToolUseId ?? parentToolUseId;
@@ -1498,7 +1516,10 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     }),
   );
   const subagentLaunchRegistry =
-    ctx.subagentLaunchRegistry ?? (ctx.subagentSessions ? new SubagentLaunchRegistry() : undefined);
+    ctx.subagentLaunchRegistry ??
+    (ctx.subagentSessions || ctx.taskTracker || ctx.subagentAttribution
+      ? new SubagentLaunchRegistry()
+      : undefined);
 
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
@@ -1558,7 +1579,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       createTaskToolPreToolHook(ctx.taskTracker),
       "TaskCreate|TaskUpdate|TodoWrite",
     );
-    pushHook(hooks, "TaskCreated", createTaskCreatedHook(ctx.taskTracker));
+    pushHook(hooks, "TaskCreated", createTaskCreatedHook(ctx.taskTracker, subagentLaunchRegistry));
     pushHook(hooks, "TaskCompleted", createTaskCompletedHook(ctx.taskTracker));
     pushHook(hooks, "Stop", createStopHook(ctx));
   }

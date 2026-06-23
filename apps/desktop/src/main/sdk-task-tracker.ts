@@ -255,14 +255,17 @@ export function createSdkTaskTracker(
     persist(updateCoderTodoStatus(todos, todoId, "completed"));
   };
 
-  const applySubagentStart = (input: { agentId: string; agentType: string }) => {
+  const applySubagentStart = (input: { agentId: string; agentType: string; todoId?: string }) => {
     progressFromSdk = true;
-    const pending = todos.find((todo) => todo.status === "pending");
-    if (!pending) {
+    const explicitTodoId = input.todoId?.trim();
+    const linkedTodoId =
+      (explicitTodoId && todos.some((todo) => todo.id === explicitTodoId) ? explicitTodoId : undefined) ??
+      todoIdForSdkTask(input.agentId);
+    if (!linkedTodoId) {
       return;
     }
-    subagentTodoLinks.set(input.agentId, pending.id);
-    persist(updateCoderTodoStatus(todos, pending.id, "running"));
+    subagentTodoLinks.set(input.agentId, linkedTodoId);
+    persist(updateCoderTodoStatus(todos, linkedTodoId, "running"));
   };
 
   const applySubagentStop = (input: { agentId: string; agentType: string }) => {

@@ -7,6 +7,7 @@ import type {
   PreToolUseHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
+  TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   buildEcoSdkHooks,
@@ -25,6 +26,7 @@ import {
   createSubagentStartHook,
   createSubagentStopHook,
   createSubagentToolAttributionPreToolHook,
+  createTaskCreatedHook,
   resolveSubagentStartParentToolUseId,
   SubagentLaunchRegistry,
   createTaskToolPreToolHook,
@@ -1919,6 +1921,117 @@ test("createSubagentStartHook forwards parentToolUseId and launch metadata out o
     { signal: new AbortController().signal },
   );
 
+  expect(starts).toEqual([
+    {
+      agentId: "agent_coder_b",
+      agentType: "coder",
+      parentToolUseId: "toolu_task_b",
+      prompt: "Implement B",
+      todoId: "todo-b",
+    },
+    {
+      agentId: "agent_coder_a",
+      agentType: "coder",
+      parentToolUseId: "toolu_task_a",
+      prompt: "Implement A",
+      todoId: "todo-a",
+    },
+  ]);
+});
+
+test("TaskCreated hook links SDK task id so SubagentStart can resolve without callback toolUseID", async () => {
+  const registry = new SubagentLaunchRegistry();
+  registry.register({
+    parentToolUseId: "toolu_task_a",
+    role: "coder",
+    prompt: "Implement A",
+    todoIdHint: "todo-a",
+  });
+  registry.register({
+    parentToolUseId: "toolu_task_b",
+    role: "coder",
+    prompt: "Implement B",
+    todoIdHint: "todo-b",
+  });
+
+  const createdTasks: Array<{ taskId: string; subject: string }> = [];
+  const taskCreatedHook = createTaskCreatedHook(
+    {
+      onPreToolUse() {},
+      onTaskCreated(input) {
+        createdTasks.push({ taskId: input.taskId, subject: input.subject });
+      },
+      onTaskCompleted() {},
+      onSubagentStart() {},
+      onSubagentStop() {},
+      onStop() {},
+    },
+    registry,
+  );
+  const starts: Array<Record<string, unknown>> = [];
+  const startHook = createSubagentStartHook({
+    subagentLaunchRegistry: registry,
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_parallel",
+      onStart(input) {
+        starts.push(input);
+      },
+      onStop() {},
+      resolveResume: () => undefined,
+    },
+  });
+
+  await taskCreatedHook(
+    {
+      hook_event_name: "TaskCreated",
+      task_id: "agent_coder_b",
+      task_subject: "Implement B",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies TaskCreatedHookInput,
+    "toolu_task_b",
+    { signal: new AbortController().signal },
+  );
+  await taskCreatedHook(
+    {
+      hook_event_name: "TaskCreated",
+      task_id: "agent_coder_a",
+      task_subject: "Implement A",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies TaskCreatedHookInput,
+    "toolu_task_a",
+    { signal: new AbortController().signal },
+  );
+
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_coder_b",
+      agent_type: "coder",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_coder_a",
+      agent_type: "coder",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(createdTasks).toEqual([
+    { taskId: "agent_coder_b", subject: "Implement B" },
+    { taskId: "agent_coder_a", subject: "Implement A" },
+  ]);
   expect(starts).toEqual([
     {
       agentId: "agent_coder_b",

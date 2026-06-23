@@ -88,6 +88,31 @@ test("createSubagentSessionHooks uses structured parentToolUseId and prompt from
   });
 });
 
+test("createSubagentSessionHooks does not assign todoId from pending fallback on start", () => {
+  const saved: Array<Record<string, unknown>> = [];
+  const store = {
+    upsertSubagentSessionActive(input: Record<string, unknown>) {
+      saved.push(input);
+    },
+    markSubagentSessionStopped() {},
+    resolveResumeAgentId() {
+      return undefined;
+    },
+  } as never;
+
+  const hooks = createSubagentSessionHooks(store, "thr_no_guess", "execution", {
+    todoIdHint: () => "todo-pending",
+  });
+
+  hooks.onStart({
+    agentId: "agent_coder_a",
+    agentType: "coder",
+    prompt: "Implement API endpoints",
+  });
+
+  expect(saved[0]).not.toHaveProperty("todoId");
+});
+
 test("createSubagentSessionHooks records dynamic Eco agent sessions", () => {
   const saved: Array<Record<string, unknown>> = [];
   const stopped: string[] = [];

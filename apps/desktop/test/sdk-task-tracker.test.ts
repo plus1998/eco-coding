@@ -137,11 +137,41 @@ test("SubagentStart and SubagentStop update todo status", () => {
     },
   ]);
 
-  hooks.onSubagentStart({ agentId: "agent_1", agentType: "coder" });
+  hooks.onSubagentStart({ agentId: "agent_1", agentType: "coder", todoId: "thr_1:task:0" });
   expect(store.getTodos()[0]?.status).toBe("running");
 
   hooks.onSubagentStop({ agentId: "agent_1", agentType: "coder" });
   expect(store.getTodos()[0]?.status).toBe("completed");
+});
+
+test("SubagentStart does not mark the first pending todo without a structured link", () => {
+  const { store, hooks } = createTracker([
+    {
+      id: "thr_1:task:0",
+      threadId: "thr_1",
+      title: "First pending",
+      detail: "First pending",
+      status: "pending",
+      position: 0,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
+
+  hooks.onSubagentStart({ agentId: "agent_1", agentType: "coder" });
+
+  expect(store.getTodos()[0]?.status).toBe("pending");
+});
+
+test("SubagentStart resolves todo through matching SDK task id", () => {
+  const { store, hooks } = createTracker();
+
+  hooks.onTaskCreated({ taskId: "agent_1", subject: "Implement panel" });
+  hooks.onSubagentStart({ agentId: "agent_1", agentType: "coder" });
+
+  expect(store.getTodos()[0]).toMatchObject({
+    title: "Implement panel",
+    status: "running",
+  });
 });
 
 test("onStop completes running todos", () => {
