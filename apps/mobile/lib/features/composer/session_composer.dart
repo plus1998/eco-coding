@@ -165,7 +165,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final canEditConfig = !widget.isRunning;
     final speechAvailable =
         ref.watch(systemSpeechRecognizerAvailabilityProvider).valueOrNull ==

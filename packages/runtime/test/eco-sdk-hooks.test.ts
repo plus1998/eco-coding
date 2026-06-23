@@ -21,9 +21,12 @@ import {
   createNormalizeSubagentPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
+  createSubagentLaunchPreToolHook,
   createSubagentStartHook,
   createSubagentStopHook,
   createSubagentToolAttributionPreToolHook,
+  resolveSubagentStartParentToolUseId,
+  SubagentLaunchRegistry,
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
@@ -1847,6 +1850,230 @@ test("subagent lifecycle hooks normalize dynamic Eco agent keys", async () => {
 
   expect(starts).toEqual([{ agentId: "agent_researcher", agentType: "researcher" }]);
   expect(stops).toEqual([{ agentId: "agent_researcher", agentType: "researcher" }]);
+});
+
+test("resolveSubagentStartParentToolUseId prefers hook callback toolUseID", () => {
+  expect(
+    resolveSubagentStartParentToolUseId(
+      {
+        hook_event_name: "SubagentStart",
+        agent_id: "agent_coder_b",
+        agent_type: "coder",
+        session_id: "s1",
+        cwd: "/tmp",
+      } satisfies SubagentStartHookInput,
+      "toolu_task_b",
+    ),
+  ).toBe("toolu_task_b");
+});
+
+test("createSubagentStartHook forwards parentToolUseId and launch metadata out of order", async () => {
+  const registry = new SubagentLaunchRegistry();
+  registry.register({
+    parentToolUseId: "toolu_task_a",
+    role: "coder",
+    prompt: "Implement A",
+    todoIdHint: "todo-a",
+  });
+  registry.register({
+    parentToolUseId: "toolu_task_b",
+    role: "coder",
+    prompt: "Implement B",
+    todoIdHint: "todo-b",
+  });
+
+  const starts: Array<Record<string, unknown>> = [];
+  const startHook = createSubagentStartHook({
+    subagentLaunchRegistry: registry,
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_parallel",
+      onStart(input) {
+        starts.push(input);
+      },
+      onStop() {},
+      resolveResume: () => undefined,
+    },
+  });
+
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_coder_b",
+      agent_type: "coder",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    "toolu_task_b",
+    { signal: new AbortController().signal },
+  );
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_coder_a",
+      agent_type: "coder",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    "toolu_task_a",
+    { signal: new AbortController().signal },
+  );
+
+  expect(starts).toEqual([
+    {
+      agentId: "agent_coder_b",
+      agentType: "coder",
+      parentToolUseId: "toolu_task_b",
+      prompt: "Implement B",
+      todoId: "todo-b",
+    },
+    {
+      agentId: "agent_coder_a",
+      agentType: "coder",
+      parentToolUseId: "toolu_task_a",
+      prompt: "Implement A",
+      todoId: "todo-a",
+    },
+  ]);
+});
+
+test("createSubagentLaunchPreToolHook registers launch and forwards attribution", async () => {
+  const registry = new SubagentLaunchRegistry();
+  const taskTools: Array<{ toolUseId: string; role?: string }> = [];
+  const hook = createSubagentLaunchPreToolHook({
+    registry,
+    attribution: {
+      onTaskToolUse(toolUseId, input) {
+        taskTools.push({ toolUseId, ...(input?.role && { role: input.role }) });
+      },
+    },
+  });
+
+  await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "coder", prompt: "Implement API", eco_todo_id: "todo-1" },
+      tool_use_id: "toolu_delegate",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "toolu_delegate",
+    { signal: new AbortController().signal },
+  );
+
+  expect(taskTools).toEqual([{ toolUseId: "toolu_delegate", role: "coder" }]);
+  expect(registry.peek("toolu_delegate")).toMatchObject({
+    parentToolUseId: "toolu_delegate",
+    role: "coder",
+    prompt: "Implement API",
+    todoIdHint: "todo-1",
+  });
+});
+
+test("createSubagentLaunchPreToolHook forwards SDK built-in general-purpose role", async () => {
+  const registry = new SubagentLaunchRegistry();
+  const taskTools: Array<{ toolUseId: string; role?: string }> = [];
+  const hook = createSubagentLaunchPreToolHook({
+    registry,
+    attribution: {
+      onTaskToolUse(toolUseId, input) {
+        taskTools.push({ toolUseId, ...(input?.role && { role: input.role }) });
+      },
+    },
+  });
+
+  await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: SDK_GENERAL_PURPOSE_AGENT_KEY, prompt: "Research and modify." },
+      tool_use_id: "tool_general",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_general",
+    { signal: new AbortController().signal },
+  );
+
+  expect(taskTools).toEqual([{ toolUseId: "tool_general", role: SDK_GENERAL_PURPOSE_AGENT_KEY }]);
+  expect(registry.peek("tool_general")).toMatchObject({
+    parentToolUseId: "tool_general",
+    role: SDK_GENERAL_PURPOSE_AGENT_KEY,
+    prompt: "Research and modify.",
+  });
+});
+
+test("createSubagentLaunchPreToolHook forwards SDK built-in Plan role", async () => {
+  const registry = new SubagentLaunchRegistry();
+  const taskTools: Array<{ toolUseId: string; role?: string }> = [];
+  const hook = createSubagentLaunchPreToolHook({
+    registry,
+    attribution: {
+      onTaskToolUse(toolUseId, input) {
+        taskTools.push({ toolUseId, ...(input?.role && { role: input.role }) });
+      },
+    },
+  });
+
+  await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: SDK_PLAN_AGENT_KEY, prompt: "Research plan context." },
+      tool_use_id: "tool_plan",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_plan",
+    { signal: new AbortController().signal },
+  );
+
+  expect(taskTools).toEqual([{ toolUseId: "tool_plan", role: SDK_PLAN_AGENT_KEY }]);
+  expect(registry.peek("tool_plan")).toMatchObject({
+    parentToolUseId: "tool_plan",
+    role: SDK_PLAN_AGENT_KEY,
+    prompt: "Research plan context.",
+  });
+});
+
+test("buildEcoSdkHooks launch hook attributes SDK built-in Agent delegations", async () => {
+  const taskTools: Array<{ toolUseId: string; role?: string }> = [];
+  const hooks = buildEcoSdkHooks({
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_builtin",
+      onStart() {},
+      onStop() {},
+      resolveResume: () => undefined,
+    },
+    subagentAttribution: {
+      onTaskToolUse(toolUseId, input) {
+        taskTools.push({ toolUseId, ...(input?.role && { role: input.role }) });
+      },
+    },
+    onNotification() {},
+    onPreCompact: async () => {},
+  });
+  const agentPreToolHooks =
+    hooks.PreToolUse?.filter((matcher) => !matcher.matcher || /Agent|Task/.test(matcher.matcher))
+      .flatMap((matcher) => matcher.hooks) ?? [];
+  for (const hook of agentPreToolHooks) {
+    await hook(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: "Agent",
+        tool_input: { subagent_type: SDK_GENERAL_PURPOSE_AGENT_KEY, prompt: "Complex task." },
+        tool_use_id: "tool_builtin",
+        session_id: "s1",
+        cwd: "/tmp",
+      } satisfies PreToolUseHookInput,
+      "tool_builtin",
+      { signal: new AbortController().signal },
+    );
+  }
+
+  expect(taskTools).toEqual([{ toolUseId: "tool_builtin", role: SDK_GENERAL_PURPOSE_AGENT_KEY }]);
 });
 
 test("buildEcoSdkHooks registers expected hook events", () => {

@@ -87,6 +87,7 @@ class ThreadRunProjectionAgent {
     required this.timeline,
     this.delegationSummary,
     this.delegationPrompt,
+    this.parentToolUseId,
     this.latestActivity,
     this.endedAt,
   });
@@ -102,6 +103,7 @@ class ThreadRunProjectionAgent {
       durationMs: (json['durationMs'] as num?)?.toInt() ?? 0,
       delegationSummary: json['delegationSummary'] as String?,
       delegationPrompt: json['delegationPrompt'] as String?,
+      parentToolUseId: json['parentToolUseId'] as String?,
       latestActivity: json['latestActivity'] as String?,
       endedAt: json['endedAt'] as String?,
       timeline: timelineRaw
@@ -122,11 +124,43 @@ class ThreadRunProjectionAgent {
   final int durationMs;
   final String? delegationSummary;
   final String? delegationPrompt;
+  final String? parentToolUseId;
   final String? latestActivity;
   final String? endedAt;
   final List<ThreadRunProjectionTimelineItem> timeline;
 
   bool get isRunning => status == 'active' || status == 'launching';
+}
+
+class ThreadRunProjectionRequestSpan {
+  const ThreadRunProjectionRequestSpan({
+    required this.requestId,
+    required this.status,
+    required this.startedAt,
+    this.ownerAgentId,
+    this.role,
+    this.firstTokenAt,
+    this.endedAt,
+  });
+
+  factory ThreadRunProjectionRequestSpan.fromJson(Map<String, dynamic> json) =>
+      ThreadRunProjectionRequestSpan(
+        requestId: json['requestId'] as String? ?? '',
+        status: json['status'] as String? ?? '',
+        startedAt: json['startedAt'] as String? ?? '',
+        ownerAgentId: json['ownerAgentId'] as String?,
+        role: json['role'] as String?,
+        firstTokenAt: json['firstTokenAt'] as String?,
+        endedAt: json['endedAt'] as String?,
+      );
+
+  final String requestId;
+  final String status;
+  final String startedAt;
+  final String? ownerAgentId;
+  final String? role;
+  final String? firstTokenAt;
+  final String? endedAt;
 }
 
 class ThreadRunProjectionSnapshot {
@@ -137,12 +171,14 @@ class ThreadRunProjectionSnapshot {
     required this.agents,
     required this.sourceEventCount,
     this.timeline = const [],
+    this.requestSpans = const [],
   });
 
   factory ThreadRunProjectionSnapshot.fromJson(Map<String, dynamic> json) {
     final thread = json['thread'] as Map<String, dynamic>? ?? const {};
     final agentsRaw = json['agents'] as List<dynamic>? ?? const [];
     final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
+    final requestSpansRaw = json['requestSpans'] as List<dynamic>? ?? const [];
     return ThreadRunProjectionSnapshot(
       threadId: thread['threadId'] as String? ?? '',
       status: thread['status'] as String? ?? '',
@@ -162,6 +198,13 @@ class ThreadRunProjectionSnapshot {
             ),
           )
           .toList(),
+      requestSpans: requestSpansRaw
+          .map(
+            (entry) => ThreadRunProjectionRequestSpan.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -171,6 +214,7 @@ class ThreadRunProjectionSnapshot {
   final int sourceEventCount;
   final List<ThreadRunProjectionAgent> agents;
   final List<ThreadRunProjectionTimelineItem> timeline;
+  final List<ThreadRunProjectionRequestSpan> requestSpans;
 
   bool get hasData => sourceEventCount > 0;
 }

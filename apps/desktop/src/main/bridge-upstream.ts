@@ -114,6 +114,7 @@ export interface BridgeForwardContext {
   upstreamUserAgent?: string;
   onUsage?: BridgeUsageHandler;
   onUpstreamConnectionError?: (info: BridgeUpstreamConnectionErrorInfo) => void;
+  onUpstreamRequestId?: (requestId: string) => void;
 }
 
 export interface BridgeUsageInfo {
@@ -592,6 +593,9 @@ async function forwardAnthropicNativeMessages(
     upstreamResponse.headers.get("x-request-id") ??
     upstreamResponse.headers.get("request-id") ??
     undefined;
+  if (requestId) {
+    ctx.onUpstreamRequestId?.(requestId);
+  }
 
   if (!upstreamResponse.ok) {
     const responseText = await upstreamResponse.text();

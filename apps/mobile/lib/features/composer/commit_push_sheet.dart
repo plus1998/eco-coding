@@ -144,7 +144,6 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final diff = widget.diff;
 
     return SafeArea(

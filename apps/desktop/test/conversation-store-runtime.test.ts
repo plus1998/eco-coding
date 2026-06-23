@@ -394,3 +394,50 @@ test.skipIf(!sqliteAvailable)("rewindThreadToActivityLine prunes target and late
   expect(store.listSubagentSessions(thread.id)).toEqual([]);
   expect(store.listSubagentMetrics(thread.id)).toEqual([]);
 });
+
+test.skipIf(!sqliteAvailable)("rekeys thread run events when provider request id replaces local placeholder", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-run-event-rekey-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_rekey",
+    title: "Rekey",
+    prompt: "hello",
+    workspacePath: "/tmp/project",
+    status: "running",
+    message: "ok",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  store.saveThread(thread);
+
+  store.appendThreadRunEvent({
+    id: "evt_start",
+    threadId: thread.id,
+    eventType: "request.started",
+    scope: "main",
+    streamState: "final",
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:01.000Z",
+    role: "planner",
+    requestId: "req_local_placeholder",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_delta",
+    threadId: thread.id,
+    eventType: "message.delta",
+    scope: "main",
+    streamState: "partial",
+    message: "Hello",
+    observedAt: "2026-01-01T00:00:02.000Z",
+    role: "planner",
+    requestId: "req_local_placeholder",
+  });
+
+  expect(
+    store.rekeyThreadRunRequestId(thread.id, "req_local_placeholder", "msgreq_provider_123"),
+  ).toBe(2);
+  expect(store.listThreadRunEvents(thread.id).map((event) => event.requestId)).toEqual([
+    "msgreq_provider_123",
+    "msgreq_provider_123",
+  ]);
+});

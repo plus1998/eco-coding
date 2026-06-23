@@ -92,6 +92,11 @@ export interface AnthropicProxyUpstreamErrorInfo {
   statusCode?: number;
 }
 
+export interface AnthropicProxyUpstreamRequestIdInfo {
+  role: RuntimeAgentRole;
+  requestId: string;
+}
+
 export interface AnthropicProxyUsageInfo {
   role: RuntimeAgentRole;
   providerId: string;
@@ -126,6 +131,8 @@ export interface AnthropicProxyStartOptions {
   upstreamUserAgent?: string;
   /** Fires when the local proxy forwards a streaming Messages API call upstream. */
   onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void;
+  /** Fires when upstream response headers expose a provider request id. */
+  onUpstreamRequestId?: (info: AnthropicProxyUpstreamRequestIdInfo) => void;
   /** Fires when the upstream fetch fails before a response body is returned. */
   onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void;
   /** Fires after a Messages API response exposes provider-reported token usage. */
@@ -153,6 +160,7 @@ export async function startAnthropicModelProxy(
   options?: AnthropicProxyStartOptions,
 ): Promise<StartedAnthropicProxy> {
   const onMessagesRequest = options?.onMessagesRequest;
+  const onUpstreamRequestId = options?.onUpstreamRequestId;
   const onUpstreamConnectionError = options?.onUpstreamConnectionError;
   const onUsage = options?.onUsage;
   const upstreamUserAgent = options?.upstreamUserAgent?.trim() || undefined;
@@ -259,6 +267,11 @@ export async function startAnthropicModelProxy(
               error: info.error,
               ...(info.statusCode !== undefined && { statusCode: info.statusCode }),
             });
+          },
+        }),
+        ...(onUpstreamRequestId && {
+          onUpstreamRequestId: (requestId: string) => {
+            onUpstreamRequestId({ role: route.role, requestId });
           },
         }),
         ...(onUsage && {

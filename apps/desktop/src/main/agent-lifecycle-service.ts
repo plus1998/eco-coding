@@ -154,10 +154,12 @@ export class AgentLifecycleService {
     role: RuntimeAgentRole;
     missionKey?: string;
     todoId?: string;
+    parentToolUseId?: string;
   }): AgentInstanceRecord | undefined {
     const state = this.getOrCreateThread(input.threadId);
     const now = this.now();
-    const parentToolUseId = consumePendingToolUseId(state, input.role);
+    const parentToolUseId =
+      input.parentToolUseId?.trim() || consumePendingToolUseId(state, input.role);
     const record: AgentInstanceRecord = {
       threadId: input.threadId,
       agentId: input.agentId,

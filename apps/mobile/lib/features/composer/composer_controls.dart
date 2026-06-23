@@ -229,7 +229,6 @@ class ComposerContextTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final child = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -297,7 +296,6 @@ class ComposerToolbarTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1012,7 +1010,6 @@ class _SheetHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(

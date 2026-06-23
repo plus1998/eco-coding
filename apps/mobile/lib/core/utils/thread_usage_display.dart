@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../models/thread_models.dart';
 import '../models/thread_usage_models.dart';
 import '../theme/subagent_theme.dart';
-import 'activity_display.dart';
 import 'model_id.dart';
 
 String formatCostUsd(double value) {

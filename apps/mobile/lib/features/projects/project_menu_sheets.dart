@@ -26,7 +26,6 @@ Future<void> showProjectActionSheet({
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
     builder: (sheetContext) {
-      final eco = ecoColors(sheetContext);
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -56,6 +56,7 @@ function event(input: Partial<ThreadRunEvent> & { id: string; sequence: number }
     observedAt: input.observedAt ?? "2026-01-01T00:00:02.000Z",
     ...(input.role && { role: input.role }),
     ...(input.agentId && { agentId: input.agentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.requestId && { requestId: input.requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
@@ -85,7 +86,7 @@ test("buildThreadRunProjection isolates concurrent same-role subagents by agentI
   expect(projection.timeline).toEqual([]);
 });
 
-test("buildThreadRunProjection surfaces ambiguous role-only agent events as diagnostics", () => {
+test("buildThreadRunProjection surfaces role-only agent events as missing_agent_id", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
     status: "running",
@@ -94,11 +95,11 @@ test("buildThreadRunProjection surfaces ambiguous role-only agent events as diag
     events: [event({ id: "e1", sequence: 1, role: "coder", message: "Role-only event" })],
   });
 
-  expect(projection.diagnostics[0]?.code).toBe("ambiguous_subagent_role");
+  expect(projection.diagnostics[0]?.code).toBe("missing_agent_id");
   expect(projection.agents.every((row) => row.timeline.length === 0)).toBe(true);
 });
 
-test("buildThreadRunProjection resolves role-only agent events to the only matching agent window", () => {
+test("buildThreadRunProjection resolves agent-scoped events via parentToolUseId", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
     status: "completed",
@@ -108,17 +109,19 @@ test("buildThreadRunProjection resolves role-only agent events to the only match
         agentId: "explore_a",
         role: "explore",
         status: "stopped",
+        parentToolUseId: "toolu_explore",
         startedAt: "2026-01-01T00:00:01.000Z",
         endedAt: "2026-01-01T00:00:05.000Z",
       }),
     ],
     events: [
       event({
-        id: "role-only",
+        id: "linked",
         sequence: 1,
         eventType: "tool.started",
         scope: "agent",
         role: "explore",
+        parentToolUseId: "toolu_explore",
         message: "Tool: WebFetch · weather.com.cn",
         observedAt: "2026-01-01T00:00:03.000Z",
       }),
@@ -126,10 +129,9 @@ test("buildThreadRunProjection resolves role-only agent events to the only match
   });
 
   expect(projection.diagnostics).toEqual([]);
-  expect(projection.timeline).toEqual([]);
   expect(projection.agents[0]?.timeline).toMatchObject([
     {
-      id: "role-only",
+      id: "linked",
       role: "explore",
       agentId: "explore_a",
       text: "Tool: WebFetch · weather.com.cn",
@@ -214,6 +216,7 @@ test("buildThreadRunProjection derives request span timing from stream events", 
         sequence: 1,
         role: "coder",
         agentId: "coder_a",
+        requestId: "msgreq_provider_1",
         streamKey: "thr_projection:coder_a:coder",
         streamState: "placeholder",
         message: "",
@@ -224,6 +227,7 @@ test("buildThreadRunProjection derives request span timing from stream events", 
         sequence: 2,
         role: "coder",
         agentId: "coder_a",
+        requestId: "msgreq_provider_1",
         streamKey: "thr_projection:coder_a:coder",
         streamState: "streaming",
         message: "Hello",
@@ -234,6 +238,7 @@ test("buildThreadRunProjection derives request span timing from stream events", 
         sequence: 3,
         role: "coder",
         agentId: "coder_a",
+        requestId: "msgreq_provider_1",
         streamKey: "thr_projection:coder_a:coder",
         streamState: "finalized",
         message: "Hello",
@@ -243,7 +248,7 @@ test("buildThreadRunProjection derives request span timing from stream events", 
   });
 
   expect(projection.requestSpans[0]).toMatchObject({
-    requestId: "stream:thr_projection:coder_a:coder",
+    requestId: "msgreq_provider_1",
     ownerAgentId: "coder_a",
     status: "completed",
     startedAt: "2026-01-01T00:00:01.000Z",
@@ -460,6 +465,55 @@ test("buildThreadRunProjection tracks retry attempts and terminal request states
     "request-2-start",
     "request-2-cancelled",
   ]);
+});
+
+test("buildThreadRunProjection keeps a single span after provider request id rekey", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:04.000Z" }],
+    agents: [],
+    events: [
+      event({
+        id: "request-start",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "msgreq_provider_123",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "message-delta",
+        sequence: 2,
+        eventType: "message.delta",
+        scope: "main",
+        role: "planner",
+        requestId: "msgreq_provider_123",
+        streamState: "streaming",
+        message: "Hello",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "message-final",
+        sequence: 3,
+        eventType: "message.final",
+        scope: "main",
+        role: "planner",
+        requestId: "msgreq_provider_123",
+        streamState: "finalized",
+        message: "Hello world",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.requestSpans).toHaveLength(1);
+  expect(projection.requestSpans[0]).toMatchObject({
+    requestId: "msgreq_provider_123",
+    status: "completed",
+  });
+  expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(false);
 });
 
 test("buildThreadRunProjection diagnoses request spans left open after terminal status", () => {

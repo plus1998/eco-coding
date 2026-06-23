@@ -71,7 +71,7 @@ const metricsStoreStub: SubagentMetricsPersistenceStore = {
   clearSubagentMetrics: () => {},
 };
 
-test("resolveActivityAgentId falls back to sole active subagent without parent", () => {
+test("resolveActivityAgentId requires parent tool use mapping when role-only", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   registry.onSubagentStart("thr_1", { agentId: "agent_coder_solo", role: "coder" });
 
@@ -89,10 +89,10 @@ test("resolveActivityAgentId falls back to sole active subagent without parent",
     { metricsRegistry: registry },
   );
 
-  expect(agentId).toBe("agent_coder_solo");
+  expect(agentId).toBeUndefined();
 });
 
-test("resolveActivityAgentId falls back to sole active dynamic subagent", () => {
+test("resolveActivityAgentId requires parent mapping for dynamic runtime roles", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   registry.onSubagentStart("thr_1", { agentId: "agent_researcher_solo", role: "researcher" });
 
@@ -109,7 +109,7 @@ test("resolveActivityAgentId falls back to sole active dynamic subagent", () => 
     { metricsRegistry: registry },
   );
 
-  expect(agentId).toBe("agent_researcher_solo");
+  expect(agentId).toBeUndefined();
 });
 
 test("resolveActivityAgentId resolves parallel coders via parent tool use", () => {

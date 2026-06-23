@@ -1,4 +1,4 @@
-import { defaultSubagentAvailability, mergeStreamText } from "@eco/runtime";
+import { defaultSubagentAvailability } from "@eco/runtime";
 import {
   Activity,
   AlertCircle,
@@ -40,7 +40,6 @@ import {
 import { createRoot } from "react-dom/client";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
-import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   buildThreadRuntimeConfigFromDefaults,
@@ -72,7 +71,6 @@ import {
   type SessionSyncSettingsSnapshot,
   type SkillsListResult,
   type SubagentRole,
-  type ThreadActivityLine,
   type ThreadActivityRewindTarget,
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
@@ -103,7 +101,7 @@ import {
   promptIncludesSkillName,
   type SkillInfo,
 } from "../shared/skills";
-import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
+import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
   extractPlanFailureMessage,
   resolveRetryBannerDetail,
@@ -114,11 +112,6 @@ import {
 } from "../shared/thread-failure-message";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import { ActivityLogView } from "./ActivityLogView";
-import {
-  isActivityStatusNoise,
-  shouldScrollMainActivityFeedForLine,
-  stripActivityStatusNoise,
-} from "./activity-log";
 import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { BashApprovalPanel } from "./BashApprovalPanel";
@@ -273,8 +266,6 @@ const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 const emptyGitSettings: GitSettingsSnapshot = { commitMessageRoleByProfileId: {} };
 
 const threadInfoCompactQuery = "(max-width: 1100px)";
-
-type ActivityLine = ThreadActivityLine;
 
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
   threadId: string;
@@ -441,7 +432,6 @@ function App() {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
-  const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
   const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
     Record<string, ThreadSubagentSessionTiming[]>
   >({});
@@ -743,34 +733,6 @@ function App() {
           }
         });
       }
-
-      if (event.type === "thread.user_prompt" || event.type === "thread.api_error") {
-        if (event.activityLine) {
-          appendActivityLine(event.threadId, event.activityLine);
-        }
-        return;
-      }
-
-      if (event.activityLine) {
-        appendActivityLine(event.threadId, event.activityLine);
-        return;
-      }
-
-      if (
-        event.type.startsWith("thread.") &&
-        event.type !== "thread.auto_retry" &&
-        event.type !== "thread.retry"
-      ) {
-        return;
-      }
-
-      appendActivityLine(event.threadId, {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        role: event.role ?? "system",
-        message: event.message,
-        ...(event.stream !== undefined && { stream: event.stream }),
-        ...(event.apiError && { apiError: event.apiError }),
-      });
     });
     return () => {
       if (threadListRefreshTimer !== undefined) {
@@ -788,15 +750,6 @@ function App() {
     }
 
     let cancelled = false;
-    void window.eco.listThreadActivity(selectedThreadId).then((lines) => {
-      if (cancelled) {
-        return;
-      }
-      setActivityByThread((current) => ({
-        ...current,
-        [selectedThreadId]: lines,
-      }));
-    });
 
     if (typeof window.eco.getThreadRunProjection === "function") {
       void window.eco.getThreadRunProjection(selectedThreadId).then((projection) => {
@@ -1615,7 +1568,6 @@ function App() {
     activeThread?.status === "queued" ||
     activeThread?.status === "awaiting_plan";
 
-  const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
   const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
   const queuedFollowUps = useMemo(() => queuedThreadFollowUps(activeFollowUps), [activeFollowUps]);
   const displayedQueuedFollowUps = useMemo(
@@ -1864,22 +1816,11 @@ function App() {
     if (container) {
       syncActivityFeedScrollJump(container);
     }
-  }, [activityLines, runProjectionLayoutSignature, syncActivityFeedScrollJump]);
+  }, [runProjectionLayoutSignature, syncActivityFeedScrollJump]);
 
   useLayoutEffect(() => {
     requestActivityFeedForceScroll();
   }, [activeThread?.id, requestActivityFeedForceScroll]);
-
-  useLayoutEffect(() => {
-    const forceScroll = Date.now() < forceActivityFeedScrollUntilRef.current;
-    const lastLine = activityLines.at(-1);
-    if (!forceScroll && !shouldScrollMainActivityFeedForLine(lastLine)) {
-      return;
-    }
-    scrollActivityFeedToEnd(forceScroll);
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(forceScroll));
-    return () => cancelAnimationFrame(frame);
-  }, [activityLines, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
     if (!runProjectionLayoutSignature) {
@@ -1911,98 +1852,6 @@ function App() {
     scrollActivityFeedToEnd,
     showPlanApproval,
   ]);
-
-  function withoutReconnectActivityLines(lines: ActivityLine[]): ActivityLine[] {
-    return lines.filter((entry) => !isReconnectActivityMessage(entry.message));
-  }
-
-  function appendActivityLine(threadId: string, line: ActivityLine) {
-    const cleanedMessage = stripActivityStatusNoise(line.message);
-    if (isUsageNoiseMessage(cleanedMessage) || isActivityStatusNoise(line.message)) {
-      return;
-    }
-    const normalizedLine: ActivityLine = {
-      ...line,
-      message: cleanedMessage,
-    };
-    const clearsReconnect = shouldClearReconnectActivity(normalizedLine);
-    if (isReconnectActivityMessage(cleanedMessage)) {
-      setActivityByThread((current) => {
-        const previous = current[threadId] ?? [];
-        for (let index = previous.length - 1; index >= 0; index -= 1) {
-          const candidate = previous[index];
-          if (candidate && isReconnectActivityMessage(candidate.message)) {
-            return {
-              ...current,
-              [threadId]: [
-                ...previous.slice(0, index),
-                { ...candidate, message: cleanedMessage, role: normalizedLine.role },
-                ...previous.slice(index + 1),
-              ],
-            };
-          }
-        }
-        return {
-          ...current,
-          [threadId]: [...previous, normalizedLine].slice(-300),
-        };
-      });
-      return;
-    }
-    setActivityByThread((current) => {
-      const previous = clearsReconnect
-        ? withoutReconnectActivityLines(current[threadId] ?? [])
-        : (current[threadId] ?? []);
-      const last = previous[previous.length - 1];
-      if (
-        last &&
-        !normalizedLine.stream &&
-        last.role === normalizedLine.role &&
-        last.message === normalizedLine.message &&
-        last.stream !== true
-      ) {
-        if (clearsReconnect && previous.length !== (current[threadId] ?? []).length) {
-          return { ...current, [threadId]: previous };
-        }
-        return current;
-      }
-      if (normalizedLine.stream && last && !last.stream && isActivityStatusNoise(last.message)) {
-        return {
-          ...current,
-          [threadId]: [...previous.slice(0, -1), { ...normalizedLine, stream: true }].slice(-300),
-        };
-      }
-      if (!normalizedLine.stream && last?.stream && last.role === normalizedLine.role) {
-        const merged = normalizedLine.message.trim()
-          ? mergeStreamText(last.message, normalizedLine.message)
-          : last.message;
-        return {
-          ...current,
-          [threadId]: [
-            ...previous.slice(0, -1),
-            { ...last, message: stripActivityStatusNoise(merged), stream: false },
-          ].slice(-300),
-        };
-      }
-      if (normalizedLine.stream && last?.stream) {
-        return {
-          ...current,
-          [threadId]: [
-            ...previous.slice(0, -1),
-            {
-              ...last,
-              role: normalizedLine.role,
-              message: stripActivityStatusNoise(mergeStreamText(last.message, normalizedLine.message)),
-            },
-          ].slice(-300),
-        };
-      }
-      return {
-        ...current,
-        [threadId]: [...previous, normalizedLine].slice(-300),
-      };
-    });
-  }
 
   async function openWorkspace() {
     setError(undefined);
@@ -2050,7 +1899,6 @@ function App() {
       return;
     }
     const [
-      lines,
       projection,
       subagentSessions,
       subagentMetrics,
@@ -2061,7 +1909,6 @@ function App() {
       todos,
       usageSnapshot,
     ] = await Promise.all([
-      window.eco.listThreadActivity(threadId),
       typeof window.eco.getThreadRunProjection === "function"
         ? window.eco.getThreadRunProjection(threadId)
         : Promise.resolve(undefined),
@@ -2083,7 +1930,6 @@ function App() {
       window.eco.getThreadUsageSnapshot(threadId),
     ]);
 
-    setActivityByThread((current) => ({ ...current, [threadId]: lines }));
     if (projection) {
       setRunProjectionByThread((current) => ({ ...current, [threadId]: projection }));
     } else {
@@ -2256,12 +2102,6 @@ function App() {
           ...current,
           [result.thread.id]: [],
         }));
-        void window.eco.listThreadActivity(result.thread.id).then((lines) => {
-          setActivityByThread((current) => ({
-            ...current,
-            [result.thread.id]: lines,
-          }));
-        });
       }
       clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
       setPrompt("");
@@ -3031,7 +2871,6 @@ function App() {
     });
     setSelectedThreadId(undefined);
     resetComposerDefaultConfig();
-    setActivityByThread({});
     setTodosByThread({});
     setFollowUpsByThread({});
   }
@@ -3228,10 +3067,9 @@ function App() {
       resetComposerDefaultConfig();
       setComposerRewindTarget(undefined);
     }
-    setActivityByThread((current) => removeRecordKey(current, threadId));
+    setRunProjectionByThread((current) => removeRecordKey(current, threadId));
     setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
     setSubagentMetricsByThread((current) => removeRecordKey(current, threadId));
-    setRunProjectionByThread((current) => removeRecordKey(current, threadId));
     setUsageByThread((current) => removeRecordKey(current, threadId));
     setBillingByThread((current) => removeRecordKey(current, threadId));
     setContextByThread((current) => removeRecordKey(current, threadId));
@@ -3796,7 +3634,6 @@ function App() {
               <div className="activity-messages-shell">
                 <div ref={activityMessagesRef} className="activity-messages">
                 <ActivityLogView
-                  lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
                   {...(runProjection && { projection: runProjection })}
                   {...(activeThread &&

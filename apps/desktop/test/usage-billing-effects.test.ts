@@ -480,9 +480,12 @@ test("applySdkRunBillingEffects requests verified ledger projection by default",
   ]);
 });
 
-test("applySingleUsageBillingEffects falls back to legacy subagent metrics when ledger projection is unavailable", async () => {
+test("applySingleUsageBillingEffects does not backfill legacy subagent metrics when ledger projection is unavailable", async () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
-  const threadId = "thr_effects_legacy_subagent_fallback";
+  const legacySubagentUsageCalls: Array<
+    Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>
+  > = [];
+  const threadId = "thr_effects_no_legacy_subagent_backfill";
   registry.onSubagentStart(threadId, { agentId: "agent_coder", role: "coder" });
   const coordinator = new UsageLedgerCoordinator({
     store: {
@@ -509,7 +512,13 @@ test("applySingleUsageBillingEffects falls back to legacy subagent metrics when 
     }),
     usageLedger: coordinator,
     accumulator: new ThreadUsageAccumulator(),
-    subagentMetrics: registry,
+    subagentMetrics: {
+      recordContextObservation: (id, input) => registry.recordContextObservation(id, input),
+      recordSdkUsage: (...args) => {
+        legacySubagentUsageCalls.push(args);
+        return registry.recordSdkUsage(...args);
+      },
+    },
     emitUsageUpdated: () => undefined,
     schedulePersistThreadMetrics: () => undefined,
   };
@@ -521,7 +530,7 @@ test("applySingleUsageBillingEffects falls back to legacy subagent metrics when 
     runtimeRoutes: routes,
     lookupPricing,
     agentId: "agent_coder",
-    requestKey: "proxy:coder:req_fallback",
+    requestKey: "proxy:coder:req_no_backfill",
   });
 
   const billing = await applySingleUsageBillingEffects(services, {
@@ -532,17 +541,20 @@ test("applySingleUsageBillingEffects falls back to legacy subagent metrics when 
   });
 
   const [entry] = registry.listEntries(threadId);
-  expect(entry?.usage.inputTokens).toBe(10_000);
-  expect(entry?.ecoCostUsd).toBeGreaterThan(0);
-  expect(billing.subagents?.[0]).toMatchObject({
-    agentId: "agent_coder",
-    inputTokens: 10_000,
-  });
+  expect(legacySubagentUsageCalls).toHaveLength(0);
+  expect(entry?.usage.inputTokens).toBe(0);
+  expect(entry?.ecoCostUsd).toBe(0);
+  expect(billing.primarySource).toBe("proxy");
+  expect(billing.ecoCostUsd).toBeGreaterThan(0);
+  expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });
 
-test("applySdkRunBillingEffects falls back to legacy subagent metrics when ledger projection is unavailable", async () => {
+test("applySdkRunBillingEffects does not backfill legacy subagent metrics when ledger projection is unavailable", async () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
-  const threadId = "thr_sdk_effects_legacy_subagent_fallback";
+  const legacySubagentUsageCalls: Array<
+    Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>
+  > = [];
+  const threadId = "thr_sdk_effects_no_legacy_subagent_backfill";
   registry.onSubagentStart(threadId, { agentId: "agent_coder", role: "coder" });
   const coordinator = new UsageLedgerCoordinator({
     store: {
@@ -569,7 +581,13 @@ test("applySdkRunBillingEffects falls back to legacy subagent metrics when ledge
     }),
     usageLedger: coordinator,
     accumulator: new ThreadUsageAccumulator(),
-    subagentMetrics: registry,
+    subagentMetrics: {
+      recordContextObservation: (id, input) => registry.recordContextObservation(id, input),
+      recordSdkUsage: (...args) => {
+        legacySubagentUsageCalls.push(args);
+        return registry.recordSdkUsage(...args);
+      },
+    },
     emitUsageUpdated: () => undefined,
     schedulePersistThreadMetrics: () => undefined,
   };
@@ -589,25 +607,24 @@ test("applySdkRunBillingEffects falls back to legacy subagent metrics when ledge
   const billing = await applySdkRunBillingEffects(services, {
     threadId,
     role: "coder",
-    requestKey: "sdk-result:event_fallback",
+    requestKey: "sdk-result:event_no_backfill",
     models: billingModels.models,
     billingRole: "coder",
     contextUsage: usage(1_500),
     updateContext: true,
     totalCostUsd: 0.03,
     ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
-    runAttemptId: "attempt_fallback",
+    runAttemptId: "attempt_no_backfill",
     ledgerAgentId: "agent_coder",
     resolvedSubagentId: "agent_coder",
   });
 
   const [entry] = registry.listEntries(threadId);
-  expect(entry?.usage.inputTokens).toBe(1_500);
-  expect(entry?.usage.outputTokens).toBe(2_000);
-  expect(entry?.ecoCostUsd).toBeGreaterThan(0);
-  expect(billing.subagents?.[0]).toMatchObject({
-    agentId: "agent_coder",
-    inputTokens: 1_500,
-    outputTokens: 2_000,
-  });
+  expect(legacySubagentUsageCalls).toHaveLength(0);
+  expect(entry?.usage.inputTokens).toBe(0);
+  expect(entry?.usage.outputTokens).toBe(0);
+  expect(entry?.ecoCostUsd).toBe(0);
+  expect(billing.primarySource).toBe("sdk");
+  expect(billing.otelCostUsd).toBe(0.03);
+  expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });

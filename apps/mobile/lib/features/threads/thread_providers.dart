@@ -145,7 +145,6 @@ class ActivityItem {
 
 class ThreadSessionState {
   const ThreadSessionState({
-    this.activities = const [],
     this.pendingPlan,
     this.pendingBash,
     this.pendingClarification,
@@ -159,7 +158,6 @@ class ThreadSessionState {
     this.contextSnapshot,
   });
 
-  final List<ActivityItem> activities;
   final ThreadPendingPlan? pendingPlan;
   final BashApprovalRequest? pendingBash;
   final ClarificationRequest? pendingClarification;
@@ -173,7 +171,6 @@ class ThreadSessionState {
   final ThreadContextSnapshot? contextSnapshot;
 
   ThreadSessionState copyWith({
-    List<ActivityItem>? activities,
     ThreadPendingPlan? pendingPlan,
     bool clearPlan = false,
     BashApprovalRequest? pendingBash,
@@ -193,7 +190,6 @@ class ThreadSessionState {
     bool clearContext = false,
   }) {
     return ThreadSessionState(
-      activities: activities ?? this.activities,
       pendingPlan: clearPlan ? null : (pendingPlan ?? this.pendingPlan),
       pendingBash: clearBash ? null : (pendingBash ?? this.pendingBash),
       pendingClarification: clearClarification
@@ -230,6 +226,42 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   final String threadId;
   final Ref ref;
+  Timer? _projectionRefreshTimer;
+
+  void _scheduleProjectionRefresh() {
+    if (state.runProjection?.hasData == true) {
+      return;
+    }
+    _projectionRefreshTimer?.cancel();
+    _projectionRefreshTimer = Timer(const Duration(milliseconds: 120), () {
+      unawaited(_refreshProjectionFromRpc());
+    });
+  }
+
+  Future<void> _refreshProjectionFromRpc() async {
+    if (!mounted || state.runProjection?.hasData == true) {
+      return;
+    }
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      return;
+    }
+    try {
+      final projection = await rpc.getRunProjection(threadId);
+      if (!mounted || projection == null) {
+        return;
+      }
+      state = state.copyWith(
+        runProjection: _pickNewerProjection(state.runProjection, projection),
+      );
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _projectionRefreshTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _init() async {
     ref.listen(ecoEventsProvider, (previous, next) {
@@ -257,7 +289,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
 
     try {
-      final lines = await rpc.activityList(threadId);
+      ThreadRunProjectionSnapshot? projection;
+      List<ThreadSubagentSessionTiming> subagentSessions = const [];
+      ThreadBillingSnapshot? billing;
+      ThreadContextSnapshot? contextSnapshot;
+      try {
+        projection = await rpc.getRunProjection(threadId);
+      } catch (_) {}
       final followUps = await rpc.followUpList(threadId);
       final threads = await rpc.listThreads();
       ThreadSummary? thread;
@@ -271,13 +309,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       final plan = await rpc.getPendingPlan(threadId);
       final bash = await rpc.getPendingBashApproval(threadId);
       final clarification = await rpc.getPendingClarification(threadId);
-      ThreadRunProjectionSnapshot? projection;
-      List<ThreadSubagentSessionTiming> subagentSessions = const [];
-      ThreadBillingSnapshot? billing;
-      ThreadContextSnapshot? contextSnapshot;
-      try {
-        projection = await rpc.getRunProjection(threadId);
-      } catch (_) {}
       try {
         subagentSessions = await rpc.listSubagentSessions(threadId);
       } catch (_) {}
@@ -287,12 +318,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         contextSnapshot = usage.context;
       } catch (_) {}
 
-      final loadedActivities = lines.map(_activityItemFromLine).toList();
-      final liveActivities = state.activities;
       final loadedFollowUps = _mergeThreadFollowUps(followUps, state.followUps);
 
       state = ThreadSessionState(
-        activities: _mergeActivityItems(loadedActivities, liveActivities),
         pendingPlan: plan,
         pendingBash: bash,
         pendingClarification: clarification,
@@ -321,111 +349,11 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     );
     if (eventThreadId != threadId) return;
 
-    var activities = [...state.activities];
     final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
 
-    if (!isMetricsOnlyEvent) {
-      final resolvedTool = _resolveLiveToolMetadata(live);
-      final toolUseId = resolvedTool?.toolUseId?.trim();
-
-      if (live.activityLine != null) {
-        final line = live.activityLine!;
-        final indexById = activities.indexWhere((a) => a.id == line.id);
-        final indexByTool = toolUseId != null && toolUseId.isNotEmpty
-            ? activities.indexWhere((a) => a.tool?.toolUseId == toolUseId)
-            : -1;
-        final existingById = indexById >= 0 ? activities[indexById] : null;
-        final existingByTool =
-            indexByTool >= 0 ? activities[indexByTool] : null;
-        final existing = existingByTool ?? existingById;
-        final item = ActivityItem(
-          id: existing?.id ?? line.id,
-          role: line.role,
-          message: line.message,
-          stream: line.stream ?? false,
-          agentId: line.agentId ??
-              existing?.agentId ??
-              live.bashApproval?.agentId,
-          apiError: line.apiError ?? existing?.apiError,
-          tool: mergeActivityToolMetadata(existing?.tool, resolvedTool),
-        );
-        if (indexByTool >= 0) {
-          activities[indexByTool] = item;
-        } else if (indexById >= 0) {
-          activities[indexById] = item;
-        } else {
-          activities.add(item);
-        }
-      } else if (toolUseId != null &&
-          toolUseId.isNotEmpty &&
-          resolvedTool != null) {
-        final index =
-            activities.indexWhere((a) => a.tool?.toolUseId == toolUseId);
-        if (index >= 0) {
-          final existing = activities[index];
-          activities[index] = ActivityItem(
-            id: existing.id,
-            role: live.role ?? existing.role,
-            message: live.message.isNotEmpty ? live.message : existing.message,
-            stream: live.stream ?? existing.stream,
-            agentId: existing.agentId ?? live.bashApproval?.agentId,
-            apiError: existing.apiError,
-            tool: mergeActivityToolMetadata(existing.tool, resolvedTool),
-          );
-        } else if (live.message.isNotEmpty && !isUsageBadgeText(live.message)) {
-          activities.add(
-            ActivityItem(
-              id: 'tool-$toolUseId',
-              role: live.role ?? 'tool',
-              message: live.message,
-              stream: live.stream ?? false,
-              agentId: live.bashApproval?.agentId,
-              tool: resolvedTool,
-            ),
-          );
-        }
-      } else if (live.message.isNotEmpty && !isUsageBadgeText(live.message)) {
-        final tool = live.tool;
-        if (live.stream == true && activities.isNotEmpty) {
-          final last = activities.last;
-          if (last.stream && last.role == (live.role ?? last.role)) {
-            activities[activities.length - 1] = ActivityItem(
-              id: last.id,
-              role: last.role,
-              message: last.message + live.message,
-              stream: true,
-              agentId: last.agentId,
-              apiError: last.apiError,
-              tool: mergeActivityToolMetadata(last.tool, tool),
-            );
-          } else {
-            activities.add(
-              ActivityItem(
-                id: 'stream_${activities.length}',
-                role: live.role ?? 'assistant',
-                message: live.message,
-                stream: true,
-                tool: tool,
-              ),
-            );
-          }
-        } else {
-          activities.add(
-            ActivityItem(
-              id: 'evt_${activities.length}',
-              role: live.role ?? 'assistant',
-              message: live.message,
-              stream: live.stream ?? false,
-              tool: tool,
-            ),
-          );
-        }
-      }
+    if (!isMetricsOnlyEvent && state.runProjection?.hasData != true) {
+      _scheduleProjectionRefresh();
     }
-
-    state = state.copyWith(
-      activities: activities,
-    );
 
     if (isFollowUpThreadLiveEvent(
       kind: event.kind,
@@ -675,33 +603,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   }
 }
 
-ThreadRunToolMetadata? mergeActivityToolMetadata(
-  ThreadRunToolMetadata? existing,
-  ThreadRunToolMetadata? incoming,
-) {
-  if (incoming == null) return existing;
-  if (existing == null) return incoming;
-  return ThreadRunToolMetadata(
-    name: incoming.name.isNotEmpty ? incoming.name : existing.name,
-    detail: incoming.detail ?? existing.detail,
-    toolUseId: incoming.toolUseId ?? existing.toolUseId,
-    description: incoming.description ?? existing.description,
-    output: incoming.output ?? existing.output,
-    durationMs: incoming.durationMs ?? existing.durationMs,
-    status: incoming.status ?? existing.status,
-  );
-}
-
-ThreadRunToolMetadata? _resolveLiveToolMetadata(ThreadLiveEvent live) {
-  final fromApproval = live.bashApproval != null
-      ? toolMetadataFromBashApproval(
-          live.bashApproval!,
-          status: bashApprovalLiveTypeToToolStatus(live.type),
-        )
-      : null;
-  return mergeActivityToolMetadata(fromApproval, live.tool);
-}
-
 ThreadRunProjectionSnapshot? _pickNewerProjection(
   ThreadRunProjectionSnapshot? current,
   ThreadRunProjectionSnapshot? incoming,
@@ -712,33 +613,6 @@ ThreadRunProjectionSnapshot? _pickNewerProjection(
     return incoming;
   }
   return current;
-}
-
-ActivityItem _activityItemFromLine(ThreadActivityLine line) {
-  return ActivityItem(
-    id: line.id,
-    role: line.role,
-    message: line.message,
-    stream: line.stream ?? false,
-    agentId: line.agentId,
-    apiError: line.apiError,
-  );
-}
-
-List<ActivityItem> _mergeActivityItems(
-  List<ActivityItem> base,
-  List<ActivityItem> overlay,
-) {
-  final merged = [...base];
-  for (final item in overlay) {
-    final index = merged.indexWhere((entry) => entry.id == item.id);
-    if (index >= 0) {
-      merged[index] = item;
-    } else {
-      merged.add(item);
-    }
-  }
-  return merged;
 }
 
 List<ThreadPendingFollowUp> _mergeThreadFollowUps(

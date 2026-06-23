@@ -22,17 +22,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
   ThreadBillingSnapshot,
-  ThreadActivityLine,
   ThreadActivityRewindTarget,
   ThreadContextSnapshot,
   ThreadRunProjectionAgent,
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
-  ThreadStatus,
   ThreadSubagentSessionTiming,
   ThreadSubagentMetricsSummary,
   ThreadSummary,
@@ -46,15 +43,11 @@ import {
 } from "../shared/activity-display";
 import { formatDurationMs } from "./AppMessage";
 import {
-  buildSubagentMetricsByAgentId,
-  buildSubagentTimingsByAgentId,
   formatDuration,
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
   type ActivityActionIcon,
   type ActivityDetailBlock,
-  type ActivityLogBlock,
-  type SubagentRunItem,
 } from "./activity-log";
 import {
   buildThreadRunProjectionViewModel,
@@ -83,10 +76,6 @@ import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtim
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
-
-function isThreadRequestActive(sessionRunning: boolean, threadStatus?: ThreadStatus): boolean {
-  return sessionRunning && (threadStatus === "running" || threadStatus === "queued");
-}
 
 function toStreamRequestTimingAnchor(
   requestSpan?: ThreadRunProjectionRequestSpan,
@@ -145,7 +134,6 @@ function usePlannerLayoutChangeEffect(
 }
 
 interface ActivityLogViewProps {
-  lines: ThreadActivityLine[];
   thread?: ThreadSummary;
   onRestorePrompt?: RestorePromptHandler;
   modelByRole?: Record<string, string>;
@@ -172,7 +160,6 @@ export function ActivityLogView(props: ActivityLogViewProps) {
   return (
     <ProjectionActivityLogView
       projection={props.projection}
-      lines={props.lines}
       {...(props.thread && { thread: props.thread })}
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}
@@ -184,7 +171,6 @@ export function ActivityLogView(props: ActivityLogViewProps) {
 
 function ProjectionActivityLogView({
   projection,
-  lines,
   thread,
   onRestorePrompt,
   onPlannerLayoutChange,
@@ -192,7 +178,6 @@ function ProjectionActivityLogView({
   agentThemes,
 }: {
   projection: ThreadRunProjectionSnapshot;
-  lines: ThreadActivityLine[];
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -251,7 +236,6 @@ function ProjectionActivityLogView({
           key={entry.key}
           entry={entry}
           projection={projection}
-          activityLines={lines}
           requestSpansById={requestSpansById}
           expandedAgentKeys={expandedAgentKeys}
           onToggleAgent={(agentId) => {
@@ -299,7 +283,6 @@ function wrapRunLogFeedEntry(
 function ProjectionMainFeedEntry({
   entry,
   projection,
-  activityLines,
   requestSpansById,
   expandedAgentKeys,
   onToggleAgent,
@@ -309,7 +292,6 @@ function ProjectionMainFeedEntry({
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   projection: ThreadRunProjectionSnapshot;
-  activityLines: ThreadActivityLine[];
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
@@ -331,7 +313,6 @@ function ProjectionMainFeedEntry({
       <ProjectionSubagentRunRow
         agent={entry.card.agent}
         projection={projection}
-        activityLines={activityLines}
         requestSpansById={requestSpansById}
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
@@ -439,7 +420,6 @@ function ProjectionAgentEchoShell({
 function ProjectionSubagentRunRow({
   agent,
   projection,
-  activityLines,
   requestSpansById,
   expanded,
   onToggle,
@@ -448,7 +428,6 @@ function ProjectionSubagentRunRow({
 }: {
   agent: ThreadRunProjectionAgent;
   projection: ThreadRunProjectionSnapshot;
-  activityLines: ThreadActivityLine[];
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expanded: boolean;
   onToggle: () => void;
@@ -490,8 +469,6 @@ function ProjectionSubagentRunRow({
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
   const missionText = resolveSubagentCardMissionText(agent, {
     mainTimeline: projection.timeline,
-    subagentAgents: projection.agents,
-    activityLines,
   });
   const hasTimelineDetails = agent.timeline.some(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
@@ -651,100 +628,6 @@ function ProjectionTimelineEntry({
   );
 }
 
-function RunLogBlock({
-  block,
-  onRestorePrompt,
-  modelByRole,
-  usageByRole,
-  context,
-  subagentTimingsByAgentId,
-  subagentMetricsByAgentId,
-  agentDisplayNames,
-  agentThemes,
-  onPlannerLayoutChange,
-  threadId,
-  threadStatus,
-}: {
-  block: ActivityLogBlock;
-  onRestorePrompt?: RestorePromptHandler;
-  modelByRole?: Record<string, string>;
-  usageByRole?: Record<string, ThreadUsageSnapshot>;
-  context?: ThreadContextSnapshot;
-  subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
-  subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
-  agentDisplayNames?: RuntimeAgentDisplayNames;
-  agentThemes?: RuntimeAgentThemes;
-  onPlannerLayoutChange?: () => void;
-  threadId?: string;
-  threadStatus?: ThreadStatus;
-}) {
-  if (block.kind === "user-prompt") {
-    return (
-      <UserPromptBlock
-        text={block.text}
-        {...(block.rewindTarget && { rewindTarget: block.rewindTarget })}
-        {...(onRestorePrompt && { onRestorePrompt })}
-      />
-    );
-  }
-  if (block.kind === "work-session") {
-    return (
-      <WorkSessionBlock
-        block={block}
-        {...(modelByRole && { modelByRole })}
-        {...(usageByRole && { usageByRole })}
-        {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
-        {...(threadStatus && { threadStatus })}
-      />
-    );
-  }
-  if (block.kind === "subagent-run-group") {
-    return (
-      <SubagentRunGroup
-        block={block}
-        requestActive={isThreadRequestActive(
-          block.items.some((item) => item.running),
-          threadStatus,
-        )}
-        {...(modelByRole && { modelByRole })}
-        {...(usageByRole && { usageByRole })}
-        {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
-        {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
-        {...(agentDisplayNames && { agentDisplayNames })}
-        {...(agentThemes && { agentThemes })}
-        {...(context && { context })}
-      />
-    );
-  }
-  if (block.kind === "assistant-message") {
-    return (
-      <AssistantMessageBlock
-        text={block.text}
-        {...(block.streaming !== undefined && { streaming: block.streaming })}
-        {...(block.subagent && { subagent: block.subagent })}
-        {...(modelByRole && { modelByRole })}
-        {...(usageByRole && { usageByRole })}
-        {...(threadId && { threadId })}
-      />
-    );
-  }
-  if (block.kind === "worktree-merge") {
-    return <WorkspaceChangesCard summary={block.summary} {...(threadId && { threadId })} />;
-  }
-  if (block.kind === "surfaced-detail") {
-    const requestActive = threadStatus === "running" || threadStatus === "queued";
-    return wrapRunLogFeedEntry(
-      <DetailBlock
-        block={block.block}
-        requestActive={requestActive}
-        {...(modelByRole && { modelByRole })}
-        {...(usageByRole && { usageByRole })}
-      />,
-      { tight: isTightFeedDetailBlock(block.block) },
-    );
-  }
-  return null;
-}
 
 type SubagentStatusBadge = {
   label: string;
@@ -928,334 +811,10 @@ function shortSubagentAgentId(agentId: string): string {
   return agentId.slice(-8);
 }
 
-function metricsToUsageSnapshot(metrics: ThreadSubagentMetricsSummary): ThreadUsageSnapshot {
-  const limit = metrics.contextLimit ?? 0;
-  const occupied = metrics.contextOccupied;
-  return {
-    inputTokens: metrics.inputTokens,
-    outputTokens: metrics.outputTokens,
-    cacheReadTokens: metrics.cacheReadTokens,
-    cacheCreationTokens: metrics.cacheCreationTokens,
-    contextTokens: occupied,
-    ...(limit > 0 && { contextLimit: limit, occupancyPct: Math.round((occupied / limit) * 100) }),
-    ...(metrics.modelId && { modelId: metrics.modelId }),
-  };
-}
 
-function SubagentRunInstanceStrip({
-  agentId,
-  metrics,
-  context,
-}: {
-  agentId?: string;
-  metrics?: ThreadSubagentMetricsSummary;
-  context?: ThreadContextSnapshot;
-}) {
-  const instance = agentId ? context?.instances?.find((entry) => entry.agentId === agentId) : undefined;
-  const contextLabel =
-    instance && instance.limit > 0
-      ? `上下文 ${Math.round((instance.occupied / instance.limit) * 100)}%`
-      : metrics && metrics.contextLimit && metrics.contextLimit > 0
-        ? `上下文 ${Math.round((metrics.contextOccupied / metrics.contextLimit) * 100)}%`
-        : undefined;
 
-  return (
-    <div className="subagent-run-instance-strip" aria-label="子代理实例">
-      {metrics ? (
-        <span className="subagent-run-instance-usage">
-          {formatUsageBadge({
-            inputTokens: metrics.inputTokens,
-            outputTokens: metrics.outputTokens,
-            cacheReadTokens: metrics.cacheReadTokens,
-            cacheCreationTokens: metrics.cacheCreationTokens,
-          })}
-          {metrics.ecoCostUsd > 0 ? ` · $${metrics.ecoCostUsd.toFixed(4)}` : ""}
-        </span>
-      ) : null}
-      {contextLabel ? <span className="subagent-run-instance-context">{contextLabel}</span> : null}
-    </div>
-  );
-}
 
-function SubagentRunRow({
-  item,
-  expanded,
-  onToggle,
-  requestActive,
-  modelByRole,
-  usageByRole,
-  context,
-  subagentTimingsByAgentId,
-  subagentMetricsByAgentId,
-  agentDisplayNames,
-  agentThemes,
-}: {
-  item: SubagentRunItem;
-  expanded: boolean;
-  onToggle: () => void;
-  requestActive: boolean;
-  modelByRole?: Record<string, string>;
-  usageByRole?: Record<string, ThreadUsageSnapshot>;
-  context?: ThreadContextSnapshot;
-  subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
-  subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
-  agentDisplayNames?: RuntimeAgentDisplayNames;
-  agentThemes?: RuntimeAgentThemes;
-}) {
-  const persistedTiming = item.agentId ? subagentTimingsByAgentId?.[item.agentId] : undefined;
-  const [liveDurationMs, setLiveDurationMs] = useState(item.runDurationMs ?? 0);
-  const durationMs = item.runDurationMs ?? 0;
 
-  useEffect(() => {
-    if (!item.running) {
-      setLiveDurationMs(durationMs);
-      return;
-    }
-    if (persistedTiming) {
-      const tick = () => setLiveDurationMs(computeSubagentSessionDurationMs(persistedTiming));
-      tick();
-      const timer = setInterval(tick, 1000);
-      return () => clearInterval(timer);
-    }
-    const baselineMs = durationMs;
-    const anchorAt = Date.now();
-    const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [durationMs, item.running, item.sessionKey, persistedTiming]);
-
-  const instanceMetrics = item.agentId ? subagentMetricsByAgentId?.[item.agentId] : undefined;
-  const roleLabel =
-    resolveRuntimeAgentName(item.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(item.role);
-  const modelId = instanceMetrics?.modelId ?? modelByRole?.[item.role];
-  const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
-  const showModelShort = modelShort && !isRedundantAgentModelShort(roleLabel, modelShort);
-  const titleWithModel = formatRoleModelLabel(item.role, modelId);
-  const rawStatus = item.statusLine?.trim();
-  const statusText =
-    rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
-      ? rawStatus
-      : item.running
-        ? "工作中"
-        : "点击查看执行详情";
-  const elapsedMs = item.running ? liveDurationMs : durationMs;
-  const durationLabel =
-    elapsedMs > 0
-      ? item.running
-        ? formatDuration(elapsedMs)
-        : `用时 ${formatDuration(elapsedMs)}`
-      : undefined;
-  const usageForAgent = instanceMetrics ? metricsToUsageSnapshot(instanceMetrics) : undefined;
-  const scopedUsageByRole = usageForAgent !== undefined ? { [item.role]: usageForAgent } : usageByRole;
-  const missionBlock = item.children.find((child) => child.kind === "subagent-mission");
-  const missionText =
-    missionBlock?.kind === "subagent-mission"
-      ? resolveMissionDisplayText(missionBlock.prompt?.trim() || missionBlock.summary)
-      : "";
-  const detailChildren = item.children.filter((child) => child.kind !== "subagent-mission");
-  const statusBadge = resolveSubagentStatusBadge(item.running);
-
-  return (
-    <div
-      className={`subagent-run-row-wrap${item.agentId ? " has-agent-id" : ""}${item.running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
-      data-agent-id={item.agentId}
-      data-role={normalizeAgentDisplayRole(item.role) ?? item.role}
-      style={resolveSubagentRowThemeStyle(item.role, agentThemes)}
-    >
-      <SubagentRunCardButton
-        role={item.role}
-        roleLabel={roleLabel}
-        {...(item.agentId && { agentId: item.agentId })}
-        showModelShort={Boolean(showModelShort)}
-        {...(modelShort && { modelShort })}
-        running={item.running}
-        statusBadge={statusBadge}
-        statusText={statusText}
-        {...(missionText && { missionText })}
-        {...(durationLabel && { durationLabel })}
-        expanded={expanded}
-        onToggle={onToggle}
-      />
-      {detailChildren.length > 0 || item.agentId ? (
-        <div className="work-session-details-compact">
-          <div className="work-session-details-compact-inner">
-            <SubagentRunInstanceStrip
-              {...(item.agentId && { agentId: item.agentId })}
-              {...(instanceMetrics && { metrics: instanceMetrics })}
-              {...(context && { context })}
-            />
-            {detailChildren.map((child, index) => (
-              <DetailBlock
-                key={`${item.sessionKey}-${child.kind}-${index}`}
-                block={child}
-                hideSubagentIdentity
-                requestActive={requestActive}
-                {...(modelByRole && { modelByRole })}
-                {...(scopedUsageByRole && { usageByRole: scopedUsageByRole })}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SubagentRunGroup({
-  block,
-  requestActive,
-  modelByRole,
-  usageByRole,
-  context,
-  subagentTimingsByAgentId,
-  subagentMetricsByAgentId,
-  agentDisplayNames,
-  agentThemes,
-}: {
-  block: Extract<ActivityLogBlock, { kind: "subagent-run-group" }>;
-  requestActive: boolean;
-  modelByRole?: Record<string, string>;
-  usageByRole?: Record<string, ThreadUsageSnapshot>;
-  context?: ThreadContextSnapshot;
-  subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
-  subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
-  agentDisplayNames?: RuntimeAgentDisplayNames;
-  agentThemes?: RuntimeAgentThemes;
-}) {
-  const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
-
-  return (
-    <section className={`subagent-run-group${block.parallel ? " parallel" : ""}`}>
-      {block.items.map((item) => (
-        <SubagentRunRow
-          key={item.sessionKey}
-          item={item}
-          expanded={Boolean(expandedKeys[item.sessionKey])}
-          requestActive={requestActive}
-          {...(modelByRole && { modelByRole })}
-          {...(usageByRole && { usageByRole })}
-          {...(context && { context })}
-          {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
-          {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
-          {...(agentDisplayNames && { agentDisplayNames })}
-          {...(agentThemes && { agentThemes })}
-          onToggle={() => {
-            setExpandedKeys((current) => ({
-              ...current,
-              [item.sessionKey]: !current[item.sessionKey],
-            }));
-          }}
-        />
-      ))}
-    </section>
-  );
-}
-
-function WorkSessionBlock({
-  block,
-  modelByRole,
-  usageByRole,
-  onPlannerLayoutChange,
-  threadStatus,
-}: {
-  block: Extract<ActivityLogBlock, { kind: "work-session" }>;
-  modelByRole?: Record<string, string>;
-  usageByRole?: Record<string, ThreadUsageSnapshot>;
-  onPlannerLayoutChange?: () => void;
-  threadStatus?: ThreadStatus;
-}) {
-  const requestActive = isThreadRequestActive(block.running, threadStatus);
-  const [expanded, setExpanded] = useState(() => !block.defaultCollapsed);
-  const workSessionLayoutSignature = useMemo(
-    () =>
-      block.inlineContent
-        ? [block.awaitingFirstToken ? 1 : 0, block.children.length, block.running ? 1 : 0].join(":")
-        : "",
-    [block.awaitingFirstToken, block.children.length, block.inlineContent, block.running],
-  );
-
-  usePlannerLayoutChangeEffect(workSessionLayoutSignature, onPlannerLayoutChange);
-
-  const activeLabel = block.activeSubagent
-    ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
-    : "";
-
-  const label = block.running
-    ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
-    : `已处理 ${formatDuration(block.durationMs)}`;
-
-  if (block.inlineContent) {
-    return (
-      <section className="work-session work-session-inline">
-        {block.children.length > 0 ? (
-          <div className="work-session-details">
-            {block.children.map((child, index) => (
-              <DetailBlock
-                key={`${child.kind}-${index}`}
-                block={child}
-                requestActive={requestActive}
-                {...(modelByRole && { modelByRole })}
-                {...(usageByRole && { usageByRole })}
-              />
-            ))}
-          </div>
-        ) : null}
-      </section>
-    );
-  }
-
-  return (
-    <section className="work-session">
-      <button
-        type="button"
-        className="work-session-toggle"
-        onClick={() => setExpanded((current) => !current)}
-        aria-expanded={expanded}
-        disabled={block.running && block.children.length === 0 && !block.awaitingFirstToken}
-      >
-        <span className={`work-session-dot${block.running ? " running" : ""}`} />
-        <span className="work-session-label">
-          {label}
-          {block.activeMissionSummary ? (
-            <span className="work-session-mission">{block.activeMissionSummary}</span>
-          ) : null}
-        </span>
-        {!block.running && block.children.length > 0 ? (
-          <ChevronDown
-            size={16}
-            className={expanded ? "work-session-chevron" : "work-session-chevron collapsed"}
-          />
-        ) : null}
-      </button>
-      {expanded && block.children.length > 0 ? (
-        <div className="work-session-details">
-          {block.children.map((child, index) => (
-            <DetailBlock
-              key={`${child.kind}-${index}`}
-              block={child}
-              requestActive={requestActive}
-              {...(modelByRole && { modelByRole })}
-              {...(usageByRole && { usageByRole })}
-            />
-          ))}
-        </div>
-      ) : null}
-      {!expanded && !block.running && block.children.length > 0 ? (
-        <ul className="work-session-preview" aria-label="步骤摘要">
-          {block.children
-            .filter((child) => child.kind === "phase" || child.kind === "subagent-mission")
-            .slice(-4)
-            .map((child, index) => (
-              <li key={`preview-${index}`}>
-                {child.kind === "subagent-mission" ? child.summary : child.label}
-              </li>
-            ))}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
 
 function DetailBlock({
   block,
@@ -1729,40 +1288,6 @@ function UserPromptBlock({
   );
 }
 
-function AssistantMessageBlock({
-  text,
-  streaming,
-  subagent,
-  modelByRole,
-  usageByRole,
-  threadId,
-}: {
-  text: string;
-  streaming?: boolean;
-  subagent?: string;
-  modelByRole?: Record<string, string>;
-  usageByRole?: Record<string, ThreadUsageSnapshot>;
-  threadId?: string;
-}) {
-  const clarificationRows = parseClarificationAnswersSummary(text);
-  if (clarificationRows) {
-    return <ClarificationAnswersCard rows={clarificationRows} />;
-  }
-  const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
-  if (worktreeMergeSummary) {
-    return <WorkspaceChangesCard summary={worktreeMergeSummary} {...(threadId && { threadId })} />;
-  }
-  return (
-    <RunLogNarrative
-      text={text}
-      {...(streaming !== undefined && { streaming })}
-      {...(subagent && { subagent })}
-      omitSubagentBadge={isAgentDisplayRole(subagent)}
-      {...(modelByRole && { modelByRole })}
-      {...(usageByRole && { usageByRole })}
-    />
-  );
-}
 
 const CLARIFICATION_ANSWER_PREFIX = "澄清回答：";
 

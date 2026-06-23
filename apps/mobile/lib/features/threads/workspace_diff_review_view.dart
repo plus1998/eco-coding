@@ -17,7 +17,6 @@ class WorkspaceDiffReviewView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final parsedFiles = mergeDiffFilesWithStats(
       patch: diff.patch,
       files: diff.files,
@@ -148,7 +147,6 @@ class _DiffFileCardState extends State<_DiffFileCard> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: ecoColors(context).bgElevated,
@@ -238,7 +236,6 @@ class _DiffHunkSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -284,7 +281,6 @@ class _DiffLineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     Color? background;
     switch (line.kind) {
       case DiffLineKind.addition:

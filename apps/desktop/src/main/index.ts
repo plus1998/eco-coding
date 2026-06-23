@@ -193,9 +193,10 @@ import {
   formatWorktreeMergeThreadMessage,
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
+import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
-import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
+import { activityStreamKey, resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
 import { buildAgentAuditExportArchive } from "./agent-audit-export";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
@@ -217,6 +218,7 @@ import {
   registerPendingBashApproval,
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
+import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
 import {
   lookupRouteCapabilityHints,
@@ -328,8 +330,7 @@ import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
-import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
-import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
+import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
@@ -477,6 +478,7 @@ let closeSdkSessionStore: (() => Promise<void>) | undefined;
 
 const activeRunRuntimeState = new ActiveRunRuntimeStateStore();
 const activeRunBillingState = new ActiveRunBillingStateStore();
+const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
@@ -507,6 +509,7 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
 function finishActiveRun(threadId: string): void {
   activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
+  threadLiveRequestRegistry.clearThread(threadId);
   proxyBillingStampRegistry.clearThread(threadId);
 }
 
@@ -4347,7 +4350,6 @@ function buildSdkHookContextExtras(
   phase: SubagentRunPhase,
   extras?: SdkRunHookContextExtras,
 ): Partial<EcoHookContext> {
-  const pendingLaunches: PendingSubagentLaunch[] = [];
   const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
   const subagentAttribution = {
     resolveAgentId: (input: { role: RuntimeAgentRole; parentToolUseId?: string; sessionId: string }) =>
@@ -4379,23 +4381,6 @@ function buildSdkHookContextExtras(
       proxyBillingStampRegistry.unregister(threadId, agentId);
     },
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
-    consumePendingLaunch: (input) => {
-      const roleIndex = pendingLaunches.findIndex((pending) => pending.role === input.role);
-      if (roleIndex >= 0) {
-        const [pending] = pendingLaunches.splice(roleIndex, 1);
-        return pending;
-      }
-      return undefined;
-    },
-    onAgentToolCapture: (input) => {
-      const missionKey = normalizeSubagentMissionKey(input.prompt);
-      const todoId = input.todoIdHint ?? (peekPendingCoderTodoId ? peekPendingCoderTodoId() : undefined);
-      pendingLaunches.push({
-        role: input.role,
-        ...(missionKey ? { missionKey } : {}),
-        ...(todoId ? { todoId } : {}),
-      });
-    },
     contextMonitor,
     handoffService: subagentHandoffService,
   });
@@ -5182,21 +5167,34 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
     ...(plannerSessionId && { plannerSessionId }),
     metricsRegistry: subagentMetricsRegistry,
   });
+  const sdkParentToolUseId = readSdkEventParentToolUseId(event);
   sdkStreamBridge.handleEvent(
     threadId,
     event,
     (id, type, message, role, stream, agentId, extras) => {
+      const mergedMetadata = {
+        ...(extras?.metadata ?? {}),
+        ...(sdkParentToolUseId && { parent_tool_use_id: sdkParentToolUseId }),
+      };
+      const hasMetadata = Object.keys(mergedMetadata).length > 0;
+      const liveRequestId = resolveLiveRequestId(threadId, {
+        type,
+        role: String(role),
+        stream,
+        ...(agentId && { agentId }),
+      });
       emitThreadEvent(
         id,
         type,
         message,
         role as AgentRole | "system" | "thinking" | "tool" | "user",
         stream,
-        agentId || extras
+        agentId || extras || sdkParentToolUseId || liveRequestId
           ? {
               ...(agentId && { agentId }),
               ...(extras?.tool && { tool: extras.tool }),
-              ...(extras?.metadata && { metadata: extras.metadata }),
+              ...(hasMetadata && { metadata: mergedMetadata }),
+              ...(liveRequestId && { requestId: liveRequestId }),
             }
           : undefined,
       );
@@ -5291,6 +5289,9 @@ async function emitProxyUsage(
     contextRole: resolved.contextRole,
     contextOccupied: resolved.contextOccupied,
   });
+  if (info.requestId?.trim()) {
+    threadLiveRequestRegistry.endRequest(info.threadId, info.requestId);
+  }
 
   noteUsageBillingObservation(info.threadId, resolved.observation);
   const billingTask = processUsageBilling(resolved.billingInput);
@@ -5834,6 +5835,7 @@ interface EmitThreadEventExtras {
   runtimeConfig?: ThreadRuntimeConfig;
   tool?: ThreadRunToolMetadata;
   metadata?: Record<string, unknown>;
+  requestId?: string;
 }
 
 function emitThreadEvent(
@@ -5870,17 +5872,7 @@ function emitThreadEvent(
   const isSilentFollowUpEvent = type.startsWith("thread.follow_up.");
   const displayMessage = isSilentFollowUpEvent ? "" : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
-  const persistActivityLine =
-    (!isThreadStatusEvent ||
-      type === "thread.auto_retry" ||
-      type === "thread.retry" ||
-      type === "thread.user_prompt" ||
-      type === "thread.api_error") &&
-    !isUsageEvent &&
-    !isContextEvent &&
-    type !== "thread.todos_updated" &&
-    type !== "thread.title_updated" &&
-    type !== "thread.subagent_timing_updated";
+  const persistActivityLine = type === "thread.user_prompt" || type === "thread.api_error";
 
   let persistedActivityLine: ThreadActivityLine | undefined;
   if (
@@ -6080,7 +6072,28 @@ function recordThreadRunEventFromLiveEvent(input: {
   const bashApproval =
     input.extras?.bashApproval &&
     buildBashApprovalRunMetadataFromRequest(input.type, input.extras.bashApproval);
-  const agentId = input.extras?.agentId?.trim() || input.extras?.bashApproval?.agentId?.trim();
+  const parentToolUseId = readLiveEventParentToolUseId(input.extras);
+  let agentId = input.extras?.agentId?.trim() || input.extras?.bashApproval?.agentId?.trim();
+  if (!agentId && parentToolUseId) {
+    agentId = resolveAgentIdByParentToolUseId(input.threadId, parentToolUseId);
+  }
+  const requestId =
+    input.extras?.requestId?.trim() ||
+    resolveLiveRequestId(input.threadId, {
+      type: input.type,
+      role: input.role,
+      stream: input.stream,
+      ...(agentId && { agentId }),
+    });
+  const streamKey = resolveLiveEventStreamKey({
+    threadId: input.threadId,
+    type: input.type,
+    role: input.role,
+    stream: input.stream,
+    ...(agentId && { agentId }),
+    ...(input.persistedActivityLine && { persistedActivityLine: input.persistedActivityLine }),
+    ...(input.extras && { extras: input.extras }),
+  });
   const event = buildThreadRunEventFromLiveEvent({
     threadId: input.threadId,
     eventId,
@@ -6091,7 +6104,9 @@ function recordThreadRunEventFromLiveEvent(input: {
     observedAt: new Date().toISOString(),
     ...(runAttemptId && { runAttemptId }),
     ...(agentId && { agentId }),
-    ...(input.persistedActivityLine && { streamKey: input.persistedActivityLine.id }),
+    ...(parentToolUseId && { parentToolUseId }),
+    ...(requestId && { requestId }),
+    ...(streamKey && { streamKey }),
     ...(input.extras?.apiError && { apiError: input.extras.apiError }),
     ...(input.extras?.tool && { tool: input.extras.tool }),
     ...(input.extras?.metadata && { metadata: input.extras.metadata }),
@@ -6106,6 +6121,90 @@ function recordThreadRunEventFromLiveEvent(input: {
   } catch (error) {
     process.stderr.write(`[eco] thread run event shadow write failed: ${errorMessage(error)}\n`);
   }
+}
+
+function resolveLiveEventStreamKey(input: {
+  threadId: string;
+  type: string;
+  role: string;
+  stream: boolean;
+  agentId?: string;
+  persistedActivityLine?: ThreadActivityLine;
+  extras?: EmitThreadEventExtras;
+}): string | undefined {
+  if (input.persistedActivityLine) {
+    return input.persistedActivityLine.id;
+  }
+  const toolUseId = input.extras?.tool?.toolUseId?.trim();
+  if (toolUseId) {
+    return `tool:${toolUseId}`;
+  }
+  if (
+    input.stream ||
+    input.type === "message.delta" ||
+    input.type === "thinking.delta" ||
+    input.type === "otel.activity"
+  ) {
+    return activityStreamKey(input.threadId, input.agentId, input.role);
+  }
+  return undefined;
+}
+
+function resolveLiveRequestId(
+  threadId: string,
+  input: { type: string; role: string; stream: boolean; agentId?: string },
+): string | undefined {
+  if (
+    !input.type.startsWith("request.") &&
+    input.type !== "thread.api_error" &&
+    !input.stream &&
+    input.type !== "message.delta" &&
+    input.type !== "otel.activity"
+  ) {
+    return undefined;
+  }
+  const scope = {
+    role: input.role,
+    ...(input.agentId && { agentId: input.agentId }),
+  };
+  const existing = threadLiveRequestRegistry.resolve(threadId, scope);
+  if (existing) {
+    return existing;
+  }
+  if (input.type === "request.started") {
+    return threadLiveRequestRegistry.beginRequest(threadId, scope);
+  }
+  return undefined;
+}
+
+function readLiveEventParentToolUseId(extras?: EmitThreadEventExtras): string | undefined {
+  const fromMetadata = extras?.metadata?.parent_tool_use_id ?? extras?.metadata?.parentToolUseId;
+  if (typeof fromMetadata === "string" && fromMetadata.trim()) {
+    return fromMetadata.trim();
+  }
+  return undefined;
+}
+
+function resolveAgentIdByParentToolUseId(threadId: string, parentToolUseId: string): string | undefined {
+  const linked = subagentMetricsRegistry.resolveAgentIdByParentToolUse(threadId, parentToolUseId);
+  if (linked) {
+    return linked;
+  }
+  const agent = conversationStore
+    .listAgentInstances(threadId)
+    .find((row) => row.parentToolUseId?.trim() === parentToolUseId.trim());
+  return agent?.agentId;
+}
+
+function readSdkEventParentToolUseId(event: AgentEventLike): string | undefined {
+  const payload = event.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const parentToolUseId = (payload as { parent_tool_use_id?: unknown }).parent_tool_use_id;
+  return typeof parentToolUseId === "string" && parentToolUseId.trim()
+    ? parentToolUseId.trim()
+    : undefined;
 }
 
 function resolveCurrentRunAttemptId(threadId: string): string | undefined {
@@ -6413,7 +6512,7 @@ function toolMetadataFromBashApprovalRequest(
   const detail = request.filesystemPath ?? request.command;
   const phase = resolveBashApprovalPhase(liveType);
   const status: ThreadRunToolMetadata["status"] =
-    phase === "rejected" || phase === "denied" ? "failed" : "running";
+    phase === "rejected" || phase === "denied" ? "failed" : "started";
   return {
     name: toolName,
     detail: detail.trim() || request.command,
@@ -6430,8 +6529,19 @@ function bashApprovalEventExtras(
   return {
     bashApproval: request,
     tool: toolMetadataFromBashApprovalRequest(request, liveType),
-    ...(request.agentId?.trim() && { agentId: request.agentId.trim() }),
+    agentId: request.agentId.trim(),
   };
+}
+
+function resolveThreadBashApprovalAgentId(
+  threadId: string,
+  request: Pick<SdkToolPermissionRequest, "agentId" | "agentType">,
+): string | undefined {
+  return resolveBashApprovalAgentId(threadId, request, {
+    plannerAgentId: agentLifecycle.usagePlannerAgentId(threadId),
+    roleForAgentId: (tid, agentId) => subagentMetricsRegistry.roleForAgentId(tid, agentId),
+    resolveSubagentId: (tid, input) => subagentMetricsRegistry.resolveAgentId(tid, input),
+  });
 }
 
 function createThreadToolPermissionHandler(
@@ -6462,6 +6572,14 @@ function createThreadToolPermissionHandler(
         return { behavior: "allow", updatedInput: request.input };
       }
       const filesystemPath = readApproval.filesystemPath;
+      const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
+      if (!approvalAgentId) {
+        return {
+          behavior: "deny",
+          message: "Eco could not attribute this filesystem approval to an agent instance.",
+          interrupt: false,
+        };
+      }
 
       const approvalRequest: BashApprovalRequest = {
         toolUseId: request.toolUseId,
@@ -6471,9 +6589,9 @@ function createThreadToolPermissionHandler(
         reason: readApproval.reason,
         riskScore: 40,
         riskLevel: "medium",
+        agentId: approvalAgentId,
         filesystemTool: request.toolName,
         filesystemPath,
-        ...(request.agentId ? { agentId: request.agentId } : {}),
         ...(request.agentType ? { agentType: request.agentType } : {}),
         description: `允许在工作区外执行 ${request.toolName}？`,
       };
@@ -6552,6 +6670,14 @@ function createThreadToolPermissionHandler(
       ...(request.agentType ? { agentType: request.agentType } : {}),
     });
     if (policy.action === "deny") {
+      const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
+      if (!approvalAgentId) {
+        return {
+          behavior: "deny",
+          message: "Eco could not attribute this Bash denial to an agent instance.",
+          interrupt: false,
+        };
+      }
       const deniedApproval: BashApprovalRequest = {
         toolUseId: request.toolUseId,
         threadId,
@@ -6560,7 +6686,7 @@ function createThreadToolPermissionHandler(
         reason: policy.reason,
         riskScore: policy.riskScore,
         riskLevel: policy.riskLevel,
-        ...(request.agentId ? { agentId: request.agentId } : {}),
+        agentId: approvalAgentId,
         ...(request.agentType ? { agentType: request.agentType } : {}),
       };
       emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false, {
@@ -6581,13 +6707,21 @@ function createThreadToolPermissionHandler(
           detail: command,
           toolUseId: request.toolUseId,
           ...(description ? { description } : {}),
-          status: "running",
+          status: "started",
         },
       });
       return { behavior: "allow", updatedInput: request.input };
     }
 
     const description = readBashDescriptionInput(request.input);
+    const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
+    if (!approvalAgentId) {
+      return {
+        behavior: "deny",
+        message: "Eco could not attribute this Bash approval to an agent instance.",
+        interrupt: false,
+      };
+    }
     const approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
       threadId,
@@ -6596,7 +6730,7 @@ function createThreadToolPermissionHandler(
       reason: policy.reason,
       riskScore: policy.riskScore,
       riskLevel: policy.riskLevel,
-      ...(request.agentId ? { agentId: request.agentId } : {}),
+      agentId: approvalAgentId,
       ...(request.agentType ? { agentType: request.agentType } : {}),
       ...(description ? { description } : {}),
     };
@@ -6708,6 +6842,17 @@ function emitSettingsUpdated(): void {
 
 const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();
 
+function resolveProxyRequestScope(
+  threadId: string,
+  role: RuntimeAgentRole,
+): { role: RuntimeAgentRole; agentId?: string } {
+  const stamp = proxyBillingStampRegistry.resolveForRoute(threadId, role);
+  return {
+    role,
+    ...(stamp?.agentId && { agentId: stamp.agentId }),
+  };
+}
+
 function emitUpstreamModelRequestActivity(threadId: string, role: RuntimeAgentRole): void {
   emitThreadEvent(threadId, "request.started", "Requesting model…", role, false);
 }
@@ -6730,6 +6875,25 @@ function emitUpstreamConnectionErrorActivity(
   emitThreadEvent(threadId, "otel.activity", message, role, false);
 }
 
+function adoptLiveProviderRequestId(
+  threadId: string,
+  scope: { role: string; agentId?: string },
+  providerRequestId: string,
+): void {
+  const adopted = threadLiveRequestRegistry.adoptProviderRequestId(threadId, scope, providerRequestId);
+  if (!adopted.replacedRequestId) {
+    return;
+  }
+  const updated = conversationStore.rekeyThreadRunRequestId(
+    threadId,
+    adopted.replacedRequestId,
+    adopted.requestId,
+  );
+  if (updated > 0) {
+    scheduleThreadRunProjectionUpdated(threadId);
+  }
+}
+
 function startRuntimeProxy(
   routes: RuntimeRoute[],
   attachments?: PromptImageAttachment[],
@@ -6745,11 +6909,15 @@ function startRuntimeProxy(
       ...(upstreamUserAgent && { upstreamUserAgent }),
       ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
       ...(threadId && {
-        ...(emitRequestActivity && {
-          onMessagesRequest: ({ role }) => {
+        onMessagesRequest: ({ role }) => {
+          threadLiveRequestRegistry.beginRequest(threadId, resolveProxyRequestScope(threadId, role));
+          if (emitRequestActivity) {
             emitUpstreamModelRequestActivity(threadId, role);
-          },
-        }),
+          }
+        },
+        onUpstreamRequestId: ({ role, requestId }) => {
+          adoptLiveProviderRequestId(threadId, resolveProxyRequestScope(threadId, role), requestId);
+        },
         onUpstreamConnectionError: ({ role, error, statusCode }) => {
           emitUpstreamConnectionErrorActivity(threadId, role, error, statusCode);
         },

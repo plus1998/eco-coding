@@ -250,7 +250,6 @@ class _ProjectSectionState extends State<_ProjectSection> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final project = widget.project;
     final threads = widget.threads;
     final isSelected = widget.isSelected;
@@ -470,7 +469,6 @@ class _ThreadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final title = thread.title;
     final showStatus = hasThreadStatusIndicator(thread);
     final timeLabel = formatRelativeTime(threadStatusTime(thread));
@@ -542,19 +540,18 @@ class _ThreadTrailingIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-
     if (isThreadWaitingForApproval(thread)) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: ecoColors(context).statusAllowBg,
+          color: eco.statusAllowBg,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: ecoColors(context).statusAllowBorder),
+          border: Border.all(color: eco.statusAllowBorder),
         ),
         child: Text(
           '等待批准',
           style: TextStyle(
-            color: ecoColors(context).statusAllowText,
+            color: eco.statusAllowText,
             fontSize: 11,
             fontWeight: FontWeight.w500,
           ),

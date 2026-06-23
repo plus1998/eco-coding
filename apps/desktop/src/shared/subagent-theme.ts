@@ -1,10 +1,10 @@
-export const SUBAGENT_DEFAULT_THEME_COLORS: Readonly<Record<string, string>> = {
+export const SUBAGENT_DEFAULT_THEME_COLORS = {
   explore: "#A78BFA",
   architect: "#22D3EE",
   coder: "#34D399",
   reviewer: "#FBBF24",
   tester: "#F472B6",
-};
+} as const;
 
 export const SUBAGENT_UNKNOWN_THEME_COLOR = "#60A5FA";
 
@@ -25,7 +25,10 @@ export function stripEcoAgentKeyPrefix(value: string): string {
 
 export function defaultThemeColorForAgentKey(agentKey: string): string {
   const normalized = stripEcoAgentKeyPrefix(agentKey.trim().toLowerCase());
-  return SUBAGENT_DEFAULT_THEME_COLORS[normalized] ?? SUBAGENT_UNKNOWN_THEME_COLOR;
+  if (normalized in SUBAGENT_DEFAULT_THEME_COLORS) {
+    return SUBAGENT_DEFAULT_THEME_COLORS[normalized as keyof typeof SUBAGENT_DEFAULT_THEME_COLORS];
+  }
+  return SUBAGENT_UNKNOWN_THEME_COLOR;
 }
 
 export function isValidThemeColorHex(value: string): boolean {

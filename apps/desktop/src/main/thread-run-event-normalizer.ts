@@ -1,4 +1,4 @@
-import { parseSubagentMissionMessage } from "@eco/runtime";
+import { formatSubagentMissionMessage, parseSubagentMissionMessage } from "@eco/runtime";
 import type {
   ThreadApiErrorInfo,
   ThreadRunBashApprovalMetadata,
@@ -44,6 +44,8 @@ export interface BuildThreadRunEventFromLiveInput {
   observedAt: string;
   runAttemptId?: string;
   agentId?: string;
+  parentToolUseId?: string;
+  requestId?: string;
   streamKey?: string;
   apiError?: ThreadApiErrorInfo;
   tool?: ThreadRunToolMetadata;
@@ -94,11 +96,7 @@ export function buildThreadRunEventFromLiveEvent(
     ...(input.tool && { tool: input.tool }),
   });
   const streamState = resolveThreadRunEventStreamState(input);
-  const requestId = resolveRequestId({
-    threadId: input.threadId,
-    eventId: input.eventId,
-    eventType,
-  });
+  const requestId = input.requestId?.trim() || undefined;
 
   return {
     id: `tre:${input.eventId}`,
@@ -111,6 +109,7 @@ export function buildThreadRunEventFromLiveEvent(
     observedAt: input.observedAt,
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.agentId && { agentId: input.agentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(requestId && { requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
     metadata: buildLiveEventMetadata(input),
@@ -141,6 +140,34 @@ export function buildSubagentLifecycleRunEvent(
       ...(input.delegationPrompt && { delegationPrompt: input.delegationPrompt }),
       ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
     },
+  };
+}
+
+export interface BuildSubagentMissionAttributedRunEventInput {
+  threadId: string;
+  agentId: string;
+  role: string;
+  prompt: string;
+  observedAt: string;
+  runAttemptId?: string;
+  parentToolUseId?: string;
+}
+
+export function buildSubagentMissionAttributedRunEvent(
+  input: BuildSubagentMissionAttributedRunEventInput,
+): ThreadRunEventInput {
+  return {
+    id: `tre:${input.threadId}:agent:${input.agentId}:mission`,
+    threadId: input.threadId,
+    eventType: "message.final",
+    scope: "agent",
+    role: input.role,
+    agentId: input.agentId,
+    streamState: "none",
+    message: formatSubagentMissionMessage(input.role, input.prompt, { agentId: input.agentId }),
+    observedAt: input.observedAt,
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
   };
 }
 
@@ -192,7 +219,7 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
       return "tool.completed";
     }
     if (input.tool) {
-      return input.tool.status === "running" ? "tool.started" : "tool.completed";
+      return input.tool.status === "started" ? "tool.started" : "tool.completed";
     }
     return input.stream ? "message.delta" : "message.final";
   }
@@ -247,17 +274,6 @@ function resolveThreadRunEventStreamState(
     return "none";
   }
   return input.message.trim() ? "streaming" : "placeholder";
-}
-
-function resolveRequestId(input: {
-  threadId: string;
-  eventId: string;
-  eventType: ThreadRunEventType;
-}): string | undefined {
-  if (!input.eventType.startsWith("request.") && input.eventType !== "api.error") {
-    return undefined;
-  }
-  return `req:${input.threadId}:${input.eventId}`;
 }
 
 function buildLiveEventMetadata(input: BuildThreadRunEventFromLiveInput): Record<string, unknown> {

@@ -6,16 +6,10 @@ import type { ConversationStore } from "./conversation-store.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
-import { buildSubagentLifecycleRunEvent } from "./thread-run-event-normalizer.js";
+import { buildSubagentLifecycleRunEvent, buildSubagentMissionAttributedRunEvent } from "./thread-run-event-normalizer.js";
 import type { ContextWindowMonitor } from "./context-window-monitor.js";
 import type { SubagentHandoffService } from "./subagent-handoff-service.js";
 import { logEcoDiagThrottled } from "./eco-diag-log.js";
-
-export interface PendingSubagentLaunch {
-  role: RuntimeAgentRole;
-  missionKey?: string;
-  todoId?: string;
-}
 
 export function createSubagentSessionHooks(
   store: ConversationStore,
@@ -25,8 +19,6 @@ export function createSubagentSessionHooks(
     lifecycle?: AgentLifecycleService;
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
-    consumePendingLaunch?: (input: { role: RuntimeAgentRole }) => PendingSubagentLaunch | undefined;
-    onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
     onTimingChanged?: () => void;
     onProxyAttributionSettled?: (input: { agentId: string; role: RuntimeAgentRole }) => void;
     onSubagentBillingStamp?: (input: {
@@ -48,12 +40,10 @@ export function createSubagentSessionHooks(
       if (!role) {
         return;
       }
-      const pending = options?.consumePendingLaunch?.({ role });
       const prompt = input.prompt?.trim() ?? "";
-      const todoId = input.todoId ?? pending?.todoId ?? options?.todoIdHint?.();
+      const todoId = input.todoId ?? options?.todoIdHint?.();
       const missionKey =
-        pending?.missionKey ??
-        (role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined);
+        role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
       store.upsertSubagentSessionActive({
         threadId,
         role,
@@ -62,9 +52,11 @@ export function createSubagentSessionHooks(
         ...(todoId && { todoId }),
         ...(missionKey && { missionKey }),
       });
+      const parentToolUseId = input.parentToolUseId?.trim() || undefined;
       options?.metricsRegistry?.onSubagentStart(threadId, {
         agentId: input.agentId,
         role,
+        ...(parentToolUseId && { parentToolUseId }),
       });
       options?.onProxyAttributionSettled?.({
         agentId: input.agentId,
@@ -76,6 +68,7 @@ export function createSubagentSessionHooks(
         role,
         ...(missionKey && { missionKey }),
         ...(todoId && { todoId }),
+        ...(parentToolUseId && { parentToolUseId }),
       });
       appendSubagentLifecycleEvent(store, {
         threadId,
@@ -90,6 +83,16 @@ export function createSubagentSessionHooks(
         ...(prompt && { delegationPrompt: prompt }),
         ...(prompt && { delegationSummary: summarizeAgentObjective(role, prompt) }),
       });
+      if (prompt) {
+        appendSubagentMissionAttributedEvent(store, {
+          threadId,
+          agentId: input.agentId,
+          role,
+          prompt,
+          ...(lifecycleRecord?.runAttemptId && { runAttemptId: lifecycleRecord.runAttemptId }),
+          ...(parentToolUseId && { parentToolUseId }),
+        });
+      }
       options?.onSubagentBillingStamp?.({
         agentId: input.agentId,
         role,
@@ -127,7 +130,6 @@ export function createSubagentSessionHooks(
       return store.resolveResumeAgentId(input);
     },
     ...(options?.todoIdHint && { todoIdHint: options.todoIdHint }),
-    ...(options?.onAgentToolCapture && { onAgentToolCapture: options.onAgentToolCapture }),
   };
 
   if (options?.contextMonitor && options?.handoffService) {
@@ -161,6 +163,33 @@ export function createSubagentSessionHooks(
   }
 
   return hooks;
+}
+
+function appendSubagentMissionAttributedEvent(
+  store: ConversationStore,
+  input: {
+    threadId: string;
+    agentId: string;
+    role: RuntimeAgentRole;
+    prompt: string;
+    runAttemptId?: string;
+    parentToolUseId?: string;
+  },
+): void {
+  if (typeof store.appendThreadRunEvent !== "function") {
+    return;
+  }
+  try {
+    store.appendThreadRunEvent(
+      buildSubagentMissionAttributedRunEvent({
+        ...input,
+        observedAt: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[eco] subagent mission run event failed: ${message}\n`);
+  }
 }
 
 function appendSubagentLifecycleEvent(

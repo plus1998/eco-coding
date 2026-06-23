@@ -1,7 +1,6 @@
 import '../models/thread_run_projection.dart';
 import 'subagent_session_timing.dart';
 import 'activity_display.dart';
-import 'agent_mission.dart';
 
 class SubagentTimelineEntry {
   const SubagentTimelineEntry({
@@ -156,15 +155,6 @@ String? resolveProjectionAgentStatusText(ThreadRunProjectionAgent agent) {
   return null;
 }
 
-String _resolveProjectionToolName(ThreadRunProjectionTimelineItem item) {
-  final tool = readProjectionToolMetadata(item.metadata);
-  final name = tool?.name.trim();
-  if (name != null && name.isNotEmpty) {
-    return name;
-  }
-  return 'Tool';
-}
-
 String _firstReadableLine(String text) {
   for (final line in text.split(RegExp(r'\r?\n'))) {
     final trimmed = line.trim();
@@ -245,24 +235,4 @@ ThreadRunProjectionAgent? findProjectionAgentById(
     if (agent.agentId == agentId) return agent;
   }
   return null;
-}
-
-ThreadRunProjectionAgent? findProjectionAgentForMission(
-  ThreadRunProjectionSnapshot projection,
-  String role,
-  int occurrence,
-) {
-  final normalizedRole = normalizeAgentDisplayRole(role) ?? role;
-  final agents = projection.agents
-      .where((agent) => agent.kind == 'subagent')
-      .where(
-        (agent) => (normalizeAgentDisplayRole(agent.role) ?? agent.role) ==
-            normalizedRole,
-      )
-      .toList()
-    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
-  if (occurrence < 0 || occurrence >= agents.length) {
-    return null;
-  }
-  return agents[occurrence];
 }

@@ -16,6 +16,7 @@ test("registers and resolves pending Bash approvals", async () => {
     reason: "Eco requires user confirmation before running Bash.",
     riskScore: 5,
     riskLevel: "low",
+    agentId: "planner:attempt_execution_0",
   });
 
   expect(getPendingBashApprovalForThread("thread_1")?.command).toBe("date");
@@ -34,6 +35,7 @@ test("cancels pending Bash approvals for a thread", async () => {
     reason: "Eco requires user confirmation before running Bash.",
     riskScore: 5,
     riskLevel: "low",
+    agentId: "planner:attempt_execution_0",
   });
 
   cancelBashApprovalsForThread("thread_2", "cancelled by user");

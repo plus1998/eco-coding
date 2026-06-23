@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { formatSubagentMissionMessage } from "@eco/runtime";
+import { formatSubagentMissionMessage, parseSubagentMissionMessage } from "@eco/runtime";
 import {
   buildSubagentLifecycleRunEvent,
+  buildSubagentMissionAttributedRunEvent,
   buildThreadRunEventFromLiveEvent,
   isMetricsOnlyThreadLiveEvent,
 } from "../src/main/thread-run-event-normalizer";
@@ -45,7 +46,7 @@ test("buildThreadRunEventFromLiveEvent keeps api errors visible in main and agen
 
   expect(event?.eventType).toBe("api.error");
   expect(event?.scope).toBe("both");
-  expect(event?.requestId).toBe("req:thr_1:act_error");
+  expect(event?.requestId).toBeUndefined();
   expect(event?.metadata?.apiError).toEqual({ statusCode: 502, message: "Bad Gateway" });
 });
 
@@ -133,6 +134,7 @@ test("buildThreadRunEventFromLiveEvent maps SDK request status to request span",
     role: "planner",
     stream: false,
     message: "Requesting model…",
+    requestId: "msgreq_provider_123",
     observedAt: "2026-01-01T00:00:00.000Z",
   });
 
@@ -140,7 +142,7 @@ test("buildThreadRunEventFromLiveEvent maps SDK request status to request span",
     id: "tre:request_1",
     eventType: "request.started",
     scope: "main",
-    requestId: "req:thr_1:request_1",
+    requestId: "msgreq_provider_123",
     streamState: "none",
     metadata: { liveType: "request.started" },
   });
@@ -154,6 +156,7 @@ test("buildThreadRunEventFromLiveEvent maps SDK retry status to request retry", 
     role: "planner",
     stream: false,
     message: "API retry 2/5…",
+    requestId: "msgreq_provider_retry",
     observedAt: "2026-01-01T00:00:00.000Z",
   });
 
@@ -161,7 +164,7 @@ test("buildThreadRunEventFromLiveEvent maps SDK retry status to request retry", 
     id: "tre:retry_1",
     eventType: "request.retry_scheduled",
     scope: "main",
-    requestId: "req:thr_1:retry_1",
+    requestId: "msgreq_provider_retry",
     streamState: "none",
     metadata: { liveType: "request.retry_scheduled" },
   });
@@ -386,6 +389,27 @@ test("buildSubagentLifecycleRunEvent stores delegation prompt metadata", () => {
     delegationPrompt: "Implement export filters in src/api.ts",
     delegationSummary: "实现：export filters",
   });
+});
+
+test("buildSubagentMissionAttributedRunEvent stamps agentId into @mission payload", () => {
+  const event = buildSubagentMissionAttributedRunEvent({
+    threadId: "thr_1",
+    agentId: "agent_coder_a",
+    role: "coder",
+    prompt: "Implement export filters in src/api.ts",
+    parentToolUseId: "toolu_agent_1",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    eventType: "message.final",
+    scope: "agent",
+    agentId: "agent_coder_a",
+    parentToolUseId: "toolu_agent_1",
+  });
+  const mission = parseSubagentMissionMessage(event.message);
+  expect(mission?.agentId).toBe("agent_coder_a");
+  expect(mission?.prompt).toContain("export filters");
 });
 
 test("buildThreadRunEventFromLiveEvent keeps planner Agent delegation on main timeline", () => {

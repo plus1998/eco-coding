@@ -20,7 +20,7 @@ import {
   type SubagentMetricsEntry,
   SubagentMetricsState,
 } from "./subagent-metrics-state";
-import { SubagentToolUseIndex } from "./subagent-tool-use-index";
+import { SubagentToolUseIndex, type LinkPendingSubagentToolUseResult } from "./subagent-tool-use-index";
 
 export type {
   SubagentContextObservationInput,
@@ -46,11 +46,24 @@ export class SubagentMetricsRegistry {
     this.persistence = persistence ?? new SubagentMetricsStoreFacade(store);
   }
 
-  onSubagentStart(threadId: string, input: { agentId: string; role: RuntimeAgentRole }): void {
+  onSubagentStart(
+    threadId: string,
+    input: { agentId: string; role: RuntimeAgentRole; parentToolUseId?: string },
+  ): void {
     const state = this.getOrCreateThread(threadId);
     const now = Date.now();
     const start = state.metrics.start(input, now);
-    const toolUseLink = state.toolUses.linkNextPendingForRole(input.role, input.agentId);
+    const explicitParentToolUseId = input.parentToolUseId?.trim();
+    let toolUseLink: LinkPendingSubagentToolUseResult;
+    if (explicitParentToolUseId) {
+      state.toolUses.link(explicitParentToolUseId, input.agentId);
+      toolUseLink = {
+        toolUseId: explicitParentToolUseId,
+        mappedCount: state.toolUses.mappedCount,
+      };
+    } else {
+      toolUseLink = state.toolUses.linkNextPendingForRole(input.role, input.agentId);
+    }
     this.persistEntry(threadId, start.entry);
     this.diagnostics.logLifecycle({
       threadId,

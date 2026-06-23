@@ -495,41 +495,6 @@ export function activityActionKey(
   return `${subagent ?? ""}\0${icon ?? ""}\0${normalizeActivityActionLabel(label)}`;
 }
 
-const BASH_APPROVAL_ACTIVITY_PATTERN =
-  /^(?:等待确认|已允许本次|已拒绝|Bash 已拒绝：)\s*([A-Za-z][A-Za-z0-9_]*)(?:[：:]\s*(.+))?$/u;
-
-export interface ParsedBashApprovalActivityText {
-  toolName: string;
-  detail?: string;
-  phase: "approval-pending" | "approval-approved" | "approval-rejected";
-}
-
-export function parseBashApprovalActivityText(text: string): ParsedBashApprovalActivityText | undefined {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  if (trimmed.startsWith("Bash 已拒绝：")) {
-    return { toolName: "Bash", detail: trimmed.slice("Bash 已拒绝：".length).trim(), phase: "approval-rejected" };
-  }
-  const match = trimmed.match(BASH_APPROVAL_ACTIVITY_PATTERN);
-  if (!match?.[1]) {
-    return undefined;
-  }
-  const toolName = match[1];
-  const detail = match[2]?.trim() || undefined;
-  if (trimmed.startsWith("等待确认")) {
-    return { toolName, ...(detail && { detail }), phase: "approval-pending" };
-  }
-  if (trimmed.startsWith("已允许本次")) {
-    return { toolName, ...(detail && { detail }), phase: "approval-approved" };
-  }
-  if (trimmed.startsWith("已拒绝")) {
-    return { toolName, ...(detail && { detail }), phase: "approval-rejected" };
-  }
-  return undefined;
-}
-
 export type ToolActionLifecycle =
   | "approval-pending"
   | "approval-approved"

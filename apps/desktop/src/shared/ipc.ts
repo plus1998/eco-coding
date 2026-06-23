@@ -1,4 +1,5 @@
 import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
+import type { ThreadRunToolMetadata } from "./thread-run-events";
 
 export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
@@ -140,6 +141,8 @@ export type {
   CenterServerDeviceView,
   CenterServerRegisterDesktopRequest,
   CenterServerRegisterDesktopResult,
+  CenterServerRemoveConnectionOptions,
+  CenterServerRemoveConnectionResult,
   CenterServerSettingsInput,
   CenterServerSettingsSnapshot,
   CenterServerSettingsView,
@@ -954,7 +957,7 @@ export interface BashApprovalRequest {
   reason: string;
   riskScore: number;
   riskLevel: "low" | "medium" | "high" | "critical";
-  agentId?: string;
+  agentId: string;
   agentType?: string;
   description?: string;
   /** When set, this approval is for Read/Glob/Grep outside the workspace. */

@@ -111,18 +111,6 @@ enum ToolActionLifecycle {
   failed,
 }
 
-class ParsedBashApprovalActivityText {
-  const ParsedBashApprovalActivityText({
-    required this.toolName,
-    required this.phase,
-    this.detail,
-  });
-
-  final String toolName;
-  final String? detail;
-  final ToolActionLifecycle phase;
-}
-
 class ThreadRunBashApprovalMetadata {
   const ThreadRunBashApprovalMetadata({
     required this.toolUseId,
@@ -226,29 +214,6 @@ Map<String, ThreadRunToolMetadata> buildToolIndexByToolUseId(
     scan(agent.timeline);
   }
   return index;
-}
-
-ThreadRunBashApprovalMetadata? findBashApprovalForParsed(
-  ParsedBashApprovalActivityText parsed,
-  Map<String, ThreadRunBashApprovalMetadata> index,
-) {
-  final normalizedDetail = parsed.detail?.trim();
-  ThreadRunBashApprovalMetadata? fallback;
-  for (final approval in index.values) {
-    if (approval.toolName != parsed.toolName) continue;
-    if (normalizedDetail == null || normalizedDetail.isEmpty) {
-      fallback ??= approval;
-      continue;
-    }
-    final approvalDetail = approval.detail?.trim();
-    if (approvalDetail == normalizedDetail) return approval;
-    if (approvalDetail != null &&
-        normalizeBashCommandKey(approvalDetail) ==
-            normalizeBashCommandKey(normalizedDetail)) {
-      return approval;
-    }
-  }
-  return fallback;
 }
 
 ThreadRunToolMetadata? findProjectionToolForInvocation(
@@ -425,10 +390,6 @@ String resolveBashApprovalTitle({
   return '需要确认工具权限';
 }
 
-final _bashApprovalActivityPattern = RegExp(
-  r'^(?:等待确认|已允许本次|已拒绝|Bash 已拒绝：)\s*([A-Za-z][A-Za-z0-9_]*)(?:[：:]\s*(.+))?$',
-);
-
 String activityActionKey({
   String? subagent,
   required String label,
@@ -452,48 +413,6 @@ String resolveMergedToolActionLabel(String existing, String incoming) {
     return existing;
   }
   return incoming;
-}
-
-ParsedBashApprovalActivityText? parseBashApprovalActivityText(String text) {
-  final trimmed = text.trim();
-  if (trimmed.isEmpty) {
-    return null;
-  }
-  if (trimmed.startsWith('Bash 已拒绝：')) {
-    return ParsedBashApprovalActivityText(
-      toolName: 'Bash',
-      detail: trimmed.substring('Bash 已拒绝：'.length).trim(),
-      phase: ToolActionLifecycle.approvalRejected,
-    );
-  }
-  final match = _bashApprovalActivityPattern.firstMatch(trimmed);
-  if (match == null || match.group(1) == null) {
-    return null;
-  }
-  final toolName = match.group(1)!;
-  final detail = match.group(2)?.trim();
-  if (trimmed.startsWith('等待确认')) {
-    return ParsedBashApprovalActivityText(
-      toolName: toolName,
-      detail: detail,
-      phase: ToolActionLifecycle.approvalPending,
-    );
-  }
-  if (trimmed.startsWith('已允许本次')) {
-    return ParsedBashApprovalActivityText(
-      toolName: toolName,
-      detail: detail,
-      phase: ToolActionLifecycle.approvalApproved,
-    );
-  }
-  if (trimmed.startsWith('已拒绝')) {
-    return ParsedBashApprovalActivityText(
-      toolName: toolName,
-      detail: detail,
-      phase: ToolActionLifecycle.approvalRejected,
-    );
-  }
-  return null;
 }
 
 int compareToolActionLifecyclePriority(
@@ -562,6 +481,16 @@ bool isThreadFollowUpActivityMessage(String message) {
   final trimmed = message.trim();
   if (trimmed.isEmpty) return false;
   return _threadOperationalStatusPatterns.any((pattern) => pattern.hasMatch(trimmed));
+}
+
+/// Legacy activity-line bash/filesystem approval transitions; projection owns display.
+bool isLegacyBashApprovalActivityText(String message) {
+  final trimmed = message.trim();
+  if (trimmed.isEmpty) return false;
+  if (trimmed.startsWith('Bash 已拒绝：')) return true;
+  return RegExp(
+    r'^(?:等待确认|已允许本次|已拒绝)\s*[A-Za-z][A-Za-z0-9_]*(?:[：:]\s*.+)?$',
+  ).hasMatch(trimmed);
 }
 
 bool isUserPromptActivityLine({required String role, required String message}) {
@@ -727,149 +656,6 @@ String formatBashRunMeta(String command, {int? durationMs}) {
     );
   }
   return parts.join(', ');
-}
-
-String? _deriveBashTitleFromCommand(String? command) {
-  final trimmed = command?.trim();
-  if (trimmed == null || trimmed.isEmpty) {
-    return null;
-  }
-
-  final segments = trimmed
-      .split(RegExp(r'\s*(?:&&|\|\||;)\s*'))
-      .map((segment) => segment.trim())
-      .where((segment) => segment.isNotEmpty)
-      .toList();
-  final lastSegment = segments.isEmpty ? trimmed : segments.last;
-  final normalized = lastSegment.replaceAll(RegExp(r'\s+'), ' ');
-
-  final testMatch = RegExp(
-    r'^(?:bun|npm|pnpm|yarn)\s+test(?:\s+(.+))?$',
-    caseSensitive: false,
-  ).firstMatch(normalized);
-  if (testMatch != null) {
-    final targets = testMatch.group(1)?.trim();
-    if (targets == null || targets.isEmpty) {
-      return 'Run tests';
-    }
-    final files = targets
-        .split(RegExp(r'\s+'))
-        .map((target) => pathBasename(target.replaceAll(RegExp(r'''^['"]|['"]$'''), '')))
-        .where((target) => target.isNotEmpty)
-        .toList();
-    final primary = files.isEmpty ? null : files.first;
-    if (primary != null &&
-        RegExp(r'\.(?:test|spec)\.[cm]?[jt]sx?$', caseSensitive: false)
-            .hasMatch(primary)) {
-      final base = primary.replaceAll(
-        RegExp(r'\.(?:test|spec)\.[cm]?[jt]sx?$', caseSensitive: false),
-        '',
-      );
-      return clampActivityPreviewLine('Run $base tests', 48);
-    }
-    if (files.length == 1 && primary != null) {
-      return clampActivityPreviewLine('Run $primary tests', 48);
-    }
-    return files.length > 1 ? 'Run ${files.length} test files' : 'Run tests';
-  }
-
-  final runMatch = RegExp(
-    r'^(?:npm|bun|pnpm|yarn)\s+run\s+(\S+)',
-    caseSensitive: false,
-  ).firstMatch(normalized);
-  if (runMatch?.group(1) != null) {
-    return clampActivityPreviewLine('Run ${runMatch!.group(1)!}', 48);
-  }
-
-  final gitMatch = RegExp(
-    r'^git\s+(\S+)(?:\s+(.+))?',
-    caseSensitive: false,
-  ).firstMatch(normalized);
-  if (gitMatch?.group(1) != null) {
-    final subcommand = gitMatch!.group(1)!;
-    final rest = gitMatch.group(2)?.trim();
-    if (rest != null && rest.isNotEmpty) {
-      final firstArg = rest
-          .split(RegExp(r'\s+'))
-          .first
-          .replaceAll(RegExp(r'''^['"]|['"]$'''), '');
-      if (firstArg.isNotEmpty && firstArg.length <= 24) {
-        return clampActivityPreviewLine(
-          'git $subcommand ${pathBasename(firstArg)}',
-          48,
-        );
-      }
-    }
-    return clampActivityPreviewLine('git $subcommand', 48);
-  }
-
-  if (RegExp(r'^kill\b', caseSensitive: false).hasMatch(normalized)) {
-    return 'Stop process';
-  }
-  if (RegExp(r'^curl\b', caseSensitive: false).hasMatch(normalized)) {
-    return 'Fetch URL';
-  }
-  if (RegExp(r'^wget\b', caseSensitive: false).hasMatch(normalized)) {
-    return 'Download file';
-  }
-  if (RegExp(r'^docker\b', caseSensitive: false).hasMatch(normalized)) {
-    final dockerMatch = RegExp(
-      r'^docker(?:\s+compose)?\s+(\S+)',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-    return clampActivityPreviewLine(
-      dockerMatch != null ? 'docker ${dockerMatch.group(1)!}' : 'docker',
-      48,
-    );
-  }
-  if (RegExp(r'^cd\s+\S+$', caseSensitive: false).hasMatch(normalized)) {
-    return clampActivityPreviewLine(
-      'cd ${pathBasename(normalized.substring(3).trim())}',
-      48,
-    );
-  }
-
-  final tokens = normalized.split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
-  final list = tokens.toList();
-  final first = list.isEmpty ? '' : list.first;
-  if (first.startsWith('./') ||
-      first.startsWith('/') ||
-      RegExp(r'\.(?:sh|py|js|ts|mjs|cjs)$', caseSensitive: false).hasMatch(first)) {
-    return clampActivityPreviewLine(pathBasename(first), 48);
-  }
-  if (normalized.length <= 48) {
-    return normalized;
-  }
-  if (list.length >= 2) {
-    return clampActivityPreviewLine('${list[0]} ${list[1]}', 48);
-  }
-  return clampActivityPreviewLine(first, 48);
-}
-
-bool _looksLikeShellCommand(String text) {
-  return RegExp(
-    r'^(?:cd|bun|npm|pnpm|yarn|git|curl|make|docker|python|node|\./|/)',
-    caseSensitive: false,
-  ).hasMatch(text) ||
-      text.contains('&&') ||
-      text.contains('|') ||
-      text.contains('\n');
-}
-
-String _normalizeBashSummaryCandidate(String? summaryText) {
-  final trimmed = summaryText?.trim();
-  if (trimmed == null || trimmed.isEmpty) return '';
-  final toolLine = RegExp(
-    r'^Tool:\s*Bash(?:\s*·\s*([\s\S]+))?$',
-    caseSensitive: false,
-  ).firstMatch(trimmed);
-  if (toolLine != null) {
-    final detail = toolLine.group(1)
-        ?.replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
-        .trim();
-    return detail ?? '';
-  }
-  return trimmed;
 }
 
 String formatMeaningfulBashTitle({

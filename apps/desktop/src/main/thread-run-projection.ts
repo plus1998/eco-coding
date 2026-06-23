@@ -65,13 +65,13 @@ export function buildThreadRunProjection(
   const diagnostics: ThreadRunProjectionDiagnostic[] = [];
   const agentsById = new Map<string, ThreadRunProjectionAgent>();
   const eventsByAgentId = new Map<string, ThreadRunProjectionTimelineItem[]>();
-  const agentsByRole = buildAgentsByRole(input.agents);
+  const agentsByParentToolUseId = buildAgentsByParentToolUseId(input.agents);
 
   for (const event of events) {
     if (isMetricsOnlyThreadRunEvent(event)) {
       continue;
     }
-    const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByRole, diagnostics);
+    const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByParentToolUseId, diagnostics);
     if ((event.scope === "agent" || event.scope === "both") && resolvedAgentId) {
       const item = eventToTimelineItem(event, resolvedAgentId);
       const rows = eventsByAgentId.get(resolvedAgentId) ?? [];
@@ -168,24 +168,22 @@ function eventToTimelineItem(
   };
 }
 
-function buildAgentsByRole(
+function buildAgentsByParentToolUseId(
   agents: readonly AgentInstanceRecord[],
-): Map<string, AgentInstanceRecord[]> {
-  const map = new Map<string, AgentInstanceRecord[]>();
+): Map<string, AgentInstanceRecord> {
+  const map = new Map<string, AgentInstanceRecord>();
   for (const agent of agents) {
-    if (!subagentRoleSet.has(agent.role)) {
-      continue;
+    const parentToolUseId = agent.parentToolUseId?.trim();
+    if (parentToolUseId) {
+      map.set(parentToolUseId, agent);
     }
-    const rows = map.get(agent.role) ?? [];
-    rows.push(agent);
-    map.set(agent.role, rows);
   }
   return map;
 }
 
 function resolveProjectionEventAgentId(
   event: ThreadRunEvent,
-  agentsByRole: ReadonlyMap<string, readonly AgentInstanceRecord[]>,
+  agentsByParentToolUseId: ReadonlyMap<string, AgentInstanceRecord>,
   diagnostics: ThreadRunProjectionDiagnostic[],
 ): string | undefined {
   if (event.scope !== "agent" && event.scope !== "both") {
@@ -194,42 +192,37 @@ function resolveProjectionEventAgentId(
   if (event.agentId) {
     return event.agentId;
   }
+
+  const parentToolUseId = event.parentToolUseId?.trim() ?? readEventParentToolUseId(event);
+  if (parentToolUseId) {
+    const linked = agentsByParentToolUseId.get(parentToolUseId);
+    if (linked) {
+      return linked.agentId;
+    }
+  }
+
   if (!event.role || !subagentRoleSet.has(event.role)) {
     return undefined;
   }
 
-  const candidates = (agentsByRole.get(event.role) ?? []).filter((agent) =>
-    agentInstanceContainsEvent(agent, event.observedAt),
-  );
-  if (candidates.length === 1) {
-    return candidates[0]?.agentId;
-  }
-
   diagnostics.push({
-    code: candidates.length > 1 ? "ambiguous_subagent_role" : "missing_agent_id",
-    message:
-      candidates.length > 1
-        ? `Agent-scoped event for role ${event.role} has multiple matching agents.`
-        : `Agent-scoped event for role ${event.role} is missing agentId.`,
+    code: "missing_agent_id",
+    message: `Agent-scoped event for role ${event.role} is missing agentId.`,
     eventId: event.id,
   });
   return undefined;
 }
 
-function agentInstanceContainsEvent(agent: AgentInstanceRecord, observedAt: string): boolean {
-  const eventMs = Date.parse(observedAt);
-  const startMs = Date.parse(agent.startedAt);
-  const endMs = agent.endedAt ? Date.parse(agent.endedAt) : undefined;
-  if (!Number.isFinite(eventMs) || !Number.isFinite(startMs)) {
-    return agent.status === "active";
+function readEventParentToolUseId(event: ThreadRunEvent): string | undefined {
+  const metadata = event.metadata;
+  if (!metadata || typeof metadata !== "object") {
+    return undefined;
   }
-  if (eventMs < startMs) {
-    return false;
+  const parentToolUseId = metadata.parentToolUseId ?? metadata.parent_tool_use_id;
+  if (typeof parentToolUseId === "string" && parentToolUseId.trim()) {
+    return parentToolUseId.trim();
   }
-  if (endMs !== undefined && Number.isFinite(endMs) && eventMs > endMs) {
-    return false;
-  }
-  return true;
+  return undefined;
 }
 
 function buildUsageByAgentId(
@@ -389,13 +382,8 @@ function closeRequestSpanForTerminalThread(
 }
 
 function resolveProjectionRequestId(event: ThreadRunEvent): string | undefined {
-  if (event.requestId) {
-    return event.requestId;
-  }
-  if (event.streamState !== "none") {
-    return `stream:${event.streamKey ?? event.agentId ?? event.role ?? event.id}`;
-  }
-  return undefined;
+  const requestId = event.requestId?.trim();
+  return requestId || undefined;
 }
 
 function createRequestSpan(event: ThreadRunEvent, requestId: string): MutableRequestSpan {

@@ -152,9 +152,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         break;
       }
     }
-    final showLanding = !session.loading &&
-        session.error == null &&
-        session.activities.isEmpty;
     final landingHero = landingHeroText(
       workspacePath: workspacePath.isEmpty ? null : workspacePath,
       isHomeProject: project?.isHome ?? false,
@@ -168,6 +165,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
     final isRunning = _isRunning(thread);
+    final showLanding = !session.loading &&
+        session.error == null &&
+        !isRunning &&
+        !isProjectionFeedReady(session.runProjection);
     final isAwaitingPlan = _isAwaitingPlan(thread, session);
     final canStopThread = isRunning || isAwaitingPlan;
     final planFailureMessage = isAwaitingPlan
@@ -198,14 +199,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       final previousFeed = previous == null
           ? 0
           : buildActivityFeed(
-              lines: previous.activities,
               threadPrompt: previous.thread?.prompt,
               threadId: widget.threadId,
               runProjection: previous.runProjection,
               subagentSessions: previous.subagentSessions,
             ).length;
       final nextFeed = buildActivityFeed(
-        lines: next.activities,
         threadPrompt: next.thread?.prompt,
         threadId: widget.threadId,
         runProjection: next.runProjection,
@@ -314,7 +313,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   canStopThread: canStopThread,
                   followUpMode: followUpMode,
                   sendBusy: _followUpBusy,
-                  hasActivity: session.activities.isNotEmpty,
+                  hasActivity: isProjectionFeedReady(session.runProjection),
                   inputHint: _editingFollowUpId != null
                       ? '编辑引导消息…'
                       : (showLanding ? composerLandingPlaceholder : null),
@@ -590,12 +589,12 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
         buildDefaultRuntimeConfig(modelSettings: modelSettings);
     final agentProfile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
     final feedEntries = buildActivityFeed(
-      lines: session.activities,
       threadPrompt: thread?.prompt,
       threadId: threadId,
       runProjection: session.runProjection,
       subagentSessions: session.subagentSessions,
     );
+    final projectionReady = isProjectionFeedReady(session.runProjection);
     final hasStreamingThinking = feedEntries.any(
       (entry) => entry.kind == ActivityFeedKind.thinking && entry.streaming,
     );
@@ -618,12 +617,31 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
 
     return Stack(
       children: [
-        ActivityFeedList(
-          entries: displayFeedEntries,
-          scrollController: scrollController,
-          topPadding: sessionContentTopPadding(context),
-          agentProfile: agentProfile,
-        ),
+        if (!projectionReady)
+          Center(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                sessionContentTopPadding(context),
+                24,
+                24,
+              ),
+              child: Text(
+                isRunning ? '运行投影加载中…' : '运行投影尚未就绪',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: ecoColors(context).textMuted,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ActivityFeedList(
+            entries: displayFeedEntries,
+            scrollController: scrollController,
+            topPadding: sessionContentTopPadding(context),
+            agentProfile: agentProfile,
+          ),
         Positioned(
           right: 8,
           bottom: 8,
@@ -652,7 +670,6 @@ class _PlanApprovalBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final retryMode = failureMessage != null;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -735,7 +752,6 @@ class _EditingFollowUpBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: ecoColors(context).accentSoft,
@@ -796,7 +812,6 @@ class _FollowUpBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: ecoColors(context).cardSurface,

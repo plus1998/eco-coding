@@ -442,7 +442,6 @@ class _ConnectStepHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final done = isSetupWizardStepDone(step, overview);
 
     return Column(
@@ -837,7 +836,6 @@ class _PcDeviceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Material(
       color: selected ? ecoColors(context).accentSoft : ecoColors(context).cardSurface,
       borderRadius: BorderRadius.circular(12),
@@ -908,7 +906,6 @@ class _AccountStatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -951,7 +948,6 @@ class _ScanFirstView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -1032,7 +1028,6 @@ class _ReadyConnectionView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final eco = ecoColors(context);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
     final stableOnline = selectedDesktop == null
         ? null
@@ -1126,7 +1121,6 @@ class _StepBlockedHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(

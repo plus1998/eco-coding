@@ -177,6 +177,37 @@ test("resolveAgentId matches queued parent tool_use ids by role when starts are 
   ).toBe("agent_explore_a");
 });
 
+test("resolveAgentId links explicit parentToolUseId even when subagent starts out of order", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_explicit_parent";
+
+  registry.noteTaskToolUse(threadId, "toolu_task_a", "coder");
+  registry.noteTaskToolUse(threadId, "toolu_task_b", "coder");
+  registry.onSubagentStart(threadId, {
+    agentId: "agent_coder_b",
+    role: "coder",
+    parentToolUseId: "toolu_task_b",
+  });
+  registry.onSubagentStart(threadId, {
+    agentId: "agent_coder_a",
+    role: "coder",
+    parentToolUseId: "toolu_task_a",
+  });
+
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "coder",
+      parentToolUseId: "toolu_task_a",
+    }),
+  ).toBe("agent_coder_a");
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "coder",
+      parentToolUseId: "toolu_task_b",
+    }),
+  ).toBe("agent_coder_b");
+});
+
 test("resolveAgentId matches dynamic runtime roles", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_dynamic_role_queue";

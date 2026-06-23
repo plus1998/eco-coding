@@ -56,9 +56,8 @@ test("resolveResumeAgentIdFromRecords prefers coder todo match", () => {
   expect(agentId).toBe("coder-a");
 });
 
-test("createSubagentSessionHooks consumes pending launch for matching role", () => {
+test("createSubagentSessionHooks uses structured parentToolUseId and prompt from onStart", () => {
   const saved: Array<Record<string, unknown>> = [];
-  const consumedRoles: string[] = [];
   const store = {
     upsertSubagentSessionActive(input: Record<string, unknown>) {
       saved.push(input);
@@ -69,25 +68,23 @@ test("createSubagentSessionHooks consumes pending launch for matching role", () 
     },
   } as never;
 
-  const hooks = createSubagentSessionHooks(store, "thr_pending_launch", "execution", {
-    consumePendingLaunch(input) {
-      consumedRoles.push(input.role);
-      return input.role === "coder"
-        ? { role: "coder", todoId: "todo-coder", missionKey: "implement api" }
-        : undefined;
-    },
+  const hooks = createSubagentSessionHooks(store, "thr_pending_launch", "execution");
+
+  hooks.onStart({
+    agentId: "agent_coder_a",
+    agentType: "coder",
+    parentToolUseId: "toolu_coder_a",
+    prompt: "Implement API endpoints",
+    todoId: "todo-coder",
   });
 
-  hooks.onStart({ agentId: "agent_coder_a", agentType: "coder" });
-
-  expect(consumedRoles).toEqual(["coder"]);
   expect(saved[0]).toMatchObject({
     threadId: "thr_pending_launch",
     role: "coder",
     agentId: "agent_coder_a",
     phase: "execution",
     todoId: "todo-coder",
-    missionKey: "implement api",
+    missionKey: "implement api endpoints",
   });
 });
 

@@ -91,16 +91,6 @@ export function resolveActivityAgentId(
     return distinctExplicit;
   }
 
-  if (options.metricsRegistry) {
-    const resolved = options.metricsRegistry.resolveAgentId(threadId, {
-      role: billingRole,
-      ...(parentToolUseId && { parentToolUseId }),
-    });
-    if (resolved) {
-      return resolved;
-    }
-  }
-
   return undefined;
 }
 

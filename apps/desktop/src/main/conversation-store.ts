@@ -1876,6 +1876,23 @@ export class ConversationStore {
     return record;
   }
 
+  /** Rewrites persisted run events when a local placeholder request id is adopted upstream. */
+  rekeyThreadRunRequestId(threadId: string, fromRequestId: string, toRequestId: string): number {
+    const from = fromRequestId.trim();
+    const to = toRequestId.trim();
+    if (!from || !to || from === to) {
+      return 0;
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE thread_run_events
+            SET request_id = ?
+          WHERE thread_id = ? AND request_id = ?`,
+      )
+      .run(to, threadId, from);
+    return Number(result.changes ?? 0);
+  }
+
   listThreadRunEvents(threadId: string): ThreadRunEvent[] {
     const rows = this.db
       .prepare(
@@ -2857,10 +2874,11 @@ function mergeThreadRunToolMetadata(
   if (!incoming || existing.name !== incoming.name) {
     return existing;
   }
+  const description = incoming.description ?? existing.description;
   return {
     ...existing,
     ...incoming,
-    description: incoming.description ?? existing.description,
+    ...(description !== undefined ? { description } : {}),
   };
 }
 

@@ -85,6 +85,30 @@ test("AgentLifecycleService links interleaved subagents by role-aware parent too
   expect(explore?.parentToolUseId).toBe("toolu_explore");
 });
 
+test("AgentLifecycleService prefers explicit parentToolUseId over role FIFO", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_explicit_parent", phase: "execution", retryIndex: 0 });
+
+  service.noteTaskToolUse("thr_explicit_parent", "toolu_a", "coder");
+  service.noteTaskToolUse("thr_explicit_parent", "toolu_b", "coder");
+  service.startSubagent({
+    threadId: "thr_explicit_parent",
+    agentId: "agent_coder_b",
+    role: "coder",
+    parentToolUseId: "toolu_b",
+  });
+  service.startSubagent({
+    threadId: "thr_explicit_parent",
+    agentId: "agent_coder_a",
+    role: "coder",
+    parentToolUseId: "toolu_a",
+  });
+
+  expect(store.getAgent("thr_explicit_parent", "agent_coder_a")?.parentToolUseId).toBe("toolu_a");
+  expect(store.getAgent("thr_explicit_parent", "agent_coder_b")?.parentToolUseId).toBe("toolu_b");
+});
+
 test("AgentLifecycleService records dynamic subagents by runtime role", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);

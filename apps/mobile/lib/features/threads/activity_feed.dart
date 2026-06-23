@@ -13,7 +13,7 @@ import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/subagent_session_timing.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/shimmer_text.dart';
-import 'thread_providers.dart';
+import 'projection_activity_feed.dart';
 
 enum ActivityFeedKind {
   user,
@@ -65,899 +65,25 @@ class ActivityFeedEntry {
   final String? toolUseId;
 }
 
-List<ActivityItem> _resolveEffectiveActivityLines({
-  required List<ActivityItem> lines,
-  ThreadRunProjectionSnapshot? runProjection,
-  String? threadPrompt,
-  String? threadId,
-}) {
-  if (lines.any((line) => line.role == 'user')) {
-    return lines;
-  }
-  String? userPrompt;
-  String? userPromptId;
-  for (final item in runProjection?.timeline ?? const []) {
-    if (item.eventType == 'thread.user_prompt' && item.text.trim().isNotEmpty) {
-      userPrompt = item.text.trim();
-      userPromptId = item.id;
-      break;
-    }
-  }
-  userPrompt ??= threadPrompt?.trim();
-  if (userPrompt == null || userPrompt.isEmpty) {
-    return lines;
-  }
-  return [
-    ActivityItem(
-      id: userPromptId ?? 'user-prompt-${threadId ?? 'thread'}',
-      role: 'user',
-      message: userPrompt,
-    ),
-    ...lines,
-  ];
+bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
+  return projection != null && projection.sourceEventCount > 0;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
-  required List<ActivityItem> lines,
   String? threadPrompt,
   String? threadId,
   ThreadRunProjectionSnapshot? runProjection,
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
 }) {
-  final effectiveLines = _resolveEffectiveActivityLines(
-    lines: lines,
-    runProjection: runProjection,
+  if (!isProjectionFeedReady(runProjection)) {
+    return const [];
+  }
+  return buildProjectionActivityFeed(
+    projection: runProjection!,
     threadPrompt: threadPrompt,
     threadId: threadId,
-  );
-  final bashApprovalByToolUseId = buildBashApprovalIndexByToolUseId(runProjection);
-  final toolByToolUseId = buildToolIndexByToolUseId(runProjection);
-
-  final output = <ActivityFeedEntry>[];
-  final entrySourceLineIndex = <String, int>{};
-  var narrative = '';
-  String? narrativeId;
-  int? narrativeSourceLineIndex;
-  var narrativeStreaming = false;
-  var thinking = '';
-  String? thinkingId;
-  int? thinkingSourceLineIndex;
-  var thinkingStreaming = false;
-  String? pendingUsageBadge;
-
-  void bindEntryToLine(String entryId, int lineIndex) {
-    entrySourceLineIndex[entryId] = lineIndex;
-  }
-
-  void flushThinking({bool atEnd = false}) {
-    final text = stripActivityStatusNoise(thinking).trim();
-    final stillStreaming = thinkingStreaming && atEnd;
-    if (text.isEmpty && !stillStreaming) {
-      thinking = '';
-      thinkingId = null;
-      thinkingStreaming = false;
-      return;
-    }
-    final last = output.isNotEmpty ? output.last : null;
-    if (text.isNotEmpty &&
-        last != null &&
-        last.kind == ActivityFeedKind.thinking &&
-        shouldMergeThinkingBlocks(last.text, text)) {
-      output[output.length - 1] = ActivityFeedEntry(
-        id: last.id,
-        kind: ActivityFeedKind.thinking,
-        text: mergeThinkingBlocks(last.text, text),
-        streaming: stillStreaming,
-      );
-    } else {
-      final entryId = thinkingId ?? 'thinking-${output.length}';
-      output.add(
-        ActivityFeedEntry(
-          id: entryId,
-          kind: ActivityFeedKind.thinking,
-          text: text,
-          streaming: stillStreaming,
-        ),
-      );
-      if (thinkingSourceLineIndex != null) {
-        bindEntryToLine(entryId, thinkingSourceLineIndex!);
-      }
-    }
-    thinking = '';
-    thinkingId = null;
-    thinkingSourceLineIndex = null;
-    thinkingStreaming = false;
-  }
-
-  void flushNarrative() {
-    final text = stripActivityStatusNoise(narrative).trim();
-    if (text.isEmpty) {
-      narrative = '';
-      narrativeId = null;
-      narrativeStreaming = false;
-      return;
-    }
-    final entryId = narrativeId ?? 'narrative-${output.length}';
-    output.add(
-      ActivityFeedEntry(
-        id: entryId,
-        kind: ActivityFeedKind.assistant,
-        text: text,
-        streaming: narrativeStreaming,
-        usageBadge: pendingUsageBadge,
-      ),
-    );
-    if (narrativeSourceLineIndex != null) {
-      bindEntryToLine(entryId, narrativeSourceLineIndex!);
-    }
-    narrative = '';
-    narrativeId = null;
-    narrativeSourceLineIndex = null;
-    narrativeStreaming = false;
-    pendingUsageBadge = null;
-  }
-
-  void flushTextBuffers({bool atEnd = false}) {
-    flushThinking(atEnd: atEnd);
-    flushNarrative();
-  }
-
-  void upsertAction({
-    required String id,
-    required int lineIndex,
-    required String label,
-    required ActivityActionIcon icon,
-    ToolActionLifecycle? lifecycle,
-    String? subagentRole,
-    BashRunCardDisplay? bashRun,
-    String? toolUseId,
-  }) {
-    var existingIndex = -1;
-    if (toolUseId != null && toolUseId.isNotEmpty) {
-      existingIndex = output.lastIndexWhere(
-        (entry) =>
-            entry.kind == ActivityFeedKind.action && entry.toolUseId == toolUseId,
-      );
-    }
-    if (existingIndex < 0 && (toolUseId == null || toolUseId.isEmpty)) {
-      final actionKey = activityActionKey(
-        subagent: subagentRole,
-        label: label,
-        icon: icon,
-      );
-      existingIndex = output.lastIndexWhere(
-        (entry) =>
-            entry.kind == ActivityFeedKind.action &&
-            (entry.toolUseId == null || entry.toolUseId!.isEmpty) &&
-            activityActionKey(
-              subagent: entry.subagentRole,
-              label: entry.text,
-              icon: entry.actionIcon,
-            ) ==
-                actionKey,
-      );
-    }
-    if (existingIndex >= 0) {
-      final existing = output[existingIndex];
-      ToolActionLifecycle? nextLifecycle = lifecycle;
-      if (existing.lifecycle != null && lifecycle != null) {
-        nextLifecycle =
-            compareToolActionLifecyclePriority(lifecycle, existing.lifecycle!) >=
-                    0
-                ? lifecycle
-                : existing.lifecycle;
-      } else {
-        nextLifecycle ??= existing.lifecycle;
-      }
-      output[existingIndex] = ActivityFeedEntry(
-        id: existing.id,
-        kind: ActivityFeedKind.action,
-        text: label,
-        actionIcon: icon,
-        subagentRole: subagentRole ?? existing.subagentRole,
-        lifecycle: nextLifecycle,
-        bashRun: bashRun ?? existing.bashRun,
-        toolUseId: toolUseId ?? existing.toolUseId,
-      );
-      return;
-    }
-    output.add(
-      ActivityFeedEntry(
-        id: id,
-        kind: ActivityFeedKind.action,
-        text: label,
-        actionIcon: icon,
-        subagentRole: subagentRole,
-        lifecycle: lifecycle,
-        bashRun: bashRun,
-        toolUseId: toolUseId,
-      ),
-    );
-    bindEntryToLine(id, lineIndex);
-  }
-
-  BashRunCardDisplay? resolveActionBashRun(
-    ThreadRunToolMetadata tool,
-    String message,
-  ) {
-    if (tool.name != 'Bash') return null;
-    return resolveBashRunCardDisplayFromTool(tool, summaryText: message);
-  }
-
-  ToolActionLifecycle resolveStructuredToolLifecycle({
-    required ThreadRunToolMetadata tool,
-    ThreadRunBashApprovalMetadata? bashApproval,
-  }) {
-    final approvalLifecycle = bashApprovalPhaseToLifecycle(bashApproval?.phase);
-    if (approvalLifecycle != null) {
-      return approvalLifecycle;
-    }
-    return toolLifecycleFromMetadata(tool);
-  }
-
-  void upsertParsedBashApproval({
-    required String id,
-    required int lineIndex,
-    required ParsedBashApprovalActivityText parsed,
-    String? subagentRole,
-  }) {
-    final bashApproval = findBashApprovalForParsed(
-      parsed,
-      bashApprovalByToolUseId,
-    );
-    final command = bashApproval?.detail ?? parsed.detail;
-    final label = bashApproval?.description?.trim().isNotEmpty == true
-        ? bashApproval!.description!.trim()
-        : formatToolDisplayLabel(parsed.toolName, command);
-    final lifecycle = bashApprovalPhaseToLifecycle(bashApproval?.phase) ??
-        parsed.phase;
-    upsertAction(
-      id: id,
-      lineIndex: lineIndex,
-      toolUseId: bashApproval?.toolUseId,
-      label: label,
-      icon: iconForToolName(parsed.toolName),
-      lifecycle: lifecycle,
-      subagentRole: subagentRole,
-      bashRun: parsed.toolName == 'Bash'
-          ? resolveBashRunCardDisplay(
-              toolName: 'Bash',
-              command: command,
-              description: bashApproval?.description,
-            )
-          : null,
-    );
-  }
-
-  void upsertParsedToolInvocation({
-    required String id,
-    required int lineIndex,
-    required ParsedActivityToolInvocation invocation,
-    String? subagentRole,
-  }) {
-    final projectionTool = findProjectionToolForInvocation(
-      invocation,
-      toolByToolUseId,
-    );
-    final tool = projectionTool ??
-        ThreadRunToolMetadata(
-          name: invocation.toolName,
-          detail: invocation.detail,
-          durationMs: invocation.durationMs,
-          status: invocation.durationMs != null ? 'completed' : 'running',
-        );
-    final bashApproval = tool.toolUseId != null
-        ? bashApprovalByToolUseId[tool.toolUseId!]
-        : null;
-    upsertAction(
-      id: id,
-      lineIndex: lineIndex,
-      toolUseId: tool.toolUseId,
-      label: formatStructuredToolActionLabel(
-        tool,
-        bashApproval: bashApproval,
-      ),
-      icon: iconForToolName(bashApproval?.toolName ?? tool.name),
-      lifecycle: resolveStructuredToolLifecycle(
-        tool: tool,
-        bashApproval: bashApproval,
-      ),
-      subagentRole: subagentRole,
-      bashRun: resolveActionBashRun(tool, invocation.rawMessage),
-    );
-  }
-
-  void upsertPhase(String summary, {String? detail, required int lineIndex}) {
-    final last = output.isNotEmpty ? output.last : null;
-    if (last != null &&
-        last.kind == ActivityFeedKind.phase &&
-        last.text == summary) {
-      if (detail != null && detail.isNotEmpty) {
-        output[output.length - 1] = ActivityFeedEntry(
-          id: last.id,
-          kind: ActivityFeedKind.phase,
-          text: summary,
-          detail: detail,
-        );
-      }
-      return;
-    }
-    final phaseId = 'phase-${output.length}';
-    output.add(
-      ActivityFeedEntry(
-        id: phaseId,
-        kind: ActivityFeedKind.phase,
-        text: summary,
-        detail: detail,
-      ),
-    );
-    bindEntryToLine(phaseId, lineIndex);
-  }
-
-  for (var lineIndex = 0; lineIndex < effectiveLines.length; lineIndex++) {
-    final line = effectiveLines[lineIndex];
-    final cleaned = stripActivityStatusNoise(line.message);
-    final message = stripSubagentBracketPrefix(cleaned);
-    if ((message.isEmpty && line.role != 'thinking') ||
-        isUsageNoiseMessage(message)) {
-      continue;
-    }
-
-    if (line.role == 'system' || isInternalAgentActivityRole(line.role)) {
-      continue;
-    }
-
-    if (line.role != 'thinking' && isInternalActivityMessage(message)) {
-      continue;
-    }
-
-    if (isUsageBadgeText(message)) {
-      flushTextBuffers();
-      pendingUsageBadge = message.trim();
-      continue;
-    }
-
-    final mission = parseSubagentMissionMessage(message);
-    if (mission != null && isSubagentDisplayRole(mission.role)) {
-      flushTextBuffers();
-      output.add(
-        ActivityFeedEntry(
-          id: line.id,
-          kind: ActivityFeedKind.subagentMission,
-          text: mission.summary,
-          subagentRole: mission.role,
-          missionPrompt:
-              mission.prompt.isNotEmpty ? mission.prompt : null,
-        ),
-      );
-      bindEntryToLine(line.id, lineIndex);
-      continue;
-    }
-
-    if (line.role == 'user') {
-      flushTextBuffers();
-      if (!isUserPromptActivityLine(role: line.role, message: line.message)) {
-        continue;
-      }
-      output.add(
-        ActivityFeedEntry(
-          id: line.id,
-          kind: ActivityFeedKind.user,
-          text: line.message.trim(),
-        ),
-      );
-      bindEntryToLine(line.id, lineIndex);
-      continue;
-    }
-
-    final agentRole = normalizeAgentDisplayRole(line.role);
-    if (agentRole != null && isSubagentDisplayRole(agentRole)) {
-      flushTextBuffers();
-      final summary = message.trim();
-      if (summary.length >= 8 &&
-          !summary.startsWith('Tool:') &&
-          !summary.startsWith('Reading ') &&
-          !summary.startsWith('Running ')) {
-        output.add(
-          ActivityFeedEntry(
-            id: line.id,
-            kind: ActivityFeedKind.subagentMission,
-            text: summary,
-            subagentRole: agentRole,
-          ),
-        );
-        bindEntryToLine(line.id, lineIndex);
-      }
-      continue;
-    }
-
-    if (line.role == 'thinking') {
-      flushNarrative();
-      final text = line.stream ? message : message.trim();
-      thinkingSourceLineIndex ??= lineIndex;
-      if (line.stream) {
-        thinking =
-            thinking.isEmpty ? text : mergeStreamText(thinking, text);
-        thinkingStreaming = true;
-        thinkingId ??= line.id;
-      } else {
-        thinking = thinking.isEmpty ? text : mergeStreamText(thinking, text);
-        thinkingStreaming = false;
-        thinkingId ??= line.id;
-      }
-      continue;
-    }
-
-    if (line.apiError != null) {
-      flushTextBuffers();
-      output.add(
-        ActivityFeedEntry(
-          id: line.id,
-          kind: ActivityFeedKind.error,
-          text: line.apiError!.message,
-        ),
-      );
-      bindEntryToLine(line.id, lineIndex);
-      continue;
-    }
-
-    if (line.tool != null) {
-      flushTextBuffers();
-      final tool = line.tool!;
-      final bashApproval = tool.toolUseId != null
-          ? bashApprovalByToolUseId[tool.toolUseId!]
-          : null;
-      upsertAction(
-        id: line.id,
-        lineIndex: lineIndex,
-        toolUseId: tool.toolUseId,
-        label: formatStructuredToolActionLabel(
-          tool,
-          bashApproval: bashApproval,
-        ),
-        icon: iconForToolName(bashApproval?.toolName ?? tool.name),
-        lifecycle: resolveStructuredToolLifecycle(
-          tool: tool,
-          bashApproval: bashApproval,
-        ),
-        subagentRole: agentRole,
-        bashRun: resolveActionBashRun(tool, message),
-      );
-      continue;
-    }
-
-    final parsedApproval = parseBashApprovalActivityText(message);
-    if (parsedApproval != null) {
-      flushTextBuffers();
-      upsertParsedBashApproval(
-        id: line.id,
-        lineIndex: lineIndex,
-        parsed: parsedApproval,
-        subagentRole: agentRole,
-      );
-      continue;
-    }
-
-    final parsedInvocation = parseActivityToolInvocation(message);
-    if (parsedInvocation != null) {
-      flushTextBuffers();
-      upsertParsedToolInvocation(
-        id: line.id,
-        lineIndex: lineIndex,
-        invocation: parsedInvocation,
-        subagentRole: agentRole,
-      );
-      continue;
-    }
-
-    if (isThreadFollowUpActivityMessage(message)) {
-      continue;
-    }
-
-    if (_looksLikeApiError(message)) {
-      flushTextBuffers();
-      output.add(
-        ActivityFeedEntry(
-          id: line.id,
-          kind: ActivityFeedKind.error,
-          text: message,
-        ),
-      );
-      bindEntryToLine(line.id, lineIndex);
-      continue;
-    }
-
-    if (line.role != 'thinking' &&
-        (isActivityNoiseMessage(message) || isActivityStatusNoise(message))) {
-      continue;
-    }
-
-    if (line.role == 'planner' ||
-        line.role == 'assistant' ||
-        line.role == 'main') {
-      flushThinking();
-      narrativeSourceLineIndex ??= lineIndex;
-      if (line.stream) {
-        narrative += message;
-        narrativeId ??= line.id;
-        narrativeStreaming = true;
-      } else {
-        narrative += message;
-        narrativeId ??= line.id;
-        narrativeStreaming = false;
-      }
-      continue;
-    }
-
-    if (shouldShowLineInMainFeed(role: line.role) && message.trim().isNotEmpty) {
-      flushThinking();
-      narrativeSourceLineIndex ??= lineIndex;
-      narrative += message;
-      narrativeId ??= line.id;
-      narrativeStreaming = line.stream;
-    }
-  }
-
-  flushThinking(atEnd: true);
-  flushNarrative();
-  _enrichSubagentEntries(
-    output,
-    runProjection: runProjection,
     subagentSessions: subagentSessions,
   );
-  if (runProjection != null) {
-    _syncProjectionSubagentCards(
-      output,
-      runProjection,
-      effectiveLines,
-      entrySourceLineIndex,
-    );
-    _enrichSubagentEntries(
-      output,
-      runProjection: runProjection,
-      subagentSessions: subagentSessions,
-    );
-    _sortFeedEntriesByTriggerTime(
-      output,
-      entrySourceLineIndex,
-      effectiveLines,
-      runProjection,
-    );
-  }
-  return output;
-}
-
-void _syncProjectionSubagentCards(
-  List<ActivityFeedEntry> output,
-  ThreadRunProjectionSnapshot projection,
-  List<ActivityItem> lines,
-  Map<String, int> entrySourceLineIndex,
-) {
-  final subagents = projection.agents
-      .where((agent) => agent.kind == 'subagent')
-      .toList()
-    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
-  if (subagents.isEmpty) return;
-
-  final coveredAgentIds = <String>{
-    for (final entry in output)
-      if (entry.kind == ActivityFeedKind.subagentMission &&
-          entry.agentId != null &&
-          entry.agentId!.isNotEmpty)
-        entry.agentId!,
-  };
-
-  for (final agent in subagents) {
-    if (coveredAgentIds.contains(agent.agentId)) continue;
-
-    final claimIndex = _findUnclaimedMissionIndex(
-      output,
-      agent,
-      projection,
-      coveredAgentIds,
-    );
-    if (claimIndex >= 0) {
-      final entry = output[claimIndex];
-      output[claimIndex] = ActivityFeedEntry(
-        id: entry.id,
-        kind: entry.kind,
-        text: entry.text,
-        subagentRole: entry.subagentRole,
-        missionPrompt: entry.missionPrompt,
-        agentId: agent.agentId,
-        running: entry.running,
-        durationMs: entry.durationMs,
-        statusText: entry.statusText,
-        timeline: entry.timeline,
-        bashRun: entry.bashRun,
-        toolUseId: entry.toolUseId,
-      );
-      coveredAgentIds.add(agent.agentId);
-      continue;
-    }
-
-    final delegation = readProjectionAgentDelegation(agent);
-    final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
-    final cardId = 'projection-agent-${agent.agentId}';
-    final card = ActivityFeedEntry(
-      id: cardId,
-      kind: ActivityFeedKind.subagentMission,
-      text: delegation?.summary ?? resolveSubagentRunDisplayTitle(role),
-      subagentRole: role,
-      missionPrompt: delegation?.prompt,
-      agentId: agent.agentId,
-    );
-    output.add(card);
-    final triggerLineIndex = _resolveAgentTriggerLineIndex(
-      agent,
-      lines,
-      projection,
-    );
-    if (triggerLineIndex != null) {
-      entrySourceLineIndex[cardId] = triggerLineIndex;
-    }
-    coveredAgentIds.add(agent.agentId);
-  }
-}
-
-int _findUnclaimedMissionIndex(
-  List<ActivityFeedEntry> output,
-  ThreadRunProjectionAgent agent,
-  ThreadRunProjectionSnapshot projection,
-  Set<String> coveredAgentIds,
-) {
-  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
-  final occurrence = _projectionSubagentRoleOccurrence(projection, agent);
-  var seen = 0;
-  for (var index = 0; index < output.length; index++) {
-    final entry = output[index];
-    if (entry.kind != ActivityFeedKind.subagentMission) continue;
-    final entryAgentId = entry.agentId?.trim();
-    if (entryAgentId != null && entryAgentId.isNotEmpty) {
-      if (entryAgentId == agent.agentId) return index;
-      continue;
-    }
-    final entryRole =
-        normalizeAgentDisplayRole(entry.subagentRole) ?? entry.subagentRole ?? '';
-    if (entryRole != role) continue;
-    if (seen == occurrence) return index;
-    seen++;
-  }
-  return -1;
-}
-
-int _projectionSubagentRoleOccurrence(
-  ThreadRunProjectionSnapshot projection,
-  ThreadRunProjectionAgent agent,
-) {
-  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
-  final sameRoleAgents = projection.agents
-      .where((entry) => entry.kind == 'subagent')
-      .where(
-        (entry) => (normalizeAgentDisplayRole(entry.role) ?? entry.role) == role,
-      )
-      .toList()
-    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
-  for (var index = 0; index < sameRoleAgents.length; index++) {
-    if (sameRoleAgents[index].agentId == agent.agentId) {
-      return index;
-    }
-  }
-  return sameRoleAgents.length;
-}
-
-int? _resolveAgentTriggerLineIndex(
-  ThreadRunProjectionAgent agent,
-  List<ActivityItem> lines,
-  ThreadRunProjectionSnapshot projection,
-) {
-  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
-  final occurrence = _projectionSubagentRoleOccurrence(projection, agent);
-  var seen = 0;
-  for (var index = 0; index < lines.length; index++) {
-    final line = lines[index];
-    final mission = parseSubagentMissionMessage(line.message);
-    if (mission != null && isSubagentDisplayRole(mission.role)) {
-      final missionRole =
-          normalizeAgentDisplayRole(mission.role) ?? mission.role;
-      if (missionRole == role) {
-        if (seen == occurrence) return index;
-        seen++;
-      }
-      continue;
-    }
-    final lineRole = normalizeAgentDisplayRole(line.role);
-    if (lineRole != role) continue;
-    final message =
-        stripSubagentBracketPrefix(stripActivityStatusNoise(line.message)).trim();
-    if (message.length >= 8 &&
-        !message.startsWith('Tool:') &&
-        !message.startsWith('Reading ') &&
-        !message.startsWith('Running ')) {
-      if (seen == occurrence) return index;
-      seen++;
-    }
-  }
-  return null;
-}
-
-void _sortFeedEntriesByTriggerTime(
-  List<ActivityFeedEntry> output,
-  Map<String, int> entrySourceLineIndex,
-  List<ActivityItem> lines,
-  ThreadRunProjectionSnapshot projection,
-) {
-  final sortAtById = <String, String>{
-    for (final entry in output)
-      entry.id: _resolveFeedEntrySortAt(
-        entry,
-        entrySourceLineIndex,
-        lines,
-        projection,
-      ),
-  };
-  final stableIndex = <String, int>{
-    for (var index = 0; index < output.length; index++) output[index].id: index,
-  };
-  output.sort((left, right) {
-    final atDelta = sortAtById[left.id]!.compareTo(sortAtById[right.id]!);
-    if (atDelta != 0) return atDelta;
-    return stableIndex[left.id]!.compareTo(stableIndex[right.id]!);
-  });
-}
-
-String _resolveFeedEntrySortAt(
-  ActivityFeedEntry entry,
-  Map<String, int> entrySourceLineIndex,
-  List<ActivityItem> lines,
-  ThreadRunProjectionSnapshot projection,
-) {
-  final agentId = entry.agentId?.trim();
-  if (entry.kind == ActivityFeedKind.subagentMission &&
-      agentId != null &&
-      agentId.isNotEmpty) {
-    final agent = findProjectionAgentById(projection, agentId);
-    if (agent != null && agent.startedAt.trim().isNotEmpty) {
-      return agent.startedAt;
-    }
-  }
-  for (final item in projection.timeline) {
-    if (item.id == entry.id && item.at.trim().isNotEmpty) {
-      return item.at;
-    }
-  }
-  for (final agent in projection.agents) {
-    for (final item in agent.timeline) {
-      if (item.id == entry.id && item.at.trim().isNotEmpty) {
-        return item.at;
-      }
-    }
-  }
-  final lineIndex = entrySourceLineIndex[entry.id];
-  if (lineIndex != null) {
-    return _interpolateLineTriggeredAt(lineIndex, lines.length, projection);
-  }
-  return '9999-12-31T23:59:59.999Z';
-}
-
-String _interpolateLineTriggeredAt(
-  int lineIndex,
-  int lineCount,
-  ThreadRunProjectionSnapshot projection,
-) {
-  final anchors = <String>[];
-  for (final item in projection.timeline) {
-    final at = item.at.trim();
-    if (at.isNotEmpty) anchors.add(at);
-  }
-  for (final agent in projection.agents) {
-    final startedAt = agent.startedAt.trim();
-    if (startedAt.isNotEmpty) anchors.add(startedAt);
-    final endedAt = agent.endedAt?.trim();
-    if (endedAt != null && endedAt.isNotEmpty) anchors.add(endedAt);
-  }
-  if (anchors.isEmpty) {
-    final padded = lineIndex.toString().padLeft(4, '0');
-    return '1970-01-01T00:00:$padded.000Z';
-  }
-  anchors.sort();
-  if (lineCount <= 1) return anchors.first;
-  final ratio = lineIndex / (lineCount - 1);
-  final minMs = DateTime.parse(anchors.first).millisecondsSinceEpoch;
-  final maxMs = DateTime.parse(anchors.last).millisecondsSinceEpoch;
-  final ms = minMs + ((maxMs - minMs) * ratio).round();
-  return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true).toIso8601String();
-}
-
-void _enrichSubagentEntries(
-  List<ActivityFeedEntry> output, {
-  ThreadRunProjectionSnapshot? runProjection,
-  List<ThreadSubagentSessionTiming> subagentSessions = const [],
-}) {
-  if (runProjection == null &&
-      subagentSessions.isEmpty &&
-      !output.any((entry) => entry.kind == ActivityFeedKind.subagentMission)) {
-    return;
-  }
-
-  final sessionsByAgentId = indexSubagentSessionsByAgentId(subagentSessions);
-  final absorbedToolUseIds = <String>{};
-  final roleOccurrence = <String, int>{};
-
-  for (var index = 0; index < output.length; index++) {
-    final entry = output[index];
-    if (entry.kind != ActivityFeedKind.subagentMission) continue;
-
-    final role =
-        normalizeAgentDisplayRole(entry.subagentRole) ?? entry.subagentRole ?? '';
-    ThreadRunProjectionAgent? agent;
-    if (entry.agentId != null &&
-        entry.agentId!.isNotEmpty &&
-        runProjection != null) {
-      agent = findProjectionAgentById(runProjection, entry.agentId!);
-    } else if (runProjection != null) {
-      final occurrence = roleOccurrence[role] ?? 0;
-      roleOccurrence[role] = occurrence + 1;
-      agent = findProjectionAgentForMission(runProjection, role, occurrence);
-    }
-
-    final timing =
-        agent != null ? sessionsByAgentId[agent.agentId] : null;
-    final running = resolveSubagentRunning(agent: agent, timing: timing);
-    final durationMs = resolveSubagentDurationMs(agent: agent, timing: timing);
-    final timeline = agent != null
-        ? buildSubagentTimelineFromProjection(agent.timeline)
-        : const <SubagentTimelineEntry>[];
-    final statusText = agent != null
-        ? resolveProjectionAgentStatusText(agent)
-        : (running ? '工作中' : null);
-    final missionPrompt = entry.missionPrompt ??
-        agent?.delegationPrompt ??
-        (agent?.delegationSummary?.trim().isNotEmpty == true
-            ? agent!.delegationSummary
-            : null);
-    final summary = entry.text.trim().isNotEmpty
-        ? entry.text
-        : (agent != null
-            ? (readProjectionAgentDelegation(agent)?.summary ??
-                resolveSubagentRunDisplayTitle(role))
-            : resolveSubagentRunDisplayTitle(role));
-
-    for (final item in timeline) {
-      final toolUseId = item.toolUseId;
-      if (toolUseId != null && toolUseId.isNotEmpty) {
-        absorbedToolUseIds.add(toolUseId);
-      }
-    }
-
-    output[index] = ActivityFeedEntry(
-      id: entry.id,
-      kind: entry.kind,
-      text: summary,
-      subagentRole: entry.subagentRole,
-      missionPrompt: missionPrompt,
-      agentId: agent?.agentId ?? entry.agentId,
-      running: running,
-      durationMs: durationMs,
-      statusText: statusText,
-      timeline: timeline,
-    );
-  }
-
-  if (absorbedToolUseIds.isEmpty) return;
-  output.removeWhere(
-    (entry) =>
-        entry.kind == ActivityFeedKind.action &&
-        entry.toolUseId != null &&
-        absorbedToolUseIds.contains(entry.toolUseId),
-  );
-}
-
-bool _looksLikeApiError(String message) {
-  final trimmed = message.trim();
-  return trimmed.startsWith('API error') ||
-      trimmed.startsWith('Tool failed:') ||
-      trimmed.startsWith('工具调用失败');
 }
 
 class ActivityFeedList extends StatelessWidget {
@@ -1060,7 +186,6 @@ class _UserPromptTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
@@ -1099,7 +224,6 @@ class _AssistantNarrativeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     if (text.isEmpty && usageBadge != null) {
       return _UsageBadgeLine(badge: usageBadge!);
     }
@@ -1173,7 +297,6 @@ class _ThinkingTileState extends State<_ThinkingTile> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     if (widget.streaming && !_hasBody) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
@@ -1287,7 +410,6 @@ class _UsageBadgeLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Text(
       badge,
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -1323,8 +445,6 @@ class _ActionTile extends StatelessWidget {
         ),
       );
     }
-
-    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
       child: Row(
@@ -1382,135 +502,112 @@ class _BashRunCardState extends State<_BashRunCard> {
         : running
             ? ecoColors(context).accent.withValues(alpha: 0.45)
             : ecoColors(context).borderSubtle;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ecoColors(context).cardSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Row(
-              children: [
-                Icon(
-                  EcoIcons.terminal,
-                  size: 16,
-                  color: running ? ecoColors(context).accentText : ecoColors(context).textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    display.title,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: ecoColors(context).textHeading,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-                if (display.meta != null && display.meta!.isNotEmpty)
-                  Text(
-                    display.meta!,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: ecoColors(context).textMuted,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                  ),
-              ],
-            ),
-          ),
-          if (display.body != null && display.body!.isNotEmpty) ...[
-            Divider(height: 1, color: ecoColors(context).borderSubtle),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: _ExpandableBashOutput(
-                text: display.body!,
-                expanded: _bodyExpanded,
-                maxCollapsedLines: _collapsedBodyLines,
-                onToggle: () => setState(() => _bodyExpanded = !_bodyExpanded),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ExpandableBashOutput extends StatelessWidget {
-  const _ExpandableBashOutput({
-    required this.text,
-    required this.expanded,
-    required this.maxCollapsedLines,
-    required this.onToggle,
-  });
-
-  final String text;
-  final bool expanded;
-  final int maxCollapsedLines;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: eco.textSecondary,
+    final body = display.body?.trim() ?? '';
+    final bodyStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: ecoColors(context).textSecondary,
           fontFamily: 'Menlo',
           height: 1.45,
         );
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final exceedsCollapsedLimit = _textExceedsLineLimit(
-          text: text,
-          style: style,
-          maxWidth: constraints.maxWidth,
-          maxLines: maxCollapsedLines,
-          textDirection: Directionality.of(context),
-        );
+        final bodyMaxWidth = constraints.maxWidth - 24;
+        final canExpand = body.isNotEmpty &&
+            _textExceedsLineLimit(
+              text: body,
+              style: bodyStyle,
+              maxWidth: bodyMaxWidth > 0 ? bodyMaxWidth : constraints.maxWidth,
+              maxLines: _collapsedBodyLines,
+              textDirection: Directionality.of(context),
+            );
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AnimatedSize(
-              duration: const Duration(milliseconds: 150),
-              curve: Curves.easeOut,
-              alignment: Alignment.topLeft,
-              child: expanded
-                  ? SelectableText(text, style: style)
-                  : Text(
-                      text,
-                      maxLines: maxCollapsedLines,
-                      overflow: TextOverflow.ellipsis,
-                      style: style,
+        final card = DecoratedBox(
+          decoration: BoxDecoration(
+            color: ecoColors(context).cardSurface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      EcoIcons.terminal,
+                      size: 16,
+                      color: running
+                          ? ecoColors(context).accentText
+                          : ecoColors(context).textMuted,
                     ),
-            ),
-            if (exceedsCollapsedLimit) ...[
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: onToggle,
-                  child: Text(
-                    expanded ? '收起' : '展开',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: eco.accentText,
-                          fontWeight: FontWeight.w500,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        display.title,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: ecoColors(context).textHeading,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                    if (display.meta != null && display.meta!.isNotEmpty)
+                      Text(
+                        display.meta!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: ecoColors(context).textMuted,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                      ),
+                    if (canExpand) ...[
+                      const SizedBox(width: 4),
+                      AnimatedRotation(
+                        turns: _bodyExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 150),
+                        child: Icon(
+                          EcoIcons.expandDown,
+                          size: 16,
+                          color: ecoColors(context).textMuted,
                         ),
-                  ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
+              if (body.isNotEmpty) ...[
+                Divider(height: 1, color: ecoColors(context).borderSubtle),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.topLeft,
+                    child: _bodyExpanded
+                        ? SelectableText(body, style: bodyStyle)
+                        : Text(
+                            body,
+                            maxLines: _collapsedBodyLines,
+                            overflow: TextOverflow.ellipsis,
+                            style: bodyStyle,
+                          ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
+        );
+
+        if (!canExpand) {
+          return card;
+        }
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => _bodyExpanded = !_bodyExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: card,
+          ),
         );
       },
     );
@@ -1540,7 +637,6 @@ class _PhaseTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -1637,7 +733,6 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
     final trimmedPrompt = widget.prompt?.trim() ?? '';
     final trimmedSummary = widget.summary.trim();
@@ -1849,7 +944,6 @@ class _SubagentTimelineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(

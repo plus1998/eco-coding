@@ -21,7 +21,6 @@ import {
 } from "./plan-path.js";
 import { appendReviewerScopeToPrompt } from "./reviewer-scope";
 import {
-  createSubagentMissionCapturePreToolHook,
   createSubagentResumePreToolHook,
   normalizeAgentToolInputSubagentType,
   normalizeSdkSubagentType,
@@ -63,12 +62,21 @@ import {
   type SubagentAvailability,
 } from "./subagent-availability";
 import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
+import { SubagentLaunchRegistry } from "./subagent-launch-registry.js";
+
+export { SubagentLaunchRegistry, type SubagentLaunchRecord } from "./subagent-launch-registry.js";
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
   onTaskCreated(input: { taskId: string; subject: string; description?: string }): void;
   onTaskCompleted(input: { taskId: string; subject: string }): void;
-  onSubagentStart(input: { agentId: string; agentType: string }): void;
+  onSubagentStart(input: {
+    agentId: string;
+    agentType: string;
+    parentToolUseId?: string;
+    prompt?: string;
+    todoId?: string;
+  }): void;
   onSubagentStop(input: { agentId: string; agentType: string }): void;
   onStop(status: "completed" | "blocked" | "cancelled"): void;
   peekPendingCoderTodoId?: () => string | undefined;
@@ -84,7 +92,13 @@ export type SubagentRunPhase = "planning" | "execution" | "question";
 export interface EcoSubagentSessionHooks {
   phase: SubagentRunPhase;
   threadId: string;
-  onStart(input: { agentId: string; agentType: string; prompt?: string; todoId?: string }): void;
+  onStart(input: {
+    agentId: string;
+    agentType: string;
+    parentToolUseId?: string;
+    prompt?: string;
+    todoId?: string;
+  }): void;
   onStop(input: { agentId: string; agentType: string }): void;
   resolveResume(input: SubagentResumeResolveInput): string | undefined;
   todoIdHint?: () => string | undefined;
@@ -132,6 +146,7 @@ export interface EcoHookContext {
   approveDeferredExitPlanMode?: boolean;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
+  subagentLaunchRegistry?: SubagentLaunchRegistry;
   subagentAttribution?: EcoSubagentAttributionHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
   onPreCompact?: (input: EcoPreCompactHookInput) => Promise<void>;
@@ -1128,6 +1143,86 @@ export function createReviewerScopePreToolHook(
   };
 }
 
+export function resolveSubagentStartParentToolUseId(
+  input: SubagentStartHookInput,
+  toolUseID: string | undefined,
+): string | undefined {
+  const fromCallback = typeof toolUseID === "string" ? toolUseID.trim() : "";
+  if (fromCallback) {
+    return fromCallback;
+  }
+  const extended = input as SubagentStartHookInput & {
+    parent_tool_use_id?: string;
+    tool_use_id?: string;
+  };
+  const fromParentField =
+    typeof extended.parent_tool_use_id === "string" ? extended.parent_tool_use_id.trim() : "";
+  if (fromParentField) {
+    return fromParentField;
+  }
+  const fromToolField = typeof extended.tool_use_id === "string" ? extended.tool_use_id.trim() : "";
+  return fromToolField || undefined;
+}
+
+function readAgentDelegationPrompt(toolInput: Record<string, unknown>): string {
+  if (typeof toolInput.prompt === "string" && toolInput.prompt.trim()) {
+    return toolInput.prompt;
+  }
+  if (typeof toolInput.task === "string" && toolInput.task.trim()) {
+    return toolInput.task;
+  }
+  if (typeof toolInput.description === "string" && toolInput.description.trim()) {
+    return toolInput.description;
+  }
+  return "";
+}
+
+export function createSubagentLaunchPreToolHook(input: {
+  registry: SubagentLaunchRegistry;
+  attribution?: EcoSubagentAttributionHooks;
+  onAgentToolCapture?: EcoSubagentSessionHooks["onAgentToolCapture"];
+}): HookCallback {
+  const { registry, attribution, onAgentToolCapture } = input;
+  return async (hookInput, toolUseID) => {
+    if (hookInput.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = hookInput as PreToolUseHookInput;
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
+      return {};
+    }
+    const parentToolUseId =
+      (typeof toolUseID === "string" && toolUseID.trim()) || preInput.tool_use_id.trim();
+    if (!parentToolUseId) {
+      return {};
+    }
+    const rawToolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const { input: toolInput } = normalizeAgentToolInputSubagentType(rawToolInput);
+    const role = normalizeSdkBuiltinOrEcoAgentRole(readAgentSubagentType(rawToolInput));
+    if (!role) {
+      return {};
+    }
+    const prompt = readAgentDelegationPrompt(toolInput);
+    const todoIdHint =
+      typeof toolInput.eco_todo_id === "string" && toolInput.eco_todo_id.trim()
+        ? toolInput.eco_todo_id.trim()
+        : undefined;
+    registry.register({
+      parentToolUseId,
+      role,
+      prompt,
+      ...(todoIdHint && { todoIdHint }),
+    });
+    onAgentToolCapture?.({
+      role,
+      prompt,
+      ...(todoIdHint && { todoIdHint }),
+    });
+    attribution?.onTaskToolUse?.(parentToolUseId, { role });
+    return {};
+  };
+}
+
 export function createSubagentToolAttributionPreToolHook(
   attribution?: EcoSubagentAttributionHooks,
 ): HookCallback | undefined {
@@ -1201,16 +1296,24 @@ export function createTaskCompletedHook(taskTracker: EcoTaskTrackerHooks): HookC
 export function createSubagentStartHook(handlers: {
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
+  subagentLaunchRegistry?: SubagentLaunchRegistry;
 }): HookCallback {
-  return async (input) => {
+  return async (input, toolUseID) => {
     if (input.hook_event_name !== "SubagentStart") {
       return {};
     }
     const started = input as SubagentStartHookInput;
     const agentType = normalizeSdkSubagentType(started.agent_type) ?? started.agent_type;
+    const parentToolUseId = resolveSubagentStartParentToolUseId(started, toolUseID);
+    const launch = parentToolUseId ? handlers.subagentLaunchRegistry?.take(parentToolUseId) : undefined;
+    const prompt = launch?.prompt?.trim() || undefined;
+    const todoId = launch?.todoIdHint?.trim() || undefined;
     const payload = {
       agentId: started.agent_id,
       agentType,
+      ...(parentToolUseId && { parentToolUseId }),
+      ...(prompt && { prompt }),
+      ...(todoId && { todoId }),
     };
     handlers.taskTracker?.onSubagentStart(payload);
     handlers.subagentSessions?.onStart(payload);
@@ -1372,16 +1475,11 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
   );
+  const subagentLaunchRegistry =
+    ctx.subagentLaunchRegistry ?? (ctx.subagentSessions ? new SubagentLaunchRegistry() : undefined);
+
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
-    if (sessions.onAgentToolCapture) {
-      pushHook(
-        hooks,
-        "PreToolUse",
-        createSubagentMissionCapturePreToolHook(sessions.onAgentToolCapture),
-        "Agent|Task",
-      );
-    }
     pushHook(
       hooks,
       "PreToolUse",
@@ -1399,16 +1497,32 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     );
   }
   pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent|Task");
-  pushHook(
-    hooks,
-    "PreToolUse",
-    createSubagentToolAttributionPreToolHook(ctx.subagentAttribution),
-    "Agent|Task",
-  );
+  if (subagentLaunchRegistry) {
+    pushHook(
+      hooks,
+      "PreToolUse",
+      createSubagentLaunchPreToolHook({
+        registry: subagentLaunchRegistry,
+        ...(ctx.subagentAttribution && { attribution: ctx.subagentAttribution }),
+        ...(ctx.subagentSessions?.onAgentToolCapture && {
+          onAgentToolCapture: ctx.subagentSessions.onAgentToolCapture,
+        }),
+      }),
+      "Agent|Task",
+    );
+  } else {
+    pushHook(
+      hooks,
+      "PreToolUse",
+      createSubagentToolAttributionPreToolHook(ctx.subagentAttribution),
+      "Agent|Task",
+    );
+  }
 
   const subagentHandlers = {
     ...(ctx.taskTracker && { taskTracker: ctx.taskTracker }),
     ...(ctx.subagentSessions && { subagentSessions: ctx.subagentSessions }),
+    ...(subagentLaunchRegistry && { subagentLaunchRegistry }),
   };
   if (subagentHandlers.taskTracker || subagentHandlers.subagentSessions) {
     pushHook(hooks, "SubagentStart", createSubagentStartHook(subagentHandlers));
