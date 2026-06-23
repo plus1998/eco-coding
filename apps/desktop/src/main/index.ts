@@ -493,6 +493,7 @@ let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 250;
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -6290,7 +6291,7 @@ function scheduleThreadRunProjectionUpdated(threadId: string): void {
   const timer = setTimeout(() => {
     runProjectionEmitTimers.delete(threadId);
     emitThreadRunProjectionUpdated(threadId);
-  }, 80);
+  }, RUN_PROJECTION_EMIT_DEBOUNCE_MS);
   runProjectionEmitTimers.set(threadId, timer);
 }
 

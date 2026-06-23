@@ -4,9 +4,9 @@ import type {
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
 
-export const FEED_PROJECTION_MAX_TEXT_CHARS = 4_000;
+export const FEED_PROJECTION_MAX_TEXT_CHARS = 1_200;
 export const FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS = 2_000;
-export const FEED_PROJECTION_MAX_TIMELINE_ITEMS = 120;
+export const FEED_PROJECTION_MAX_TIMELINE_ITEMS = 80;
 
 function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
   if (text.length <= maxChars) {

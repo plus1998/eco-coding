@@ -85,7 +85,7 @@ test("trimProjectionForFeed keeps only the most recent timeline items", () => {
   });
 
   expect(trimmed.timeline).toHaveLength(FEED_PROJECTION_MAX_TIMELINE_ITEMS);
-  expect(trimmed.timeline[0]?.id).toBe("evt_30");
+  expect(trimmed.timeline[0]?.id).toBe(`evt_${items.length - FEED_PROJECTION_MAX_TIMELINE_ITEMS}`);
   expect(trimmed.timeline.at(-1)?.id).toBe("evt_149");
 });
 
