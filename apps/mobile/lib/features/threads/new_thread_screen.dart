@@ -9,6 +9,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
+import '../composer/composer_dock_shell.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
 import '../projects/project_providers.dart';
@@ -83,7 +84,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     }
 
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       extendBodyBehindAppBar: true,
       appBar: buildThreadSessionAppBar(
         context,
@@ -98,73 +99,84 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       ),
       body: ref.watch(runtimeConfigProvider) == null
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : Stack(
               children: [
-                Expanded(
-                  child: Stack(
-                    children: [
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          32,
-                          sessionToolbarFrostHeight(context),
-                          32,
-                          32,
-                        ),
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: Text(
-                            landingHeroText(
-                              workspacePath: workspacePath,
-                              isHomeProject: project?.isHome ?? false,
-                              projectName: project?.name,
-                            ),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.35,
-                                ),
-                          ),
-                        ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    32,
+                    sessionToolbarFrostHeight(context),
+                    32,
+                    180,
+                  ),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      landingHeroText(
+                        workspacePath: workspacePath,
+                        isHomeProject: project?.isHome ?? false,
+                        projectName: project?.name,
                       ),
-                    ],
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                    ),
                   ),
                 ),
-                WorkspaceChangesPill(
-                  summary: workspaceChanges,
-                  busy: changesLoading,
-                  onTap: workspacePath.isNotEmpty
-                      ? () {
-                          refreshWorkspaceChanges(ref, workspacePath);
-                          showWorkspaceDiffReviewSheet(
-                            context: context,
-                            ref: ref,
-                            workspacePath: workspacePath,
-                          );
-                        }
-                      : null,
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: AnimatedPadding(
+                    duration: const Duration(milliseconds: 100),
+                    curve: Curves.easeOut,
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.viewInsetsOf(context).bottom,
+                    ),
+                    child: ComposerDockShell(
+                      child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        WorkspaceChangesPill(
+                          summary: workspaceChanges,
+                          busy: changesLoading,
+                          onTap: workspacePath.isNotEmpty
+                              ? () {
+                                  refreshWorkspaceChanges(ref, workspacePath);
+                                  showWorkspaceDiffReviewSheet(
+                                    context: context,
+                                    ref: ref,
+                                    workspacePath: workspacePath,
+                                  );
+                                }
+                              : null,
+                        ),
+                        SessionComposer(
+                          controller: _promptController,
+                          attachments: _attachments,
+                          runtimeConfig: runtimeConfig,
+                          threadId: '',
+                          isRunning: _starting,
+                          hasActivity: false,
+                          inputHint: composerLandingPlaceholder,
+                          onPickImage: _pickImage,
+                          onRemoveAttachment: (index) =>
+                              setState(() => _attachments.removeAt(index)),
+                          onSend: _startThread,
+                          onStop: () {},
+                          onRuntimeConfigChanged: (config) {
+                            ref.read(runtimeConfigProvider.notifier).state =
+                                config;
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                SessionComposer(
-                  controller: _promptController,
-                  attachments: _attachments,
-                  runtimeConfig: runtimeConfig,
-                  threadId: '',
-                  isRunning: _starting,
-                  hasActivity: false,
-                  inputHint: composerLandingPlaceholder,
-                  onPickImage: _pickImage,
-                  onRemoveAttachment: (index) =>
-                      setState(() => _attachments.removeAt(index)),
-                  onSend: _startThread,
-                  onStop: () {},
-                  onRuntimeConfigChanged: (config) {
-                    ref.read(runtimeConfigProvider.notifier).state = config;
-                  },
-                ),
-              ],
-            ),
+              ),
+            ],
+          ),
     );
   }
 

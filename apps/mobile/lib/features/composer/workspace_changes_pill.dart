@@ -35,7 +35,7 @@ class WorkspaceChangesPill extends StatelessWidget {
         child: ComposerStackCard(
           stadium: true,
           onTap: onTap,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: composerStackRowPadding,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

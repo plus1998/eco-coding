@@ -99,12 +99,14 @@ class ActivityFeedList extends StatelessWidget {
     required this.entries,
     required this.scrollController,
     this.topPadding = 8,
+    this.bottomPadding = 12,
     this.agentProfile,
   });
 
   final List<ActivityFeedEntry> entries;
   final ScrollController scrollController;
   final double topPadding;
+  final double bottomPadding;
   final OrchestrationProfile? agentProfile;
 
   @override
@@ -115,7 +117,7 @@ class ActivityFeedList extends StatelessWidget {
       child: ListView.builder(
         controller: scrollController,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: EdgeInsets.fromLTRB(12, topPadding, 12, 12),
+        padding: EdgeInsets.fromLTRB(12, topPadding, 12, bottomPadding),
         cacheExtent: 600,
         itemCount: entries.length,
         itemBuilder: (context, index) {
