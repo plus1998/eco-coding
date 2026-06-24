@@ -246,7 +246,7 @@ class _TodoRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    displayTitle,
+                    '#${todo.position + 1} $displayTitle',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),

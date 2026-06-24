@@ -1127,6 +1127,29 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
   var _expanded = false;
   late int _liveDurationMs;
   Timer? _durationTimer;
+  String? _latchedAgentId;
+  String _latchedMissionText = '';
+  var _latchedHasTimeline = false;
+
+  String _resolvedMissionText() {
+    final trimmedPrompt = widget.prompt?.trim() ?? '';
+    final trimmedSummary = widget.summary.trim();
+    final incoming = resolveMissionDisplayText(
+      trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary,
+    );
+    if (_latchedAgentId != widget.agentId) {
+      _latchedAgentId = widget.agentId;
+      _latchedMissionText = '';
+      _latchedHasTimeline = false;
+    }
+    if (incoming.isNotEmpty) {
+      _latchedMissionText = incoming;
+    }
+    if (widget.timeline.isNotEmpty) {
+      _latchedHasTimeline = true;
+    }
+    return _latchedMissionText.isNotEmpty ? _latchedMissionText : incoming;
+  }
 
   @override
   void initState() {
@@ -1164,11 +1187,8 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
   @override
   Widget build(BuildContext context) {
     final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
-    final trimmedPrompt = widget.prompt?.trim() ?? '';
-    final trimmedSummary = widget.summary.trim();
-    final fullText = resolveMissionDisplayText(
-      trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary,
-    );
+    final fullText = _resolvedMissionText();
+    final hasTimeline = widget.timeline.isNotEmpty || _latchedHasTimeline;
     final borderColor = subagentMissionBorderColor(
       role,
       profile: widget.agentProfile,
@@ -1344,7 +1364,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       ),
                     ),
                   ),
-                if (_expanded && widget.timeline.isNotEmpty) ...[
+                if (_expanded && hasTimeline) ...[
                   const SizedBox(height: 10),
                   Divider(height: 1, color: ecoColors(context).borderSubtle),
                   const SizedBox(height: 8),

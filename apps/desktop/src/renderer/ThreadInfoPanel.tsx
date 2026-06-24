@@ -800,13 +800,7 @@ export function ThreadInfoPanel({
       className="thread-info-panel"
       aria-label={threadId ? "会话信息" : "工作区"}
     >
-      <div
-        className={
-          showUsagePanels
-            ? "thread-info-panel-scroll thread-info-panel-scroll-with-float"
-            : "thread-info-panel-scroll"
-        }
-      >
+      <div className="thread-info-panel-scroll">
         <section className="thread-info-section thread-info-workspace-section">
           <h3 className="thread-info-heading">工作区</h3>
           <WorkspaceGitSection

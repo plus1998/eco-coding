@@ -1602,6 +1602,68 @@ test("buildThreadRunProjectionViewModel hides absorbed planner Agent delegation 
 
   expect(view.mainFeedEntries).toHaveLength(1);
   expect(view.mainFeedEntries[0]?.kind).toBe("agent-card");
+  expect(view.subagentCards[0]?.missionText).toBe("Implement export filters in src/api.ts");
+});
+
+test("buildThreadRunProjectionViewModel resolves subagent missionText from full timeline before display filtering", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: "agent_explore_a",
+          role: "explore",
+          kind: "subagent",
+          status: "active",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          timeline: [
+            item({
+              id: "agent-started",
+              eventType: "agent.started",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_a",
+              text: "Subagent explore started",
+              metadata: {
+                lifecycle: "started",
+                delegationPrompt: "Scan src for API usage",
+                delegationSummary: "扫描：API usage",
+              },
+            }),
+            item({
+              id: "request-started",
+              eventType: "request.started",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_a",
+              text: "Request started",
+              requestId: "req_1",
+              sequence: 2,
+            }),
+            item({
+              id: "request-stream",
+              eventType: "message.delta",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_a",
+              text: "Working",
+              requestId: "req_1",
+              streamKey: "stream_1",
+              sequence: 3,
+            }),
+          ],
+        },
+      ],
+      requestSpans: [
+        {
+          requestId: "req_1",
+          status: "active",
+          startedAt: "2026-01-01T00:00:02.000Z",
+        },
+      ],
+    }),
+  );
+
+  expect(view.subagentCards[0]?.missionText).toBe("Scan src for API usage");
 });
 
 test("buildThreadRunProjectionViewModel does not echo attributed @mission from agent timeline", () => {

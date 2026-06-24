@@ -1760,6 +1760,22 @@ html[data-window-focused="true"] .codex-sidebar {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  min-width: 0;
+}
+
+.coder-todo-detail {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.coder-todo-index {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.coder-todo-index::after {
+  content: " ";
 }
 
 .coder-todo-title-row strong {
@@ -1796,12 +1812,6 @@ html[data-window-focused="true"] .codex-sidebar {
 .coder-todo-status.cancelled {
   background: var(--status-deny-bg);
   color: var(--status-deny-text);
-}
-
-.coder-todo-detail {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .coder-todo-detail summary {
@@ -2684,6 +2694,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .bash-approval-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin-top: 10px;
 }
 
@@ -2711,6 +2724,10 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .bash-approval-panel.codex-style {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 18px 20px 14px;
   border: 1px solid #3a3a3a;
   border-radius: 16px;
@@ -4452,6 +4469,9 @@ html[data-window-focused="true"] .codex-sidebar {
   display: flex;
   flex-direction: column;
   gap: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 2px 0 12px;
 }
 
@@ -4719,6 +4739,15 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .subagent-run-mission-preview {
   margin: 4px 0 0;
+}
+
+.subagent-run-mission-placeholder {
+  color: #a3a3a3;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subagent-run-row-wrap .work-session-details-compact {
@@ -5540,6 +5569,9 @@ html[data-window-focused="true"] .codex-sidebar {
 .run-log-action--bash-card {
   display: block;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .run-log-bash-card {
@@ -5591,6 +5623,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .run-log-bash-card-output {
   margin: 0;
   max-height: 100px;
+  max-width: 100%;
   padding: 10px 12px 12px;
   color: #9a9a9a;
   background: transparent;
@@ -5600,10 +5633,21 @@ html[data-window-focused="true"] .codex-sidebar {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.subagent-run-row-wrap .run-log-action--bash-card,
+.subagent-run-row-wrap .run-log-bash-card,
+.run-log-agent-echo .run-log-action--bash-card,
+.work-session-details-compact .run-log-action--bash-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-left: 0;
 }
 
 .run-log-bash-card.is-running .run-log-bash-card-title {
@@ -5811,24 +5855,46 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .thread-info-git-graph-footer {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   padding: 8px 16px 12px;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
 }
 
-.thread-info-panel-scroll-with-float {
-  padding-bottom: 44px;
+.thread-info-float-stack {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  left: auto;
+  z-index: 4;
+  display: flex;
+  justify-content: flex-end;
+  width: auto;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  pointer-events: none;
 }
 
-.thread-info-float-stack {
-  flex-shrink: 0;
-  padding: 0 16px 12px;
+.thread-info-panel:has(.thread-info-git-graph-footer .thread-info-workspace-git-graph:not(.is-expanded))
+  .thread-info-float-stack {
+  bottom: 57px;
+}
+
+.thread-info-float-pills,
+.thread-info-float-control {
+  pointer-events: auto;
 }
 
 .thread-info-float-control {
   display: inline-flex;
   flex-shrink: 0;
+  background: none;
 }
 
 .thread-info-float-popover {
@@ -5884,6 +5950,11 @@ html[data-window-focused="true"] .codex-sidebar {
   justify-content: flex-end;
   gap: 6px;
   flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .thread-info-float-reopen {
@@ -13183,6 +13254,16 @@ html[data-window-focused="true"] .settings-nav {
     grid-row: 3;
     height: 100%;
   }
+
+  .codex-main:not(.codex-main-landing)
+    .activity-feed:has(.activity-header)
+    .run-log
+    > .run-log-feed-entry
+    > .run-log-action--bash-card {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+  }
 }
 
 .codex-main:not(.codex-main-landing) .run-log {
@@ -13423,6 +13504,34 @@ html[data-window-focused="true"] .settings-nav {
   color: var(--codex-log-muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.codex-main:not(.codex-main-landing)
+  .activity-feed:has(.activity-header)
+  .run-log
+  > .run-log-feed-entry
+  > .run-log-action--bash-card {
+  width: calc(100% + var(--activity-title-max) + var(--activity-title-gap));
+  max-width: calc(100% + var(--activity-title-max) + var(--activity-title-gap));
+  margin-left: calc(-1 * (var(--activity-title-max) + var(--activity-title-gap)));
+}
+
+.codex-main:not(.codex-main-landing)
+  .activity-feed:has(.activity-header)
+  .subagent-run-row-wrap
+  .run-log-action--bash-card,
+.codex-main:not(.codex-main-landing)
+  .activity-feed:has(.activity-header)
+  .run-log-agent-echo
+  .run-log-action--bash-card,
+.codex-main:not(.codex-main-landing)
+  .activity-feed:has(.activity-header)
+  .work-session-details-compact
+  .run-log-action--bash-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-left: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-file-change-card {
@@ -13668,6 +13777,11 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-mission-preview.run-log-expandable-text {
+  color: var(--codex-log-muted);
+  font-size: 13px;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-mission-placeholder {
   color: var(--codex-log-muted);
   font-size: 13px;
 }
@@ -14901,8 +15015,14 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .package-scripts-shell.has-output-panel {
-  width: min(760px, calc(100vw - 48px));
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  width: min(840px, calc(100vw - 40px));
+  max-height: min(86vh, 720px);
+  grid-template-columns: minmax(300px, 380px) minmax(360px, 420px);
+}
+
+.package-scripts-shell.has-output-panel .package-scripts-dialog,
+.package-scripts-shell.has-output-panel .package-scripts-output-panel {
+  max-height: min(86vh, 720px);
 }
 
 .package-scripts-dialog {

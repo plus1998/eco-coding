@@ -37,9 +37,11 @@ export function CoderTodoPanel({ todos, embedded, compact = false }: CoderTodoPa
     return null;
   }
 
+  const orderedTodos = [...todos].sort((left, right) => left.position - right.position);
+
   const list = (
     <ol className={`coder-todo-list${compact ? " coder-todo-list-compact" : ""}`}>
-      {todos.map((todo) => {
+      {orderedTodos.map((todo) => {
         const Icon = statusIcon[todo.status];
         const label = displayLabel(todo, compact);
         return (
@@ -53,7 +55,10 @@ export function CoderTodoPanel({ todos, embedded, compact = false }: CoderTodoPa
             </span>
             <div className="coder-todo-body">
               <div className="coder-todo-title-row">
-                <strong title={todo.title}>{label}</strong>
+                <strong title={todo.title}>
+                  <span className="coder-todo-index">#{todo.position + 1}</span>
+                  {label}
+                </strong>
                 {!compact ? (
                   <span className={`coder-todo-status ${todo.status}`}>{statusLabel[todo.status]}</span>
                 ) : null}

@@ -75,6 +75,8 @@ export interface ThreadRunProjectionSubagentCard {
   timelineIds: string[];
   running: boolean;
   statusText?: string;
+  /** Resolved from the full agent timeline before display filtering. */
+  missionText: string;
 }
 
 export function buildThreadRunProjectionViewModel(
@@ -93,11 +95,15 @@ export function buildThreadRunProjectionViewModel(
       const displayTimeline = filterProjectionTimelineForDetailFeed(agent.timeline, requestSpansById);
       const displayAgent: ThreadRunProjectionAgent = { ...agent, timeline: displayTimeline };
       const statusText = resolveProjectionAgentStatusText(displayAgent);
+      const missionText = resolveSubagentCardMissionText(agent, {
+        mainTimeline: projection.timeline,
+      });
       return {
         key: agent.agentId,
         agent: displayAgent,
         timelineIds: displayTimeline.map((item) => item.id),
         running: agent.status === "active" || agent.status === "launching",
+        missionText,
         ...(statusText && { statusText }),
       };
     });

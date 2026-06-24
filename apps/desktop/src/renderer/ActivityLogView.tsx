@@ -56,7 +56,6 @@ import {
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
   resolveProjectionAgentStatusText,
-  resolveSubagentCardMissionText,
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
@@ -234,7 +233,6 @@ function ProjectionActivityLogView({
         <ProjectionMainFeedEntry
           key={entry.key}
           entry={entry}
-          projection={projection}
           requestSpansById={requestSpansById}
           expandedAgentKeys={expandedAgentKeys}
           onToggleAgent={(agentId) => {
@@ -281,7 +279,6 @@ function wrapRunLogFeedEntry(
 
 function ProjectionMainFeedEntry({
   entry,
-  projection,
   requestSpansById,
   expandedAgentKeys,
   onToggleAgent,
@@ -290,7 +287,6 @@ function ProjectionMainFeedEntry({
   agentThemes,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
-  projection: ThreadRunProjectionSnapshot;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
@@ -311,7 +307,7 @@ function ProjectionMainFeedEntry({
     return wrapRunLogFeedEntry(
       <ProjectionSubagentRunRow
         agent={entry.card.agent}
-        projection={projection}
+        missionText={entry.card.missionText}
         requestSpansById={requestSpansById}
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
@@ -416,9 +412,20 @@ function ProjectionAgentEchoShell({
   );
 }
 
+function useLatchedAgentText(agentId: string, text: string): string {
+  const latchRef = useRef<{ agentId: string; text: string }>({ agentId: "", text: "" });
+  if (latchRef.current.agentId !== agentId) {
+    latchRef.current = { agentId, text: "" };
+  }
+  if (text) {
+    latchRef.current.text = text;
+  }
+  return text || latchRef.current.text;
+}
+
 function ProjectionSubagentRunRow({
   agent,
-  projection,
+  missionText: incomingMissionText,
   requestSpansById,
   expanded,
   onToggle,
@@ -426,7 +433,7 @@ function ProjectionSubagentRunRow({
   agentThemes,
 }: {
   agent: ThreadRunProjectionAgent;
-  projection: ThreadRunProjectionSnapshot;
+  missionText: string;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expanded: boolean;
   onToggle: () => void;
@@ -466,9 +473,7 @@ function ProjectionSubagentRunRow({
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
-  const missionText = resolveSubagentCardMissionText(agent, {
-    mainTimeline: projection.timeline,
-  });
+  const missionText = useLatchedAgentText(agent.agentId, incomingMissionText);
   const hasTimelineDetails = agent.timeline.some(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
   );
@@ -743,18 +748,16 @@ function SubagentRunCardButton({
             />
           </span>
         </div>
+        <p className="subagent-run-mission-tag">任务目标</p>
         {resolvedMissionText ? (
-          <>
-            <p className="subagent-run-mission-tag">任务目标</p>
-            <ExpandableMissionText
-              text={resolvedMissionText}
-              expanded={expanded}
-              className="subagent-run-mission-preview"
-            />
-          </>
+          <ExpandableMissionText
+            text={resolvedMissionText}
+            expanded={expanded}
+            className="subagent-run-mission-preview"
+          />
         ) : (
-          <p className="subagent-run-status" title={statusText}>
-            {statusText}
+          <p className="subagent-run-mission-preview subagent-run-mission-placeholder" title={statusText}>
+            {statusText || "等待任务说明…"}
           </p>
         )}
       </div>

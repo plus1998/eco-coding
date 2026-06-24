@@ -23,11 +23,13 @@ class _ProjectionSubagentCard {
   const _ProjectionSubagentCard({
     required this.agent,
     required this.displayTimeline,
+    required this.missionText,
     required this.statusText,
   });
 
   final ThreadRunProjectionAgent agent;
   final List<ThreadRunProjectionTimelineItem> displayTimeline;
+  final String missionText;
   final String? statusText;
 }
 
@@ -96,9 +98,14 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           latestActivity: agent.latestActivity,
           endedAt: agent.endedAt,
         );
+        final missionText = resolveSubagentCardMissionText(
+          agent,
+          mainTimeline: projection.timeline,
+        );
         return _ProjectionSubagentCard(
           agent: displayAgent,
           displayTimeline: displayTimeline,
+          missionText: missionText,
           statusText: resolveProjectionAgentStatusText(displayAgent),
         );
       })
@@ -130,10 +137,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     final agent = card.agent;
     final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
     final delegation = readProjectionAgentDelegation(agent);
-    final missionText = resolveSubagentCardMissionText(
-      agent,
-      mainTimeline: projection.timeline,
-    );
+    final missionText = card.missionText;
     final timing = sessionsByAgentId[agent.agentId];
     final running = resolveSubagentRunning(agent: agent, timing: timing);
     final durationMs = resolveSubagentDurationMs(agent: agent, timing: timing);
