@@ -106,7 +106,12 @@ export function WorkspaceGitSection({
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
   );
   const branchPickerDisabled = gitBusy || branchBusy;
-  const canPull = Boolean(gitStatus?.isGitRepository && (gitStatus.behindCount ?? 0) > 0);
+  const canPull = Boolean(
+    gitStatus?.isGitRepository &&
+      gitStatus.branch &&
+      gitStatus.branch !== "detached" &&
+      gitStatus.hasUpstream,
+  );
   const showPullEntry = Boolean(workspacePath && gitStatus?.isGitRepository);
 
   const closeBranchMenu = useCallback(() => {
@@ -528,9 +533,11 @@ export function WorkspaceGitSection({
               disabled={!canPull || gitBusy || pullBusy}
               onClick={() => void handlePull()}
               title={
-                canPull
-                  ? `落后远程 ${gitStatus?.behindCount ?? 0} 个提交`
-                  : "当前分支已与远程同步"
+                !canPull
+                  ? "未配置远程跟踪分支"
+                  : (gitStatus?.behindCount ?? 0) > 0
+                    ? `落后远程 ${gitStatus?.behindCount ?? 0} 个提交`
+                    : "从远程拉取最新变更"
               }
             >
               <CloudDownload size={16} aria-hidden />

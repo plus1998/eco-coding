@@ -41,7 +41,9 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
 
   bool get _canPull =>
       widget.gitStatus?.isGitRepository == true &&
-      (widget.gitStatus?.behindCount ?? 0) > 0;
+      widget.gitStatus?.branch != null &&
+      widget.gitStatus!.branch != 'detached' &&
+      (widget.gitStatus?.hasUpstream ?? false);
 
   List<_ThreadSessionMenuEntry> get _entries => [
         _ThreadSessionMenuEntry(
@@ -67,7 +69,7 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
         _ThreadSessionMenuEntry(
           value: 'pull',
           icon: EcoIcons.pull,
-          label: _canPull
+          label: _canPull && (widget.gitStatus?.behindCount ?? 0) > 0
               ? '拉取（落后 ${widget.gitStatus!.behindCount}）'
               : '拉取',
           enabled: !widget.isRunning && _canPull,

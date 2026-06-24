@@ -14,6 +14,7 @@ import {
   type EventCenterJsonRpcRequest,
   type EventCenterJsonRpcResponse,
   type EventCenterPackageJsonChangedPayload,
+  type EventCenterGitRemoteFetchedPayload,
   type EventCenterPayloadMap,
   isEventCenterInvokeParams,
   isEventCenterJsonRpcRequest,
@@ -140,6 +141,15 @@ export class DesktopEventCenter {
     });
   }
 
+  publishGitRemoteFetched(workspacePath: string): EventCenterEnvelope {
+    return this.publish({
+      kind: "workspace.git_remote_fetched",
+      payload: { workspacePath },
+      workspacePath,
+      aggregateKey: `workspace:${workspacePath}:git-fetch`,
+    });
+  }
+
   async handleJsonRpcMessage(message: unknown): Promise<EventCenterJsonRpcResponse | undefined> {
     const request = parseJsonRpcRequest(message);
     if (!request.ok) {
@@ -250,6 +260,12 @@ export function createElectronEventSink(
           send(
             IPC_CHANNELS.workspacePackageJsonChanged,
             (envelope.payload as EventCenterPackageJsonChangedPayload).workspacePath,
+          );
+          return;
+        case "workspace.git_remote_fetched":
+          send(
+            IPC_CHANNELS.gitRemoteFetched,
+            (envelope.payload as EventCenterGitRemoteFetchedPayload).workspacePath,
           );
           return;
         case "settings.updated":

@@ -35,8 +35,72 @@ export interface GitWorkingTreeStatus {
   canCommit: boolean;
   aheadCount: number;
   behindCount: number;
+  hasUpstream: boolean;
   remoteOriginUrl?: string;
   gh: GhAvailability;
+}
+
+export const DEFAULT_GIT_AUTOFETCH_PERIOD_SECONDS = 180;
+
+const lastFetchAtByWorkspace = new Map<string, number>();
+
+export function markWorkspaceFetched(workspacePath: string, at = Date.now()): void {
+  lastFetchAtByWorkspace.set(path.resolve(workspacePath), at);
+}
+
+export function isWorkspaceFetchStale(
+  workspacePath: string,
+  maxAgeMs = DEFAULT_GIT_AUTOFETCH_PERIOD_SECONDS * 1000,
+): boolean {
+  const last = lastFetchAtByWorkspace.get(path.resolve(workspacePath));
+  return last === undefined || Date.now() - last >= maxAgeMs;
+}
+
+export async function fetchFromOrigin(
+  workspacePath: string,
+  run: GitRunner = defaultGitRunner,
+  options: { remote?: string; prune?: boolean } = {},
+): Promise<{ ok: boolean; output: string }> {
+  const cwd = path.resolve(workspacePath);
+  const remote = options.remote?.trim() || "origin";
+  const remoteUrl = await run(["git", "remote", "get-url", remote], cwd);
+  if (remoteUrl.exitCode !== 0 || !remoteUrl.stdout.trim()) {
+    return { ok: false, output: "" };
+  }
+
+  const args = ["git", "fetch", remote];
+  if (options.prune) {
+    args.push("--prune");
+  }
+  const result = await run(args, cwd);
+  if (result.exitCode === 0) {
+    markWorkspaceFetched(cwd);
+  }
+  return {
+    ok: result.exitCode === 0,
+    output: (result.stdout.trim() || result.stderr.trim()).trim(),
+  };
+}
+
+async function resolveSyncRevRange(
+  cwd: string,
+  branch: string | undefined,
+  run: GitRunner,
+): Promise<{ revRange?: string; hasUpstream: boolean }> {
+  const upstream = await run(["git", "rev-parse", "--abbrev-ref", "@{upstream}"], cwd);
+  if (upstream.exitCode === 0 && upstream.stdout.trim()) {
+    return { revRange: "@{upstream}...HEAD", hasUpstream: true };
+  }
+
+  if (branch && branch !== "detached") {
+    const originBranch = await run(["git", "rev-parse", "--verify", `refs/remotes/origin/${branch}`], cwd);
+    if (originBranch.exitCode === 0) {
+      return { revRange: `origin/${branch}...HEAD`, hasUpstream: true };
+    }
+  }
+
+  const originUrl = await run(["git", "remote", "get-url", "origin"], cwd);
+  return { hasUpstream: originUrl.exitCode === 0 && Boolean(originUrl.stdout.trim()) };
 }
 
 export const GIT_COMMITS_PAGE_SIZE = 5;
@@ -175,6 +239,7 @@ export async function checkGhAvailability(): Promise<GhAvailability> {
 export async function getGitWorkingTreeStatus(
   workspacePath: string,
   run: GitRunner = defaultGitRunner,
+  options: { fetchIfStale?: boolean } = {},
 ): Promise<GitWorkingTreeStatus> {
   const resolvedPath = path.resolve(workspacePath);
   const gh = await checkGhAvailability();
@@ -191,8 +256,13 @@ export async function getGitWorkingTreeStatus(
       canCommit: false,
       aheadCount: 0,
       behindCount: 0,
+      hasUpstream: false,
       gh,
     };
+  }
+
+  if (options.fetchIfStale !== false && isWorkspaceFetchStale(resolvedPath)) {
+    await fetchFromOrigin(resolvedPath, run);
   }
 
   const hasGitCommits = (await run(["git", "rev-parse", "--verify", "HEAD"], resolvedPath)).exitCode === 0;
@@ -220,8 +290,9 @@ export async function getGitWorkingTreeStatus(
 
   let aheadCount = 0;
   let behindCount = 0;
-  if (branch && branch !== "detached") {
-    const counts = await run(["git", "rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], resolvedPath);
+  const { revRange, hasUpstream } = await resolveSyncRevRange(resolvedPath, branch, run);
+  if (revRange) {
+    const counts = await run(["git", "rev-list", "--left-right", "--count", revRange], resolvedPath);
     if (counts.exitCode === 0) {
       const parts = counts.stdout.trim().split(/\s+/);
       behindCount = Number.parseInt(parts[0] ?? "0", 10) || 0;
@@ -244,6 +315,7 @@ export async function getGitWorkingTreeStatus(
     canCommit: dirtyFileCount > 0,
     aheadCount,
     behindCount,
+    hasUpstream,
     ...(remoteOriginUrl && { remoteOriginUrl }),
     gh,
   };

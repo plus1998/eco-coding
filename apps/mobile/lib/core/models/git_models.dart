@@ -9,6 +9,7 @@ class GitWorkingTreeStatus {
     required this.canCommit,
     required this.aheadCount,
     required this.behindCount,
+    required this.hasUpstream,
     this.branch,
     this.branches = const [],
     this.remoteOriginUrl,
@@ -29,6 +30,7 @@ class GitWorkingTreeStatus {
         canCommit: json['canCommit'] as bool? ?? false,
         aheadCount: (json['aheadCount'] as num?)?.toInt() ?? 0,
         behindCount: (json['behindCount'] as num?)?.toInt() ?? 0,
+        hasUpstream: json['hasUpstream'] as bool? ?? false,
         remoteOriginUrl: json['remoteOriginUrl'] as String?,
       );
 
@@ -43,6 +45,7 @@ class GitWorkingTreeStatus {
   final bool canCommit;
   final int aheadCount;
   final int behindCount;
+  final bool hasUpstream;
   final String? remoteOriginUrl;
 
   bool get hasChanges => dirtyFileCount > 0;

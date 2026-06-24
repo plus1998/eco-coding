@@ -128,6 +128,7 @@ export const IPC_CHANNELS = {
   gitCommit: "git:commit",
   gitPush: "git:push",
   gitPull: "git:pull",
+  gitRemoteFetched: "git:remote-fetched",
   gitSettingsGet: "git-settings:get",
   gitSettingsSave: "git-settings:save",
 } as const;
@@ -340,6 +341,7 @@ export interface GitWorkingTreeStatus {
   canCommit: boolean;
   aheadCount: number;
   behindCount: number;
+  hasUpstream: boolean;
   remoteOriginUrl?: string;
   gh: GhAvailabilityView;
 }
@@ -449,6 +451,10 @@ export interface GitSettingsSnapshot {
   commitMessageRoleByProfileId: Record<string, RuntimeAgentRole | "auto">;
   /** 生成提交信息时附加给大模型的额外指令（格式、语言、长度等） */
   commitMessageInstructions?: string;
+  /** 窗口聚焦且仓库空闲时周期性 git fetch，对齐 VS Code git.autofetch */
+  autofetch?: boolean;
+  /** 自动 fetch 间隔（秒），默认 180 */
+  autofetchPeriod?: number;
 }
 
 export interface ProxyBridgeSettingsSnapshot {

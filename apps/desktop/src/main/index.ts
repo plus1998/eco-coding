@@ -275,6 +275,7 @@ import {
   handleGitPush,
   listGitCommits,
 } from "./git-service";
+import { GitAutoFetcher } from "./git-autofetch";
 import {
   createGitSettingsStore,
   type GitSettingsStore,
@@ -462,6 +463,8 @@ const packageScriptRunner = new PackageScriptRunner((event) => {
 const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
   desktopEventCenter.publishPackageJsonChanged(workspacePath);
 });
+let gitAutoFetcher: GitAutoFetcher | undefined;
+let activeGitOperations = 0;
 const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
@@ -722,11 +725,19 @@ app.whenReady().then(async () => {
   backfillThreadRuntimeConfigs();
   recoverOrphanedRunningThreads();
   currentWorkspace = await ensureHomeProject();
+  initializeGitAutoFetcher();
   registerIpcHandlers();
   if (centerServerClient.getSnapshot().settings.enabled) {
     void centerServerClient.start();
   }
   await createMainWindow();
+
+  app.on("browser-window-focus", () => {
+    gitAutoFetcher?.setWindowFocused(true);
+  });
+  app.on("browser-window-blur", () => {
+    gitAutoFetcher?.setWindowFocused(false);
+  });
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -743,6 +754,7 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   flushAllThreadMetrics();
+  gitAutoFetcher?.dispose();
   centerServerClient?.dispose();
   void closeSdkSessionStore?.();
 });
@@ -1141,6 +1153,7 @@ function registerIpcHandlers(): void {
     }
 
     currentWorkspace = await inspectWorkspace(selectedPath);
+    syncGitAutoFetcherWorkspace();
     return { canceled: false, workspace: currentWorkspace };
   });
 
@@ -1154,6 +1167,7 @@ function registerIpcHandlers(): void {
       throw new Error("请选择文件夹，而不是文件。");
     }
     currentWorkspace = await inspectWorkspace(resolvedPath);
+    syncGitAutoFetcherWorkspace();
     return currentWorkspace;
   });
 
@@ -1232,6 +1246,7 @@ function registerIpcHandlers(): void {
     }
     const workspace = await prepareWorkspaceGit(workspacePath, gitRunner.run);
     currentWorkspace = workspace;
+    syncGitAutoFetcherWorkspace();
     return workspace;
   });
 
@@ -1908,7 +1923,9 @@ function registerIpcHandlers(): void {
     if (!isGitSettingsSnapshot(payload)) {
       throw new Error("Invalid git settings.");
     }
-    return gitSettingsStore.save(normalizeGitSettingsSnapshot(payload));
+    const saved = gitSettingsStore.save(normalizeGitSettingsSnapshot(payload));
+    applyGitAutoFetcherSettings();
+    return saved;
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitGetStatus, async (workspacePath: unknown) => {
@@ -2002,6 +2019,7 @@ function registerIpcHandlers(): void {
     });
     if (currentWorkspace?.path === payload.workspacePath.trim()) {
       currentWorkspace = await inspectWorkspace(payload.workspacePath.trim());
+      syncGitAutoFetcherWorkspace();
     }
     return result;
   });
@@ -2020,6 +2038,7 @@ function registerIpcHandlers(): void {
     const result = await handleGitPull(payload, runGitCommand);
     if (currentWorkspace?.path === payload.workspacePath.trim()) {
       currentWorkspace = await inspectWorkspace(payload.workspacePath.trim());
+      syncGitAutoFetcherWorkspace();
     }
     return result;
   });
@@ -2594,6 +2613,7 @@ async function ensureWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
 
   const workspace = await inspectWorkspace(resolvedPath);
   currentWorkspace = workspace;
+  syncGitAutoFetcherWorkspace();
   return workspace;
 }
 
@@ -5459,12 +5479,48 @@ async function removeIsolatedWorktree(plan: WorktreePlan, threadId: string): Pro
   }
 }
 
+function initializeGitAutoFetcher(): void {
+  gitAutoFetcher = new GitAutoFetcher({
+    run: runGitCommand,
+    isGitBusy: () => activeGitOperations > 0,
+    onFetched: (workspacePath) => {
+      desktopEventCenter.publishGitRemoteFetched(workspacePath);
+    },
+  });
+  applyGitAutoFetcherSettings();
+  syncGitAutoFetcherWorkspace();
+}
+
+function applyGitAutoFetcherSettings(): void {
+  if (!gitAutoFetcher) {
+    return;
+  }
+  const settings = gitSettingsStore.get();
+  gitAutoFetcher.configure({
+    enabled: settings.autofetch !== false,
+    periodSeconds: settings.autofetchPeriod ?? 180,
+  });
+}
+
+function syncGitAutoFetcherWorkspace(): void {
+  if (!gitAutoFetcher) {
+    return;
+  }
+  const workspacePath =
+    currentWorkspace?.isGitRepository && currentWorkspace.path.trim()
+      ? currentWorkspace.path.trim()
+      : undefined;
+  gitAutoFetcher.setWorkspace(workspacePath);
+}
+
 async function runGitCommand(
   command: string[],
   cwd: string,
   options?: { stdin?: string },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
+  activeGitOperations += 1;
+  try {
+    return await new Promise((resolve) => {
     const child = execFile(
       command[0] === "git" ? resolveGitExecutable() : (command[0] ?? resolveGitExecutable()),
       command.slice(1),
@@ -5488,6 +5544,9 @@ async function runGitCommand(
       child.stdin?.end();
     }
   });
+  } finally {
+    activeGitOperations -= 1;
+  }
 }
 
 function normalizeThreadMessage(status: ThreadStatus, message: string): string {

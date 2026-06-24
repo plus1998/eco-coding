@@ -4,9 +4,12 @@ import {
   COMMIT_DIFF_MAX_CHARS,
   createGitBranch,
   discardWorkspaceChanges,
+  fetchFromOrigin,
+  getGitWorkingTreeStatus,
   getWorkspaceDiff,
   listGitCommits,
   listMergeConflictFiles,
+  markWorkspaceFetched,
   pullChanges,
 } from "../src/main/git-operations";
 
@@ -287,4 +290,68 @@ test("listMergeConflictFiles reads unmerged paths from porcelain status", async 
 
   const files = await listMergeConflictFiles("/tmp/repo", run);
   expect(files).toEqual(["src/conflict.ts"]);
+});
+
+test("fetchFromOrigin runs git fetch origin when remote exists", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    const key = args.join(" ");
+    if (key === "git remote get-url origin") {
+      return { exitCode: 0, stdout: "git@github.com:eco/repo.git", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await fetchFromOrigin("/tmp/repo", run);
+  expect(result.ok).toBe(true);
+  expect(calls).toContainEqual(["git", "fetch", "origin"]);
+});
+
+test("getGitWorkingTreeStatus uses upstream tracking branch for ahead/behind", async () => {
+  markWorkspaceFetched("/tmp/repo");
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo", stderr: "" };
+    }
+    if (key === "git rev-parse --verify HEAD") {
+      return { exitCode: 0, stdout: "abc123", stderr: "" };
+    }
+    if (key === "git branch --show-current") {
+      return { exitCode: 0, stdout: "main", stderr: "" };
+    }
+    if (key === "git branch --format=%(refname:short)") {
+      return { exitCode: 0, stdout: "main", stderr: "" };
+    }
+    if (key === "git status --short") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git diff --numstat HEAD") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git rev-parse --abbrev-ref @{upstream}") {
+      return { exitCode: 0, stdout: "origin/main", stderr: "" };
+    }
+    if (key === "git rev-list --left-right --count @{upstream}...HEAD") {
+      return { exitCode: 0, stdout: "2\t1", stderr: "" };
+    }
+    if (key === "git remote get-url origin") {
+      return { exitCode: 0, stdout: "git@github.com:eco/repo.git", stderr: "" };
+    }
+    if (key.startsWith("git --version") || key.includes("gh ")) {
+      return { exitCode: 1, stdout: "", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const status = await getGitWorkingTreeStatus("/tmp/repo", run, { fetchIfStale: false });
+  expect(status.behindCount).toBe(2);
+  expect(status.aheadCount).toBe(1);
+  expect(status.hasUpstream).toBe(true);
+  expect(calls.some((args) => args.join(" ") === "git rev-list --left-right --count @{upstream}...HEAD")).toBe(
+    true,
+  );
 });

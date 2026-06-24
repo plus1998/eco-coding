@@ -1367,6 +1367,25 @@ function App() {
   }, [refreshGitStatus]);
 
   useEffect(() => {
+    const onFocus = () => {
+      void refreshGitStatus();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshGitStatus]);
+
+  useEffect(() => {
+    if (!currentProjectPath || !window.eco?.onGitRemoteFetched) {
+      return undefined;
+    }
+    return window.eco.onGitRemoteFetched((workspacePath) => {
+      if (workspacePath === currentProjectPath) {
+        void refreshGitStatus();
+      }
+    });
+  }, [currentProjectPath, refreshGitStatus]);
+
+  useEffect(() => {
     if (!window.eco) {
       return;
     }

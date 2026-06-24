@@ -597,6 +597,7 @@ void main() {
       canCommit: true,
       aheadCount: 0,
       behindCount: 0,
+      hasUpstream: false,
     );
 
     expect(status.toChangesSummary().fileCount, 3);

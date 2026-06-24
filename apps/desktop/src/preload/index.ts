@@ -170,6 +170,15 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.workspacePackageJsonChanged, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageJsonChanged, listener);
   },
+  onGitRemoteFetched(callback: (workspacePath: string) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (typeof payload === "string") {
+        callback(payload);
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.gitRemoteFetched, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.gitRemoteFetched, listener);
+  },
   startPackageScript(request: RunPackageScriptRequest): Promise<StartPackageScriptResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceStartPackageScript, request);
   },

@@ -9,10 +9,18 @@ const COMMIT_MESSAGE_INSTRUCTIONS_MAX_CHARS = 2_000;
 export interface GitSettingsSnapshot {
   commitMessageRoleByProfileId: Record<string, CommitMessageRolePreference>;
   commitMessageInstructions?: string;
+  /** 窗口聚焦且仓库空闲时周期性 git fetch，对齐 VS Code git.autofetch */
+  autofetch?: boolean;
+  /** 自动 fetch 间隔（秒），默认 180 */
+  autofetchPeriod?: number;
 }
 
 export function defaultGitSettings(): GitSettingsSnapshot {
-  return { commitMessageRoleByProfileId: {} };
+  return {
+    commitMessageRoleByProfileId: {},
+    autofetch: true,
+    autofetchPeriod: 180,
+  };
 }
 
 export async function createGitSettingsStore(dbPath: string): Promise<GitSettingsStore> {
@@ -104,10 +112,28 @@ export function normalizeGitSettingsSnapshot(value: unknown): GitSettingsSnapsho
     }
   }
   const instructions = normalizeCommitMessageInstructions(record.commitMessageInstructions);
+  const autofetch = normalizeAutofetch(record.autofetch);
+  const autofetchPeriod = normalizeAutofetchPeriod(record.autofetchPeriod);
   return {
     commitMessageRoleByProfileId,
     ...(instructions && { commitMessageInstructions: instructions }),
+    autofetch,
+    autofetchPeriod,
   };
+}
+
+function normalizeAutofetch(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return true;
+}
+
+function normalizeAutofetchPeriod(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 30) {
+    return Math.floor(value);
+  }
+  return 180;
 }
 
 function normalizeCommitMessageInstructions(value: unknown): string | undefined {
