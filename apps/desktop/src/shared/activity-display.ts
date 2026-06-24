@@ -239,9 +239,13 @@ export function formatBashRunMeta(command: string, durationMs?: number): string 
   }
   const segments = trimmed.split(/\s*(?:&&|\|\||;)\s*/u).filter(Boolean);
   const firstToken = segments[0]?.trim().split(/\s+/u)[0] ?? "";
+  const metaToken =
+    firstToken && (firstToken.startsWith("/") || firstToken.startsWith("./") || firstToken.startsWith("~/"))
+      ? pathBasename(firstToken)
+      : firstToken;
   const parts: string[] = [];
-  if (firstToken) {
-    parts.push(firstToken);
+  if (metaToken) {
+    parts.push(metaToken);
   }
   if (segments.length > 1) {
     parts.push(`${segments.length - 1}+`);
@@ -392,6 +396,7 @@ function deriveBashTitleFromCommand(command: string | undefined): string | undef
   if (
     first.startsWith("./") ||
     first.startsWith("/") ||
+    first.startsWith("~/") ||
     /\.(?:sh|py|js|ts|mjs|cjs)$/iu.test(first)
   ) {
     return clampActivityPreviewLine(pathBasename(first), 48);
@@ -407,7 +412,7 @@ function deriveBashTitleFromCommand(command: string | undefined): string | undef
 
 function looksLikeShellCommand(text: string): boolean {
   return (
-    /^(?:cd|bun|npm|pnpm|yarn|git|curl|make|docker|python|node|\.\/|\/)/u.test(text) ||
+    /^(?:cd|bun|npm|pnpm|yarn|git|curl|make|docker|python|node|\.\/|\/|~\/)/u.test(text) ||
     text.includes("&&") ||
     text.includes("|") ||
     text.includes("\n")

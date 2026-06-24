@@ -582,6 +582,10 @@ String pathBasename(String filePath) {
   return list.last;
 }
 
+bool _isPath(String token) {
+  return token.startsWith('/') || token.startsWith('./') || token.startsWith('~/');
+}
+
 String clampActivityPreviewLine(String text, [int max = 56]) {
   final oneLine = text.replaceAll(RegExp(r'\s+'), ' ').trim();
   if (oneLine.isEmpty || oneLine.length <= max) return oneLine;
@@ -690,8 +694,9 @@ String formatBashRunMeta(String command, {int? durationMs}) {
   }
   final segments = trimmed.split(RegExp(r'\s*(?:&&|\|\||;)\s*'));
   final firstToken = segments.first.trim().split(RegExp(r'\s+')).first;
+  final metaToken = _isPath(firstToken) ? pathBasename(firstToken) : firstToken;
   final parts = <String>[];
-  if (firstToken.isNotEmpty) parts.add(firstToken);
+  if (metaToken.isNotEmpty) parts.add(metaToken);
   if (segments.length > 1) parts.add('${segments.length - 1}+');
   if (durationMs != null) {
     final seconds = durationMs / 1000;
@@ -715,9 +720,29 @@ String formatMeaningfulBashTitle({
   }
   final normalizedCommand = command?.trim();
   if (normalizedCommand != null && normalizedCommand.isNotEmpty) {
-    return clampActivityPreviewLine(normalizedCommand, 48);
+    final title = _deriveBashTitleFromCommand(normalizedCommand);
+    return title != null ? title : clampActivityPreviewLine(normalizedCommand, 48);
   }
   return '运行命令';
+}
+
+String? _deriveBashTitleFromCommand(String command) {
+  final lastSegment = command
+      .split(RegExp(r'\s*(?:&&|\|\||;)\s*'))
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .lastOrNull;
+  if (lastSegment == null) return null;
+
+  final normalized = lastSegment.replaceAll(RegExp(r'\s+'), ' ');
+  final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+  if (tokens.isEmpty) return null;
+
+  final first = tokens[0];
+  if (first.startsWith('/') || first.startsWith('./') || first.startsWith('~/')) {
+    return clampActivityPreviewLine(pathBasename(first), 48);
+  }
+  return null;
 }
 
 BashRunCardDisplay? resolveBashRunCardDisplay({

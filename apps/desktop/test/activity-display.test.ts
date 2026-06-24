@@ -97,3 +97,16 @@ test("readBashApprovalMetadata reads structured projection metadata", () => {
     description: "Search outside workspace",
   });
 });
+
+test("formatMeaningfulBashTitle truncates absolute path to basename", () => {
+  expect(formatMeaningfulBashTitle("/opt/android/adb")).toBe("adb");
+  expect(formatMeaningfulBashTitle("/usr/local/bin/docker ps")).toBe("docker");
+  expect(formatMeaningfulBashTitle("~/Library/Android/adb")).toBe("adb");
+});
+
+test("formatBashRunMeta truncates absolute path to basename", () => {
+  expect(formatBashRunMeta("/opt/android/adb")).toBe("adb");
+  expect(formatBashRunMeta("/usr/bin/ls -la")).toBe("ls");
+  expect(formatBashRunMeta("~/Library/Android/adb")).toBe("adb");
+  expect(formatBashRunMeta("npm test")).toBe("npm");
+});
