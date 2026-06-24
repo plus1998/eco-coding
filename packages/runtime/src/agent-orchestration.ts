@@ -392,6 +392,8 @@ export function buildToolPermissionPolicyFromProfile(
     /** Phase read-only cap list (plan/question). Not the merged SDK auto-approve list. */
     phaseAllowedTools?: readonly string[];
     mainAllowedTools?: readonly string[];
+    /** Composer/runtime MCP selection merged into main agent MCP allowlist. */
+    runtimeMcpServers?: readonly string[];
   } = {},
 ): EcoRuntimeToolPermissionPolicy {
   const explicitAgentKeys = options.agentKeys ? new Set(options.agentKeys) : undefined;
@@ -422,11 +424,15 @@ export function buildToolPermissionPolicyFromProfile(
   const mainToolPolicy = phaseCapTools
     ? capEcoToolPolicyForPhase(profile.mainAgent.tools, phaseCapTools)
     : materializeEcoToolPolicy(profile.mainAgent.tools);
+  const runtimeMcp = (options.runtimeMcpServers ?? []).map((server) => sanitizeMcpServerName(server));
+  const mainAssignedMcp = [
+    ...new Set([...resolveAssignedMcpServers(mainToolPolicy), ...runtimeMcp]),
+  ];
   return {
     main: normalizeToolPermissionEntry(
       mainToolPolicy,
       resolveMainToolPermissionExtraAllowed(phaseCapTools, options.mainAllowedTools),
-      resolveAssignedMcpServers(mainToolPolicy),
+      mainAssignedMcp,
     ),
     agents,
   };

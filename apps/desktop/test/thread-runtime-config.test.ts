@@ -17,6 +17,7 @@ import {
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
   resolveThreadAgentProfile,
+  resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   serializeThreadRuntimeConfig,
   withPlanModeDisabled,
@@ -342,4 +343,74 @@ test("isThreadRuntimeConfig rejects invalid payloads", () => {
   expect(
     isThreadRuntimeConfig({ routeProfileId: "", orchestrationMode: "manual", subagentEnabled: {} }),
   ).toBe(false);
+});
+
+test("buildThreadRuntimeConfigFromDefaults seeds MCP from profile and remembered workflow defaults", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { planModeEnabled: false, mcpServersEnabled: { mongo: true } },
+    mcpServers: [
+      {
+        id: "m1",
+        name: "mongo",
+        transport: "stdio",
+        enabled: true,
+        command: "npx",
+        args: [],
+        env: {},
+        updatedAt: "2020-01-01T00:00:00.000Z",
+      },
+      {
+        id: "m2",
+        name: "browser",
+        transport: "stdio",
+        enabled: true,
+        command: "npx",
+        args: [],
+        env: {},
+        updatedAt: "2020-01-01T00:00:00.000Z",
+      },
+    ],
+  });
+  expect(config.mcpServersEnabled).toEqual({ mongo: true, browser: false });
+});
+
+test("resolveThreadRuntimeMcpServerKeys uses composer overrides when present", () => {
+  const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { planModeEnabled: false },
+    mcpServers: [
+      {
+        id: "m1",
+        name: "mongo",
+        transport: "stdio",
+        enabled: true,
+        command: "npx",
+        args: [],
+        env: {},
+        updatedAt: "2020-01-01T00:00:00.000Z",
+      },
+      {
+        id: "m2",
+        name: "browser",
+        transport: "stdio",
+        enabled: true,
+        command: "npx",
+        args: [],
+        env: {},
+        updatedAt: "2020-01-01T00:00:00.000Z",
+      },
+    ],
+  });
+  const withOverride = {
+    ...runtimeConfig,
+    mcpServersEnabled: { mongo: false, browser: true },
+  };
+  expect(
+    resolveThreadRuntimeMcpServerKeys({
+      runtimeConfig: withOverride,
+      settings: agentSettings,
+      availableMcpServerKeys: ["mongo", "browser"],
+    }),
+  ).toEqual(["browser"]);
 });

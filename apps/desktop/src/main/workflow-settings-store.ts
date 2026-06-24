@@ -2,11 +2,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { EcoOrchestrationMode } from "@eco/runtime";
+import {
+  normalizeMcpServersEnabled,
+  type McpServersEnabledSettings,
+} from "../shared/composer-mcp";
 
 export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
+  mcpServersEnabled?: Record<string, boolean>;
 }
 
 export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
@@ -51,20 +56,16 @@ export class WorkflowSettingsStore {
   }
 
   get(): WorkflowSettingsSnapshot {
-    const row = this.db
-      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
-      .get("plan_mode_enabled") as { value_json: string } | undefined;
-    if (row) {
-      return snapshotFromStoredPlanMode(row.value_json);
-    }
-    const legacyRow = this.db
-      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
-      .get("orchestration_mode") as { value_json: string } | undefined;
-    return snapshotFromStoredOrchestration(parseStoredOrchestration(legacyRow?.value_json));
+    const planModeEnabled = this.readPlanModeEnabled();
+    const mcpServersEnabled = this.readMcpServersEnabled();
+    return {
+      planModeEnabled,
+      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    };
   }
 
   save(snapshot: WorkflowSettingsSnapshot): WorkflowSettingsSnapshot {
-    const planModeEnabled = normalizeWorkflowSettingsSnapshot(snapshot).planModeEnabled;
+    const normalized = normalizeWorkflowSettingsSnapshot(snapshot);
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -72,8 +73,46 @@ export class WorkflowSettingsStore {
          VALUES (?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
       )
-      .run("plan_mode_enabled", JSON.stringify(planModeEnabled), now);
+      .run("plan_mode_enabled", JSON.stringify(normalized.planModeEnabled), now);
+    if (normalized.mcpServersEnabled) {
+      this.db
+        .prepare(
+          `INSERT INTO workflow_settings (key, value_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+        )
+        .run("composer_mcp_servers_enabled", JSON.stringify(normalized.mcpServersEnabled), now);
+    } else {
+      this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("composer_mcp_servers_enabled");
+    }
     return this.get();
+  }
+
+  private readPlanModeEnabled(): boolean {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("plan_mode_enabled") as { value_json: string } | undefined;
+    if (row) {
+      return snapshotFromStoredPlanMode(row.value_json).planModeEnabled;
+    }
+    const legacyRow = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("orchestration_mode") as { value_json: string } | undefined;
+    return snapshotFromStoredOrchestration(parseStoredOrchestration(legacyRow?.value_json)).planModeEnabled;
+  }
+
+  private readMcpServersEnabled(): McpServersEnabledSettings | undefined {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("composer_mcp_servers_enabled") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) {
+      return undefined;
+    }
+    try {
+      return normalizeMcpServersEnabled(JSON.parse(row.value_json) as unknown);
+    } catch {
+      return undefined;
+    }
   }
 }
 
@@ -148,17 +187,30 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
     return defaultWorkflowSettings();
   }
   const record = value as Record<string, unknown>;
+  const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
   if (typeof record.planModeEnabled === "boolean") {
-    return { planModeEnabled: record.planModeEnabled };
+    return {
+      planModeEnabled: record.planModeEnabled,
+      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    };
   }
   if (record.orchestrationMode === "manual" || record.orchestrationMode === "autonomous") {
-    return { planModeEnabled: record.orchestrationMode === "manual" };
+    return {
+      planModeEnabled: record.orchestrationMode === "manual",
+      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    };
   }
   if (record.orchestrationMode === "analyze_plan_execute") {
-    return { planModeEnabled: true };
+    return {
+      planModeEnabled: true,
+      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    };
   }
   if (record.orchestrationMode === "sdk_default") {
-    return { planModeEnabled: false };
+    return {
+      planModeEnabled: false,
+      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    };
   }
   return defaultWorkflowSettings();
 }

@@ -321,6 +321,7 @@ export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
+  mcpServersEnabled?: Record<string, boolean>;
 }
 
 export interface GhAvailabilityView {
@@ -609,10 +610,16 @@ export {
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   resolveThreadAgentProfile,
+  resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   withPlanModeDisabled,
 } from "./thread-runtime-config";
-export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
+export type { McpServersEnabledSettings, ThreadRuntimeConfig, ThreadRuntimeConfigInput };
+export {
+  countEnabledMcpServers,
+  deriveMcpServersEnabled,
+  listEnabledGlobalMcpServerKeys,
+} from "./composer-mcp";
 
 export interface PromptImageAttachment {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";

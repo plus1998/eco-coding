@@ -753,6 +753,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
           ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
+          ...(input.sdkSession?.runtimeMcpServers?.length
+            ? { runtimeMcpServers: input.sdkSession.runtimeMcpServers }
+            : {}),
         })
       : undefined;
     const pendingToolPermissionDecisions: EcoToolPermissionDecisionAudit[] = [];

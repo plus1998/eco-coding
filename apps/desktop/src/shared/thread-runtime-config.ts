@@ -1,7 +1,15 @@
-import { defaultSubagentAvailability, normalizeSubagentAvailability, SUBAGENT_ROLES } from "@eco/runtime";
+import { collectProfileAssignedMcpServers, defaultSubagentAvailability, normalizeSubagentAvailability, SUBAGENT_ROLES } from "@eco/runtime";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
+import {
+  deriveMcpServersEnabled,
+  listEnabledGlobalMcpServerKeys,
+  normalizeMcpServersEnabled,
+  resolveEnabledMcpServerKeys,
+  type McpServersEnabledSettings,
+} from "./composer-mcp";
 import type {
   ModelSettingsSnapshot,
+  McpServerConfigView,
   OrchestrationModeSetting,
   OrchestrationProfile,
   RoleRouteConfig,
@@ -11,12 +19,15 @@ import type {
   WorkflowSettingsSnapshot,
 } from "./ipc";
 
+export type { McpServersEnabledSettings };
+
 export type { BashReviewMode };
 
 export interface ThreadRuntimeConfig {
   routeProfileId: string;
   agentProfileId?: string;
   subagentEnabled: SubagentEnabledSettings;
+  mcpServersEnabled?: McpServersEnabledSettings;
   planModeEnabled: boolean;
   bashReviewMode: BashReviewMode;
 }
@@ -140,7 +151,14 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
     bashReviewMode === "always" ||
     bashReviewMode === "auto" ||
     bashReviewMode === "allow_all"
-  );
+  ) && (record.mcpServersEnabled === undefined || isMcpServersEnabledRecord(record.mcpServersEnabled));
+}
+
+function isMcpServersEnabledRecord(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((enabled) => typeof enabled === "boolean");
 }
 
 export function parseThreadRuntimeConfigJson(
@@ -169,10 +187,12 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   const planModeEnabled = normalizePlanModeEnabled(record.planModeEnabled ?? record.orchestrationMode);
   const routeProfileId = typeof record.routeProfileId === "string" ? record.routeProfileId.trim() : "";
   const bashReviewMode = normalizeBashReviewMode(record.bashReviewMode);
+  const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
   return {
     routeProfileId,
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
+    ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
     planModeEnabled,
     bashReviewMode,
   };
@@ -208,11 +228,34 @@ function normalizeBashReviewMode(value: unknown): BashReviewMode {
   return "always";
 }
 
+/** Resolve MCP servers enabled for a thread session (composer overrides profile assignment). */
+export function resolveThreadRuntimeMcpServerKeys(input: {
+  runtimeConfig?: ThreadRuntimeConfig;
+  settings: ModelSettingsSnapshot;
+  availableMcpServerKeys: readonly string[];
+}): string[] {
+  const profile = input.runtimeConfig
+    ? resolveThreadAgentProfile(input.settings, input.runtimeConfig)
+    : undefined;
+  const profileAssigned = profile
+    ? collectProfileAssignedMcpServers(profile, input.settings.agentTemplates)
+    : [];
+  if (input.runtimeConfig?.mcpServersEnabled) {
+    return resolveEnabledMcpServerKeys(
+      deriveMcpServersEnabled(input.availableMcpServerKeys, {
+        existing: input.runtimeConfig.mcpServersEnabled,
+      }),
+    );
+  }
+  return profileAssigned;
+}
+
 export function buildThreadRuntimeConfigFromDefaults(input: {
   settings: ModelSettingsSnapshot;
   workflowDefaults: WorkflowSettingsSnapshot;
   routeProfileId?: string;
   agentProfileId?: string;
+  mcpServers?: readonly McpServerConfigView[];
 }): ThreadRuntimeConfig {
   const requestedProfileId = input.agentProfileId?.trim() || input.routeProfileId?.trim();
   const agentProfile =
@@ -221,10 +264,23 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   if (!agentProfile) {
     throw new Error("至少添加一套智能体配置。");
   }
+  const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(input.mcpServers ?? []);
+  const profileAssignedMcpServers = collectProfileAssignedMcpServers(
+    agentProfile,
+    input.settings.agentTemplates,
+  );
   return {
     routeProfileId: agentProfile.id,
     agentProfileId: agentProfile.id,
     subagentEnabled: deriveSubagentEnabledFromProfile(agentProfile),
+    ...(availableMcpServerKeys.length > 0
+      ? {
+          mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
+            profileAssignedServers: profileAssignedMcpServers,
+            remembered: input.workflowDefaults.mcpServersEnabled,
+          }),
+        }
+      : {}),
     planModeEnabled: input.workflowDefaults.planModeEnabled,
     bashReviewMode: "always",
   };

@@ -1,4 +1,4 @@
-import { defaultSubagentAvailability } from "@eco/runtime";
+import { collectProfileAssignedMcpServers, defaultSubagentAvailability } from "@eco/runtime";
 import {
   Activity,
   AlertCircle,
@@ -47,7 +47,9 @@ import {
   type ClarificationRequest,
   type CoderTodoItem,
   deriveSubagentEnabledFromProfile,
+  deriveMcpServersEnabled,
   getDefaultAgentProfileId,
+  listEnabledGlobalMcpServerKeys,
   type LinkAgentsSkillsResult,
   type McpServerCheckResult,
   type McpServerConfigInput,
@@ -84,6 +86,7 @@ import {
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
@@ -117,6 +120,7 @@ import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { BashApprovalPanel } from "./BashApprovalPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
+import { ComposerMcpServers } from "./ComposerMcpServers";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
@@ -388,6 +392,9 @@ function App() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
+  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
+    planModeEnabled: false,
+  });
   const [sessionSyncSettings, setSessionSyncSettings] =
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [centerServerSettings, setCenterServerSettings] =
@@ -484,10 +491,11 @@ function App() {
       window.eco.listThreads(),
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
+      window.eco.getWorkflowSettings(),
       window.eco.getSessionSyncSettings(),
       window.eco.getCenterServerSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, sessionSync, centerServer, proxyBridge]) => {
+    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, workflow, sessionSync, centerServer, proxyBridge]) => {
       setHomeProjectPath(resolvedHomeProjectPath);
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
@@ -503,6 +511,7 @@ function App() {
       setThreads(currentThreads);
       setSettings(modelSettings);
       setMcpSettings(mcp);
+      setWorkflowSettings(workflow);
       setSessionSyncSettings(sessionSync);
       setCenterServerSettings(centerServer);
       setProxyBridgeSettings(proxyBridge);
@@ -1456,10 +1465,12 @@ function App() {
           composerRuntimeConfig?.routeProfileId ??
           getDefaultAgentProfileId(settings);
         const routeProfileId = composerRuntimeConfig?.routeProfileId;
-        const planModeEnabled = planModeOverride ?? composerRuntimeConfig?.planModeEnabled ?? false;
+        const planModeEnabled =
+          planModeOverride ?? composerRuntimeConfig?.planModeEnabled ?? workflowSettings.planModeEnabled;
         return buildThreadRuntimeConfigFromDefaults({
           settings,
-          workflowDefaults: { planModeEnabled },
+          workflowDefaults: { ...workflowSettings, planModeEnabled },
+          mcpServers: mcpSettings.servers,
           ...(agentProfileId && { agentProfileId }),
           ...(routeProfileId && { routeProfileId }),
         });
@@ -1472,6 +1483,8 @@ function App() {
       composerRuntimeConfig?.agentProfileId,
       composerRuntimeConfig?.routeProfileId,
       composerRuntimeConfig?.planModeEnabled,
+      workflowSettings,
+      mcpSettings.servers,
     ],
   );
 
@@ -1502,6 +1515,29 @@ function App() {
     () => (composerRuntimeConfig ? resolveThreadAgentProfile(settings, composerRuntimeConfig) : undefined),
     [settings, composerRuntimeConfig],
   );
+  const composerMcpSettings = useMemo(() => {
+    const availableServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
+    if (availableServerKeys.length === 0) {
+      return {};
+    }
+    if (composerRuntimeConfig?.mcpServersEnabled) {
+      return deriveMcpServersEnabled(availableServerKeys, {
+        existing: composerRuntimeConfig.mcpServersEnabled,
+      });
+    }
+    return deriveMcpServersEnabled(availableServerKeys, {
+      profileAssignedServers: selectedRuntimeProfile
+        ? collectProfileAssignedMcpServers(selectedRuntimeProfile, settings.agentTemplates)
+        : [],
+      remembered: workflowSettings.mcpServersEnabled,
+    });
+  }, [
+    composerRuntimeConfig?.mcpServersEnabled,
+    mcpSettings.servers,
+    selectedRuntimeProfile,
+    settings.agentTemplates,
+    workflowSettings.mcpServersEnabled,
+  ]);
   const activeRoutes = useMemo(() => {
     return selectedRuntimeProfile ? runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
   }, [selectedRuntimeProfile]);
@@ -2668,6 +2704,7 @@ function App() {
     }
     const profile = findOrchestrationProfileBySelectionId(settings, profileId);
     const agentProfileId = profile?.id ?? profileId;
+    const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
     const next: ThreadRuntimeConfig = {
       ...composerRuntimeConfig,
       routeProfileId: agentProfileId,
@@ -2678,6 +2715,17 @@ function App() {
               profile,
               composerRuntimeConfig.subagentEnabled,
             ),
+          }
+        : {}),
+      ...(availableMcpServerKeys.length > 0
+        ? {
+            mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
+              profileAssignedServers: profile
+                ? collectProfileAssignedMcpServers(profile, settings.agentTemplates)
+                : [],
+              existing: composerRuntimeConfig.mcpServersEnabled,
+              remembered: workflowSettings.mcpServersEnabled,
+            }),
           }
         : {}),
     };
@@ -2736,6 +2784,30 @@ function App() {
       subagentEnabled: { ...composerRuntimeConfig.subagentEnabled, [role]: enabled },
     };
     await persistComposerRuntimeConfig(next);
+  }
+
+  async function toggleComposerMcpServer(serverKey: string, enabled: boolean) {
+    if (!composerRuntimeConfig) {
+      return;
+    }
+    const nextMcpServersEnabled = { ...composerMcpSettings, [serverKey]: enabled };
+    const next: ThreadRuntimeConfig = {
+      ...composerRuntimeConfig,
+      mcpServersEnabled: nextMcpServersEnabled,
+    };
+    await persistComposerRuntimeConfig(next, { persistWhileRunning: true });
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        mcpServersEnabled: nextMcpServersEnabled,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function toggleComposerPlanMode(planModeEnabled: boolean) {
@@ -3439,6 +3511,17 @@ function App() {
     />
   );
 
+  const composerMcpControl = (
+    <ComposerMcpServers
+      servers={mcpSettings.servers}
+      enabledSettings={composerMcpSettings}
+      canEdit={canEditComposerConfig}
+      saving={isSavingSettings}
+      compact={composerCompact}
+      onToggleServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
+    />
+  );
+
   const composer = (
     <div className="codex-composer-wrap">
       {displayedQueuedFollowUps.length > 0 ? (
@@ -3540,6 +3623,7 @@ function App() {
                     {composerRouteControl}
                     <span className="composer-context-divider" aria-hidden />
                     {composerAgentModelsControl}
+                    {composerMcpControl}
                   </div>
                   <div className="composer-footer-row composer-footer-config-row">
                     {composerRuntimeConfig ? (
@@ -3623,6 +3707,7 @@ function App() {
           <div className="composer-context-bar">
             {composerRouteControl}
             {composerAgentModelsControl}
+            {composerMcpControl}
           </div>
         ) : null}
       </div>

@@ -29,6 +29,8 @@ export interface EcoSdkSessionOptions {
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];
+  /** Composer-selected MCP servers for this session (merged with profile assignment). */
+  runtimeMcpServers?: string[];
 }
 
 export interface EcoSdkResumeOptions {

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
+  createWorkflowSettingsStore,
   defaultWorkflowSettings,
   isWorkflowSettingsSnapshot,
   normalizeWorkflowSettingsSnapshot,
@@ -8,6 +12,15 @@ import {
   usesPlanMode,
   usesPlanOrchestration,
 } from "../src/main/workflow-settings-store";
+
+const sqliteAvailable = await (async () => {
+  try {
+    await import("node:sqlite");
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 test("plan mode defaults to off", () => {
   expect(defaultWorkflowSettings()).toEqual({ planModeEnabled: false });
@@ -46,4 +59,31 @@ test("orchestrationModeFromSnapshot maps plan mode to runtime mode", () => {
 test("usesPlanOrchestration is alias for plan mode", () => {
   expect(usesPlanOrchestration({ planModeEnabled: true })).toBe(true);
   expect(usesPlanOrchestration({ planModeEnabled: false })).toBe(false);
+});
+
+test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => {
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      planModeEnabled: false,
+      mcpServersEnabled: { mongo: true, browser: false },
+    }),
+  ).toEqual({
+    planModeEnabled: false,
+    mcpServersEnabled: { mongo: true, browser: false },
+  });
+});
+
+test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP selections", async () => {
+  const dbPath = path.join(os.tmpdir(), `eco-workflow-settings-${Date.now()}.sqlite`);
+  const store = await createWorkflowSettingsStore(dbPath);
+  const saved = store.save({
+    planModeEnabled: true,
+    mcpServersEnabled: { mongo: true, browser: false },
+  });
+  expect(saved).toEqual({
+    planModeEnabled: true,
+    mcpServersEnabled: { mongo: true, browser: false },
+  });
+  expect(store.get()).toEqual(saved);
+  await fs.rm(dbPath, { force: true });
 });

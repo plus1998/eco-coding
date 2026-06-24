@@ -389,6 +389,13 @@ test("resolveToolPermissionEntryForActor still resolves eco profile agents", () 
   );
 });
 
+test("buildToolPermissionPolicyFromProfile merges runtime MCP servers into main policy", () => {
+  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
+    runtimeMcpServers: ["mongo"],
+  });
+  expect(policy.main.mcpServers).toEqual(expect.arrayContaining(["browser", "mongo"]));
+});
+
 test("buildToolPermissionPolicyFromProfile enables bash for hands-on profiles without explicit bash field", () => {
   const handsOnProfile: EcoOrchestrationProfileConfig = {
     ...profile,

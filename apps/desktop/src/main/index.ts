@@ -8,7 +8,6 @@ import type { ResolvedModelRoute } from "@eco/model-router";
 import { createRedisSessionStore, type SessionStore, testRedisConnection } from "@eco/persistence";
 import {
   type AgentEvent,
-  collectProfileAssignedMcpServers,
   defaultSubagentAvailability,
   type EcoAgentRuntimeConfig,
   type EcoPlanningContext,
@@ -107,6 +106,7 @@ import {
   type RuntimeAgentRole,
   type RuntimeRoleRouteConfig,
   resolveThreadAgentProfile,
+  resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
@@ -158,6 +158,7 @@ import {
   withPlanModeDisabled,
 } from "../shared/ipc";
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
+import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import { isExternalPackageScriptTarget } from "../shared/package-script-target";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
@@ -906,6 +907,7 @@ function buildDefaultThreadRuntimeConfig(): ThreadRuntimeConfig {
   return buildThreadRuntimeConfigFromDefaults({
     settings: getModelSettingsSnapshot(),
     workflowDefaults: workflowSettingsStore.get(),
+    mcpServers: mcpStore.listServers(),
   });
 }
 
@@ -5413,13 +5415,13 @@ async function buildSdkSessionOptions(
   const thread = conversationStore.getThread(threadId);
   const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
   const settings = getModelSettingsSnapshot();
-  const profile = hydrated?.runtimeConfig
-    ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
-    : undefined;
-  const assignedMcpServers = profile
-    ? collectProfileAssignedMcpServers(profile, settings.agentTemplates)
-    : [];
-  const filteredMcp = filterMcpSdkConfigByAssignedServers(mcp, assignedMcpServers);
+  const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
+  const enabledMcpServers = resolveThreadRuntimeMcpServerKeys({
+    ...(hydrated?.runtimeConfig ? { runtimeConfig: hydrated.runtimeConfig } : {}),
+    settings,
+    availableMcpServerKeys,
+  });
+  const filteredMcp = filterMcpSdkConfigByAssignedServers(mcp, enabledMcpServers);
   const runtimeMcp = prepareMcpSdkConfigForRuntime(filteredMcp);
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
@@ -5441,6 +5443,9 @@ async function buildSdkSessionOptions(
     projectNames,
     explicitUser,
   });
+  const profile = hydrated?.runtimeConfig
+    ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
+    : undefined;
   const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
   return {
     settingSources: skillConfig.settingSources,
@@ -5448,6 +5453,7 @@ async function buildSdkSessionOptions(
     ...(implicitReadAllowRoots.length > 0 ? { implicitReadAllowRoots } : {}),
     agentSkills,
     enabledSubagents,
+    ...(enabledMcpServers.length > 0 ? { runtimeMcpServers: enabledMcpServers } : {}),
     ...(Object.keys(runtimeMcp.mcpServers).length > 0 ? { mcpServers: runtimeMcp.mcpServers } : {}),
     ...(runtimeMcp.allowedTools.length > 0 ? { mcpAllowedTools: runtimeMcp.allowedTools } : {}),
   };
