@@ -1621,7 +1621,6 @@ function RunLogFileChangeCard({
   const [expanded, setExpanded] = useState(false);
   const collapsedLineLimit = 6;
   const previewLines = expanded ? display.previewLines : display.previewLines.slice(0, collapsedLineLimit);
-  const hasMore = display.previewLines.length > collapsedLineLimit;
 
   return (
     <button
@@ -1663,7 +1662,6 @@ function RunLogFileChangeCard({
             </div>
           ))}
         </div>
-        {!expanded && hasMore ? <div className="run-log-file-change-card-fade" aria-hidden /> : null}
       </div>
     </button>
   );
