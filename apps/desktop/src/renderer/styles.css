@@ -4074,6 +4074,13 @@ html[data-window-focused="true"] .codex-sidebar {
   min-width: 0;
 }
 
+.run-log-feed-entry {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
 .run-log-progress {
   display: inline-flex;
   align-items: center;
@@ -5572,11 +5579,20 @@ html[data-window-focused="true"] .codex-sidebar {
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+.run-log-action--bash-card-role {
+  display: inline-block;
+  margin-bottom: 6px;
 }
 
 .run-log-bash-card {
+  display: block;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
@@ -5624,6 +5640,7 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 0;
   max-height: 100px;
   max-width: 100%;
+  min-width: 0;
   padding: 10px 12px 12px;
   color: #9a9a9a;
   background: transparent;
@@ -5638,16 +5655,6 @@ html[data-window-focused="true"] .codex-sidebar {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-}
-
-.subagent-run-row-wrap .run-log-action--bash-card,
-.subagent-run-row-wrap .run-log-bash-card,
-.run-log-agent-echo .run-log-action--bash-card,
-.work-session-details-compact .run-log-action--bash-card {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  margin-left: 0;
 }
 
 .run-log-bash-card.is-running .run-log-bash-card-title {
@@ -13254,16 +13261,6 @@ html[data-window-focused="true"] .settings-nav {
     grid-row: 3;
     height: 100%;
   }
-
-  .codex-main:not(.codex-main-landing)
-    .activity-feed:has(.activity-header)
-    .run-log
-    > .run-log-feed-entry
-    > .run-log-action--bash-card {
-    width: 100%;
-    max-width: 100%;
-    margin-left: 0;
-  }
 }
 
 .codex-main:not(.codex-main-landing) .run-log {
@@ -13273,6 +13270,9 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-feed-entry {
   margin: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry + .run-log-feed-entry {
@@ -13506,32 +13506,12 @@ html[data-window-focused="true"] .settings-nav {
   line-height: 1.55;
 }
 
-.codex-main:not(.codex-main-landing)
-  .activity-feed:has(.activity-header)
-  .run-log
-  > .run-log-feed-entry
-  > .run-log-action--bash-card {
-  width: calc(100% + var(--activity-title-max) + var(--activity-title-gap));
-  max-width: calc(100% + var(--activity-title-max) + var(--activity-title-gap));
-  margin-left: calc(-1 * (var(--activity-title-max) + var(--activity-title-gap)));
-}
-
-.codex-main:not(.codex-main-landing)
-  .activity-feed:has(.activity-header)
-  .subagent-run-row-wrap
-  .run-log-action--bash-card,
-.codex-main:not(.codex-main-landing)
-  .activity-feed:has(.activity-header)
-  .run-log-agent-echo
-  .run-log-action--bash-card,
-.codex-main:not(.codex-main-landing)
-  .activity-feed:has(.activity-header)
-  .work-session-details-compact
-  .run-log-action--bash-card {
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card {
   width: 100%;
   max-width: 100%;
   min-width: 0;
   margin-left: 0;
+  overflow: hidden;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-file-change-card {

@@ -1563,9 +1563,11 @@ function RunLogAction({
 
   if (bashRun) {
     return (
-      <div className="run-log-action run-log-action--bash-card">
+      <div className="run-log-action--bash-card">
         {showRoleLabel ? (
-          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+          <span className="run-log-action-role run-log-action--bash-card-role">
+            {formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}
+          </span>
         ) : null}
         <RunLogBashCard display={bashRun} {...(lifecycle && { lifecycle })} />
       </div>
