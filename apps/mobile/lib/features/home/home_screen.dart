@@ -147,18 +147,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (payload.canQuickJoin) {
       await _run(() async {
         final client = ref.read(ecoCenterClientProvider);
-        await client.quickJoinFromQr(payload);
+        final result = await client.quickJoinFromQr(payload);
         final creds = client.credentials;
         _serverUrlController.text = creds.serverUrl;
         _emailController.text = creds.userEmail ?? '';
-        ref.read(selectedDesktopIdProvider.notifier).state =
-            creds.selectedDesktopId;
         ref.read(serverReachableProvider.notifier).state = true;
         ref.invalidate(credentialsProvider);
-        ref.invalidate(bindingsProvider);
-        ref.invalidate(desktopPresenceProvider);
+        final selected = await _selectDesktop(result.desktopDeviceId);
         setState(() => _showManualSetup = false);
-        _showSnack('已连接 PC');
+        if (selected.online) {
+          _showSnack(
+            result.alreadyBound
+                ? '已打开 ${selected.name}'
+                : '已绑定 ${selected.name}',
+          );
+          if (mounted) context.go('/threads');
+        } else {
+          _showSnack('${selected.name} 已选择，但当前离线');
+        }
       });
       return;
     }
@@ -169,6 +175,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _wizardStep = SetupWizardStep.bindPc;
     });
     _showSnack('旧版二维码，请完成登录后绑定');
+  }
+
+  Future<_SelectedDesktopResult> _selectDesktop(String desktopId) async {
+    final client = ref.read(ecoCenterClientProvider);
+    ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
+    await client.setSelectedDesktop(desktopId);
+    if (client.status.state != EcoConnectionState.connected) {
+      await client.connect();
+    }
+    ref.invalidate(bindingsProvider);
+    ref.invalidate(desktopPresenceProvider);
+    await ref.read(desktopPresenceProvider.notifier).refresh(force: true);
+    final presence = ref.read(desktopPresenceProvider).valueOrNull ?? [];
+    final device = presence.where((entry) => entry.id == desktopId).firstOrNull;
+    return _SelectedDesktopResult(
+      name: formatDesktopLabel(device, desktopId),
+      online: device?.online ?? false,
+    );
   }
 
   @override
@@ -193,7 +217,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           return;
         }
         final recovery =
-            status.authRecovery ?? classifyCenterServerAuthError(status.lastError);
+            status.authRecovery ??
+            classifyCenterServerAuthError(status.lastError);
         if (!shouldStopCenterServerReconnect(recovery)) {
           return;
         }
@@ -225,14 +250,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onPressed: actionBusy ? null : () => context.pop(),
               )
             : _showManualSetup && !overview.setupComplete
-                ? IconButton(
-                    icon: const Icon(EcoIcons.qrScan),
-                    tooltip: '返回扫码',
-                    onPressed: actionBusy
-                        ? null
-                        : () => setState(() => _showManualSetup = false),
-                  )
-                : null,
+            ? IconButton(
+                icon: const Icon(EcoIcons.qrScan),
+                tooltip: '返回扫码',
+                onPressed: actionBusy
+                    ? null
+                    : () => setState(() => _showManualSetup = false),
+              )
+            : null,
         actions: [
           IconButton(
             onPressed: actionBusy ? null : _refreshStatus,
@@ -266,54 +291,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             )
           : _showManualSetup
-              ? SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SetupWizardProgress(
-                        current: currentStep,
-                        overview: overview,
-                        onStepTap: _goToStep,
-                      ),
-                      const SizedBox(height: 28),
-                      _ConnectStepHeader(step: currentStep, overview: overview),
-                      const SizedBox(height: 20),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        child: _buildStepContent(
-                          key: ValueKey(currentStep),
-                          step: currentStep,
-                          overview: overview,
-                          actionBusy: actionBusy,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _WizardNavBar(
-                        showBack: currentStep.index > 0,
-                        showNext: isSetupWizardStepDone(
-                              currentStep,
-                              overview,
-                            ) &&
-                            currentStep != SetupWizardStep.selectPc,
-                        showEnterApp: overview.setupComplete,
-                        busy: actionBusy,
-                        onBack: _goBack,
-                        onNext: () => _goNext(overview),
-                        onEnterApp: () => context.go('/threads'),
-                        inline: true,
-                      ),
-                    ],
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SetupWizardProgress(
+                    current: currentStep,
+                    overview: overview,
+                    onStepTap: _goToStep,
                   ),
-                )
-              : _ScanFirstView(
-                  busy: actionBusy,
-                  onScan: _openScanner,
-                  onManualSetup: () => setState(() {
-                    _showManualSetup = true;
-                    _wizardStep ??= resolveSetupWizardStep(overview);
-                  }),
-                ),
+                  const SizedBox(height: 28),
+                  _ConnectStepHeader(step: currentStep, overview: overview),
+                  const SizedBox(height: 20),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _buildStepContent(
+                      key: ValueKey(currentStep),
+                      step: currentStep,
+                      overview: overview,
+                      actionBusy: actionBusy,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _WizardNavBar(
+                    showBack: currentStep.index > 0,
+                    showNext:
+                        isSetupWizardStepDone(currentStep, overview) &&
+                        currentStep != SetupWizardStep.selectPc,
+                    showEnterApp: overview.setupComplete,
+                    busy: actionBusy,
+                    onBack: _goBack,
+                    onNext: () => _goNext(overview),
+                    onEnterApp: () => context.go('/threads'),
+                    inline: true,
+                  ),
+                ],
+              ),
+            )
+          : _ScanFirstView(
+              busy: actionBusy,
+              onScan: _openScanner,
+              onManualSetup: () => setState(() {
+                _showManualSetup = true;
+                _wizardStep ??= resolveSetupWizardStep(overview);
+              }),
+            ),
     );
   }
 
@@ -325,117 +348,125 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }) {
     return switch (step) {
       SetupWizardStep.server => KeyedSubtree(
-          key: key,
-          child: _ServerStep(
-            controller: _serverUrlController,
-            overview: overview,
-            busy: actionBusy,
-            onTest: () => _run(() async {
-              final client = ref.read(ecoCenterClientProvider);
-              final ok = await client.testConnection(_serverUrlController.text);
-              ref.read(serverReachableProvider.notifier).state = ok;
-              if (ok) {
-                await client.setServerUrl(_serverUrlController.text);
-                ref.invalidate(credentialsProvider);
-                _showSnack('服务器可达');
-              } else {
-                _showSnack('无法访问服务器，请检查地址与网络');
-              }
-            }),
-          ),
-        ),
-      SetupWizardStep.login => KeyedSubtree(
-          key: key,
-          child: _LoginStep(
-            overview: overview,
-            emailController: _emailController,
-            passwordController: _passwordController,
-            isRegister: _isRegister,
-            busy: actionBusy,
-            onToggleRegister: actionBusy
-                ? null
-                : (value) => setState(() => _isRegister = value),
-            onSubmit: () => _run(() async {
-              final client = ref.read(ecoCenterClientProvider);
-              if (_serverUrlController.text.trim().isEmpty) {
-                throw Exception('请先完成服务器配置');
-              }
+        key: key,
+        child: _ServerStep(
+          controller: _serverUrlController,
+          overview: overview,
+          busy: actionBusy,
+          onTest: () => _run(() async {
+            final client = ref.read(ecoCenterClientProvider);
+            final ok = await client.testConnection(_serverUrlController.text);
+            ref.read(serverReachableProvider.notifier).state = ok;
+            if (ok) {
               await client.setServerUrl(_serverUrlController.text);
-              if (_isRegister) {
-                await client.register(
-                  email: _emailController.text,
-                  password: _passwordController.text,
-                );
-              } else {
-                await client.login(
-                  email: _emailController.text,
-                  password: _passwordController.text,
-                );
-              }
-              await client.ensureMobileDevice();
-              await client.connect();
               ref.invalidate(credentialsProvider);
-              ref.invalidate(bindingsProvider);
-              ref.invalidate(desktopPresenceProvider);
-              _showSnack('登录成功，WebSocket 已连接');
-            }),
-            onReconnect: () => _run(() async {
-              await ref.read(ecoCenterClientProvider).connect();
-              _showSnack('已尝试重新连接 WebSocket');
-            }),
-          ),
+              _showSnack('服务器可达');
+            } else {
+              _showSnack('无法访问服务器，请检查地址与网络');
+            }
+          }),
         ),
-      SetupWizardStep.bindPc => KeyedSubtree(
-          key: key,
-          child: _BindPcStep(
-            pairCodeController: _pairCodeController,
-            overview: overview,
-            busy: actionBusy,
-            onScan: () async {
-              final payload = await Navigator.of(context).push<PairingQrPayload>(
-                MaterialPageRoute(builder: (_) => const PairingScanScreen()),
+      ),
+      SetupWizardStep.login => KeyedSubtree(
+        key: key,
+        child: _LoginStep(
+          overview: overview,
+          emailController: _emailController,
+          passwordController: _passwordController,
+          isRegister: _isRegister,
+          busy: actionBusy,
+          onToggleRegister: actionBusy
+              ? null
+              : (value) => setState(() => _isRegister = value),
+          onSubmit: () => _run(() async {
+            final client = ref.read(ecoCenterClientProvider);
+            if (_serverUrlController.text.trim().isEmpty) {
+              throw Exception('请先完成服务器配置');
+            }
+            await client.setServerUrl(_serverUrlController.text);
+            if (_isRegister) {
+              await client.register(
+                email: _emailController.text,
+                password: _passwordController.text,
               );
-              if (payload != null) {
-                _pairCodeController.text = payload.code;
-              }
-            },
-            onBind: () => _run(() async {
-              final client = ref.read(ecoCenterClientProvider);
-              await client.claimPairing(_pairCodeController.text);
-              ref.invalidate(bindingsProvider);
-              ref.invalidate(desktopPresenceProvider);
-              _pairCodeController.clear();
-              _showSnack('绑定成功');
-            }),
-          ),
+            } else {
+              await client.login(
+                email: _emailController.text,
+                password: _passwordController.text,
+              );
+            }
+            await client.ensureMobileDevice();
+            await client.connect();
+            ref.invalidate(credentialsProvider);
+            ref.invalidate(bindingsProvider);
+            ref.invalidate(desktopPresenceProvider);
+            _showSnack('登录成功，WebSocket 已连接');
+          }),
+          onReconnect: () => _run(() async {
+            await ref.read(ecoCenterClientProvider).connect();
+            _showSnack('已尝试重新连接 WebSocket');
+          }),
         ),
+      ),
+      SetupWizardStep.bindPc => KeyedSubtree(
+        key: key,
+        child: _BindPcStep(
+          pairCodeController: _pairCodeController,
+          overview: overview,
+          busy: actionBusy,
+          onScan: () async {
+            final payload = await Navigator.of(context).push<PairingQrPayload>(
+              MaterialPageRoute(builder: (_) => const PairingScanScreen()),
+            );
+            if (payload != null) {
+              await _handleScanResult(payload);
+            }
+          },
+          onBind: () => _run(() async {
+            final client = ref.read(ecoCenterClientProvider);
+            final binding = await client.claimPairing(_pairCodeController.text);
+            _pairCodeController.clear();
+            final selected = await _selectDesktop(binding.desktopDeviceId);
+            if (selected.online) {
+              _showSnack('已绑定 ${selected.name}');
+              if (mounted) context.go('/threads');
+            } else {
+              _showSnack('${selected.name} 已绑定，但当前离线');
+            }
+          }),
+        ),
+      ),
       SetupWizardStep.selectPc => KeyedSubtree(
-          key: key,
-          child: _SelectPcStep(
-            overview: overview,
-            busy: actionBusy,
-            onSelect: (desktopId, name, online) async {
-              ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
-              await ref
-                  .read(ecoCenterClientProvider)
-                  .setSelectedDesktop(desktopId);
-              if (online) {
-                _showSnack('已选择 $name');
-              } else {
-                _showSnack('$name 当前离线');
-              }
-            },
-          ),
+        key: key,
+        child: _SelectPcStep(
+          overview: overview,
+          busy: actionBusy,
+          onSelect: (desktopId, name, online) async {
+            ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
+            await ref
+                .read(ecoCenterClientProvider)
+                .setSelectedDesktop(desktopId);
+            if (online) {
+              _showSnack('已选择 $name');
+            } else {
+              _showSnack('$name 当前离线');
+            }
+          },
         ),
+      ),
     };
   }
 }
 
+class _SelectedDesktopResult {
+  const _SelectedDesktopResult({required this.name, required this.online});
+
+  final String name;
+  final bool online;
+}
+
 class _ConnectStepHeader extends StatelessWidget {
-  const _ConnectStepHeader({
-    required this.step,
-    required this.overview,
-  });
+  const _ConnectStepHeader({required this.step, required this.overview});
 
   final SetupWizardStep step;
   final SetupOverview overview;
@@ -450,18 +481,18 @@ class _ConnectStepHeader extends StatelessWidget {
         Text(
           step.title,
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.3,
-              ),
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
         ),
         if (!done) ...[
           const SizedBox(height: 6),
           Text(
             step.subtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: ecoColors(context).textMuted,
-                  height: 1.4,
-                ),
+              color: ecoColors(context).textMuted,
+              height: 1.4,
+            ),
           ),
         ],
       ],
@@ -525,7 +556,9 @@ class _WizardNavBar extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: ecoColors(context).borderSidebar)),
+        border: Border(
+          top: BorderSide(color: ecoColors(context).borderSidebar),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -564,7 +597,10 @@ class _ServerStep extends StatelessWidget {
             labelText: 'Center Server',
             hintText: 'http://192.168.1.10:3128',
             suffixIcon: serverStep.state == SetupStepState.done
-                ? Icon(EcoIcons.checkCircle, color: ecoColors(context).statusAllowText)
+                ? Icon(
+                    EcoIcons.checkCircle,
+                    color: ecoColors(context).statusAllowText,
+                  )
                 : null,
           ),
           keyboardType: TextInputType.url,
@@ -575,8 +611,8 @@ class _ServerStep extends StatelessWidget {
           Text(
             serverStep.hint!,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: ecoColors(context).statusDenyText,
-                ),
+              color: ecoColors(context).statusDenyText,
+            ),
           ),
         ],
         const SizedBox(height: 16),
@@ -632,8 +668,8 @@ class _LoginStep extends ConsumerWidget {
             Text(
               wsStep.hint ?? '连接异常',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: ecoColors(context).statusDenyText,
-                  ),
+                color: ecoColors(context).statusDenyText,
+              ),
             ),
             const SizedBox(height: 8),
             OutlinedButton(
@@ -761,7 +797,7 @@ class _SelectPcStep extends ConsumerWidget {
   final SetupOverview overview;
   final bool busy;
   final Future<void> Function(String desktopId, String name, bool online)
-      onSelect;
+  onSelect;
   final bool compact;
 
   @override
@@ -784,18 +820,22 @@ class _SelectPcStep extends ConsumerWidget {
         final presence = presenceAsync.valueOrNull ?? [];
         final presenceLoading =
             presenceAsync.isLoading && presenceAsync.valueOrNull == null;
-        final onlineIds = presence.where((d) => d.online).map((d) => d.id).toSet();
+        final onlineIds = presence
+            .where((d) => d.online)
+            .map((d) => d.id)
+            .toSet();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: active.map((binding) {
             final desktopId = binding.desktopDeviceId;
-            final stableOnline = ref.watch(stableDesktopOnlineProvider(desktopId));
+            final stableOnline = ref.watch(
+              stableDesktopOnlineProvider(desktopId),
+            );
             final online = presenceLoading
                 ? stableOnline
                 : stableOnline ?? onlineIds.contains(desktopId);
-            final device =
-                presence.where((d) => d.id == desktopId).firstOrNull;
+            final device = presence.where((d) => d.id == desktopId).firstOrNull;
             final name = formatDesktopLabel(device, desktopId);
             final selected = selectedDesktop == desktopId;
             return Padding(
@@ -837,7 +877,9 @@ class _PcDeviceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? ecoColors(context).accentSoft : ecoColors(context).cardSurface,
+      color: selected
+          ? ecoColors(context).accentSoft
+          : ecoColors(context).cardSurface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -857,7 +899,9 @@ class _PcDeviceTile extends StatelessWidget {
               Icon(
                 EcoIcons.desktop,
                 size: 20,
-                color: selected ? ecoColors(context).accentText : ecoColors(context).textSecondary,
+                color: selected
+                    ? ecoColors(context).accentText
+                    : ecoColors(context).textSecondary,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -866,9 +910,8 @@ class _PcDeviceTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w500,
-                      ),
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
                 ),
               ),
               Container(
@@ -877,7 +920,9 @@ class _PcDeviceTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: switch (online) {
-                    null => ecoColors(context).textMuted.withValues(alpha: 0.55),
+                    null => ecoColors(
+                      context,
+                    ).textMuted.withValues(alpha: 0.55),
                     true => ecoColors(context).online,
                     false => ecoColors(context).offline,
                   },
@@ -885,7 +930,11 @@ class _PcDeviceTile extends StatelessWidget {
               ),
               if (selected) ...[
                 const SizedBox(width: 10),
-                Icon(EcoIcons.check, size: 18, color: ecoColors(context).accentText),
+                Icon(
+                  EcoIcons.check,
+                  size: 18,
+                  color: ecoColors(context).accentText,
+                ),
               ],
             ],
           ),
@@ -896,10 +945,7 @@ class _PcDeviceTile extends StatelessWidget {
 }
 
 class _AccountStatusRow extends StatelessWidget {
-  const _AccountStatusRow({
-    required this.email,
-    required this.connected,
-  });
+  const _AccountStatusRow({required this.email, required this.connected});
 
   final String email;
   final bool connected;
@@ -918,7 +964,9 @@ class _AccountStatusRow extends StatelessWidget {
           Icon(
             connected ? EcoIcons.checkCircle : EcoIcons.user,
             size: 18,
-            color: connected ? ecoColors(context).statusAllowText : ecoColors(context).textSecondary,
+            color: connected
+                ? ecoColors(context).statusAllowText
+                : ecoColors(context).textSecondary,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -978,17 +1026,17 @@ class _ScanFirstView extends StatelessWidget {
               '扫描 PC 端配对码',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              ),
             ),
             const SizedBox(height: 10),
             Text(
               '在 Desktop「连接」页生成二维码',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: ecoColors(context).textMuted,
-                  ),
+                color: ecoColors(context).textMuted,
+              ),
             ),
             const Spacer(flex: 3),
             FilledButton(
@@ -1024,7 +1072,7 @@ class _ReadyConnectionView extends ConsumerWidget {
   final VoidCallback onScan;
   final VoidCallback onEnterApp;
   final Future<void> Function(String desktopId, String name, bool online)
-      onSelectPc;
+  onSelectPc;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1064,7 +1112,9 @@ class _ReadyConnectionView extends ConsumerWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: switch (selectedOnline) {
-                        null => ecoColors(context).textMuted.withValues(alpha: 0.55),
+                        null => ecoColors(
+                          context,
+                        ).textMuted.withValues(alpha: 0.55),
                         true => ecoColors(context).online,
                         false => ecoColors(context).offline,
                       },
@@ -1077,8 +1127,8 @@ class _ReadyConnectionView extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -1125,9 +1175,9 @@ class _StepBlockedHint extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: ecoColors(context).textMuted,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: ecoColors(context).textMuted),
       ),
     );
   }

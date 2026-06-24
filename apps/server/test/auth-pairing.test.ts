@@ -132,6 +132,131 @@ test("joins pairing through bootstrap token without prior mobile auth", async ()
   await closeTestMongoStore(store);
 });
 
+test("joins pairing with an existing mobile device without registering another mobile", async () => {
+  const store = await createTestMongoStore("auth_pairing_join_existing_mobile");
+  const clock = fixedClock("2026-01-01T00:00:00.000Z");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+    now: clock,
+  });
+  const devices = new DeviceService({ store, now: clock });
+  const pairing = new PairingService({
+    store,
+    pairingTtlSeconds: 300,
+    devices,
+    auth,
+    now: clock,
+  });
+
+  const user = await auth.registerUser({
+    email: "existing@example.com",
+    password: "correct horse battery staple",
+  });
+  const desktop = await devices.registerDevice({
+    userId: user.id,
+    kind: "desktop",
+    name: "Studio",
+  });
+  const mobile = await devices.registerDevice({
+    userId: user.id,
+    kind: "mobile",
+    name: "iPhone",
+  });
+  const firstPairing = await pairing.createPairingSession({
+    userId: user.id,
+    desktopDeviceId: desktop.device.id,
+  });
+  const firstJoin = await pairing.joinExistingMobilePairingSession({
+    userId: user.id,
+    mobileDeviceId: mobile.device.id,
+    code: firstPairing.code,
+    token: firstPairing.bootstrapToken,
+  });
+  const secondPairing = await pairing.createPairingSession({
+    userId: user.id,
+    desktopDeviceId: desktop.device.id,
+  });
+  const secondJoin = await pairing.joinExistingMobilePairingSession({
+    userId: user.id,
+    mobileDeviceId: mobile.device.id,
+    code: secondPairing.code,
+    token: secondPairing.bootstrapToken,
+  });
+
+  expect(firstJoin.device.id).toBe(mobile.device.id);
+  expect(secondJoin.device.id).toBe(mobile.device.id);
+  expect(secondJoin.binding.id).toBe(firstJoin.binding.id);
+  const userDevices = await devices.listDevices(user.id);
+  expect(userDevices.filter((device) => device.kind === "mobile")).toHaveLength(1);
+
+  await closeTestMongoStore(store);
+});
+
+test("existing mobile join does not consume another user's pairing code", async () => {
+  const store = await createTestMongoStore("auth_pairing_join_existing_wrong_user");
+  const clock = fixedClock("2026-01-01T00:00:00.000Z");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+    now: clock,
+  });
+  const devices = new DeviceService({ store, now: clock });
+  const pairing = new PairingService({
+    store,
+    pairingTtlSeconds: 300,
+    devices,
+    auth,
+    now: clock,
+  });
+
+  const owner = await auth.registerUser({
+    email: "owner-existing@example.com",
+    password: "correct horse battery staple",
+  });
+  const other = await auth.registerUser({
+    email: "other-existing@example.com",
+    password: "correct horse battery staple",
+  });
+  const desktop = await devices.registerDevice({
+    userId: owner.id,
+    kind: "desktop",
+    name: "Studio",
+  });
+  const otherMobile = await devices.registerDevice({
+    userId: other.id,
+    kind: "mobile",
+    name: "Other phone",
+  });
+  const createdPairing = await pairing.createPairingSession({
+    userId: owner.id,
+    desktopDeviceId: desktop.device.id,
+  });
+
+  await expect(
+    pairing.joinExistingMobilePairingSession({
+      userId: other.id,
+      mobileDeviceId: otherMobile.device.id,
+      code: createdPairing.code,
+      token: createdPairing.bootstrapToken,
+    }),
+  ).rejects.toThrow("Pairing code is invalid or expired.");
+
+  const joined = await pairing.joinPairingSession({
+    code: createdPairing.code,
+    token: createdPairing.bootstrapToken,
+    deviceName: "Owner phone",
+  });
+  expect(joined.user.id).toBe(owner.id);
+  expect(joined.desktopDeviceId).toBe(desktop.device.id);
+
+  await closeTestMongoStore(store);
+});
+
 test("rejects join when bootstrap token does not match", async () => {
   const store = await createTestMongoStore("auth_pairing_join_bad_token");
   const clock = fixedClock("2026-01-01T00:00:00.000Z");

@@ -195,10 +195,7 @@ class EcoCenterClient {
       path: '/v1/devices/${_credentials.deviceId}',
       method: 'PATCH',
       bearerToken: accessToken,
-      body: {
-        'name': profile.displayName,
-        'metadata': profile.toMetadata(),
-      },
+      body: {'name': profile.displayName, 'metadata': profile.toMetadata()},
     );
     final device = PublicDevice.fromJson(response['device'] as JsonMap);
     _credentials = _credentials.copyWith(deviceName: device.name);
@@ -219,50 +216,77 @@ class EcoCenterClient {
     return DeviceBinding.fromJson(response['binding'] as JsonMap);
   }
 
-  Future<DeviceBinding> quickJoinFromQr(PairingQrPayload payload) async {
+  Future<QuickPairingResult> quickJoinFromQr(PairingQrPayload payload) async {
     if (!payload.canQuickJoin) {
-      throw EcoCenterException(
-        'QR 码缺少服务器地址或授权信息，请使用 PC 最新版生成的二维码。',
-      );
+      throw EcoCenterException('QR 码缺少服务器地址或授权信息，请使用 PC 最新版生成的二维码。');
     }
     final serverUrl = normalizeCenterServerHttpUrl(payload.serverUrl!);
     final reachable = await testConnection(serverUrl);
     if (!reachable) {
       throw EcoCenterException('无法访问服务器，请检查地址与网络');
     }
-    final profile = await DeviceProfile.collect();
+    final sameServer =
+        _credentials.serverUrl.trim().isNotEmpty &&
+        normalizeCenterServerHttpUrl(_credentials.serverUrl) == serverUrl;
+    final reuseCurrentMobile = sameServer && _credentials.hasDeviceCredentials;
+    final profile = reuseCurrentMobile ? null : await DeviceProfile.collect();
+    final existingBindings = reuseCurrentMobile
+        ? await listBindings()
+        : const <DeviceBinding>[];
+    final accessToken = reuseCurrentMobile
+        ? await _ensureDeviceAccessToken()
+        : null;
     final response = await _requestJson(
       serverUrl: serverUrl,
       path: '/v1/pairing/join',
       method: 'POST',
+      bearerToken: accessToken,
       body: {
         'code': payload.code,
         'token': payload.bootstrapToken,
-        'deviceName': profile.displayName,
-        'metadata': profile.toMetadata(),
+        if (profile != null) 'deviceName': profile.displayName,
+        if (profile != null) 'metadata': profile.toMetadata(),
       },
     );
     final user = PublicUser.fromJson(response['user'] as JsonMap);
     final device = PublicDevice.fromJson(response['device'] as JsonMap);
-    final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
     final binding = DeviceBinding.fromJson(response['binding'] as JsonMap);
     final desktopDeviceId = response['desktopDeviceId'] as String;
-    _credentials = AppCredentials(
-      serverUrl: serverUrl,
-      userEmail: user.email,
-      userDisplayName: user.displayName,
-      deviceId: device.id,
-      deviceSecret: response['deviceSecret'] as String,
-      deviceName: device.name,
-      deviceRefreshToken: tokens.refreshToken,
-      deviceAccessToken: tokens.accessToken,
-      deviceAccessTokenExpiresAt: tokens.expiresAt,
-      selectedDesktopId: desktopDeviceId,
+    final alreadyBound = existingBindings.any(
+      (item) => item.isActive && item.desktopDeviceId == desktopDeviceId,
     );
+    if (reuseCurrentMobile) {
+      _credentials = _credentials.copyWith(
+        serverUrl: serverUrl,
+        userEmail: user.email,
+        userDisplayName: user.displayName,
+        deviceName: device.name,
+        selectedDesktopId: desktopDeviceId,
+      );
+    } else {
+      final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
+      _credentials = AppCredentials(
+        serverUrl: serverUrl,
+        userEmail: user.email,
+        userDisplayName: user.displayName,
+        deviceId: device.id,
+        deviceSecret: response['deviceSecret'] as String,
+        deviceName: device.name,
+        deviceRefreshToken: tokens.refreshToken,
+        deviceAccessToken: tokens.accessToken,
+        deviceAccessTokenExpiresAt: tokens.expiresAt,
+        selectedDesktopId: desktopDeviceId,
+      );
+    }
     await _store.save(_credentials);
     _intentionallyStopped = false;
     await _connectOnce();
-    return binding;
+    return QuickPairingResult(
+      binding: binding,
+      desktopDeviceId: desktopDeviceId,
+      reusedMobileDevice: reuseCurrentMobile,
+      alreadyBound: alreadyBound,
+    );
   }
 
   Future<List<DeviceBinding>> listBindings({
@@ -446,7 +470,8 @@ class EcoCenterClient {
 
       await channel.ready.timeout(
         const Duration(seconds: 15),
-        onTimeout: () => throw EcoCenterException('WebSocket connection timed out.'),
+        onTimeout: () =>
+            throw EcoCenterException('WebSocket connection timed out.'),
       );
       if (_intentionallyStopped) {
         throw EcoCenterException('Connection aborted.');
@@ -470,7 +495,8 @@ class EcoCenterClient {
           authRecovery: recovery,
         ),
       );
-      if (!_intentionallyStopped && !shouldStopCenterServerReconnect(recovery)) {
+      if (!_intentionallyStopped &&
+          !shouldStopCenterServerReconnect(recovery)) {
         _scheduleReconnect();
       }
       rethrow;
@@ -592,7 +618,10 @@ class EcoCenterClient {
         );
         return refreshed.accessToken;
       } catch (error) {
-        throw _toAuthException(error, fallbackRecovery: CenterServerAuthRecovery.relogin);
+        throw _toAuthException(
+          error,
+          fallbackRecovery: CenterServerAuthRecovery.relogin,
+        );
       }
     }
     throw EcoCenterException(
@@ -796,6 +825,20 @@ class PairingQrPayload {
       serverUrl!.trim().isNotEmpty &&
       bootstrapToken != null &&
       bootstrapToken!.trim().isNotEmpty;
+}
+
+class QuickPairingResult {
+  const QuickPairingResult({
+    required this.binding,
+    required this.desktopDeviceId,
+    required this.reusedMobileDevice,
+    required this.alreadyBound,
+  });
+
+  final DeviceBinding binding;
+  final String desktopDeviceId;
+  final bool reusedMobileDevice;
+  final bool alreadyBound;
 }
 
 PairingQrPayload parsePairingQrPayload(String raw) {

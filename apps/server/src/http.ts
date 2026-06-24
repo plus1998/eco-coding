@@ -371,6 +371,7 @@ export async function handleEcoHttpRoute(input: {
   if (request.method === "POST" && pathname === "/v1/pairing/join") {
     const body = await readJsonObject(request);
     const code = requireString(body, "code");
+    const claims = await optionalBearer(request, auth);
     await consumeHttpRateLimit({
       rateLimiter,
       request,
@@ -379,6 +380,24 @@ export async function handleEcoHttpRoute(input: {
       subjectParts: [code],
     });
     const metadata = readOptionalDeviceMetadata(body.metadata);
+    if (claims) {
+      if (claims.subjectKind !== "device" || claims.deviceKind !== "mobile") {
+        throw new Error("Mobile device token is required.");
+      }
+      const joined = await pairing.joinExistingMobilePairingSession({
+        userId: claims.userId,
+        mobileDeviceId: claims.deviceId,
+        code,
+        token: requireString(body, "token"),
+      });
+      return json({
+        user: toPublicUser(joined.user),
+        device: toPublicDevice(joined.device),
+        binding: toPublicDeviceBinding(joined.binding),
+        desktopDeviceId: joined.desktopDeviceId,
+        reusedDevice: true,
+      });
+    }
     const joined = await pairing.joinPairingSession({
       code,
       token: requireString(body, "token"),
@@ -538,6 +557,14 @@ async function requireBearer(request: Request, auth: AuthService): Promise<Acces
   const token = extractBearerToken(request);
   if (!token) {
     throw new Error("Missing bearer token.");
+  }
+  return auth.verifyBearerToken(token);
+}
+
+async function optionalBearer(request: Request, auth: AuthService): Promise<AccessTokenClaims | undefined> {
+  const token = extractBearerToken(request);
+  if (!token) {
+    return undefined;
   }
   return auth.verifyBearerToken(token);
 }

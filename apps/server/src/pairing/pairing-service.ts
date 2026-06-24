@@ -35,6 +35,13 @@ export interface JoinPairingSessionResult {
   desktopDeviceId: string;
 }
 
+export interface JoinExistingMobilePairingSessionResult {
+  user: UserRecord;
+  device: DeviceRecord;
+  binding: DeviceBindingRecord;
+  desktopDeviceId: string;
+}
+
 export class PairingService {
   private readonly store: MongoStore;
   private readonly pairingTtlSeconds: number;
@@ -163,6 +170,54 @@ export class PairingService {
       device: registered.device,
       deviceSecret: registered.deviceSecret,
       tokens,
+      binding,
+      desktopDeviceId: desktop.id,
+    };
+  }
+
+  async joinExistingMobilePairingSession(input: {
+    userId: string;
+    mobileDeviceId: string;
+    code: string;
+    token: string;
+  }): Promise<JoinExistingMobilePairingSessionResult> {
+    const normalizedCode = input.code.trim().toUpperCase();
+    const token = input.token.trim();
+    if (!normalizedCode || !token) {
+      throw new Error("Pairing code and token are required.");
+    }
+    const mobile = await this.store.findDeviceById(input.mobileDeviceId);
+    if (!mobile || mobile.userId !== input.userId || mobile.kind !== "mobile" || mobile.disabledAt) {
+      throw new Error("Mobile device is not active.");
+    }
+    const session = await this.store.claimPairingSessionByCodeAndBootstrapTokenHash({
+      codeHash: await sha256Hex(normalizedCode),
+      bootstrapTokenHash: await sha256Hex(token),
+      userId: input.userId,
+      now: this.nowIso(),
+    });
+    if (!session) {
+      throw new Error("Pairing code is invalid or expired.");
+    }
+    const desktop = await this.store.findDeviceById(session.desktopDeviceId);
+    if (!desktop || desktop.userId !== session.userId || desktop.kind !== "desktop" || desktop.disabledAt) {
+      throw new Error("Desktop device is not active.");
+    }
+    const user = await this.store.findUserById(session.userId);
+    if (!user || user.disabledAt) {
+      throw new Error("User account is not active.");
+    }
+    const binding = await this.store.createDeviceBinding({
+      id: createId("bind"),
+      userId: input.userId,
+      desktopDeviceId: desktop.id,
+      mobileDeviceId: mobile.id,
+      capabilities: defaultBindingCapabilities(),
+      now: this.nowIso(),
+    });
+    return {
+      user,
+      device: mobile,
       binding,
       desktopDeviceId: desktop.id,
     };

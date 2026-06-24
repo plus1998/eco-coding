@@ -354,6 +354,7 @@ export class MongoStore {
   async claimPairingSessionByCodeAndBootstrapTokenHash(input: {
     codeHash: string;
     bootstrapTokenHash: string;
+    userId?: string;
     now: string;
   }): Promise<PairingSessionRecord | undefined> {
     const nowDate = toDate(input.now);
@@ -361,6 +362,7 @@ export class MongoStore {
       {
         codeHash: input.codeHash,
         bootstrapTokenHash: input.bootstrapTokenHash,
+        ...(input.userId ? { userId: input.userId } : {}),
         claimedAt: null,
         expiresAt: { $gt: nowDate },
       },
