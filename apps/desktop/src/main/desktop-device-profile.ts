@@ -19,3 +19,7 @@ export function desktopDeviceMetadata(profile: DesktopDeviceProfile): Record<str
     platform: profile.platform,
   };
 }
+
+export function defaultDesktopDeviceName(profile: DesktopDeviceProfile = collectDesktopDeviceProfile()): string {
+  return profile.hostname.trim() || "Eco Desktop";
+}

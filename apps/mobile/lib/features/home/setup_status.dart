@@ -37,7 +37,17 @@ class SetupOverview {
   final bool readyForThreads;
   final String? selectedDesktopId;
 
-  /// Stable gate: logged in, device registered, bound to a PC, and selected PC is visible.
+  /// Logged in and has at least one active PC binding.
+  bool get hasActiveBinding {
+    if (steps.length < 5) return false;
+    return steps[1].state == SetupStepState.done &&
+        steps[3].state == SetupStepState.done;
+  }
+
+  /// Show bound PC list on the connect screen (independent of online status).
+  bool get showPcPicker => hasActiveBinding;
+
+  /// Stable gate: logged in, device registered, bound to a PC, and a bound PC is selected.
   bool get setupComplete {
     if (selectedDesktopId == null || selectedDesktopId!.isEmpty) return false;
     if (steps.length < 5) return false;
@@ -75,13 +85,16 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       bindingsAsync.isLoading && bindings == null && loggedIn && deviceRegistered;
 
   String? selectedName;
-  bool selectedOnline = false;
-  if (effectiveSelectedDesktopId != null && presence != null) {
-    for (final device in presence) {
-      if (device.id == effectiveSelectedDesktopId) {
-        selectedName = formatDesktopLabel(device, effectiveSelectedDesktopId);
-        selectedOnline = device.online;
-        break;
+  bool? selectedOnline;
+  if (effectiveSelectedDesktopId != null) {
+    selectedName = shortenDeviceId(effectiveSelectedDesktopId);
+    if (presence != null) {
+      for (final device in presence) {
+        if (device.id == effectiveSelectedDesktopId) {
+          selectedName = formatDesktopLabel(device, effectiveSelectedDesktopId);
+          selectedOnline = device.online;
+          break;
+        }
       }
     }
   }
@@ -124,20 +137,17 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   }
 
   SetupStepState selectStepState() {
+    if (!hasBinding && !bindingsReloading) {
+      return effectiveSelectedDesktopId == null
+          ? SetupStepState.pending
+          : SetupStepState.inProgress;
+    }
     if (effectiveSelectedDesktopId == null) {
-      if (!hasBinding && !bindingsReloading) return SetupStepState.pending;
       return SetupStepState.inProgress;
     }
     if (!activeBindings.any((binding) => binding.desktopDeviceId == effectiveSelectedDesktopId)) {
       return bindingsReloading ? SetupStepState.inProgress : SetupStepState.pending;
     }
-    if (presenceAsync.isLoading && presence == null) {
-      return SetupStepState.inProgress;
-    }
-    if (presence == null) return SetupStepState.inProgress;
-    final matched =
-        presence.where((device) => device.id == effectiveSelectedDesktopId);
-    if (matched.isEmpty) return SetupStepState.inProgress;
     return SetupStepState.done;
   }
 
@@ -186,14 +196,12 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       title: '选择操控的 PC',
       state: selectStepState(),
       subtitle: effectiveSelectedDesktopId != null
-          ? presenceAsync.isLoading && presence == null
+          ? selectedOnline == null
               ? '${selectedName ?? effectiveSelectedDesktopId} · 检测中…'
-              : '${selectedName ?? effectiveSelectedDesktopId}${selectedOnline ? ' · 在线' : ' · 离线'}'
+              : '${selectedName ?? effectiveSelectedDesktopId}${selectedOnline == true ? ' · 在线' : ' · 离线'}'
           : null,
       hint: effectiveSelectedDesktopId != null &&
-              presence != null &&
-              !presenceAsync.isLoading &&
-              !selectedOnline
+              selectedOnline == false
           ? 'Desktop 当前离线，请确认 Desktop 已连接同一 Server'
           : null,
     ),
@@ -206,7 +214,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
 
   final readyForThreads = gateComplete &&
       wsState == EcoConnectionState.connected &&
-      selectedOnline;
+      selectedOnline == true;
 
   return SetupOverview(
     steps: steps,

@@ -229,7 +229,7 @@ class EcoCenterClient {
         _credentials.serverUrl.trim().isNotEmpty &&
         normalizeCenterServerHttpUrl(_credentials.serverUrl) == serverUrl;
     final reuseCurrentMobile = sameServer && _credentials.hasDeviceCredentials;
-    final profile = reuseCurrentMobile ? null : await DeviceProfile.collect();
+    final profile = await DeviceProfile.collect();
     final existingBindings = reuseCurrentMobile
         ? await listBindings()
         : const <DeviceBinding>[];
@@ -244,8 +244,8 @@ class EcoCenterClient {
       body: {
         'code': payload.code,
         'token': payload.bootstrapToken,
-        if (profile != null) 'deviceName': profile.displayName,
-        if (profile != null) 'metadata': profile.toMetadata(),
+        'deviceName': profile.displayName,
+        'metadata': profile.toMetadata(),
       },
     );
     final user = PublicUser.fromJson(response['user'] as JsonMap);
@@ -281,6 +281,13 @@ class EcoCenterClient {
     await _store.save(_credentials);
     _intentionallyStopped = false;
     await _connectOnce();
+    if (reuseCurrentMobile) {
+      try {
+        await syncDeviceProfile();
+      } catch (_) {
+        // Profile sync is best-effort after quick pairing.
+      }
+    }
     return QuickPairingResult(
       binding: binding,
       desktopDeviceId: desktopDeviceId,

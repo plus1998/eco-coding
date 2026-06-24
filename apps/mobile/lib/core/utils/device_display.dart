@@ -18,11 +18,59 @@ String threadSessionSubtitleLabel({
 }
 
 String formatDesktopLabel(PublicDevice? device, String deviceId) {
-  final hostname = device?.metadata.hostname?.trim();
-  if (hostname != null && hostname.isNotEmpty) {
-    return hostname;
+  return formatDeviceLabel(device, deviceId, kind: 'desktop');
+}
+
+String formatMobileLabel(PublicDevice? device, String deviceId) {
+  return formatDeviceLabel(device, deviceId, kind: 'mobile');
+}
+
+String formatDeviceLabel(
+  PublicDevice? device,
+  String deviceId, {
+  required String kind,
+}) {
+  final metadata = device?.metadata;
+  if (kind == 'desktop') {
+    final hostname = metadata?.hostname?.trim();
+    if (hostname != null && hostname.isNotEmpty) {
+      return hostname;
+    }
   }
+
+  final model = metadata?.model?.trim();
+  if (model != null && model.isNotEmpty) {
+    return model;
+  }
+
+  final name = device?.name.trim();
+  if (name != null && name.isNotEmpty && !_isGenericDeviceName(name, kind: kind)) {
+    return name;
+  }
+
   return shortenDeviceId(deviceId);
+}
+
+String? formatDeviceDetail(PublicDevice? device, String deviceId) {
+  final parts = <String>[];
+  final ipAddress = device?.metadata.ipAddress?.trim();
+  final platform = device?.metadata.platform?.trim();
+  if (ipAddress != null && ipAddress.isNotEmpty) {
+    parts.add(ipAddress);
+  }
+  if (platform != null && platform.isNotEmpty) {
+    parts.add(platform);
+  }
+  parts.add(shortenDeviceId(deviceId));
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
+bool _isGenericDeviceName(String name, {required String kind}) {
+  final normalized = name.trim().toLowerCase();
+  if (kind == 'mobile') {
+    return normalized == 'eco mobile' || normalized == 'ecomobile';
+  }
+  return normalized == 'eco desktop' || normalized == 'ecodesktop';
 }
 
 String shortenDeviceId(String deviceId) {

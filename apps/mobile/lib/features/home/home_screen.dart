@@ -272,7 +272,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: overview.setupComplete
+      body: overview.showPcPicker
           ? _ReadyConnectionView(
               overview: overview,
               busy: actionBusy,
@@ -817,6 +817,14 @@ class _SelectPcStep extends ConsumerWidget {
           return const _StepBlockedHint(text: '暂无绑定设备');
         }
 
+        final seenDesktopIds = <String>{};
+        final uniqueBindings = <DeviceBinding>[];
+        for (final binding in active) {
+          if (seenDesktopIds.add(binding.desktopDeviceId)) {
+            uniqueBindings.add(binding);
+          }
+        }
+
         final presence = presenceAsync.valueOrNull ?? [];
         final presenceLoading =
             presenceAsync.isLoading && presenceAsync.valueOrNull == null;
@@ -827,7 +835,7 @@ class _SelectPcStep extends ConsumerWidget {
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: active.map((binding) {
+          children: uniqueBindings.map((binding) {
             final desktopId = binding.desktopDeviceId;
             final stableOnline = ref.watch(
               stableDesktopOnlineProvider(desktopId),
@@ -837,16 +845,18 @@ class _SelectPcStep extends ConsumerWidget {
                 : stableOnline ?? onlineIds.contains(desktopId);
             final device = presence.where((d) => d.id == desktopId).firstOrNull;
             final name = formatDesktopLabel(device, desktopId);
+            final detail = formatDeviceDetail(device, desktopId);
             final selected = selectedDesktop == desktopId;
             return Padding(
               padding: EdgeInsets.only(bottom: compact ? 6 : 8),
               child: _PcDeviceTile(
                 name: name,
+                detail: detail,
                 online: online,
                 selected: selected,
-                onTap: busy || online == null
+                onTap: busy
                     ? null
-                    : () => onSelect(desktopId, name, online),
+                    : () => onSelect(desktopId, name, online ?? false),
               ),
             );
           }).toList(),
@@ -864,12 +874,14 @@ class _SelectPcStep extends ConsumerWidget {
 class _PcDeviceTile extends StatelessWidget {
   const _PcDeviceTile({
     required this.name,
+    this.detail,
     required this.online,
     required this.selected,
     this.onTap,
   });
 
   final String name;
+  final String? detail;
   final bool? online;
   final bool selected;
   final VoidCallback? onTap;
@@ -905,13 +917,27 @@ class _PcDeviceTile extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                    if (detail != null)
+                      Text(
+                        detail!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: ecoColors(context).textMuted,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Container(

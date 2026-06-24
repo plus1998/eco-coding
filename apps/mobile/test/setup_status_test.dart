@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('SetupOverview.setupComplete', () {
-    test('requires login, active binding, and visible selected desktop', () {
+    test('requires login, active binding, and selected bound desktop', () {
       expect(
         _overview(
           selectedDesktopId: 'dev_desktop',
@@ -34,6 +34,30 @@ void main() {
           select: SetupStepState.done,
         ).setupComplete,
         isTrue,
+      );
+    });
+  });
+
+  group('SetupOverview.showPcPicker', () {
+    test('is true once logged in with an active binding', () {
+      expect(
+        _overview(
+          selectedDesktopId: null,
+          login: SetupStepState.done,
+          bind: SetupStepState.done,
+          select: SetupStepState.pending,
+        ).showPcPicker,
+        isTrue,
+      );
+
+      expect(
+        _overview(
+          selectedDesktopId: 'dev_desktop',
+          login: SetupStepState.done,
+          bind: SetupStepState.pending,
+          select: SetupStepState.pending,
+        ).showPcPicker,
+        isFalse,
       );
     });
   });

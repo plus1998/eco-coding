@@ -180,6 +180,8 @@ export class PairingService {
     mobileDeviceId: string;
     code: string;
     token: string;
+    deviceName?: string;
+    metadata?: Record<string, string>;
   }): Promise<JoinExistingMobilePairingSessionResult> {
     const normalizedCode = input.code.trim().toUpperCase();
     const token = input.token.trim();
@@ -207,6 +209,12 @@ export class PairingService {
     if (!user || user.disabledAt) {
       throw new Error("User account is not active.");
     }
+    const device = await this.devices.updateDeviceProfile({
+      userId: session.userId,
+      deviceId: mobile.id,
+      ...(input.deviceName?.trim() ? { name: input.deviceName.trim() } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    });
     const binding = await this.store.createDeviceBinding({
       id: createId("bind"),
       userId: input.userId,
@@ -217,7 +225,7 @@ export class PairingService {
     });
     return {
       user,
-      device: mobile,
+      device,
       binding,
       desktopDeviceId: desktop.id,
     };

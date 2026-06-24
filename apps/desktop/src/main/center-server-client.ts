@@ -28,7 +28,11 @@ import {
 import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
 import { buildEventCenterJsonRpcFailure, EVENT_CENTER_JSON_RPC_ERROR } from "../shared/event-center";
 import type { CenterServerSettingsSecret, CenterServerStore } from "./center-server-store";
-import { collectDesktopDeviceProfile, desktopDeviceMetadata } from "./desktop-device-profile";
+import {
+  collectDesktopDeviceProfile,
+  defaultDesktopDeviceName,
+  desktopDeviceMetadata,
+} from "./desktop-device-profile";
 import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
 
 type FetchLike = typeof fetch;
@@ -182,6 +186,8 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     request: CenterServerRegisterDesktopRequest,
   ): Promise<CenterServerRegisterDesktopResult> {
     const serverUrl = normalizeCenterServerHttpUrl(request.serverUrl);
+    const profile = collectDesktopDeviceProfile();
+    const deviceName = request.deviceName.trim() || defaultDesktopDeviceName(profile);
     const response = await this.requestJson<RegisterDesktopResponse>({
       serverUrl,
       path: "/v1/devices/register",
@@ -189,8 +195,8 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       bearerToken: request.userAccessToken,
       body: {
         kind: "desktop",
-        name: request.deviceName.trim(),
-        metadata: desktopDeviceMetadata(collectDesktopDeviceProfile()),
+        name: deviceName,
+        metadata: desktopDeviceMetadata(profile),
       },
     });
     return this.persistRegisteredDevice(serverUrl, response);
@@ -243,6 +249,8 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     user: CenterServerAccountView;
     accessToken: string;
   }): Promise<CenterServerAccountAuthResult> {
+    const profile = collectDesktopDeviceProfile();
+    const deviceName = input.deviceName.trim() || defaultDesktopDeviceName(profile);
     const response = await this.requestJson<RegisterDesktopResponse>({
       serverUrl: input.serverUrl,
       path: "/v1/devices/register",
@@ -250,8 +258,8 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       bearerToken: input.accessToken,
       body: {
         kind: "desktop",
-        name: input.deviceName.trim(),
-        metadata: desktopDeviceMetadata(collectDesktopDeviceProfile()),
+        name: deviceName,
+        metadata: desktopDeviceMetadata(profile),
       },
     });
     const registered = await this.persistRegisteredDevice(input.serverUrl, response);

@@ -15,6 +15,12 @@ import {
 } from "./rate-limit";
 import { RedisRpcBus, type RpcBus } from "./rpc/rpc-bus";
 import { type OnlineDeviceSnapshot, RpcGateway, type RpcPeer } from "./rpc/rpc-gateway";
+import {
+  clientIdentity,
+  enrichDeviceMetadata,
+  normalizeIpAddress,
+  resolveClientIp,
+} from "./client-ip";
 import type { AccessTokenClaims, DeviceAccessTokenClaims, DeviceBindingRecord, DeviceRecord } from "./types";
 import { toPublicDevice, toPublicDeviceBinding, toPublicUser } from "./types";
 
@@ -122,6 +128,7 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
           deviceId: ws.data.claims.deviceId,
           deviceKind: ws.data.claims.deviceKind,
           capabilities: ws.data.claims.capabilities,
+          clientIp: normalizeIpAddress(ws.remoteAddress),
           send(message) {
             ws.send(JSON.stringify(message));
           },
@@ -252,10 +259,15 @@ export async function handleEcoHttpRoute(input: {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     const body = await readJsonObject(request);
-    const metadata = readOptionalDeviceMetadata(body.metadata);
+    const kind = requireDeviceKind(body, "kind");
+    const metadata = enrichDeviceMetadata({
+      metadata: readOptionalDeviceMetadata(body.metadata),
+      clientIp: resolveClientIp(request),
+      deviceKind: kind,
+    });
     const registered = await devices.registerDevice({
       userId: claims.userId,
-      kind: requireDeviceKind(body, "kind"),
+      kind,
       name: requireString(body, "name"),
       ...(metadata !== undefined ? { metadata } : {}),
     });
@@ -298,8 +310,16 @@ export async function handleEcoHttpRoute(input: {
   if (request.method === "PATCH" && deviceIdFromPath) {
     const claims = await requireBearer(request, auth);
     assertCanUpdateDevice(claims, deviceIdFromPath);
+    const existing = await store.findDeviceById(deviceIdFromPath);
+    if (!existing || existing.userId !== claims.userId || existing.disabledAt) {
+      throw new Error("Device was not found.");
+    }
     const body = await readJsonObject(request);
-    const metadata = readOptionalDeviceMetadata(body.metadata);
+    const metadata = enrichDeviceMetadata({
+      metadata: readOptionalDeviceMetadata(body.metadata),
+      clientIp: resolveClientIp(request),
+      deviceKind: existing.kind,
+    });
     const device = await devices.updateDeviceProfile({
       userId: claims.userId,
       deviceId: deviceIdFromPath,
@@ -389,6 +409,8 @@ export async function handleEcoHttpRoute(input: {
         mobileDeviceId: claims.deviceId,
         code,
         token: requireString(body, "token"),
+        ...(typeof body.deviceName === "string" ? { deviceName: body.deviceName } : {}),
+        ...(metadata !== undefined ? { metadata } : {}),
       });
       return json({
         user: toPublicUser(joined.user),
@@ -807,14 +829,6 @@ async function consumeHttpRateLimit(input: {
   }
 }
 
-function clientIdentity(request: Request): string {
-  const directHeader =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-real-ip") ??
-    request.headers.get("x-forwarded-for");
-  const forwardedIp = directHeader?.split(",")[0]?.trim();
-  return forwardedIp || "unknown";
-}
 
 function createId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;

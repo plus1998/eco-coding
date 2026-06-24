@@ -482,7 +482,7 @@ export function CenterServerSettingsPanel({
                 const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
                 const online = mobile?.online === true;
                 const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
-                const mobileDetail = formatMobileDetail(mobile);
+                const mobileDetail = formatMobileDetail(mobile, binding.mobileDeviceId);
                 const revoking = revokingBindingId === binding.id;
                 return (
                   <li key={binding.id} className="cs-list-item">
@@ -867,7 +867,10 @@ function formatMobileLabel(mobile: CenterServerDevicePresenceView | undefined, d
   return shortenDeviceId(deviceId);
 }
 
-function formatMobileDetail(mobile: CenterServerDevicePresenceView | undefined): string | undefined {
+function formatMobileDetail(
+  mobile: CenterServerDevicePresenceView | undefined,
+  deviceId: string,
+): string | undefined {
   const parts: string[] = [];
   const ipAddress = mobile?.metadata?.ipAddress?.trim();
   const platform = mobile?.metadata?.platform?.trim();
@@ -877,5 +880,6 @@ function formatMobileDetail(mobile: CenterServerDevicePresenceView | undefined):
   if (platform) {
     parts.push(platform);
   }
+  parts.push(shortenDeviceId(deviceId));
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }

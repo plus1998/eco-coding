@@ -241,8 +241,8 @@ class StableDesktopOnlineNotifier extends FamilyNotifier<bool?, String> {
     });
 
     final presence = ref.watch(desktopPresenceProvider).valueOrNull;
-    if (presence == null) return state;
+    if (presence == null) return null;
     final device = presence.where((entry) => entry.id == desktopId).firstOrNull;
-    return device?.online ?? state;
+    return device?.online;
   }
 }

@@ -25,6 +25,7 @@ import {
 } from "@eco/shared";
 import type { MongoStore } from "../db/mongo-store";
 import type { PresenceStore } from "../presence/presence-store";
+import { normalizeIpAddress } from "../client-ip";
 import { type InvokeAuthorization, PolicyEngine } from "./policy";
 import type { RpcBus, RpcBusMessage } from "./rpc-bus";
 
@@ -34,6 +35,7 @@ export interface RpcPeer {
   deviceId: string;
   deviceKind: EcoDeviceKind;
   capabilities: EcoDeviceCapability[];
+  clientIp?: string;
   send(message: EcoJsonRpcMessage): void;
   close?(code: number, reason: string): void;
 }
@@ -126,6 +128,16 @@ export class RpcGateway {
     await this.presence.setSession(session);
     await this.presence.setDeviceRoute({ ...session, instanceId: this.instanceId });
     await this.store.touchDevice(peer.deviceId, now);
+    if (peer.deviceKind === "desktop") {
+      const clientIp = normalizeIpAddress(peer.clientIp);
+      if (clientIp) {
+        await this.store.updateDeviceProfile({
+          userId: peer.userId,
+          deviceId: peer.deviceId,
+          metadata: { ipAddress: clientIp },
+        });
+      }
+    }
     await this.publishPresenceDeviceEvent(peer, true, now, session);
   }
 
