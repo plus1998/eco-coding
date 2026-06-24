@@ -247,6 +247,25 @@ class ProjectionAgentDelegation {
   final String? prompt;
 }
 
+ProjectionAgentDelegation? readProjectionDelegationMetadata(
+  ThreadRunProjectionTimelineItem item,
+) {
+  final metadata = item.metadata;
+  if (metadata == null) return null;
+  final summary = (metadata['delegationSummary'] as String?)?.trim() ?? '';
+  final prompt = (metadata['delegationPrompt'] as String?)?.trim() ?? '';
+  if (summary.isEmpty && prompt.isEmpty) return null;
+  final role =
+      normalizeAgentDisplayRole(item.role) ?? item.role?.trim() ?? '子代理';
+  return ProjectionAgentDelegation(
+    role: role,
+    summary: summary.isNotEmpty
+        ? summary
+        : (prompt.length > 200 ? prompt.substring(0, 200) : prompt),
+    prompt: prompt.isEmpty ? null : prompt,
+  );
+}
+
 ProjectionAgentDelegation? readProjectionAgentDelegation(
   ThreadRunProjectionAgent agent,
 ) {
@@ -261,6 +280,71 @@ ProjectionAgentDelegation? readProjectionAgentDelegation(
         : (prompt.length > 200 ? prompt.substring(0, 200) : prompt),
     prompt: prompt.isEmpty ? null : prompt,
   );
+}
+
+/// Mission body for subagent cards — structured attribution only (delegation / parentToolUseId).
+String resolveSubagentCardMissionText(
+  ThreadRunProjectionAgent agent, {
+  List<ThreadRunProjectionTimelineItem> mainTimeline = const [],
+}) {
+  final delegation = readProjectionAgentDelegation(agent);
+  if (delegation != null) {
+    final text = resolveMissionDisplayText(
+      (delegation.prompt?.trim().isNotEmpty == true
+              ? delegation.prompt!
+              : delegation.summary)
+          .trim(),
+    );
+    if (text.isNotEmpty) return text;
+  }
+
+  for (final item in agent.timeline) {
+    if (item.eventType == 'agent.started') {
+      final timelineDelegation = readProjectionDelegationMetadata(item);
+      if (timelineDelegation != null) {
+        final text = resolveMissionDisplayText(
+          (timelineDelegation.prompt?.trim().isNotEmpty == true
+                  ? timelineDelegation.prompt!
+                  : timelineDelegation.summary)
+              .trim(),
+        );
+        if (text.isNotEmpty) return text;
+      }
+    }
+    final mission = parseSubagentMissionMessage(item.text);
+    if (mission != null) {
+      if (mission.agentId != null && mission.agentId != agent.agentId) {
+        continue;
+      }
+      if (item.agentId != null && item.agentId != agent.agentId) continue;
+      final text = resolveMissionDisplayText(
+        mission.prompt.isNotEmpty ? mission.prompt : mission.summary,
+      );
+      if (text.isNotEmpty) return text;
+    }
+  }
+
+  final parentToolUseId = agent.parentToolUseId?.trim();
+  if (parentToolUseId != null &&
+      parentToolUseId.isNotEmpty &&
+      mainTimeline.isNotEmpty) {
+    for (final item in mainTimeline) {
+      final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId
+              ?.trim() ??
+          readBashApprovalMetadata(item.metadata)?.toolUseId.trim();
+      if (toolUseId != parentToolUseId) continue;
+      final mission = parseSubagentMissionMessage(item.text);
+      if (mission == null) break;
+      if (mission.agentId != null && mission.agentId != agent.agentId) break;
+      final text = resolveMissionDisplayText(
+        mission.prompt.isNotEmpty ? mission.prompt : mission.summary,
+      );
+      if (text.isNotEmpty) return text;
+      break;
+    }
+  }
+
+  return '';
 }
 
 ThreadRunProjectionAgent? findProjectionAgentById(

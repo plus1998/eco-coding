@@ -130,6 +130,10 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     final agent = card.agent;
     final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
     final delegation = readProjectionAgentDelegation(agent);
+    final missionText = resolveSubagentCardMissionText(
+      agent,
+      mainTimeline: projection.timeline,
+    );
     final timing = sessionsByAgentId[agent.agentId];
     final running = resolveSubagentRunning(agent: agent, timing: timing);
     final durationMs = resolveSubagentDurationMs(agent: agent, timing: timing);
@@ -142,7 +146,9 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           kind: ActivityFeedKind.subagentMission,
           text: delegation?.summary ?? resolveSubagentRunDisplayTitle(role),
           subagentRole: role,
-          missionPrompt: delegation?.prompt,
+          missionPrompt: missionText.isNotEmpty
+              ? missionText
+              : delegation?.prompt,
           agentId: agent.agentId,
           running: running,
           durationMs: durationMs,

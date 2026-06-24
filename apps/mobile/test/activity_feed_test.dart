@@ -9,6 +9,7 @@ import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
 import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
+import 'package:eco_mobile/core/utils/subagent_projection_feed.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
 
 void main() {
@@ -837,5 +838,126 @@ void main() {
 
     expect(find.text('展开全文'), findsNothing);
     expect(find.text('短消息'), findsOneWidget);
+  });
+
+  test('resolveSubagentCardMissionText falls back to main timeline @mission by parentToolUseId', () {
+    const missionText =
+        '@mission {"role":"coder","summary":"Implement export filters in src/api.ts","prompt":"Implement export filters in src/api.ts"}';
+    final text = resolveSubagentCardMissionText(
+      ThreadRunProjectionAgent(
+        agentId: 'agent_coder_a',
+        role: 'coder',
+        kind: 'subagent',
+        status: 'active',
+        startedAt: '2026-01-01T00:00:01.000Z',
+        durationMs: 0,
+        parentToolUseId: 'toolu_agent_1',
+        timeline: const [],
+      ),
+      mainTimeline: [
+        ThreadRunProjectionTimelineItem(
+          id: 'delegate-coder',
+          sequence: 1,
+          eventType: 'tool.started',
+          scope: 'main',
+          role: 'coder',
+          text: missionText,
+          at: '2026-01-01T00:00:00.000Z',
+          metadata: const {
+            'liveType': 'tool.started',
+            'tool': {
+              'name': 'Agent',
+              'detail': 'coder',
+              'toolUseId': 'toolu_agent_1',
+              'status': 'running',
+            },
+          },
+        ),
+      ],
+    );
+    expect(text, 'Implement export filters in src/api.ts');
+  });
+
+  test('resolveSubagentCardMissionText falls back to agent.started timeline metadata', () {
+    final text = resolveSubagentCardMissionText(
+      ThreadRunProjectionAgent(
+        agentId: 'coder_a',
+        role: 'coder',
+        kind: 'subagent',
+        status: 'active',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        durationMs: 0,
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'agent-started',
+            sequence: 1,
+            eventType: 'agent.started',
+            scope: 'agent',
+            role: 'coder',
+            agentId: 'coder_a',
+            text: 'Subagent coder started',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'lifecycle': 'started',
+              'delegationPrompt': 'Review export filters in src/api.ts',
+              'delegationSummary': '审查：export filters',
+            },
+          ),
+        ],
+      ),
+    );
+    expect(text, 'Review export filters in src/api.ts');
+  });
+
+  test('buildActivityFeed shows subagent mission from parentToolUseId fallback', () {
+    const missionText =
+        '@mission {"role":"coder","summary":"Implement export filters in src/api.ts","prompt":"Implement export filters in src/api.ts"}';
+    final feed = buildActivityFeed(
+      runProjection: ThreadRunProjectionSnapshot.fromJson({
+        'thread': {
+          'threadId': 't1',
+          'status': 'running',
+          'generatedAt': '2026-01-01T00:00:00.000Z',
+        },
+        'sourceEventCount': 2,
+        'timeline': [
+          {
+            'id': 'delegate-coder',
+            'sequence': 1,
+            'eventType': 'tool.started',
+            'scope': 'main',
+            'role': 'coder',
+            'text': missionText,
+            'at': '2026-01-01T00:00:00.000Z',
+            'metadata': {
+              'liveType': 'tool.started',
+              'tool': {
+                'name': 'Agent',
+                'detail': 'coder',
+                'toolUseId': 'toolu_agent_1',
+                'status': 'running',
+              },
+            },
+          },
+        ],
+        'agents': [
+          {
+            'agentId': 'agent_coder_a',
+            'role': 'coder',
+            'kind': 'subagent',
+            'status': 'active',
+            'startedAt': '2026-01-01T00:00:01.000Z',
+            'durationMs': 0,
+            'parentToolUseId': 'toolu_agent_1',
+            'timeline': [],
+          },
+        ],
+      }),
+    );
+
+    final card = feed.firstWhere(
+      (entry) => entry.kind == ActivityFeedKind.subagentMission,
+    );
+    expect(card.missionPrompt, 'Implement export filters in src/api.ts');
   });
 }
