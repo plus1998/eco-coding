@@ -4,6 +4,7 @@ import '../../core/models/git_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/unified_diff.dart';
+import '../../core/widgets/eco_surface_card.dart';
 
 class WorkspaceDiffReviewView extends StatelessWidget {
   const WorkspaceDiffReviewView({
@@ -147,64 +148,56 @@ class _DiffFileCardState extends State<_DiffFileCard> {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ecoColors(context).bgElevated,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ecoColors(context).borderSubtle),
-      ),
+    return EcoSurfaceCard(
+      onTap: _toggleExpanded,
+      borderRadius: BorderRadius.circular(14),
+      borderColor: ecoColors(context).borderSubtle,
+      backgroundColor: ecoColors(context).bgElevated,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _toggleExpanded,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Icon(
-                        _expanded ? EcoIcons.expandUp : EcoIcons.expandDown,
-                        size: 20,
-                        color: ecoColors(context).textMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.file.fileName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
-                          if (widget.file.directory.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.file.directory,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: ecoColors(context).textMuted,
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    _DiffStats(
-                      additions: widget.additions,
-                      deletions: widget.deletions,
-                    ),
-                  ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(
+                    _expanded ? EcoIcons.expandUp : EcoIcons.expandDown,
+                    size: 20,
+                    color: ecoColors(context).textMuted,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.file.fileName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (widget.file.directory.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.file.directory,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: ecoColors(context).textMuted,
+                              ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                _DiffStats(
+                  additions: widget.additions,
+                  deletions: widget.deletions,
+                ),
+              ],
             ),
           ),
           if (_expanded) ...[

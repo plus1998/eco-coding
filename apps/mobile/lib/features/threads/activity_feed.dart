@@ -13,6 +13,7 @@ import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/subagent_session_timing.dart';
 import '../../core/widgets/eco_markdown.dart';
+import '../../core/widgets/eco_surface_card.dart';
 import '../../core/widgets/shimmer_text.dart';
 import 'projection_activity_feed.dart';
 
@@ -703,12 +704,11 @@ class _BashRunCardState extends State<_BashRunCard> {
               textDirection: Directionality.of(context),
             );
 
-        final card = DecoratedBox(
-          decoration: BoxDecoration(
-            color: ecoColors(context).cardSurface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: borderColor),
-          ),
+        return EcoSurfaceCard(
+          onTap: canExpand ? () => setState(() => _bodyExpanded = !_bodyExpanded) : null,
+          borderRadius: BorderRadius.circular(10),
+          borderColor: borderColor,
+          backgroundColor: ecoColors(context).cardSurface,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -759,37 +759,30 @@ class _BashRunCardState extends State<_BashRunCard> {
               ),
               if (body.isNotEmpty) ...[
                 Divider(height: 1, color: ecoColors(context).borderSubtle),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                  child: AnimatedSize(
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                    alignment: Alignment.topLeft,
-                    child: _bodyExpanded
-                        ? SelectableText(body, style: bodyStyle)
-                        : Text(
-                            body,
-                            maxLines: _collapsedBodyLines,
-                            overflow: TextOverflow.ellipsis,
-                            style: bodyStyle,
-                          ),
+                EcoClippedFadeBody(
+                  expanded: _bodyExpanded || !canExpand,
+                  collapsedMaxHeight: 52,
+                  showFade: canExpand && !_bodyExpanded,
+                  fadeColor: ecoColors(context).cardSurface,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.topLeft,
+                      child: _bodyExpanded || !canExpand
+                          ? SelectableText(body, style: bodyStyle)
+                          : Text(
+                              body,
+                              maxLines: _collapsedBodyLines,
+                              overflow: TextOverflow.clip,
+                              style: bodyStyle,
+                            ),
+                    ),
                   ),
                 ),
               ],
             ],
-          ),
-        );
-
-        if (!canExpand) {
-          return card;
-        }
-
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => setState(() => _bodyExpanded = !_bodyExpanded),
-            borderRadius: BorderRadius.circular(10),
-            child: card,
           ),
         );
       },
@@ -842,148 +835,97 @@ class _FileChangeCardState extends State<_FileChangeCard> {
         : display.previewLines.take(_collapsedLineLimit).toList();
     final hasMore = display.previewLines.length > _collapsedLineLimit;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _expanded = !_expanded),
-        borderRadius: BorderRadius.circular(12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: ecoColors(context).cardSurface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                child: Row(
-                  children: [
-                    Icon(
-                      EcoIcons.file,
-                      size: 16,
-                      color: ecoColors(context).accentText,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        display.fileName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: ecoColors(context).textHeading,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ),
-                    if (display.additions > 0)
-                      Text(
-                        '+${display.additions}',
-                        style: TextStyle(
-                          color: ecoColors(context).success,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    if (display.additions > 0 && display.deletions > 0)
-                      const SizedBox(width: 8),
-                    if (display.deletions > 0)
-                      Text(
-                        '-${display.deletions}',
-                        style: TextStyle(
-                          color: ecoColors(context).danger,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                  ],
+    final lineStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontFamily: 'Menlo',
+          height: 1.45,
+          color: ecoColors(context).textSecondary,
+        );
+
+    return EcoSurfaceCard(
+      onTap: () => setState(() => _expanded = !_expanded),
+      borderRadius: BorderRadius.circular(12),
+      borderColor: borderColor,
+      backgroundColor: ecoColors(context).cardSurface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Row(
+              children: [
+                Icon(
+                  EcoIcons.file,
+                  size: 16,
+                  color: ecoColors(context).accentText,
                 ),
-              ),
-              Divider(height: 1, color: ecoColors(context).borderSubtle),
-              Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
-                    child: Column(
-                      children: [
-                        for (final line in previewLines)
-                          _FileChangeLineRow(line: line),
-                      ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    display.fileName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: ecoColors(context).textHeading,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                if (display.additions > 0)
+                  Text(
+                    '+${display.additions}',
+                    style: TextStyle(
+                      color: ecoColors(context).success,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
-                  if (!_expanded && hasMore)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: 44,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              ecoColors(context).cardSurface.withValues(alpha: 0),
-                              ecoColors(context).cardSurface,
-                            ],
-                          ),
-                        ),
-                      ),
+                if (display.additions > 0 && display.deletions > 0)
+                  const SizedBox(width: 8),
+                if (display.deletions > 0)
+                  Text(
+                    '-${display.deletions}',
+                    style: TextStyle(
+                      color: ecoColors(context).danger,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: ecoColors(context).borderSubtle),
+          EcoClippedFadeBody(
+            expanded: _expanded,
+            collapsedMaxHeight: 132,
+            showFade: !_expanded && hasMore,
+            fadeColor: ecoColors(context).cardSurface,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final line in previewLines)
+                    EcoDiffGutterLine(
+                      text: line.text,
+                      gutterColor: switch (line.kind) {
+                        FileChangePreviewLineKind.add => ecoColors(context).success,
+                        FileChangePreviewLineKind.remove => ecoColors(context).danger,
+                        FileChangePreviewLineKind.context => Colors.transparent,
+                      },
+                      backgroundColor: switch (line.kind) {
+                        FileChangePreviewLineKind.add => ecoColors(context).statusAllowBg,
+                        FileChangePreviewLineKind.remove => ecoColors(context).statusDenyBg,
+                        FileChangePreviewLineKind.context => Colors.transparent,
+                      },
+                      style: lineStyle,
                     ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FileChangeLineRow extends StatelessWidget {
-  const _FileChangeLineRow({required this.line});
-
-  final FileChangePreviewLine line;
-
-  @override
-  Widget build(BuildContext context) {
-    Color background = Colors.transparent;
-    Color borderColor = Colors.transparent;
-    switch (line.kind) {
-      case FileChangePreviewLineKind.add:
-        background = ecoColors(context).statusAllowBg;
-        borderColor = ecoColors(context).success;
-      case FileChangePreviewLineKind.remove:
-        background = ecoColors(context).statusDenyBg;
-        borderColor = ecoColors(context).danger;
-      case FileChangePreviewLineKind.context:
-        background = Colors.transparent;
-        borderColor = Colors.transparent;
-    }
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: background,
-        border: Border(
-          left: BorderSide(
-            color: borderColor,
-            width: 3,
-          ),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-        child: Text(
-          line.text.isEmpty ? ' ' : line.text,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'Menlo',
-                height: 1.45,
-                color: ecoColors(context).textSecondary,
-              ),
-        ),
+        ],
       ),
     );
   }
@@ -1233,33 +1175,30 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
       running: widget.running,
     );
 
+    final resolvedBorderColor = Color.alphaBlend(
+      borderColor.withValues(alpha: widget.running ? 0.55 : 0.45),
+      ecoColors(context).borderSubtle,
+    );
+    final resolvedBackground = widget.running
+        ? Color.alphaBlend(
+            borderColor.withValues(alpha: 0.08),
+            ecoColors(context).cardSurface,
+          )
+        : Colors.transparent;
+
     return Semantics(
       button: true,
       expanded: _expanded,
       label: '${resolveSubagentRunDisplayTitle(role)} 子代理任务',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: EcoSurfaceCard(
           onTap: () => setState(() => _expanded = !_expanded),
           borderRadius: BorderRadius.circular(10),
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 6),
+          borderColor: resolvedBorderColor,
+          backgroundColor: resolvedBackground,
+          child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            decoration: BoxDecoration(
-              color: widget.running
-                  ? Color.alphaBlend(
-                      borderColor.withValues(alpha: 0.08),
-                      ecoColors(context).cardSurface,
-                    )
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: Color.alphaBlend(
-                  borderColor.withValues(alpha: widget.running ? 0.55 : 0.45),
-                  ecoColors(context).borderSubtle,
-                ),
-              ),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1382,13 +1321,21 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     ),
                   )
                 else
-                  Text(
-                    fullText,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textSecondary,
-                      height: 1.45,
+                  EcoClippedFadeBody(
+                    expanded: false,
+                    collapsedMaxHeight: 42,
+                    showFade: fullText.length > 80,
+                    fadeColor: resolvedBackground == Colors.transparent
+                        ? ecoColors(context).cardSurface
+                        : resolvedBackground,
+                    child: Text(
+                      fullText,
+                      maxLines: 2,
+                      overflow: TextOverflow.clip,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: ecoColors(context).textSecondary,
+                        height: 1.45,
+                      ),
                     ),
                   ),
                 if (_expanded && widget.timeline.isNotEmpty) ...[
