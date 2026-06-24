@@ -111,9 +111,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             final rpc = ref.read(desktopRpcProvider);
                             if (rpc == null) return;
                             try {
+                              final workflow =
+                                  await ref.read(workflowSettingsProvider.future);
                               await rpc.saveWorkflowSettings(
                                 WorkflowSettingsSnapshot(
                                   planModeEnabled: value,
+                                  mcpServersEnabled: workflow?.mcpServersEnabled,
                                 ),
                               );
                               ref.invalidate(workflowSettingsProvider);

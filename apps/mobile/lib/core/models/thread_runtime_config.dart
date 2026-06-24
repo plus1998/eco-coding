@@ -1,3 +1,5 @@
+import 'composer_mcp.dart';
+import 'mcp_models.dart';
 import 'thread_models.dart';
 
 OrchestrationProfile? agentProfileById(
@@ -49,9 +51,76 @@ Map<String, bool> deriveSubagentEnabledFromProfile(
   return subagentEnabled;
 }
 
+List<String> collectProfileAssignedMcpServers(OrchestrationProfile profile) {
+  final servers = <String>{};
+  for (final server in profile.mainAssignedMcpServers) {
+    servers.add(sanitizeMcpServerName(server));
+  }
+  for (final agent in profile.agents) {
+    if (!agent.enabled) continue;
+    for (final server in agent.mcpServers) {
+      servers.add(sanitizeMcpServerName(server));
+    }
+  }
+  return servers.toList(growable: false);
+}
+
+Map<String, bool> resolveComposerMcpSettings({
+  required List<McpServerConfigView> servers,
+  required ThreadRuntimeConfig runtimeConfig,
+  OrchestrationProfile? profile,
+  Map<String, bool>? remembered,
+}) {
+  final availableServerKeys = listEnabledGlobalMcpServerKeys(servers);
+  if (availableServerKeys.isEmpty) {
+    return const {};
+  }
+  if (runtimeConfig.mcpServersEnabled != null) {
+    return deriveMcpServersEnabled(
+      availableServerKeys,
+      existing: runtimeConfig.mcpServersEnabled,
+    );
+  }
+  return deriveMcpServersEnabled(
+    availableServerKeys,
+    profileAssignedServers: profile == null
+        ? const []
+        : collectProfileAssignedMcpServers(profile),
+    remembered: remembered,
+  );
+}
+
+ThreadRuntimeConfig buildRuntimeConfigForProfile({
+  required OrchestrationProfile profile,
+  required ThreadRuntimeConfig runtimeConfig,
+  required List<McpServerConfigView> servers,
+  Map<String, bool>? remembered,
+}) {
+  final availableKeys = listEnabledGlobalMcpServerKeys(servers);
+  return ThreadRuntimeConfig(
+    routeProfileId: profile.id,
+    agentProfileId: profile.id,
+    subagentEnabled: deriveSubagentEnabledFromProfile(
+      profile,
+      existing: runtimeConfig.subagentEnabled,
+    ),
+    mcpServersEnabled: availableKeys.isEmpty
+        ? null
+        : deriveMcpServersEnabled(
+            availableKeys,
+            profileAssignedServers: collectProfileAssignedMcpServers(profile),
+            existing: runtimeConfig.mcpServersEnabled,
+            remembered: remembered,
+          ),
+    planModeEnabled: runtimeConfig.planModeEnabled,
+    bashReviewMode: runtimeConfig.bashReviewMode,
+  );
+}
+
 ThreadRuntimeConfig buildDefaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,
   WorkflowSettingsSnapshot? workflow,
+  List<McpServerConfigView>? mcpServers,
   String? profileId,
 }) {
   final profiles = modelSettings?.orchestrationProfiles ?? [];
@@ -71,10 +140,20 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
   }
   profile ??= profiles.first;
 
+  final availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpServers ?? []);
+  final mcpServersEnabled = availableMcpServerKeys.isEmpty
+      ? null
+      : deriveMcpServersEnabled(
+          availableMcpServerKeys,
+          profileAssignedServers: collectProfileAssignedMcpServers(profile),
+          remembered: workflow?.mcpServersEnabled,
+        );
+
   return ThreadRuntimeConfig(
     routeProfileId: profile.id,
     agentProfileId: profile.id,
     subagentEnabled: deriveSubagentEnabledFromProfile(profile),
+    mcpServersEnabled: mcpServersEnabled,
     planModeEnabled: workflow?.planModeEnabled ?? false,
     bashReviewMode: 'always',
   );

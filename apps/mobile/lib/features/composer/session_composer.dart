@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/platform/system_speech_recognizer.dart';
@@ -9,7 +8,6 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
-import 'workspace_changes_pill.dart';
 
 class SessionComposer extends ConsumerStatefulWidget {
   const SessionComposer({
@@ -23,14 +21,11 @@ class SessionComposer extends ConsumerStatefulWidget {
     this.followUpMode = false,
     this.sendBusy = false,
     required this.hasActivity,
-    required this.workspaceChanges,
-    required this.changesLoading,
     required this.onPickImage,
     required this.onRemoveAttachment,
     required this.onSend,
     required this.onStop,
     required this.onRuntimeConfigChanged,
-    required this.onChangesTap,
     this.inputHint,
     this.contextSnapshot,
     this.threadStatus,
@@ -45,14 +40,11 @@ class SessionComposer extends ConsumerStatefulWidget {
   final bool followUpMode;
   final bool sendBusy;
   final bool hasActivity;
-  final WorkspaceChangesSummary? workspaceChanges;
-  final bool changesLoading;
   final VoidCallback onPickImage;
   final void Function(int index) onRemoveAttachment;
   final VoidCallback onSend;
   final VoidCallback onStop;
   final ValueChanged<ThreadRuntimeConfigInput> onRuntimeConfigChanged;
-  final VoidCallback? onChangesTap;
   final String? inputHint;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
@@ -171,19 +163,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         true;
     final showSpeechInput = speechAvailable || _speechBusy;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        WorkspaceChangesPill(
-          summary: widget.workspaceChanges,
-          busy: widget.changesLoading,
-          onTap: widget.onChangesTap,
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: DecoratedBox(
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        child: DecoratedBox(
               decoration: BoxDecoration(
                 color: ecoColors(context).composerContextBg,
                 borderRadius: BorderRadius.circular(22),
@@ -287,6 +271,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           canEdit: canEditConfig,
                           onChanged: widget.onRuntimeConfigChanged,
                         ),
+                        ComposerMcpIconButton(
+                          runtimeConfig: widget.runtimeConfig,
+                          threadId: widget.threadId,
+                          onChanged: widget.onRuntimeConfigChanged,
+                        ),
                         ComposerBashReviewIconButton(
                           runtimeConfig: widget.runtimeConfig,
                           threadId: widget.threadId,
@@ -339,8 +328,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
               ),
             ),
           ),
-        ),
-      ],
     );
   }
 }

@@ -1,4 +1,5 @@
 import '../models/git_models.dart';
+import '../models/mcp_models.dart';
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
 import '../models/thread_usage_models.dart';
@@ -379,6 +380,15 @@ class DesktopRpc {
       [settings.toJson()],
     );
     return WorkflowSettingsSnapshot.fromJson(result);
+  }
+
+  Future<McpSettingsSnapshot> getMcpSettings() async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'mcp-settings:get',
+      [],
+    );
+    return McpSettingsSnapshot.fromJson(result);
   }
 
   Future<GitWorkingTreeStatus> getGitStatus(String workspacePath) async {

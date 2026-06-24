@@ -1,4 +1,5 @@
 import '../utils/activity_display.dart';
+import 'composer_mcp.dart';
 import 'thread_run_projection.dart';
 import 'thread_usage_models.dart';
 
@@ -33,6 +34,7 @@ class ThreadRuntimeConfig {
     required this.routeProfileId,
     this.agentProfileId,
     required this.subagentEnabled,
+    this.mcpServersEnabled,
     required this.planModeEnabled,
     required this.bashReviewMode,
   });
@@ -46,10 +48,18 @@ class ThreadRuntimeConfig {
           role: rawSubagents[role] as bool? ?? true,
       };
     }
+    final rawMcp = json['mcpServersEnabled'];
+    Map<String, bool>? parsedMcp;
+    if (rawMcp is Map) {
+      parsedMcp = normalizeMcpServersEnabled(
+        rawMcp.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    }
     return ThreadRuntimeConfig(
       routeProfileId: json['routeProfileId'] as String? ?? '',
       agentProfileId: json['agentProfileId'] as String?,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
+      mcpServersEnabled: parsedMcp,
       planModeEnabled: json['planModeEnabled'] as bool? ?? false,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
     );
@@ -59,6 +69,7 @@ class ThreadRuntimeConfig {
         'routeProfileId': routeProfileId,
         if (agentProfileId != null) 'agentProfileId': agentProfileId,
         'subagentEnabled': subagentEnabled,
+        if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
         'planModeEnabled': planModeEnabled,
         'bashReviewMode': bashReviewMode,
       };
@@ -66,6 +77,7 @@ class ThreadRuntimeConfig {
   final String routeProfileId;
   final String? agentProfileId;
   final Map<String, bool> subagentEnabled;
+  final Map<String, bool>? mcpServersEnabled;
   final bool planModeEnabled;
   final String bashReviewMode;
 }
@@ -73,16 +85,32 @@ class ThreadRuntimeConfig {
 typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 
 class WorkflowSettingsSnapshot {
-  const WorkflowSettingsSnapshot({required this.planModeEnabled});
+  const WorkflowSettingsSnapshot({
+    required this.planModeEnabled,
+    this.mcpServersEnabled,
+  });
 
-  factory WorkflowSettingsSnapshot.fromJson(Map<String, dynamic> json) =>
-      WorkflowSettingsSnapshot(
-        planModeEnabled: json['planModeEnabled'] as bool? ?? false,
+  factory WorkflowSettingsSnapshot.fromJson(Map<String, dynamic> json) {
+    final rawMcp = json['mcpServersEnabled'];
+    Map<String, bool>? parsedMcp;
+    if (rawMcp is Map) {
+      parsedMcp = normalizeMcpServersEnabled(
+        rawMcp.map((key, value) => MapEntry(key.toString(), value)),
       );
+    }
+    return WorkflowSettingsSnapshot(
+      planModeEnabled: json['planModeEnabled'] as bool? ?? false,
+      mcpServersEnabled: parsedMcp,
+    );
+  }
 
-  Map<String, dynamic> toJson() => {'planModeEnabled': planModeEnabled};
+  Map<String, dynamic> toJson() => {
+        'planModeEnabled': planModeEnabled,
+        if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
+      };
 
   final bool planModeEnabled;
+  final Map<String, bool>? mcpServersEnabled;
 }
 
 class PromptImageAttachment {
@@ -608,6 +636,7 @@ class OrchestrationAgentInstance {
     required this.agentKey,
     required this.enabled,
     this.themeColor,
+    this.mcpServers = const [],
   });
 
   factory OrchestrationAgentInstance.fromJson(Map<String, dynamic> json) =>
@@ -615,11 +644,27 @@ class OrchestrationAgentInstance {
         agentKey: json['agentKey'] as String? ?? '',
         enabled: json['enabled'] as bool? ?? false,
         themeColor: json['themeColor'] as String?,
+        mcpServers: (json['mcpServers'] as List<dynamic>? ?? [])
+            .map((entry) => entry.toString())
+            .toList(),
       );
 
   final String agentKey;
   final bool enabled;
   final String? themeColor;
+  final List<String> mcpServers;
+}
+
+List<String> _readMainAssignedMcpServers(Map<String, dynamic> json) {
+  final mainAgent = json['mainAgent'];
+  if (mainAgent is! Map<String, dynamic>) return const [];
+  final tools = mainAgent['tools'];
+  if (tools is! Map<String, dynamic>) return const [];
+  final mcp = tools['mcp'];
+  if (mcp is! Map<String, dynamic>) return const [];
+  final allowedServers = mcp['allowedServers'];
+  if (allowedServers is! List) return const [];
+  return allowedServers.map((entry) => entry.toString()).toList();
 }
 
 class OrchestrationProfile {
@@ -628,6 +673,7 @@ class OrchestrationProfile {
     required this.name,
     required this.agents,
     this.builtinExploreThemeColor,
+    this.mainAssignedMcpServers = const [],
   });
 
   factory OrchestrationProfile.fromJson(Map<String, dynamic> json) =>
@@ -635,6 +681,7 @@ class OrchestrationProfile {
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? json['id'] as String? ?? '',
         builtinExploreThemeColor: _readBuiltinExploreThemeColor(json),
+        mainAssignedMcpServers: _readMainAssignedMcpServers(json),
         agents: (json['agents'] as List<dynamic>? ?? [])
             .map(
               (e) => OrchestrationAgentInstance.fromJson(
@@ -648,6 +695,7 @@ class OrchestrationProfile {
   final String name;
   final List<OrchestrationAgentInstance> agents;
   final String? builtinExploreThemeColor;
+  final List<String> mainAssignedMcpServers;
 }
 
 String? _readBuiltinExploreThemeColor(Map<String, dynamic> json) {

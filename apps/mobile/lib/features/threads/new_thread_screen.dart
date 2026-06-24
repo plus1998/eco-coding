@@ -10,6 +10,7 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../composer/session_composer.dart';
+import '../composer/workspace_changes_pill.dart';
 import '../projects/project_providers.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
@@ -39,9 +40,13 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     if (ref.read(runtimeConfigProvider) != null) return;
     final modelSettings = await ref.read(modelSettingsProvider.future);
     final workflow = await ref.read(workflowSettingsProvider.future);
+    final mcpSettings = await ref.read(mcpSettingsProvider.future);
     if (!mounted) return;
-    ref.read(runtimeConfigProvider.notifier).state =
-        defaultRuntimeConfig(modelSettings: modelSettings, workflow: workflow);
+    ref.read(runtimeConfigProvider.notifier).state = buildDefaultRuntimeConfig(
+      modelSettings: modelSettings,
+      workflow: workflow,
+      mcpServers: mcpSettings?.servers,
+    );
   }
 
   @override
@@ -55,10 +60,12 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     final workspacePath = ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
     final modelSettings = ref.watch(modelSettingsProvider);
     final workflow = ref.watch(workflowSettingsProvider);
+    final mcpSettings = ref.watch(mcpSettingsProvider);
     final runtimeConfig = ref.watch(runtimeConfigProvider) ??
         buildDefaultRuntimeConfig(
           modelSettings: modelSettings.valueOrNull,
           workflow: workflow.valueOrNull,
+          mcpServers: mcpSettings.valueOrNull?.servers,
         );
     final gitStatusAsync = workspacePath.isNotEmpty
         ? ref.watch(gitStatusProvider(workspacePath))
@@ -125,25 +132,10 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                     ],
                   ),
                 ),
-                SessionComposer(
-                  controller: _promptController,
-                  attachments: _attachments,
-                  runtimeConfig: runtimeConfig,
-                  threadId: '',
-                  isRunning: _starting,
-                  hasActivity: false,
-                  inputHint: composerLandingPlaceholder,
-                  workspaceChanges: workspaceChanges,
-                  changesLoading: changesLoading,
-                  onPickImage: _pickImage,
-                  onRemoveAttachment: (index) =>
-                      setState(() => _attachments.removeAt(index)),
-                  onSend: _startThread,
-                  onStop: () {},
-                  onRuntimeConfigChanged: (config) {
-                    ref.read(runtimeConfigProvider.notifier).state = config;
-                  },
-                  onChangesTap: workspacePath.isNotEmpty
+                WorkspaceChangesPill(
+                  summary: workspaceChanges,
+                  busy: changesLoading,
+                  onTap: workspacePath.isNotEmpty
                       ? () {
                           refreshWorkspaceChanges(ref, workspacePath);
                           showWorkspaceDiffReviewSheet(
@@ -153,6 +145,23 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                           );
                         }
                       : null,
+                ),
+                SessionComposer(
+                  controller: _promptController,
+                  attachments: _attachments,
+                  runtimeConfig: runtimeConfig,
+                  threadId: '',
+                  isRunning: _starting,
+                  hasActivity: false,
+                  inputHint: composerLandingPlaceholder,
+                  onPickImage: _pickImage,
+                  onRemoveAttachment: (index) =>
+                      setState(() => _attachments.removeAt(index)),
+                  onSend: _startThread,
+                  onStop: () {},
+                  onRuntimeConfigChanged: (config) {
+                    ref.read(runtimeConfigProvider.notifier).state = config;
+                  },
                 ),
               ],
             ),

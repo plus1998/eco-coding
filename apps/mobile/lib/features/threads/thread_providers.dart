@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/mcp_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
@@ -76,13 +77,21 @@ final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   return rpc.getWorkflowSettings();
 });
 
+final mcpSettingsProvider = FutureProvider<McpSettingsSnapshot?>((ref) async {
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return null;
+  return rpc.getMcpSettings();
+});
+
 ThreadRuntimeConfig defaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,
   WorkflowSettingsSnapshot? workflow,
+  List<McpServerConfigView>? mcpServers,
 }) {
   return buildDefaultRuntimeConfig(
     modelSettings: modelSettings,
     workflow: workflow,
+    mcpServers: mcpServers,
   );
 }
 
@@ -447,6 +456,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         );
       }
       ref.read(runtimeConfigProvider.notifier).state = config;
+      if (config.mcpServersEnabled != null) {
+        ref.invalidate(workflowSettingsProvider);
+      }
     }
 
     if (shouldUpdateThreadSummaryFromLiveEvent(live.type) &&

@@ -68,6 +68,7 @@ abstract final class EcoIcons {
   static const IconData shieldAuto = LucideIcons.shield;
   static const IconData shieldAllowAll = LucideIcons.shieldOff;
   static const IconData shieldManual = LucideIcons.hand;
+  static const IconData mcp = LucideIcons.plug;
 
   // ── 线程 / 会话内容 ───────────────────────────────────
   static const IconData planApproval = LucideIcons.clipboardCheck;

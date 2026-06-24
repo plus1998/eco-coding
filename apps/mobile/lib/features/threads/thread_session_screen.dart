@@ -14,7 +14,9 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
 import '../approvals/approval_sheets.dart';
+import '../composer/composer_stack_card.dart';
 import '../composer/session_composer.dart';
+import '../composer/workspace_changes_pill.dart';
 import 'activity_feed.dart';
 import 'thread_info_sheets.dart';
 import 'thread_menu_sheets.dart';
@@ -186,7 +188,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final runtimeConfig =
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
-        buildDefaultRuntimeConfig();
+        buildDefaultRuntimeConfig(
+          modelSettings: ref.watch(modelSettingsProvider).valueOrNull,
+          workflow: ref.watch(workflowSettingsProvider).valueOrNull,
+          mcpServers: ref.watch(mcpSettingsProvider).valueOrNull?.servers,
+        );
     final thread = session.thread;
     final workspacePath = thread?.workspacePath ?? '';
     final projectName = workspacePath.isEmpty
@@ -337,6 +343,20 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                WorkspaceChangesPill(
+                  summary: workspaceChanges,
+                  busy: changesLoading,
+                  onTap: workspacePath.isNotEmpty
+                      ? () {
+                          refreshWorkspaceChanges(ref, workspacePath);
+                          showWorkspaceDiffReviewSheet(
+                            context: context,
+                            ref: ref,
+                            workspacePath: workspacePath,
+                          );
+                        }
+                      : null,
+                ),
                 if (queuedFollowUps.isNotEmpty)
                   _FollowUpBar(
                     followUps: queuedFollowUps,
@@ -372,8 +392,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                       : (showLanding ? composerLandingPlaceholder : null),
                   contextSnapshot: session.contextSnapshot,
                   threadStatus: thread?.status,
-                  workspaceChanges: workspaceChanges,
-                  changesLoading: changesLoading,
                   onPickImage: _pickImage,
                   onRemoveAttachment: (index) =>
                       setState(() => _attachments.removeAt(index)),
@@ -382,16 +400,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   onRuntimeConfigChanged: (config) {
                     ref.read(runtimeConfigProvider.notifier).state = config;
                   },
-                  onChangesTap: workspacePath.isNotEmpty
-                      ? () {
-                          refreshWorkspaceChanges(ref, workspacePath);
-                          showWorkspaceDiffReviewSheet(
-                            context: context,
-                            ref: ref,
-                            workspacePath: workspacePath,
-                          );
-                        }
-                      : null,
                 ),
               ],
             ),
@@ -919,166 +927,100 @@ class _FollowUpBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ecoColors(context).cardSurface,
-        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    EcoIcons.subthread,
-                    size: 16,
-                    color: ecoColors(context).textMuted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text('引导消息', style: Theme.of(context).textTheme.labelLarge),
-                ],
-              ),
-            ),
-            ...followUps.map((item) {
-              final actionBusy =
-                  cancelBusyId == item.id || escalateBusyId == item.id;
-              final canEscalate = item.priority != 'escalated';
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: ecoColors(context).bgElevated,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: ecoColors(context).borderSubtle),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Icon(
-                                EcoIcons.indent,
-                                size: 16,
-                                color: ecoColors(context).textMuted,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                formatThreadFollowUpPreview(item),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            _FollowUpActionButton(
-                              icon: escalateBusyId == item.id
-                                  ? null
-                                  : EcoIcons.indent,
-                              label: escalateBusyId == item.id ? '处理中…' : '引导',
-                              loading: escalateBusyId == item.id,
-                              enabled: canEscalate && !actionBusy,
-                              onPressed: canEscalate && !actionBusy
-                                  ? () => onEscalate(item)
-                                  : null,
-                            ),
-                            const SizedBox(width: 8),
-                            _FollowUpActionButton(
-                              icon: EcoIcons.edit,
-                              label: '修改',
-                              enabled: !actionBusy,
-                              onPressed: !actionBusy
-                                  ? () => onEdit(item)
-                                  : null,
-                            ),
-                            const SizedBox(width: 8),
-                            _FollowUpActionButton(
-                              icon: cancelBusyId == item.id
-                                  ? null
-                                  : EcoIcons.delete,
-                              label: cancelBusyId == item.id ? '删除中…' : '删除',
-                              loading: cancelBusyId == item.id,
-                              enabled: !actionBusy,
-                              danger: true,
-                              onPressed: !actionBusy
-                                  ? () => onDelete(item)
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    final eco = ecoColors(context);
+    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: eco.composerPillText,
+          fontSize: 13,
+          height: 1.2,
+        );
 
-class _FollowUpActionButton extends StatelessWidget {
-  const _FollowUpActionButton({
-    required this.label,
-    required this.enabled,
-    required this.onPressed,
-    this.icon,
-    this.loading = false,
-    this.danger = false,
-  });
-
-  final String label;
-  final bool enabled;
-  final VoidCallback? onPressed;
-  final IconData? icon;
-  final bool loading;
-  final bool danger;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = !enabled
-        ? ecoColors(context).textMuted
-        : (danger ? ecoColors(context).danger : ecoColors(context).accentText);
-    return TextButton(
-      onPressed: enabled ? onPressed : null,
-      style: TextButton.styleFrom(
-        foregroundColor: color,
-        disabledForegroundColor: ecoColors(context).textMuted,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: composerStackOuterPadding,
+      child: Column(
         children: [
-          if (loading)
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2, color: color),
-            )
-          else if (icon != null)
-            Icon(icon, size: 14, color: color),
-          if (loading || icon != null) const SizedBox(width: 4),
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
+          for (var index = 0; index < followUps.length; index++) ...[
+            if (index > 0) const SizedBox(height: composerStackItemGap),
+            Builder(
+              builder: (context) {
+                final item = followUps[index];
+                final actionBusy =
+                    cancelBusyId == item.id || escalateBusyId == item.id;
+                final canEscalate = item.priority != 'escalated';
+
+                return ComposerStackCard(
+                  onTap: actionBusy ? null : () => onEdit(item),
+                  child: Row(
+                    children: [
+                      Icon(
+                        EcoIcons.indent,
+                        size: 14,
+                        color: eco.composerPillText,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          formatThreadFollowUpPreview(item),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textStyle,
+                        ),
+                      ),
+                      PopupMenuButton<_FollowUpMenuAction>(
+                        enabled: !actionBusy,
+                        icon: Icon(
+                          EcoIcons.more,
+                          size: 16,
+                          color: eco.composerPillText,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onSelected: (action) {
+                          switch (action) {
+                            case _FollowUpMenuAction.escalate:
+                              if (canEscalate) {
+                                onEscalate(item);
+                              }
+                            case _FollowUpMenuAction.edit:
+                              onEdit(item);
+                            case _FollowUpMenuAction.delete:
+                              onDelete(item);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          if (canEscalate)
+                            PopupMenuItem(
+                              value: _FollowUpMenuAction.escalate,
+                              enabled: !actionBusy,
+                              child: Text(
+                                escalateBusyId == item.id ? '处理中…' : '引导',
+                              ),
+                            ),
+                          const PopupMenuItem(
+                            value: _FollowUpMenuAction.edit,
+                            child: Text('修改'),
+                          ),
+                          PopupMenuItem(
+                            value: _FollowUpMenuAction.delete,
+                            enabled: !actionBusy,
+                            child: Text(
+                              cancelBusyId == item.id ? '删除中…' : '删除',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
   }
 }
+
+enum _FollowUpMenuAction { escalate, edit, delete }

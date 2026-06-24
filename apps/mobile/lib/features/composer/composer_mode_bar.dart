@@ -124,6 +124,7 @@ extension on ThreadRuntimeConfig {
     String? routeProfileId,
     String? agentProfileId,
     Map<String, bool>? subagentEnabled,
+    Map<String, bool>? mcpServersEnabled,
     bool? planModeEnabled,
     String? bashReviewMode,
   }) {
@@ -131,6 +132,7 @@ extension on ThreadRuntimeConfig {
       routeProfileId: routeProfileId ?? this.routeProfileId,
       agentProfileId: agentProfileId ?? this.agentProfileId,
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
+      mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
       planModeEnabled: planModeEnabled ?? this.planModeEnabled,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );

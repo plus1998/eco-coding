@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/plan_mode_ui.dart';
+import '../../core/models/composer_mcp.dart';
+import '../../core/models/mcp_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
@@ -27,6 +29,7 @@ extension ThreadRuntimeConfigCopy on ThreadRuntimeConfig {
     String? routeProfileId,
     String? agentProfileId,
     Map<String, bool>? subagentEnabled,
+    Map<String, bool>? mcpServersEnabled,
     bool? planModeEnabled,
     String? bashReviewMode,
   }) {
@@ -34,10 +37,28 @@ extension ThreadRuntimeConfigCopy on ThreadRuntimeConfig {
       routeProfileId: routeProfileId ?? this.routeProfileId,
       agentProfileId: agentProfileId ?? this.agentProfileId,
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
+      mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
       planModeEnabled: planModeEnabled ?? this.planModeEnabled,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
   }
+}
+
+Future<void> persistComposerMcpWorkflowDefaults(
+  WidgetRef ref, {
+  required Map<String, bool> mcpServersEnabled,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+  final workflow = await ref.read(workflowSettingsProvider.future);
+  if (workflow == null) return;
+  await rpc.saveWorkflowSettings(
+    WorkflowSettingsSnapshot(
+      planModeEnabled: workflow.planModeEnabled,
+      mcpServersEnabled: mcpServersEnabled,
+    ),
+  );
+  ref.invalidate(workflowSettingsProvider);
 }
 
 void persistRuntimeConfig(
@@ -142,6 +163,8 @@ class ComposerRouteSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final runtimeConfig = watchedComposerRuntimeConfig(ref, fallbackConfig);
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
+    final mcpServers = ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final profiles = modelSettings?.orchestrationProfiles ?? [];
     final selectedId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
@@ -176,17 +199,11 @@ class ComposerRouteSheet extends ConsumerWidget {
                               persistRuntimeConfig(
                                 ref,
                                 threadId: threadId,
-                                config: ThreadRuntimeConfig(
-                                  routeProfileId: entry.id,
-                                  agentProfileId: entry.id,
-                                  subagentEnabled:
-                                      deriveSubagentEnabledFromProfile(
-                                        entry,
-                                        existing: runtimeConfig.subagentEnabled,
-                                      ),
-                                  planModeEnabled:
-                                      runtimeConfig.planModeEnabled,
-                                  bashReviewMode: runtimeConfig.bashReviewMode,
+                                config: buildRuntimeConfigForProfile(
+                                  profile: entry,
+                                  runtimeConfig: runtimeConfig,
+                                  servers: mcpServers,
+                                  remembered: workflow?.mcpServersEnabled,
                                 ),
                                 onChanged: onChanged,
                               );
@@ -389,6 +406,8 @@ class ComposerProfileControl extends ConsumerWidget {
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
     final settings = await ref.read(modelSettingsProvider.future);
+    final workflow = await ref.read(workflowSettingsProvider.future);
+    final mcpServers = await ref.read(mcpSettingsProvider.future);
     final profiles = settings?.orchestrationProfiles ?? [];
     if (profiles.isEmpty || !context.mounted) return;
 
@@ -424,15 +443,11 @@ class ComposerProfileControl extends ConsumerWidget {
                       persistRuntimeConfig(
                         ref,
                         threadId: threadId,
-                        config: ThreadRuntimeConfig(
-                          routeProfileId: profile.id,
-                          agentProfileId: profile.id,
-                          subagentEnabled: deriveSubagentEnabledFromProfile(
-                            profile,
-                            existing: runtimeConfig.subagentEnabled,
-                          ),
-                          planModeEnabled: runtimeConfig.planModeEnabled,
-                          bashReviewMode: runtimeConfig.bashReviewMode,
+                        config: buildRuntimeConfigForProfile(
+                          profile: profile,
+                          runtimeConfig: runtimeConfig,
+                          servers: mcpServers?.servers ?? const [],
+                          remembered: workflow?.mcpServersEnabled,
                         ),
                         onChanged: onChanged,
                       );
@@ -553,40 +568,6 @@ class ComposerOrchestrationControl extends ConsumerWidget {
   }
 }
 
-class ComposerPlanModeControl extends ConsumerWidget {
-  const ComposerPlanModeControl({
-    super.key,
-    required this.runtimeConfig,
-    required this.threadId,
-    required this.canEdit,
-    required this.onChanged,
-  });
-
-  final ThreadRuntimeConfigInput runtimeConfig;
-  final String threadId;
-  final bool canEdit;
-  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final current = planModeUi(runtimeConfig.planModeEnabled);
-    return ComposerToolbarTrigger(
-      icon: planModeIcon(runtimeConfig.planModeEnabled),
-      label: current.title,
-      enabled: canEdit,
-      onTap: canEdit
-          ? () => showComposerPlanModeSheet(
-              context,
-              ref,
-              runtimeConfig: runtimeConfig,
-              threadId: threadId,
-              onChanged: onChanged,
-            )
-          : null,
-    );
-  }
-}
-
 class ComposerPlanModeIconButton extends ConsumerWidget {
   const ComposerPlanModeIconButton({
     super.key,
@@ -678,6 +659,146 @@ Future<void> showComposerPlanModeSheet(
             );
           }),
         ],
+      ),
+    ),
+  );
+}
+
+class ComposerMcpIconButton extends ConsumerWidget {
+  const ComposerMcpIconButton({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.onChanged,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mcpSettings = ref.watch(mcpSettingsProvider).valueOrNull;
+    final servers = mcpSettings?.servers ?? const [];
+    final enabledServers = servers
+        .where((server) => server.enabled && server.name.trim().isNotEmpty)
+        .toList();
+    if (enabledServers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
+    final profile = resolveThreadAgentProfile(
+      ref.watch(modelSettingsProvider).valueOrNull,
+      runtimeConfig,
+    );
+    final enabledSettings = resolveComposerMcpSettings(
+      servers: servers,
+      runtimeConfig: runtimeConfig,
+      profile: profile,
+      remembered: workflow?.mcpServersEnabled,
+    );
+    final enabledCount = countEnabledMcpServers(enabledSettings);
+    final summary = '$enabledCount/${enabledServers.length}';
+
+    return IconButton(
+      onPressed: () => showComposerMcpSheet(
+        context,
+        ref,
+        runtimeConfig: runtimeConfig,
+        threadId: threadId,
+        servers: enabledServers,
+        enabledSettings: enabledSettings,
+        onChanged: onChanged,
+      ),
+      tooltip: 'MCP 服务器 · $summary',
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      icon: Icon(
+        EcoIcons.mcp,
+        size: 22,
+        color: enabledCount > 0
+            ? ecoColors(context).accent
+            : ecoColors(context).textSecondary,
+      ),
+    );
+  }
+}
+
+Future<void> showComposerMcpSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  required ThreadRuntimeConfigInput runtimeConfig,
+  required String threadId,
+  required List<McpServerConfigView> servers,
+  required Map<String, bool> enabledSettings,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+}) async {
+  var currentConfig = runtimeConfig;
+  var currentSettings = Map<String, bool>.from(enabledSettings);
+
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: ecoColors(context).bgMenu,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (sheetContext) => SafeArea(
+      child: StatefulBuilder(
+        builder: (context, setSheetState) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SheetHeader(
+                  title: 'MCP 服务器 · '
+                      '${countEnabledMcpServers(currentSettings)}/${servers.length}',
+                ),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: servers.length,
+                    itemBuilder: (context, index) {
+                      final server = servers[index];
+                      final serverKey = sanitizeMcpServerName(server.name);
+                      final enabled = currentSettings[serverKey] ?? false;
+                      return SwitchListTile(
+                        title: Text(server.name),
+                        subtitle: Text(server.transport),
+                        value: enabled,
+                        onChanged: (value) async {
+                          final nextSettings = Map<String, bool>.from(
+                            currentSettings,
+                          )..[serverKey] = value;
+                          final nextConfig = currentConfig.copyWith(
+                            mcpServersEnabled: nextSettings,
+                          );
+                          currentConfig = nextConfig;
+                          currentSettings = nextSettings;
+                          setSheetState(() {});
+                          persistRuntimeConfig(
+                            ref,
+                            threadId: threadId,
+                            config: nextConfig,
+                            onChanged: onChanged,
+                          );
+                          await persistComposerMcpWorkflowDefaults(
+                            ref,
+                            mcpServersEnabled: nextSettings,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     ),
   );
