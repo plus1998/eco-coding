@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../core/theme/eco_theme.dart';
@@ -20,19 +18,19 @@ class ComposerContextMenuEntry {
   final bool danger;
 }
 
-const _menuRowHorizontalPadding = 16.0;
-const _menuRowVerticalPadding = 12.0;
-const _menuIconSize = 18.0;
+const _menuRowHorizontalPadding = 25.0;
+const _menuRowVerticalPadding = 10.0;
+const _menuIconSize = 17.0;
 const _menuIconGap = 10.0;
-const _menuCardVerticalPadding = 6.0;
-const _menuBorderRadius = 16.0;
-const _menuMinWidth = 220.0;
+const _menuCardVerticalPadding = 4.0;
+const _menuBorderRadius = 14.0;
+const _menuAnchorGap = 10.0;
+const _menuRowBodyHeight = 20.0;
 
 double _menuWidthForEntries(
   BuildContext context,
   List<ComposerContextMenuEntry> entries,
 ) {
-  final rowHorizontalPadding = _menuRowHorizontalPadding * 2;
   final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
         fontWeight: FontWeight.w500,
       );
@@ -44,12 +42,19 @@ double _menuWidthForEntries(
   for (final entry in entries) {
     painter.text = TextSpan(text: entry.label, style: textStyle);
     painter.layout();
-    maxTextWidth = math.max(maxTextWidth, painter.width);
+    if (painter.width > maxTextWidth) {
+      maxTextWidth = painter.width;
+    }
   }
-  return math.max(
-    _menuMinWidth,
-    rowHorizontalPadding + _menuIconSize + _menuIconGap + maxTextWidth,
-  );
+  return _menuRowHorizontalPadding * 2 +
+      _menuIconSize +
+      _menuIconGap +
+      maxTextWidth;
+}
+
+double _menuHeightForEntries(int entryCount) {
+  final rowHeight = _menuRowVerticalPadding * 2 + _menuRowBodyHeight;
+  return _menuCardVerticalPadding * 2 + entryCount * rowHeight;
 }
 
 void showComposerContextMenu({
@@ -65,11 +70,15 @@ void showComposerContextMenu({
   final overlayBox = overlayState.context.findRenderObject() as RenderBox;
   final origin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
   final menuWidth = _menuWidthForEntries(context, entries);
+  final menuHeight = _menuHeightForEntries(entries.length);
   final left = (origin.dx + box.size.width - menuWidth).clamp(
     12.0,
     overlayBox.size.width - menuWidth - 12,
   );
-  final top = origin.dy + box.size.height + 4;
+  final viewPadding = MediaQuery.viewPaddingOf(context);
+  final minTop = viewPadding.top + 8;
+  final maxTop = overlayBox.size.height - menuHeight - viewPadding.bottom - 12;
+  final top = (origin.dy - menuHeight - _menuAnchorGap).clamp(minTop, maxTop);
 
   late OverlayEntry entry;
   entry = OverlayEntry(
@@ -194,14 +203,12 @@ class _ComposerContextMenuRow extends StatelessWidget {
             children: [
               Icon(entry.icon, size: _menuIconSize, color: iconColor),
               const SizedBox(width: _menuIconGap),
-              Expanded(
-                child: Text(
-                  entry.label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
+              Text(
+                entry.label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ],
           ),

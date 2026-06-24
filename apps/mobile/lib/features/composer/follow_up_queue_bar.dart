@@ -86,18 +86,18 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
         ComposerContextMenuEntry(
           value: 'escalate',
           icon: EcoIcons.indent,
-          label: widget.escalateBusyId == widget.followUp.id ? '处理中…' : '立即引导',
+          label: widget.escalateBusyId == widget.followUp.id ? '处理中…' : '引导',
           enabled: !_actionBusy,
         ),
       const ComposerContextMenuEntry(
         value: 'edit',
         icon: EcoIcons.edit,
-        label: '编辑消息',
+        label: '修改',
       ),
       ComposerContextMenuEntry(
         value: 'delete',
         icon: EcoIcons.delete,
-        label: widget.cancelBusyId == widget.followUp.id ? '删除中…' : '删除引导',
+        label: widget.cancelBusyId == widget.followUp.id ? '删除中…' : '删除',
         enabled: !_actionBusy,
         danger: true,
       ),
