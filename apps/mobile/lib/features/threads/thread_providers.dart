@@ -86,6 +86,23 @@ ThreadRuntimeConfig defaultRuntimeConfig({
   );
 }
 
+void listenWorkspaceGitRefreshEvents(Ref ref) {
+  ref.listen(ecoEventsProvider, (previous, next) {
+    next.whenData((event) {
+      if (event.kind.startsWith('thread.') ||
+          event.kind.startsWith('agent.')) {
+        ref.invalidateSelf();
+      }
+    });
+  });
+}
+
+void refreshWorkspaceChanges(WidgetRef ref, String workspacePath) {
+  if (workspacePath.isEmpty) return;
+  ref.invalidate(gitStatusProvider(workspacePath));
+  ref.invalidate(workspaceDiffProvider(workspacePath));
+}
+
 final workspaceDiffProvider =
     FutureProvider.family<WorkspaceDiffResult?, String>((
       ref,
@@ -95,14 +112,7 @@ final workspaceDiffProvider =
       final rpc = ref.watch(desktopRpcProvider);
       if (rpc == null) return null;
 
-      ref.listen(ecoEventsProvider, (previous, next) {
-        next.whenData((event) {
-          if (event.kind.startsWith('thread.') ||
-              event.kind.startsWith('agent.')) {
-            ref.invalidateSelf();
-          }
-        });
-      });
+      listenWorkspaceGitRefreshEvents(ref);
 
       try {
         final diff = await rpc.getWorkspaceDiff(workspacePath);
@@ -119,6 +129,9 @@ final gitStatusProvider = FutureProvider.family<GitWorkingTreeStatus?, String>((
   if (workspacePath.isEmpty) return null;
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
+
+  listenWorkspaceGitRefreshEvents(ref);
+
   try {
     return await rpc.getGitStatus(workspacePath);
   } catch (_) {

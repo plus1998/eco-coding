@@ -110,7 +110,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
         workspacePath: widget.workspacePath,
         branch: widget.branch,
       );
-      ref.invalidate(workspaceDiffProvider(widget.workspacePath));
+      refreshWorkspaceChanges(ref, widget.workspacePath);
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       setState(() => _error = error.toString());
@@ -133,7 +133,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
         profileId: widget.profileId,
         message: message.isEmpty ? null : message,
       );
-      ref.invalidate(workspaceDiffProvider(widget.workspacePath));
+      refreshWorkspaceChanges(ref, widget.workspacePath);
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       setState(() => _error = error.toString());

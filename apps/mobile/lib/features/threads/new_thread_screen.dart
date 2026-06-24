@@ -144,11 +144,14 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                     ref.read(runtimeConfigProvider.notifier).state = config;
                   },
                   onChangesTap: workspacePath.isNotEmpty
-                      ? () => showWorkspaceDiffReviewSheet(
+                      ? () {
+                          refreshWorkspaceChanges(ref, workspacePath);
+                          showWorkspaceDiffReviewSheet(
                             context: context,
                             ref: ref,
                             workspacePath: workspacePath,
-                          )
+                          );
+                        }
                       : null,
                 ),
               ],

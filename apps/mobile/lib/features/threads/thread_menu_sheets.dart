@@ -42,6 +42,7 @@ Future<void> showWorkspaceDiffReviewSheet({
   required WidgetRef ref,
   required String workspacePath,
 }) {
+  refreshWorkspaceChanges(ref, workspacePath);
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -337,7 +338,9 @@ class _WorkspaceDiffReviewSheetState
     if (rpc == null) {
       throw StateError('未连接 Desktop');
     }
-    return rpc.getWorkspaceDiff(widget.workspacePath);
+    final diff = await rpc.getWorkspaceDiff(widget.workspacePath);
+    refreshWorkspaceChanges(ref, widget.workspacePath);
+    return diff;
   }
 
   Future<void> _refresh() async {

@@ -85,6 +85,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshFollowUps());
+      final workspacePath =
+          ref.read(threadSessionProvider(widget.threadId)).thread?.workspacePath ??
+          '';
+      if (workspacePath.isNotEmpty) {
+        refreshWorkspaceChanges(ref, workspacePath);
+      }
     }
   }
 
@@ -255,6 +261,17 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           onlyIfNearBottom: !projectionBecameReady,
         );
       }
+      final prevThread = previous?.thread;
+      final nextThread = next.thread;
+      if (prevThread != null &&
+          nextThread != null &&
+          isThreadBusy(prevThread) &&
+          !isThreadBusy(nextThread)) {
+        final path = nextThread.workspacePath;
+        if (path.isNotEmpty) {
+          refreshWorkspaceChanges(ref, path);
+        }
+      }
     });
 
     return Scaffold(
@@ -366,11 +383,14 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                     ref.read(runtimeConfigProvider.notifier).state = config;
                   },
                   onChangesTap: workspacePath.isNotEmpty
-                      ? () => showWorkspaceDiffReviewSheet(
-                          context: context,
-                          ref: ref,
-                          workspacePath: workspacePath,
-                        )
+                      ? () {
+                          refreshWorkspaceChanges(ref, workspacePath);
+                          showWorkspaceDiffReviewSheet(
+                            context: context,
+                            ref: ref,
+                            workspacePath: workspacePath,
+                          );
+                        }
                       : null,
                 ),
               ],

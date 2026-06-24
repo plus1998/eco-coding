@@ -406,8 +406,7 @@ Future<void> openCommitPushFromMenu({
   );
 
   if (committed == true && context.mounted) {
-    ref.invalidate(gitStatusProvider(workspacePath));
-    ref.invalidate(workspaceDiffProvider(workspacePath));
+    refreshWorkspaceChanges(ref, workspacePath);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('已提交并推送到远程')),
     );
@@ -427,8 +426,7 @@ Future<void> pullChangesFromMenu({
     workspacePath: workspacePath,
     branch: branch,
   );
-  ref.invalidate(gitStatusProvider(workspacePath));
-  ref.invalidate(workspaceDiffProvider(workspacePath));
+  refreshWorkspaceChanges(ref, workspacePath);
   if (!context.mounted) return;
 
   if (result.conflicted) {
