@@ -82,4 +82,24 @@ void main() {
 
     expect(config.mcpServersEnabled, const {'mongo': true, 'browser': true});
   });
+
+  test('ModelSettingsSnapshot parses embedded mcpSettings', () {
+    final settings = ModelSettingsSnapshot.fromJson({
+      'orchestrationProfiles': [],
+      'routeProfiles': [],
+      'mcpSettings': {
+        'servers': [
+          {
+            'id': '1',
+            'name': 'mongo',
+            'transport': 'stdio',
+            'enabled': true,
+          },
+        ],
+      },
+    });
+
+    expect(settings.mcpSettings?.servers.length, 1);
+    expect(settings.mcpSettings?.servers.first.name, 'mongo');
+  });
 }

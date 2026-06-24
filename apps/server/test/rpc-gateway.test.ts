@@ -80,6 +80,30 @@ test("rejects invokes from unbound mobile devices", async () => {
   await closeTestMongoStore(context.store);
 });
 
+test("forwards mcp-settings:get to desktop when remote-enabled", async () => {
+  const context = await createGatewayContext();
+  await context.gateway.connect(context.desktopPeer);
+  await context.gateway.connect(context.mobilePeer);
+  clearMessages(context);
+
+  await context.gateway.handleMessage(
+    context.mobilePeer,
+    JSON.stringify(
+      buildEcoJsonRpcRequest("mobile_req_mcp", ECO_RPC_METHODS.invoke, {
+        desktopDeviceId: context.desktopPeer.deviceId,
+        channel: "mcp-settings:get",
+        args: [],
+      }),
+    ),
+  );
+
+  expect(context.desktopMessages).toHaveLength(1);
+  expect((context.desktopMessages[0] as { params: { channel: string } }).params.channel).toBe(
+    "mcp-settings:get",
+  );
+  await closeTestMongoStore(context.store);
+});
+
 test("rejects non remote-enabled commands before forwarding to desktop", async () => {
   const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);

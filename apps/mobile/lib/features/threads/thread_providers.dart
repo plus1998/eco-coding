@@ -78,6 +78,12 @@ final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
 });
 
 final mcpSettingsProvider = FutureProvider<McpSettingsSnapshot?>((ref) async {
+  final modelSettings = await ref.watch(modelSettingsProvider.future);
+  final embedded = modelSettings?.mcpSettings;
+  if (embedded != null) {
+    return embedded;
+  }
+
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
   try {

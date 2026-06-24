@@ -762,7 +762,10 @@ app.on("will-quit", () => {
 });
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
-  return mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore);
+  return {
+    ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore),
+    mcpSettings: mcpStore.getSettings(),
+  };
 }
 
 function assertCanWriteAgentTemplateId(id: string): void {

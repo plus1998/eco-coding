@@ -1,5 +1,6 @@
 import '../utils/activity_display.dart';
 import 'composer_mcp.dart';
+import 'mcp_models.dart';
 import 'thread_run_projection.dart';
 import 'thread_usage_models.dart';
 
@@ -730,23 +731,30 @@ class ModelSettingsSnapshot {
   const ModelSettingsSnapshot({
     required this.orchestrationProfiles,
     required this.routeProfiles,
+    this.mcpSettings,
   });
 
-  factory ModelSettingsSnapshot.fromJson(Map<String, dynamic> json) =>
-      ModelSettingsSnapshot(
-        orchestrationProfiles:
-            (json['orchestrationProfiles'] as List<dynamic>? ?? [])
-                .map((e) => OrchestrationProfile.fromJson(
-                      e as Map<String, dynamic>,
-                    ))
-                .toList(),
-        routeProfiles: (json['routeProfiles'] as List<dynamic>? ?? [])
-            .map((e) => RouteProfileSummary.fromJson(
-                  e as Map<String, dynamic>,
-                ))
-            .toList(),
-      );
+  factory ModelSettingsSnapshot.fromJson(Map<String, dynamic> json) {
+    final rawMcpSettings = json['mcpSettings'];
+    return ModelSettingsSnapshot(
+      orchestrationProfiles:
+          (json['orchestrationProfiles'] as List<dynamic>? ?? [])
+              .map((e) => OrchestrationProfile.fromJson(
+                    e as Map<String, dynamic>,
+                  ))
+              .toList(),
+      routeProfiles: (json['routeProfiles'] as List<dynamic>? ?? [])
+          .map((e) => RouteProfileSummary.fromJson(
+                e as Map<String, dynamic>,
+              ))
+          .toList(),
+      mcpSettings: rawMcpSettings is Map<String, dynamic>
+          ? McpSettingsSnapshot.fromJson(rawMcpSettings)
+          : null,
+    );
+  }
 
   final List<OrchestrationProfile> orchestrationProfiles;
   final List<RouteProfileSummary> routeProfiles;
+  final McpSettingsSnapshot? mcpSettings;
 }

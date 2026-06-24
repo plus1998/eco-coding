@@ -632,6 +632,7 @@ export interface ModelSettingsSnapshot {
   routeProfiles: RouteProfileView[];
   agentTemplates: AgentTemplate[];
   orchestrationProfiles: OrchestrationProfile[];
+  mcpSettings?: McpSettingsSnapshot;
 }
 
 export interface AgentTemplateExportRequest {
