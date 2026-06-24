@@ -105,22 +105,100 @@ ThreadRuntimeConfig defaultRuntimeConfig({
   );
 }
 
-void listenWorkspaceGitRefreshEvents(Ref ref) {
-  ref.listen(ecoEventsProvider, (previous, next) {
-    next.whenData((event) {
-      if (event.kind.startsWith('thread.') ||
-          event.kind.startsWith('agent.')) {
-        ref.invalidateSelf();
-      }
-    });
-  });
+String normalizeWorkspacePathKey(String workspacePath) {
+  var normalized = workspacePath.trim();
+  while (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  return normalized;
 }
 
 void refreshWorkspaceChanges(WidgetRef ref, String workspacePath) {
   if (workspacePath.isEmpty) return;
+  ref.read(workspaceGitStatusPushProvider.notifier).clearForWorkspace(workspacePath);
   ref.invalidate(gitStatusProvider(workspacePath));
   ref.invalidate(workspaceDiffProvider(workspacePath));
 }
+
+final workspaceGitStatusPushProvider =
+    NotifierProvider<WorkspaceGitStatusPushNotifier, Map<String, WorkspaceChangesSummary>>(
+  WorkspaceGitStatusPushNotifier.new,
+);
+
+class WorkspaceGitStatusPushNotifier extends Notifier<Map<String, WorkspaceChangesSummary>> {
+  @override
+  Map<String, WorkspaceChangesSummary> build() {
+    ref.listen(ecoEventsProvider, (previous, next) {
+      next.whenData(_handleEvent);
+    });
+    return const {};
+  }
+
+  void _handleEvent(EcoEventEnvelope event) {
+    if (event.kind != 'workspace.git_status_changed') {
+      return;
+    }
+    final payload = event.payload;
+    if (payload is! Map<String, dynamic>) {
+      return;
+    }
+
+    final workspacePath = payload['workspacePath'] as String?;
+    if (workspacePath == null || workspacePath.trim().isEmpty) {
+      return;
+    }
+
+    final summary = WorkspaceChangesSummary(
+      fileCount: (payload['dirtyFileCount'] as num?)?.toInt() ?? 0,
+      totalAdditions: (payload['insertions'] as num?)?.toInt() ?? 0,
+      totalDeletions: (payload['deletions'] as num?)?.toInt() ?? 0,
+    );
+    final key = normalizeWorkspacePathKey(workspacePath);
+    final current = state[key];
+    if (current != null &&
+        current.fileCount == summary.fileCount &&
+        current.totalAdditions == summary.totalAdditions &&
+        current.totalDeletions == summary.totalDeletions) {
+      return;
+    }
+    state = {...state, key: summary};
+  }
+
+  void clearForWorkspace(String workspacePath) {
+    final key = normalizeWorkspacePathKey(workspacePath);
+    if (!state.containsKey(key)) {
+      return;
+    }
+    final next = Map<String, WorkspaceChangesSummary>.from(state);
+    next.remove(key);
+    state = next;
+  }
+}
+
+final workspacePillSummaryProvider =
+    Provider.family<WorkspaceChangesSummary?, String>((ref, workspacePath) {
+  if (workspacePath.isEmpty) {
+    return null;
+  }
+  final key = normalizeWorkspacePathKey(workspacePath);
+  final pushed = ref.watch(workspaceGitStatusPushProvider)[key];
+  if (pushed != null) {
+    return pushed;
+  }
+  return ref.watch(gitStatusProvider(workspacePath)).valueOrNull?.toChangesSummary();
+});
+
+final workspacePillLoadingProvider = Provider.family<bool, String>((ref, workspacePath) {
+  if (workspacePath.isEmpty) {
+    return false;
+  }
+  final key = normalizeWorkspacePathKey(workspacePath);
+  if (ref.watch(workspaceGitStatusPushProvider).containsKey(key)) {
+    return false;
+  }
+  final gitAsync = ref.watch(gitStatusProvider(workspacePath));
+  return gitAsync.isLoading || gitAsync.isReloading;
+});
 
 final workspaceDiffProvider =
     FutureProvider.family<WorkspaceDiffResult?, String>((
@@ -130,8 +208,6 @@ final workspaceDiffProvider =
       if (workspacePath.isEmpty) return null;
       final rpc = ref.watch(desktopRpcProvider);
       if (rpc == null) return null;
-
-      listenWorkspaceGitRefreshEvents(ref);
 
       try {
         final diff = await rpc.getWorkspaceDiff(workspacePath);
@@ -148,8 +224,6 @@ final gitStatusProvider = FutureProvider.family<GitWorkingTreeStatus?, String>((
   if (workspacePath.isEmpty) return null;
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
-
-  listenWorkspaceGitRefreshEvents(ref);
 
   try {
     return await rpc.getGitStatus(workspacePath);

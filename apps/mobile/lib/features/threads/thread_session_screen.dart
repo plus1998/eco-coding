@@ -220,9 +220,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ? ref.watch(gitStatusProvider(workspacePath))
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
-    final workspaceChanges = gitStatus?.toChangesSummary();
-    final changesLoading =
-        gitStatusAsync.isLoading || gitStatusAsync.isReloading;
+    final workspaceChanges = ref.watch(workspacePillSummaryProvider(workspacePath));
+    final changesLoading = ref.watch(workspacePillLoadingProvider(workspacePath));
     final isRunning = _isRunning(thread);
     final showLanding =
         !session.loading &&

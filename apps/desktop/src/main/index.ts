@@ -376,6 +376,7 @@ import {
 import { buildThreadRunProjection } from "./thread-run-projection";
 import { trimProjectionForFeed } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
+import { WorkspaceGitStatusPublisher } from "./workspace-git-status-publisher";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
 import {
   buildThreadUsageSnapshotResult,
@@ -465,6 +466,9 @@ const packageScriptRunner = new PackageScriptRunner((event) => {
 const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
   desktopEventCenter.publishPackageJsonChanged(workspacePath);
 });
+const workspaceGitStatusPublisher = new WorkspaceGitStatusPublisher(runGitCommand, (summary) => {
+  desktopEventCenter.publishGitStatusChanged(summary);
+});
 let gitAutoFetcher: GitAutoFetcher | undefined;
 let activeGitOperations = 0;
 const gitWorktrees = new GitWorktreeService(gitRunner);
@@ -483,6 +487,17 @@ function emitCenterServerStatus(): void {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.centerServerStatusChanged, centerServerClient.getSnapshot());
   });
+}
+
+function scheduleWorkspaceGitStatusPublish(workspacePath: string | undefined): void {
+  if (!workspacePath?.trim()) {
+    return;
+  }
+  workspaceGitStatusPublisher.schedule(workspacePath.trim());
+}
+
+function scheduleWorkspaceGitStatusPublishForThread(threadId: string): void {
+  scheduleWorkspaceGitStatusPublish(conversationStore.getThread(threadId)?.workspacePath);
 }
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
@@ -1957,11 +1972,13 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid git discard workspace changes request.");
     }
     const filePath = typeof record.path === "string" ? record.path.trim() : undefined;
-    return discardWorkspaceChanges(
+    const result = await discardWorkspaceChanges(
       record.workspacePath.trim(),
       filePath ? { path: filePath } : {},
       runGitCommand,
     );
+    scheduleWorkspaceGitStatusPublish(record.workspacePath);
+    return result;
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitListCommits, async (payload: unknown) => {
@@ -1984,6 +2001,7 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid git checkout request.");
     }
     await checkoutGitBranch(record.workspacePath, record.branch, runGitCommand);
+    scheduleWorkspaceGitStatusPublish(record.workspacePath);
     return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
   });
 
@@ -1996,6 +2014,7 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid git create branch request.");
     }
     await createGitBranch(record.workspacePath, record.branch, runGitCommand);
+    scheduleWorkspaceGitStatusPublish(record.workspacePath);
     return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
   });
 
@@ -2027,6 +2046,7 @@ function registerIpcHandlers(): void {
       currentWorkspace = await inspectWorkspace(payload.workspacePath.trim());
       syncGitAutoFetcherWorkspace();
     }
+    scheduleWorkspaceGitStatusPublish(payload.workspacePath);
     return result;
   });
 
@@ -2034,7 +2054,9 @@ function registerIpcHandlers(): void {
     if (!isGitPushRequest(payload)) {
       throw new Error("Invalid git push request.");
     }
-    return handleGitPush(payload, runGitCommand);
+    const result = await handleGitPush(payload, runGitCommand);
+    scheduleWorkspaceGitStatusPublish(payload.workspacePath);
+    return result;
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitPull, async (payload: unknown) => {
@@ -2046,6 +2068,7 @@ function registerIpcHandlers(): void {
       currentWorkspace = await inspectWorkspace(payload.workspacePath.trim());
       syncGitAutoFetcherWorkspace();
     }
+    scheduleWorkspaceGitStatusPublish(payload.workspacePath);
     return result;
   });
 
@@ -5778,6 +5801,14 @@ function emitThreadEvent(
     payload.tool = extras.tool;
   }
 
+  if (
+    type === "workspace.changes" ||
+    type === "thread.completed" ||
+    type === "thread.idle"
+  ) {
+    scheduleWorkspaceGitStatusPublishForThread(threadId);
+  }
+
   desktopEventCenter.publishThreadLiveEvent(payload);
   return persistedActivityLine;
 }
@@ -5913,6 +5944,9 @@ function recordThreadRunEventFromLiveEvent(input: {
   try {
     conversationStore.appendThreadRunEvent(event);
     scheduleThreadRunProjectionUpdated(input.threadId);
+    if (input.extras?.tool?.fileChange) {
+      scheduleWorkspaceGitStatusPublishForThread(input.threadId);
+    }
   } catch (error) {
     process.stderr.write(`[eco] thread run event shadow write failed: ${errorMessage(error)}\n`);
   }

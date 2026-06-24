@@ -15,6 +15,7 @@ import {
   type EventCenterJsonRpcResponse,
   type EventCenterPackageJsonChangedPayload,
   type EventCenterGitRemoteFetchedPayload,
+  type EventCenterGitStatusChangedPayload,
   type EventCenterPayloadMap,
   isEventCenterInvokeParams,
   isEventCenterJsonRpcRequest,
@@ -147,6 +148,17 @@ export class DesktopEventCenter {
       payload: { workspacePath },
       workspacePath,
       aggregateKey: `workspace:${workspacePath}:git-fetch`,
+    });
+  }
+
+  publishGitStatusChanged(
+    payload: EventCenterGitStatusChangedPayload,
+  ): EventCenterEnvelope<EventCenterGitStatusChangedPayload> {
+    return this.publish({
+      kind: "workspace.git_status_changed",
+      payload,
+      workspacePath: payload.workspacePath,
+      aggregateKey: `workspace:${payload.workspacePath}:git-status`,
     });
   }
 

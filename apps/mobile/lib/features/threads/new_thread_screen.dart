@@ -72,8 +72,8 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
         ? ref.watch(gitStatusProvider(workspacePath))
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
-    final workspaceChanges = gitStatus?.toChangesSummary();
-    final changesLoading = gitStatusAsync.isLoading || gitStatusAsync.isReloading;
+    final workspaceChanges = ref.watch(workspacePillSummaryProvider(workspacePath));
+    final changesLoading = ref.watch(workspacePillLoadingProvider(workspacePath));
     final projectsAsync = ref.watch(projectListProvider);
     EcoProject? project;
     for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {

@@ -27,11 +27,15 @@ export type EventCenterEventKind =
   | "settings.updated"
   | "workspace.package_script"
   | "workspace.package_json_changed"
-  | "workspace.git_remote_fetched";
+  | "workspace.git_remote_fetched"
+  | "workspace.git_status_changed";
 
 export type ThreadEventCenterEventKind = Exclude<
   EventCenterEventKind,
-  "workspace.package_script" | "workspace.package_json_changed" | "workspace.git_remote_fetched"
+  | "workspace.package_script"
+  | "workspace.package_json_changed"
+  | "workspace.git_remote_fetched"
+  | "workspace.git_status_changed"
 >;
 
 export type EventCenterSource = "desktop" | "renderer" | "center-server" | "mobile";
@@ -104,6 +108,13 @@ export interface EventCenterGitRemoteFetchedPayload {
   workspacePath: string;
 }
 
+export interface EventCenterGitStatusChangedPayload {
+  workspacePath: string;
+  dirtyFileCount: number;
+  insertions: number;
+  deletions: number;
+}
+
 export interface EventCenterPayloadMap {
   "thread.lifecycle": ThreadLiveEvent;
   "thread.stream": ThreadLiveEvent;
@@ -119,6 +130,7 @@ export interface EventCenterPayloadMap {
   "workspace.package_script": PackageScriptStreamEvent;
   "workspace.package_json_changed": EventCenterPackageJsonChangedPayload;
   "workspace.git_remote_fetched": EventCenterGitRemoteFetchedPayload;
+  "workspace.git_status_changed": EventCenterGitStatusChangedPayload;
 }
 
 export const EVENT_CENTER_JSON_RPC_ERROR = {
