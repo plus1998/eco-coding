@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import type { PackageManagerKind } from "../shared/ipc";
 
@@ -18,7 +18,33 @@ const FALLBACK_PATH_PREFIXES = (home: string): string[] =>
     home ? path.join(home, ".bun", "bin") : "",
     home ? path.join(home, ".local", "bin") : "",
     home ? path.join(home, "Library", "pnpm") : "",
+    ...resolveNvmNodeBinDirs(home),
   ].filter(Boolean);
+
+function resolveNvmNodeBinDirs(home: string): string[] {
+  const nvmDir = process.env.NVM_DIR?.trim() || (home ? path.join(home, ".nvm") : "");
+  if (!nvmDir) {
+    return [];
+  }
+  const dirs: string[] = [];
+  const currentBin = path.join(nvmDir, "current", "bin");
+  if (fs.existsSync(currentBin)) {
+    dirs.push(currentBin);
+  }
+  const defaultAliasPath = path.join(nvmDir, "alias", "default");
+  try {
+    const version = fs.readFileSync(defaultAliasPath, "utf8").trim();
+    if (version) {
+      const versionBin = path.join(nvmDir, "versions", "node", version, "bin");
+      if (fs.existsSync(versionBin)) {
+        dirs.push(versionBin);
+      }
+    }
+  } catch {
+    // Ignore missing nvm alias files.
+  }
+  return dirs;
+}
 
 export function shellQuoteArg(value: string): string {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) {
@@ -54,7 +80,7 @@ export function toSpawnEnv(env: NodeJS.ProcessEnv = process.env): Record<string,
 function resolveViaPath(name: string, directories: string[]): string | undefined {
   for (const directory of directories) {
     const candidate = path.join(directory, name);
-    if (existsSync(candidate)) {
+    if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
@@ -69,13 +95,13 @@ export function resolveCommandExecutable(name: string, envKey?: string): string 
 
   if (envKey) {
     const fromEnv = process.env[envKey]?.trim();
-    if (fromEnv && existsSync(fromEnv)) {
+    if (fromEnv && fs.existsSync(fromEnv)) {
       executableCache.set(name, fromEnv);
       return fromEnv;
     }
   }
 
-  if (name.includes(path.sep) && existsSync(name)) {
+  if (name.includes(path.sep) && fs.existsSync(name)) {
     executableCache.set(name, name);
     return name;
   }

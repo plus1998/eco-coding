@@ -285,6 +285,7 @@ import {
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { checkMcpServerConnection } from "./mcp-checker";
 import { createMcpStore, type McpStore } from "./mcp-store";
+import { prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { launchInExternalTerminal } from "./open-external-terminal";
 import { PackageJsonWatcher } from "./package-json-watcher";
@@ -5419,6 +5420,7 @@ async function buildSdkSessionOptions(
     ? collectProfileAssignedMcpServers(profile, settings.agentTemplates)
     : [];
   const filteredMcp = filterMcpSdkConfigByAssignedServers(mcp, assignedMcpServers);
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(filteredMcp);
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
     thread?.workspacePath ??
@@ -5446,8 +5448,8 @@ async function buildSdkSessionOptions(
     ...(implicitReadAllowRoots.length > 0 ? { implicitReadAllowRoots } : {}),
     agentSkills,
     enabledSubagents,
-    ...(Object.keys(filteredMcp.mcpServers).length > 0 ? { mcpServers: filteredMcp.mcpServers } : {}),
-    ...(filteredMcp.allowedTools.length > 0 ? { mcpAllowedTools: filteredMcp.allowedTools } : {}),
+    ...(Object.keys(runtimeMcp.mcpServers).length > 0 ? { mcpServers: runtimeMcp.mcpServers } : {}),
+    ...(runtimeMcp.allowedTools.length > 0 ? { mcpAllowedTools: runtimeMcp.allowedTools } : {}),
   };
 }
 
