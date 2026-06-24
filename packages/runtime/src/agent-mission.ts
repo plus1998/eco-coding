@@ -11,6 +11,10 @@ export interface SubagentMissionPayload {
 
 const MISSION_PREFIX = "@mission ";
 
+export function isSubagentMissionEnvelope(message: string): boolean {
+  return message.trim().startsWith(MISSION_PREFIX);
+}
+
 const ROLE_DEFAULT_SUMMARY: Record<SubagentRole, string> = {
   explore: "只读探索代码库以收集上下文",
   architect: "根据计划梳理架构与实现方案",

@@ -275,6 +275,7 @@ export {
 export {
   formatSubagentMissionMessage,
   isGenericMissionSummary,
+  isSubagentMissionEnvelope,
   isToolElapsedDuration,
   isWeakAgentToolDetail,
   missionFromAgentToolDetail,

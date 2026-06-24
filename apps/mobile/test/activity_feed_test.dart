@@ -342,6 +342,17 @@ void main() {
     );
   });
 
+  test('isSubagentMissionEnvelope matches legacy and structured mission lines', () {
+    expect(isSubagentMissionEnvelope('@mission explore: scan src'), isTrue);
+    expect(
+      isSubagentMissionEnvelope(
+        '@mission {"role":"explore","summary":"scan","prompt":"scan src"}',
+      ),
+      isTrue,
+    );
+    expect(isSubagentMissionEnvelope('Plain task prompt'), isFalse);
+  });
+
   test('buildActivityFeed does not echo attributed @mission in main feed', () {
     const missionText =
         '@mission {"role":"explore","summary":"Gather CPU info","prompt":"Gather CPU info","agentId":"agent_explore_a"}';

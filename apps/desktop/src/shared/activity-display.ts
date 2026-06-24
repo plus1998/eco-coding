@@ -1,6 +1,6 @@
 /** Normalize activity line text for display (strip redundant subagent prefixes). */
 
-import { parseSubagentMissionMessage, shortenModelId } from "@eco/runtime";
+import { isSubagentMissionEnvelope, parseSubagentMissionMessage, shortenModelId } from "@eco/runtime";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
@@ -97,7 +97,7 @@ export function shouldClearReconnectActivity(line: { message: string; role: stri
     return false;
   }
 
-  if (parseSubagentMissionMessage(trimmed)) {
+  if (isSubagentMissionEnvelope(trimmed)) {
     return true;
   }
   if (/^正在刷新上下文用量/.test(trimmed)) {

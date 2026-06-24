@@ -35,7 +35,7 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
-import { formatRoleModelLabel, formatUsageBadge, resolveMissionDisplayText, shortenModelId } from "@eco/runtime";
+import { formatRoleModelLabel, formatUsageBadge, isSubagentMissionEnvelope, resolveMissionDisplayText, shortenModelId } from "@eco/runtime";
 import {
   activityLabelIncludesAgentRole,
   isRedundantAgentModelShort,
@@ -657,6 +657,9 @@ function shouldSuppressSubagentCardTimelineItem(
   hasDelegation: boolean,
 ): boolean {
   if (hasDelegation && item.eventType === "agent.started") {
+    return true;
+  }
+  if (isSubagentMissionEnvelope(item.text)) {
     return true;
   }
   if (!hasCardMission) {

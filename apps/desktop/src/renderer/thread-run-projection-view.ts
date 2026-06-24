@@ -16,7 +16,11 @@ import {
   toolStatusToLifecycle,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
-import { parseSubagentMissionMessage, resolveMissionDisplayText } from "@eco/runtime";
+import {
+  isSubagentMissionEnvelope,
+  parseSubagentMissionMessage,
+  resolveMissionDisplayText,
+} from "@eco/runtime";
 import {
   iconForToolName,
   resolveSubagentRunDisplayTitle,
@@ -183,11 +187,13 @@ function filterAbsorbedSubagentDelegations(
     return [...timeline];
   }
   return timeline.filter((item) => {
-    const mission = parseSubagentMissionMessage(item.text);
-    if (mission) {
-      const missionAgentId = mission.agentId?.trim();
-      if (missionAgentId && subagentAgentIds.has(missionAgentId)) {
-        return false;
+    if (isSubagentMissionEnvelope(item.text)) {
+      const mission = parseSubagentMissionMessage(item.text);
+      if (mission) {
+        const missionAgentId = mission.agentId?.trim();
+        if (missionAgentId && subagentAgentIds.has(missionAgentId)) {
+          return false;
+        }
       }
       const itemAgentId = item.agentId?.trim();
       if (itemAgentId && subagentAgentIds.has(itemAgentId)) {
@@ -718,7 +724,7 @@ function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean
   if (isProjectionTodoStatusItem(item)) {
     return false;
   }
-  if (parseSubagentMissionMessage(item.text)) {
+  if (isSubagentMissionEnvelope(item.text)) {
     return false;
   }
   if (
@@ -960,7 +966,7 @@ function findLatestAgentSpeechSummary(
     if (isProjectionTodoStatusItem(item)) {
       continue;
     }
-    if (parseSubagentMissionMessage(item.text)) {
+    if (isSubagentMissionEnvelope(item.text)) {
       continue;
     }
     if (item.eventType === "message.delta" || item.eventType === "message.final") {

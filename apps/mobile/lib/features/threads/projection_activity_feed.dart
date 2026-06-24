@@ -207,7 +207,7 @@ bool _isProjectionUserPromptItem(ThreadRunProjectionTimelineItem item) {
 
 bool _isAgentEchoTimelineItem(ThreadRunProjectionTimelineItem item) {
   if (_projectionLiveType(item) == 'todo.updated') return false;
-  if (parseSubagentMissionMessage(item.text) != null) return false;
+  if (isSubagentMissionEnvelope(item.text)) return false;
   if (item.eventType != 'message.delta' &&
       item.eventType != 'message.final' &&
       item.eventType != 'thinking.delta' &&
@@ -248,8 +248,8 @@ List<ThreadRunProjectionTimelineItem> _filterAbsorbedSubagentDelegations(
 
   return timeline.where((item) {
     final mission = parseSubagentMissionMessage(item.text);
-    if (mission != null) {
-      final missionAgentId = mission.agentId?.trim();
+    if (isSubagentMissionEnvelope(item.text)) {
+      final missionAgentId = mission?.agentId?.trim();
       if (missionAgentId != null &&
           missionAgentId.isNotEmpty &&
           subagentAgentIds.contains(missionAgentId)) {

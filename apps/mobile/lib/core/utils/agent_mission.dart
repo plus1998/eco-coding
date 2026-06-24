@@ -4,6 +4,10 @@ import 'activity_display.dart';
 
 const _missionPrefix = '@mission ';
 
+bool isSubagentMissionEnvelope(String message) {
+  return message.trim().startsWith(_missionPrefix);
+}
+
 class SubagentMissionPayload {
   const SubagentMissionPayload({
     required this.role,

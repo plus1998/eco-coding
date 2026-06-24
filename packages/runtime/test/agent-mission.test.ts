@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   formatSubagentMissionMessage,
   isGenericMissionSummary,
+  isSubagentMissionEnvelope,
   isWeakAgentToolDetail,
   parseSubagentMissionMessage,
   resolveMissionDisplayText,
@@ -36,6 +37,12 @@ test("resolveMissionDisplayText unwraps @mission payloads", () => {
   const message = formatSubagentMissionMessage("coder", "Implement login flow");
   expect(resolveMissionDisplayText(message)).toBe("Implement login flow");
   expect(resolveMissionDisplayText("Plain task prompt")).toBe("Plain task prompt");
+});
+
+test("isSubagentMissionEnvelope matches legacy and structured mission lines", () => {
+  expect(isSubagentMissionEnvelope("@mission explore: scan src")).toBe(true);
+  expect(isSubagentMissionEnvelope(formatSubagentMissionMessage("coder", "Fix tests"))).toBe(true);
+  expect(isSubagentMissionEnvelope("Plain task prompt")).toBe(false);
 });
 
 test("ignores elapsed duration in agent tool detail", () => {

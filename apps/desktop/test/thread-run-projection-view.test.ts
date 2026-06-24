@@ -1695,6 +1695,57 @@ test("buildThreadRunProjectionViewModel absorbs main feed @mission stamped with 
   expect(view.mainFeedEntries[0]?.kind).toBe("agent-card");
 });
 
+test("buildThreadRunProjectionViewModel does not echo legacy @mission below subagent card", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: "agent_explore_legacy",
+          role: "explore",
+          kind: "subagent",
+          status: "active",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          delegationPrompt: "scan src",
+          delegationSummary: "scan src",
+          timeline: [
+            item({
+              id: "mission-legacy",
+              eventType: "message.final",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_legacy",
+              text: "@mission explore: scan src",
+              at: "2026-01-01T00:00:01.100Z",
+              sequence: 2,
+            }),
+            item({
+              id: "agent-speech",
+              eventType: "message.final",
+              scope: "agent",
+              role: "explore",
+              agentId: "agent_explore_legacy",
+              text: "Scanning repository layout.",
+              at: "2026-01-01T00:00:02.000Z",
+              sequence: 3,
+            }),
+          ],
+        },
+      ],
+      timeline: [],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual([
+    "agent-card",
+    "agent-echo",
+  ]);
+  const echo = view.mainFeedEntries[1];
+  expect(echo?.kind).toBe("agent-echo");
+  if (echo?.kind === "agent-echo") {
+    expect(echo.item.text).toBe("Scanning repository layout.");
+  }
+});
+
 test("projectionItemToDetailBlock omits tool role badge and resolves icon from tool name", () => {
   const detail = projectionItemToDetailBlock(
     item({
