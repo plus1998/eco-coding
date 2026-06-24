@@ -47,6 +47,7 @@ test("registers explicit remote command definitions", () => {
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toContain(
     "workflow-settings:save",
   );
+  expect(isRemoteCommandChannel("mcp-settings:get")).toBe(true);
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(
     expect.arrayContaining([
       "thread:get",

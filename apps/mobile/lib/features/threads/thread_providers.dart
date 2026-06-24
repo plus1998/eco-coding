@@ -80,7 +80,11 @@ final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
 final mcpSettingsProvider = FutureProvider<McpSettingsSnapshot?>((ref) async {
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
-  return rpc.getMcpSettings();
+  try {
+    return await rpc.getMcpSettings();
+  } catch (_) {
+    return null;
+  }
 });
 
 ThreadRuntimeConfig defaultRuntimeConfig({
