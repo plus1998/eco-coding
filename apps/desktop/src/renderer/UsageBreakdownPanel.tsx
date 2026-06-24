@@ -427,20 +427,20 @@ function ViewToggle({
       <button
         type="button"
         role="tab"
-        aria-selected={view === "agent"}
-        className={view === "agent" ? "active" : undefined}
-        onClick={() => onChange("agent")}
-      >
-        按 Agent
-      </button>
-      <button
-        type="button"
-        role="tab"
         aria-selected={view === "model"}
         className={view === "model" ? "active" : undefined}
         onClick={() => onChange("model")}
       >
         按模型
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === "agent"}
+        className={view === "agent" ? "active" : undefined}
+        onClick={() => onChange("agent")}
+      >
+        按 Agent
       </button>
       {showEvents ? (
         <button
@@ -464,7 +464,7 @@ export function UsageBreakdownPanel({
   agentDisplayNames,
 }: UsageBreakdownPanelProps) {
   const breakdown = useMemo(() => buildBillingTokenBreakdown(billing), [billing]);
-  const [view, setView] = useState<BreakdownView>("agent");
+  const [view, setView] = useState<BreakdownView>("model");
   const [expanded, setExpanded] = useState(false);
   const [ledgerEvents, setLedgerEvents] = useState<ThreadUsageLedgerEventView[]>([]);
   const compact = variant === "compact";
@@ -510,7 +510,7 @@ export function UsageBreakdownPanel({
     );
 
   if (compact) {
-    const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
+    const summaryRows = breakdown.byModel.length > 0 ? breakdown.byModel : breakdown.byAgent;
     const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
     return (
@@ -539,7 +539,7 @@ export function UsageBreakdownPanel({
     );
   }
 
-  const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
+  const summaryRows = breakdown.byModel.length > 0 ? breakdown.byModel : breakdown.byAgent;
   const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
   return (
