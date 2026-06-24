@@ -761,11 +761,16 @@ class _BashRunCardState extends State<_BashRunCard> {
                 Divider(height: 1, color: ecoColors(context).borderSubtle),
                 EcoClippedFadeBody(
                   expanded: _bodyExpanded || !canExpand,
-                  collapsedMaxHeight: 52,
+                  collapsedMaxHeight: 60,
                   showFade: canExpand && !_bodyExpanded,
                   fadeColor: ecoColors(context).cardSurface,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      10,
+                      12,
+                      _bodyExpanded || !canExpand ? 12 : 8,
+                    ),
                     child: AnimatedSize(
                       duration: const Duration(milliseconds: 150),
                       curve: Curves.easeOut,
@@ -870,39 +875,45 @@ class _FileChangeCardState extends State<_FileChangeCard> {
                         ),
                   ),
                 ),
-                if (display.additions > 0)
-                  Text(
-                    '+${display.additions}',
-                    style: TextStyle(
-                      color: ecoColors(context).success,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                if (display.additions > 0 && display.deletions > 0)
-                  const SizedBox(width: 8),
-                if (display.deletions > 0)
-                  Text(
-                    '-${display.deletions}',
-                    style: TextStyle(
-                      color: ecoColors(context).danger,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (display.additions > 0)
+                      Text(
+                        '+${display.additions}',
+                        style: TextStyle(
+                          color: ecoColors(context).success,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    if (display.additions > 0 && display.deletions > 0)
+                      const SizedBox(width: 8),
+                    if (display.deletions > 0)
+                      Text(
+                        '-${display.deletions}',
+                        style: TextStyle(
+                          color: ecoColors(context).danger,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
           Divider(height: 1, color: ecoColors(context).borderSubtle),
           EcoClippedFadeBody(
             expanded: _expanded,
-            collapsedMaxHeight: 132,
+            collapsedMaxHeight: 148,
             showFade: !_expanded && hasMore,
             fadeColor: ecoColors(context).cardSurface,
             child: Padding(
-              padding: const EdgeInsets.only(top: 6, bottom: 10),
+              padding: EdgeInsets.only(top: 6, bottom: _expanded ? 10 : 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1323,7 +1334,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                 else
                   EcoClippedFadeBody(
                     expanded: false,
-                    collapsedMaxHeight: 42,
+                    collapsedMaxHeight: 48,
                     showFade: fullText.length > 80,
                     fadeColor: resolvedBackground == Colors.transparent
                         ? ecoColors(context).cardSurface

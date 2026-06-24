@@ -57,26 +57,20 @@ class EcoDiffGutterLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: backgroundColor ?? Colors.transparent,
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ColoredBox(
-              color: gutterColor,
-              child: SizedBox(width: gutterWidth),
-            ),
-            Expanded(
-              child: Padding(
-                padding: contentPadding,
-                child: Text(
-                  text.isEmpty ? ' ' : text,
-                  style: style,
-                ),
-              ),
-            ),
-          ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: backgroundColor ?? Colors.transparent,
+        border: Border(
+          left: BorderSide(color: gutterColor, width: gutterWidth),
+        ),
+      ),
+      child: Padding(
+        padding: contentPadding,
+        child: Text(
+          text.isEmpty ? ' ' : text,
+          style: style,
+          softWrap: true,
+          overflow: TextOverflow.clip,
         ),
       ),
     );
@@ -109,9 +103,13 @@ class EcoClippedFadeBody extends StatelessWidget {
     Widget body = child;
     if (!expanded) {
       body = ClipRect(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: collapsedMaxHeight),
-          child: child,
+        child: SizedBox(
+          height: collapsedMaxHeight,
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            clipBehavior: Clip.hardEdge,
+            child: child,
+          ),
         ),
       );
     }
