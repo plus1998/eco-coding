@@ -845,6 +845,7 @@ class _FileChangeCardState extends State<_FileChangeCard> {
           height: 1.45,
           color: ecoColors(context).textSecondary,
         );
+    final diffPalette = FileChangeDiffPalette.of(ecoColors(context));
 
     return EcoSurfaceCard(
       onTap: () => setState(() => _expanded = !_expanded),
@@ -883,7 +884,7 @@ class _FileChangeCardState extends State<_FileChangeCard> {
                       Text(
                         '+${display.additions}',
                         style: TextStyle(
-                          color: ecoColors(context).success,
+                          color: diffPalette.addStat,
                           fontWeight: FontWeight.w600,
                           fontSize: 12,
                           fontFeatures: const [FontFeature.tabularFigures()],
@@ -895,7 +896,7 @@ class _FileChangeCardState extends State<_FileChangeCard> {
                       Text(
                         '-${display.deletions}',
                         style: TextStyle(
-                          color: ecoColors(context).danger,
+                          color: diffPalette.removeStat,
                           fontWeight: FontWeight.w600,
                           fontSize: 12,
                           fontFeatures: const [FontFeature.tabularFigures()],
@@ -920,16 +921,8 @@ class _FileChangeCardState extends State<_FileChangeCard> {
                   for (final line in previewLines)
                     EcoDiffGutterLine(
                       text: line.text,
-                      gutterColor: switch (line.kind) {
-                        FileChangePreviewLineKind.add => ecoColors(context).success,
-                        FileChangePreviewLineKind.remove => ecoColors(context).danger,
-                        FileChangePreviewLineKind.context => Colors.transparent,
-                      },
-                      backgroundColor: switch (line.kind) {
-                        FileChangePreviewLineKind.add => ecoColors(context).statusAllowBg,
-                        FileChangePreviewLineKind.remove => ecoColors(context).statusDenyBg,
-                        FileChangePreviewLineKind.context => Colors.transparent,
-                      },
+                      gutterColor: diffPalette.gutterFor(line.kind),
+                      backgroundColor: diffPalette.backgroundFor(line.kind),
                       style: lineStyle,
                     ),
                 ],

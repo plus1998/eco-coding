@@ -1,5 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
+
+import '../theme/eco_theme.dart';
+
 enum FileChangePreviewLineKind { add, remove, context }
 
 class FileChangePreviewLine {
@@ -21,6 +25,48 @@ class ThreadRunFileChangeMetadata {
   final int additions;
   final int deletions;
   final List<FileChangePreviewLine> previewLines;
+}
+
+/// Muted diff colors for activity file-change cards.
+class FileChangeDiffPalette {
+  const FileChangeDiffPalette({
+    required this.addStat,
+    required this.removeStat,
+    required this.addGutter,
+    required this.removeGutter,
+    required this.addBackground,
+    required this.removeBackground,
+  });
+
+  final Color addStat;
+  final Color removeStat;
+  final Color addGutter;
+  final Color removeGutter;
+  final Color addBackground;
+  final Color removeBackground;
+
+  factory FileChangeDiffPalette.of(EcoColors eco) {
+    return FileChangeDiffPalette(
+      addStat: eco.success.withValues(alpha: 0.58),
+      removeStat: eco.danger.withValues(alpha: 0.58),
+      addGutter: eco.success.withValues(alpha: 0.28),
+      removeGutter: eco.danger.withValues(alpha: 0.28),
+      addBackground: eco.success.withValues(alpha: 0.05),
+      removeBackground: eco.danger.withValues(alpha: 0.05),
+    );
+  }
+
+  Color gutterFor(FileChangePreviewLineKind kind) => switch (kind) {
+        FileChangePreviewLineKind.add => addGutter,
+        FileChangePreviewLineKind.remove => removeGutter,
+        FileChangePreviewLineKind.context => Colors.transparent,
+      };
+
+  Color backgroundFor(FileChangePreviewLineKind kind) => switch (kind) {
+        FileChangePreviewLineKind.add => addBackground,
+        FileChangePreviewLineKind.remove => removeBackground,
+        FileChangePreviewLineKind.context => Colors.transparent,
+      };
 }
 
 class FileChangeCardDisplay {

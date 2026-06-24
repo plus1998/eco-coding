@@ -5668,11 +5668,11 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-file-change-card-stats .stat-add {
-  color: #4ade80;
+  color: rgba(134, 239, 172, 0.58);
 }
 
 .run-log-file-change-card-stats .stat-del {
-  color: #f87171;
+  color: rgba(252, 165, 165, 0.58);
 }
 
 .run-log-file-change-card-divider {
@@ -5713,13 +5713,13 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-file-change-line.is-add {
-  background: rgba(34, 197, 94, 0.12);
-  border-left-color: #4ade80;
+  background: rgba(34, 197, 94, 0.05);
+  border-left-color: rgba(74, 222, 128, 0.28);
 }
 
 .run-log-file-change-line.is-remove {
-  background: rgba(248, 113, 113, 0.12);
-  border-left-color: #f87171;
+  background: rgba(248, 113, 113, 0.05);
+  border-left-color: rgba(248, 113, 113, 0.28);
 }
 
 .run-log-file-change-card-fade {
@@ -13423,6 +13423,24 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-file-change-card-fade {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, var(--codex-log-bg, #fff) 78%);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-card-stats .stat-add {
+  color: rgba(36, 138, 61, 0.62);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-card-stats .stat-del {
+  color: rgba(215, 0, 21, 0.52);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-line.is-add {
+  background: rgba(36, 138, 61, 0.05);
+  border-left-color: rgba(36, 138, 61, 0.22);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-line.is-remove {
+  background: rgba(215, 0, 21, 0.04);
+  border-left-color: rgba(215, 0, 21, 0.2);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {
