@@ -9,6 +9,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
+import '../../core/providers/app_providers.dart';
 import '../composer/composer_dock_shell.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
@@ -29,6 +30,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   var _starting = false;
+  String? _runtimeConfigDesktopId;
 
   @override
   void initState() {
@@ -38,7 +40,12 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   }
 
   Future<void> _initRuntimeConfig() async {
-    if (ref.read(runtimeConfigProvider) != null) return;
+    final currentDesktopId = ref.read(selectedDesktopIdProvider);
+    final existing = ref.read(runtimeConfigProvider);
+    // Re-initialize only when there's no config or the desktop has changed.
+    if (existing != null && _runtimeConfigDesktopId == currentDesktopId) return;
+
+    _runtimeConfigDesktopId = currentDesktopId;
     final modelSettings = await ref.read(modelSettingsProvider.future);
     final workflow = await ref.read(workflowSettingsProvider.future);
     final mcpSettings = await ref.read(mcpSettingsProvider.future);
@@ -58,6 +65,14 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // When the selected desktop changes, clear the runtime config so it
+    // re-derives from the newly-selected desktop's model/MCP settings.
+    ref.listen(selectedDesktopIdProvider, (previous, next) {
+      if (previous != null && previous != next) {
+        ref.read(runtimeConfigProvider.notifier).state = null;
+      }
+    });
+
     final workspacePath = ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
     final modelSettings = ref.watch(modelSettingsProvider);
     final workflow = ref.watch(workflowSettingsProvider);
