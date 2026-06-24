@@ -1,5 +1,6 @@
 import '../../core/models/thread_run_projection.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import 'activity_feed.dart';
@@ -573,6 +574,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       ? bashApprovalPhaseToLifecycle(bashApproval.phase)
       : _toolLifecycleFromProjectionItem(item, tool);
   final command = tool?.detail?.trim() ?? bashApproval?.detail?.trim();
+  final fileChange = resolveFileChangeCardDisplay(tool?.fileChange);
   return ActivityFeedEntry(
     id: item.id,
     kind: ActivityFeedKind.action,
@@ -592,6 +594,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
             summaryText: item.text,
           )
         : null,
+    fileChange: fileChange,
   );
 }
 
@@ -822,6 +825,7 @@ int _projectionToolDisplayRichness(ThreadRunProjectionTimelineItem item) {
   if (tool?.description?.trim().isNotEmpty == true) score += 2;
   if (tool?.output?.trim().isNotEmpty == true) score += 4;
   if (tool?.durationMs != null) score += 8;
+  if (tool?.fileChange != null) score += 32;
   if (item.eventType == 'tool.completed') score += 16;
   return score;
 }

@@ -309,6 +309,7 @@ function normalizeThreadRunToolMetadata(tool: ThreadRunToolMetadata): ThreadRunT
     ...(tool.toolUseId?.trim() && { toolUseId: tool.toolUseId.trim() }),
     ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
     ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),
+    ...(tool.fileChange && { fileChange: tool.fileChange }),
   };
 }
 

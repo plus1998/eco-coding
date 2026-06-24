@@ -253,7 +253,7 @@ function ProjectionActivityLogView({
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && block.bashRun) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange)) {
     return false;
   }
   return (
@@ -860,6 +860,7 @@ function DetailBlock({
         icon={block.icon}
         label={block.label}
         {...(block.bashRun && { bashRun: block.bashRun })}
+        {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -1481,6 +1482,7 @@ function RunLogAction({
   label,
   lifecycle,
   bashRun,
+  fileChange,
   subagent,
   modelByRole,
   omitRoleLabel,
@@ -1489,6 +1491,7 @@ function RunLogAction({
   label: string;
   lifecycle?: ToolActionLifecycle;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
+  fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
@@ -1566,6 +1569,17 @@ function RunLogAction({
     );
   }
 
+  if (fileChange) {
+    return (
+      <div className="run-log-action run-log-action--file-change-card">
+        {showRoleLabel ? (
+          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+        ) : null}
+        <RunLogFileChangeCard display={fileChange} {...(lifecycle && { lifecycle })} />
+      </div>
+    );
+  }
+
   return (
     <div className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}>
       {showRoleLabel ? (
@@ -1594,6 +1608,64 @@ function RunLogAction({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function RunLogFileChangeCard({
+  display,
+  lifecycle,
+}: {
+  display: import("../shared/activity-display").FileChangeCardDisplay;
+  lifecycle?: ToolActionLifecycle;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const collapsedLineLimit = 6;
+  const previewLines = expanded ? display.previewLines : display.previewLines.slice(0, collapsedLineLimit);
+  const hasMore = display.previewLines.length > collapsedLineLimit;
+
+  return (
+    <button
+      type="button"
+      className={[
+        "run-log-file-change-card",
+        lifecycle === "running" ? "is-running" : "",
+        lifecycle === "failed" ? "is-failed" : "",
+        expanded ? "is-expanded" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => setExpanded((value) => !value)}
+      aria-expanded={expanded}
+    >
+      <div className="run-log-file-change-card-header">
+        <FileText size={16} className="run-log-file-change-card-icon" aria-hidden />
+        <span className="run-log-file-change-card-title">{display.fileName}</span>
+        <span className="run-log-file-change-card-stats">
+          {display.additions > 0 ? <span className="stat-add">+{display.additions}</span> : null}
+          {display.deletions > 0 ? <span className="stat-del">-{display.deletions}</span> : null}
+        </span>
+      </div>
+      <div className="run-log-file-change-card-divider" aria-hidden />
+      <div className="run-log-file-change-card-preview-shell">
+        <div className="run-log-file-change-card-preview">
+          {previewLines.map((line, index) => (
+            <div
+              key={`${line.kind}:${index}:${line.text.slice(0, 24)}`}
+              className={[
+                "run-log-file-change-line",
+                line.kind === "add" ? "is-add" : "",
+                line.kind === "remove" ? "is-remove" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <code>{line.text || " "}</code>
+            </div>
+          ))}
+        </div>
+        {!expanded && hasMore ? <div className="run-log-file-change-card-fade" aria-hidden /> : null}
+      </div>
+    </button>
   );
 }
 

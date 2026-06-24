@@ -7,6 +7,7 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
@@ -44,6 +45,7 @@ class ActivityFeedEntry {
     this.statusText,
     this.timeline = const [],
     this.bashRun,
+    this.fileChange,
     this.toolUseId,
     this.reconnecting = false,
   });
@@ -64,6 +66,7 @@ class ActivityFeedEntry {
   final String? statusText;
   final List<SubagentTimelineEntry> timeline;
   final BashRunCardDisplay? bashRun;
+  final FileChangeCardDisplay? fileChange;
   final String? toolUseId;
   final bool reconnecting;
 }
@@ -158,6 +161,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           icon: entry.actionIcon ?? ActivityActionIcon.file,
           lifecycle: entry.lifecycle,
           bashRun: entry.bashRun,
+          fileChange: entry.fileChange,
         );
       case ActivityFeedKind.phase:
         if (entry.reconnecting) {
@@ -601,15 +605,23 @@ class _ActionTile extends StatelessWidget {
     required this.icon,
     this.lifecycle,
     this.bashRun,
+    this.fileChange,
   });
 
   final String label;
   final ActivityActionIcon icon;
   final ToolActionLifecycle? lifecycle;
   final BashRunCardDisplay? bashRun;
+  final FileChangeCardDisplay? fileChange;
 
   @override
   Widget build(BuildContext context) {
+    if (fileChange != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: _FileChangeCard(display: fileChange!, lifecycle: lifecycle),
+      );
+    }
     if (bashRun != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
@@ -798,6 +810,183 @@ bool _textExceedsLineLimit({
     textDirection: textDirection,
   )..layout(maxWidth: maxWidth);
   return painter.didExceedMaxLines;
+}
+
+class _FileChangeCard extends StatefulWidget {
+  const _FileChangeCard({required this.display, this.lifecycle});
+
+  final FileChangeCardDisplay display;
+  final ToolActionLifecycle? lifecycle;
+
+  @override
+  State<_FileChangeCard> createState() => _FileChangeCardState();
+}
+
+class _FileChangeCardState extends State<_FileChangeCard> {
+  static const _collapsedLineLimit = 6;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final display = widget.display;
+    final lifecycle = widget.lifecycle;
+    final running = lifecycle == ToolActionLifecycle.running;
+    final failed = lifecycle == ToolActionLifecycle.failed;
+    final borderColor = failed
+        ? ecoColors(context).danger.withValues(alpha: 0.45)
+        : running
+            ? ecoColors(context).accent.withValues(alpha: 0.45)
+            : ecoColors(context).borderSubtle;
+    final previewLines = _expanded
+        ? display.previewLines
+        : display.previewLines.take(_collapsedLineLimit).toList();
+    final hasMore = display.previewLines.length > _collapsedLineLimit;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        borderRadius: BorderRadius.circular(12),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: ecoColors(context).cardSurface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      EcoIcons.file,
+                      size: 16,
+                      color: ecoColors(context).accentText,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        display.fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: ecoColors(context).textHeading,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                    if (display.additions > 0)
+                      Text(
+                        '+${display.additions}',
+                        style: TextStyle(
+                          color: ecoColors(context).success,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    if (display.additions > 0 && display.deletions > 0)
+                      const SizedBox(width: 8),
+                    if (display.deletions > 0)
+                      Text(
+                        '-${display.deletions}',
+                        style: TextStyle(
+                          color: ecoColors(context).danger,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: ecoColors(context).borderSubtle),
+              Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
+                    child: Column(
+                      children: [
+                        for (final line in previewLines)
+                          _FileChangeLineRow(line: line),
+                      ],
+                    ),
+                  ),
+                  if (!_expanded && hasMore)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 44,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              ecoColors(context).cardSurface.withValues(alpha: 0),
+                              ecoColors(context).cardSurface,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FileChangeLineRow extends StatelessWidget {
+  const _FileChangeLineRow({required this.line});
+
+  final FileChangePreviewLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    Color background = Colors.transparent;
+    Color borderColor = Colors.transparent;
+    switch (line.kind) {
+      case FileChangePreviewLineKind.add:
+        background = ecoColors(context).statusAllowBg;
+        borderColor = ecoColors(context).success;
+      case FileChangePreviewLineKind.remove:
+        background = ecoColors(context).statusDenyBg;
+        borderColor = ecoColors(context).danger;
+      case FileChangePreviewLineKind.context:
+        background = Colors.transparent;
+        borderColor = Colors.transparent;
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        border: Border(
+          left: BorderSide(
+            color: borderColor,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+        child: Text(
+          line.text.isEmpty ? ' ' : line.text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontFamily: 'Menlo',
+                height: 1.45,
+                color: ecoColors(context).textSecondary,
+              ),
+        ),
+      ),
+    );
+  }
 }
 
 class _PhaseTile extends StatelessWidget {
@@ -1241,6 +1430,16 @@ class _SubagentTimelineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (entry.fileChange != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: _FileChangeCard(
+          display: entry.fileChange!,
+          lifecycle: entry.lifecycle,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(

@@ -1,5 +1,6 @@
 import '../models/thread_run_projection.dart';
 import 'subagent_session_timing.dart';
+import 'file_change.dart';
 import 'activity_display.dart';
 import 'agent_mission.dart';
 
@@ -12,6 +13,7 @@ class SubagentTimelineEntry {
     this.streaming = false,
     this.isError = false,
     this.toolUseId,
+    this.fileChange,
   });
 
   final String id;
@@ -21,6 +23,7 @@ class SubagentTimelineEntry {
   final bool streaming;
   final bool isError;
   final String? toolUseId;
+  final FileChangeCardDisplay? fileChange;
 }
 
 List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
@@ -56,6 +59,27 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
         item.eventType == 'tool.completed' ||
         item.eventType == 'tool.failed') {
       final tool = readProjectionToolMetadata(item.metadata);
+      final fileChange = resolveFileChangeCardDisplay(tool?.fileChange);
+      if (fileChange != null) {
+        output.add(
+          SubagentTimelineEntry(
+            id: item.id,
+            toolUseId: tool?.toolUseId,
+            label: fileChange.fileName,
+            icon: ActivityActionIcon.edit,
+            lifecycle: item.eventType == 'tool.failed'
+                ? ToolActionLifecycle.failed
+                : item.eventType == 'tool.completed'
+                    ? ToolActionLifecycle.completed
+                    : tool != null
+                        ? toolLifecycleFromMetadata(tool)
+                        : ToolActionLifecycle.running,
+            isError: item.eventType == 'tool.failed',
+            fileChange: fileChange,
+          ),
+        );
+        continue;
+      }
       final label = tool != null
           ? (tool.name == 'Bash' &&
                   tool.description?.trim().isNotEmpty == true

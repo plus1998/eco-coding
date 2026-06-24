@@ -3,6 +3,7 @@ import 'dart:ui' show Color;
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
 import '../theme/subagent_theme.dart' as subagent_theme;
+import 'file_change.dart';
 import 'subagent_session_timing.dart';
 
 const subagentDisplayRoles = {
@@ -262,6 +263,7 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(Map<String, dynamic>? json)
     output: output?.isNotEmpty == true ? output : null,
     durationMs: durationMs is int ? durationMs : null,
     status: status?.isNotEmpty == true ? status : null,
+    fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
   );
 }
 
@@ -356,6 +358,7 @@ class ThreadRunToolMetadata {
     this.output,
     this.durationMs,
     this.status,
+    this.fileChange,
   });
 
   final String name;
@@ -365,6 +368,7 @@ class ThreadRunToolMetadata {
   final String? output;
   final int? durationMs;
   final String? status;
+  final ThreadRunFileChangeMetadata? fileChange;
 }
 
 ThreadRunToolMetadata? readProjectionToolMetadata(Map<String, dynamic>? metadata) {

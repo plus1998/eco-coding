@@ -5610,6 +5610,142 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #c8c8c8;
 }
 
+.run-log-action--file-change-card {
+  display: block;
+  width: 100%;
+}
+
+.run-log-file-change-card {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-log-file-change-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.run-log-file-change-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.run-log-file-change-card-icon {
+  flex-shrink: 0;
+  color: #2dd4bf;
+}
+
+.run-log-file-change-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #e5e5e5;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-file-change-card-stats {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-file-change-card-stats .stat-add {
+  color: #4ade80;
+}
+
+.run-log-file-change-card-stats .stat-del {
+  color: #f87171;
+}
+
+.run-log-file-change-card-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.run-log-file-change-card-preview-shell {
+  position: relative;
+}
+
+.run-log-file-change-card-preview {
+  padding: 8px 0 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.run-log-file-change-card:not(.is-expanded) .run-log-file-change-card-preview {
+  max-height: 132px;
+  overflow: hidden;
+}
+
+.run-log-file-change-line {
+  display: flex;
+  min-width: 0;
+  padding: 0 12px 0 10px;
+  border-left: 3px solid transparent;
+}
+
+.run-log-file-change-line code {
+  display: block;
+  min-width: 0;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.run-log-file-change-line.is-add {
+  background: rgba(34, 197, 94, 0.12);
+  border-left-color: #4ade80;
+}
+
+.run-log-file-change-line.is-remove {
+  background: rgba(248, 113, 113, 0.12);
+  border-left-color: #f87171;
+}
+
+.run-log-file-change-card-fade {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 48px;
+  background: linear-gradient(180deg, rgba(20, 20, 20, 0) 0%, rgba(20, 20, 20, 0.92) 78%);
+  pointer-events: none;
+}
+
+.run-log-file-change-card.is-expanded .run-log-file-change-card-preview {
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.run-log-file-change-card.is-running {
+  border-color: rgba(45, 212, 191, 0.35);
+}
+
+.run-log-file-change-card.is-failed {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
 .run-log-subagent-badge {
   flex-wrap: wrap;
   gap: 8px;
@@ -13265,6 +13401,28 @@ html[data-window-focused="true"] .settings-nav {
   color: var(--codex-log-muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-card {
+  border-color: var(--codex-log-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-card-title {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-card-divider {
+  background: var(--codex-log-line-subtle);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-line code {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-file-change-card-fade {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, var(--codex-log-bg, #fff) 78%);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {

@@ -1,4 +1,5 @@
-/** Normalize activity line text for display (strip redundant subagent prefixes). */
+export type { FileChangeCardDisplay, FileChangePreviewLine } from "./file-change";
+export { resolveFileChangeCardDisplay } from "./file-change";
 
 import { isSubagentMissionEnvelope, parseSubagentMissionMessage, shortenModelId } from "@eco/runtime";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";

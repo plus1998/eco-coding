@@ -346,6 +346,42 @@ test("emits structured SDK tool metadata for tool progress activity", () => {
   ]);
 });
 
+test("emits structured file change metadata for Edit tool started activity", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ tool?: { name: string; fileChange?: { path: string; additions: number } } }> =
+    [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "coder",
+      payload: {
+        type: "tool_use",
+        tool_name: "Edit",
+        tool_use_id: "toolu_edit_1",
+        input: {
+          file_path: "/repo/lib/widget.dart",
+          old_string: "final old = true;",
+          new_string: "final updated = false;",
+        },
+      },
+    },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      emitted.push({ ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted[0]?.tool).toMatchObject({
+    name: "Edit",
+    fileChange: {
+      path: "/repo/lib/widget.dart",
+      additions: 1,
+      deletions: 1,
+    },
+  });
+});
+
 test("emits structured SDK tool metadata for task progress activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

@@ -1,4 +1,4 @@
-import type { BashRunCardDisplay, ToolActionLifecycle } from "../shared/activity-display";
+import type { BashRunCardDisplay, FileChangeCardDisplay, ToolActionLifecycle } from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
@@ -45,6 +45,7 @@ export type ActivityDetailBlock =
       subagent?: string;
       agentId?: string;
       bashRun?: BashRunCardDisplay;
+      fileChange?: FileChangeCardDisplay;
     }
   | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
   | {

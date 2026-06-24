@@ -4,6 +4,11 @@ import {
   type AgentEvent,
 } from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
+import {
+  enrichFileChangeFromToolOutput,
+  isFileChangeToolName,
+  resolveFileChangeFromToolInput,
+} from "../shared/file-change.js";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { activityStreamKey } from "./activity-agent-id.js";
 
@@ -260,12 +265,20 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     name === "Bash"
       ? readString(record.description) ?? readBashDescriptionFromToolInput(record.input)
       : undefined;
+  const fileChangeFromInput = isFileChangeToolName(name)
+    ? resolveFileChangeFromToolInput(name, record.input)
+    : undefined;
+  const fileChange = enrichFileChangeFromToolOutput(
+    fileChangeFromInput,
+    output ?? record.result ?? record.content,
+  );
   return {
     name,
     ...(command && { detail: command }),
     ...(output && { output }),
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
+    ...(fileChange && { fileChange }),
     status: "completed",
   };
 }
@@ -345,11 +358,15 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const detail = resolveSdkToolDisplayDetail(name, record.input);
   const toolUseId = readString(record.tool_use_id);
   const description = name === "Bash" ? readBashDescriptionFromToolInput(record.input) : undefined;
+  const fileChange = isFileChangeToolName(name)
+    ? resolveFileChangeFromToolInput(name, record.input)
+    : undefined;
   return {
     name,
     ...(detail && { detail }),
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
+    ...(fileChange && { fileChange }),
   };
 }
 

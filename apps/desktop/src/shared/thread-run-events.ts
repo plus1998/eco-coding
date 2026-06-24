@@ -34,6 +34,8 @@ export type ThreadRunEventType =
   | "api.error"
   | "diagnostic";
 
+import type { ThreadRunFileChangeMetadata } from "./file-change";
+
 export interface ThreadRunToolMetadata {
   name: string;
   detail?: string;
@@ -43,6 +45,7 @@ export interface ThreadRunToolMetadata {
   status?: "started" | "completed" | "failed";
   /** Human-readable Bash title from Agent tool input.description */
   description?: string;
+  fileChange?: ThreadRunFileChangeMetadata;
 }
 
 export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";

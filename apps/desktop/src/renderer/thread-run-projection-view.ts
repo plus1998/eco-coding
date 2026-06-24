@@ -12,6 +12,7 @@ import {
   formatToolStatusPreview,
   parseReconnectActivityMessage,
   resolveBashRunCardDisplay,
+  resolveFileChangeCardDisplay,
   readBashApprovalMetadata,
   toolStatusToLifecycle,
   type ToolActionLifecycle,
@@ -26,6 +27,7 @@ import {
   resolveSubagentRunDisplayTitle,
   type ActivityDetailBlock,
 } from "./activity-log";
+import { parseThreadRunFileChangeMetadata } from "../shared/file-change";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isRecordedUserPromptLiveEvent,
@@ -675,6 +677,7 @@ function projectionToolDisplayRichness(item: ThreadRunProjectionTimelineItem): n
   }
   return (
     (metadataTool.detail ? 4 : 0) +
+    (metadataTool.fileChange ? 8 : 0) +
     (metadataTool.durationMs !== undefined ? 2 : 0) +
     (item.eventType === "tool.completed" ? 1 : 0)
   );
@@ -788,12 +791,14 @@ function buildProjectionToolActionBlock(
     ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
     ...(description && { description }),
   });
+  const fileChange = resolveFileChangeCardDisplay(metadataTool?.fileChange);
   return {
     kind: "action",
     icon: iconForToolName(input.toolName),
     label: input.label,
     ...(input.lifecycle && { lifecycle: input.lifecycle }),
     ...(bashRun && { bashRun }),
+    ...(fileChange && { fileChange }),
     ...(subagent && { subagent }),
     ...(item.agentId && { agentId: item.agentId }),
   };
@@ -1063,6 +1068,10 @@ function readProjectionToolMetadata(
     ...(isProjectionToolStatus(record.status) && { status: record.status }),
     ...(typeof record.description === "string" &&
       record.description.trim() && { description: record.description.trim() }),
+    ...((): { fileChange?: ThreadRunToolMetadata["fileChange"] } => {
+      const fileChange = parseThreadRunFileChangeMetadata(record.fileChange);
+      return fileChange ? { fileChange } : {};
+    })(),
   };
 }
 
