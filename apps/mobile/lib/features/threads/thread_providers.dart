@@ -34,7 +34,10 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
 
     ref.listen(ecoEventsProvider, (previous, next) {
       next.whenData((event) {
-        if (event.kind.startsWith('thread.')) {
+        final payload = event.payload;
+        if (payload is! Map<String, dynamic>) return;
+        final live = ThreadLiveEvent.fromJson(payload);
+        if (_shouldRefreshThreadListFromLiveEvent(live)) {
           ref.invalidateSelf();
         }
       });
@@ -388,7 +391,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (live.type == 'thread.run_projection_updated') {
       if (live.projection != null) {
         state = state.copyWith(
-          runProjection: _pickNewerProjection(state.runProjection, live.projection),
+          runProjection: _pickNewerProjection(
+            state.runProjection,
+            live.projection,
+          ),
         );
       } else {
         _scheduleProjectionRefresh();
@@ -462,10 +468,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         bash,
       ) {
         if (!mounted) return;
-        state = state.copyWith(
-          pendingBash: bash,
-          clearBash: bash == null,
-        );
+        state = state.copyWith(pendingBash: bash, clearBash: bash == null);
       });
     }
     if (event.kind == 'thread.clarification') {
@@ -479,7 +482,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         );
       });
     }
-    if (event.kind.startsWith('thread.')) {
+    if (_shouldRefreshThreadListFromLiveEvent(live)) {
       ref.invalidate(threadListProvider);
       ref.read(threadListProvider.future).then((threads) {
         if (!mounted) return;
@@ -509,10 +512,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
             state.pendingPlan == null) {
           ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
             if (!mounted) return;
-            state = state.copyWith(
-              pendingPlan: plan,
-              thread: thread,
-            );
+            state = state.copyWith(pendingPlan: plan, thread: thread);
           });
           return;
         }
@@ -663,4 +663,10 @@ bool _isMetricsOnlyThreadLiveEvent(String liveType) {
 
 bool _isActiveThreadStatus(String? status) {
   return status == 'running' || status == 'awaiting_plan';
+}
+
+bool _shouldRefreshThreadListFromLiveEvent(ThreadLiveEvent live) {
+  if (live.title?.trim().isNotEmpty == true) return true;
+  if (live.runtimeConfig != null) return true;
+  return shouldUpdateThreadSummaryFromLiveEvent(live.type);
 }

@@ -16,6 +16,8 @@ bool shouldUpdateThreadSummaryFromLiveEvent(String eventType) {
     'thread.todos_updated',
     'thread.title_updated',
     'thread.runtime_config_updated',
+    'thread.run_projection_updated',
+    'thread.subagent_timing_updated',
   };
   if (excluded.contains(eventType)) {
     return false;
@@ -49,7 +51,10 @@ String threadStatusFromLiveEvent(String eventType, String fallback) {
   }
 }
 
-String resolveThreadMessageFromLiveEvent(String eventType, String eventMessage) {
+String resolveThreadMessageFromLiveEvent(
+  String eventType,
+  String eventMessage,
+) {
   if (eventType == 'thread.execution_failed') {
     final detail = eventMessage.trim();
     return detail.isEmpty
@@ -63,7 +68,9 @@ String? extractPlanFailureMessage(String threadMessage) {
   if (!threadMessage.startsWith(planExecutionFailurePrefix)) {
     return null;
   }
-  final detail = threadMessage.substring(planExecutionFailurePrefix.length).trim();
+  final detail = threadMessage
+      .substring(planExecutionFailurePrefix.length)
+      .trim();
   return detail.isEmpty ? null : detail;
 }
 

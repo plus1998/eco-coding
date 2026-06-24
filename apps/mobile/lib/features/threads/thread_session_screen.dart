@@ -9,7 +9,6 @@ import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
-import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
@@ -44,6 +43,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
   String? _followUpEscalateBusyId;
+  Timer? _scrollToBottomTimer;
   double _lastKeyboardInset = 0;
 
   @override
@@ -74,8 +74,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final inset = MediaQuery.viewInsetsOf(context).bottom;
-      if (inset > _lastKeyboardInset) {
-        _scrollToBottom(animated: false);
+      if (inset > _lastKeyboardInset && _isNearScrollBottom(tolerance: 360)) {
+        _scheduleScrollToBottom(animated: false);
       }
       _lastKeyboardInset = inset;
     });
@@ -86,6 +86,28 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshFollowUps());
     }
+  }
+
+  bool _isNearScrollBottom({double tolerance = 220}) {
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    if (!position.hasPixels || !position.hasContentDimensions) return true;
+    return position.maxScrollExtent - position.pixels <= tolerance;
+  }
+
+  void _scheduleScrollToBottom({
+    bool animated = true,
+    bool onlyIfNearBottom = false,
+  }) {
+    if (onlyIfNearBottom && !_isNearScrollBottom()) return;
+    _scrollToBottomTimer?.cancel();
+    _scrollToBottomTimer = Timer(
+      animated ? const Duration(milliseconds: 80) : Duration.zero,
+      () {
+        if (!mounted) return;
+        _scrollToBottom(animated: animated);
+      },
+    );
   }
 
   void _scrollToBottom({bool animated = true}) {
@@ -131,14 +153,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     return thread.status == 'running' || thread.status == 'queued';
   }
 
-  bool _isAwaitingPlan(ThreadSummary? thread, ThreadSessionState session) {
-    if (thread == null) return false;
-    return session.pendingPlan?.threadId == thread.id;
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scrollToBottomTimer?.cancel();
     _promptController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -146,8 +164,21 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   Widget build(BuildContext context) {
-    final session = ref.watch(threadSessionProvider(widget.threadId));
-    final runtimeConfig = ref.watch(runtimeConfigProvider) ??
+    final session = ref.watch(
+      threadSessionProvider(widget.threadId).select(
+        (state) => (
+          loading: state.loading,
+          error: state.error,
+          thread: state.thread,
+          pendingPlan: state.pendingPlan,
+          followUps: state.followUps,
+          contextSnapshot: state.contextSnapshot,
+          projectionReady: isProjectionFeedReady(state.runProjection),
+        ),
+      ),
+    );
+    final runtimeConfig =
+        ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
         buildDefaultRuntimeConfig();
     final thread = session.thread;
@@ -164,26 +195,30 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
     final workspaceChanges = gitStatus?.toChangesSummary();
-    final changesLoading = gitStatusAsync.isLoading || gitStatusAsync.isReloading;
+    final changesLoading =
+        gitStatusAsync.isLoading || gitStatusAsync.isReloading;
     final isRunning = _isRunning(thread);
-    final showLanding = !session.loading &&
+    final showLanding =
+        !session.loading &&
         session.error == null &&
         !isRunning &&
-        !isProjectionFeedReady(session.runProjection);
-    final isAwaitingPlan = _isAwaitingPlan(thread, session);
+        !session.projectionReady;
+    final isAwaitingPlan =
+        thread != null && session.pendingPlan?.threadId == thread.id;
     final canStopThread = isRunning || isAwaitingPlan;
     final planFailureMessage = isAwaitingPlan
-        ? extractPlanFailureMessage(thread?.message ?? '')
+        ? extractPlanFailureMessage(thread.message)
         : null;
     final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
-    final queuedFollowUps = queuedThreadFollowUps(session.followUps)
-        .where((item) => item.id != _editingFollowUpId)
-        .toList();
+    final queuedFollowUps = queuedThreadFollowUps(
+      session.followUps,
+    ).where((item) => item.id != _editingFollowUpId).toList();
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
-      final previousApprovalKey =
-          previous == null ? null : _approvalKey(previous);
+      final previousApprovalKey = previous == null
+          ? null
+          : _approvalKey(previous);
       final nextApprovalKey = _approvalKey(next);
       if (previousApprovalKey != null && nextApprovalKey == null) {
         Navigator.of(context).maybePop();
@@ -202,22 +237,23 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           });
         }
       }
-      final previousFeed = previous == null
-          ? 0
-          : buildActivityFeed(
-              threadPrompt: previous.thread?.prompt,
-              threadId: widget.threadId,
-              runProjection: previous.runProjection,
-              subagentSessions: previous.subagentSessions,
-            ).length;
-      final nextFeed = buildActivityFeed(
-        threadPrompt: next.thread?.prompt,
-        threadId: widget.threadId,
-        runProjection: next.runProjection,
-        subagentSessions: next.subagentSessions,
-      ).length;
-      if (previousFeed != nextFeed) {
-        _scrollToBottom();
+      final previousProjection = previous?.runProjection;
+      final nextProjection = next.runProjection;
+      final previousEventCount = previousProjection?.sourceEventCount ?? 0;
+      final nextEventCount = nextProjection?.sourceEventCount ?? 0;
+      final projectionBecameReady =
+          !isProjectionFeedReady(previousProjection) &&
+          isProjectionFeedReady(nextProjection);
+      final projectionAdvanced =
+          nextEventCount > previousEventCount ||
+          (nextEventCount > 0 &&
+              nextEventCount == previousEventCount &&
+              nextProjection?.generatedAt != previousProjection?.generatedAt);
+      if (projectionBecameReady || projectionAdvanced) {
+        _scheduleScrollToBottom(
+          animated: false,
+          onlyIfNearBottom: !projectionBecameReady,
+        );
       }
     });
 
@@ -244,37 +280,33 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   child: session.loading
                       ? const Center(child: CircularProgressIndicator())
                       : session.error != null
-                          ? Center(child: Text(session.error!))
-                          : showLanding
-                              ? Padding(
-                                  padding: EdgeInsets.fromLTRB(
-                                    32,
-                                    sessionToolbarFrostHeight(context),
-                                    32,
-                                    32,
+                      ? Center(child: Text(session.error!))
+                      : showLanding
+                      ? Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            32,
+                            sessionToolbarFrostHeight(context),
+                            32,
+                            32,
+                          ),
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: Text(
+                              landingHero,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
                                   ),
-                                  child: Align(
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      landingHero,
-                                      textAlign: TextAlign.center,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            height: 1.35,
-                                          ),
-                                    ),
-                                  ),
-                                )
-                              : _ThreadSessionFeedPane(
-                                  threadId: widget.threadId,
-                                  scrollController: _scrollController,
-                                  isRunning: isRunning,
-                                  billing: session.billing,
-                                  threadStatus: thread?.status,
-                                ),
+                            ),
+                          ),
+                        )
+                      : _ThreadSessionFeedPane(
+                          threadId: widget.threadId,
+                          scrollController: _scrollController,
+                          isRunning: isRunning,
+                        ),
                 ),
               ],
             ),
@@ -302,13 +334,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 if (isAwaitingPlan && session.pendingPlan != null)
                   _PlanApprovalBanner(
                     failureMessage: planFailureMessage,
-                    onViewPlan: () => _showApprovalSheets(session),
-                    onApprove: () => _handlePlanApproval(
-                      approve: true,
+                    onViewPlan: () => _showApprovalSheets(
+                      ref.read(threadSessionProvider(widget.threadId)),
                     ),
-                    onDismiss: () => _handlePlanApproval(
-                      approve: false,
-                    ),
+                    onApprove: () => _handlePlanApproval(approve: true),
+                    onDismiss: () => _handlePlanApproval(approve: false),
                   ),
                 SessionComposer(
                   controller: _promptController,
@@ -319,7 +349,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   canStopThread: canStopThread,
                   followUpMode: followUpMode,
                   sendBusy: _followUpBusy,
-                  hasActivity: isProjectionFeedReady(session.runProjection),
+                  hasActivity: session.projectionReady,
                   inputHint: _editingFollowUpId != null
                       ? '编辑引导消息…'
                       : (showLanding ? composerLandingPlaceholder : null),
@@ -337,10 +367,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   },
                   onChangesTap: workspacePath.isNotEmpty
                       ? () => showWorkspaceDiffReviewSheet(
-                            context: context,
-                            ref: ref,
-                            workspacePath: workspacePath,
-                          )
+                          context: context,
+                          ref: ref,
+                          workspacePath: workspacePath,
+                        )
                       : null,
                 ),
               ],
@@ -402,9 +432,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       await _refreshFollowUps();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) {
@@ -428,9 +458,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       await _refreshFollowUps();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) {
@@ -451,9 +481,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       if (followUpMode) {
         if (_attachments.isNotEmpty) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('运行中引导消息暂不支持图片附件。')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('运行中引导消息暂不支持图片附件。')));
           }
           return;
         }
@@ -466,10 +496,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           );
           _cancelEditingFollowUp();
         } else {
-          await rpc.followUpEnqueue(
-            threadId: widget.threadId,
-            prompt: prompt,
-          );
+          await rpc.followUpEnqueue(threadId: widget.threadId, prompt: prompt);
           FocusManager.instance.primaryFocus?.unfocus();
           _promptController.clear();
           if (mounted) {
@@ -511,9 +538,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       await rpc.cancelThread(widget.threadId);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -528,9 +555,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -592,37 +619,69 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
     required this.threadId,
     required this.scrollController,
     required this.isRunning,
-    required this.billing,
-    this.threadStatus,
   });
 
   final String threadId;
   final ScrollController scrollController;
   final bool isRunning;
-  final ThreadBillingSnapshot? billing;
-  final String? threadStatus;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(threadSessionProvider(threadId));
-    final thread = session.thread;
+    return Stack(
+      children: [
+        _ActivityFeedView(
+          threadId: threadId,
+          scrollController: scrollController,
+          isRunning: isRunning,
+        ),
+        Positioned(
+          right: 8,
+          bottom: 8,
+          child: _ThreadUsageOverlay(threadId: threadId),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActivityFeedView extends ConsumerWidget {
+  const _ActivityFeedView({
+    required this.threadId,
+    required this.scrollController,
+    required this.isRunning,
+  });
+
+  final String threadId;
+  final ScrollController scrollController;
+  final bool isRunning;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final threadPrompt = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.thread?.prompt),
+    );
+    final runProjection = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.runProjection),
+    );
+    final subagentSessions = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.subagentSessions),
+    );
     final agentProfile = null as OrchestrationProfile?;
     final feedEntries = buildActivityFeed(
-      threadPrompt: thread?.prompt,
+      threadPrompt: threadPrompt,
       threadId: threadId,
-      runProjection: session.runProjection,
-      subagentSessions: session.subagentSessions,
+      runProjection: runProjection,
+      subagentSessions: subagentSessions,
     );
-    final projectionReady = isProjectionFeedReady(session.runProjection);
+    final projectionReady = isProjectionFeedReady(runProjection);
     final hasStreamingThinking = feedEntries.any(
       (entry) => entry.kind == ActivityFeedKind.thinking && entry.streaming,
     );
     final hasStreamingAssistant = feedEntries.any(
       (entry) => entry.kind == ActivityFeedKind.assistant && entry.streaming,
     );
-    final displayFeedEntries = isRunning &&
-            !hasStreamingThinking &&
-            !hasStreamingAssistant
+    final displayFeedEntries =
+        isRunning && !hasStreamingThinking && !hasStreamingAssistant
         ? [
             ...feedEntries,
             const ActivityFeedEntry(
@@ -634,42 +693,51 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           ]
         : feedEntries;
 
-    return Stack(
-      children: [
-        if (!projectionReady)
-          Center(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                24,
-                sessionContentTopPadding(context),
-                24,
-                24,
-              ),
-              child: Text(
-                isRunning ? '运行投影加载中…' : '运行投影尚未就绪',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: ecoColors(context).textMuted,
-                    ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          )
-        else
-          ActivityFeedList(
-            entries: displayFeedEntries,
-            scrollController: scrollController,
-            topPadding: sessionContentTopPadding(context),
-            agentProfile: agentProfile,
+    if (!projectionReady) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            sessionContentTopPadding(context),
+            24,
+            24,
           ),
-        Positioned(
-          right: 8,
-          bottom: 8,
-          child: ThreadUsageFloatButtons(
-            billing: billing,
-            threadStatus: threadStatus,
+          child: Text(
+            isRunning ? '运行投影加载中…' : '运行投影尚未就绪',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: ecoColors(context).textMuted,
+            ),
+            textAlign: TextAlign.center,
           ),
         ),
-      ],
+      );
+    }
+
+    return ActivityFeedList(
+      entries: displayFeedEntries,
+      scrollController: scrollController,
+      topPadding: sessionContentTopPadding(context),
+      agentProfile: agentProfile,
+    );
+  }
+}
+
+class _ThreadUsageOverlay extends ConsumerWidget {
+  const _ThreadUsageOverlay({required this.threadId});
+
+  final String threadId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final billing = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.billing),
+    );
+    final threadStatus = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.thread?.status),
+    );
+    return ThreadUsageFloatButtons(
+      billing: billing,
+      threadStatus: threadStatus,
     );
   }
 }
@@ -712,8 +780,8 @@ class _PlanApprovalBanner extends StatelessWidget {
                   child: Text(
                     retryMode ? '执行失败，计划待确认' : '计划已生成，等待确认',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: ecoColors(context).accentText,
-                        ),
+                      color: ecoColors(context).accentText,
+                    ),
                   ),
                 ),
                 TextButton(
@@ -735,8 +803,8 @@ class _PlanApprovalBanner extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).accentText,
-                    ),
+                  color: ecoColors(context).accentText,
+                ),
               ),
             ],
             const SizedBox(height: 8),
@@ -790,8 +858,8 @@ class _EditingFollowUpBanner extends StatelessWidget {
               child: Text(
                 '正在编辑引导消息',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).accentText,
-                    ),
+                  color: ecoColors(context).accentText,
+                ),
               ),
             ),
             TextButton.icon(
@@ -845,7 +913,11 @@ class _FollowUpBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  Icon(EcoIcons.subthread, size: 16, color: ecoColors(context).textMuted),
+                  Icon(
+                    EcoIcons.subthread,
+                    size: 16,
+                    color: ecoColors(context).textMuted,
+                  ),
                   const SizedBox(width: 6),
                   Text('引导消息', style: Theme.of(context).textTheme.labelLarge),
                 ],
@@ -908,8 +980,9 @@ class _FollowUpBar extends StatelessWidget {
                               icon: EcoIcons.edit,
                               label: '修改',
                               enabled: !actionBusy,
-                              onPressed:
-                                  !actionBusy ? () => onEdit(item) : null,
+                              onPressed: !actionBusy
+                                  ? () => onEdit(item)
+                                  : null,
                             ),
                             const SizedBox(width: 8),
                             _FollowUpActionButton(
@@ -920,8 +993,9 @@ class _FollowUpBar extends StatelessWidget {
                               loading: cancelBusyId == item.id,
                               enabled: !actionBusy,
                               danger: true,
-                              onPressed:
-                                  !actionBusy ? () => onDelete(item) : null,
+                              onPressed: !actionBusy
+                                  ? () => onDelete(item)
+                                  : null,
                             ),
                           ],
                         ),
@@ -977,10 +1051,7 @@ class _FollowUpActionButton extends StatelessWidget {
             SizedBox(
               width: 14,
               height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: color,
-              ),
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
             )
           else if (icon != null)
             Icon(icon, size: 14, color: color),
