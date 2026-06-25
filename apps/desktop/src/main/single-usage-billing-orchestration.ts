@@ -1,3 +1,4 @@
+import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { BillingUsageSource, RuntimeAgentRole } from "../shared/ipc";
 import type { RuntimeRoute } from "./billing-resolver";
 import { shouldUpdateContextFromUsageSource } from "./billing-orchestration";
@@ -34,6 +35,7 @@ export interface SingleUsageBillingRequest {
   attributionPending?: boolean;
   aliasModelId?: string;
   providerId?: string;
+  apiCompat?: UpstreamApiCompat;
 }
 
 export interface ResolveSingleUsageBillingOrchestrationInput {

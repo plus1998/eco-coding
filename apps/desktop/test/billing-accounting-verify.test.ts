@@ -58,7 +58,17 @@ async function appendProxyUsage(
   inputTokens: number,
 ) {
   const resolved = resolveProxyUsageBilling({
-    info: { threadId, role, modelId, requestId, usage: usage(inputTokens) },
+    info: {
+      threadId,
+      role,
+      providerId: "provider",
+      providerName: "Provider",
+      providerBaseUrl: "https://api.example.test",
+      modelId,
+      apiCompat: "anthropic",
+      requestId,
+      usage: usage(inputTokens),
+    },
     resolver: new SubagentMetricsRegistry(metricsStoreStub),
   });
   const artifacts = await resolveSingleUsageBillingArtifacts({

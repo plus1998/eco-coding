@@ -15,6 +15,7 @@ function proxyUsage(input: Partial<AnthropicProxyUsageInfo> = {}): AnthropicProx
     providerName: "Anthropic",
     providerBaseUrl: "https://api.anthropic.com",
     modelId: "haiku",
+    apiCompat: "anthropic",
     requestId: "req_proxy_1",
     usage: parsedUsage(),
     ...input,
@@ -152,5 +153,18 @@ test("resolveProxyUsageBilling leaves planner proxy usage unattributed", () => {
     role: "planner",
     reconciliationOnly: true,
     fillSdkPrimaryForSubagent: false,
+    apiCompat: "anthropic",
   });
+});
+
+test("resolveProxyUsageBilling carries OpenAI-compat apiCompat for planner context routing", () => {
+  const resolved = resolveProxyUsageBilling({
+    info: {
+      ...proxyUsage({ role: "planner", apiCompat: "openai_chat_completions" }),
+      threadId: "thr_proxy",
+    },
+    resolver: resolver(),
+  });
+
+  expect(resolved.billingInput.apiCompat).toBe("openai_chat_completions");
 });

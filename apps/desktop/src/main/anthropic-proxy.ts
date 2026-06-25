@@ -103,6 +103,7 @@ export interface AnthropicProxyUsageInfo {
   providerName: string;
   providerBaseUrl: string;
   modelId: string;
+  apiCompat: UpstreamApiCompat;
   requestedModel?: string;
   aliasModelId?: string;
   requestId?: string;
@@ -282,6 +283,7 @@ export async function startAnthropicModelProxy(
               providerName: info.providerName,
               providerBaseUrl: info.providerBaseUrl,
               modelId: info.modelId,
+              apiCompat: route.apiCompat,
               aliasModelId: route.aliasModelId,
               ...(info.requestedModel && { requestedModel: info.requestedModel }),
               ...(info.requestId && { requestId: info.requestId }),

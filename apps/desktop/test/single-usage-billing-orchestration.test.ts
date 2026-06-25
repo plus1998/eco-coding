@@ -152,3 +152,17 @@ test("resolveSingleUsageBillingOrchestration lets explicit updateContext overrid
   expect(resolved?.effectsInput.updateContext).toBe(false);
   expect(resolved?.effectsInput.messageId).toBe("msg_1");
 });
+
+test("resolveSingleUsageBillingOrchestration updates planner context for proxy usage", async () => {
+  const resolved = await resolveSingleUsageBillingOrchestration({
+    request: request({
+      role: "planner",
+      modelId: "llama-local",
+      apiCompat: "anthropic",
+    }),
+    runtimeRoutes: routes,
+    lookupPricing,
+  });
+
+  expect(resolved?.effectsInput.updateContext).toBe(true);
+});

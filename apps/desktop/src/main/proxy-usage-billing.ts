@@ -1,4 +1,5 @@
 import { computeWindowOccupancy, type ParsedUsage } from "@eco/runtime";
+import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { AnthropicProxyUsageInfo } from "./anthropic-proxy";
 import {
@@ -26,12 +27,14 @@ export interface ProxyUsageBillingInput {
   plannerAgentId?: string;
   reconciliationOnly: true;
   fillSdkPrimaryForSubagent: boolean;
+  updateContext?: boolean;
   agentId?: string;
   parentToolUseId?: string;
   routeRole?: RuntimeAgentRole;
   attributionPending?: boolean;
   aliasModelId?: string;
   providerId?: string;
+  apiCompat?: UpstreamApiCompat;
 }
 
 export interface ResolveProxyUsageBillingInput {
@@ -114,6 +117,7 @@ export function resolveProxyUsageBilling(
       ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
       reconciliationOnly: true,
       fillSdkPrimaryForSubagent: false,
+      apiCompat: info.apiCompat,
       routeRole: info.role,
       ...(input.stampedParentToolUseId && { parentToolUseId: input.stampedParentToolUseId }),
       ...(info.aliasModelId && { aliasModelId: info.aliasModelId }),

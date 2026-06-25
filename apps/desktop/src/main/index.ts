@@ -57,7 +57,7 @@ ensureDesktopPath();
 
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
-import { isOpenAICompat } from "../shared/api-compat";
+import { isOpenAICompat, resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
@@ -5235,6 +5235,29 @@ function noteUsageBillingObservation(threadId: string, observation: UsageBilling
   activeRunBillingState.appendObservation(threadId, observation);
 }
 
+function resolveProxyUsageApiCompat(
+  threadId: string,
+  role: RuntimeAgentRole,
+  apiCompat?: UpstreamApiCompat,
+): UpstreamApiCompat {
+  if (apiCompat) {
+    return apiCompat;
+  }
+  try {
+    const roleRoutes = resolveRoleRoutesForThread(threadId);
+    const route = roleRoutes.find((entry) => entry.role === role);
+    if (!route) {
+      return "anthropic";
+    }
+    const provider = providerStore
+      .listProvidersWithSecrets()
+      .find((entry) => entry.id === route.providerId);
+    return resolveUpstreamApiCompat(route.apiCompat, provider?.apiCompat);
+  } catch {
+    return "anthropic";
+  }
+}
+
 async function emitProxyUsage(
   info: AnthropicProxyUsageInfo & { threadId: string },
 ): Promise<UpstreamProxyCallBilling | null> {
@@ -5246,7 +5269,10 @@ async function emitProxyUsage(
   const stampedBillingRole = info.stampedBillingRole ?? registryStamp?.billingRole;
   const stampedParentToolUseId = info.stampedParentToolUseId ?? registryStamp?.parentToolUseId;
   const resolved = resolveProxyUsageBilling({
-    info,
+    info: {
+      ...info,
+      apiCompat: resolveProxyUsageApiCompat(info.threadId, info.role, info.apiCompat),
+    },
     ...(currentRequestSeq !== undefined && { currentRequestSeq }),
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),

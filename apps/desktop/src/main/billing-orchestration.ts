@@ -117,6 +117,11 @@ export function shouldUpdateContextFromUsageSource(
   if (source === "proxy" && role && isSubagentBillingRole(role)) {
     return true;
   }
+  // Proxy is the only context meter for planner when SDK getContextUsage() is unavailable
+  // (OpenAI-compat / llama.cpp upstream). Anthropic-native runs still calibrate via sdk_context_usage.
+  if (source === "proxy" && role === "planner") {
+    return true;
+  }
   return false;
 }
 

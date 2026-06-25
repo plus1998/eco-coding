@@ -74,7 +74,11 @@ test("resolveProxyUsageBilling marks subagent usage pending before onSubagentSta
     info: {
       threadId: "thr_pending",
       role: "coder",
+      providerId: "provider",
+      providerName: "Provider",
+      providerBaseUrl: "https://api.example.test",
       modelId: "haiku",
+      apiCompat: "anthropic",
       requestId: "req_pending_1",
       usage: usage(),
     },
@@ -101,7 +105,11 @@ test("pending proxy ledger event settles on onSubagentStart", async () => {
     info: {
       threadId: "thr_pending_settle",
       role: "coder",
+      providerId: "provider",
+      providerName: "Provider",
+      providerBaseUrl: "https://api.example.test",
       modelId: "haiku",
+      apiCompat: "anthropic",
       requestId: "req_pending_settle",
       usage: usage(),
     },

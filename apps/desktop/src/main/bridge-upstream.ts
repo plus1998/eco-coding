@@ -123,6 +123,7 @@ export interface BridgeUsageInfo {
   providerName: string;
   providerBaseUrl: string;
   modelId: string;
+  apiCompat: UpstreamApiCompat;
   requestedModel?: string;
   requestId?: string;
   usage: ParsedUsage;
@@ -161,6 +162,7 @@ function buildBridgeUsageInfo(
     providerName: route.provider.name,
     providerBaseUrl: route.provider.baseUrl,
     modelId: route.modelId,
+    apiCompat: route.apiCompat,
     ...(requestedModel && { requestedModel }),
     ...(requestId && { requestId }),
     usage,

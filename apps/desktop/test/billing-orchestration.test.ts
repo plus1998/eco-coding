@@ -140,7 +140,7 @@ test("shouldUpdateContextFromUsageSource accepts SDK and proxy subagent usage", 
   expect(shouldUpdateContextFromUsageSource("sdk", "planner")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("proxy", "explore")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("proxy", "researcher")).toBe(true);
-  expect(shouldUpdateContextFromUsageSource("proxy", "planner")).toBe(false);
+  expect(shouldUpdateContextFromUsageSource("proxy", "planner")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("proxy")).toBe(false);
 });
 
