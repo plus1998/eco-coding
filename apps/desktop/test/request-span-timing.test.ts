@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   computeRequestSpanTtftMs,
   computeRequestSpanWaitingMs,
+  resolveRequestSpanDurationMs,
 } from "../src/shared/request-span-timing";
 
 test("computeRequestSpanWaitingMs uses persisted startedAt while waiting", () => {
@@ -89,6 +90,15 @@ test("computeRequestSpanTtftMs returns undefined without firstTokenAt", () => {
       startedAt: "2026-01-01T00:00:00.000Z",
     }),
   ).toBeUndefined();
+});
+
+test("resolveRequestSpanDurationMs falls back to endedAt when firstTokenAt is missing", () => {
+  expect(
+    resolveRequestSpanDurationMs({
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:06.500Z",
+    }),
+  ).toBe(6500);
 });
 
 test("computeRequestSpanTtftMs returns undefined for invalid timestamps", () => {

@@ -301,12 +301,6 @@ function filterProjectionTimelineForDetailFeed(
       .map(projectionRequestKey)
       .filter((key): key is string => Boolean(key)),
   );
-  const ownersWithStreamRows = new Set(
-    displayTimeline
-      .filter(isStreamingRequestDisplayItem)
-      .map(projectionOwnerKey)
-      .filter((key): key is string => Boolean(key)),
-  );
   const latestActiveRequestStartedByOwner = buildLatestActiveRequestStartedByOwner(
     displayTimeline,
     requestSpansById,
@@ -322,6 +316,10 @@ function filterProjectionTimelineForDetailFeed(
     }
     const requestSpan = projectionRequestSpan(item, requestSpansById);
     if (requestSpan && !isProjectionRequestActive(requestSpan)) {
+      const requestId = item.requestId?.trim();
+      if (requestId && requestsWithStreamRows.has(`request:${requestId}`)) {
+        return !requestHasThinkingStream(requestId, displayTimeline);
+      }
       return false;
     }
     const requestKey = projectionRequestKey(item);
@@ -335,7 +333,23 @@ function filterProjectionTimelineForDetailFeed(
         return false;
       }
     }
-    return !ownerKey || !ownersWithStreamRows.has(ownerKey);
+    if (
+      displayTimeline.some((streamItem) =>
+        isStreamRowSuppressingRequestStarted(streamItem, item, requestSpansById),
+      )
+    ) {
+      const requestId = item.requestId?.trim();
+      if (
+        requestSpan &&
+        !isProjectionRequestActive(requestSpan) &&
+        requestId &&
+        !requestHasThinkingStream(requestId, displayTimeline)
+      ) {
+        return true;
+      }
+      return false;
+    }
+    return true;
     }),
   );
 }
@@ -598,6 +612,42 @@ export function isThreadContextCompactionInFlight(
     }
   }
   return true;
+}
+
+function requestHasThinkingStream(
+  requestId: string,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  return timeline.some(
+    (streamItem) =>
+      streamItem.requestId === requestId &&
+      (streamItem.eventType === "thinking.delta" || streamItem.eventType === "thinking.final"),
+  );
+}
+
+function isStreamRowSuppressingRequestStarted(
+  streamItem: ThreadRunProjectionTimelineItem,
+  requestStarted: ThreadRunProjectionTimelineItem,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): boolean {
+  if (!isStreamingRequestDisplayItem(streamItem)) {
+    return false;
+  }
+  const startedOwner = projectionOwnerKey(requestStarted);
+  const streamOwner = projectionOwnerKey(streamItem);
+  if (!startedOwner || startedOwner !== streamOwner) {
+    return false;
+  }
+  const startedRequestId = requestStarted.requestId?.trim();
+  const streamRequestId = streamItem.requestId?.trim();
+  if (startedRequestId && streamRequestId) {
+    return streamRequestId === startedRequestId;
+  }
+  const span = projectionRequestSpan(requestStarted, requestSpansById);
+  return (
+    Boolean(span && isProjectionRequestActive(span)) &&
+    compareTimelineItems(streamItem, requestStarted) > 0
+  );
 }
 
 function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {

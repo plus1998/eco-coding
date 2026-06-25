@@ -939,6 +939,110 @@ test("buildThreadRunProjectionViewModel hides request placeholders once owner ou
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-delta"]);
 });
 
+test("buildThreadRunProjectionViewModel keeps timing-only request row for completed message-only responses", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_planner",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:03.000Z",
+          endedAt: "2026-01-01T00:00:05.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "request-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_planner",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "planner-final",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_planner",
+          text: "直接回复，没有思考内容。",
+          at: "2026-01-01T00:00:05.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:request-start",
+    "main:planner-final",
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel keeps follow-up request placeholder after prior planner output", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_turn_1",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+        {
+          requestId: "req_turn_2",
+          status: "waiting_first_token",
+          startedAt: "2026-01-01T00:01:00.000Z",
+          role: "planner",
+        },
+      ],
+      timeline: [
+        item({
+          id: "turn-1-final",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_turn_1",
+          text: "第一轮回复。",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "turn-2-user",
+          eventType: "thread.status",
+          role: "user",
+          text: "继续帮我查一下。",
+          metadata: { liveType: "thread.user_prompt" },
+          at: "2026-01-01T00:00:59.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "turn-2-request",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_turn_2",
+          at: "2026-01-01T00:01:00.000Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:turn-1-final",
+    "main:turn-2-user",
+    "main:turn-2-request",
+  ]);
+  const requestEntry = view.mainFeedEntries[2];
+  expect(requestEntry?.kind).toBe("timeline");
+  if (requestEntry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(requestEntry.item)).toMatchObject({
+      kind: "model-request",
+      role: "planner",
+    });
+  }
+});
+
 test("buildThreadRunProjectionViewModel keeps final main agent text after empty placeholder sharing a streamKey", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

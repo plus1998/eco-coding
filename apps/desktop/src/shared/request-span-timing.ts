@@ -32,3 +32,28 @@ export function computeRequestSpanTtftMs(fields: RequestSpanTimingFields): numbe
   }
   return Math.max(0, firstTokenMs - startedMs);
 }
+
+export function resolveRequestSpanDurationMs(
+  span: Pick<RequestSpanTimingFields, "startedAt" | "firstTokenAt"> & { endedAt?: string } | undefined,
+): number | undefined {
+  if (!span?.startedAt) {
+    return undefined;
+  }
+  const ttft = computeRequestSpanTtftMs({
+    status: span.firstTokenAt ? "streaming" : "completed",
+    startedAt: span.startedAt,
+    ...(span.firstTokenAt && { firstTokenAt: span.firstTokenAt }),
+  });
+  if (ttft !== undefined) {
+    return ttft;
+  }
+  if (!span.endedAt) {
+    return undefined;
+  }
+  const startedMs = Date.parse(span.startedAt);
+  const endedMs = Date.parse(span.endedAt);
+  if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs)) {
+    return undefined;
+  }
+  return Math.max(0, endedMs - startedMs);
+}

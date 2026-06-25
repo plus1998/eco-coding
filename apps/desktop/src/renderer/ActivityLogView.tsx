@@ -42,6 +42,7 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import { formatDurationMs } from "./AppMessage";
+import { resolveRequestSpanDurationMs } from "../shared/request-span-timing";
 import {
   formatDuration,
   resolveSubagentRunDisplayTitle,
@@ -848,22 +849,16 @@ function DetailBlock({
   }
   if (block.kind === "model-request") {
     return (
-      <ModelRequestBlock
+      <WaitingThinkingBlock
         active={requestActive}
-        {...(block.role && { role: block.role })}
-        omitRoleLabel={omitSubagent}
-        {...(!omitSubagent && modelByRole && { modelByRole })}
         {...(requestSpan && { requestSpan })}
       />
     );
   }
   if (block.kind === "agent-request") {
     return (
-      <AgentRequestBlock
+      <WaitingThinkingBlock
         active={requestActive}
-        {...(block.subagent && { subagent: block.subagent })}
-        omitRoleLabel={omitSubagent}
-        {...(!omitSubagent && modelByRole && { modelByRole })}
         {...(requestSpan && { requestSpan })}
       />
     );
@@ -1072,22 +1067,67 @@ function ContextCompactionDivider({ label }: { label: string }) {
   );
 }
 
-function RequestTimingBadge({ timing }: { timing: ReturnType<typeof useStreamRequestTiming> }) {
-  if (timing.phase === "idle") {
-    return null;
-  }
-  if (timing.phase === "waiting") {
-    return (
-      <span className="run-log-request-timing" aria-live="polite">
-        等待 {formatDurationMs(timing.waitingMs)}
-      </span>
-    );
-  }
+
+function ShimmerText({ children }: { children: string }) {
   return (
-    <span className="run-log-request-timing done" aria-live="polite">
-      首 token {formatDurationMs(timing.ttftMs ?? 0)}
+    <span className="run-log-shimmer-text" aria-live="polite">
+      {children}
     </span>
   );
+}
+
+function WaitingThinkingBlock({
+  active,
+  requestSpan,
+}: {
+  active?: boolean;
+  requestSpan?: ThreadRunProjectionRequestSpan;
+}) {
+  const [showDuration, setShowDuration] = useState(false);
+  const durationMs = resolveRequestDurationMs(requestSpan);
+
+  if (!active) {
+    if (!durationMs) {
+      return null;
+    }
+    return (
+      <div className="run-log-thinking is-collapsed">
+        <button
+          type="button"
+          className="run-log-thinking-header"
+          onClick={() => setShowDuration((value) => !value)}
+          aria-expanded={showDuration}
+        >
+          <span className="run-log-thinking-label">
+            思考
+            {showDuration ? (
+              <span className="run-log-thinking-timing-inline">
+                {" "}
+                · 耗时 {formatDurationMs(durationMs)}
+              </span>
+            ) : null}
+          </span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="run-log-thinking streaming empty">
+      <div className="run-log-thinking-header">
+        <ShimmerText>正在思考</ShimmerText>
+      </div>
+    </div>
+  );
+}
+
+function resolveRequestDurationMs(
+  requestSpan?: ThreadRunProjectionRequestSpan,
+): number | undefined {
+  if (!requestSpan) {
+    return undefined;
+  }
+  return resolveRequestSpanDurationMs(requestSpan);
 }
 
 function ThinkingBlock({
@@ -1100,6 +1140,7 @@ function ThinkingBlock({
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showDuration, setShowDuration] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
   const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1117,6 +1158,7 @@ function ThinkingBlock({
     hasBody,
     toStreamRequestTimingAnchor(requestSpan),
   );
+  const durationMs = timing.ttftMs ?? resolveRequestDurationMs(requestSpan);
   latestRenderStateRef.current = {
     streaming: Boolean(streaming),
     hasBody,
@@ -1205,12 +1247,14 @@ function ThinkingBlock({
 
   useEffect(() => () => clearCollapseTimers(), [clearCollapseTimers]);
 
+  const waitingEmpty = Boolean(streaming) && !hasBody;
+
   return (
     <div
       className={[
         "run-log-thinking",
         streaming ? "streaming" : "",
-        !hasBody && streaming ? "empty" : "",
+        waitingEmpty ? "empty" : "",
         collapsed && !isCollapsing ? "is-collapsed" : "",
         isCollapsing ? "is-collapsing" : "",
         bodyOpen ? "is-expanded" : "",
@@ -1225,8 +1269,17 @@ function ThinkingBlock({
           if (streaming || isCollapsing) {
             return;
           }
+          if (waitingEmpty) {
+            return;
+          }
           autoCollapseEligibleRef.current = false;
           autoCollapseSuppressedRef.current = true;
+          if (durationMs !== undefined) {
+            setShowDuration((value) => !value);
+          }
+          if (!hasBody) {
+            return;
+          }
           if (expanded) {
             startCollapseAnimation();
             return;
@@ -1235,13 +1288,17 @@ function ThinkingBlock({
           setIsCollapsing(false);
           setCollapsed(false);
         }}
-        aria-expanded={bodyOpen || Boolean(streaming)}
-        disabled={streaming && !hasBody}
+        aria-expanded={bodyOpen || Boolean(streaming) || showDuration}
+        disabled={waitingEmpty}
       >
         <span className="run-log-thinking-label">
-          {timing.phase === "waiting" && timing.elapsedMs > 0
-            ? `思考 ${formatDuration(timing.elapsedMs)}`
-            : "思考"}
+          {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : "思考"}
+          {!waitingEmpty && showDuration && durationMs !== undefined ? (
+            <span className="run-log-thinking-timing-inline">
+              {" "}
+              · 耗时 {formatDurationMs(durationMs)}
+            </span>
+          ) : null}
         </span>
         {hasBody && !streaming ? (
           <span
@@ -1394,68 +1451,6 @@ function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; an
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function ModelRequestBlock({
-  role,
-  modelByRole,
-  omitRoleLabel,
-  active = false,
-  requestSpan,
-}: {
-  role?: string;
-  modelByRole?: Record<string, string>;
-  omitRoleLabel?: boolean;
-  active?: boolean;
-  requestSpan?: ThreadRunProjectionRequestSpan;
-}) {
-  const timing = useStreamRequestTiming(active, false, toStreamRequestTimingAnchor(requestSpan));
-  const roleLabel = omitRoleLabel
-    ? "请求中"
-    : role
-      ? formatRoleModelLabel(role, modelByRole?.[role])
-      : "模型";
-
-  return (
-    <div className="run-log-agent-request run-log-model-request">
-      <Bot size={16} className="run-log-agent-request-icon" aria-hidden />
-      <span className="run-log-agent-request-label">
-        {omitRoleLabel ? roleLabel : `${roleLabel} 请求中`}
-        <RequestTimingBadge timing={timing} />
-      </span>
-    </div>
-  );
-}
-
-function AgentRequestBlock({
-  subagent,
-  modelByRole,
-  omitRoleLabel,
-  active = false,
-  requestSpan,
-}: {
-  subagent?: string;
-  modelByRole?: Record<string, string>;
-  omitRoleLabel?: boolean;
-  active?: boolean;
-  requestSpan?: ThreadRunProjectionRequestSpan;
-}) {
-  const timing = useStreamRequestTiming(active, false, toStreamRequestTimingAnchor(requestSpan));
-  const roleLabel = omitRoleLabel
-    ? "请求中"
-    : subagent
-      ? formatRoleModelLabel(subagent, modelByRole?.[subagent])
-      : "子代理";
-
-  return (
-    <div className="run-log-agent-request">
-      <Bot size={16} className="run-log-agent-request-icon" aria-hidden />
-      <span className="run-log-agent-request-label">
-        {omitRoleLabel ? roleLabel : `${roleLabel} 请求中`}
-        <RequestTimingBadge timing={timing} />
-      </span>
     </div>
   );
 }
@@ -1836,13 +1831,9 @@ function RunLogNarrative({
 }) {
   const usage = subagent ? usageByRole?.[subagent] : undefined;
   const hasBody = text.trim().length > 0;
-  const timing = useStreamRequestTiming(
-    Boolean(streaming) && !hasBody,
-    hasBody,
-    toStreamRequestTimingAnchor(requestSpan),
-  );
   const showSubagentBadge = subagent && !omitSubagentBadge;
   const showBody = hasBody || !streaming;
+  const waitingEmpty = Boolean(streaming) && !hasBody;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
   const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
 
@@ -1858,7 +1849,6 @@ function RunLogNarrative({
       {showSubagentBadge ? (
         <span className="run-log-subagent-badge">
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-          {streaming ? <RequestTimingBadge timing={timing} /> : null}
           {usage ? (
             <span className="run-log-usage-badge">
               {formatUsageBadge({
@@ -1870,8 +1860,8 @@ function RunLogNarrative({
             </span>
           ) : null}
         </span>
-      ) : streaming ? (
-        <RequestTimingBadge timing={timing} />
+      ) : waitingEmpty ? (
+        <WaitingThinkingBlock active {...(requestSpan && { requestSpan })} />
       ) : null}
       {showBody ? (
         <div className="run-log-narrative-body">
