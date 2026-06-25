@@ -150,11 +150,10 @@ const protectedPlanModeToolNames = ["EnterPlanMode", "ExitPlanMode", "mcp__eco_p
 const askAllowedTools = [
   "Agent",
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
-  SDK_SKILL_TOOL_NAME,
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
-  "AskUserQuestion",
 ] as const;
+const askDisallowedSdkTools = [...planningDisallowedSdkTools, ...protectedPlanModeToolNames] as const;
 const exploreSubagentTools = ["Read", "Glob", "Grep"] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
 const readOnlySubagentBashTools = [
@@ -175,7 +174,12 @@ const universalEcoBasePromptAppend = [
 ].join("\n");
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
-const askSessionPhaseAppend = "Session mode: ask (read-only).";
+const askSessionPhaseAppend = [
+  "Session mode: ask (read-only).",
+  "Answer directly in chat. Explore the codebase with read-only tools when needed.",
+  "Do not draft implementation plans, call EnterPlanMode/ExitPlanMode, or route work through plan approval.",
+  "If the user wants code changes, tell them to switch to Agent or Plan mode.",
+].join("\n");
 const defaultSettingSources = ["project"] as const;
 
 function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
@@ -184,7 +188,8 @@ function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
 
 function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   prompt: string;
-  permissionMode: "plan";
+  permissionMode: typeof readOnlyPermissionMode;
+  askPhase: true;
   allowedTools: string[];
   phaseAppend: string;
   agents: Record<string, unknown>;
@@ -193,7 +198,8 @@ function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
   return {
     prompt: input.prompt,
-    permissionMode: "plan",
+    permissionMode: readOnlyPermissionMode,
+    askPhase: true,
     allowedTools: [...askAllowedTools],
     phaseAppend: askSessionPhaseAppend,
     agents: createAskAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
@@ -547,6 +553,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSingleSession(input, buildAskSessionPhase(input));
   }
 
+  async *runPlan(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield createPhaseBoundaryEvent(input.threadId, "plan", "【计划】调研并制定方案");
+    yield* this.runPlanningPass(input, input.prompt);
+  }
+
   async *compactSession(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
   }
@@ -646,17 +657,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       mode === "execution" ? "execute" : "plan",
       mode === "execution" ? "【续聊】继续执行" : "【续聊】继续对话",
     );
-    const planningContinuation = mode === "planning";
+    if (mode === "planning") {
+      yield* this.runPlanningPass(input, continuationPrompt);
+      return;
+    }
     const sessionResult = yield* this.runSingleSession(input, {
       prompt: continuationPrompt,
-      permissionMode: planningContinuation ? "plan" : "acceptEdits",
-      ...(planningContinuation ? { planningPhase: true } : {}),
-      allowedTools: planningContinuation
-        ? [...planningContinuationAllowedTools]
-        : [...autonomousAllowedTools],
+      permissionMode: "acceptEdits",
+      allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
         universalProfile
-          ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
+          ? buildUniversalPhaseAppend("execute")
           : buildAutonomousOrchestratorAppend(),
         handsOn,
         availability,
@@ -665,18 +676,42 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
-    if (planningContinuation) {
-      const finalizedPlan =
-        sessionResult.finalizedPlan ??
-        resolvePlanningFinalizedPlanFromTranscript(sessionResult.transcript);
-      if (finalizedPlan) {
-        yield createPlanReadyEvent(input.threadId, {
-          userPrompt: input.prompt,
-          analysis: finalizedPlan.analysis,
-          plan: finalizedPlan.plan,
-          ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
-        });
-      }
+    void sessionResult;
+  }
+
+  private async *runPlanningPass(
+    input: AgentRuntimeRunInput,
+    prompt: string,
+  ): AsyncIterable<AgentEvent> {
+    const universalProfile = usesUniversalAgentProfile(input);
+    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
+    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
+    const sessionResult = yield* this.runSingleSession(input, {
+      prompt,
+      permissionMode: "plan",
+      planningPhase: true,
+      allowedTools: [...planningContinuationAllowedTools],
+      phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
+        universalProfile
+          ? buildUniversalPhaseAppend("plan")
+          : buildAutonomousOrchestratorAppend(),
+        handsOn,
+        availability,
+        universalProfile,
+      ),
+      agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
+      availability,
+    });
+    const finalizedPlan =
+      sessionResult.finalizedPlan ??
+      resolvePlanningFinalizedPlanFromTranscript(sessionResult.transcript);
+    if (finalizedPlan) {
+      yield createPlanReadyEvent(input.threadId, {
+        userPrompt: input.prompt,
+        analysis: finalizedPlan.analysis,
+        plan: finalizedPlan.plan,
+        ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
+      });
     }
   }
 
@@ -707,6 +742,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       prompt: string;
       permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
       planningPhase?: boolean;
+      askPhase?: boolean;
       /** Execution resume after Eco plan approval: complete the deferred ExitPlanMode call. */
       approveDeferredExitPlanMode?: boolean;
       allowedTools: string[];
@@ -749,9 +785,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : undefined;
     const dynamicDefinitions = mergeBuiltinExploreAgentDefinition(dynamicProfileDefinitions, phase.agents);
     const dynamicAgentKeys = dynamicDefinitions ? Object.keys(dynamicDefinitions) : undefined;
-    const mainAllowedTools = input.agentRegistry
-      ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
-      : phase.allowedTools;
+    const mainAllowedTools = phase.askPhase
+      ? phase.allowedTools
+      : input.agentRegistry
+        ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
+        : phase.allowedTools;
     const applyPhaseToolCap =
       phase.planningPhase === true ||
       phase.permissionMode === "plan" ||
@@ -806,6 +844,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const sdkDisallowedTools = mergeSdkDisallowedTools(
       toolPermissions?.main.disallowed,
       phase.planningPhase ? planningDisallowedSdkTools : [],
+      phase.askPhase ? askDisallowedSdkTools : [],
     );
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
     // attributed to the planner role; raw profile model ids are ambiguous when multiple

@@ -1432,7 +1432,11 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   const questionAgents = capturedOptions[1]?.agents as Record<string, { model?: string }> | undefined;
   expect(Object.keys(questionAgents ?? {})).toEqual([ecoSubagentKeyForRole("explore")]);
   expect(questionAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
-  expect(capturedOptions[1]?.permissionMode).toBe("plan");
+  expect(capturedOptions[1]?.permissionMode).toBe("dontAsk");
+  expect(capturedOptions[1]?.disallowedTools).toEqual(
+    expect.arrayContaining(["Write", "Bash", "ExitPlanMode", "EnterPlanMode"]),
+  );
+  expect(capturedOptions[1]?.allowedTools).not.toContain("AskUserQuestion");
 
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
@@ -1505,11 +1509,11 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   // Main agent requests go through the planner role route (proxy alias) so billing
   // attributes the usage to the planner role even when models are shared across roles.
   expect(options.model).toBe("claude-opus-4");
+  expect(options.permissionMode).toBe("dontAsk");
   expect(options.allowedTools).toEqual([
     "Agent",
     "TaskList",
     "TaskOutput",
-    "Skill",
     "Read",
     "Glob",
     "Grep",
@@ -1517,14 +1521,10 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     "NotebookRead",
     "WebSearch",
     "WebFetch",
-    "AskUserQuestion",
-    "TaskCreate",
-    "TaskUpdate",
-    "TodoWrite",
-    "mcp__browser__*",
-    "mcp__sources__*",
     "mcp__browser__open",
   ]);
+  expect(options.allowedTools).not.toContain("AskUserQuestion");
+  expect(options.allowedTools).not.toContain("Skill");
 
   const agents = options.agents as Record<string, Record<string, unknown>>;
   expect(Object.keys(agents)).toEqual(["eco_explore", "eco_researcher"]);
@@ -1545,6 +1545,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   const systemPrompt = options.systemPrompt as string;
   expect(systemPrompt).toContain("Coordinate a research answer without assuming a coding task.");
   expect(systemPrompt).toContain("Session mode: ask (read-only).");
+  expect(systemPrompt).toContain("Do not draft implementation plans");
   expect(systemPrompt).toContain("Research Desk");
   expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
   expect(systemPrompt).not.toContain("File edits apply directly");
@@ -1943,6 +1944,59 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   const ready = events.find((event) => event.type === "plan.ready");
   expect(ready?.payload).toMatchObject({
     plan: "## Summary\n\nShip the official plan.",
+  });
+});
+
+test("ClaudeAgentSdkDriver runPlan starts a fresh planning session", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    hookContext: {
+      awaitPlanApproval: async () => "approved",
+    },
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-plan-start",
+              uuid: "init-plan-start",
+            };
+            await invokeExitPlanPermissionHook(options, "## Summary\n\nShip the first plan.");
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-plan-start",
+              uuid: "result-plan-start",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  const events: Array<{ type: string; payload?: unknown }> = [];
+  for await (const event of driver.runPlan({
+    threadId: "thr_plan_start",
+    prompt: "Add markdown rendering",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type, payload: event.payload });
+  }
+
+  expect(capturedOptions[0]?.permissionMode).toBe("plan");
+  expect(capturedOptions[0]?.allowedTools).toContain("AskUserQuestion");
+  const ready = events.find((event) => event.type === "plan.ready");
+  expect(ready?.payload).toMatchObject({
+    plan: "## Summary\n\nShip the first plan.",
   });
 });
 

@@ -36,7 +36,7 @@
 |---------------|-----|----------------------|---------|--------|----------|
 | `agent` | Agent | `acceptEdits` | 按 profile | 全量 enabled | 主代理可自行 `ExitPlanMode` |
 | `plan` | Plan | `plan` | 禁止 | 只读子集 + `Agent(Plan)` 可选 | **必须** ExitPlanMode 桥接 |
-| `ask` | Ask | `plan` + 只读 `allowedTools` | 禁止 | explore + 只读子代理 | 不进入 |
+| `ask` | Ask | `dontAsk` + 只读 `allowedTools` + 显式禁用写/Bash/Plan 工具 | 禁止 | 仅 `explore` | 不进入 |
 
 ### 2.2 配置模型
 
@@ -56,7 +56,7 @@ interface ThreadRuntimeConfig {
 | `sessionMode` | 入口 |
 |---------------|------|
 | `agent` | `driver.run()` / `runContinuation("execution" \| "planning")` |
-| `plan` | planning 路径 + plan 状态机 |
+| `plan` | `driver.runPlan()` / `runContinuation("planning")` |
 | `ask` | `driver.runAsk()` / `runContinuation("ask")` |
 
 已删除：`classifyThreadIntent`、`question.ts`、`runQuestion`（外部）、`ThreadContinueAction.kind === "question"`。
@@ -77,7 +77,7 @@ interface ThreadRuntimeConfig {
 
 ### Phase 6 收尾（Claude 对齐清单）
 
-- [x] Ask 允许 `AskUserQuestion`（与 Plan 一致）
+- [x] Ask 禁止 `AskUserQuestion` 与 Plan 工具（对齐 Cursor 只读问答）
 - [x] `agent-preset-evals` 与 catalog 同步
 - [x] Mobile 设置页三档 workflow 默认
 - [x] 删除 `runQuestion`、死代码 `composer_mode_bar.dart`
@@ -132,7 +132,7 @@ interface ThreadRuntimeConfig {
 | 新建 Agent / Plan / Ask | 对应 `permissionMode` 与工具集 |
 | Ask 后续「帮我改代码」 | 仍为 Ask |
 | Agent 后续纯提问 | 仍为 Agent |
-| Ask 可 `AskUserQuestion` | allowedTools 含该工具 |
+| Ask 可 `AskUserQuestion` | allowedTools 不含该工具 |
 | Profile 禁用 reviewer | hooks + agents 注册表拦截 |
 | hook deny SDK Explore | 无 mandatory prompt 仍 deny |
 
@@ -142,7 +142,7 @@ interface ThreadRuntimeConfig {
 
 | # | 问题 | 决议 |
 |---|------|------|
-| 1 | Ask 是否允许 `AskUserQuestion`？ | **允许** |
+| 1 | Ask 是否允许 `AskUserQuestion`？ | **不允许**（Ask 只读问答；澄清留给 Plan） |
 | 2 | Ask 是否允许 profile 只读子代理？ | 允许 |
 | 3 | Thread 创建后能否改 `sessionMode`？ | Composer 可改下一条 |
 | 4 | `sessionMode` 存哪？ | thread 持久化 + workflow 默认 |

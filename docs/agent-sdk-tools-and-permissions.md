@@ -135,7 +135,7 @@ Eco PreToolUse hook     → Profile 工具策略（disallowed / filesystem / net
 
 执行阶段若配置了 `toolPermissionHandler`，Eco 会 `stripBashAutoApprovedTools()`，确保 Bash **不会**通过 `allowedTools` 被 SDK 自动批准，必须走 Desktop 的 Bash 审批流。
 
-只读 Ask 阶段使用 `permissionMode: "plan"` + 只读 `allowedTools`（与 Claude Code Plan 模式相同的写拦截语义，但 Eco 不进入 ExitPlanMode 流程）。未列出的写/Bash 工具由 SDK plan 模式与 `disallowedTools` 拦截。
+只读 Ask 阶段使用 `permissionMode: "dontAsk"` + 只读 `allowedTools`，并在 SDK `disallowedTools` 中显式禁用写/Bash/`EnterPlanMode`/`ExitPlanMode`。Eco 不进入 ExitPlanMode 审批流程。
 
 代码见 `buildAskSessionPhase()`（`packages/runtime/src/claude-agent-sdk.ts`）。
 
@@ -297,7 +297,8 @@ Eco Composer 三档模式由用户显式选择（`sessionMode: agent | plan | as
 |---------------|----------------------|----------|
 | **agent** | `acceptEdits` | `driver.run()` / execution continuation |
 | **plan** | `plan` | `runContinuation("planning")` |
-| **ask** | `plan`（只读工具集 + `AskUserQuestion`） | `driver.runAsk()` / `runContinuation("ask")` |
+| **ask** | `dontAsk`（只读工具集；禁用 Plan 工具） | `driver.runAsk()` / `runContinuation("ask")` |
+| **plan** | `plan`（调研 + `AskUserQuestion` + `ExitPlanMode`） | `driver.runPlan()` / `runContinuation("planning")` |
 
 ### Eco 子代理 vs SDK 内置
 

@@ -75,6 +75,7 @@ export interface EcoPlanningContext {
 export interface AgentRuntimeDriver {
   run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
   runAsk?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  runPlan?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
   runContinuation?(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "ask",
