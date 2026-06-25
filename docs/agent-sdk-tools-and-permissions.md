@@ -135,7 +135,9 @@ Eco PreToolUse hook     → Profile 工具策略（disallowed / filesystem / net
 
 执行阶段若配置了 `toolPermissionHandler`，Eco 会 `stripBashAutoApprovedTools()`，确保 Bash **不会**通过 `allowedTools` 被 SDK 自动批准，必须走 Desktop 的 Bash 审批流。
 
-只读 Question 阶段使用 `permissionMode: "dontAsk"` + `allowedTools` 白名单式自动批准，未列出的工具直接拒绝。
+只读 Ask 阶段使用 `permissionMode: "plan"` + 只读 `allowedTools`（与 Claude Code Plan 模式相同的写拦截语义，但 Eco 不进入 ExitPlanMode 流程）。未列出的写/Bash 工具由 SDK plan 模式与 `disallowedTools` 拦截。
+
+代码见 `buildAskSessionPhase()`（`packages/runtime/src/claude-agent-sdk.ts`）。
 
 代码注释（权威简述）见 `packages/runtime/src/eco-sdk-hooks.ts` 中 `createExitPlanModePreToolHook` 上方的 block comment。
 
@@ -258,7 +260,7 @@ Skill 可加载性和 Agent 文件读取权限是两件事：
 2. **SDK 权限**：是否在 `allowedTools` 里（仅影响 auto-approve）？`permissionMode` 是什么？
 3. **canUseTool**：Desktop Bash 审批 / `bashReviewMode` 是否拒绝？
 4. **Eco PreToolUse**：Profile `disallowed`、filesystem、network、bash 策略是否拒绝？
-5. **阶段**：当前是 `planning` / `question` / `execution`？Plan 阶段 Bash 应在 SDK `disallowedTools` 与物化后的 Profile `disallowed` 中。
+5. **阶段**：当前是 `planning` / `ask` / `execution`？Plan 与 Ask 阶段 Bash 应在 SDK `disallowedTools` 与物化后的 Profile `disallowed` 中。
 
 错误信息对照：
 
@@ -287,7 +289,30 @@ Skill 可加载性和 Agent 文件读取权限是两件事：
 
 ---
 
-## 9. 变更时注意
+## 9. Session 模式与 `Agent()` 委派
+
+Eco Composer 三档模式由用户显式选择（`sessionMode: agent | plan | ask`），**不再**根据用户消息正则推断 Q&A。
+
+| `sessionMode` | SDK `permissionMode` | 典型入口 |
+|---------------|----------------------|----------|
+| **agent** | `acceptEdits` | `driver.run()` / execution continuation |
+| **plan** | `plan` | `runContinuation("planning")` |
+| **ask** | `plan`（只读工具集） | `driver.runAsk()` / `runContinuation("ask")` |
+
+### Eco 子代理 vs SDK 内置
+
+- Eco 在 `agents` 中注册 `eco_*` 子代理（及 profile 动态 agent）；路由靠各 agent 的 `description`，**不在** main system prompt 里重复 mandatory roster。
+- SDK 内置 `Explore` / `Plan` / `Bash` 等通过两层机制屏蔽：
+  1. **SDK `permissions.deny`** — `Agent(Explore)` 等 pattern（`sdkBuiltinSubagentDenyRules`）
+  2. **PreToolUse** — `createNonEcoSubagentDenyPreToolHook` 拒绝未注册的 `subagent_type`；拒绝文案指向 **「Use agents registered for this session」**，不引用 system prompt 里的 agent 列表。
+
+Plan 阶段可临时允许 `Agent(Plan)`（`allowedSdkBuiltinAgentKeys`）；`general-purpose` 始终允许。
+
+实现：`packages/runtime/src/eco-sdk-hooks.ts` → `createNonEcoSubagentDenyPreToolHook`。
+
+---
+
+## 10. 变更时注意
 
 1. 改工具行为前，先分清是 **可用性** 还是 **权限** 问题。
 2. 新增阶段限制时，优先往 `disallowed` 加裸工具名，不要加隐式推断。

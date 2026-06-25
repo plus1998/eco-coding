@@ -275,16 +275,16 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 
 **验收**
 
-- [ ] 文档 `docs/agent-sdk-tools-and-permissions.md` 与实现一致
-- [ ] `eco-sdk-hooks.test.ts` 覆盖 deny 文案
+- [x] 文档 `docs/agent-sdk-tools-and-permissions.md` 与实现一致
+- [x] `eco-sdk-hooks.test.ts` 覆盖 deny 文案
 
 ---
 
 ### Phase 6 — 文档与清理
 
-- 更新 `README.md` Thread modes / Prompt architecture
-- 删除 deprecated：`planModeEnabled` 双写（major 版本或 migration script）
-- CHANGELOG 条目
+- [x] 更新 `README.md` Thread modes / Prompt architecture
+- [ ] 删除 deprecated：`planModeEnabled` 双写（major 版本或 migration script）
+- [x] 推进记录与相关文档已更新（无独立 CHANGELOG 文件）
 
 ---
 
@@ -300,7 +300,7 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 
 - `apps/desktop/src/shared/thread-continuation.ts`
 - `apps/desktop/src/shared/thread-runtime-config.ts`
-- `apps/desktop/src/shared/plan-mode-ui.ts` — **待扩为 session-mode-ui**
+- `apps/desktop/src/shared/plan-mode-ui.ts` — **已扩为 session-mode-ui**
 
 ### Runtime
 
@@ -351,6 +351,10 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 |------|-------|------|
 | 2026-06-25 | 0 | 创建本文档；对齐 Claude Code 模式模型 |
 | 2026-06-25 | 1 | Composer 三档 `sessionMode`（agent/plan/ask）；Ask 走 `runAskThread`；续聊按 thread sessionMode 路由 |
+| 2026-06-25 | 2 | `runAsk` 统一 `runSingleSession`；Ask 用 `permissionMode: plan` + raw prompt |
+| 2026-06-25 | 3 | 删除 `classifyThreadIntent`；续聊仅看 `sessionMode` |
+| 2026-06-25 | 4 | 删除 `question.ts`；瘦身 autonomous / profile / universal append |
+| 2026-06-25 | 5–6 | deny hook 文案对齐；更新 README 与 agent-sdk-tools 文档 |
 
 ---
 

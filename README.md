@@ -10,18 +10,25 @@ The first version focuses on a router-first command center:
 - SQLite event storage with secrets kept in the system keychain.
 - Direct workspace editing with SDK file checkpointing for rewind; session diffs tracked via git in the opened project.
 
-## Thread modes
+## Thread modes (Composer `sessionMode`)
+
+Users pick the mode explicitly in Composer — **Agent | Plan | Ask**. Eco does **not** infer Q&A from prompt wording (`classifyThreadIntent` removed).
 
 | Mode | When | Runtime entry | SDK `permissionMode` |
 |------|------|---------------|----------------------|
-| **Coding (default)** | New coding thread or autonomous continue | `driver.run()` | `acceptEdits` |
-| **Plan continuation** | Plan Mode enabled + revise/fresh plan, or resume planning | `runContinuation("planning")` | `plan` (official Claude Plan Mode) |
-| **Plan execution** | User approves a pending plan | `runContinuation("execution", planning)` | `acceptEdits` (same session) |
-| **Question** | User intent is Q&A | `runQuestion()` | `dontAsk` (read-only) |
+| **Agent** (default) | Coding / implementation | `driver.run()` or execution continuation | `acceptEdits` |
+| **Plan** | User wants plan-first workflow | `runContinuation("planning")` | `plan` (official Claude Plan Mode) |
+| **Ask** | Read-only Q&A | `driver.runAsk()` or `runContinuation("ask")` | `plan` + read-only `allowedTools` |
 
-**Plan Mode** (`planModeEnabled` in thread/composer settings) changes **continuation routing** and enables SDK Plan Mode on planning turns. It does **not** start a separate “manual orchestration” driver. The main agent still chooses when to explore, delegate, implement, or submit a plan via `ExitPlanMode`.
+`sessionMode` is stored on the thread (`thread.runtimeConfig.sessionMode`). Legacy threads with only `planModeEnabled: true` map to **Plan**; otherwise **Agent**.
 
-Plan approval uses the **ExitPlanMode bridge**: hooks capture the plan, Eco shows the approval UI, and execution continues in the **same SDK session** after approval (not a second isolated execution run).
+**Plan** changes continuation routing and enables SDK Plan Mode on planning turns. The main agent still chooses when to explore, delegate, implement, or submit a plan via `ExitPlanMode`.
+
+Plan approval uses the **ExitPlanMode bridge**: hooks capture the plan, Eco shows the approval UI, and execution continues in the **same SDK session** after approval.
+
+**Ask** is not auto-selected for question-shaped messages in Agent mode — switch Composer to Ask for read-only answers.
+
+See **[docs/session-mode-simplification.md](docs/session-mode-simplification.md)** for the migration plan and **[docs/agent-sdk-tools-and-permissions.md](docs/agent-sdk-tools-and-permissions.md)** for tools/permissions per mode.
 
 ## System prompt and project context
 
@@ -46,35 +53,34 @@ Built in `runSingleSession()` (`packages/runtime/src/claude-agent-sdk.ts`):
 claude_code preset (SDK built-in)
   + ecoBasePromptAppend                    # coding preset profiles
     OR universalEcoBasePromptAppend        # non-coding / universal profiles
-  + phaseAppend                            # mode-specific orchestration (see below)
-  + buildMainAgentProfileAppend()          # when an orchestration profile is active:
-      profile name/preset, strategy guidance, subagent roster
-  + buildMainAgentHandsOnBoundaryAppend()  # mirrors PreToolUse policy (writes/Bash)
+  + phaseAppend                            # mode-specific line (see below)
+  + buildMainAgentProfileAppend()          # profile name + strategy (when profile active)
+  + buildMainAgentHandsOnBoundaryAppend()  # only when profile disallows writes and/or Bash
 ```
 
 | `phaseAppend` source | Used in |
 |----------------------|---------|
-| `buildAutonomousOrchestratorAppend()` | Default coding: `run()`, plan/execution continuation |
-| `buildUniversalPhaseAppend(phase)` | Universal (non-coding) profiles |
-| `buildQuestionAnswerSystemAppend()` | `runQuestion()` |
+| `buildAutonomousOrchestratorAppend()` | Agent mode: minimal constraints (no mandatory roster) |
+| `buildUniversalPhaseAppend(phase)` | Universal profiles: `Session mode: …` one-liner |
+| `askSessionPhaseAppend` | Ask mode: `Session mode: ask (read-only).` |
 
-**Coding orchestration append** (`packages/runtime/src/prompts/autonomous.ts`) tells the main agent to:
+**Coding orchestration append** (`packages/runtime/src/prompts/autonomous.ts`) is intentionally short:
 
-- Delegate only to enabled Eco subagents (`eco_*` keys) or SDK `general-purpose` for complex explore+act work
-- **Not** force subagent order or mandatory review/test passes
-- Use `AskUserQuestion` for material ambiguity; use `ExitPlanMode` only when a formal plan needs approval
-- Avoid the SDK Workflow tool
+- Delegate via subagent **descriptions**; do not force review/test order
+- Do not use the SDK Workflow tool
 
-**Hands-on boundary** (`packages/runtime/src/prompts/subagent-pipeline.ts`) states the same write/Bash rules the Eco tool-policy hook enforces (direct edits vs delegate to coder, Bash allowed or not).
+Subagent routing and SDK built-in blocks are enforced in **`agents` definitions**, SDK `permissions.deny` (`Agent(Explore)` etc.), and PreToolUse hooks — not repeated in the main prompt.
+
+**Hands-on boundary** is injected only when the active profile disables main-agent writes or Bash (mirrors PreToolUse policy).
 
 ### User-turn prompts (not system)
 
-| Mode | Prompt builder | Notes |
-|------|----------------|-------|
-| Coding / autonomous | Raw user message | Activity context may be appended on continue (`buildAgentPromptWithContext`) |
-| Plan continuation | User message, or `buildUniversalPlanningContinuationPrompt()` | Reminds model to call `ExitPlanMode` with full plan body |
+| Mode | Prompt | Notes |
+|------|--------|-------|
+| Agent | Raw user message | Activity context may be appended on continue (`buildAgentPromptWithContext`) |
+| Plan continuation | User message or universal planning wrapper | Reminds model to call `ExitPlanMode` with full plan body |
 | After plan approval | `buildAutonomousPlanContinuationPrompt()` | System-reminder that plan was approved; same session |
-| Question | `buildQuestionAnswerPrompt()` | Read-only task line + explore hint |
+| Ask | Raw user message | No `buildQuestionAnswerPrompt` wrapper |
 
 ### Eco coding subagents (`createAutonomousAgentDefinitions`)
 
@@ -97,7 +103,7 @@ Universal orchestration profiles use **template prompts** from the profile (`age
 - **ExitPlanMode** — captured in hooks; desktop `awaitPlanApproval` shows plan UI; `plan.ready` event for transcript fallback
 - **Reviewer scope** — `## Changed files (this session)` injected on `Agent(reviewer)` delegations
 - **Subagent handoff** — resume/summary prompt when context is compacted mid-subagent
-- **Tool policy** — PreToolUse denies disallowed tools; matches hands-on boundary text
+- **Tool policy** — PreToolUse denies disallowed tools; non-eco `Agent(...)` types get *Use agents registered for this session*
 
 ### Deprecated / empty
 

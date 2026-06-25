@@ -742,6 +742,34 @@ test("createNonEcoSubagentDenyPreToolHook denies SDK built-ins other than genera
     permissionDecision: "deny",
   });
   expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("Plan");
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Use agents registered for this session",
+  );
+});
+
+test("createNonEcoSubagentDenyPreToolHook denies SDK Explore with session agent guidance", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "Explore", prompt: "Scan repo" },
+      tool_use_id: "tool_explore",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_explore",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("Explore");
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Use agents registered for this session",
+  );
 });
 
 test("createNonEcoSubagentDenyPreToolHook allows Agent(Plan) when plan mode opens it", async () => {
@@ -818,6 +846,9 @@ test("createNonEcoSubagentDenyPreToolHook denies unlisted dynamic Eco agent keys
     permissionDecision: "deny",
   });
   expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("eco_writer");
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Use agents registered for this session",
+  );
 });
 
 test("createToolPermissionPreToolHook enforces main and subagent tool policies", async () => {

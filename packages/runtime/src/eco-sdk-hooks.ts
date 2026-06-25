@@ -678,6 +678,9 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
   };
 }
 
+const NON_ECO_SUBAGENT_DENY_REASON =
+  "Use agents registered for this session (Eco agent keys from the active Agents list).";
+
 export function createNonEcoSubagentDenyPreToolHook(
   allowedAgentKeys: readonly string[] = [],
   allowedSdkBuiltinAgentKeys: readonly string[] = [],
@@ -712,7 +715,7 @@ export function createNonEcoSubagentDenyPreToolHook(
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Subagent "${rawType}" is not an Eco agent. Use listed Eco agent keys only (see Available Eco subagents in system prompt).`,
+        permissionDecisionReason: `Subagent "${rawType}" is not registered for this session. ${NON_ECO_SUBAGENT_DENY_REASON}`,
       },
     };
   };
