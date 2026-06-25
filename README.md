@@ -107,7 +107,7 @@ Universal orchestration profiles use **template prompts** from the profile (`age
 
 ### Deprecated aliases
 
-- `createExecutionAgentDefinitions` — alias of `createAutonomousAgentDefinitions`
+- `createAgentDefinitions` — alias of `createAutonomousAgentDefinitions`
 - Forced execute-phase pipeline prompts (`buildExecutePhase*`, `planningPhaseSystemAppend`, etc.) — **removed**
 
 ## Context compaction

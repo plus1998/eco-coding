@@ -1057,7 +1057,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 }
 
-/** @deprecated Use createExecutionAgentDefinitions */
 /** @deprecated Use createAutonomousAgentDefinitions */
 export function createAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
@@ -1183,15 +1182,6 @@ export function createAutonomousAgentDefinitions(
     };
   }
   return definitions;
-}
-
-/** @deprecated Use createAutonomousAgentDefinitions */
-export function createExecutionAgentDefinitions(
-  routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
-  availability: SubagentAvailability = normalizeSubagentAvailability(),
-): Record<string, unknown> {
-  return createAutonomousAgentDefinitions(routes, agentSkills, availability);
 }
 
 export function toSdkAgentModel(modelId?: string, role = "subagent"): string {

@@ -15,7 +15,7 @@ import {
   createAgentDefinitions,
   createAutonomousAgentDefinitions,
   createCanUseTool,
-  createExecutionAgentDefinitions,
+  createAutonomousAgentDefinitions,
   createPhaseBoundaryEvent,
   createPlanningAgentDefinitions,
   createPlanReadyEvent,
@@ -467,7 +467,7 @@ test("creates native SDK subagent definitions", () => {
 });
 
 test("execution architect prompt requires Coder Tasks section", () => {
-  const definitions = createExecutionAgentDefinitions(routes);
+  const definitions = createAutonomousAgentDefinitions(routes);
   const architectPrompt = (definitions[ecoSubagentKeyForRole("architect")] as { prompt: string }).prompt;
   expect(architectPrompt).toContain("## Coder Tasks");
   expect(architectPrompt).toContain("Context Digest");
@@ -485,7 +485,7 @@ test("execution architect prompt requires Coder Tasks section", () => {
 });
 
 test("reviewer prompt limits scope to current session workspace diff", () => {
-  const definitions = createExecutionAgentDefinitions(routes);
+  const definitions = createAutonomousAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).toMatchObject({
     description: expect.stringContaining("High-risk"),
     prompt: expect.stringMatching(/git diff --name-only HEAD/),
@@ -584,7 +584,7 @@ test("autonomous subagents scope tools: explore read-only, coder writable, other
   expect(testerTools).toContain("WebSearch");
 });
 
-test("createExecutionAgentDefinitions omits every disabled role", () => {
+test("createAutonomousAgentDefinitions omits every disabled role", () => {
   const availability = {
     explore: true,
     architect: true,
@@ -592,15 +592,15 @@ test("createExecutionAgentDefinitions omits every disabled role", () => {
     reviewer: false,
     tester: false,
   };
-  const definitions = createExecutionAgentDefinitions(routes, undefined, availability);
+  const definitions = createAutonomousAgentDefinitions(routes, undefined, availability);
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("coder"));
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("tester"));
 });
 
-test("createExecutionAgentDefinitions skips architect when no route is configured", () => {
+test("createAutonomousAgentDefinitions skips architect when no route is configured", () => {
   const partialRoutes = routes.filter((route) => route.role !== "architect");
-  const definitions = createExecutionAgentDefinitions(partialRoutes);
+  const definitions = createAutonomousAgentDefinitions(partialRoutes);
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("architect"));
   expect(definitions).toHaveProperty(ecoSubagentKeyForRole("coder"));
 });
