@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-
 import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode.dart';
 import '../../core/constants/session_mode_ui.dart';
@@ -618,7 +616,7 @@ IconData sessionModeIcon(SessionMode mode) {
     return EcoIcons.planMode;
   }
   if (mode == 'ask') {
-    return LucideIcons.messageCircle;
+    return EcoIcons.askMode;
   }
   return EcoIcons.agentMode;
 }

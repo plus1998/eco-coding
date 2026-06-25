@@ -64,6 +64,7 @@ abstract final class EcoIcons {
   static const IconData profile = LucideIcons.layoutDashboard;
   static const IconData subagents = LucideIcons.users;
   static const IconData planMode = LucideIcons.listTodo;
+  static const IconData askMode = LucideIcons.messageCircle;
   static const IconData agentMode = LucideIcons.infinity;
   static const IconData shieldAuto = LucideIcons.shield;
   static const IconData shieldAllowAll = LucideIcons.shieldOff;
