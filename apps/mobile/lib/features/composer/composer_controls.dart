@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/constants/bash_review_ui.dart';
-import '../../core/constants/plan_mode_ui.dart';
+import '../../core/constants/session_mode.dart';
+import '../../core/constants/session_mode_ui.dart';
 import '../../core/models/composer_mcp.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/thread_models.dart';
@@ -30,15 +32,23 @@ extension ThreadRuntimeConfigCopy on ThreadRuntimeConfig {
     String? agentProfileId,
     Map<String, bool>? subagentEnabled,
     Map<String, bool>? mcpServersEnabled,
+    SessionMode? sessionMode,
     bool? planModeEnabled,
     String? bashReviewMode,
   }) {
+    final synced = sessionMode != null || planModeEnabled != null
+        ? syncSessionModeFields(
+            sessionMode: sessionMode ?? this.sessionMode,
+            planModeEnabled: planModeEnabled ?? this.planModeEnabled,
+          )
+        : MapEntry(this.sessionMode, this.planModeEnabled);
     return ThreadRuntimeConfig(
       routeProfileId: routeProfileId ?? this.routeProfileId,
       agentProfileId: agentProfileId ?? this.agentProfileId,
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
-      planModeEnabled: planModeEnabled ?? this.planModeEnabled,
+      sessionMode: synced.key,
+      planModeEnabled: synced.value,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
   }
@@ -584,13 +594,12 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final planModeEnabled = runtimeConfig.planModeEnabled;
-    final current = planModeUi(planModeEnabled);
+    final current = sessionModeUi(runtimeConfig.sessionMode);
 
     return IconButton(
       onPressed: !canEdit
           ? null
-          : () => showComposerPlanModeSheet(
+          : () => showComposerSessionModeSheet(
               context,
               ref,
               runtimeConfig: runtimeConfig,
@@ -602,19 +611,27 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       icon: Icon(
-        planModeIcon(planModeEnabled),
+        sessionModeIcon(runtimeConfig.sessionMode),
         size: 22,
-        color: planModeEnabled ? ecoColors(context).accent : ecoColors(context).textSecondary,
+        color: runtimeConfig.sessionMode != 'agent'
+            ? ecoColors(context).accent
+            : ecoColors(context).textSecondary,
       ),
     );
   }
 }
 
-IconData planModeIcon(bool planModeEnabled) {
-  return planModeEnabled ? EcoIcons.planMode : EcoIcons.agentMode;
+IconData sessionModeIcon(SessionMode mode) {
+  if (mode == 'plan') {
+    return EcoIcons.planMode;
+  }
+  if (mode == 'ask') {
+    return LucideIcons.messageCircle;
+  }
+  return EcoIcons.agentMode;
 }
 
-Future<void> showComposerPlanModeSheet(
+Future<void> showComposerSessionModeSheet(
   BuildContext context,
   WidgetRef ref, {
   required ThreadRuntimeConfigInput runtimeConfig,
@@ -633,11 +650,11 @@ Future<void> showComposerPlanModeSheet(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _SheetHeader(title: '想以何种方式工作？'),
-          ...planModeUiOptions.map((option) {
-            final isActive = option.value == runtimeConfig.planModeEnabled;
+          ...sessionModeUiOptions.map((option) {
+            final isActive = option.value == runtimeConfig.sessionMode;
             return ListTile(
               leading: Icon(
-                planModeIcon(option.value),
+                sessionModeIcon(option.value),
                 size: 20,
                 color: ecoColors(context).textSecondary,
               ),
@@ -651,7 +668,7 @@ Future<void> showComposerPlanModeSheet(
                 persistRuntimeConfig(
                   ref,
                   threadId: threadId,
-                  config: runtimeConfig.copyWith(planModeEnabled: option.value),
+                  config: runtimeConfig.copyWith(sessionMode: option.value),
                   onChanged: onChanged,
                 );
                 Navigator.pop(context);

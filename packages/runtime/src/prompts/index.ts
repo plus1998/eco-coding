@@ -1,7 +1,7 @@
 export {
-  autonomousOrchestratorAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
+  type BuildAutonomousOrchestratorAppendOptions,
 } from "./autonomous.js";
 export {
   ecoBasePromptAppend,

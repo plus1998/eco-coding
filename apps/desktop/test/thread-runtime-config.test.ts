@@ -141,6 +141,7 @@ test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () =>
   expect(config.routeProfileId).toBe("profile-b");
   expect(config.agentProfileId).toBe("profile-b");
   expect(config.planModeEnabled).toBe(false);
+  expect(config.sessionMode).toBe("agent");
   expect(config.subagentEnabled.reviewer).toBe(true);
   expect(isAutonomousThreadRuntime(config)).toBe(true);
 });
@@ -152,6 +153,7 @@ test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan mode
   });
   expect(config.agentProfileId).toBe("profile-a");
   expect(config.planModeEnabled).toBe(true);
+  expect(config.sessionMode).toBe("plan");
   expect(config.subagentEnabled.reviewer).toBe(true);
 });
 
@@ -251,6 +253,7 @@ test("serialize and parse thread runtime config round-trip", () => {
   });
   const json = serializeThreadRuntimeConfig(config);
   expect(json).toContain("planModeEnabled");
+  expect(json).toContain("sessionMode");
   expect(json).not.toContain("orchestrationMode");
   expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
 });
@@ -269,8 +272,18 @@ test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => 
     agentProfileId: "generic-copy",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: false,
+    sessionMode: "agent",
     bashReviewMode: "always",
   });
+});
+
+test("buildThreadRuntimeConfigFromDefaults supports ask workflow default", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { planModeEnabled: false, sessionMode: "ask" },
+  });
+  expect(config.sessionMode).toBe("ask");
+  expect(config.planModeEnabled).toBe(false);
 });
 
 test("withPlanModeDisabled turns off plan mode without mutating the original config", () => {
@@ -278,10 +291,11 @@ test("withPlanModeDisabled turns off plan mode without mutating the original con
     settings: agentSettings,
     workflowDefaults: { planModeEnabled: true },
   });
-  expect(withPlanModeDisabled(config)).toEqual({ ...config, planModeEnabled: false });
+  expect(withPlanModeDisabled(config)).toEqual({ ...config, sessionMode: "agent", planModeEnabled: false });
   expect(config.planModeEnabled).toBe(true);
-  expect(withPlanModeDisabled({ ...config, planModeEnabled: false })).toEqual({
+  expect(withPlanModeDisabled({ ...config, planModeEnabled: false, sessionMode: "agent" })).toEqual({
     ...config,
+    sessionMode: "agent",
     planModeEnabled: false,
   });
 });
@@ -297,6 +311,7 @@ test("normalizeThreadRuntimeConfig preserves planModeEnabled", () => {
     routeProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: true,
+    sessionMode: "plan",
     bashReviewMode: "always",
   });
 });
@@ -312,6 +327,7 @@ test("normalizeThreadRuntimeConfig migrates legacy orchestrationMode", () => {
     routeProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: true,
+    sessionMode: "plan",
     bashReviewMode: "always",
   });
 });
@@ -321,6 +337,7 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
     routeProfileId: "profile-a",
     agentProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
+    sessionMode: "plan" as const,
     planModeEnabled: true,
     bashReviewMode: "always" as const,
   };
@@ -328,7 +345,7 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
     isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" }),
   ).toBe(true);
   expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, planModeEnabled: false }),
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, planModeEnabled: false, sessionMode: "agent" }),
   ).toBe(false);
   expect(
     isBashReviewModeOnlyRuntimeConfigUpdate(base, {

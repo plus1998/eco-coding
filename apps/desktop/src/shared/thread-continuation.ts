@@ -24,6 +24,7 @@ export type ThreadContinueAction =
   | { kind: "question"; resume: boolean };
 
 export interface ThreadContinueRoutingInput {
+  sessionMode?: import("./session-mode").SessionMode;
   intent: "question" | "coding";
   followUp: string;
   canResume: boolean;
@@ -115,6 +116,10 @@ export function resolveContinuePhase(input: ContinuePhaseInput): "planning" | "e
 
 export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): ThreadContinueAction {
   const wantsRevision = userRequestsPlanRevision(input.followUp);
+
+  if (input.sessionMode === "ask") {
+    return { kind: "question", resume: input.canResume };
+  }
 
   if (input.intent === "question") {
     return { kind: "question", resume: input.canResume };

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Infinity, List } from "lucide-react";
+import { Check, ChevronDown, Infinity, List, MessageCircle } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -9,7 +9,8 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { PLAN_MODE_UI, planModeUi } from "../shared/plan-mode-ui";
+import type { SessionMode } from "../shared/session-mode";
+import { SESSION_MODE_UI, sessionModeUi } from "../shared/session-mode-ui";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
@@ -37,17 +38,17 @@ function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
 }
 
 interface ComposerPlanModeToggleProps {
-  planModeEnabled: boolean;
+  sessionMode: SessionMode;
   canEdit: boolean;
   saving?: boolean | undefined;
-  onToggle: (planModeEnabled: boolean) => void;
+  onSelect: (sessionMode: SessionMode) => void;
 }
 
 export function ComposerPlanModeToggle({
-  planModeEnabled,
+  sessionMode,
   canEdit,
   saving,
-  onToggle,
+  onSelect,
 }: ComposerPlanModeToggleProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -55,7 +56,7 @@ export function ComposerPlanModeToggle({
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
 
   const clickable = canEdit && !saving;
-  const current = planModeUi(planModeEnabled);
+  const current = sessionModeUi(sessionMode);
   const className = ["composer-toolbar-trigger", clickable ? "is-clickable" : "", open ? "is-active" : ""]
     .filter(Boolean)
     .join(" ");
@@ -105,9 +106,9 @@ export function ComposerPlanModeToggle({
     };
   }, [open]);
 
-  function selectMode(enabled: boolean) {
-    if (enabled !== planModeEnabled) {
-      onToggle(enabled);
+  function selectMode(mode: SessionMode) {
+    if (mode !== sessionMode) {
+      onSelect(mode);
     }
     setOpen(false);
   }
@@ -118,18 +119,18 @@ export function ComposerPlanModeToggle({
       type="button"
       className={className}
       disabled={saving}
-      aria-pressed={planModeEnabled}
+      aria-pressed={sessionMode !== "agent"}
       aria-label={current.title}
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
-      <PlanModeIcon planModeEnabled={planModeEnabled} size={15} className="composer-toolbar-trigger-icon" />
+      <SessionModeIcon mode={sessionMode} size={15} className="composer-toolbar-trigger-icon" />
       <span className="composer-toolbar-trigger-label">{current.title}</span>
       <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
-    <span className={className} title="当前对话进行中，Plan 不可修改">
-      <PlanModeIcon planModeEnabled={planModeEnabled} size={15} className="composer-toolbar-trigger-icon" />
+    <span className={className} title="当前对话进行中，工作模式不可修改">
+      <SessionModeIcon mode={sessionMode} size={15} className="composer-toolbar-trigger-icon" />
       <span className="composer-toolbar-trigger-label">{current.title}</span>
     </span>
   );
@@ -138,10 +139,10 @@ export function ComposerPlanModeToggle({
     <>
       <span className="composer-orchestration-wrap">{control}</span>
       {open && clickable ? (
-        <ComposerPlanModePopover
+        <ComposerSessionModePopover
           panelRef={panelRef}
           panelStyle={panelStyle}
-          planModeEnabled={planModeEnabled}
+          sessionMode={sessionMode}
           disabled={Boolean(saving)}
           onSelect={selectMode}
         />
@@ -150,18 +151,18 @@ export function ComposerPlanModeToggle({
   );
 }
 
-function ComposerPlanModePopover({
+function ComposerSessionModePopover({
   panelRef,
   panelStyle,
-  planModeEnabled,
+  sessionMode,
   disabled,
   onSelect,
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   panelStyle: CSSProperties;
-  planModeEnabled: boolean;
+  sessionMode: SessionMode;
   disabled: boolean;
-  onSelect: (enabled: boolean) => void;
+  onSelect: (mode: SessionMode) => void;
 }) {
   return createPortal(
     <div
@@ -175,12 +176,12 @@ function ComposerPlanModePopover({
         <p className="composer-codex-popover-title">想以何种方式工作？</p>
       </header>
       <ul className="composer-codex-popover-list">
-        {PLAN_MODE_UI.map((option) => (
-          <li key={String(option.value)}>
+        {SESSION_MODE_UI.map((option) => (
+          <li key={option.value}>
             <button
               type="button"
               className={
-                option.value === planModeEnabled
+                option.value === sessionMode
                   ? "composer-codex-popover-item active"
                   : "composer-codex-popover-item"
               }
@@ -188,13 +189,13 @@ function ComposerPlanModePopover({
               onClick={() => onSelect(option.value)}
             >
               <span className="composer-plan-mode-popover-icon" aria-hidden>
-                <PlanModeIcon planModeEnabled={option.value} size={16} />
+                <SessionModeIcon mode={option.value} size={16} />
               </span>
               <span className="composer-codex-popover-body">
                 <span className="composer-codex-popover-item-title">{option.title}</span>
                 <span className="composer-codex-popover-item-desc">{option.description}</span>
               </span>
-              {option.value === planModeEnabled ? (
+              {option.value === sessionMode ? (
                 <span className="composer-codex-popover-check" aria-hidden>
                   <Check size={14} strokeWidth={2.25} />
                 </span>
@@ -208,17 +209,20 @@ function ComposerPlanModePopover({
   );
 }
 
-function PlanModeIcon({
-  planModeEnabled,
+function SessionModeIcon({
+  mode,
   size,
   className,
 }: {
-  planModeEnabled: boolean;
+  mode: SessionMode;
   size: number;
   className?: string;
 }) {
-  if (planModeEnabled) {
+  if (mode === "plan") {
     return <List size={size} strokeWidth={1.75} aria-hidden className={className} />;
+  }
+  if (mode === "ask") {
+    return <MessageCircle size={size} strokeWidth={1.75} aria-hidden className={className} />;
   }
   return <Infinity size={size} strokeWidth={1.75} aria-hidden className={className} />;
 }

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
 import { parseSubagentMissionMessage } from "../src/agent-mission";
 import type { EcoAgentRuntimeConfig, EcoToolPolicy } from "../src/agent-orchestration";
+import { defaultSubagentAvailability } from "../src/subagent-availability";
 import {
   appendToPhaseTranscript,
   applyEcoSdkSettings,
@@ -501,6 +502,34 @@ test("autonomous orchestrator append does not force a fixed subagent pipeline", 
   expect(append).toContain("Do not force a fixed subagent order");
   expect(append).not.toContain("Coders (parallel)");
   expect(append).not.toContain("TaskCreate");
+  expect(append).toContain("Mandatory subagent policy");
+  expect((append.match(/Mandatory subagent policy/g) ?? []).length).toBe(1);
+});
+
+test("autonomous orchestrator append reflects effective subagent availability", () => {
+  const append = buildAutonomousOrchestratorAppend({
+    ...defaultSubagentAvailability(),
+    reviewer: false,
+    tester: false,
+  });
+  expect(append).toContain("coder: eco_coder");
+  expect(append).not.toContain("reviewer: eco_reviewer");
+  expect(append).not.toContain("tester: eco_tester");
+});
+
+test("autonomous orchestrator append skips compact roster when profile roster is present", () => {
+  const append = buildAutonomousOrchestratorAppend(defaultSubagentAvailability(), {
+    hasProfileRoster: true,
+  });
+  expect(append).toContain("Mandatory subagent policy");
+  expect(append).not.toContain("Available Eco subagents in this session:");
+});
+
+test("autonomous orchestrator append documents Plan agent during planning", () => {
+  const append = buildAutonomousOrchestratorAppend(defaultSubagentAvailability(), {
+    allowPlanAgent: true,
+  });
+  expect(append).toContain("Agent(Plan)");
 });
 
 test("buildAutonomousPlanContinuationPrompt carries approved plan context", () => {

@@ -120,6 +120,25 @@ test("interrupted execution follow-up resumes sdk when possible", () => {
   ).toEqual({ kind: "resume_execution" });
 });
 
+test("resolveThreadContinueAction routes ask session mode to question continuation", () => {
+  expect(
+    resolveThreadContinueAction({
+      sessionMode: "ask",
+      intent: "coding",
+      followUp: "实现登录功能",
+      canResume: true,
+      planModeEnabled: false,
+      hasPendingPlan: false,
+      hasApprovedPlanOnDisk: false,
+      enteredExecutionPhase: false,
+      hasCoderTodos: false,
+      hasAppliedDiff: false,
+      threadStatus: "completed",
+      activityLines: [],
+    }),
+  ).toEqual({ kind: "question", resume: true });
+});
+
 test("pickDisplayContextTokens prefers planner", () => {
   expect(
     pickDisplayContextTokens({

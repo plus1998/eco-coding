@@ -39,15 +39,23 @@ test("isWorkflowSettingsSnapshot accepts orchestrationMode and legacy fields", (
 test("normalizeWorkflowSettingsSnapshot maps legacy values", () => {
   expect(normalizeWorkflowSettingsSnapshot({ orchestrationMode: "sdk_default" })).toEqual({
     planModeEnabled: false,
+    sessionMode: "agent",
   });
   expect(normalizeWorkflowSettingsSnapshot({ orchestrationMode: "analyze_plan_execute" })).toEqual({
     planModeEnabled: true,
+    sessionMode: "plan",
   });
   expect(normalizeWorkflowSettingsSnapshot({ planModeEnabled: true })).toEqual({
     planModeEnabled: true,
+    sessionMode: "plan",
   });
   expect(normalizeWorkflowSettingsSnapshot({ planModeEnabled: false })).toEqual({
     planModeEnabled: false,
+    sessionMode: "agent",
+  });
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask", planModeEnabled: true })).toEqual({
+    planModeEnabled: false,
+    sessionMode: "ask",
   });
 });
 
@@ -69,6 +77,7 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
     }),
   ).toEqual({
     planModeEnabled: false,
+    sessionMode: "agent",
     mcpServersEnabled: { mongo: true, browser: false },
   });
 });

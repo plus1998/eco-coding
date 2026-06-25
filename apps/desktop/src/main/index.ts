@@ -95,6 +95,7 @@ import {
   type McpServerConfigInput,
   type ModelSettingsSnapshot,
   normalizeThreadRuntimeConfig,
+  resolveSessionMode,
   type OrchestrationProfile,
   type OrchestrationProfileExportRequest,
   type OrchestrationProfileVersionRestoreRequest,
@@ -1131,7 +1132,26 @@ function resolveAgentRuntimeConfigForThreadId(threadId: string): EcoAgentRuntime
 function threadPlanModeEnabled(threadId: string): boolean {
   const thread = conversationStore.getThread(threadId);
   const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
-  return config?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
+  return config ? resolveSessionMode(config) === "plan" : workflowSettingsStore.get().planModeEnabled;
+}
+
+function threadSessionMode(threadId: string): import("../shared/session-mode").SessionMode {
+  const thread = conversationStore.getThread(threadId);
+  const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
+  if (config) {
+    return resolveSessionMode(config);
+  }
+  return resolveSessionMode(workflowSettingsStore.get());
+}
+
+function shouldRouteThreadToAsk(sessionMode: import("../shared/session-mode").SessionMode, prompt: string): boolean {
+  if (sessionMode === "ask") {
+    return true;
+  }
+  if (sessionMode === "plan") {
+    return false;
+  }
+  return classifyThreadIntent(prompt) === "question";
 }
 
 function disableThreadPlanMode(threadId: string): ThreadRuntimeConfig | undefined {
@@ -2237,7 +2257,8 @@ function registerIpcHandlers(): void {
     const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
-    const intent = classifyThreadIntent(prompt);
+    const sessionMode = resolveSessionMode(threadRuntime);
+    const routeAsk = shouldRouteThreadToAsk(sessionMode, prompt);
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
     const now = new Date().toISOString();
     const thread: ThreadSummary = {
@@ -2249,7 +2270,7 @@ function registerIpcHandlers(): void {
       createdAt: now,
       updatedAt: now,
       message: runtimeConfig.ok
-        ? intent === "question"
+        ? routeAsk
           ? "正在回答…"
           : "正在启动 Claude Agent SDK…"
         : runtimeConfig.reason,
@@ -2263,8 +2284,8 @@ function registerIpcHandlers(): void {
     if (runtimeConfig.ok) {
       scheduleThreadTitleSummary(thread.id, runtimeConfig);
       const attachments = payload.attachments;
-      if (intent === "question") {
-        void runQuestionThread(
+      if (routeAsk) {
+        void runAskThread(
           thread,
           workspace,
           runtimeConfig,
@@ -3072,6 +3093,8 @@ async function runQuestionThread(
   }
 }
 
+const runAskThread = runQuestionThread;
+
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
   emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
@@ -3481,7 +3504,9 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   const effectiveThread = ensureThreadRuntimeConfig(
     conversationStore.getThread(input.threadId) ?? activeThread,
   );
+  const sessionMode = threadSessionMode(input.threadId);
   const intent = classifyThreadIntent(prompt);
+  const routingIntent = sessionMode === "ask" ? "question" : intent;
   const activityLines = conversationStore.listActivityLines(input.threadId);
   const compactHandoff = conversationStore.getCompactHandoff(input.threadId);
   const sdkSession = conversationStore.getSdkSession(input.threadId);
@@ -3518,6 +3543,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   });
 
   const continueAction = resolveThreadContinueAction({
+    sessionMode,
     intent,
     followUp: prompt,
     canResume,
@@ -3536,7 +3562,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     : continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
       ? prompt
       : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
-  const statusMessage = continueStatusMessage(continueAction, intent);
+  const statusMessage = continueStatusMessage(continueAction, routingIntent);
 
   updateThread(input.threadId, {
     status: "running",
@@ -3788,10 +3814,11 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   }
 
   const workspace = await ensureWorkspace(thread.workspacePath);
-  const intent = classifyThreadIntent(prompt);
+  const sessionMode = threadSessionMode(threadId);
+  const routeAsk = shouldRouteThreadToAsk(sessionMode, prompt);
   const activityLines = conversationStore.listActivityLines(threadId);
   conversationStore.clearCoderTodos(threadId);
-  const runningMessage = intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…";
+  const runningMessage = routeAsk ? "正在重试回答…" : "正在重试分析并制定计划…";
   updateThread(threadId, {
     status: "running",
     message: runningMessage,
@@ -3816,8 +3843,8 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   const agentPrompt = resume
     ? prompt
     : buildAgentPromptWithContext(prompt, "请继续完成未完成的任务。", activityLines);
-  if (intent === "question") {
-    void runQuestionThread(
+  if (routeAsk) {
+    void runAskThread(
       updated,
       workspace,
       runtimeConfig,
@@ -4672,7 +4699,7 @@ async function dispatchThreadContinueAction(input: {
   }
 
   if (action.kind === "question") {
-    void runQuestionThread(
+    void runAskThread(
       updated,
       workspace,
       runtimeConfig,

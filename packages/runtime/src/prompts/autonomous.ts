@@ -1,28 +1,40 @@
 /** Short orchestrator rules for autonomous mode — routing lives in subagent descriptions. */
 
 import { formatMandatoryEcoSubagentRule, formatAvailableSubagentsLine } from "./subagent-pipeline.js";
-import { defaultSubagentAvailability, SDK_GENERAL_PURPOSE_AGENT_KEY } from "../subagent-availability.js";
+import {
+  defaultSubagentAvailability,
+  type SubagentAvailability,
+} from "../subagent-availability.js";
 
-export const autonomousOrchestratorAppend = [
-  "Eco orchestration: you are the main agent for this thread.",
-  formatMandatoryEcoSubagentRule(),
-  formatAvailableSubagentsLine(defaultSubagentAvailability()),
-  [
-    "Delegate to enabled Eco subagents only when their descriptions fit the task.",
-    "Do not force a fixed subagent order or mandatory review/test passes.",
-  ].join(" "),
-  [
-    "Clarify vs plan: use AskUserQuestion for material ambiguity",
-    "(preferences, scope, tradeoffs) that the repo cannot resolve.",
-    "Use ExitPlanMode only when a formal plan needs user approval before implementation.",
-  ].join(" "),
-  `SDK Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) is available for complex multi-step work that requires both exploration and action.`,
-  "Do not declare the task complete until the requested scope is implemented and you have proportionate verification evidence.",
-  "Do not use the SDK Workflow tool.",
-].join("\n");
+export interface BuildAutonomousOrchestratorAppendOptions {
+  /** Profile roster already lists Eco subagents with routing hints. */
+  hasProfileRoster?: boolean;
+  allowPlanAgent?: boolean;
+}
 
-export function buildAutonomousOrchestratorAppend(): string {
-  return autonomousOrchestratorAppend;
+export function buildAutonomousOrchestratorAppend(
+  availability: SubagentAvailability = defaultSubagentAvailability(),
+  options: BuildAutonomousOrchestratorAppendOptions = {},
+): string {
+  const delegationBlock = options.hasProfileRoster
+    ? formatMandatoryEcoSubagentRule({ allowPlanAgent: options.allowPlanAgent })
+    : formatAvailableSubagentsLine(availability, { allowPlanAgent: options.allowPlanAgent });
+
+  return [
+    "Eco orchestration: you are the main agent for this thread.",
+    delegationBlock,
+    [
+      "Delegate to enabled Eco subagents only when their descriptions fit the task.",
+      "Do not force a fixed subagent order or mandatory review/test passes.",
+    ].join(" "),
+    [
+      "Clarify vs plan: use AskUserQuestion for material ambiguity",
+      "(preferences, scope, tradeoffs) that the repo cannot resolve.",
+      "Use ExitPlanMode only when a formal plan needs user approval before implementation.",
+    ].join(" "),
+    "Do not declare the task complete until the requested scope is implemented and you have proportionate verification evidence.",
+    "Do not use the SDK Workflow tool.",
+  ].join("\n");
 }
 
 export function buildAutonomousPlanContinuationPrompt(input: {

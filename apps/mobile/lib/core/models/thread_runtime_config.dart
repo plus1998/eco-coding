@@ -1,3 +1,4 @@
+import '../constants/session_mode.dart';
 import 'composer_mcp.dart';
 import 'mcp_models.dart';
 import 'thread_models.dart';
@@ -113,6 +114,7 @@ ThreadRuntimeConfig buildRuntimeConfigForProfile({
             remembered: remembered,
           ),
     planModeEnabled: runtimeConfig.planModeEnabled,
+    sessionMode: runtimeConfig.sessionMode,
     bashReviewMode: runtimeConfig.bashReviewMode,
   );
 }
@@ -128,6 +130,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     return ThreadRuntimeConfig(
       routeProfileId: '',
       subagentEnabled: defaultSubagentAvailability(),
+      sessionMode: resolveSessionMode(planModeEnabled: workflow?.planModeEnabled),
       planModeEnabled: workflow?.planModeEnabled ?? false,
       bashReviewMode: 'always',
     );
@@ -149,12 +152,17 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
           remembered: workflow?.mcpServersEnabled,
         );
 
+  final synced = syncSessionModeFields(
+    sessionMode: workflow?.sessionMode,
+    planModeEnabled: workflow?.planModeEnabled,
+  );
   return ThreadRuntimeConfig(
     routeProfileId: profile.id,
     agentProfileId: profile.id,
     subagentEnabled: deriveSubagentEnabledFromProfile(profile),
     mcpServersEnabled: mcpServersEnabled,
-    planModeEnabled: workflow?.planModeEnabled ?? false,
+    sessionMode: synced.key,
+    planModeEnabled: synced.value,
     bashReviewMode: 'always',
   );
 }

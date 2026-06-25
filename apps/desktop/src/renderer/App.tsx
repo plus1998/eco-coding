@@ -123,6 +123,7 @@ import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerMcpServers } from "./ComposerMcpServers";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
+import type { SessionMode } from "../shared/session-mode";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
@@ -1465,11 +1466,13 @@ function App() {
           composerRuntimeConfig?.routeProfileId ??
           getDefaultAgentProfileId(settings);
         const routeProfileId = composerRuntimeConfig?.routeProfileId;
-        const planModeEnabled =
-          planModeOverride ?? composerRuntimeConfig?.planModeEnabled ?? workflowSettings.planModeEnabled;
+        const workflowDefaults =
+          planModeOverride === undefined
+            ? workflowSettings
+            : { ...workflowSettings, planModeEnabled: planModeOverride, sessionMode: planModeOverride ? "plan" as const : "agent" as const };
         return buildThreadRuntimeConfigFromDefaults({
           settings,
-          workflowDefaults: { ...workflowSettings, planModeEnabled },
+          workflowDefaults,
           mcpServers: mcpSettings.servers,
           ...(agentProfileId && { agentProfileId }),
           ...(routeProfileId && { routeProfileId }),
@@ -1482,7 +1485,6 @@ function App() {
       settings,
       composerRuntimeConfig?.agentProfileId,
       composerRuntimeConfig?.routeProfileId,
-      composerRuntimeConfig?.planModeEnabled,
       workflowSettings,
       mcpSettings.servers,
     ],
@@ -2810,12 +2812,25 @@ function App() {
     }
   }
 
-  async function toggleComposerPlanMode(planModeEnabled: boolean) {
+  async function selectComposerSessionMode(sessionMode: SessionMode) {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
     }
-    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, planModeEnabled };
+    const next: ThreadRuntimeConfig = withSessionMode(composerRuntimeConfig, sessionMode);
     await persistComposerRuntimeConfig(next);
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        sessionMode: next.sessionMode,
+        planModeEnabled: next.planModeEnabled,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function toggleComposerBashReviewMode(bashReviewMode: ThreadRuntimeConfig["bashReviewMode"]) {
@@ -3628,10 +3643,10 @@ function App() {
                   <div className="composer-footer-row composer-footer-config-row">
                     {composerRuntimeConfig ? (
                       <ComposerPlanModeToggle
-                        planModeEnabled={composerRuntimeConfig.planModeEnabled}
+                        sessionMode={composerRuntimeConfig.sessionMode}
                         canEdit={canEditComposerConfig}
                         saving={isSavingSettings}
-                        onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                        onSelect={(mode) => void selectComposerSessionMode(mode)}
                       />
                     ) : null}
                     {composerRuntimeConfig ? (
@@ -3648,10 +3663,10 @@ function App() {
                 <div className="composer-footer-row composer-footer-config-row">
                   {composerRuntimeConfig ? (
                     <ComposerPlanModeToggle
-                      planModeEnabled={composerRuntimeConfig.planModeEnabled}
+                      sessionMode={composerRuntimeConfig.sessionMode}
                       canEdit={canEditComposerConfig}
                       saving={isSavingSettings}
-                      onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                      onSelect={(mode) => void selectComposerSessionMode(mode)}
                     />
                   ) : null}
                   {composerRuntimeConfig ? (

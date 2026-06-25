@@ -321,6 +321,7 @@ export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
+  sessionMode?: import("./session-mode").SessionMode;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -609,6 +610,8 @@ export {
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
+  resolveSessionMode,
+  isAskSessionMode,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,

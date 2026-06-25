@@ -6,11 +6,13 @@ import {
   normalizeMcpServersEnabled,
   type McpServersEnabledSettings,
 } from "../shared/composer-mcp";
+import { syncSessionModeFields, type SessionMode } from "../shared/session-mode";
 
-export type OrchestrationModeSetting = "autonomous" | "manual";
+export type { SessionMode };
 
 export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
+  sessionMode?: SessionMode;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -188,29 +190,33 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   }
   const record = value as Record<string, unknown>;
   const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
-  if (typeof record.planModeEnabled === "boolean") {
+  const mcpPart = mcpServersEnabled ? { mcpServersEnabled } : {};
+  if (typeof record.planModeEnabled === "boolean" || record.sessionMode !== undefined) {
+    const synced = syncSessionModeFields({
+      ...(typeof record.sessionMode === "string" ? { sessionMode: record.sessionMode as SessionMode } : {}),
+      ...(typeof record.planModeEnabled === "boolean" ? { planModeEnabled: record.planModeEnabled } : {}),
+    });
     return {
-      planModeEnabled: record.planModeEnabled,
-      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+      planModeEnabled: synced.planModeEnabled,
+      sessionMode: synced.sessionMode,
+      ...mcpPart,
     };
   }
   if (record.orchestrationMode === "manual" || record.orchestrationMode === "autonomous") {
-    return {
+    const synced = syncSessionModeFields({
       planModeEnabled: record.orchestrationMode === "manual",
-      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    });
+    return {
+      planModeEnabled: synced.planModeEnabled,
+      sessionMode: synced.sessionMode,
+      ...mcpPart,
     };
   }
   if (record.orchestrationMode === "analyze_plan_execute") {
-    return {
-      planModeEnabled: true,
-      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
-    };
+    return { planModeEnabled: true, sessionMode: "plan", ...mcpPart };
   }
   if (record.orchestrationMode === "sdk_default") {
-    return {
-      planModeEnabled: false,
-      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
-    };
+    return { planModeEnabled: false, sessionMode: "agent", ...mcpPart };
   }
   return defaultWorkflowSettings();
 }
@@ -221,6 +227,13 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
   }
   const record = value as Record<string, unknown>;
   if (typeof record.planModeEnabled === "boolean") {
+    return true;
+  }
+  if (
+    record.sessionMode === "agent" ||
+    record.sessionMode === "plan" ||
+    record.sessionMode === "ask"
+  ) {
     return true;
   }
   if (record.orchestrationMode === "manual" || record.orchestrationMode === "autonomous") {
