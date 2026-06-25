@@ -194,6 +194,36 @@ describe('chat stream → anthropic SSE sequence', () => {
     );
   });
 
+  test('llama.cpp: Read tool args split across chunks keep a single opening brace', () => {
+    const events = pipeJsonChunksToAnthropicEvents([
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_r","type":"function","function":{"name":"Read","arguments":"{"}}]}}]}`,
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"file_path\\":\\"README.md\\"}"}}]}}]}`,
+      `{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+    const toolDeltas = events.filter(
+      (e) => e.type === 'content_block_delta' && e.delta?.type === 'input_json_delta',
+    );
+    expect(toolDeltas).toHaveLength(1);
+    expect(JSON.parse(toolDeltas[0]?.delta?.partial_json ?? '{}')).toEqual({
+      file_path: 'README.md',
+    });
+  });
+
+  test('llama.cpp: literal null content is not forwarded as assistant text', () => {
+    const events = pipeJsonChunksToAnthropicEvents([
+      `{"choices":[{"index":0,"delta":{"content":null}}]}`,
+      `{"choices":[{"index":0,"delta":{"content":"null"}}]}`,
+      `{"choices":[{"index":0,"delta":{"content":"hello"}}]}`,
+      `{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+    ]);
+    const textDeltas = events.filter(
+      (e) => e.type === 'content_block_delta' && e.delta?.type === 'text_delta',
+    );
+    expect(textDeltas.map((e) => e.delta?.text)).toEqual(['hello']);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
   test('sub2api: empty leading reasoning_content does not break later deltas', () => {
     const events = pipeJsonChunksToAnthropicEvents([
       `{"choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}`,

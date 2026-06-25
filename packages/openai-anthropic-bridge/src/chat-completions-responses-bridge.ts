@@ -859,6 +859,14 @@ function allocOutputIndex(state: ChatCompletionsToResponsesStreamState): number 
   return idx;
 }
 
+/** llama.cpp and some OpenAI-compat relays emit JSON null or the literal "null" for empty assistant text. */
+function isUsableChatCompletionTextDelta(content: unknown): content is string {
+  if (typeof content !== 'string' || content === '') {
+    return false;
+  }
+  return content.trim() !== 'null';
+}
+
 export function chatCompletionsChunkToResponsesEvents(
   chunk: ChatCompletionsChunk | null | undefined,
   state: ChatCompletionsToResponsesStreamState | null | undefined,
@@ -899,7 +907,7 @@ export function chatCompletionsChunkToResponsesEvents(
     }
 
     const content = choice.delta.content;
-    if (content !== undefined && content !== '') {
+    if (isUsableChatCompletionTextDelta(content)) {
       events.push(...closeChatReasoningItem(state));
       events.push(...ensureChatToResponsesMessageItem(state));
       events.push(...ensureChatToResponsesTextPart(state));
@@ -927,7 +935,10 @@ export function chatCompletionsChunkToResponsesEvents(
           ...toolCall,
           id: toolCall.id !== undefined && toolCall.id !== '' ? toolCall.id : generateItemId(),
           type: 'function',
-          function: { ...toolCall.function },
+          function: {
+            name: toolCall.function.name ?? '',
+            arguments: '',
+          },
         };
         state.toolCalls.set(idx, copyCall);
         stored = copyCall;

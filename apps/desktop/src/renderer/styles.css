@@ -15122,6 +15122,7 @@ html[data-window-focused="true"] .settings-nav {
   grid-template-columns: minmax(0, 1fr) 0fr;
   align-items: stretch;
   width: min(480px, calc(100vw - 48px));
+  height: min(82vh, 680px);
   max-height: min(82vh, 680px);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
@@ -15136,12 +15137,14 @@ html[data-window-focused="true"] .settings-nav {
 
 .package-scripts-shell.has-output-panel {
   width: min(840px, calc(100vw - 40px));
+  height: min(86vh, 720px);
   max-height: min(86vh, 720px);
   grid-template-columns: minmax(300px, 380px) minmax(360px, 1fr);
 }
 
 .package-scripts-shell.has-output-panel .package-scripts-dialog,
 .package-scripts-shell.has-output-panel .package-scripts-output-panel {
+  height: min(86vh, 720px);
   max-height: min(86vh, 720px);
 }
 

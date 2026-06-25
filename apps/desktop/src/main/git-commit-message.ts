@@ -9,7 +9,7 @@ import {
 } from "./upstream-log";
 
 const ANTHROPIC_VERSION = "2023-06-01";
-const COMMIT_MESSAGE_TIMEOUT_MS = 30_000;
+const COMMIT_MESSAGE_TIMEOUT_MS = 90_000;
 const COMMIT_MESSAGE_MAX_CHARS = 2_000;
 
 const COMMIT_REFUSAL_PATTERN =
