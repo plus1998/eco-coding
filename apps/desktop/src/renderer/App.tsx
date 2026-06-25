@@ -176,6 +176,7 @@ import {
   queuedThreadFollowUps,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
+import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import { isThreadAutoCompactSuspended, isThreadContextCompactionInFlight, isThreadPromptCacheInvalidated } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import { subscribeToWindowFocus } from "./window-focus";
@@ -567,7 +568,7 @@ function App() {
           }
           setRunProjectionByThread((current) => ({
             ...current,
-            [threadId]: projection,
+            [threadId]: mergeThreadRunProjectionUpdate(current[threadId], projection),
           }));
         });
       }, 300);
@@ -586,9 +587,12 @@ function App() {
       }
 
       if (event.type === "thread.run_projection_updated" && event.projection) {
+        const preserveHistory = userDetachedFromBottomRef.current;
         setRunProjectionByThread((current) => ({
           ...current,
-          [event.threadId]: event.projection!,
+          [event.threadId]: mergeThreadRunProjectionUpdate(current[event.threadId], event.projection!, {
+            preserveHistory,
+          }),
         }));
         scheduleSelectedRunProjectionFullRefresh(event.threadId);
         return;
