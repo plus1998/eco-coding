@@ -939,7 +939,7 @@ test("buildThreadRunProjectionViewModel hides request placeholders once owner ou
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-delta"]);
 });
 
-test("buildThreadRunProjectionViewModel keeps timing-only request row for completed message-only responses", () => {
+test("buildThreadRunProjectionViewModel hides request placeholder for completed message-only responses", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       requestSpans: [
@@ -973,10 +973,7 @@ test("buildThreadRunProjectionViewModel keeps timing-only request row for comple
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:request-start",
-    "main:planner-final",
-  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-final"]);
 });
 
 test("buildThreadRunProjectionViewModel keeps follow-up request placeholder after prior planner output", () => {

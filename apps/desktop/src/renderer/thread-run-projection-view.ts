@@ -318,7 +318,10 @@ function filterProjectionTimelineForDetailFeed(
     if (requestSpan && !isProjectionRequestActive(requestSpan)) {
       const requestId = item.requestId?.trim();
       if (requestId && requestsWithStreamRows.has(`request:${requestId}`)) {
-        return !requestHasThinkingStream(requestId, displayTimeline);
+        return (
+          !requestHasThinkingStream(requestId, displayTimeline) &&
+          !requestHasMessageStream(requestId, displayTimeline)
+        );
       }
       return false;
     }
@@ -343,7 +346,8 @@ function filterProjectionTimelineForDetailFeed(
         requestSpan &&
         !isProjectionRequestActive(requestSpan) &&
         requestId &&
-        !requestHasThinkingStream(requestId, displayTimeline)
+        !requestHasThinkingStream(requestId, displayTimeline) &&
+        !requestHasMessageStream(requestId, displayTimeline)
       ) {
         return true;
       }
@@ -622,6 +626,17 @@ function requestHasThinkingStream(
     (streamItem) =>
       streamItem.requestId === requestId &&
       (streamItem.eventType === "thinking.delta" || streamItem.eventType === "thinking.final"),
+  );
+}
+
+function requestHasMessageStream(
+  requestId: string,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  return timeline.some(
+    (streamItem) =>
+      streamItem.requestId === requestId &&
+      (streamItem.eventType === "message.delta" || streamItem.eventType === "message.final"),
   );
 }
 
