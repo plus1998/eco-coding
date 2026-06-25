@@ -39,6 +39,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
+import { AppMessage, useAppMessage } from "./AppMessage";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -450,6 +451,10 @@ function App() {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
+  const { showError: showAppMessageError, dismiss: dismissAppMessage, state: appMessageState } =
+    useAppMessage();
+  const showAppMessageErrorRef = useRef(showAppMessageError);
+  showAppMessageErrorRef.current = showAppMessageError;
   const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
     Record<string, ThreadSubagentSessionTiming[]>
   >({});
@@ -607,6 +612,14 @@ function App() {
         if (event.type === "thread.title_updated") {
           return;
         }
+      }
+
+      if (
+        event.type === "thread.title_failed" &&
+        event.threadId === selectedThreadIdRef.current
+      ) {
+        showAppMessageErrorRef.current("会话标题生成失败");
+        return;
       }
 
       if (event.todoList) {
@@ -3806,6 +3819,13 @@ function App() {
 
   return (
     <main className={shellClassName}>
+      {appMessageState ? (
+        <AppMessage
+          kind={appMessageState.kind}
+          message={appMessageState.message}
+          onDismiss={dismissAppMessage}
+        />
+      ) : null}
       <aside className="codex-sidebar">
         <button type="button" className="sidebar-action" onClick={startNewChat}>
           <MessageSquarePlus size={18} />

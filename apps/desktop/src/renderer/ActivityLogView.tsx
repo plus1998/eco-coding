@@ -148,13 +148,21 @@ interface ActivityLogViewProps {
   onPlannerLayoutChange?: () => void;
 }
 
+function ProjectionFeedLoading() {
+  return (
+    <div className="run-log run-log-empty" role="status" aria-label="加载中">
+      <div className="run-log-projection-loading" aria-hidden>
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  );
+}
+
 export function ActivityLogView(props: ActivityLogViewProps) {
   if (!props.projection?.sourceEventCount) {
-    return (
-      <div className="run-log run-log-empty">
-        <p className="run-log-empty-message">运行投影尚未就绪</p>
-      </div>
-    );
+    return <ProjectionFeedLoading />;
   }
   return (
     <ProjectionActivityLogView

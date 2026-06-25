@@ -2778,10 +2778,7 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-function applyThreadTitleSummary(threadId: string, title: string | undefined): void {
-  if (!title) {
-    return;
-  }
+function applyThreadTitleSummary(threadId: string, title: string): void {
   const thread = conversationStore.getThread(threadId);
   if (!thread || thread.title === title || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
@@ -2789,6 +2786,14 @@ function applyThreadTitleSummary(threadId: string, title: string | undefined): v
 
   conversationStore.updateThreadTitle(threadId, title);
   emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
+}
+
+function emitThreadTitleFailure(threadId: string): void {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
+    return;
+  }
+  emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false);
 }
 
 function scheduleThreadTitleSummary(threadId: string, runtimeConfig: RuntimeConfig): void {
@@ -2800,10 +2805,15 @@ function scheduleThreadTitleSummary(threadId: string, runtimeConfig: RuntimeConf
   const prompt = thread.prompt;
   void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch)
     .then((title) => {
-      applyThreadTitleSummary(threadId, title);
+      if (title) {
+        applyThreadTitleSummary(threadId, title);
+        return;
+      }
+      emitThreadTitleFailure(threadId);
     })
     .catch((error) => {
       process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
+      emitThreadTitleFailure(threadId);
     });
 }
 

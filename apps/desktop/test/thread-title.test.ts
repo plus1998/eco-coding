@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test";
 import {
+  buildThreadTitleRequestBody,
   buildThreadTitleUserMessage,
+  extractTitleText,
   parseThreadTitleJson,
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
   shouldReplaceAutoThreadTitle,
   summarizeThreadTitle,
+  TITLE_PROMPT_MAX_CHARS,
 } from "../src/main/thread-title";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
@@ -102,6 +105,7 @@ test("summarizes thread title through the explore route with structured output",
   expect(calls).toHaveLength(1);
   expect(calls[0]?.url).toBe("https://explore.test/v1/messages");
   expect(calls[0]?.body.model).toBe("explore-model");
+  expect(calls[0]?.body.thinking).toEqual({ type: "disabled" });
   expect(calls[0]?.headers["anthropic-beta"]).toBe("structured-outputs-2025-11-13");
   expect(calls[0]?.body.output_format).toEqual({
     type: "json_schema",
@@ -148,4 +152,44 @@ test("buildThreadTitleUserMessage includes prompt and JSON instruction", () => {
   const message = buildThreadTitleUserMessage("实现导出筛选");
   expect(message).toContain("实现导出筛选");
   expect(message).toContain('{"title":"..."}');
+  expect(message).toContain("总长度不超过");
+});
+
+test("buildThreadTitleUserMessage truncates long prompts", () => {
+  const longPrompt = "x".repeat(TITLE_PROMPT_MAX_CHARS + 500);
+  const message = buildThreadTitleUserMessage(longPrompt);
+  expect(message).toContain("任务内容已在上方截断");
+  expect(message).not.toContain("x".repeat(TITLE_PROMPT_MAX_CHARS + 100));
+});
+
+test("buildThreadTitleRequestBody disables thinking", () => {
+  const body = buildThreadTitleRequestBody(routes[0]!, "实现导出筛选", true);
+  expect(body.thinking).toEqual({ type: "disabled" });
+  expect(String(body.system)).toContain("不要输出思考过程");
+});
+
+test("buildThreadTitleRequestBody uses route max output tokens when configured", () => {
+  const body = buildThreadTitleRequestBody(
+    { ...routes[0]!, maxOutputTokens: 4096 },
+    "实现导出筛选",
+    false,
+  );
+  expect(body.max_tokens).toBe(4096);
+});
+
+test("extractTitleText ignores thinking-only responses", () => {
+  const text = extractTitleText({
+    content: [{ type: "thinking", thinking: "analyzing prompt..." }],
+  });
+  expect(text).toBeUndefined();
+});
+
+test("extractTitleText prefers text blocks over thinking", () => {
+  const text = extractTitleText({
+    content: [
+      { type: "thinking", thinking: "analyzing prompt..." },
+      { type: "text", text: '{"title":"导出筛选功能"}' },
+    ],
+  });
+  expect(text).toBe('{"title":"导出筛选功能"}');
 });

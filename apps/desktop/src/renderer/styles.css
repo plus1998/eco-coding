@@ -4074,6 +4074,49 @@ html[data-window-focused="true"] .codex-sidebar {
   min-width: 0;
 }
 
+.run-log-empty {
+  align-items: center;
+  justify-content: center;
+  min-height: min(220px, 36vh);
+  padding: 48px 24px;
+}
+
+.run-log-projection-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.run-log-projection-loading span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-muted) 88%, transparent);
+  animation: run-log-projection-loading 1.35s ease-in-out infinite;
+}
+
+.run-log-projection-loading span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.run-log-projection-loading span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes run-log-projection-loading {
+  0%,
+  70%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0) scale(0.9);
+  }
+
+  35% {
+    opacity: 0.95;
+    transform: translateY(-2px) scale(1);
+  }
+}
+
 .run-log-feed-entry {
   width: 100%;
   max-width: 100%;
