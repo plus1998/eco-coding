@@ -135,24 +135,22 @@ test("getDefaultAgentProfileId returns first orchestration profile", () => {
 test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: false },
+    workflowDefaults: { sessionMode: "agent" },
     agentProfileId: "profile-b",
   });
   expect(config.routeProfileId).toBe("profile-b");
   expect(config.agentProfileId).toBe("profile-b");
-  expect(config.planModeEnabled).toBe(false);
   expect(config.sessionMode).toBe("agent");
   expect(config.subagentEnabled.reviewer).toBe(true);
   expect(isAutonomousThreadRuntime(config)).toBe(true);
 });
 
-test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan mode on", () => {
+test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan session mode", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: true },
+    workflowDefaults: { sessionMode: "plan" },
   });
   expect(config.agentProfileId).toBe("profile-a");
-  expect(config.planModeEnabled).toBe(true);
   expect(config.sessionMode).toBe("plan");
   expect(config.subagentEnabled.reviewer).toBe(true);
 });
@@ -160,7 +158,7 @@ test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan mode
 test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile without routes", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: genericSettings,
-    workflowDefaults: { planModeEnabled: false },
+    workflowDefaults: { sessionMode: "agent" },
     agentProfileId: "generic-copy",
   });
 
@@ -172,7 +170,7 @@ test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile wi
 test("buildThreadRuntimeConfigFromDefaults does not let default routes override selected Agent Profile", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: mixedSettings,
-    workflowDefaults: { planModeEnabled: false },
+    workflowDefaults: { sessionMode: "agent" },
     agentProfileId: "generic-copy",
     routeProfileId: "profile-a",
   });
@@ -249,29 +247,28 @@ test("deriveSubagentEnabledFromProfile disables roles missing from the profile",
 test("serialize and parse thread runtime config round-trip", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: true },
+    workflowDefaults: { sessionMode: "plan" },
   });
   const json = serializeThreadRuntimeConfig(config);
-  expect(json).toContain("planModeEnabled");
   expect(json).toContain("sessionMode");
+  expect(json).not.toContain("planModeEnabled");
   expect(json).not.toContain("orchestrationMode");
   expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
 });
 
-test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => {
+test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads with sessionMode", () => {
   expect(
     parseThreadRuntimeConfigJson(
       JSON.stringify({
         agentProfileId: "generic-copy",
         subagentEnabled: threadSubagentEnabled,
-        orchestrationMode: "autonomous",
+        sessionMode: "agent",
       }),
     ),
   ).toEqual({
     routeProfileId: "",
     agentProfileId: "generic-copy",
     subagentEnabled: threadSubagentEnabled,
-    planModeEnabled: false,
     sessionMode: "agent",
     bashReviewMode: "always",
   });
@@ -280,56 +277,49 @@ test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => 
 test("buildThreadRuntimeConfigFromDefaults supports ask workflow default", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: false, sessionMode: "ask" },
+    workflowDefaults: { sessionMode: "ask" },
   });
   expect(config.sessionMode).toBe("ask");
-  expect(config.planModeEnabled).toBe(false);
 });
 
-test("withPlanModeDisabled turns off plan mode without mutating the original config", () => {
+test("withPlanModeDisabled switches plan to agent without mutating the original config", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: true },
+    workflowDefaults: { sessionMode: "plan" },
   });
-  expect(withPlanModeDisabled(config)).toEqual({ ...config, sessionMode: "agent", planModeEnabled: false });
-  expect(config.planModeEnabled).toBe(true);
-  expect(withPlanModeDisabled({ ...config, planModeEnabled: false, sessionMode: "agent" })).toEqual({
+  expect(withPlanModeDisabled(config)).toEqual({ ...config, sessionMode: "agent" });
+  expect(config.sessionMode).toBe("plan");
+  expect(withPlanModeDisabled({ ...config, sessionMode: "agent" })).toEqual({
     ...config,
     sessionMode: "agent",
-    planModeEnabled: false,
   });
 });
 
-test("normalizeThreadRuntimeConfig preserves planModeEnabled", () => {
+test("normalizeThreadRuntimeConfig preserves sessionMode", () => {
   expect(
     normalizeThreadRuntimeConfig({
       routeProfileId: "profile-a",
       subagentEnabled: threadSubagentEnabled,
-      planModeEnabled: true,
+      sessionMode: "plan",
     } as never),
   ).toEqual({
     routeProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
-    planModeEnabled: true,
     sessionMode: "plan",
     bashReviewMode: "always",
   });
 });
 
-test("normalizeThreadRuntimeConfig migrates legacy orchestrationMode", () => {
+test("parseThreadRuntimeConfigJson rejects legacy orchestrationMode-only payloads", () => {
   expect(
-    normalizeThreadRuntimeConfig({
-      routeProfileId: "profile-a",
-      subagentEnabled: threadSubagentEnabled,
-      orchestrationMode: "manual",
-    } as never),
-  ).toEqual({
-    routeProfileId: "profile-a",
-    subagentEnabled: threadSubagentEnabled,
-    planModeEnabled: true,
-    sessionMode: "plan",
-    bashReviewMode: "always",
-  });
+    parseThreadRuntimeConfigJson(
+      JSON.stringify({
+        routeProfileId: "profile-a",
+        subagentEnabled: threadSubagentEnabled,
+        orchestrationMode: "manual",
+      }),
+    ),
+  ).toBeUndefined();
 });
 
 test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only", () => {
@@ -338,14 +328,13 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
     agentProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
     sessionMode: "plan" as const,
-    planModeEnabled: true,
     bashReviewMode: "always" as const,
   };
   expect(
     isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" }),
   ).toBe(true);
   expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, planModeEnabled: false, sessionMode: "agent" }),
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, sessionMode: "agent" }),
   ).toBe(false);
   expect(
     isBashReviewModeOnlyRuntimeConfigUpdate(base, {
@@ -365,7 +354,7 @@ test("isThreadRuntimeConfig rejects invalid payloads", () => {
 test("buildThreadRuntimeConfigFromDefaults seeds MCP from profile and remembered workflow defaults", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: false, mcpServersEnabled: { mongo: true } },
+    workflowDefaults: { sessionMode: "agent", mcpServersEnabled: { mongo: true } },
     mcpServers: [
       {
         id: "m1",
@@ -395,7 +384,7 @@ test("buildThreadRuntimeConfigFromDefaults seeds MCP from profile and remembered
 test("resolveThreadRuntimeMcpServerKeys uses composer overrides when present", () => {
   const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
-    workflowDefaults: { planModeEnabled: false },
+    workflowDefaults: { sessionMode: "agent" },
     mcpServers: [
       {
         id: "m1",

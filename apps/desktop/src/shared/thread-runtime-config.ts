@@ -2,8 +2,8 @@ import { collectProfileAssignedMcpServers, defaultSubagentAvailability, normaliz
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import {
   isSessionMode,
+  normalizeSessionMode,
   resolveSessionMode,
-  syncSessionModeFields,
   type SessionMode,
 } from "./session-mode";
 import {
@@ -37,8 +37,6 @@ export interface ThreadRuntimeConfig {
   subagentEnabled: SubagentEnabledSettings;
   mcpServersEnabled?: McpServersEnabledSettings;
   sessionMode: SessionMode;
-  /** @deprecated Mirrored from sessionMode === "plan" for legacy clients. */
-  planModeEnabled: boolean;
   bashReviewMode: BashReviewMode;
 }
 
@@ -109,25 +107,6 @@ export function resolveThreadAgentProfile(
   );
 }
 
-function normalizePlanModeEnabled(value: unknown): boolean {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (value === "manual") {
-    return true;
-  }
-  if (value === "autonomous") {
-    return false;
-  }
-  if (value === "analyze_plan_execute") {
-    return true;
-  }
-  if (value === "sdk_default") {
-    return false;
-  }
-  return false;
-}
-
 export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeConfig {
   if (!value || typeof value !== "object") {
     return false;
@@ -138,17 +117,7 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (!hasRouteProfileId && !hasAgentProfileId) {
     return false;
   }
-  if (record.sessionMode !== undefined && !isSessionMode(record.sessionMode)) {
-    return false;
-  }
-  const planMode = record.planModeEnabled ?? record.orchestrationMode;
-  const hasValidPlanField =
-    planMode === "manual" ||
-    planMode === "autonomous" ||
-    planMode === "analyze_plan_execute" ||
-    planMode === "sdk_default" ||
-    typeof planMode === "boolean";
-  if (!hasValidPlanField && record.sessionMode === undefined) {
+  if (!isSessionMode(record.sessionMode)) {
     return false;
   }
   if (!record.subagentEnabled || typeof record.subagentEnabled !== "object") {
@@ -196,21 +165,15 @@ export function serializeThreadRuntimeConfig(config: ThreadRuntimeConfig): strin
 }
 
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
-  const record = config as ThreadRuntimeConfig & { orchestrationMode?: OrchestrationModeSetting };
-  const synced = syncSessionModeFields({
-    ...(isSessionMode(record.sessionMode) ? { sessionMode: record.sessionMode } : {}),
-    planModeEnabled: normalizePlanModeEnabled(record.planModeEnabled ?? record.orchestrationMode),
-  });
-  const routeProfileId = typeof record.routeProfileId === "string" ? record.routeProfileId.trim() : "";
-  const bashReviewMode = normalizeBashReviewMode(record.bashReviewMode);
-  const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
+  const routeProfileId = typeof config.routeProfileId === "string" ? config.routeProfileId.trim() : "";
+  const bashReviewMode = normalizeBashReviewMode(config.bashReviewMode);
+  const mcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);
   return {
     routeProfileId,
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
     ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
-    sessionMode: synced.sessionMode,
-    planModeEnabled: synced.planModeEnabled,
+    sessionMode: normalizeSessionMode(config.sessionMode),
     bashReviewMode,
   };
 }
@@ -286,7 +249,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     agentProfile,
     input.settings.agentTemplates,
   );
-  const synced = syncSessionModeFields(input.workflowDefaults);
+  const sessionMode = normalizeSessionMode(input.workflowDefaults.sessionMode);
   return {
     routeProfileId: agentProfile.id,
     agentProfileId: agentProfile.id,
@@ -299,8 +262,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
           }),
         }
       : {}),
-    planModeEnabled: synced.planModeEnabled,
-    sessionMode: synced.sessionMode,
+    sessionMode,
     bashReviewMode: "always",
   };
 }
@@ -314,7 +276,7 @@ export function withPlanModeDisabled(config: ThreadRuntimeConfig): ThreadRuntime
   if (resolveSessionMode(config) !== "plan") {
     return config;
   }
-  return { ...config, sessionMode: "agent", planModeEnabled: false };
+  return { ...config, sessionMode: "agent" };
 }
 
 /** True when `after` differs from `before` only by `bashReviewMode`. */
@@ -328,7 +290,6 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
     left.routeProfileId === right.routeProfileId &&
     left.agentProfileId === right.agentProfileId &&
     left.sessionMode === right.sessionMode &&
-    left.planModeEnabled === right.planModeEnabled &&
     SUBAGENT_ROLES.every((role) => left.subagentEnabled[role] === right.subagentEnabled[role])
   );
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/constants/session_mode.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_theme_provider.dart';
@@ -17,7 +18,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _planModeEnabled = false;
+  SessionMode _sessionMode = 'agent';
   bool _loading = true;
 
   @override
@@ -30,7 +31,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final workflow = await ref.read(workflowSettingsProvider.future);
     if (mounted) {
       setState(() {
-        _planModeEnabled = workflow?.planModeEnabled ?? false;
+        _sessionMode = workflow?.sessionMode ?? 'agent';
         _loading = false;
       });
     }
@@ -105,9 +106,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         SwitchListTile(
                           title: const Text('全局 Plan Mode'),
                           subtitle: const Text('workflow-settings:save'),
-                          value: _planModeEnabled,
+                          value: _sessionMode == 'plan',
                           onChanged: (value) async {
-                            setState(() => _planModeEnabled = value);
+                            final nextMode = value ? 'plan' : 'agent';
+                            setState(() => _sessionMode = nextMode);
                             final rpc = ref.read(desktopRpcProvider);
                             if (rpc == null) return;
                             try {
@@ -115,7 +117,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   await ref.read(workflowSettingsProvider.future);
                               await rpc.saveWorkflowSettings(
                                 WorkflowSettingsSnapshot(
-                                  planModeEnabled: value,
+                                  sessionMode: nextMode,
                                   mcpServersEnabled: workflow?.mcpServersEnabled,
                                 ),
                               );

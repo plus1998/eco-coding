@@ -68,7 +68,7 @@ test("registers explicit remote command definitions", () => {
 test("validates remote command args", () => {
   expect(
     validateRemoteCommandArgs("thread:start", [
-      { workspacePath: "/repo", prompt: "ship it", runtimeConfig: { planModeEnabled: false } },
+      { workspacePath: "/repo", prompt: "ship it", runtimeConfig: { sessionMode: "agent" } },
     ]),
   ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:start", [])).toMatchObject({ ok: false });

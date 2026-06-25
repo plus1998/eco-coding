@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/session_mode.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../threads/thread_providers.dart';
@@ -38,10 +39,12 @@ class ComposerModeBar extends ConsumerWidget {
               children: [
                 FilterChip(
                   label: const Text('Plan Mode'),
-                  selected: runtimeConfig.planModeEnabled,
+                  selected: runtimeConfig.sessionMode == 'plan',
                   onSelected: (value) => _update(
                     ref,
-                    runtimeConfig.copyWith(planModeEnabled: value),
+                    runtimeConfig.copyWith(
+                      sessionMode: value ? 'plan' : 'agent',
+                    ),
                     onChanged,
                   ),
                 ),
@@ -91,7 +94,7 @@ class ComposerModeBar extends ConsumerWidget {
                         routeProfileId: value,
                         agentProfileId: value,
                         subagentEnabled: runtimeConfig.subagentEnabled,
-                        planModeEnabled: runtimeConfig.planModeEnabled,
+                        sessionMode: runtimeConfig.sessionMode,
                         bashReviewMode: runtimeConfig.bashReviewMode,
                       ),
                       onChanged,
@@ -125,7 +128,7 @@ extension on ThreadRuntimeConfig {
     String? agentProfileId,
     Map<String, bool>? subagentEnabled,
     Map<String, bool>? mcpServersEnabled,
-    bool? planModeEnabled,
+    SessionMode? sessionMode,
     String? bashReviewMode,
   }) {
     return ThreadRuntimeConfig(
@@ -133,7 +136,7 @@ extension on ThreadRuntimeConfig {
       agentProfileId: agentProfileId ?? this.agentProfileId,
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
-      planModeEnabled: planModeEnabled ?? this.planModeEnabled,
+      sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
   }

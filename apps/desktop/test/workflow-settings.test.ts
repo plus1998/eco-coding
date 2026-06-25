@@ -22,61 +22,49 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
-test("plan mode defaults to off", () => {
-  expect(defaultWorkflowSettings()).toEqual({ planModeEnabled: false });
+test("session mode defaults to agent", () => {
+  expect(defaultWorkflowSettings()).toEqual({ sessionMode: "agent" });
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
 });
 
-test("isWorkflowSettingsSnapshot accepts orchestrationMode and legacy fields", () => {
-  expect(isWorkflowSettingsSnapshot({ orchestrationMode: "autonomous" })).toBe(true);
-  expect(isWorkflowSettingsSnapshot({ orchestrationMode: "manual" })).toBe(true);
-  expect(isWorkflowSettingsSnapshot({ planModeEnabled: true })).toBe(true);
-  expect(isWorkflowSettingsSnapshot({ orchestrationMode: "sdk_default" })).toBe(true);
-  expect(isWorkflowSettingsSnapshot({ orchestrationMode: "invalid" })).toBe(false);
+test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
+  expect(isWorkflowSettingsSnapshot({ sessionMode: "plan" })).toBe(true);
+  expect(isWorkflowSettingsSnapshot({ sessionMode: "ask" })).toBe(true);
+  expect(isWorkflowSettingsSnapshot({ sessionMode: "invalid" })).toBe(false);
 });
 
-test("normalizeWorkflowSettingsSnapshot maps legacy values", () => {
-  expect(normalizeWorkflowSettingsSnapshot({ orchestrationMode: "sdk_default" })).toEqual({
-    planModeEnabled: false,
-    sessionMode: "agent",
-  });
-  expect(normalizeWorkflowSettingsSnapshot({ orchestrationMode: "analyze_plan_execute" })).toEqual({
-    planModeEnabled: true,
+test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "plan" })).toEqual({
     sessionMode: "plan",
   });
-  expect(normalizeWorkflowSettingsSnapshot({ planModeEnabled: true })).toEqual({
-    planModeEnabled: true,
-    sessionMode: "plan",
-  });
-  expect(normalizeWorkflowSettingsSnapshot({ planModeEnabled: false })).toEqual({
-    planModeEnabled: false,
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
     sessionMode: "agent",
   });
-  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask", planModeEnabled: true })).toEqual({
-    planModeEnabled: false,
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
     sessionMode: "ask",
   });
+  expect(normalizeWorkflowSettingsSnapshot({})).toEqual({ sessionMode: "agent" });
 });
 
-test("orchestrationModeFromSnapshot maps plan mode to runtime mode", () => {
-  expect(orchestrationModeFromSnapshot({ planModeEnabled: true })).toBe("manual");
-  expect(orchestrationModeFromSnapshot({ planModeEnabled: false })).toBe("autonomous");
+test("orchestrationModeFromSnapshot maps session mode to runtime mode", () => {
+  expect(orchestrationModeFromSnapshot({ sessionMode: "plan" })).toBe("manual");
+  expect(orchestrationModeFromSnapshot({ sessionMode: "agent" })).toBe("autonomous");
+  expect(orchestrationModeFromSnapshot({ sessionMode: "ask" })).toBe("autonomous");
 });
 
-test("usesPlanOrchestration is alias for plan mode", () => {
-  expect(usesPlanOrchestration({ planModeEnabled: true })).toBe(true);
-  expect(usesPlanOrchestration({ planModeEnabled: false })).toBe(false);
+test("usesPlanOrchestration is alias for plan session mode", () => {
+  expect(usesPlanOrchestration({ sessionMode: "plan" })).toBe(true);
+  expect(usesPlanOrchestration({ sessionMode: "agent" })).toBe(false);
 });
 
 test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => {
   expect(
     normalizeWorkflowSettingsSnapshot({
-      planModeEnabled: false,
+      sessionMode: "agent",
       mcpServersEnabled: { mongo: true, browser: false },
     }),
   ).toEqual({
-    planModeEnabled: false,
     sessionMode: "agent",
     mcpServersEnabled: { mongo: true, browser: false },
   });
@@ -86,11 +74,11 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
   const dbPath = path.join(os.tmpdir(), `eco-workflow-settings-${Date.now()}.sqlite`);
   const store = await createWorkflowSettingsStore(dbPath);
   const saved = store.save({
-    planModeEnabled: true,
+    sessionMode: "plan",
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(saved).toEqual({
-    planModeEnabled: true,
+    sessionMode: "plan",
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(store.get()).toEqual(saved);

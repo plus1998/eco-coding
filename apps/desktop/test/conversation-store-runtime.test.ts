@@ -81,7 +81,7 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
   const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
     settings,
-    workflowDefaults: { planModeEnabled: true },
+    workflowDefaults: { sessionMode: "plan" },
   });
 
   const thread: ThreadSummary = {
@@ -102,10 +102,10 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
 
   store.saveThreadRuntimeConfig("thr_test", {
     ...runtimeConfig,
-    planModeEnabled: false,
+    sessionMode: "agent",
     routeProfileId: "profile-a",
   });
-  expect(store.getThread("thr_test")?.runtimeConfig?.planModeEnabled).toBe(false);
+  expect(store.getThread("thr_test")?.runtimeConfig?.sessionMode).toBe("agent");
 });
 
 test.skipIf(!sqliteAvailable)("listThreads keeps creation order when updated_at changes", async () => {

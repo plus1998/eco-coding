@@ -58,7 +58,7 @@ test("buildRuntimeAgentThemes maps profile overrides and eco_ aliases", () => {
   };
   const themes = buildRuntimeAgentThemes(themedSettings, {
     routeProfileId: profile.id,
-    planModeEnabled: false,
+    sessionMode: "agent",
     subagentEnabled: {
       explore: true,
       architect: true,

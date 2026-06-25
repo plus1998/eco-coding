@@ -283,7 +283,7 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 ### Phase 6 — 文档与清理
 
 - [x] 更新 `README.md` Thread modes / Prompt architecture
-- [ ] 删除 deprecated：`planModeEnabled` 双写（major 版本或 migration script）
+- [x] 删除 deprecated：`planModeEnabled` 双写（仅保留 `sessionMode`）
 - [x] 推进记录与相关文档已更新（无独立 CHANGELOG 文件）
 
 ---

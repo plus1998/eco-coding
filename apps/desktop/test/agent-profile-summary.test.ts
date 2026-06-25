@@ -66,7 +66,7 @@ test("profile summary applies current runtime subagent switches", () => {
   const summary = findSelectableAgentProfileSummary(settings(), "user.coding-default", {
     routeProfileId: "user.coding-default",
     agentProfileId: "user.coding-default",
-    planModeEnabled: true,
+    sessionMode: "plan",
     subagentEnabled: {
       explore: true,
       architect: false,

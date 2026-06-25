@@ -95,7 +95,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),
   command("workflow-settings:get", "Get workflow settings", "read", RPC_INVOKE, []),
   command("workflow-settings:save", "Save workflow settings", "write_safe", RPC_INVOKE, [
-    objectArg(["planModeEnabled"]),
+    objectArg(["sessionMode"]),
   ]),
 
   command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),

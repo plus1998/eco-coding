@@ -6,29 +6,14 @@ bool isSessionMode(String? value) {
   return value != null && sessionModes.contains(value);
 }
 
-SessionMode resolveSessionMode({
-  String? sessionMode,
-  bool? planModeEnabled,
-}) {
-  if (isSessionMode(sessionMode)) {
-    return sessionMode!;
-  }
-  return (planModeEnabled ?? false) ? 'plan' : 'agent';
+SessionMode resolveSessionMode({String? sessionMode}) {
+  return isSessionMode(sessionMode) ? sessionMode! : 'agent';
 }
 
-bool sessionModeToPlanModeEnabled(SessionMode mode) => mode == 'plan';
-
-SessionMode syncSessionModeFromPlanToggle(bool planModeEnabled) {
-  return planModeEnabled ? 'plan' : 'agent';
+SessionMode normalizeSessionMode(String? value) {
+  return isSessionMode(value) ? value! : 'agent';
 }
 
-MapEntry<SessionMode, bool> syncSessionModeFields({
-  String? sessionMode,
-  bool? planModeEnabled,
-}) {
-  final mode = resolveSessionMode(
-    sessionMode: sessionMode,
-    planModeEnabled: planModeEnabled,
-  );
-  return MapEntry(mode, sessionModeToPlanModeEnabled(mode));
-}
+bool isAskSessionMode({String? sessionMode}) => resolveSessionMode(sessionMode: sessionMode) == 'ask';
+
+bool isPlanSessionMode({String? sessionMode}) => resolveSessionMode(sessionMode: sessionMode) == 'plan';

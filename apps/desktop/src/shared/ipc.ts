@@ -320,8 +320,7 @@ export type SubagentEnabledSettings = Record<SubagentRole, boolean>;
 export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
-  planModeEnabled: boolean;
-  sessionMode?: import("./session-mode").SessionMode;
+  sessionMode: import("./session-mode").SessionMode;
   mcpServersEnabled?: Record<string, boolean>;
 }
 

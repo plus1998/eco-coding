@@ -46,7 +46,7 @@ function runtimeConfig(input: Partial<ThreadRuntimeConfig> = {}): ThreadRuntimeC
   return {
     routeProfileId: "coding",
     agentProfileId: "derived.coding.default",
-    planModeEnabled: true,
+    sessionMode: "plan",
     subagentEnabled: {
       explore: true,
       architect: true,
@@ -82,7 +82,7 @@ test("buildComposerSavedProfile copies current composer state into a user profil
 test("buildComposerSavedProfile preserves strategy when plan mode is off", () => {
   const saved = buildComposerSavedProfile({
     profile: profile(),
-    runtimeConfig: runtimeConfig({ planModeEnabled: false }),
+    runtimeConfig: runtimeConfig({ sessionMode: "agent" }),
     name: "Research Mode",
     existingIds: [],
   });

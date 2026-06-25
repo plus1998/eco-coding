@@ -33,22 +33,14 @@ extension ThreadRuntimeConfigCopy on ThreadRuntimeConfig {
     Map<String, bool>? subagentEnabled,
     Map<String, bool>? mcpServersEnabled,
     SessionMode? sessionMode,
-    bool? planModeEnabled,
     String? bashReviewMode,
   }) {
-    final synced = sessionMode != null || planModeEnabled != null
-        ? syncSessionModeFields(
-            sessionMode: sessionMode ?? this.sessionMode,
-            planModeEnabled: planModeEnabled ?? this.planModeEnabled,
-          )
-        : MapEntry(this.sessionMode, this.planModeEnabled);
     return ThreadRuntimeConfig(
       routeProfileId: routeProfileId ?? this.routeProfileId,
       agentProfileId: agentProfileId ?? this.agentProfileId,
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
-      sessionMode: synced.key,
-      planModeEnabled: synced.value,
+      sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
   }
@@ -64,7 +56,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
   if (workflow == null) return;
   await rpc.saveWorkflowSettings(
     WorkflowSettingsSnapshot(
-      planModeEnabled: workflow.planModeEnabled,
+      sessionMode: workflow.sessionMode,
       mcpServersEnabled: mcpServersEnabled,
     ),
   );

@@ -45,7 +45,7 @@ void main() {
       agentProfileId: 'p1',
       subagentEnabled: defaultSubagentAvailability(),
       mcpServersEnabled: const {'mongo': false, 'browser': true},
-      planModeEnabled: false,
+      sessionMode: 'agent',
       bashReviewMode: 'always',
     );
 
@@ -74,7 +74,7 @@ void main() {
     final config = buildDefaultRuntimeConfig(
       modelSettings: settings,
       workflow: const WorkflowSettingsSnapshot(
-        planModeEnabled: false,
+        sessionMode: 'agent',
         mcpServersEnabled: {'browser': true},
       ),
       mcpServers: _servers,

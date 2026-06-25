@@ -38,7 +38,6 @@ class ThreadRuntimeConfig {
     required this.subagentEnabled,
     this.mcpServersEnabled,
     required this.sessionMode,
-    required this.planModeEnabled,
     required this.bashReviewMode,
   });
 
@@ -58,17 +57,13 @@ class ThreadRuntimeConfig {
         rawMcp.map((key, value) => MapEntry(key.toString(), value)),
       );
     }
-    final synced = syncSessionModeFields(
-      sessionMode: json['sessionMode'] as String?,
-      planModeEnabled: json['planModeEnabled'] as bool?,
-    );
+    final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
     return ThreadRuntimeConfig(
       routeProfileId: json['routeProfileId'] as String? ?? '',
       agentProfileId: json['agentProfileId'] as String?,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
       mcpServersEnabled: parsedMcp,
-      sessionMode: synced.key,
-      planModeEnabled: synced.value,
+      sessionMode: sessionMode,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
     );
   }
@@ -79,7 +74,6 @@ class ThreadRuntimeConfig {
         'subagentEnabled': subagentEnabled,
         if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
         'sessionMode': sessionMode,
-        'planModeEnabled': planModeEnabled,
         'bashReviewMode': bashReviewMode,
       };
 
@@ -88,7 +82,6 @@ class ThreadRuntimeConfig {
   final Map<String, bool> subagentEnabled;
   final Map<String, bool>? mcpServersEnabled;
   final SessionMode sessionMode;
-  final bool planModeEnabled;
   final String bashReviewMode;
 }
 
@@ -96,8 +89,7 @@ typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 
 class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
-    required this.planModeEnabled,
-    this.sessionMode,
+    required this.sessionMode,
     this.mcpServersEnabled,
   });
 
@@ -109,25 +101,19 @@ class WorkflowSettingsSnapshot {
         rawMcp.map((key, value) => MapEntry(key.toString(), value)),
       );
     }
-    final synced = syncSessionModeFields(
-      sessionMode: json['sessionMode'] as String?,
-      planModeEnabled: json['planModeEnabled'] as bool?,
-    );
+    final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
     return WorkflowSettingsSnapshot(
-      planModeEnabled: synced.value,
-      sessionMode: synced.key,
+      sessionMode: sessionMode,
       mcpServersEnabled: parsedMcp,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'planModeEnabled': planModeEnabled,
-        if (sessionMode != null) 'sessionMode': sessionMode,
+        'sessionMode': sessionMode,
         if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
       };
 
-  final bool planModeEnabled;
-  final SessionMode? sessionMode;
+  final SessionMode sessionMode;
   final Map<String, bool>? mcpServersEnabled;
 }
 

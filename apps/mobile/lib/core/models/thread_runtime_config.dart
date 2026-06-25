@@ -113,7 +113,6 @@ ThreadRuntimeConfig buildRuntimeConfigForProfile({
             existing: runtimeConfig.mcpServersEnabled,
             remembered: remembered,
           ),
-    planModeEnabled: runtimeConfig.planModeEnabled,
     sessionMode: runtimeConfig.sessionMode,
     bashReviewMode: runtimeConfig.bashReviewMode,
   );
@@ -130,8 +129,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     return ThreadRuntimeConfig(
       routeProfileId: '',
       subagentEnabled: defaultSubagentAvailability(),
-      sessionMode: resolveSessionMode(planModeEnabled: workflow?.planModeEnabled),
-      planModeEnabled: workflow?.planModeEnabled ?? false,
+      sessionMode: resolveSessionMode(sessionMode: workflow?.sessionMode),
       bashReviewMode: 'always',
     );
   }
@@ -152,17 +150,12 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
           remembered: workflow?.mcpServersEnabled,
         );
 
-  final synced = syncSessionModeFields(
-    sessionMode: workflow?.sessionMode,
-    planModeEnabled: workflow?.planModeEnabled,
-  );
   return ThreadRuntimeConfig(
     routeProfileId: profile.id,
     agentProfileId: profile.id,
     subagentEnabled: deriveSubagentEnabledFromProfile(profile),
     mcpServersEnabled: mcpServersEnabled,
-    sessionMode: synced.key,
-    planModeEnabled: synced.value,
+    sessionMode: normalizeSessionMode(workflow?.sessionMode),
     bashReviewMode: 'always',
   );
 }

@@ -38,7 +38,7 @@ function thread(input: Partial<ThreadSummary> & { id: string; profileId: string 
     message: input.message ?? "Done.",
     runtimeConfig: {
       routeProfileId: input.profileId,
-      planModeEnabled: true,
+      sessionMode: "plan",
       subagentEnabled: {
         explore: true,
         architect: true,

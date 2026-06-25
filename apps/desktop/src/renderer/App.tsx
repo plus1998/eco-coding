@@ -394,7 +394,7 @@ function App() {
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
-    planModeEnabled: false,
+    sessionMode: "agent",
   });
   const [sessionSyncSettings, setSessionSyncSettings] =
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
@@ -1469,7 +1469,10 @@ function App() {
         const workflowDefaults =
           planModeOverride === undefined
             ? workflowSettings
-            : { ...workflowSettings, planModeEnabled: planModeOverride, sessionMode: planModeOverride ? "plan" as const : "agent" as const };
+            : {
+                ...workflowSettings,
+                sessionMode: planModeOverride ? ("plan" as const) : ("agent" as const),
+              };
         return buildThreadRuntimeConfigFromDefaults({
           settings,
           workflowDefaults,
@@ -2825,7 +2828,6 @@ function App() {
       const saved = await window.eco.saveWorkflowSettings({
         ...workflowSettings,
         sessionMode: next.sessionMode,
-        planModeEnabled: next.planModeEnabled,
       });
       setWorkflowSettings(saved);
     } catch (caught) {

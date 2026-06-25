@@ -1131,7 +1131,7 @@ function resolveAgentRuntimeConfigForThreadId(threadId: string): EcoAgentRuntime
 function threadPlanModeEnabled(threadId: string): boolean {
   const thread = conversationStore.getThread(threadId);
   const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
-  return config ? resolveSessionMode(config) === "plan" : workflowSettingsStore.get().planModeEnabled;
+  return config ? resolveSessionMode(config) === "plan" : resolveSessionMode(workflowSettingsStore.get()) === "plan";
 }
 
 function threadSessionMode(threadId: string): import("../shared/session-mode").SessionMode {
@@ -3531,7 +3531,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     sessionMode,
     followUp: prompt,
     canResume,
-    planModeEnabled: threadPlanModeEnabled(input.threadId),
+    sessionMode: threadSessionMode(input.threadId),
     hasPendingPlan,
     hasApprovedPlanOnDisk,
     enteredExecutionPhase,

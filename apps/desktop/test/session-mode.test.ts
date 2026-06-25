@@ -2,33 +2,28 @@ import { expect, test } from "bun:test";
 import {
   isAskSessionMode,
   isPlanSessionMode,
+  normalizeSessionMode,
   resolveSessionMode,
-  syncSessionModeFields,
 } from "../src/shared/session-mode";
 
 test("resolveSessionMode prefers explicit sessionMode", () => {
-  expect(resolveSessionMode({ sessionMode: "ask", planModeEnabled: true })).toBe("ask");
-  expect(resolveSessionMode({ sessionMode: "agent", planModeEnabled: true })).toBe("agent");
+  expect(resolveSessionMode({ sessionMode: "ask" })).toBe("ask");
+  expect(resolveSessionMode({ sessionMode: "agent" })).toBe("agent");
+  expect(resolveSessionMode({ sessionMode: "plan" })).toBe("plan");
 });
 
-test("resolveSessionMode migrates legacy planModeEnabled", () => {
-  expect(resolveSessionMode({ planModeEnabled: true })).toBe("plan");
-  expect(resolveSessionMode({ planModeEnabled: false })).toBe("agent");
+test("resolveSessionMode defaults to agent", () => {
+  expect(resolveSessionMode({})).toBe("agent");
+  expect(resolveSessionMode(undefined)).toBe("agent");
 });
 
-test("syncSessionModeFields keeps plan flag aligned", () => {
-  expect(syncSessionModeFields({ sessionMode: "ask" })).toEqual({
-    sessionMode: "ask",
-    planModeEnabled: false,
-  });
-  expect(syncSessionModeFields({ sessionMode: "plan" })).toEqual({
-    sessionMode: "plan",
-    planModeEnabled: true,
-  });
+test("normalizeSessionMode rejects invalid values", () => {
+  expect(normalizeSessionMode("invalid")).toBe("agent");
+  expect(normalizeSessionMode("plan")).toBe("plan");
 });
 
 test("session mode helpers", () => {
   expect(isAskSessionMode({ sessionMode: "ask" })).toBe(true);
   expect(isPlanSessionMode({ sessionMode: "plan" })).toBe(true);
-  expect(isAskSessionMode({ planModeEnabled: false })).toBe(false);
+  expect(isAskSessionMode({ sessionMode: "agent" })).toBe(false);
 });

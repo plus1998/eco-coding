@@ -20,7 +20,7 @@ Users pick the mode explicitly in Composer — **Agent | Plan | Ask**. Eco does 
 | **Plan** | User wants plan-first workflow | `runContinuation("planning")` | `plan` (official Claude Plan Mode) |
 | **Ask** | Read-only Q&A | `driver.runAsk()` or `runContinuation("ask")` | `plan` + read-only `allowedTools` |
 
-`sessionMode` is stored on the thread (`thread.runtimeConfig.sessionMode`). Legacy threads with only `planModeEnabled: true` map to **Plan**; otherwise **Agent**.
+`sessionMode` is stored on the thread (`thread.runtimeConfig.sessionMode`) and on workflow defaults (`agent` | `plan` | `ask`).
 
 **Plan** changes continuation routing and enables SDK Plan Mode on planning turns. The main agent still chooses when to explore, delegate, implement, or submit a plan via `ExitPlanMode`.
 

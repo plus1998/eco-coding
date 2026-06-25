@@ -67,7 +67,7 @@ test("awaiting_plan with pending after execution failure resumes execution not r
   const action = resolveThreadContinueAction({
     followUp: "继续",
     canResume: true,
-    planModeEnabled: true,
+    sessionMode: "plan",
     hasPendingPlan: true,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -84,7 +84,7 @@ test("awaiting_plan with pending before approval continues planning session", ()
   const action = resolveThreadContinueAction({
     followUp: "继续",
     canResume: true,
-    planModeEnabled: true,
+    sessionMode: "plan",
     hasPendingPlan: true,
     hasApprovedPlanOnDisk: false,
     enteredExecutionPhase: false,
@@ -100,7 +100,7 @@ test("canResume false with approved snapshot resumes execution", () => {
   const action = resolveThreadContinueAction({
     followUp: "继续",
     canResume: false,
-    planModeEnabled: true,
+    sessionMode: "plan",
     hasPendingPlan: false,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -116,7 +116,7 @@ test("explicit replan uses sdk planning when session resumable", () => {
   const action = resolveThreadContinueAction({
     followUp: "重新规划",
     canResume: true,
-    planModeEnabled: true,
+    sessionMode: "plan",
     hasPendingPlan: true,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -132,7 +132,7 @@ test("continue with extra tests stays on execution route", () => {
   const action = resolveThreadContinueAction({
     followUp: "继续，但加测试",
     canResume: true,
-    planModeEnabled: true,
+    sessionMode: "plan",
     hasPendingPlan: false,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -148,7 +148,7 @@ test("plan mode off without resumable session starts fresh autonomous handling",
   const action = resolveThreadContinueAction({
     followUp: "继续",
     canResume: false,
-    planModeEnabled: false,
+    sessionMode: "agent",
     hasPendingPlan: false,
     hasApprovedPlanOnDisk: false,
     enteredExecutionPhase: false,

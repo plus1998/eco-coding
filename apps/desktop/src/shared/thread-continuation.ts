@@ -23,10 +23,9 @@ export type ThreadContinueAction =
   | { kind: "fresh_autonomous" };
 
 export interface ThreadContinueRoutingInput {
-  sessionMode?: import("./session-mode").SessionMode;
+  sessionMode: import("./session-mode").SessionMode;
   followUp: string;
   canResume: boolean;
-  planModeEnabled: boolean;
   hasPendingPlan: boolean;
   hasApprovedPlanOnDisk: boolean;
   enteredExecutionPhase: boolean;
@@ -113,7 +112,7 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
     return { kind: "resume_sdk", phase: "ask", resume: input.canResume };
   }
 
-  if (!input.planModeEnabled) {
+  if (input.sessionMode === "agent") {
     if (
       input.hasPendingPlan &&
       input.threadStatus === "awaiting_plan" &&
