@@ -14997,7 +14997,7 @@ html[data-window-focused="true"] .settings-nav {
 .package-scripts-shell.has-output-panel {
   width: min(840px, calc(100vw - 40px));
   max-height: min(86vh, 720px);
-  grid-template-columns: minmax(300px, 380px) minmax(360px, 420px);
+  grid-template-columns: minmax(300px, 380px) minmax(360px, 1fr);
 }
 
 .package-scripts-shell.has-output-panel .package-scripts-dialog,
