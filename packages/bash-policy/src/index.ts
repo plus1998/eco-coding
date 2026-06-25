@@ -1,4 +1,5 @@
 export { evaluateBashHardDeny, evaluateBashPolicy } from "./evaluate";
+export { matchBashAntiBypass } from "./anti-bypass";
 export { parseShellCommand, collectCommandSegments, collectPipelines } from "./parser";
 export { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
 export { matchDeny, scorePipeline } from "./rules/match";

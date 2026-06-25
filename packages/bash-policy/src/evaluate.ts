@@ -1,6 +1,7 @@
 import { collectCommandSegments, parseShellCommand } from "./parser";
 import { matchesAnyCommandPattern } from "./pattern-match";
 import { isInsidePath } from "./path-utils";
+import { matchBashAntiBypass } from "./anti-bypass";
 import { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
 import { matchDeny } from "./rules/match";
 import { AUTO_APPROVAL_SCORE_THRESHOLD, riskLevelFromScore, scoreShellAst } from "./scorer";
@@ -13,6 +14,11 @@ function evaluateBashHardDenyCore(
   const command = input.command.trim();
   if (!command) {
     return denyDecision(100, "Empty command is not allowed", "empty_command");
+  }
+
+  const antiBypass = matchBashAntiBypass(command);
+  if (antiBypass) {
+    return denyDecision(100, antiBypass.reason, antiBypass.matchedRule);
   }
 
   const agentBash = input.agentBash;
