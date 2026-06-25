@@ -123,7 +123,7 @@ import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerMcpServers } from "./ComposerMcpServers";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
-import type { SessionMode } from "../shared/session-mode";
+import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
