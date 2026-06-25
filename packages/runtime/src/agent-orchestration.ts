@@ -450,39 +450,6 @@ function resolveMainToolPermissionExtraAllowed(
   return extras.filter((tool) => phaseAllowed.has(tool));
 }
 
-export function buildMainAgentRoster(
-  profile: EcoOrchestrationProfileConfig,
-  templates: readonly EcoAgentTemplateConfig[],
-): string {
-  const templateById = new Map(templates.map((template) => [template.id, template]));
-  const lines = [
-    [
-      `- Agent(${ecoSubagentKeyForRole("explore")}): Explore [built-in]`,
-      "  Description: Read-only codebase discovery for gathering context with the configured Explore model.",
-      "  Use when: repository context or file discovery is needed before planning, answering, or implementing.",
-    ].join("\n"),
-    ...profile.agents
-      .filter((agent) => agent.enabled)
-      .map((agent) => {
-        const template = templateById.get(agent.templateId);
-        if (!template) {
-          return `- Agent(${sdkAgentKeyForProfileAgent(agent.agentKey)}): missing template ${agent.templateId}`;
-        }
-        const displayName = agent.displayName?.trim() || template.name;
-        const output = template.outputContract?.trim() ? ` Output: ${template.outputContract.trim()}` : "";
-        return [
-          `- Agent(${sdkAgentKeyForProfileAgent(agent.agentKey)}): ${displayName} [${template.domain}]`,
-          `  Description: ${template.description.trim()}`,
-          `  Use when: ${template.whenToUse.trim()}.${output}`,
-        ].join("\n");
-      }),
-  ];
-  if (lines.length === 0) {
-    return "Available Eco subagents: none.";
-  }
-  return ["Available Eco subagents:", ...lines].join("\n");
-}
-
 export function buildMainAgentStrategySummary(profile: EcoOrchestrationProfileConfig): string {
   const strategy = profile.strategy;
   return [

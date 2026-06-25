@@ -26,9 +26,6 @@ export function resolveAskRunOutcome(result: RequestAttemptResult): ThreadRunOut
   return { kind: "completed", message: "回答完成。" };
 }
 
-/** @deprecated Use {@link resolveAskRunOutcome} */
-export const resolveQuestionRunOutcome = resolveAskRunOutcome;
-
 export function resolveAutonomousRunOutcome(
   result: RequestAttemptResult,
   input: { hasPendingPlan: boolean; planCaptured: boolean },

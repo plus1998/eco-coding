@@ -105,9 +105,8 @@ Universal orchestration profiles use **template prompts** from the profile (`age
 - **Subagent handoff** — resume/summary prompt when context is compacted mid-subagent
 - **Tool policy** — PreToolUse denies disallowed tools; non-eco `Agent(...)` types get *Use agents registered for this session*
 
-### Deprecated / empty
+### Deprecated aliases
 
-- `packages/runtime/src/prompts/planning-format.ts` — empty; native Plan Mode owns plan structure
 - `createExecutionAgentDefinitions` — alias of `createAutonomousAgentDefinitions`
 - Forced execute-phase pipeline prompts (`buildExecutePhase*`, `planningPhaseSystemAppend`, etc.) — **removed**
 

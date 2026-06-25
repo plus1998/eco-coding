@@ -1,21 +1,6 @@
 /** Short orchestrator rules for autonomous mode — routing lives in subagent descriptions. */
 
-import {
-  defaultSubagentAvailability,
-  type SubagentAvailability,
-} from "../subagent-availability.js";
-
-export interface BuildAutonomousOrchestratorAppendOptions {
-  /** @deprecated Roster and agents schema carry routing hints; kept for API compatibility. */
-  hasProfileRoster?: boolean;
-  /** @deprecated Plan agent allowance is enforced via hooks and allowedTools. */
-  allowPlanAgent?: boolean;
-}
-
-export function buildAutonomousOrchestratorAppend(
-  _availability: SubagentAvailability = defaultSubagentAvailability(),
-  _options: BuildAutonomousOrchestratorAppendOptions = {},
-): string {
+export function buildAutonomousOrchestratorAppend(): string {
   return [
     "Delegate using enabled subagent descriptions; do not force a fixed review or test order.",
     "Do not use the SDK Workflow tool.",

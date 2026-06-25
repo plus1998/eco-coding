@@ -1,7 +1,6 @@
 export {
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
-  type BuildAutonomousOrchestratorAppendOptions,
 } from "./autonomous.js";
 export {
   ecoBasePromptAppend,
@@ -19,8 +18,4 @@ export {
   reviewerAgentPrompt,
 } from "./execution-agents.js";
 export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
-export {
-  buildMainAgentHandsOnBoundaryAppend,
-  formatAvailableSubagentsLine,
-  formatMandatoryEcoSubagentRule,
-} from "./subagent-pipeline.js";
+export { buildMainAgentHandsOnBoundaryAppend } from "./subagent-pipeline.js";

@@ -503,19 +503,6 @@ test("autonomous orchestrator append keeps minimal product constraints", () => {
   expect(append).not.toContain("Available Eco subagents in this session:");
 });
 
-test("autonomous orchestrator append ignores legacy availability options", () => {
-  const append = buildAutonomousOrchestratorAppend(
-    {
-      ...defaultSubagentAvailability(),
-      reviewer: false,
-      tester: false,
-    },
-    { hasProfileRoster: true, allowPlanAgent: true },
-  );
-  expect(append).not.toContain("eco_coder");
-  expect(append).not.toContain("Agent(Plan)");
-});
-
 test("buildAutonomousPlanContinuationPrompt carries approved plan context", () => {
   const prompt = buildAutonomousPlanContinuationPrompt({
     userPrompt: "Add feature X",

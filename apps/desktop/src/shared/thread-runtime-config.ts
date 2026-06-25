@@ -282,11 +282,6 @@ export function withAgentSessionMode(
   return { ...config, sessionMode };
 }
 
-/** @deprecated Use {@link withAgentSessionMode} */
-export function withPlanModeDisabled(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
-  return withAgentSessionMode(config, "agent");
-}
-
 /** True when `after` differs from `before` only by `bashReviewMode`. */
 export function isBashReviewModeOnlyRuntimeConfigUpdate(
   before: ThreadRuntimeConfig,

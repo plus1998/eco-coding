@@ -2,9 +2,7 @@ import {
   defaultSubagentAvailability,
   ecoSubagentKeyForRole,
   isSubagentEnabled,
-  listEnabledSubagents,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
-  SDK_PLAN_AGENT_KEY,
   type SubagentAvailability,
   type SubagentRole,
 } from "../subagent-availability.js";
@@ -12,7 +10,7 @@ import type { MainAgentHandsOnCapability } from "../agent-orchestration.js";
 
 /**
  * Hands-on boundary for the main orchestrator, derived from the active profile tool policy.
- * The prompt must state the same rules the Eco PreToolUse policy hook enforces, so the
+ * The prompt must state the same rules the Eco PreToolUse policy enforces, so the
  * model never has to discover them through denied tool calls.
  */
 export function buildMainAgentHandsOnBoundaryAppend(
@@ -51,37 +49,4 @@ export function buildMainAgentHandsOnBoundaryAppend(
 
 function agentCall(role: SubagentRole): string {
   return `Agent(${ecoSubagentKeyForRole(role)})`;
-}
-
-/** Shared rule: Eco role delegation must use Eco subagent keys; SDK built-in exceptions are explicit. */
-export function formatMandatoryEcoSubagentRule(options: { allowPlanAgent?: boolean } = {}): string {
-  const blockedExamples = options.allowPlanAgent ? "Explore, Bash" : "Explore, Plan, Bash";
-  return [
-    "Mandatory subagent policy: when delegating to an Eco role via Agent(), set subagent_type to the exact eco_* key for that role.",
-    `Allowed SDK built-in exception: Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) for complex, multi-step tasks that require both exploration and action.`,
-    ...(options.allowPlanAgent
-      ? [
-          `Plan Mode exception: Agent(${SDK_PLAN_AGENT_KEY}) is also allowed for read-only codebase research before ExitPlanMode.`,
-        ]
-      : []),
-    `Do not use other SDK built-in agents (e.g. ${blockedExamples}), plain role names (coder/reviewer/explore/...), or Agent(<role>).`,
-  ].join(" ");
-}
-
-export function formatAvailableSubagentsLine(
-  availability: SubagentAvailability,
-  options: { allowPlanAgent?: boolean } = {},
-): string {
-  const enabled = listEnabledSubagents(availability);
-  const names = enabled.map((role) => `${role}: ${ecoSubagentKeyForRole(role)}`).join(", ");
-  return [
-    `Available Eco subagents in this session: ${names}.`,
-    `Available SDK built-in subagent: ${SDK_GENERAL_PURPOSE_AGENT_KEY} (inherits the main conversation model and all tools).`,
-    ...(options.allowPlanAgent
-      ? [
-          `Available SDK Plan Mode subagent: ${SDK_PLAN_AGENT_KEY} (inherits the main conversation model; read-only).`,
-        ]
-      : []),
-    formatMandatoryEcoSubagentRule(options),
-  ].join("\n");
 }

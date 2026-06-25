@@ -657,10 +657,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
         universalProfile
           ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
-          : buildAutonomousOrchestratorAppend(availability, {
-              hasProfileRoster: Boolean(input.agentRegistry),
-              allowPlanAgent: planningContinuation,
-            }),
+          : buildAutonomousOrchestratorAppend(),
         handsOn,
         availability,
         universalProfile,
@@ -694,9 +691,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
         universalProfile
           ? buildUniversalPhaseAppend("autonomous")
-          : buildAutonomousOrchestratorAppend(availability, {
-              hasProfileRoster: Boolean(input.agentRegistry),
-            }),
+          : buildAutonomousOrchestratorAppend(),
         handsOn,
         availability,
         universalProfile,
@@ -1136,9 +1131,6 @@ export function createAskAgentDefinitions(
   return filterAgentDefinitions(definitions, availability);
 }
 
-/** @deprecated Use {@link createAskAgentDefinitions} */
-export const createQuestionAgentDefinitions = createAskAgentDefinitions;
-
 /** @deprecated Import from ./prompts/execution-agents.js */
 export { reviewerAgentPrompt };
 
@@ -1449,7 +1441,6 @@ function drainToolPermissionDecisionEvents(
 export {
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
-  type BuildAutonomousOrchestratorAppendOptions,
 } from "./prompts/autonomous.js";
 
 export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {

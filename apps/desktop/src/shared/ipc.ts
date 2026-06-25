@@ -615,7 +615,6 @@ export {
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   withAgentSessionMode,
-  withPlanModeDisabled,
 } from "./thread-runtime-config";
 export type { McpServersEnabledSettings, ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 export {
