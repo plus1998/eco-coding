@@ -42,6 +42,10 @@ import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
+  formatPromptCacheConfigDriftHint,
+  resolvePromptCacheConfigDrift,
+} from "../shared/prompt-cache-config";
+import {
   buildThreadRuntimeConfigFromDefaults,
   type BashApprovalRequest,
   type ClarificationRequest,
@@ -1587,6 +1591,49 @@ function App() {
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
   const autoCompactSuspended = isThreadAutoCompactSuspended(runProjection);
   const promptCacheInvalidated = isThreadPromptCacheInvalidated(runProjection);
+  const promptCacheBaselineByThreadRef = useRef<Record<string, ThreadRuntimeConfig>>({});
+  const [promptCacheBaselineVersion, setPromptCacheBaselineVersion] = useState(0);
+
+  useEffect(() => {
+    const threadId = activeThread?.id;
+    const runtimeConfig = activeThread?.runtimeConfig;
+    if (!threadId || !runtimeConfig || !runProjection?.timeline.length) {
+      return;
+    }
+    if (promptCacheBaselineByThreadRef.current[threadId]) {
+      return;
+    }
+    promptCacheBaselineByThreadRef.current[threadId] = runtimeConfig;
+    setPromptCacheBaselineVersion((current) => current + 1);
+  }, [activeThread?.id, activeThread?.runtimeConfig, runProjection?.timeline.length]);
+
+  const composerPromptCacheDrift = useMemo(() => {
+    const threadId = activeThread?.id;
+    if (!threadId || !composerRuntimeConfig || !runProjection?.timeline.length) {
+      return null;
+    }
+    const baseline = promptCacheBaselineByThreadRef.current[threadId];
+    if (!baseline) {
+      return null;
+    }
+    const drift = resolvePromptCacheConfigDrift({
+      baseline,
+      current: composerRuntimeConfig,
+      settings,
+      mcpServers: mcpSettings.servers,
+    });
+    return drift.length > 0 ? drift : null;
+  }, [
+    activeThread?.id,
+    composerRuntimeConfig,
+    mcpSettings.servers,
+    promptCacheBaselineVersion,
+    runProjection?.timeline.length,
+    settings,
+  ]);
+  const composerPromptCacheHint = composerPromptCacheDrift
+    ? formatPromptCacheConfigDriftHint(composerPromptCacheDrift)
+    : null;
 
   const canSendFollowUp = Boolean(
     currentProjectPath &&
@@ -3559,6 +3606,11 @@ function App() {
         />
       ) : null}
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
+      {composerPromptCacheHint ? (
+        <p className="composer-prompt-cache-hint" role="status">
+          {composerPromptCacheHint}
+        </p>
+      ) : null}
       {editingFollowUpId && composerFollowUpMode ? (
         <div className="composer-rewind-banner">
           <Pencil size={14} aria-hidden />

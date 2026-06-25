@@ -7903,6 +7903,17 @@ html[data-window-focused="true"] .codex-sidebar {
   line-height: 1.4;
 }
 
+.composer-prompt-cache-hint {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #93c5fd;
+  background: color-mix(in srgb, #3b82f6 12%, transparent);
+  border: 1px solid color-mix(in srgb, #3b82f6 28%, transparent);
+}
+
 .composer-rewind-banner {
   display: inline-flex;
   align-items: center;
