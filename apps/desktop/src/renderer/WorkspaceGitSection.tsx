@@ -38,7 +38,7 @@ export interface WorkspaceGitSectionProps {
   onCheckoutGitBranch?: (branch: string) => void | Promise<void>;
   onCreateGitBranch?: (branch: string) => void | Promise<void>;
   onOpenGitSettings?: () => void;
-  onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
+  onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
   onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onPullSuccess?: () => void | Promise<void>;
@@ -61,7 +61,7 @@ export function WorkspaceGitSection({
   gitSettings,
   onCheckoutGitBranch,
   onCreateGitBranch,
-  onSaveCommitRolePreference,
+  onSaveCommitModelPreference,
   onCommitSuccess,
   onChangesDiffLoaded,
   onPullSuccess,
@@ -92,9 +92,7 @@ export function WorkspaceGitSection({
   const showCommitEntry = Boolean(
     workspacePath &&
       profileId &&
-      gitSettings &&
-      subagentEnabled &&
-      onSaveCommitRolePreference &&
+      onSaveCommitModelPreference &&
       onCommitSuccess &&
       gitStatus?.isGitRepository,
   );
@@ -573,17 +571,12 @@ export function WorkspaceGitSection({
           workspacePath={workspacePath!}
           profileId={profileId!}
           {...(gitStatus && { gitStatus })}
-          agentModelLabels={agentModelLabels}
-          routes={routes}
-          routePricingHints={routePricingHints}
-          subagentEnabled={subagentEnabled!}
-          gitSettings={gitSettings!}
           {...(gitBusy !== undefined && { busy: gitBusy })}
           {...(commitDisabled !== undefined && { disabled: commitDisabled })}
           {...(onCheckoutGitBranch && { onCheckoutBranch: onCheckoutGitBranch })}
           {...(onCreateGitBranch && { onCreateBranch: onCreateGitBranch })}
           onClose={() => setCommitDialogOpen(false)}
-          onSaveRolePreference={onSaveCommitRolePreference!}
+          onSaveModelPreference={onSaveCommitModelPreference!}
           onSuccess={handleCommitSuccess}
         />
       ) : null}

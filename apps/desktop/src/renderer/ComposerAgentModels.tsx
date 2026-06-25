@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 function rowClassName(options: {
   subagent: boolean;
@@ -231,7 +232,7 @@ export function ComposerAgentModels({
           setOpen(true);
         }}
       >
-        <Users size={15} aria-hidden className="composer-context-trigger-icon" />
+        <Users size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className="composer-context-trigger-icon" />
         <span className="composer-context-trigger-label">
           {compact ? summary : "编排"}
         </span>

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode.dart';
 import '../../core/constants/session_mode_ui.dart';
+import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/thread_models.dart';
@@ -586,7 +587,7 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final current = sessionModeUi(runtimeConfig.sessionMode);
 
-    return IconButton(
+    return ComposerToolbarIconButton(
       onPressed: !canEdit
           ? null
           : () => showComposerSessionModeSheet(
@@ -597,28 +598,12 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
               onChanged: onChanged,
             ),
       tooltip: current.title,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      icon: Icon(
-        sessionModeIcon(runtimeConfig.sessionMode),
-        size: 22,
-        color: runtimeConfig.sessionMode != 'agent'
-            ? ecoColors(context).accent
-            : ecoColors(context).textSecondary,
+      icon: SessionModeIcon(
+        mode: runtimeConfig.sessionMode,
+        color: ecoColors(context).textSecondary,
       ),
     );
   }
-}
-
-IconData sessionModeIcon(SessionMode mode) {
-  if (mode == 'plan') {
-    return EcoIcons.planMode;
-  }
-  if (mode == 'ask') {
-    return EcoIcons.askMode;
-  }
-  return EcoIcons.agentMode;
 }
 
 Future<void> showComposerSessionModeSheet(
@@ -643,9 +628,8 @@ Future<void> showComposerSessionModeSheet(
           ...sessionModeUiOptions.map((option) {
             final isActive = option.value == runtimeConfig.sessionMode;
             return ListTile(
-              leading: Icon(
-                sessionModeIcon(option.value),
-                size: 20,
+              leading: SessionModeIcon(
+                mode: option.value,
                 color: ecoColors(context).textSecondary,
               ),
               title: Text(option.title),
@@ -708,7 +692,7 @@ class ComposerMcpIconButton extends ConsumerWidget {
     final enabledCount = countEnabledMcpServers(enabledSettings);
     final summary = '$enabledCount/${enabledServers.length}';
 
-    return IconButton(
+    return ComposerToolbarIconButton(
       onPressed: () => showComposerMcpSheet(
         context,
         ref,
@@ -719,12 +703,8 @@ class ComposerMcpIconButton extends ConsumerWidget {
         onChanged: onChanged,
       ),
       tooltip: 'MCP 服务器 · $summary',
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      icon: Icon(
-        EcoIcons.mcp,
-        size: 22,
+      icon: ComposerToolbarIcon(
+        icon: EcoIcons.mcp,
         color: enabledCount > 0
             ? ecoColors(context).accent
             : ecoColors(context).textSecondary,
@@ -861,7 +841,7 @@ class ComposerRouteSummary extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (contextSnapshot != null)
-          IconButton(
+          ComposerToolbarIconButton(
             onPressed: () => showThreadContextSheet(
               context: context,
               contextSnapshot: contextSnapshot,
@@ -869,12 +849,12 @@ class ComposerRouteSummary extends ConsumerWidget {
               agentProfile: agentProfile,
             ),
             tooltip: '上下文',
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            icon: ComposerContextRing(pct: occupancyPct ?? 0, size: 22),
+            icon: ComposerContextRing(
+              pct: occupancyPct ?? 0,
+              size: kComposerToolbarIconSize,
+            ),
           ),
-        IconButton(
+        ComposerToolbarIconButton(
           onPressed: () => _showRouteSheet(
             context,
             ref,
@@ -884,12 +864,8 @@ class ComposerRouteSummary extends ConsumerWidget {
             onChanged: onChanged,
           ),
           tooltip: tooltip,
-          visualDensity: VisualDensity.compact,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          icon: Icon(
-            EcoIcons.profile,
-            size: 22,
+          icon: ComposerToolbarIcon(
+            icon: EcoIcons.profile,
             color: ecoColors(context).textSecondary,
           ),
         ),
@@ -939,7 +915,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
     final mode = runtimeConfig.bashReviewMode;
     final accent = mode == 'auto';
 
-    return IconButton(
+    return ComposerToolbarIconButton(
       onPressed: () => _showBashReviewSheet(
         context,
         ref,
@@ -948,8 +924,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
         onChanged: onChanged,
       ),
       tooltip: bashReviewUi(mode).title,
-      visualDensity: VisualDensity.compact,
-      icon: _BashReviewShieldIcon(
+      icon: ComposerBashReviewToolbarIcon(
         mode: mode,
         color: accent ? ecoColors(context).accent : ecoColors(context).textSecondary,
       ),
@@ -978,10 +953,9 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
             ...bashReviewUiOptions.map((option) {
               final isActive = option.value == runtimeConfig.bashReviewMode;
               return ListTile(
-                leading: _BashReviewShieldIcon(
+                leading: ComposerBashReviewToolbarIcon(
                   mode: option.value,
                   color: ecoColors(context).textSecondary,
-                  size: 20,
                 ),
                 title: Text(option.title),
                 subtitle: Text(option.description),
@@ -1004,46 +978,6 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
             }),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _BashReviewShieldIcon extends StatelessWidget {
-  const _BashReviewShieldIcon({
-    required this.mode,
-    required this.color,
-    this.size = 22,
-  });
-
-  final String mode;
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final icon = switch (mode) {
-      'auto' => EcoIcons.shieldAuto,
-      'allow_all' => EcoIcons.shieldAllowAll,
-      _ => EcoIcons.shieldManual,
-    };
-
-    if (mode != 'auto') {
-      return Icon(icon, size: size, color: color);
-    }
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(EcoIcons.shieldAuto, size: size, color: color),
-          Positioned(
-            bottom: size * 0.18,
-            child: Icon(EcoIcons.terminal, size: size * 0.38, color: color),
-          ),
-        ],
       ),
     );
   }

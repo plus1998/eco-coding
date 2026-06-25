@@ -34,6 +34,7 @@ test("buildCommitMessageUserMessage includes staged diff sections", () => {
   expect(message).toContain("## Staged files");
   expect(message).toContain("README.md");
   expect(message).toContain("## Recent commits");
+  expect(message).toContain("总长度不超过");
 });
 
 test("buildCommitMessageUserMessage includes unstaged sections", () => {
@@ -71,10 +72,23 @@ test("sanitizeCommitMessage keeps valid conventional commit text", () => {
   );
 });
 
-test("buildCommitMessageRequestBody disables thinking", () => {
+test("sanitizeCommitMessage truncates overly long output", () => {
+  const long = `feat(ui): ${"x".repeat(3000)}`;
+  expect(sanitizeCommitMessage(long)?.length).toBe(2000);
+});
+
+test("buildCommitMessageRequestBody does not disable thinking or cap tokens by default", () => {
   const body = buildCommitMessageRequestBody(route, context);
-  expect(body.thinking).toEqual({ type: "disabled" });
-  expect(body.max_tokens).toBe(512);
+  expect(body.thinking).toBeUndefined();
+  expect(body.max_tokens).toBeUndefined();
+});
+
+test("buildCommitMessageRequestBody uses route max output tokens when configured", () => {
+  const body = buildCommitMessageRequestBody(
+    { ...route, maxOutputTokens: 4096 },
+    context,
+  );
+  expect(body.max_tokens).toBe(4096);
 });
 
 test("extractCommitMessageText ignores thinking-only responses", () => {
@@ -92,4 +106,14 @@ test("extractCommitMessageText prefers text blocks", () => {
     ],
   });
   expect(text).toBe("feat(ui): add refresh-all toolbar");
+});
+
+test("extractCommitMessageText ignores redacted thinking blocks", () => {
+  const text = extractCommitMessageText({
+    content: [
+      { type: "redacted_thinking", data: "..." },
+      { type: "text", text: "fix(git): handle empty diff" },
+    ],
+  });
+  expect(text).toBe("fix(git): handle empty diff");
 });

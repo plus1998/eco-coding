@@ -7,21 +7,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type {
-  GitSettingsSnapshot,
+  CommitModelOptionView,
   GitWorkingTreeStatus,
-  RoutePricingHint,
-  RuntimeAgentRole,
-  RuntimeRoleRouteConfig,
-  SubagentEnabledSettings,
-  SubagentRole,
 } from "../shared/ipc";
-import { SUBAGENT_ROLES } from "../shared/ipc";
 import {
-  buildCommitModelOptions,
-  findCommitModelOptionForRole,
+  findCommitModelOptionForCandidateId,
 } from "../shared/commit-model-options";
-import { resolveCommitMessageRoute } from "../shared/resolve-commit-message-route";
-import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import {
+  resolveCommitMessageCandidateModel,
+} from "../shared/resolve-commit-message-route";
 import { CommitModelPricingCompact, CommitModelProviderDot } from "./CommitModelPricingCompact";
 
 export type CommitDialogAction = "commit" | "commit-push" | "push";
@@ -31,17 +25,12 @@ interface GitCommitDialogProps {
   workspacePath: string;
   profileId: string;
   gitStatus?: GitWorkingTreeStatus;
-  agentModelLabels: ComposerAgentModelLabel[];
-  routes: readonly RuntimeRoleRouteConfig[];
-  routePricingHints: RoutePricingHint[];
-  subagentEnabled: SubagentEnabledSettings;
-  gitSettings: GitSettingsSnapshot;
   busy?: boolean;
   disabled?: boolean;
   onCheckoutBranch?: (branch: string) => void | Promise<void>;
   onCreateBranch?: (branch: string) => void | Promise<void>;
   onClose: () => void;
-  onSaveRolePreference: (role: RuntimeAgentRole) => void | Promise<void>;
+  onSaveModelPreference: (candidateModelId: string) => void | Promise<void>;
   onSuccess: () => void | Promise<void>;
 }
 
@@ -50,22 +39,19 @@ export function GitCommitDialog({
   workspacePath,
   profileId,
   gitStatus,
-  agentModelLabels,
-  routes,
-  routePricingHints,
-  subagentEnabled,
-  gitSettings,
   busy,
   disabled,
   onCheckoutBranch,
   onCreateBranch,
   onClose,
-  onSaveRolePreference,
+  onSaveModelPreference,
   onSuccess,
 }: GitCommitDialogProps) {
   const [message, setMessage] = useState("");
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<RuntimeAgentRole | undefined>();
+  const [modelOptions, setModelOptions] = useState<CommitModelOptionView[]>([]);
+  const [selectedCandidateModelId, setSelectedCandidateModelId] = useState<string | undefined>();
+  const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchCreateMode, setBranchCreateMode] = useState(false);
@@ -76,32 +62,15 @@ export function GitCommitDialog({
   const [generatingMessage, setGeneratingMessage] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const configuredSubagentRoles = useMemo(() => {
-    const roles = new Set<SubagentRole>();
-    for (const route of routes) {
-      if (route.role !== "planner" && (SUBAGENT_ROLES as readonly string[]).includes(route.role)) {
-        roles.add(route.role as SubagentRole);
-      }
-    }
-    return roles;
-  }, [routes]);
-
-  const modelOptions = useMemo(
-    () => buildCommitModelOptions(routes, routePricingHints, configuredSubagentRoles),
-    [routes, routePricingHints, configuredSubagentRoles],
-  );
-
   const selectedOption = useMemo(
-    () => findCommitModelOptionForRole(modelOptions, selectedRole, routes, routePricingHints),
-    [modelOptions, selectedRole, routes, routePricingHints],
+    () => findCommitModelOptionForCandidateId(modelOptions, selectedCandidateModelId),
+    [modelOptions, selectedCandidateModelId],
   );
 
-  const modelLabel = selectedOption?.modelLabel ?? "未配置模型";
-
-  const savedRole = gitSettings.commitMessageRoleByProfileId[profileId] ?? "auto";
+  const modelLabel = selectedOption?.modelLabel ?? (modelOptionsLoading ? "加载模型…" : "未配置模型");
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !window.eco) {
       setModelMenuOpen(false);
       setBranchMenuOpen(false);
       setBranchCreateMode(false);
@@ -118,23 +87,48 @@ export function GitCommitDialog({
     setBranchCreateMode(false);
     setNewBranchName("");
     setBranchError(undefined);
-    const resolved = resolveCommitMessageRoute(
-      routes,
-      routePricingHints,
-      configuredSubagentRoles,
-      savedRole,
-    );
-    const matched = findCommitModelOptionForRole(modelOptions, resolved?.role, routes, routePricingHints);
-    setSelectedRole(matched?.role ?? resolved?.role);
-  }, [open]);
+    setModelOptionsLoading(true);
+    void window.eco
+      .listGitCommitModelOptions({ profileId })
+      .then((result) => {
+        setModelOptions(result.options);
+        const hints = result.options
+          .map((option) => option.hint)
+          .filter((hint): hint is NonNullable<typeof hint> => Boolean(hint));
+        const candidates = result.options.map((option) => ({
+          candidateModelId: option.candidateModelId,
+          providerId: option.providerId,
+          providerName: option.providerName,
+          modelId: option.modelId,
+        }));
+        const resolved = resolveCommitMessageCandidateModel(
+          candidates,
+          hints,
+          result.savedCandidateModelId,
+        );
+        const matched = findCommitModelOptionForCandidateId(
+          result.options,
+          resolved?.candidateModelId,
+        );
+        setSelectedCandidateModelId(matched?.candidateModelId ?? resolved?.candidateModelId);
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : String(caught));
+        setModelOptions([]);
+        setSelectedCandidateModelId(undefined);
+      })
+      .finally(() => {
+        setModelOptionsLoading(false);
+      });
+  }, [open, profileId]);
 
-  const handleSelectRole = useCallback(
-    (role: RuntimeAgentRole) => {
-      setSelectedRole(role);
+  const handleSelectCandidateModel = useCallback(
+    (candidateModelId: string) => {
+      setSelectedCandidateModelId(candidateModelId);
       setModelMenuOpen(false);
-      void onSaveRolePreference(role);
+      void onSaveModelPreference(candidateModelId);
     },
-    [onSaveRolePreference],
+    [onSaveModelPreference],
   );
 
   const closeBranchMenu = useCallback(() => {
@@ -190,7 +184,7 @@ export function GitCommitDialog({
         workspacePath,
         profileId,
         includeUnstaged,
-        ...(selectedRole && { role: selectedRole }),
+        ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
       });
       setMessage(result.message);
       setModelMenuOpen(false);
@@ -207,7 +201,7 @@ export function GitCommitDialog({
     workspacePath,
     profileId,
     includeUnstaged,
-    selectedRole,
+    selectedCandidateModelId,
   ]);
 
   const runAction = useCallback(
@@ -230,7 +224,7 @@ export function GitCommitDialog({
             profileId,
             includeUnstaged,
             ...(trimmed && { message: trimmed }),
-            ...(!trimmed && selectedRole && { role: selectedRole }),
+            ...(!trimmed && selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
           });
           if (!trimmed && result.generated) {
             setMessage(result.message);
@@ -253,7 +247,7 @@ export function GitCommitDialog({
     [
       submitting,
       disabled,
-      selectedRole,
+      selectedCandidateModelId,
       message,
       workspacePath,
       profileId,
@@ -309,7 +303,7 @@ export function GitCommitDialog({
   const showBranchPicker =
     Boolean(gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch);
   const modelPickerDisabled =
-    submitting || busy || disabled || generatingMessage || modelOptions.length === 0;
+    submitting || busy || disabled || generatingMessage || modelOptionsLoading || modelOptions.length === 0;
   const messageFieldDisabled = submitting || busy || disabled || generatingMessage;
   const showModelPicker = message.trim().length === 0;
 
@@ -486,7 +480,7 @@ export function GitCommitDialog({
                 {modelMenuOpen ? (
                   <ul className="git-commit-model-menu" role="listbox" aria-label="生成模型">
                     {modelOptions.map((option) => {
-                      const isActive = option.role === selectedRole;
+                      const isActive = option.candidateModelId === selectedCandidateModelId;
                       return (
                         <li key={option.id}>
                           <button
@@ -495,7 +489,7 @@ export function GitCommitDialog({
                             aria-selected={isActive}
                             className={isActive ? "is-active" : undefined}
                             title={option.hint?.pricingLabel ?? `${option.providerName} · ${option.modelId}`}
-                            onClick={() => handleSelectRole(option.role)}
+                            onClick={() => handleSelectCandidateModel(option.candidateModelId)}
                           >
                             <CommitModelProviderDot color={option.providerColor} label={option.providerName} />
                             <span className="git-commit-model-menu-label">{option.modelLabel}</span>
@@ -566,17 +560,8 @@ export function GitCommitDialog({
               disabled={!canCommit || submitting || busy || generatingMessage}
               onClick={() => void runAction("commit")}
             >
-              <span className="git-commit-popover-action-icon" aria-hidden>
-                <GitCommitHorizontal size={16} strokeWidth={1.75} />
-              </span>
-              <span className="git-commit-popover-action-label">提交</span>
-              <span className="git-commit-popover-action-trailing" aria-hidden>
-                {submitting ? (
-                  <Loader2 size={14} className="spinning git-commit-popover-spinner" />
-                ) : (
-                  <kbd className="git-commit-popover-shortcut">⌘↩</kbd>
-                )}
-              </span>
+              <GitCommitHorizontal size={16} strokeWidth={1.75} aria-hidden />
+              <span>{submitting ? "提交中…" : "提交"}</span>
             </button>
           </li>
           <li>
@@ -586,27 +571,23 @@ export function GitCommitDialog({
               disabled={!canCommit || submitting || busy || generatingMessage}
               onClick={() => void runAction("commit-push")}
             >
-              <span className="git-commit-popover-action-icon" aria-hidden>
-                <CloudUpload size={16} strokeWidth={1.75} />
-              </span>
-              <span className="git-commit-popover-action-label">提交并推送</span>
-              <span className="git-commit-popover-action-trailing" aria-hidden />
+              <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
+              <span>{submitting ? "处理中…" : "提交并推送"}</span>
             </button>
           </li>
-          <li>
-            <button
-              type="button"
-              className="git-commit-popover-action"
-              disabled={!canPushOnly || submitting || busy}
-              onClick={() => void runAction("push")}
-            >
-              <span className="git-commit-popover-action-icon" aria-hidden>
-                <CloudUpload size={16} strokeWidth={1.75} />
-              </span>
-              <span className="git-commit-popover-action-label">推送</span>
-              <span className="git-commit-popover-action-trailing" aria-hidden />
-            </button>
-          </li>
+          {canPushOnly ? (
+            <li>
+              <button
+                type="button"
+                className="git-commit-popover-action"
+                disabled={submitting || busy || generatingMessage}
+                onClick={() => void runAction("push")}
+              >
+                <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
+                <span>{submitting ? "推送中…" : "仅推送"}</span>
+              </button>
+            </li>
+          ) : null}
         </ul>
       </div>
     </div>,

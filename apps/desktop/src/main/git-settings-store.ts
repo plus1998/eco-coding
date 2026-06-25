@@ -1,13 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { CommitMessageRolePreference } from "../shared/resolve-commit-message-route";
-import type { RuntimeAgentRole } from "../shared/ipc";
+import type {
+  CommitMessageModelPreference,
+  CommitMessageRolePreference,
+} from "../shared/resolve-commit-message-route";
 
 const COMMIT_MESSAGE_INSTRUCTIONS_MAX_CHARS = 2_000;
 
 export interface GitSettingsSnapshot {
   commitMessageRoleByProfileId: Record<string, CommitMessageRolePreference>;
+  commitMessageCandidateModelIdByProfileId: Record<string, CommitMessageModelPreference>;
   commitMessageInstructions?: string;
   /** 窗口聚焦且仓库空闲时周期性 git fetch，对齐 VS Code git.autofetch */
   autofetch?: boolean;
@@ -18,6 +21,7 @@ export interface GitSettingsSnapshot {
 export function defaultGitSettings(): GitSettingsSnapshot {
   return {
     commitMessageRoleByProfileId: {},
+    commitMessageCandidateModelIdByProfileId: {},
     autofetch: true,
     autofetchPeriod: 180,
   };
@@ -76,18 +80,43 @@ export class GitSettingsStore {
     return settings.commitMessageRoleByProfileId[profileId] ?? "auto";
   }
 
+  getCommitMessageCandidateModelIdForProfile(profileId: string): CommitMessageModelPreference {
+    const settings = this.get();
+    return settings.commitMessageCandidateModelIdByProfileId[profileId] ?? "auto";
+  }
+
   saveCommitMessageRoleForProfile(
     profileId: string,
     role: CommitMessageRolePreference,
-    availableRoles: ReadonlySet<RuntimeAgentRole>,
+    availableRoles: ReadonlySet<string>,
   ): GitSettingsSnapshot {
     const settings = this.get();
     const nextRole =
       role === "auto" || availableRoles.has(role) ? role : ("auto" as const);
     return this.save({
+      ...settings,
       commitMessageRoleByProfileId: {
         ...settings.commitMessageRoleByProfileId,
         [profileId]: nextRole,
+      },
+    });
+  }
+
+  saveCommitMessageCandidateModelIdForProfile(
+    profileId: string,
+    candidateModelId: CommitMessageModelPreference,
+    availableCandidateModelIds: ReadonlySet<string>,
+  ): GitSettingsSnapshot {
+    const settings = this.get();
+    const nextId =
+      candidateModelId === "auto" || availableCandidateModelIds.has(candidateModelId)
+        ? candidateModelId
+        : ("auto" as const);
+    return this.save({
+      ...settings,
+      commitMessageCandidateModelIdByProfileId: {
+        ...settings.commitMessageCandidateModelIdByProfileId,
+        [profileId]: nextId,
       },
     });
   }
@@ -98,12 +127,28 @@ export function normalizeGitSettingsSnapshot(value: unknown): GitSettingsSnapsho
     return defaultGitSettings();
   }
   const record = value as Record<string, unknown>;
-  const raw = record.commitMessageRoleByProfileId;
-  if (!raw || typeof raw !== "object") {
-    return defaultGitSettings();
+  const commitMessageRoleByProfileId = normalizeRolePreferenceMap(record.commitMessageRoleByProfileId);
+  const commitMessageCandidateModelIdByProfileId = normalizeCandidateModelPreferenceMap(
+    record.commitMessageCandidateModelIdByProfileId,
+  );
+  const instructions = normalizeCommitMessageInstructions(record.commitMessageInstructions);
+  const autofetch = normalizeAutofetch(record.autofetch);
+  const autofetchPeriod = normalizeAutofetchPeriod(record.autofetchPeriod);
+  return {
+    commitMessageRoleByProfileId,
+    commitMessageCandidateModelIdByProfileId,
+    ...(instructions && { commitMessageInstructions: instructions }),
+    autofetch,
+    autofetchPeriod,
+  };
+}
+
+function normalizeRolePreferenceMap(value: unknown): Record<string, CommitMessageRolePreference> {
+  if (!value || typeof value !== "object") {
+    return {};
   }
   const commitMessageRoleByProfileId: Record<string, CommitMessageRolePreference> = {};
-  for (const [profileId, role] of Object.entries(raw)) {
+  for (const [profileId, role] of Object.entries(value)) {
     if (typeof profileId !== "string" || !profileId.trim()) {
       continue;
     }
@@ -111,15 +156,26 @@ export function normalizeGitSettingsSnapshot(value: unknown): GitSettingsSnapsho
       commitMessageRoleByProfileId[profileId] = role === "auto" ? "auto" : role.trim();
     }
   }
-  const instructions = normalizeCommitMessageInstructions(record.commitMessageInstructions);
-  const autofetch = normalizeAutofetch(record.autofetch);
-  const autofetchPeriod = normalizeAutofetchPeriod(record.autofetchPeriod);
-  return {
-    commitMessageRoleByProfileId,
-    ...(instructions && { commitMessageInstructions: instructions }),
-    autofetch,
-    autofetchPeriod,
-  };
+  return commitMessageRoleByProfileId;
+}
+
+function normalizeCandidateModelPreferenceMap(
+  value: unknown,
+): Record<string, CommitMessageModelPreference> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const commitMessageCandidateModelIdByProfileId: Record<string, CommitMessageModelPreference> = {};
+  for (const [profileId, candidateModelId] of Object.entries(value)) {
+    if (typeof profileId !== "string" || !profileId.trim()) {
+      continue;
+    }
+    if (candidateModelId === "auto" || (typeof candidateModelId === "string" && candidateModelId.trim())) {
+      commitMessageCandidateModelIdByProfileId[profileId] =
+        candidateModelId === "auto" ? "auto" : candidateModelId.trim();
+    }
+  }
+  return commitMessageCandidateModelIdByProfileId;
 }
 
 function normalizeAutofetch(value: unknown): boolean {
@@ -155,8 +211,12 @@ export function isGitSettingsSnapshot(value: unknown): value is GitSettingsSnaps
     return false;
   }
   const record = value as Record<string, unknown>;
-  const raw = record.commitMessageRoleByProfileId;
-  if (!raw || typeof raw !== "object") {
+  const rawRoles = record.commitMessageRoleByProfileId;
+  const rawCandidates = record.commitMessageCandidateModelIdByProfileId;
+  if (rawRoles !== undefined && (typeof rawRoles !== "object" || rawRoles === null)) {
+    return false;
+  }
+  if (rawCandidates !== undefined && (typeof rawCandidates !== "object" || rawCandidates === null)) {
     return false;
   }
   return true;

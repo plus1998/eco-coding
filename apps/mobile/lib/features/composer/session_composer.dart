@@ -8,6 +8,7 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
+import 'composer_toolbar_icon.dart';
 
 class SessionComposer extends ConsumerStatefulWidget {
   const SessionComposer({
@@ -254,15 +255,12 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        IconButton(
+                        ComposerToolbarIconButton(
                           onPressed: widget.onPickImage,
-                          icon: const Icon(EcoIcons.add, size: 22),
                           tooltip: '添加图片',
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
+                          icon: ComposerToolbarIcon(
+                            icon: EcoIcons.add,
+                            color: ecoColors(context).textSecondary,
                           ),
                         ),
                         ComposerPlanModeIconButton(
@@ -292,22 +290,16 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         ),
                         const SizedBox(width: 2),
                         if (showSpeechInput) ...[
-                          IconButton(
+                          ComposerToolbarIconButton(
                             onPressed: _handleSpeechInput,
-                            icon: _speechBusy
-                                ? const Icon(
-                                    EcoIcons.stop,
-                                    size: 22,
-                                  )
-                                : const Icon(EcoIcons.mic, size: 22),
                             tooltip: _speechBusy ? '停止语音输入' : '语音输入',
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 36,
-                              minHeight: 36,
-                            ),
                             color: _speechBusy ? ecoColors(context).statusDenyText : null,
+                            icon: ComposerToolbarIcon(
+                              icon: _speechBusy ? EcoIcons.stop : EcoIcons.mic,
+                              color: _speechBusy
+                                  ? ecoColors(context).statusDenyText
+                                  : ecoColors(context).textSecondary,
+                            ),
                           ),
                           const SizedBox(width: 2),
                         ],
@@ -347,11 +339,11 @@ class _SendButton extends StatelessWidget {
         onTap: onSend,
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 36,
-          height: 36,
+          width: kComposerToolbarHitSize,
+          height: kComposerToolbarHitSize,
           child: Icon(
             EcoIcons.send,
-            size: 20,
+            size: composerToolbarGlyphSize(EcoIcons.send),
             color: enabled ? ecoColors(context).composerSendText : ecoColors(context).textMuted,
           ),
         ),
@@ -375,8 +367,8 @@ class _StopButton extends StatelessWidget {
         onTap: onStop,
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 36,
-          height: 36,
+          width: kComposerToolbarHitSize,
+          height: kComposerToolbarHitSize,
           child: Center(
             child: DecoratedBox(
               decoration: BoxDecoration(

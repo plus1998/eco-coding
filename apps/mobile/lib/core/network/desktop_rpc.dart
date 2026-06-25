@@ -409,10 +409,26 @@ class DesktopRpc {
     return WorkspaceDiffResult.fromJson(result);
   }
 
+  Future<GitListCommitModelOptionsResult> listCommitModelOptions({
+    required String profileId,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:list-commit-model-options',
+      [
+        {
+          'profileId': profileId,
+        },
+      ],
+    );
+    return GitListCommitModelOptionsResult.fromJson(result);
+  }
+
   Future<GitGenerateCommitMessageResult> generateCommitMessage({
     required String workspacePath,
     required String profileId,
     bool includeUnstaged = true,
+    String? candidateModelId,
   }) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
@@ -422,6 +438,8 @@ class DesktopRpc {
           'workspacePath': workspacePath,
           'profileId': profileId,
           'includeUnstaged': includeUnstaged,
+          if (candidateModelId != null && candidateModelId.isNotEmpty)
+            'candidateModelId': candidateModelId,
         },
       ],
       deadlineMs: 120000,
@@ -434,6 +452,7 @@ class DesktopRpc {
     required String profileId,
     bool includeUnstaged = true,
     String? message,
+    String? candidateModelId,
   }) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
@@ -444,6 +463,8 @@ class DesktopRpc {
           'profileId': profileId,
           'includeUnstaged': includeUnstaged,
           if (message != null && message.isNotEmpty) 'message': message,
+          if (candidateModelId != null && candidateModelId.isNotEmpty)
+            'candidateModelId': candidateModelId,
         },
       ],
       deadlineMs: 120000,

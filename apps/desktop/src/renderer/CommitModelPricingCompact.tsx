@@ -1,9 +1,9 @@
 import { formatRatePerMillion } from "@eco/runtime";
 import { ArrowDown, ArrowUp } from "lucide-react";
-import type { RoutePricingHint } from "../shared/ipc";
+import type { CommitModelPricingHint, RoutePricingHint } from "../shared/ipc";
 
 interface CommitModelPricingCompactProps {
-  hint?: RoutePricingHint | undefined;
+  hint?: RoutePricingHint | CommitModelPricingHint | undefined;
 }
 
 function formatCompactRate(usd: number): string {

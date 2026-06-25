@@ -106,6 +106,8 @@ import {
   type GitCommitResult,
   type GitGenerateCommitMessageRequest,
   type GitGenerateCommitMessageResult,
+  type GitListCommitModelOptionsRequest,
+  type GitListCommitModelOptionsResult,
   type GitListCommitsRequest,
   type GitListCommitsResult,
   type GitPushRequest,
@@ -344,6 +346,9 @@ const api = {
   },
   generateGitCommitMessage(request: GitGenerateCommitMessageRequest): Promise<GitGenerateCommitMessageResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGenerateCommitMessage, request);
+  },
+  listGitCommitModelOptions(request: GitListCommitModelOptionsRequest): Promise<GitListCommitModelOptionsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitListCommitModelOptions, request);
   },
   commitGitChanges(request: GitCommitRequest): Promise<GitCommitResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitCommit, request);

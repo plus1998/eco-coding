@@ -3,36 +3,37 @@ import {
   buildCommitModelOptions,
   commitModelDedupeKey,
   formatCommitModelDisplayName,
-  findCommitModelOptionForRole,
+  findCommitModelOptionForCandidateId,
 } from "../src/shared/commit-model-options";
-import type { RoutePricingHint, RuntimeRoleRouteConfig } from "../src/shared/ipc";
-
-const enabled = new Set(["explore", "coder", "reviewer"] as const);
+import type { CommitModelPricingHint } from "../src/shared/ipc";
+import type { CommitMessageCandidateModel } from "../src/shared/resolve-commit-message-route";
 
 describe("commit-model-options", () => {
-  it("dedupes by provider, model, and pricing", () => {
-    const routes: RuntimeRoleRouteConfig[] = [
-      { role: "explore", providerId: "p1", modelId: "claude-sonnet-4" },
-      { role: "coder", providerId: "p1", modelId: "claude-sonnet-4" },
-      { role: "reviewer", providerId: "p2", modelId: "gpt-4.1-mini" },
+  it("builds options from all provider candidate models", () => {
+    const candidates: CommitMessageCandidateModel[] = [
+      {
+        candidateModelId: "cand-1",
+        providerId: "p1",
+        providerName: "Anthropic",
+        modelId: "claude-sonnet-4",
+      },
+      {
+        candidateModelId: "cand-2",
+        providerId: "p2",
+        providerName: "OpenAI",
+        modelId: "gpt-4.1-mini",
+      },
     ];
-    const hints: RoutePricingHint[] = [
+    const hints: CommitModelPricingHint[] = [
       {
-        role: "explore",
+        candidateModelId: "cand-1",
         modelId: "claude-sonnet-4",
         providerName: "Anthropic",
         pricingResolved: true,
         rates: { inputPerM: 3, outputPerM: 15 },
       },
       {
-        role: "coder",
-        modelId: "claude-sonnet-4",
-        providerName: "Anthropic",
-        pricingResolved: true,
-        rates: { inputPerM: 3, outputPerM: 15 },
-      },
-      {
-        role: "reviewer",
+        candidateModelId: "cand-2",
         modelId: "gpt-4.1-mini",
         providerName: "OpenAI",
         pricingResolved: true,
@@ -40,17 +41,17 @@ describe("commit-model-options", () => {
       },
     ];
 
-    const options = buildCommitModelOptions(routes, hints, enabled);
+    const options = buildCommitModelOptions(candidates, hints);
     expect(options).toHaveLength(2);
     expect(options[0]?.modelLabel).toBe("gpt-4.1-mini");
     expect(options[1]?.modelLabel).toBe("claude-sonnet-4");
-    expect(findCommitModelOptionForRole(options, "coder", routes, hints)?.role).toBe("explore");
+    expect(findCommitModelOptionForCandidateId(options, "cand-2")?.candidateModelId).toBe("cand-2");
   });
 
   it("formats long model ids for display", () => {
     expect(formatCommitModelDisplayName("vendor/very-long-model-name-for-testing-only")).toMatch(/…/);
     expect(commitModelDedupeKey("Anthropic", "sonnet", {
-      role: "coder",
+      candidateModelId: "cand-1",
       modelId: "sonnet",
       providerName: "Anthropic",
       pricingResolved: true,

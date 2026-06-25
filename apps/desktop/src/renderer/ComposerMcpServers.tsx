@@ -6,6 +6,7 @@ import type { McpServerConfigView } from "../shared/ipc";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 interface ComposerMcpServersProps {
   servers: readonly McpServerConfigView[];
@@ -188,7 +189,7 @@ export function ComposerMcpServers({
           setOpen(true);
         }}
       >
-        <Plug size={15} aria-hidden className="composer-context-trigger-icon" />
+        <Plug size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className="composer-context-trigger-icon" />
         <span className="composer-context-trigger-label">{compact ? summary : "MCP"}</span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>

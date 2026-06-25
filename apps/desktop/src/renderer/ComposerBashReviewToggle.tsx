@@ -11,6 +11,10 @@ import {
 import { createPortal } from "react-dom";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import { BASH_REVIEW_UI, bashReviewUi } from "../shared/bash-review-ui";
+import {
+  COMPOSER_TOOLBAR_ICON_PX,
+  COMPOSER_TOOLBAR_ICON_STROKE,
+} from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
@@ -215,25 +219,25 @@ function ComposerBashReviewPopover({
 
 function BashReviewToolbarIcon({ mode }: { mode: BashReviewMode }) {
   if (mode === "always") {
-    return <Hand size={15} strokeWidth={1.75} />;
+    return <Hand size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
   }
   if (mode === "auto") {
-    return <Shield size={15} strokeWidth={1.75} />;
+    return <Shield size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
   }
-  return <ShieldAlert size={15} strokeWidth={1.75} />;
+  return <ShieldAlert size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
 }
 
 function BashReviewModeIcon({ mode }: { mode: BashReviewMode }) {
   if (mode === "always") {
-    return <Hand size={16} strokeWidth={1.75} />;
+    return <Hand size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
   }
   if (mode === "auto") {
     return (
       <span className="composer-bash-review-icon-stack">
-        <Shield size={16} strokeWidth={1.75} />
-        <Terminal size={8} strokeWidth={2.25} className="composer-bash-review-icon-badge" />
+        <Shield size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />
+        <Terminal size={7} strokeWidth={2.25} className="composer-bash-review-icon-badge" />
       </span>
     );
   }
-  return <ShieldAlert size={16} strokeWidth={1.75} />;
+  return <ShieldAlert size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
 }

@@ -19,6 +19,11 @@ void main() {
       expect(isHomeProjectPath('$homePath/', homePath), isTrue);
       expect(isHomeProjectPath(repoPath, homePath), isFalse);
     });
+
+    test('returns false when home path is empty', () {
+      expect(isHomeProjectPath('/', ''), isFalse);
+      expect(isHomeProjectPath(homePath, ''), isFalse);
+    });
   });
 
   group('collectProjectPaths', () {
@@ -62,6 +67,116 @@ void main() {
       expect(paths, contains('/Users/test/other'));
       expect(paths.length, 3);
     });
+
+    test('skips empty home path and root placeholder paths', () {
+      final paths = collectProjectPaths(
+        homeProjectPath: '',
+        currentWorkspace: null,
+        threads: [
+          ThreadSummary(
+            id: 't-root',
+            title: '',
+            prompt: '',
+            workspacePath: '/',
+            status: 'idle',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            message: '',
+          ),
+          ThreadSummary(
+            id: 't-repo',
+            title: '',
+            prompt: '',
+            workspacePath: repoPath,
+            status: 'idle',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            message: '',
+          ),
+        ],
+      );
+
+      expect(paths, [repoPath]);
+    });
+
+    test('deduplicates paths that normalize to the same value', () {
+      final paths = collectProjectPaths(
+        homeProjectPath: homePath,
+        currentWorkspace: null,
+        threads: [
+          ThreadSummary(
+            id: 't-home',
+            title: '',
+            prompt: '',
+            workspacePath: '$homePath/',
+            status: 'idle',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            message: '',
+          ),
+        ],
+      );
+
+      expect(paths, [homePath]);
+    });
+  });
+
+  group('isHomeProjectName', () {
+    test('matches home case-insensitively', () {
+      expect(isHomeProjectName('home'), isTrue);
+      expect(isHomeProjectName('Home'), isTrue);
+      expect(isHomeProjectName('HOME'), isTrue);
+      expect(isHomeProjectName('eco-coding'), isFalse);
+    });
+  });
+
+  group('isHomeProject', () {
+    test('matches by path when home path is known', () {
+      expect(
+        isHomeProject(
+          path: homePath,
+          homeProjectPath: homePath,
+          projectName: 'anything',
+        ),
+        isTrue,
+      );
+    });
+
+    test('matches by name when home path is unavailable', () {
+      expect(
+        isHomeProject(
+          path: homePath,
+          homeProjectPath: '',
+          projectName: 'home',
+        ),
+        isTrue,
+      );
+    });
+
+    test('matches basename home when name is unavailable', () {
+      expect(
+        isHomeProject(
+          path: homePath,
+          homeProjectPath: '',
+        ),
+        isTrue,
+      );
+    });
+
+    test('matches canonical .eco/projects/home path regardless of name', () {
+      const canonicalHome = '/Users/plus/.eco/projects/home';
+      expect(isEcoHomeProjectPath(canonicalHome), isTrue);
+      expect(isEcoHomeProjectPath('$canonicalHome/'), isTrue);
+      expect(
+        isHomeProject(
+          path: canonicalHome,
+          homeProjectPath: '',
+          projectName: 'misc',
+        ),
+        isTrue,
+      );
+      expect(isEcoHomeProjectPath(repoPath), isFalse);
+    });
   });
 
   group('buildEcoProject', () {
@@ -98,6 +213,39 @@ void main() {
       expect(project.name, 'eco-coding');
       expect(project.branch, 'main');
       expect(project.isHome, isFalse);
+    });
+
+    test('treats lowercase home name as Home when path is unknown', () {
+      final project = buildEcoProject(
+        path: homePath,
+        homeProjectPath: '',
+        inspected: const WorkspaceInfo(
+          path: homePath,
+          name: 'home',
+          isGitRepository: false,
+        ),
+        threadCount: 0,
+      );
+
+      expect(project.name, homeProjectDisplayName);
+      expect(project.isHome, isTrue);
+    });
+
+    test('treats canonical eco home path as Home when RPC path is missing', () {
+      const canonicalHome = '/Users/plus/.eco/projects/home';
+      final project = buildEcoProject(
+        path: canonicalHome,
+        homeProjectPath: '',
+        inspected: const WorkspaceInfo(
+          path: canonicalHome,
+          name: 'misc',
+          isGitRepository: false,
+        ),
+        threadCount: 1,
+      );
+
+      expect(project.name, homeProjectDisplayName);
+      expect(project.isHome, isTrue);
     });
   });
 

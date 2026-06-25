@@ -1,15 +1,18 @@
-import type { RoutePricingHint, RoutePricingRates, RuntimeAgentRole, RuntimeRoleRouteConfig, SubagentRole } from "./ipc";
-import { SUBAGENT_ROLES } from "./ipc";
-import { commitRoutePriceScore, listCommitMessageCandidateRoutes } from "./resolve-commit-message-route";
+import type { CommitModelPricingHint } from "./ipc";
+import {
+  commitModelPriceScore,
+  type CommitMessageCandidateModel,
+} from "./resolve-commit-message-route";
 
 export interface CommitModelOption {
   id: string;
-  role: RuntimeAgentRole;
+  candidateModelId: string;
+  providerId: string;
   providerName: string;
   modelId: string;
   modelLabel: string;
   providerColor: string;
-  hint?: RoutePricingHint;
+  hint?: CommitModelPricingHint;
 }
 
 const PROVIDER_ACCENT: Record<string, string> = {
@@ -28,7 +31,7 @@ const PROVIDER_ACCENT: Record<string, string> = {
   groq: "#F43F5E",
 };
 
-function pricingSignature(rates?: RoutePricingRates): string {
+function pricingSignature(rates?: CommitModelPricingHint["rates"]): string {
   if (!rates) {
     return "unresolved";
   }
@@ -43,17 +46,17 @@ function pricingSignature(rates?: RoutePricingRates): string {
 export function commitModelDedupeKey(
   providerName: string,
   modelId: string,
-  hint?: RoutePricingHint,
+  hint?: CommitModelPricingHint,
 ): string {
   return `${providerName.trim().toLowerCase()}::${modelId.trim()}::${pricingSignature(hint?.rates)}`;
 }
 
-export function formatCommitModelDisplayName(modelId: string): string {
-  const normalized = modelId.trim();
-  if (!normalized) {
+export function formatCommitModelDisplayName(modelId: string, displayName?: string): string {
+  const preferred = displayName?.trim() || modelId.trim();
+  if (!preferred) {
     return "未配置模型";
   }
-  const short = normalized.includes("/") ? (normalized.split("/").pop() ?? normalized) : normalized;
+  const short = preferred.includes("/") ? (preferred.split("/").pop() ?? preferred) : preferred;
   if (short.length <= 28) {
     return short;
   }
@@ -78,90 +81,39 @@ export function resolveProviderAccentColor(providerName: string): string {
   return `hsl(${hue} 58% 52%)`;
 }
 
-function pickRepresentativeRole(
-  routes: readonly RuntimeRoleRouteConfig[],
-  hints: readonly RoutePricingHint[],
-): RuntimeRoleRouteConfig {
-  const hintByRole = new Map(hints.map((hint) => [hint.role, hint]));
-  const sorted = [...routes].sort((left, right) => {
-    const scoreDelta =
-      commitRoutePriceScore(hintByRole.get(left.role)) - commitRoutePriceScore(hintByRole.get(right.role));
-    if (scoreDelta !== 0) {
-      return scoreDelta;
-    }
-    return SUBAGENT_ROLES.indexOf(left.role as SubagentRole) - SUBAGENT_ROLES.indexOf(right.role as SubagentRole);
-  });
-  const representative = sorted[0];
-  if (!representative) {
-    throw new Error("Commit model option group has no candidate routes.");
-  }
-  return representative;
-}
-
 export function buildCommitModelOptions(
-  routes: readonly RuntimeRoleRouteConfig[],
-  hints: readonly RoutePricingHint[],
-  enabledRoles: ReadonlySet<SubagentRole>,
+  candidates: readonly CommitMessageCandidateModel[],
+  hints: readonly CommitModelPricingHint[],
 ): CommitModelOption[] {
-  const candidates = listCommitMessageCandidateRoutes(routes, enabledRoles);
-  const hintByRole = new Map(hints.map((hint) => [hint.role, hint]));
-  const groups = new Map<
-    string,
-    { routes: RuntimeRoleRouteConfig[]; hint?: RoutePricingHint; providerName: string }
-  >();
-
-  for (const route of candidates) {
-    const hint = hintByRole.get(route.role);
-    const providerName = hint?.providerName?.trim() || route.providerId;
-    const key = commitModelDedupeKey(providerName, route.modelId, hint);
-    const existing = groups.get(key);
-    if (existing) {
-      existing.routes.push(route);
-      continue;
-    }
-    groups.set(key, {
-      routes: [route],
-      providerName,
-      ...(hint ? { hint } : {}),
-    });
-  }
-
-  const options = [...groups.entries()].map(([id, group]) => {
-    const representative = pickRepresentativeRole(group.routes, hints);
-    const hint = group.hint ?? hintByRole.get(representative.role);
-    const providerName = hint?.providerName?.trim() || group.providerName;
-    const modelId = hint?.modelId?.trim() || representative.modelId;
+  const hintById = new Map(hints.map((hint) => [hint.candidateModelId, hint]));
+  const options = candidates.map((candidate) => {
+    const hint = hintById.get(candidate.candidateModelId);
+    const providerName = hint?.providerName?.trim() || candidate.providerName;
+    const modelId = hint?.modelId?.trim() || candidate.modelId;
+    const id = commitModelDedupeKey(providerName, modelId, hint);
     return {
       id,
-      role: representative.role,
+      candidateModelId: candidate.candidateModelId,
+      providerId: candidate.providerId,
       providerName,
       modelId,
-      modelLabel: formatCommitModelDisplayName(modelId),
+      modelLabel: formatCommitModelDisplayName(modelId, candidate.displayName),
       providerColor: resolveProviderAccentColor(providerName),
       ...(hint && { hint }),
     };
   });
 
   return options.sort(
-    (left, right) => commitRoutePriceScore(left.hint) - commitRoutePriceScore(right.hint),
+    (left, right) => commitModelPriceScore(left.hint) - commitModelPriceScore(right.hint),
   );
 }
 
-export function findCommitModelOptionForRole(
+export function findCommitModelOptionForCandidateId(
   options: readonly CommitModelOption[],
-  role: RuntimeAgentRole | undefined,
-  routes: readonly RuntimeRoleRouteConfig[],
-  hints: readonly RoutePricingHint[],
+  candidateModelId: string | undefined,
 ): CommitModelOption | undefined {
-  if (!role) {
+  if (!candidateModelId) {
     return undefined;
   }
-  const route = routes.find((entry) => entry.role === role);
-  if (!route) {
-    return options.find((option) => option.role === role);
-  }
-  const hint = hints.find((entry) => entry.role === role);
-  const providerName = hint?.providerName?.trim() || route.providerId;
-  const key = commitModelDedupeKey(providerName, route.modelId, hint);
-  return options.find((option) => option.id === key) ?? options.find((option) => option.role === role);
+  return options.find((option) => option.candidateModelId === candidateModelId);
 }

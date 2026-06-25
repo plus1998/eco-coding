@@ -69,7 +69,7 @@ interface ThreadInfoPanelProps {
   onCheckoutGitBranch?: (branch: string) => void | Promise<void>;
   onCreateGitBranch?: (branch: string) => void | Promise<void>;
   onOpenGitSettings?: () => void;
-  onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
+  onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
   onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onPullSuccess?: () => void | Promise<void>;
@@ -745,7 +745,7 @@ export function ThreadInfoPanel({
   onCheckoutGitBranch,
   onCreateGitBranch,
   onOpenGitSettings,
-  onSaveCommitRolePreference,
+  onSaveCommitModelPreference,
   onCommitSuccess,
   onChangesDiffLoaded,
   onPullSuccess,
@@ -818,7 +818,7 @@ export function ThreadInfoPanel({
             {...(onCheckoutGitBranch && { onCheckoutGitBranch })}
             {...(onCreateGitBranch && { onCreateGitBranch })}
             {...(onOpenGitSettings && { onOpenGitSettings })}
-            {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
+            {...(onSaveCommitModelPreference && { onSaveCommitModelPreference })}
             onCommitSuccess={() => void handleCommitSuccess()}
             {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
             onPullSuccess={() => void handlePullSuccess()}

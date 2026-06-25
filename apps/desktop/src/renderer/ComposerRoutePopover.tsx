@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
 import { type AgentProfileSummary, listSelectableAgentProfileSummaries } from "./agent-profile-summary";
+import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 420;
 const VIEWPORT_MARGIN = 8;
@@ -330,7 +331,7 @@ export function ComposerRoutePopoverTrigger({
       aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换智能体配置"}
       aria-expanded={open}
     >
-      <LayoutTemplate size={15} aria-hidden className="composer-context-trigger-icon" />
+      <LayoutTemplate size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className="composer-context-trigger-icon" />
       <span
         className={
           profileName ? "composer-context-trigger-label" : "composer-context-trigger-label is-placeholder"

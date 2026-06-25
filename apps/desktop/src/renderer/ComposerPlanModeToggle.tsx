@@ -11,6 +11,10 @@ import {
 import { createPortal } from "react-dom";
 import type { SessionMode } from "../shared/session-mode";
 import { SESSION_MODE_UI, sessionModeUi } from "../shared/session-mode-ui";
+import {
+  COMPOSER_TOOLBAR_ICON_STROKE,
+  sessionModeIconPx,
+} from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
@@ -119,18 +123,17 @@ export function ComposerPlanModeToggle({
       type="button"
       className={className}
       disabled={saving}
-      aria-pressed={sessionMode !== "agent"}
       aria-label={current.title}
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
-      <SessionModeIcon mode={sessionMode} size={15} className="composer-toolbar-trigger-icon" />
+      <SessionModeIcon mode={sessionMode} className="composer-toolbar-trigger-icon" />
       <span className="composer-toolbar-trigger-label">{current.title}</span>
       <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
     <span className={className} title="当前对话进行中，工作模式不可修改">
-      <SessionModeIcon mode={sessionMode} size={15} className="composer-toolbar-trigger-icon" />
+      <SessionModeIcon mode={sessionMode} className="composer-toolbar-trigger-icon" />
       <span className="composer-toolbar-trigger-label">{current.title}</span>
     </span>
   );
@@ -189,7 +192,7 @@ function ComposerSessionModePopover({
               onClick={() => onSelect(option.value)}
             >
               <span className="composer-plan-mode-popover-icon" aria-hidden>
-                <SessionModeIcon mode={option.value} size={16} />
+                <SessionModeIcon mode={option.value} />
               </span>
               <span className="composer-codex-popover-body">
                 <span className="composer-codex-popover-item-title">{option.title}</span>
@@ -211,18 +214,19 @@ function ComposerSessionModePopover({
 
 function SessionModeIcon({
   mode,
-  size,
   className,
 }: {
   mode: SessionMode;
-  size: number;
   className?: string;
 }) {
+  const iconSize = sessionModeIconPx(mode);
   if (mode === "plan") {
-    return <List size={size} strokeWidth={1.75} aria-hidden className={className} />;
+    return <List size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />;
   }
   if (mode === "ask") {
-    return <MessageCircle size={size} strokeWidth={1.75} aria-hidden className={className} />;
+    return (
+      <MessageCircle size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />
+    );
   }
-  return <Infinity size={size} strokeWidth={1.75} aria-hidden className={className} />;
+  return <Infinity size={iconSize} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className={className} />;
 }

@@ -8235,7 +8235,14 @@ html[data-window-focused="true"] .codex-sidebar {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: var(--composer-toolbar-icon);
+}
+
+.composer-toolbar-trigger-icon svg {
+  flex-shrink: 0;
 }
 
 .composer-toolbar-trigger-label {
@@ -8278,7 +8285,14 @@ html[data-window-focused="true"] .codex-sidebar {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: var(--composer-context-icon);
+}
+
+.composer-context-trigger-icon svg {
+  flex-shrink: 0;
 }
 
 .composer-context-trigger-label {
@@ -8617,8 +8631,8 @@ html[data-window-focused="true"] .codex-sidebar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .composer-bash-review-icon-badge {

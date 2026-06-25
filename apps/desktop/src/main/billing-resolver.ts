@@ -21,6 +21,7 @@ import {
   type RouteCapabilityHint,
   type RouteManualSpec,
   type RoutePricingHint,
+  type CommitModelPricingHint,
   type ThinkingEffort,
 } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
@@ -466,6 +467,66 @@ export async function lookupRoutePricingHints(
         modelsDevMapping: route.modelsDevMapping,
         modelsDevLabel: formatModelsDevLabel(route.modelsDevMapping, lookup?.displayName),
       }),
+    });
+  }
+
+  return hints;
+}
+
+function candidateLookupFromModel(
+  provider: ProviderConfigSecret,
+  candidate: {
+    modelId: string;
+    modelsDevMapping?: RuntimeRoleRouteConfig["modelsDevMapping"];
+  },
+) {
+  return {
+    baseUrl: provider.baseUrl,
+    modelId: candidate.modelId,
+    ...(candidate.modelsDevMapping && { mapping: candidate.modelsDevMapping }),
+  };
+}
+
+export async function lookupCommitModelPricingHints(
+  cache: ModelsDevPricingCache,
+  providers: readonly ProviderConfigSecret[],
+  candidates: readonly {
+    candidateModelId: string;
+    providerId: string;
+    providerName: string;
+    modelId: string;
+    modelsDevMapping?: RuntimeRoleRouteConfig["modelsDevMapping"];
+    manualSpec?: RouteManualSpec;
+  }[],
+): Promise<CommitModelPricingHint[]> {
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  const hints: CommitModelPricingHint[] = [];
+
+  for (const candidate of candidates) {
+    const provider = providerById.get(candidate.providerId);
+    if (!provider) {
+      continue;
+    }
+    const lookup = await cache.lookupForRoute(candidateLookupFromModel(provider, candidate));
+    const catalogSummary = lookup ? buildModelPricingSummary(lookup) : null;
+    const effectivePricing = resolveEffectivePricingSummary(lookup, candidate.manualSpec);
+    hints.push({
+      candidateModelId: candidate.candidateModelId,
+      modelId: candidate.modelId,
+      providerName: provider.name,
+      ...(effectivePricing?.summary && {
+        rates: effectivePricing.summary,
+        ...(effectivePricing.pricingLabel && { pricingLabel: effectivePricing.pricingLabel }),
+      }),
+      ...(catalogSummary && {
+        catalogRates: {
+          inputPerM: catalogSummary.inputPerM,
+          outputPerM: catalogSummary.outputPerM,
+          ...(catalogSummary.cacheReadPerM !== undefined && { cacheReadPerM: catalogSummary.cacheReadPerM }),
+          ...(catalogSummary.cacheWritePerM !== undefined && { cacheWritePerM: catalogSummary.cacheWritePerM }),
+        },
+      }),
+      pricingResolved: effectivePricing?.pricingResolved ?? false,
     });
   }
 

@@ -1,8 +1,6 @@
-import { applyThinkingToMessagesBody } from "@eco/runtime";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import { buildProviderRequestBaseUrl } from "./provider-models";
 import type { CommitDiffContext } from "./git-operations";
-import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
   headersToLoggable,
   logUpstream,
@@ -12,7 +10,6 @@ import {
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const COMMIT_MESSAGE_TIMEOUT_MS = 30_000;
-const COMMIT_MESSAGE_MAX_TOKENS = 512;
 const COMMIT_MESSAGE_MAX_CHARS = 2_000;
 
 const COMMIT_REFUSAL_PATTERN =
@@ -28,6 +25,7 @@ export function buildCommitMessageUserMessage(
   const parts = [
     "请根据以下 Git 变更生成一条提交信息。",
     "使用 Conventional Commits 风格：type(scope): subject，必要时附 2-4 条简短 bullet body。",
+    `提交信息总长度不超过 ${COMMIT_MESSAGE_MAX_CHARS} 个字符。`,
     "只输出最终 commit message 正文，不要引号、不要 markdown 代码块、不要解释。",
     ...(trimmedInstructions
       ? ["", "## 提交指令", trimmedInstructions]
@@ -70,13 +68,13 @@ export function buildCommitMessageRequestBody(
     "你是 Git 提交信息生成器。",
     "根据 diff 概括变更意图，遵循 Conventional Commits。",
     "第一行是简短 subject；如需 body，用空行分隔后用 - 开头的 bullet。",
+    `提交信息总长度不超过 ${COMMIT_MESSAGE_MAX_CHARS} 个字符。`,
     "不要输出拒绝、道歉或能力限制类语句。",
     "不要输出思考过程，只输出 commit message 正文。",
     ...(trimmedInstructions ? [`遵循以下用户提交指令：${trimmedInstructions}`] : []),
   ];
   const body: Record<string, unknown> = {
     model: route.modelId,
-    max_tokens: COMMIT_MESSAGE_MAX_TOKENS,
     temperature: 0,
     system: systemParts.join(" "),
     messages: [
@@ -86,8 +84,9 @@ export function buildCommitMessageRequestBody(
       },
     ],
   };
-  // Commit messages are short; disable thinking so token budget goes to the final text.
-  applyThinkingToMessagesBody(body, ROUTE_TEST_THINKING_EFFORT);
+  if (route.maxOutputTokens !== undefined && route.maxOutputTokens > 0) {
+    body.max_tokens = route.maxOutputTokens;
+  }
   return body;
 }
 
@@ -201,7 +200,7 @@ export function sanitizeCommitMessage(message: string | undefined): string | und
     return undefined;
   }
   if (normalized.length > COMMIT_MESSAGE_MAX_CHARS) {
-    return `${normalized.slice(0, COMMIT_MESSAGE_MAX_CHARS - 1)}…`;
+    return normalized.slice(0, COMMIT_MESSAGE_MAX_CHARS);
   }
   return normalized;
 }
@@ -212,8 +211,15 @@ export function extractCommitMessageText(body: unknown): string | undefined {
   }
   const chunks: string[] = [];
   for (const block of body.content) {
-    if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
+    if (!isRecord(block)) {
+      continue;
+    }
+    if (block.type === "text" && typeof block.text === "string") {
       chunks.push(block.text);
+      continue;
+    }
+    if (block.type === "thinking" || block.type === "redacted_thinking") {
+      continue;
     }
   }
   return chunks.join("\n").trim() || undefined;

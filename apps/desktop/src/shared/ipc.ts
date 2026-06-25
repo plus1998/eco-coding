@@ -125,6 +125,7 @@ export const IPC_CHANNELS = {
   gitCheckoutBranch: "git:checkout-branch",
   gitCreateBranch: "git:create-branch",
   gitGenerateCommitMessage: "git:generate-commit-message",
+  gitListCommitModelOptions: "git:list-commit-model-options",
   gitCommit: "git:commit",
   gitPush: "git:push",
   gitPull: "git:pull",
@@ -400,14 +401,18 @@ export interface GitGenerateCommitMessageRequest {
   workspacePath: string;
   profileId: string;
   includeUnstaged: boolean;
+  /** @deprecated Use candidateModelId */
   role?: RuntimeAgentRole | "auto";
+  candidateModelId?: string | "auto";
 }
 
 export interface GitGenerateCommitMessageResult {
   message: string;
-  role: RuntimeAgentRole;
+  candidateModelId: string;
   modelId: string;
   providerName: string;
+  /** @deprecated Always "explore" for commit message generation */
+  role?: RuntimeAgentRole;
 }
 
 export interface GitCommitRequest {
@@ -415,15 +420,39 @@ export interface GitCommitRequest {
   profileId: string;
   includeUnstaged: boolean;
   message?: string;
+  /** @deprecated Use candidateModelId */
   role?: RuntimeAgentRole | "auto";
+  candidateModelId?: string | "auto";
+}
+
+export interface GitListCommitModelOptionsRequest {
+  profileId: string;
+}
+
+export interface GitListCommitModelOptionsResult {
+  options: CommitModelOptionView[];
+  savedCandidateModelId: string | "auto";
+}
+
+export interface CommitModelOptionView {
+  id: string;
+  candidateModelId: string;
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelLabel: string;
+  providerColor: string;
+  hint?: CommitModelPricingHint;
 }
 
 export interface GitCommitResult {
   commitSha: string;
   message: string;
   generated: boolean;
-  role?: RuntimeAgentRole;
+  candidateModelId?: string;
   modelId?: string;
+  /** @deprecated Always "explore" when generated */
+  role?: RuntimeAgentRole;
 }
 
 export interface GitPushRequest {
@@ -449,7 +478,9 @@ export interface GitPullResult {
 }
 
 export interface GitSettingsSnapshot {
+  /** @deprecated Migrated to commitMessageCandidateModelIdByProfileId */
   commitMessageRoleByProfileId: Record<string, RuntimeAgentRole | "auto">;
+  commitMessageCandidateModelIdByProfileId: Record<string, string | "auto">;
   /** 生成提交信息时附加给大模型的额外指令（格式、语言、长度等） */
   commitMessageInstructions?: string;
   /** 窗口聚焦且仓库空闲时周期性 git fetch，对齐 VS Code git.autofetch */
@@ -1284,6 +1315,16 @@ export interface RoutePricingHint {
   /** catalog 原始单价，用于手动覆盖面板的「自动」提示 */
   catalogRates?: RoutePricingRates;
   /** 完整说明，用于悬停提示 */
+  pricingLabel?: string;
+  pricingResolved: boolean;
+}
+
+export interface CommitModelPricingHint {
+  candidateModelId: string;
+  modelId: string;
+  providerName: string;
+  rates?: RoutePricingRates;
+  catalogRates?: RoutePricingRates;
   pricingLabel?: string;
   pricingResolved: boolean;
 }

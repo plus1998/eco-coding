@@ -273,6 +273,7 @@ import {
   getWorkspaceDiff,
   handleGitCommit,
   handleGitGenerateCommitMessage,
+  handleGitListCommitModelOptions,
   handleGitPull,
   handleGitPush,
   listGitCommits,
@@ -2033,6 +2034,25 @@ function registerIpcHandlers(): void {
       pricingCache,
       run: runGitCommand,
     });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.gitListCommitModelOptions, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid git list commit model options request.");
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.profileId !== "string" || !record.profileId.trim()) {
+      throw new Error("Invalid git list commit model options request.");
+    }
+    return handleGitListCommitModelOptions(
+      { profileId: record.profileId.trim() },
+      {
+        providerStore,
+        agentOrchestrationStore,
+        gitSettingsStore,
+        pricingCache,
+      },
+    );
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitCommit, async (payload: unknown) => {

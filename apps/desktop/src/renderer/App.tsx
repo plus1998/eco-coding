@@ -159,6 +159,7 @@ import {
 } from "./project-sidebar-order";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
+import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -268,7 +269,10 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
-const emptyGitSettings: GitSettingsSnapshot = { commitMessageRoleByProfileId: {} };
+const emptyGitSettings: GitSettingsSnapshot = {
+  commitMessageRoleByProfileId: {},
+  commitMessageCandidateModelIdByProfileId: {},
+};
 
 const threadInfoCompactQuery = "(max-width: 1100px)";
 
@@ -2507,14 +2511,15 @@ function App() {
     setGitSettings(saved);
   }
 
-  async function saveCommitMessageRolePreference(role: string | "auto") {
+  async function saveCommitMessageModelPreference(candidateModelId: string) {
     if (!window.eco || !selectedRuntimeProfileId) {
       return;
     }
     const next = {
-      commitMessageRoleByProfileId: {
-        ...gitSettings.commitMessageRoleByProfileId,
-        [selectedRuntimeProfileId]: role,
+      ...gitSettings,
+      commitMessageCandidateModelIdByProfileId: {
+        ...gitSettings.commitMessageCandidateModelIdByProfileId,
+        [selectedRuntimeProfileId]: candidateModelId,
       },
     };
     const saved = await window.eco.saveGitSettings(next);
@@ -3691,7 +3696,7 @@ function App() {
                 title="停止当前运行"
                 aria-label="停止"
               >
-                {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
+                {cancelBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <Square size={COMPOSER_SEND_ICON_PX - 2} />}
               </button>
             ) : null}
             <button
@@ -3702,7 +3707,7 @@ function App() {
               title={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
               aria-label={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
             >
-              {isStarting || followUpBusy ? <Activity size={18} /> : <ArrowUp size={18} />}
+              {isStarting || followUpBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <ArrowUp size={COMPOSER_SEND_ICON_PX} />}
             </button>
           </div>
           {error && (
@@ -3999,7 +4004,7 @@ function App() {
           routePricingHints={routePricingHints}
           subagentEnabled={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
           gitSettings={gitSettings}
-          onSaveCommitRolePreference={saveCommitMessageRolePreference}
+          onSaveCommitModelPreference={saveCommitMessageModelPreference}
           onCommitSuccess={() => void handleGitCommitSuccess()}
           onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
           onPullSuccess={() => void handleGitPullSuccess()}

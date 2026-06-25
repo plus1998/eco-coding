@@ -103,6 +103,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("git:generate-commit-message", "Generate commit message", "read", RPC_INVOKE, [
     objectArg(["workspacePath", "profileId", "includeUnstaged"]),
   ]),
+  command("git:list-commit-model-options", "List commit message model options", "read", RPC_INVOKE, [
+    objectArg(["profileId"]),
+  ]),
   command("git:commit", "Commit workspace changes", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "profileId", "includeUnstaged"]),
   ]),

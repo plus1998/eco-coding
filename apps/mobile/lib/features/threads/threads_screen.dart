@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/project_models.dart';
-import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
-import '../../core/utils/relative_time.dart';
-import '../../core/utils/thread_status.dart';
+import '../projects/project_list_widgets.dart';
 import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
 
@@ -19,7 +17,6 @@ class ThreadsScreen extends ConsumerWidget {
     final projectsAsync = ref.watch(displayProjectsProvider);
     final pinnedPaths = ref.watch(pinnedProjectPathsProvider);
     final threadsByProject = ref.watch(threadsByProjectProvider);
-    final selectedPath = ref.watch(selectedProjectPathProvider).valueOrNull;
     ref.watch(collapsedProjectPathsProvider);
     final collapsedNotifier = ref.read(collapsedProjectPathsProvider.notifier);
 
@@ -51,54 +48,56 @@ class ThreadsScreen extends ConsumerWidget {
         ],
       ),
       body: projectsAsync.when(
-              data: (projects) {
-                if (projects.isEmpty) {
-                  return const Center(child: Text('暂无项目，点击右上角打开项目'));
-                }
-                return RefreshIndicator(
-                  onRefresh: () => refreshProjectsAndThreads(ref),
-                  child: ListView.builder(
-                    itemCount: projects.length,
-                    itemBuilder: (context, index) {
-                      final project = projects[index];
-                      final threads = threadsByProject[
-                              normalizeProjectPath(project.path)] ??
-                          const [];
-                      final isSelected = selectedPath == project.path;
-                      final isCollapsed = collapsedNotifier.isProjectCollapsed(project);
+        data: (projects) {
+          if (projects.isEmpty) {
+            return const ProjectListEmptyState();
+          }
+          return RefreshIndicator(
+            onRefresh: () => refreshProjectsAndThreads(ref),
+            child: ListView.builder(
+              padding: const EdgeInsets.only(top: 8, bottom: 32),
+              itemCount: projects.length,
+              itemBuilder: (context, index) {
+                final project = projects[index];
+                final threads = threadsByProject[
+                        normalizeProjectPath(project.path)] ??
+                    const [];
+                final isCollapsed =
+                    collapsedNotifier.isProjectCollapsed(project);
 
-                      final isPinned = !project.isHome &&
-                          pinnedPaths.any(
-                            (path) =>
-                                normalizeProjectPath(path) ==
-                                normalizeProjectPath(project.path),
-                          );
+                final isPinned = !project.isHome &&
+                    pinnedPaths.any(
+                      (path) =>
+                          normalizeProjectPath(path) ==
+                          normalizeProjectPath(project.path),
+                    );
 
-                      return _ProjectSection(
-                        project: project,
-                        threads: threads,
-                        isSelected: isSelected,
-                        isCollapsed: isCollapsed,
-                        isPinned: isPinned,
-                        onHeaderTap: () => _onProjectHeaderTap(ref, project: project),
-                        onHeaderLongPress: project.isHome
-                            ? null
-                            : () => showProjectActionSheet(
-                                  context: context,
-                                  ref: ref,
-                                  project: project,
-                                ),
-                        onNewThread: () => _openNewThread(context, ref, project.path),
-                        onThreadTap: (thread) =>
-                            context.push('/threads/${thread.id}'),
-                      );
-                    },
-                  ),
+                return ProjectSectionCard(
+                  project: project,
+                  threads: threads,
+                  isCollapsed: isCollapsed,
+                  isPinned: isPinned,
+                  onHeaderTap: () =>
+                      _onProjectHeaderTap(ref, project: project),
+                  onHeaderLongPress: project.isHome
+                      ? null
+                      : () => showProjectActionSheet(
+                            context: context,
+                            ref: ref,
+                            project: project,
+                          ),
+                  onNewThread: () =>
+                      _openNewThread(context, ref, project.path),
+                  onThreadTap: (thread) =>
+                      context.push('/threads/${thread.id}'),
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text(error.toString())),
             ),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(child: Text(error.toString())),
+      ),
     );
   }
 
@@ -166,21 +165,27 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final eco = ecoColors(context);
     return Padding(
       padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('打开项目', style: Theme.of(context).textTheme.titleLarge),
+          Text('打开项目', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          const Text('输入 Desktop 上的项目绝对路径'),
-          const SizedBox(height: 12),
+          Text(
+            '输入 Desktop 上的项目绝对路径',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: eco.textMuted,
+                ),
+          ),
+          const SizedBox(height: 14),
           TextField(
             controller: _pathController,
             decoration: const InputDecoration(
@@ -189,7 +194,7 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
             ),
             autofocus: true,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           FilledButton(
             onPressed: () async {
               final path = _pathController.text.trim();
@@ -200,390 +205,6 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ProjectSection extends StatefulWidget {
-  const _ProjectSection({
-    required this.project,
-    required this.threads,
-    required this.isSelected,
-    required this.isCollapsed,
-    required this.isPinned,
-    required this.onHeaderTap,
-    this.onHeaderLongPress,
-    required this.onNewThread,
-    required this.onThreadTap,
-  });
-
-  final EcoProject project;
-  final List<ThreadSummary> threads;
-  final bool isSelected;
-  final bool isCollapsed;
-  final bool isPinned;
-  final VoidCallback onHeaderTap;
-  final VoidCallback? onHeaderLongPress;
-  final VoidCallback onNewThread;
-  final void Function(ThreadSummary thread) onThreadTap;
-
-  @override
-  State<_ProjectSection> createState() => _ProjectSectionState();
-}
-
-class _ProjectSectionState extends State<_ProjectSection> {
-  var _threadsExpanded = false;
-
-  @override
-  void didUpdateWidget(covariant _ProjectSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.project.path != widget.project.path ||
-        oldWidget.threads.length <= projectVisibleThreadLimit) {
-      _threadsExpanded = false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final project = widget.project;
-    final threads = widget.threads;
-    final isSelected = widget.isSelected;
-    final isCollapsed = widget.isCollapsed;
-    final slice = sliceProjectThreads(threads, expanded: _threadsExpanded);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Material(
-          color: isSelected ? ecoColors(context).navActive : Colors.transparent,
-          child: InkWell(
-            onTap: widget.onHeaderTap,
-            onLongPress: widget.onHeaderLongPress,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: ecoColors(context).borderSubtle),
-                  left: BorderSide(
-                    color: isSelected ? ecoColors(context).accent : Colors.transparent,
-                    width: 3,
-                  ),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Icon(
-                        isCollapsed
-                            ? EcoIcons.chevronRight
-                            : EcoIcons.expandDown,
-                        size: 20,
-                        color: ecoColors(context).textMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: widget.isPinned
-                          ? Icon(
-                              EcoIcons.pin,
-                              size: 14,
-                              color: isSelected
-                                  ? ecoColors(context).accentText
-                                  : ecoColors(context).textMuted,
-                            )
-                          : const SizedBox(width: 14),
-                    ),
-                    const SizedBox(width: 2),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Icon(
-                        project.isHome
-                            ? EcoIcons.home
-                            : isCollapsed
-                                ? EcoIcons.folder
-                                : EcoIcons.folderOpen,
-                        size: 18,
-                        color: isSelected
-                            ? ecoColors(context).textPrimary
-                            : ecoColors(context).textMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  project.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleSmall
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w500,
-                                        color: isSelected
-                                            ? ecoColors(context).textHeading
-                                            : ecoColors(context).textPrimary,
-                                      ),
-                                ),
-                              ),
-                              if (shouldShowProjectBranch(project.branch)) ...[
-                                const SizedBox(width: 8),
-                                _ProjectMetaChip(
-                                  icon: EcoIcons.branch,
-                                  label: project.branch!,
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            project.path,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: ecoColors(context).textMuted,
-                                  fontSize: 11,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '新建会话',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                      icon: Icon(
-                        EcoIcons.newThread,
-                        size: 18,
-                        color: isSelected
-                            ? ecoColors(context).textPrimary
-                            : ecoColors(context).textMuted,
-                      ),
-                      onPressed: widget.onNewThread,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (!isCollapsed)
-          ...slice.visible.map(
-            (thread) => _ThreadTile(
-              thread: thread,
-              onTap: () => widget.onThreadTap(thread),
-            ),
-          ),
-        if (!isCollapsed && slice.hasMore)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(44, 4, 16, 8),
-            child: TextButton(
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                alignment: Alignment.centerLeft,
-              ),
-              onPressed: () => setState(() => _threadsExpanded = true),
-              child: Text(
-                '展开显示',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).accentText,
-                    ),
-              ),
-            ),
-          ),
-        if (!isCollapsed && threads.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(44, 8, 16, 12),
-            child: Text(
-              '暂无会话',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: ecoColors(context).textMuted,
-                  ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ProjectMetaChip extends StatelessWidget {
-  const _ProjectMetaChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: ecoColors(context).composerPillBg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: ecoColors(context).composerPillBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: ecoColors(context).textMuted),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: ecoColors(context).textSecondary,
-                  fontSize: 10,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ThreadTile extends StatelessWidget {
-  const _ThreadTile({required this.thread, required this.onTap});
-
-  final ThreadSummary thread;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = thread.title;
-    final showStatus = hasThreadStatusIndicator(thread);
-    final timeLabel = formatRelativeTime(threadStatusTime(thread));
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: ecoColors(context).borderSubtle.withValues(alpha: 0.6)),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(44, 9, 12, 9),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                      if (thread.message.isNotEmpty && showStatus) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          thread.message,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: ecoColors(context).textMuted,
-                              ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _ThreadTrailingIndicator(
-                  thread: thread,
-                  timeLabel: timeLabel,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThreadTrailingIndicator extends StatelessWidget {
-  const _ThreadTrailingIndicator({
-    required this.thread,
-    required this.timeLabel,
-  });
-
-  final ThreadSummary thread;
-  final String timeLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    if (isThreadWaitingForApproval(thread)) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: eco.statusAllowBg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: eco.statusAllowBorder),
-        ),
-        child: Text(
-          '等待批准',
-          style: TextStyle(
-            color: eco.statusAllowText,
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      );
-    }
-
-    if (isThreadBusy(thread)) {
-      return SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: threadStatusDotColor('running', eco),
-        ),
-      );
-    }
-
-    if (thread.status == 'failed' || thread.status == 'blocked') {
-      return Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(
-          color: threadStatusDotColor(thread.status, eco),
-          shape: BoxShape.circle,
-        ),
-      );
-    }
-
-    if (timeLabel.isEmpty) return const SizedBox.shrink();
-
-    return Text(
-      timeLabel,
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: ecoColors(context).textMuted,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
     );
   }
 }

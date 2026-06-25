@@ -40,8 +40,42 @@ String normalizeProjectPath(String projectPath) {
 }
 
 bool isHomeProjectPath(String projectPath, String homeProjectPath) {
+  if (homeProjectPath.trim().isEmpty) return false;
   return normalizeProjectPath(projectPath) ==
       normalizeProjectPath(homeProjectPath);
+}
+
+bool isHomeProjectName(String name) {
+  return name.trim().toLowerCase() == 'home';
+}
+
+const ecoHomeProjectSuffix = '/.eco/projects/home';
+
+/// Matches Desktop [buildHomeProjectPath]: `{homedir}/.eco/projects/home`.
+bool isEcoHomeProjectPath(String projectPath) {
+  return normalizeProjectPath(projectPath).endsWith(ecoHomeProjectSuffix);
+}
+
+bool isHomeProject({
+  required String path,
+  required String homeProjectPath,
+  String? projectName,
+}) {
+  if (isHomeProjectPath(path, homeProjectPath)) return true;
+  if (isEcoHomeProjectPath(path)) return true;
+  final name = projectName ?? _basename(path);
+  return isHomeProjectName(name);
+}
+
+bool isCollectableProjectPath(String projectPath) {
+  final trimmed = projectPath.trim();
+  if (trimmed.isEmpty) return false;
+  return normalizeProjectPath(trimmed) != '/';
+}
+
+void _addCollectableProjectPath(Set<String> paths, String projectPath) {
+  if (!isCollectableProjectPath(projectPath)) return;
+  paths.add(normalizeProjectPath(projectPath));
 }
 
 /// Collect distinct workspace paths: home, current workspace, and thread paths.
@@ -50,14 +84,13 @@ List<String> collectProjectPaths({
   WorkspaceInfo? currentWorkspace,
   required List<ThreadSummary> threads,
 }) {
-  final paths = <String>{homeProjectPath};
-  if (currentWorkspace != null && currentWorkspace.path.isNotEmpty) {
-    paths.add(currentWorkspace.path);
+  final paths = <String>{};
+  _addCollectableProjectPath(paths, homeProjectPath);
+  if (currentWorkspace != null) {
+    _addCollectableProjectPath(paths, currentWorkspace.path);
   }
   for (final thread in threads) {
-    if (thread.workspacePath.isNotEmpty) {
-      paths.add(thread.workspacePath);
-    }
+    _addCollectableProjectPath(paths, thread.workspacePath);
   }
   return paths.toList();
 }
@@ -68,10 +101,15 @@ EcoProject buildEcoProject({
   WorkspaceInfo? inspected,
   required int threadCount,
 }) {
-  final isHome = isHomeProjectPath(path, homeProjectPath);
+  final resolvedName = inspected?.name ?? _basename(path);
+  final isHome = isHomeProject(
+    path: path,
+    homeProjectPath: homeProjectPath,
+    projectName: resolvedName,
+  );
   return EcoProject(
     path: path,
-    name: isHome ? homeProjectDisplayName : (inspected?.name ?? _basename(path)),
+    name: isHome ? homeProjectDisplayName : resolvedName,
     branch: inspected?.branch,
     isHome: isHome,
     threadCount: threadCount,

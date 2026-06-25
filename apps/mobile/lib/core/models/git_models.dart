@@ -135,23 +135,111 @@ class WorkspaceDiffResult {
 class GitGenerateCommitMessageResult {
   const GitGenerateCommitMessageResult({
     required this.message,
-    required this.role,
+    required this.candidateModelId,
     required this.modelId,
     required this.providerName,
+    this.role,
   });
 
   factory GitGenerateCommitMessageResult.fromJson(Map<String, dynamic> json) =>
       GitGenerateCommitMessageResult(
         message: json['message'] as String? ?? '',
-        role: json['role'] as String? ?? '',
+        candidateModelId: json['candidateModelId'] as String? ?? '',
         modelId: json['modelId'] as String? ?? '',
         providerName: json['providerName'] as String? ?? '',
+        role: json['role'] as String?,
       );
 
   final String message;
-  final String role;
+  final String candidateModelId;
   final String modelId;
   final String providerName;
+  final String? role;
+}
+
+class CommitModelPricingHint {
+  const CommitModelPricingHint({
+    required this.candidateModelId,
+    required this.modelId,
+    required this.providerName,
+    required this.pricingResolved,
+    this.pricingLabel,
+    this.inputPerM,
+    this.outputPerM,
+  });
+
+  factory CommitModelPricingHint.fromJson(Map<String, dynamic> json) =>
+      CommitModelPricingHint(
+        candidateModelId: json['candidateModelId'] as String? ?? '',
+        modelId: json['modelId'] as String? ?? '',
+        providerName: json['providerName'] as String? ?? '',
+        pricingResolved: json['pricingResolved'] as bool? ?? false,
+        pricingLabel: json['pricingLabel'] as String?,
+        inputPerM: (json['rates'] as Map<String, dynamic>?)?['inputPerM'] as num?,
+        outputPerM: (json['rates'] as Map<String, dynamic>?)?['outputPerM'] as num?,
+      );
+
+  final String candidateModelId;
+  final String modelId;
+  final String providerName;
+  final bool pricingResolved;
+  final String? pricingLabel;
+  final num? inputPerM;
+  final num? outputPerM;
+}
+
+class CommitModelOptionView {
+  const CommitModelOptionView({
+    required this.id,
+    required this.candidateModelId,
+    required this.providerId,
+    required this.providerName,
+    required this.modelId,
+    required this.modelLabel,
+    required this.providerColor,
+    this.hint,
+  });
+
+  factory CommitModelOptionView.fromJson(Map<String, dynamic> json) =>
+      CommitModelOptionView(
+        id: json['id'] as String? ?? '',
+        candidateModelId: json['candidateModelId'] as String? ?? '',
+        providerId: json['providerId'] as String? ?? '',
+        providerName: json['providerName'] as String? ?? '',
+        modelId: json['modelId'] as String? ?? '',
+        modelLabel: json['modelLabel'] as String? ?? '',
+        providerColor: json['providerColor'] as String? ?? '',
+        hint: json['hint'] == null
+            ? null
+            : CommitModelPricingHint.fromJson(json['hint'] as Map<String, dynamic>),
+      );
+
+  final String id;
+  final String candidateModelId;
+  final String providerId;
+  final String providerName;
+  final String modelId;
+  final String modelLabel;
+  final String providerColor;
+  final CommitModelPricingHint? hint;
+}
+
+class GitListCommitModelOptionsResult {
+  const GitListCommitModelOptionsResult({
+    required this.options,
+    required this.savedCandidateModelId,
+  });
+
+  factory GitListCommitModelOptionsResult.fromJson(Map<String, dynamic> json) =>
+      GitListCommitModelOptionsResult(
+        options: (json['options'] as List<dynamic>? ?? [])
+            .map((entry) => CommitModelOptionView.fromJson(entry as Map<String, dynamic>))
+            .toList(),
+        savedCandidateModelId: json['savedCandidateModelId'] as String? ?? 'auto',
+      );
+
+  final List<CommitModelOptionView> options;
+  final String savedCandidateModelId;
 }
 
 class GitCommitResult {
