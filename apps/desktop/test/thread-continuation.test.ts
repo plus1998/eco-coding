@@ -69,7 +69,6 @@ test("legacy continuation uses full prompt injection without SDK session", () =>
 test("awaiting plan follow-up routes to plan revision without resume", () => {
   expect(
     resolveThreadContinueAction({
-      intent: "coding",
       followUp: "把测试覆盖也加进计划",
       canResume: false,
       planModeEnabled: true,
@@ -87,7 +86,6 @@ test("awaiting plan follow-up routes to plan revision without resume", () => {
 test("awaiting plan follow-up still revises plan after ExitPlanMode disables plan mode", () => {
   expect(
     resolveThreadContinueAction({
-      intent: "coding",
       followUp: "把测试覆盖也加进计划",
       canResume: false,
       planModeEnabled: false,
@@ -105,7 +103,6 @@ test("awaiting plan follow-up still revises plan after ExitPlanMode disables pla
 test("interrupted execution follow-up resumes sdk when possible", () => {
   expect(
     resolveThreadContinueAction({
-      intent: "coding",
       followUp: "继续，并补上失败用例",
       canResume: true,
       planModeEnabled: true,
@@ -120,11 +117,10 @@ test("interrupted execution follow-up resumes sdk when possible", () => {
   ).toEqual({ kind: "resume_execution" });
 });
 
-test("resolveThreadContinueAction routes ask session mode to question continuation", () => {
+test("resolveThreadContinueAction routes ask session mode to ask continuation", () => {
   expect(
     resolveThreadContinueAction({
       sessionMode: "ask",
-      intent: "coding",
       followUp: "实现登录功能",
       canResume: true,
       planModeEnabled: false,
@@ -136,7 +132,25 @@ test("resolveThreadContinueAction routes ask session mode to question continuati
       threadStatus: "completed",
       activityLines: [],
     }),
-  ).toEqual({ kind: "question", resume: true });
+  ).toEqual({ kind: "resume_sdk", phase: "ask", resume: true });
+});
+
+test("agent session mode keeps agent routing on question-shaped follow-up", () => {
+  expect(
+    resolveThreadContinueAction({
+      sessionMode: "agent",
+      followUp: "这个项目的 runtime 是怎么工作的？",
+      canResume: true,
+      planModeEnabled: false,
+      hasPendingPlan: false,
+      hasApprovedPlanOnDisk: false,
+      enteredExecutionPhase: false,
+      hasCoderTodos: false,
+      hasAppliedDiff: false,
+      threadStatus: "completed",
+      activityLines: [],
+    }),
+  ).toEqual({ kind: "resume_sdk", phase: "execution" });
 });
 
 test("pickDisplayContextTokens prefers planner", () => {

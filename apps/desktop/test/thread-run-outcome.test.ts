@@ -82,6 +82,7 @@ test("resolveContinuationRunOutcome keeps mode-specific success decisions", () =
 
 test("runAttemptPhaseFromThreadMode and isRequestAttemptAborted expose shared run helpers", () => {
   expect(runAttemptPhaseFromThreadMode("question")).toBe("question");
+  expect(runAttemptPhaseFromThreadMode("ask")).toBe("question");
   expect(runAttemptPhaseFromThreadMode("planning")).toBe("planning");
   expect(runAttemptPhaseFromThreadMode("execution")).toBe("execution");
   expect(isRequestAttemptAborted({ ok: false, reason: "stop", aborted: true })).toBe(true);

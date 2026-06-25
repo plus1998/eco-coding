@@ -52,7 +52,6 @@ test("threadEnteredExecutionPhase uses plan_cleared and approved file signals", 
 test("resolveContinuePhase returns execution after plan_cleared", () => {
   expect(
     resolveContinuePhase({
-      intent: "coding",
       threadStatus: "idle",
       hasPendingPlan: false,
       hasApprovedPlanOnDisk: true,
@@ -66,7 +65,6 @@ test("resolveContinuePhase returns execution after plan_cleared", () => {
 
 test("awaiting_plan with pending after execution failure resumes execution not replan", () => {
   const action = resolveThreadContinueAction({
-    intent: "coding",
     followUp: "继续",
     canResume: true,
     planModeEnabled: true,
@@ -79,12 +77,11 @@ test("awaiting_plan with pending after execution failure resumes execution not r
     activityLines: [{ role: "system", message: "计划已进入执行阶段。" }],
   });
   expect(action).toEqual({ kind: "resume_execution" });
-  expect(continueStatusMessage(action, "coding")).toBe("正在按计划执行…");
+  expect(continueStatusMessage(action)).toBe("正在按计划执行…");
 });
 
 test("awaiting_plan with pending before approval continues planning session", () => {
   const action = resolveThreadContinueAction({
-    intent: "coding",
     followUp: "继续",
     canResume: true,
     planModeEnabled: true,
@@ -101,7 +98,6 @@ test("awaiting_plan with pending before approval continues planning session", ()
 
 test("canResume false with approved snapshot resumes execution", () => {
   const action = resolveThreadContinueAction({
-    intent: "coding",
     followUp: "继续",
     canResume: false,
     planModeEnabled: true,
@@ -118,7 +114,6 @@ test("canResume false with approved snapshot resumes execution", () => {
 
 test("explicit replan uses sdk planning when session resumable", () => {
   const action = resolveThreadContinueAction({
-    intent: "coding",
     followUp: "重新规划",
     canResume: true,
     planModeEnabled: true,
@@ -135,7 +130,6 @@ test("explicit replan uses sdk planning when session resumable", () => {
 
 test("continue with extra tests stays on execution route", () => {
   const action = resolveThreadContinueAction({
-    intent: "coding",
     followUp: "继续，但加测试",
     canResume: true,
     planModeEnabled: true,
@@ -152,7 +146,6 @@ test("continue with extra tests stays on execution route", () => {
 
 test("plan mode off without resumable session starts fresh autonomous handling", () => {
   const action = resolveThreadContinueAction({
-    intent: "coding",
     followUp: "继续",
     canResume: false,
     planModeEnabled: false,
@@ -165,7 +158,7 @@ test("plan mode off without resumable session starts fresh autonomous handling",
     activityLines: [],
   });
   expect(action).toEqual({ kind: "fresh_autonomous" });
-  expect(continueStatusMessage(action, "coding")).toBe("正在交给主代理处理…");
+  expect(continueStatusMessage(action)).toBe("正在交给主代理处理…");
 });
 
 test("parseApprovedPlanDocument round-trips snapshot sections", () => {

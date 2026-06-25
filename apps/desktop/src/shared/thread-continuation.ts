@@ -17,15 +17,13 @@ export function isContinuableThreadStatus(status: ThreadStatus): status is Conti
 
 export type ThreadContinueAction =
   | { kind: "resume_execution" }
-  | { kind: "resume_sdk"; phase: "planning" | "execution" | "question" }
+  | { kind: "resume_sdk"; phase: "planning" | "execution" | "ask"; resume?: boolean }
   | { kind: "revise_plan" }
   | { kind: "fresh_plan" }
-  | { kind: "fresh_autonomous" }
-  | { kind: "question"; resume: boolean };
+  | { kind: "fresh_autonomous" };
 
 export interface ThreadContinueRoutingInput {
   sessionMode?: import("./session-mode").SessionMode;
-  intent: "question" | "coding";
   followUp: string;
   canResume: boolean;
   planModeEnabled: boolean;
@@ -66,7 +64,6 @@ export function userRequestsPlanRevision(followUp: string): boolean {
 }
 
 export interface ContinuePhaseInput {
-  intent: "question" | "coding";
   threadStatus: ThreadStatus;
   hasPendingPlan: boolean;
   hasApprovedPlanOnDisk: boolean;
@@ -84,9 +81,7 @@ const EXECUTION_ACTIVITY_MARKERS = [
 ] as const;
 
 /** Whether the thread has entered phase-2 execution (approved plan or coder work). */
-export function threadEnteredExecutionPhase(
-  input: Omit<ContinuePhaseInput, "intent">,
-): boolean {
+export function threadEnteredExecutionPhase(input: ContinuePhaseInput): boolean {
   if (input.hasApprovedPlanOnDisk || input.hasCoderTodos || input.hasAppliedDiff) {
     return true;
   }
@@ -98,10 +93,7 @@ export function threadEnteredExecutionPhase(
   );
 }
 
-export function resolveContinuePhase(input: ContinuePhaseInput): "planning" | "execution" | "question" {
-  if (input.intent === "question") {
-    return "question";
-  }
+export function resolveContinuePhase(input: ContinuePhaseInput): "planning" | "execution" {
   if (input.hasAppliedDiff || input.threadStatus === "completed") {
     return "execution";
   }
@@ -118,11 +110,7 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
   const wantsRevision = userRequestsPlanRevision(input.followUp);
 
   if (input.sessionMode === "ask") {
-    return { kind: "question", resume: input.canResume };
-  }
-
-  if (input.intent === "question") {
-    return { kind: "question", resume: input.canResume };
+    return { kind: "resume_sdk", phase: "ask", resume: input.canResume };
   }
 
   if (!input.planModeEnabled) {
@@ -155,7 +143,6 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
 
   if (input.canResume) {
     const phase = resolveContinuePhase({
-      intent: input.intent,
       threadStatus: input.threadStatus,
       hasPendingPlan: input.hasPendingPlan,
       hasApprovedPlanOnDisk: input.hasApprovedPlanOnDisk,
@@ -178,20 +165,14 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
   return { kind: "fresh_plan" };
 }
 
-export function continueStatusMessage(
-  action: ThreadContinueAction,
-  intent: "question" | "coding",
-): string {
-  if (action.kind === "question") {
+export function continueStatusMessage(action: ThreadContinueAction): string {
+  if (action.kind === "resume_sdk" && action.phase === "ask") {
     return "正在回答…";
   }
   if (action.kind === "resume_execution") {
     return "正在按计划执行…";
   }
   if (action.kind === "resume_sdk") {
-    if (action.phase === "question") {
-      return "正在回答…";
-    }
     if (action.phase === "execution") {
       return "正在继续执行…";
     }
@@ -201,7 +182,7 @@ export function continueStatusMessage(
     return "正在交给主代理处理…";
   }
   if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
-    return intent === "question" ? "正在回答…" : "正在分析并制定计划…";
+    return "正在分析并制定计划…";
   }
   return "正在分析并制定计划…";
 }

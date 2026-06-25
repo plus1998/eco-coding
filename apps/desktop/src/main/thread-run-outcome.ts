@@ -1,7 +1,7 @@
 import type { RequestAttemptResult } from "./request-retry";
 import type { RunAttemptPhase } from "./usage-ledger";
 
-export type ThreadRunMode = "planning" | "execution" | "question";
+export type ThreadRunMode = "planning" | "execution" | "question" | "ask";
 
 export type ThreadRunOutcomeDecision =
   | { kind: "cancelled"; reason: string }
@@ -15,7 +15,7 @@ export function isRequestAttemptAborted(result: RequestAttemptResult): boolean {
 }
 
 export function runAttemptPhaseFromThreadMode(mode: ThreadRunMode): RunAttemptPhase {
-  return mode;
+  return mode === "ask" ? "question" : mode;
 }
 
 export function resolveQuestionRunOutcome(result: RequestAttemptResult): ThreadRunOutcomeDecision {
@@ -74,7 +74,7 @@ export function resolveContinuationRunOutcome(
   if (input.mode === "execution") {
     return { kind: "completed" };
   }
-  if (input.mode === "question") {
+  if (input.mode === "question" || input.mode === "ask") {
     return { kind: "completed", message: "回答完成。" };
   }
   if (input.planningPlanCaptured) {

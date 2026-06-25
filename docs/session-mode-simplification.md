@@ -235,8 +235,8 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 
 **验收**
 
-- [ ] 代码库无 `classifyThreadIntent` 引用
-- [ ] 续聊测试覆盖：Ask 线程 follow-up 仍为 Ask
+- [x] 代码库无 `classifyThreadIntent` 引用
+- [x] 续聊测试覆盖：Ask 线程 follow-up 仍为 Ask
 - [ ] README Thread modes 表更新（Phase 5 亦可）
 
 ---
@@ -293,7 +293,7 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 ### Desktop Main
 
 - `apps/desktop/src/main/index.ts` — threadStart、续聊、retry、runQuestionThread
-- `apps/desktop/src/main/thread-intent.ts` — **待删**
+- `apps/desktop/src/main/thread-intent.ts` — **已删**
 - `apps/desktop/src/main/thread-run-outcome.ts` — question outcome → ask outcome
 
 ### Desktop Shared

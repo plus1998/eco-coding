@@ -340,7 +340,6 @@ import {
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
-import { classifyThreadIntent } from "./thread-intent";
 import {
   flushThreadMetrics,
   persistThreadMetrics,
@@ -1142,16 +1141,6 @@ function threadSessionMode(threadId: string): import("../shared/session-mode").S
     return resolveSessionMode(config);
   }
   return resolveSessionMode(workflowSettingsStore.get());
-}
-
-function shouldRouteThreadToAsk(sessionMode: import("../shared/session-mode").SessionMode, prompt: string): boolean {
-  if (sessionMode === "ask") {
-    return true;
-  }
-  if (sessionMode === "plan") {
-    return false;
-  }
-  return classifyThreadIntent(prompt) === "question";
 }
 
 function disableThreadPlanMode(threadId: string): ThreadRuntimeConfig | undefined {
@@ -2258,7 +2247,7 @@ function registerIpcHandlers(): void {
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
     const sessionMode = resolveSessionMode(threadRuntime);
-    const routeAsk = shouldRouteThreadToAsk(sessionMode, prompt);
+    const routeAsk = sessionMode === "ask";
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
     const now = new Date().toISOString();
     const thread: ThreadSummary = {
@@ -3503,8 +3492,6 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     conversationStore.getThread(input.threadId) ?? activeThread,
   );
   const sessionMode = threadSessionMode(input.threadId);
-  const intent = classifyThreadIntent(prompt);
-  const routingIntent = sessionMode === "ask" ? "question" : intent;
   const activityLines = conversationStore.listActivityLines(input.threadId);
   const compactHandoff = conversationStore.getCompactHandoff(input.threadId);
   const sdkSession = conversationStore.getSdkSession(input.threadId);
@@ -3542,7 +3529,6 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
 
   const continueAction = resolveThreadContinueAction({
     sessionMode,
-    intent,
     followUp: prompt,
     canResume,
     planModeEnabled: threadPlanModeEnabled(input.threadId),
@@ -3560,7 +3546,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     : continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
       ? prompt
       : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
-  const statusMessage = continueStatusMessage(continueAction, routingIntent);
+  const statusMessage = continueStatusMessage(continueAction);
 
   updateThread(input.threadId, {
     status: "running",
@@ -3813,7 +3799,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
 
   const workspace = await ensureWorkspace(thread.workspacePath);
   const sessionMode = threadSessionMode(threadId);
-  const routeAsk = shouldRouteThreadToAsk(sessionMode, prompt);
+  const routeAsk = sessionMode === "ask";
   const activityLines = conversationStore.listActivityLines(threadId);
   conversationStore.clearCoderTodos(threadId);
   const runningMessage = routeAsk ? "正在重试回答…" : "正在重试分析并制定计划…";
@@ -4696,17 +4682,37 @@ async function dispatchThreadContinueAction(input: {
     return;
   }
 
-  if (action.kind === "question") {
-    void runAskThread(
-      updated,
-      workspace,
-      runtimeConfig,
-      agentPrompt,
-      cwd !== workspace.path ? cwd : undefined,
-      action.resume ? (resumeOverride ?? resolveResumeOptions(threadId, cwd)) : undefined,
-      attachments,
-      roleRoutes,
-    );
+  if (action.kind === "resume_sdk" && action.phase === "ask") {
+    const resume =
+      action.resume !== false ? (resumeOverride ?? resolveResumeOptions(threadId, cwd)) : undefined;
+    if (resume) {
+      void (async () => {
+        await ensureContextHeadroom(threadId, cwd, new AbortController().signal);
+        await runThreadContinuation(
+          updated,
+          workspace,
+          runtimeConfig,
+          agentPrompt,
+          "ask",
+          existingWorktreePlan,
+          attachments,
+          roleRoutes,
+          undefined,
+          resume,
+        );
+      })();
+    } else {
+      void runAskThread(
+        updated,
+        workspace,
+        runtimeConfig,
+        agentPrompt,
+        cwd !== workspace.path ? cwd : undefined,
+        undefined,
+        attachments,
+        roleRoutes,
+      );
+    }
     return;
   }
 
@@ -4774,7 +4780,7 @@ async function runThreadContinuation(
   workspace: WorkspaceInfo,
   runtimeConfig: RuntimeConfig,
   followUp: string,
-  mode: "planning" | "execution" | "question",
+  mode: "planning" | "execution" | "ask",
   existingWorktreePlan?: WorktreePlan,
   attachments?: PromptImageAttachment[],
   routesOverride?: readonly RuntimeRoleRouteConfig[],
@@ -4805,7 +4811,7 @@ async function runThreadContinuation(
   const taskRunHooks = taskRuntime?.taskRunHooks;
 
   try {
-    if (mode !== "question") {
+    if (mode !== "ask") {
       const resolved = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
       worktreePlan = resolved.worktreePlan;
       cwd = resolved.cwd;
@@ -4860,8 +4866,7 @@ async function runThreadContinuation(
               if (!driver.runContinuation) {
                 throw new Error("Runtime driver does not support session continuation.");
               }
-              const continuationMode = mode === "question" ? "ask" : mode;
-              eventStream = driver.runContinuation(runInput, continuationMode, planningContext);
+              eventStream = driver.runContinuation(runInput, mode, planningContext);
 
               return await consumeSdkRunEvents({
                 events: eventStream,
@@ -4921,7 +4926,7 @@ async function runThreadContinuation(
             await completeCodingThreadRun(thread.id, worktreePlan);
             return;
           }
-          if (mode === "question") {
+          if (mode === "ask") {
             updateThread(thread.id, {
               status: "completed",
               message: message ?? "回答完成。",
