@@ -1,38 +1,23 @@
 /** Short orchestrator rules for autonomous mode — routing lives in subagent descriptions. */
 
-import { formatMandatoryEcoSubagentRule, formatAvailableSubagentsLine } from "./subagent-pipeline.js";
 import {
   defaultSubagentAvailability,
   type SubagentAvailability,
 } from "../subagent-availability.js";
 
 export interface BuildAutonomousOrchestratorAppendOptions {
-  /** Profile roster already lists Eco subagents with routing hints. */
+  /** @deprecated Roster and agents schema carry routing hints; kept for API compatibility. */
   hasProfileRoster?: boolean;
+  /** @deprecated Plan agent allowance is enforced via hooks and allowedTools. */
   allowPlanAgent?: boolean;
 }
 
 export function buildAutonomousOrchestratorAppend(
-  availability: SubagentAvailability = defaultSubagentAvailability(),
-  options: BuildAutonomousOrchestratorAppendOptions = {},
+  _availability: SubagentAvailability = defaultSubagentAvailability(),
+  _options: BuildAutonomousOrchestratorAppendOptions = {},
 ): string {
-  const delegationBlock = options.hasProfileRoster
-    ? formatMandatoryEcoSubagentRule({ allowPlanAgent: options.allowPlanAgent })
-    : formatAvailableSubagentsLine(availability, { allowPlanAgent: options.allowPlanAgent });
-
   return [
-    "Eco orchestration: you are the main agent for this thread.",
-    delegationBlock,
-    [
-      "Delegate to enabled Eco subagents only when their descriptions fit the task.",
-      "Do not force a fixed subagent order or mandatory review/test passes.",
-    ].join(" "),
-    [
-      "Clarify vs plan: use AskUserQuestion for material ambiguity",
-      "(preferences, scope, tradeoffs) that the repo cannot resolve.",
-      "Use ExitPlanMode only when a formal plan needs user approval before implementation.",
-    ].join(" "),
-    "Do not declare the task complete until the requested scope is implemented and you have proportionate verification evidence.",
+    "Delegate using enabled subagent descriptions; do not force a fixed review or test order.",
     "Do not use the SDK Workflow tool.",
   ].join("\n");
 }

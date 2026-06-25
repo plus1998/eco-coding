@@ -85,15 +85,3 @@ export function formatAvailableSubagentsLine(
     formatMandatoryEcoSubagentRule(options),
   ].join("\n");
 }
-
-export function buildQuestionExploreInstruction(availability: SubagentAvailability): string {
-  return isSubagentEnabled(availability, "explore")
-    ? `For broad codebase questions, use ${agentCall("explore")} with thoroughness quick|medium|very thorough.`
-    : `For broad codebase questions, use Read, Glob, and Grep — do not call ${agentCall("explore")}.`;
-}
-
-export function buildQuestionAnswerTaskLine(availability: SubagentAvailability): string {
-  return isSubagentEnabled(availability, "explore")
-    ? `Task: Answer read-only. Use ${agentCall("explore")} if the question requires repo-wide context.`
-    : "Task: Answer read-only. Use Read/Glob/Grep for repo-wide context.";
-}

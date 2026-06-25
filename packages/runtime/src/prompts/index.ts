@@ -20,11 +20,6 @@ export {
 } from "./execution-agents.js";
 export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
 export {
-  buildQuestionAnswerPrompt,
-  buildQuestionAnswerSystemAppend,
-  questionAnswerSystemAppend,
-} from "./question.js";
-export {
   buildMainAgentHandsOnBoundaryAppend,
   formatAvailableSubagentsLine,
   formatMandatoryEcoSubagentRule,

@@ -10,7 +10,6 @@ import {
   applySessionStoreToQueryOptions,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
-  buildQuestionAnswerPrompt,
   buildSdkProcessEnv,
   ClaudeAgentSdkDriver,
   createAgentDefinitions,
@@ -34,7 +33,6 @@ import {
   isSdkInitMessage,
   mapSdkMessageToEvents,
   mergeAllowedTools,
-  questionAnswerSystemAppend,
   readSdkSessionId,
   readSdkUserMessageCheckpointId,
   resolveAgentSkills,
@@ -497,39 +495,25 @@ test("reviewer prompt limits scope to current session workspace diff", () => {
   expect(reviewerAgentPrompt).toContain("missing test coverage");
 });
 
-test("autonomous orchestrator append does not force a fixed subagent pipeline", () => {
+test("autonomous orchestrator append keeps minimal product constraints", () => {
   const append = buildAutonomousOrchestratorAppend();
-  expect(append).toContain("Do not force a fixed subagent order");
-  expect(append).not.toContain("Coders (parallel)");
-  expect(append).not.toContain("TaskCreate");
-  expect(append).toContain("Mandatory subagent policy");
-  expect((append.match(/Mandatory subagent policy/g) ?? []).length).toBe(1);
-});
-
-test("autonomous orchestrator append reflects effective subagent availability", () => {
-  const append = buildAutonomousOrchestratorAppend({
-    ...defaultSubagentAvailability(),
-    reviewer: false,
-    tester: false,
-  });
-  expect(append).toContain("coder: eco_coder");
-  expect(append).not.toContain("reviewer: eco_reviewer");
-  expect(append).not.toContain("tester: eco_tester");
-});
-
-test("autonomous orchestrator append skips compact roster when profile roster is present", () => {
-  const append = buildAutonomousOrchestratorAppend(defaultSubagentAvailability(), {
-    hasProfileRoster: true,
-  });
-  expect(append).toContain("Mandatory subagent policy");
+  expect(append).toContain("do not force a fixed review or test order");
+  expect(append).toContain("Do not use the SDK Workflow tool");
+  expect(append).not.toContain("Mandatory subagent policy");
   expect(append).not.toContain("Available Eco subagents in this session:");
 });
 
-test("autonomous orchestrator append documents Plan agent during planning", () => {
-  const append = buildAutonomousOrchestratorAppend(defaultSubagentAvailability(), {
-    allowPlanAgent: true,
-  });
-  expect(append).toContain("Agent(Plan)");
+test("autonomous orchestrator append ignores legacy availability options", () => {
+  const append = buildAutonomousOrchestratorAppend(
+    {
+      ...defaultSubagentAvailability(),
+      reviewer: false,
+      tester: false,
+    },
+    { hasProfileRoster: true, allowPlanAgent: true },
+  );
+  expect(append).not.toContain("eco_coder");
+  expect(append).not.toContain("Agent(Plan)");
 });
 
 test("buildAutonomousPlanContinuationPrompt carries approved plan context", () => {
@@ -674,17 +658,6 @@ test("inferActivityRole maps Agent(Plan) to Plan", () => {
       },
     }),
   ).toBe("Plan");
-});
-
-test("builds read-only question answering prompts", () => {
-  expect(questionAnswerSystemAppend).toContain("ANSWER");
-  expect(questionAnswerSystemAppend).toContain("read-only");
-  expect(questionAnswerSystemAppend).toContain(`Agent(${ecoSubagentKeyForRole("explore")})`);
-  expect(questionAnswerSystemAppend).toContain("Do not create an implementation plan");
-  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("User question:");
-  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain(
-    `Agent(${ecoSubagentKeyForRole("explore")})`,
-  );
 });
 
 test("formats eco phase boundary events", () => {
@@ -1584,11 +1557,11 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   const systemPrompt = options.systemPrompt as string;
   expect(systemPrompt).toContain("Coordinate a research answer without assuming a coding task.");
   expect(systemPrompt).toContain("Session mode: ask (read-only).");
-  expect(systemPrompt).toContain("Agent(eco_explore)");
-  expect(systemPrompt).toContain("Agent(eco_researcher)");
+  expect(systemPrompt).toContain("Research Desk");
   expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
   expect(systemPrompt).not.toContain("File edits apply directly");
   expect(systemPrompt).not.toContain("Eco universal orchestration.");
+  expect(Object.keys(agents)).toEqual(["eco_explore", "eco_researcher"]);
 });
 
 test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic permissions", async () => {
@@ -1736,8 +1709,6 @@ test("ClaudeAgentSdkDriver treats profile guidance as main-agent guidance", asyn
   expect(systemPrompt).toContain(
     "Use researcher for evidence discovery and synthesizer when synthesis improves the answer.",
   );
-  expect(systemPrompt).toContain("Agent(eco_researcher)");
-  expect(systemPrompt).toContain("Agent(eco_synthesizer)");
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {

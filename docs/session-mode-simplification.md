@@ -255,7 +255,7 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 
 **验收**
 
-- [ ] `agent-orchestration.test.ts` / `claude-agent-sdk.test.ts` 更新快照
+- [x] `agent-orchestration.test.ts` / `claude-agent-sdk.test.ts` 更新快照
 - [ ] `agent-preset-evals` / commercial quality gate 仍通过（无 child prompt 泄漏）
 - [ ] 手工：Agent 模式仍能委派 eco_coder；误用 SDK Explore 仍被 hook deny
 
@@ -306,7 +306,7 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 
 - `packages/runtime/src/claude-agent-sdk.ts`
 - `packages/runtime/src/prompts/autonomous.ts`
-- `packages/runtime/src/prompts/question.ts` — **待删**
+- `packages/runtime/src/prompts/question.ts` — **已删**
 - `packages/runtime/src/prompts/subagent-pipeline.ts`
 - `packages/runtime/src/agent-orchestration.ts` — `buildMainAgentSystemPrompt`
 - `packages/runtime/src/eco-sdk-hooks.ts`

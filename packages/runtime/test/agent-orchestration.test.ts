@@ -125,15 +125,16 @@ test("createAgentDefinitionsFromProfile merges dynamic session skills", () => {
   expect(definition.skills).toEqual(["workspace-research"]);
 });
 
-test("buildMainAgentSystemPrompt injects roster without leaking child prompts", () => {
+test("buildMainAgentSystemPrompt injects profile strategy without leaking child prompts", () => {
   const prompt = buildMainAgentSystemPrompt(profile, [researchTemplate], "PHASE APPEND");
 
   expect(typeof prompt).toBe("string");
   expect(prompt).toContain("You coordinate research work without assuming a coding task.");
   expect(prompt).toContain("PHASE APPEND");
-  expect(prompt).toContain("Agent(eco_researcher)");
-  expect(prompt).toContain("Need sourced findings or external context");
+  expect(prompt).toContain("Research Desk");
+  expect(prompt).toContain("Delegate only when evidence quality improves.");
   expect(prompt).not.toContain("CHILD SECRET PROMPT");
+  expect(prompt).not.toContain("Agent(eco_researcher)");
 });
 
 test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", () => {
@@ -158,7 +159,8 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", 
     excludeDynamicSections: true,
   });
   expect(systemPrompt.append).toContain("CODING PHASE APPEND");
-  expect(systemPrompt.append).toContain("Agent(eco_researcher)");
+  expect(systemPrompt.append).toContain("Research Desk");
+  expect(systemPrompt.append).not.toContain("Agent(eco_researcher)");
 });
 
 test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enforcement", () => {

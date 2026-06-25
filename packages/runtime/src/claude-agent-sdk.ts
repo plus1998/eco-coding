@@ -16,6 +16,7 @@ import {
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
   resolveMainAgentHandsOnCapability,
+  type MainAgentHandsOnCapability,
   SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_FILESYSTEM_READ_TOOL_NAMES,
   SDK_FILESYSTEM_WRITE_TOOL_NAMES,
@@ -59,8 +60,6 @@ import {
 } from "./prompts/autonomous.js";
 import { buildMainAgentHandsOnBoundaryAppend } from "./prompts/subagent-pipeline.js";
 import {
-  buildQuestionAnswerPrompt,
-  buildQuestionAnswerSystemAppend,
   ecoBasePromptAppend,
   executionArchitectDescription,
   executionArchitectPrompt,
@@ -72,7 +71,6 @@ import {
   exploreAgentPrompt,
   planningArchitectDescription,
   planningArchitectPrompt,
-  questionAnswerSystemAppend,
   reviewerAgentPrompt,
 } from "./prompts/index.js";
 import {
@@ -211,21 +209,39 @@ const universalDelegateOptions = {
   delegateTarget: "an implementation-capable agent from the active profile roster (via Agent(...))",
 } as const;
 
-function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "autonomous"): string {
-  const phaseLine =
-    phase === "answer"
-      ? "Current phase: answer the user directly."
-      : phase === "plan"
-        ? "Current phase: understand the request and produce a decision-ready plan when planning is required."
-        : phase === "execute"
-          ? "Current phase: carry out the approved or current task according to the active profile."
-          : "Current phase: handle the task directly, ask a clarifying question when needed, or delegate.";
+function buildUniversalPhaseAppend(phase: "plan" | "execute" | "autonomous"): string {
+  const sessionLine =
+    phase === "plan"
+      ? "Session mode: plan (read-only until ExitPlanMode)."
+      : phase === "execute"
+        ? "Session mode: agent (execution)."
+        : "Session mode: agent.";
+  return [sessionLine, "Do not use the SDK Workflow tool."].join("\n");
+}
+
+function shouldAppendMainAgentHandsOnBoundary(capability: MainAgentHandsOnCapability): boolean {
+  return !capability.canEditFiles || !capability.canRunBash;
+}
+
+function appendMainAgentHandsOnBoundaryIfNeeded(
+  baseAppend: string,
+  capability: MainAgentHandsOnCapability,
+  availability: SubagentAvailability,
+  universalProfile: boolean,
+): string {
+  if (!shouldAppendMainAgentHandsOnBoundary(capability)) {
+    return baseAppend;
+  }
   return [
-    "Eco universal orchestration.",
-    phaseLine,
-    `Use Agent(...) with Eco agent keys shown in the active profile roster, or Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) for complex multi-step work that needs both exploration and action.`,
-    "Do not use other SDK built-in agents or the SDK Workflow tool.",
-  ].join("\n");
+    baseAppend,
+    buildMainAgentHandsOnBoundaryAppend(
+      capability,
+      availability,
+      universalProfile ? universalDelegateOptions : {},
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
@@ -646,18 +662,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools: planningContinuation
         ? [...planningContinuationAllowedTools]
         : [...autonomousAllowedTools],
-      phaseAppend: `${
+      phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
         universalProfile
           ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
           : buildAutonomousOrchestratorAppend(availability, {
               hasProfileRoster: Boolean(input.agentRegistry),
               allowPlanAgent: planningContinuation,
-            })
-      }\n${buildMainAgentHandsOnBoundaryAppend(
+            }),
         handsOn,
         availability,
-        universalProfile ? universalDelegateOptions : {},
-      )}`,
+        universalProfile,
+      ),
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -684,13 +699,16 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       prompt: input.prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
-      phaseAppend: `${
+      phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
         universalProfile
           ? buildUniversalPhaseAppend("autonomous")
           : buildAutonomousOrchestratorAppend(availability, {
               hasProfileRoster: Boolean(input.agentRegistry),
-            })
-      }\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalProfile ? universalDelegateOptions : {})}`,
+            }),
+        handsOn,
+        availability,
+        universalProfile,
+      ),
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -1436,11 +1454,6 @@ function drainToolPermissionDecisionEvents(
   return events;
 }
 
-export {
-  buildQuestionAnswerPrompt,
-  buildQuestionAnswerSystemAppend,
-  questionAnswerSystemAppend,
-};
 export {
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,

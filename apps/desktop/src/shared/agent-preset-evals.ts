@@ -159,9 +159,6 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
       if (!resolved.agentKeys.includes(sdkKey)) {
         errors.push(`Enabled agent is missing from runtime definitions: ${sdkKey}`);
       }
-      if (!promptText.includes(`Agent(${sdkKey})`)) {
-        errors.push(`Main agent roster is missing runtime agent: ${sdkKey}`);
-      }
       const definition = resolved.definitions[sdkKey] as Record<string, unknown> | undefined;
       if (!definition) {
         continue;

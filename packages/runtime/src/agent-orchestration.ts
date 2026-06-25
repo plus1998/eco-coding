@@ -493,12 +493,11 @@ export function buildMainAgentStrategySummary(profile: EcoOrchestrationProfileCo
 
 export function buildMainAgentProfileAppend(
   profile: EcoOrchestrationProfileConfig,
-  templates: readonly EcoAgentTemplateConfig[],
+  _templates: readonly EcoAgentTemplateConfig[],
 ): string {
   return [
     `Eco orchestration profile: ${profile.name} (${profile.preset}).`,
     buildMainAgentStrategySummary(profile),
-    buildMainAgentRoster(profile, templates),
   ].join("\n\n");
 }
 
