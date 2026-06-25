@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildThreadTitleRequestBody,
   buildThreadTitleUserMessage,
+  extractTitleJsonFromThinking,
   extractTitleText,
   parseThreadTitleJson,
   resolveThreadTitleRoute,
@@ -192,4 +193,30 @@ test("extractTitleText prefers text blocks over thinking", () => {
     ],
   });
   expect(text).toBe('{"title":"导出筛选功能"}');
+});
+
+test("extractTitleJsonFromThinking reads JSON embedded in thinking blocks", () => {
+  const text = extractTitleJsonFromThinking({
+    content: [{ type: "thinking", thinking: '只输出 JSON：{"title":"模型身份询问"}' }],
+  });
+  expect(parseThreadTitleJson(text)).toBe("模型身份询问");
+});
+
+test("summarizeThreadTitle recovers title from thinking-only upstream responses", async () => {
+  const title = await summarizeThreadTitle(routes, "你是什么模型", async () => {
+    return new Response(
+      JSON.stringify({
+        stop_reason: "max_tokens",
+        content: [
+          {
+            type: "thinking",
+            thinking: '用户要求生成标题。只输出 JSON：{"title":"模型身份询问"}',
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  });
+
+  expect(title).toBe("模型身份询问");
 });

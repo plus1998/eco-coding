@@ -11,6 +11,8 @@ import {
 const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
 const TITLE_TIMEOUT_MS = 90_000;
+/** Enough headroom when upstream ignores thinking:disabled and emits thinking before JSON. */
+const TITLE_MAX_OUTPUT_TOKENS = 256;
 export const TITLE_PROMPT_MAX_CHARS = 8_000;
 export const TITLE_OUTPUT_MAX_CHARS = 42;
 export const pendingThreadTitle = "新编码任务";
@@ -77,7 +79,7 @@ export function buildThreadTitleRequestBody(
 ): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: titleRoute.modelId,
-    max_tokens: 64,
+    max_tokens: TITLE_MAX_OUTPUT_TOKENS,
     temperature: 0,
     thinking: { type: "disabled" },
     system: THREAD_TITLE_SYSTEM_PROMPT,
@@ -272,8 +274,24 @@ async function requestThreadTitle(
   }
 
   const extracted = extractTitleText(responseBody);
-  const rawTitle = parseThreadTitleJson(extracted);
+  const thinkingFallback = extracted ? undefined : extractTitleJsonFromThinking(responseBody);
+  const titleSource = extracted ?? thinkingFallback;
+  const rawTitle = parseThreadTitleJson(titleSource);
   const sanitized = sanitizeThreadTitle(rawTitle, prompt);
+  const contentBlockTypes = Array.isArray((responseBody as { content?: unknown }).content)
+    ? (responseBody as { content: unknown[] }).content.map((block) =>
+        typeof block === "object" && block !== null && "type" in block
+          ? String((block as { type: unknown }).type)
+          : "unknown",
+      )
+    : [];
+  const stopReason =
+    typeof responseBody === "object" &&
+    responseBody !== null &&
+    "stop_reason" in responseBody &&
+    typeof (responseBody as { stop_reason: unknown }).stop_reason === "string"
+      ? (responseBody as { stop_reason: string }).stop_reason
+      : undefined;
   logUpstream("thread-title-response", {
     role: titleRoute.role,
     provider: titleRoute.provider.name,
@@ -289,16 +307,44 @@ async function requestThreadTitle(
       provider: titleRoute.provider.name,
       modelId: titleRoute.modelId,
       structuredOutput: useStructuredOutput,
-      reason: !extracted?.trim()
-        ? "empty-extracted-text"
+      reason: !titleSource?.trim()
+        ? contentBlockTypes.includes("thinking") && !contentBlockTypes.includes("text")
+          ? "thinking-only-response"
+          : "empty-extracted-text"
         : TITLE_REFUSAL_PATTERN.test((rawTitle ?? "").split("\n")[0] ?? "")
           ? "refusal-pattern"
           : "empty-after-sanitize",
+      stopReason,
+      contentBlockTypes,
       extractedText: extracted,
+      thinkingFallback,
       rawTitle,
     });
   }
   return sanitized;
+}
+
+/** Recover title JSON when upstream ignores thinking:disabled and only emits thinking blocks. */
+export function extractTitleJsonFromThinking(body: unknown): string | undefined {
+  if (!isRecord(body) || !Array.isArray(body.content)) {
+    return undefined;
+  }
+
+  const chunks: string[] = [];
+  for (const block of body.content) {
+    if (!isRecord(block)) {
+      continue;
+    }
+    if (block.type === "thinking" && typeof block.thinking === "string") {
+      chunks.push(block.thinking);
+      continue;
+    }
+    if (block.type === "redacted_thinking") {
+      continue;
+    }
+  }
+  const joined = chunks.join("\n").trim();
+  return joined ? joined : undefined;
 }
 
 export function extractTitleText(body: unknown): string | undefined {
