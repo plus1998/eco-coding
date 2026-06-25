@@ -10,21 +10,21 @@ export interface BashReviewUiOption {
 export const BASH_REVIEW_UI: BashReviewUiOption[] = [
   {
     value: "always",
-    title: "请求批准",
+    title: "每次确认",
     subtitle: "always",
-    description: "执行 Bash 命令时始终询问",
+    description: "执行命令或访问工作区外路径前都询问",
   },
   {
     value: "auto",
-    title: "替我审批",
+    title: "风险时确认",
     subtitle: "auto",
-    description: "仅对检测到的风险操作请求批准",
+    description: "低风险自动执行；高风险命令或外路径访问仍询问",
   },
   {
     value: "allow_all",
-    title: "完全访问权限",
+    title: "自动执行",
     subtitle: "allow",
-    description: "自动批准 Bash 命令（仍需智能体配置允许 Bash 工具）",
+    description: "跳过确认（仍受当前模式、Profile 与安全策略限制）",
   },
 ];
 

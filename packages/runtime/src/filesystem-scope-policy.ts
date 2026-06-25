@@ -2,6 +2,10 @@ import os from "node:os";
 
 export const READ_FILESYSTEM_TOOL_NAMES = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
 
+export const WRITE_FILESYSTEM_TOOL_NAMES = ["Write", "Edit", "MultiEdit", "NotebookEdit"] as const;
+
+export const WRITE_FILESYSTEM_TOOLS = new Set<string>(WRITE_FILESYSTEM_TOOL_NAMES);
+
 export function isReadFilesystemTool(toolName: string): boolean {
   return (READ_FILESYSTEM_TOOL_NAMES as readonly string[]).includes(toolName);
 }
@@ -147,4 +151,13 @@ function normalizePolicyPathSeparators(value: string): string {
 
 function isAbsolutePolicyPath(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:/.test(value);
+}
+
+export function isReviewableExternalReadPath(absolutePath: string): boolean {
+  return (
+    absolutePath.includes("/.claude/skills/") ||
+    absolutePath.includes("/.codex/skills/") ||
+    absolutePath.includes("/.agents/skills/") ||
+    absolutePath.includes("/.cc-switch/skills/")
+  );
 }

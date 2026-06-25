@@ -1568,7 +1568,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
   expect(allowedFetch.hookSpecificOutput).toBeUndefined();
 });
 
-test("createToolPermissionPreToolHook asks for risky bash commands", async () => {
+test("createToolPermissionPreToolHook passes risky bash through to canUseTool confirmation", async () => {
   const hook = createToolPermissionPreToolHook(
     {
       main: {
@@ -1595,14 +1595,10 @@ test("createToolPermissionPreToolHook asks for risky bash commands", async () =>
     { signal: new AbortController().signal },
   );
 
-  expect(riskyBash.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "ask",
-  });
-  expect(riskyBash.hookSpecificOutput?.permissionDecisionReason).toContain("risk score");
+  expect(riskyBash.hookSpecificOutput).toBeUndefined();
 });
 
-test("createToolPermissionPreToolHook asks for all bash commands in always review mode", async () => {
+test("createToolPermissionPreToolHook does not ask for bash in always mode at hook layer", async () => {
   const hook = createToolPermissionPreToolHook(
     {
       main: {
@@ -1629,14 +1625,10 @@ test("createToolPermissionPreToolHook asks for all bash commands in always revie
     { signal: new AbortController().signal },
   );
 
-  expect(result.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "ask",
-  });
-  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("always review mode");
+  expect(result.hookSpecificOutput).toBeUndefined();
 });
 
-test("createToolPermissionPreToolHook reads live bash review mode from resolver", async () => {
+test("createToolPermissionPreToolHook reads live bash review mode from resolver for hook hard deny only", async () => {
   let mode: "always" | "auto" = "always";
   const hook = createToolPermissionPreToolHook(
     {
@@ -1667,10 +1659,7 @@ test("createToolPermissionPreToolHook reads live bash review mode from resolver"
   const alwaysResult = await hook!(input, "tool_bash_live_mode", {
     signal: new AbortController().signal,
   });
-  expect(alwaysResult.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "ask",
-  });
+  expect(alwaysResult.hookSpecificOutput).toBeUndefined();
 
   mode = "auto";
   const autoResult = await hook!(input, "tool_bash_live_mode", {

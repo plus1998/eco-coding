@@ -264,6 +264,7 @@ export * from "./subagent-availability";
 export * from "./agent-orchestration";
 export * from "./tool-permission-policy.js";
 export * from "./filesystem-scope-policy.js";
+export * from "./tool-confirmation.js";
 export * from "./ask-user-question";
 export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";

@@ -13,20 +13,14 @@ import {
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
-  filesystemReadScopeAskReason,
-  isDiscoveryFilesystemTool,
-  isPathInsidePolicyScope,
+  evaluateFilesystemReadConfirmation,
   isReadFilesystemTool,
   normalizeSdkSubagentType,
-  SDK_GENERAL_PURPOSE_AGENT_KEY,
-  SDK_PLAN_AGENT_KEY,
   type ParsedUsage,
   type PlanReadyPayload,
-  pathContainsGlobMeta,
   readFilesystemPath,
-  resolveFilesystemScopeRoot,
-  resolvePolicyPath,
-  resolvePolicySearchBase,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
   type SdkToolPermissionDecision,
   type SdkToolPermissionRequest,
   type SessionCapturedPayload,
@@ -51,7 +45,7 @@ import {
   shell,
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
-import { evaluateThreadBashPermission } from "./thread-bash-permission";
+import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
 
 ensureDesktopPath();
 
@@ -6617,15 +6611,25 @@ function createThreadToolPermissionHandler(
 
       const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
       const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
+      const runtimeConfig = ensureThreadRuntimeConfig(thread).runtimeConfig;
+      const confirmationMode = runtimeConfig?.bashReviewMode ?? "always";
       const readApproval = resolveFilesystemReadApprovalRequest({
         toolName: request.toolName,
         input: request.input,
         cwd: cwd ?? thread.workspacePath ?? ".",
         workspacePath: thread.workspacePath,
+        confirmationMode,
         ...(request.decisionReason ? { fallbackReason: request.decisionReason } : {}),
       });
       if (!readApproval) {
         return { behavior: "allow", updatedInput: request.input };
+      }
+      if (readApproval.action === "deny") {
+        return {
+          behavior: "deny",
+          message: readApproval.reason,
+          interrupt: false,
+        };
       }
       const filesystemPath = readApproval.filesystemPath;
       const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
@@ -6643,13 +6647,13 @@ function createThreadToolPermissionHandler(
         command: `${request.toolName} ${filesystemPath}`,
         cwd,
         reason: readApproval.reason,
-        riskScore: 40,
-        riskLevel: "medium",
+        riskScore: readApproval.riskScore ?? 40,
+        riskLevel: readApproval.riskLevel ?? "medium",
         agentId: approvalAgentId,
         filesystemTool: request.toolName,
         filesystemPath,
         ...(request.agentType ? { agentType: request.agentType } : {}),
-        description: `允许在工作区外执行 ${request.toolName}？`,
+        description: readApproval.userMessage,
       };
 
       emitThreadEvent(
@@ -6715,17 +6719,17 @@ function createThreadToolPermissionHandler(
     const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
     const runtimeConfig = ensureThreadRuntimeConfig(thread).runtimeConfig;
     const agentRegistry = resolveAgentRuntimeConfigForThread(thread);
-    const policy = evaluateThreadBashPermission({
+    const confirmation = evaluateThreadToolConfirmation({
       command,
       cwd,
       workspacePath: thread.workspacePath,
-      bashReviewMode: runtimeConfig?.bashReviewMode ?? "always",
-      phaseAllowsBash: runPhase !== "planning" && runPhase !== "ask",
+      confirmationMode: runtimeConfig?.bashReviewMode ?? "always",
+      phaseAllowsExecution: runPhase !== "planning" && runPhase !== "ask",
       ...(agentRegistry ? { agentRegistry } : {}),
       ...(request.agentId ? { agentId: request.agentId } : {}),
       ...(request.agentType ? { agentType: request.agentType } : {}),
     });
-    if (policy.action === "deny") {
+    if (confirmation.action === "deny") {
       const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
       if (!approvalAgentId) {
         return {
@@ -6739,22 +6743,22 @@ function createThreadToolPermissionHandler(
         threadId,
         command,
         cwd: cwd ?? thread.workspacePath ?? ".",
-        reason: policy.reason,
-        riskScore: policy.riskScore,
-        riskLevel: policy.riskLevel,
+        reason: confirmation.reason,
+        riskScore: confirmation.riskScore ?? 100,
+        riskLevel: confirmation.riskLevel ?? "critical",
         agentId: approvalAgentId,
         ...(request.agentType ? { agentType: request.agentType } : {}),
       };
-      emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false, {
+      emitThreadEvent(threadId, "bash_approval.denied", `已拒绝：${confirmation.userMessage}`, "tool", false, {
         ...bashApprovalEventExtras(deniedApproval, "bash_approval.denied"),
       });
       return {
         behavior: "deny",
-        message: policy.reason,
+        message: confirmation.reason,
         interrupt: false,
       };
     }
-    if (policy.action === "allow") {
+    if (confirmation.action === "allow") {
       const description = readBashDescriptionInput(request.input);
       emitThreadEvent(threadId, "tool.started", `Tool: Bash · ${description ?? command}`, "tool", false, {
         ...(request.agentId ? { agentId: request.agentId } : {}),
@@ -6783,12 +6787,12 @@ function createThreadToolPermissionHandler(
       threadId,
       command,
       cwd,
-      reason: policy.reason,
-      riskScore: policy.riskScore,
-      riskLevel: policy.riskLevel,
+      reason: confirmation.reason,
+      riskScore: confirmation.riskScore ?? 50,
+      riskLevel: confirmation.riskLevel ?? "medium",
       agentId: approvalAgentId,
       ...(request.agentType ? { agentType: request.agentType } : {}),
-      ...(description ? { description } : {}),
+      ...(description ? { description } : { description: confirmation.userMessage }),
     };
 
     emitThreadEvent(threadId, "bash_approval.requested", `等待确认 Bash：${command}`, "tool", false, {
@@ -6819,33 +6823,41 @@ function resolveFilesystemReadApprovalRequest(input: {
   input: Record<string, unknown>;
   cwd: string;
   workspacePath: string;
+  confirmationMode: import("@eco/runtime").ExecutionConfirmationMode;
   fallbackReason?: string;
-}): { filesystemPath: string; reason: string } | undefined {
-  const scopeRoot = resolveFilesystemScopeRoot(input.workspacePath, input.cwd);
-  const filesystemPath = readFilesystemPath(input.input, input.toolName) ?? ".";
-  if (filesystemPath === ".") {
-    const cwdInsideScope = isPathInsidePolicyScope(resolvePolicyPath(".", input.cwd), scopeRoot);
-    if (isDiscoveryFilesystemTool(input.toolName) && !cwdInsideScope) {
-      return {
-        filesystemPath,
-        reason:
-          input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, filesystemPath, scopeRoot),
-      };
+}):
+  | {
+      action: "ask";
+      filesystemPath: string;
+      reason: string;
+      userMessage: string;
+      riskScore?: number;
+      riskLevel?: import("../shared/ipc").ApprovalRiskLevel;
     }
+  | { action: "deny"; reason: string; userMessage: string }
+  | undefined {
+  const decision = evaluateFilesystemReadConfirmation({
+    toolName: input.toolName,
+    toolInput: input.input,
+    cwd: input.cwd,
+    workspacePath: input.workspacePath,
+    confirmationMode: input.confirmationMode,
+    ...(input.fallbackReason ? { fallbackReason: input.fallbackReason } : {}),
+  });
+  if (!decision || decision.action === "allow") {
     return undefined;
   }
-
-  const candidatePath =
-    isDiscoveryFilesystemTool(input.toolName) && pathContainsGlobMeta(filesystemPath)
-      ? resolvePolicySearchBase(filesystemPath, input.cwd)
-      : resolvePolicyPath(filesystemPath, input.cwd);
-  if (isPathInsidePolicyScope(candidatePath, scopeRoot)) {
-    return undefined;
+  if (decision.action === "deny") {
+    return { action: "deny", reason: decision.reason, userMessage: decision.userMessage };
   }
-
+  const filesystemPath = readFilesystemPath(input.input, input.toolName) ?? ".";
   return {
+    action: "ask",
     filesystemPath,
-    reason: input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, filesystemPath, scopeRoot),
+    reason: decision.reason,
+    userMessage: decision.userMessage,
+    ...(decision.riskScore !== undefined && { riskScore: decision.riskScore }),
+    ...(decision.riskLevel && { riskLevel: decision.riskLevel }),
   };
 }
 

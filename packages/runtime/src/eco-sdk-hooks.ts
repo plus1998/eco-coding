@@ -34,7 +34,11 @@ export {
   readAgentSubagentType,
 } from "./subagent-resume.js";
 
-import { type BashReviewMode, evaluateBashPolicy } from "../../bash-policy/src";
+import {
+  evaluateBashHookGate,
+  evaluateFilesystemHookGate,
+  type ExecutionConfirmationMode,
+} from "./tool-confirmation.js";
 import type { RuntimeAgentRole } from "../../shared/src";
 import {
   type EcoRuntimeToolPermissionEntry,
@@ -42,17 +46,7 @@ import {
   resolveToolPermissionEntryForActor,
 } from "./agent-orchestration.js";
 import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
-import {
-  filesystemReadScopeAskReason,
-  isDiscoveryFilesystemTool,
-  isPathInsideAnyPolicyScope,
-  isPathInsidePolicyScope,
-  pathContainsGlobMeta,
-  readFilesystemPath,
-  resolveFilesystemScopeRoot,
-  resolvePolicyPath,
-  resolvePolicySearchBase,
-} from "./filesystem-scope-policy.js";
+import { WRITE_FILESYSTEM_TOOLS } from "./filesystem-scope-policy.js";
 import {
   isSubagentEnabled,
   isSubagentRole,
@@ -163,8 +157,9 @@ export interface EcoHookContext {
   allowedAgentKeys?: string[];
   allowedSdkBuiltinAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
-  bashReviewMode?: BashReviewMode;
-  resolveBashReviewMode?: () => BashReviewMode;
+  /** @deprecated 持久化字段名；语义为执行确认档位 */
+  bashReviewMode?: ExecutionConfirmationMode;
+  resolveBashReviewMode?: () => ExecutionConfirmationMode;
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
@@ -177,7 +172,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const READ_FILESYSTEM_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead"]);
-const WRITE_FILESYSTEM_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 export interface EcoToolPermissionDecisionAudit {
   permissionDecision: "deny";
   toolName: string;
@@ -758,8 +752,8 @@ export function createToolPermissionPreToolHook(
   options: {
     workspacePath?: string;
     implicitReadAllowRoots?: readonly string[];
-    bashReviewMode?: BashReviewMode;
-    resolveBashReviewMode?: () => BashReviewMode;
+    bashReviewMode?: ExecutionConfirmationMode;
+    resolveBashReviewMode?: () => ExecutionConfirmationMode;
     onDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
   } = {},
 ): HookCallback | undefined {
@@ -856,8 +850,8 @@ function evaluateStructuredToolPolicy(
   entry: EcoRuntimeToolPermissionEntry,
   options: {
     workspacePath?: string;
-    bashReviewMode?: BashReviewMode;
-    resolveBashReviewMode?: () => BashReviewMode;
+    bashReviewMode?: ExecutionConfirmationMode;
+    resolveBashReviewMode?: () => ExecutionConfirmationMode;
     actor?: "main" | string;
   },
 ): HookJSONOutput | undefined {
@@ -876,39 +870,33 @@ function evaluateBashToolPolicy(
   entry: EcoRuntimeToolPermissionEntry,
   options: {
     workspacePath?: string;
-    bashReviewMode?: BashReviewMode;
-    resolveBashReviewMode?: () => BashReviewMode;
+    bashReviewMode?: ExecutionConfirmationMode;
+    resolveBashReviewMode?: () => ExecutionConfirmationMode;
     actor?: "main" | string;
   },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
   const command = readBashCommand(input.tool_input);
-  const mode = options.resolveBashReviewMode?.() ?? options.bashReviewMode ?? "always";
   if (!command) {
-    if (mode === "allow_all") {
-      return undefined;
-    }
-    return askTool("Bash", "Bash command could not be evaluated and requires approval.");
+    return undefined;
   }
   const workspacePath = options.workspacePath?.trim() || input.cwd;
-  const decision = evaluateBashPolicy({
+  const confirmationMode = options.resolveBashReviewMode?.() ?? options.bashReviewMode ?? "always";
+  const gate = evaluateBashHookGate({
     command,
     cwd: input.cwd,
     workspacePath,
-    mode,
+    confirmationMode,
     agentBash: {
       enabled: true,
       ...(bash?.commandAllowlist ? { commandAllowlist: bash.commandAllowlist } : {}),
       ...(bash?.commandDenylist ? { commandDenylist: bash.commandDenylist } : {}),
     },
   });
-  if (decision.action === "deny") {
-    return denyTool("Bash", decision.reason);
+  if (!gate || gate.action !== "deny") {
+    return undefined;
   }
-  if (decision.action === "ask") {
-    return askTool("Bash", decision.reason);
-  }
-  return undefined;
+  return denyTool("Bash", gate.reason);
 }
 
 function evaluateFilesystemToolPolicy(
@@ -916,6 +904,8 @@ function evaluateFilesystemToolPolicy(
   entry: EcoRuntimeToolPermissionEntry,
   options: {
     workspacePath?: string;
+    bashReviewMode?: ExecutionConfirmationMode;
+    resolveBashReviewMode?: () => ExecutionConfirmationMode;
     implicitReadAllowRoots?: readonly string[];
     actor?: "main" | string;
   },
@@ -924,92 +914,33 @@ function evaluateFilesystemToolPolicy(
   if (!filesystem) {
     return undefined;
   }
-  const isReadTool = READ_FILESYSTEM_TOOLS.has(input.tool_name);
-  const isWriteTool = WRITE_FILESYSTEM_TOOLS.has(input.tool_name);
-  if (!isReadTool && !isWriteTool) {
-    return undefined;
-  }
-  if (isReadTool && filesystem.read === "extra_dirs") {
-    return undefined;
-  }
   const workspacePath = options.workspacePath?.trim();
   if (!workspacePath) {
     return undefined;
   }
-  const scopeRoot = resolveFilesystemScopeRoot(workspacePath, input.cwd);
-  const implicitRoots = options.implicitReadAllowRoots ?? [];
-  const filePath = readFilesystemPath(input.tool_input, input.tool_name);
-  if (!filePath) {
-    if (
-      isDiscoveryFilesystemTool(input.tool_name) &&
-      isReadTool &&
-      filesystem.read !== "none" &&
-      !isPathInsidePolicyScope(resolvePolicyPath(".", input.cwd), scopeRoot)
-    ) {
-      return askFilesystemScope(input.tool_name, ".", scopeRoot);
-    }
+  const confirmationMode = options.resolveBashReviewMode?.() ?? options.bashReviewMode ?? "always";
+  const gate = evaluateFilesystemHookGate({
+    toolName: input.tool_name,
+    toolInput: input.tool_input,
+    cwd: input.cwd,
+    workspacePath,
+    confirmationMode,
+    filesystemRead: filesystem.read,
+    filesystemWrite: filesystem.write,
+    ...(options.implicitReadAllowRoots?.length
+      ? { implicitReadAllowRoots: options.implicitReadAllowRoots }
+      : {}),
+  });
+  if (!gate) {
     return undefined;
   }
-  const absolutePath = resolvePolicyPath(filePath, input.cwd);
-  if (
-    isReadTool &&
-    implicitRoots.length > 0 &&
-    isPathInsideAnyPolicyScope(absolutePath, implicitRoots)
-  ) {
-    return undefined;
+  if (gate.action === "deny") {
+    return denyTool(input.tool_name, gate.reason);
   }
-  if (
-    isDiscoveryFilesystemTool(input.tool_name) &&
-    isReadTool &&
-    pathContainsGlobMeta(filePath)
-  ) {
-    const searchRoot = resolvePolicySearchBase(filePath, input.cwd);
-    if (
-      isReadTool &&
-      implicitRoots.length > 0 &&
-      isPathInsideAnyPolicyScope(searchRoot, implicitRoots)
-    ) {
-      return undefined;
-    }
-    if (filesystem.read !== "none" && !isPathInsidePolicyScope(searchRoot, scopeRoot)) {
-      return askFilesystemScope(input.tool_name, filePath, scopeRoot);
-    }
-    return undefined;
-  }
-  const insideScope = isPathInsidePolicyScope(absolutePath, scopeRoot);
-  if (isReadTool && filesystem.read !== "none" && !insideScope) {
-    if (isReviewableExternalReadPath(absolutePath)) {
-      return askFilesystemScope(input.tool_name, filePath, scopeRoot);
-    }
-    return denyTool(
-      input.tool_name,
-      `Filesystem read path "${filePath}" is outside Eco workspace "${scopeRoot}".`,
-    );
-  }
-  if (
-    isWriteTool &&
-    filesystem.write === "workspace" &&
-    !insideScope
-  ) {
-    return denyTool(
-      input.tool_name,
-      `Filesystem write path "${filePath}" is outside Eco workspace "${scopeRoot}".`,
-    );
+  if (gate.action === "ask") {
+    return askTool(input.tool_name, gate.reason);
   }
   return undefined;
-}
-
-function isReviewableExternalReadPath(absolutePath: string): boolean {
-  return (
-    absolutePath.includes("/.claude/skills/") ||
-    absolutePath.includes("/.codex/skills/") ||
-    absolutePath.includes("/.agents/skills/") ||
-    absolutePath.includes("/.cc-switch/skills/")
-  );
-}
-
-function askFilesystemScope(toolName: string, filePath: string, scopeRoot: string): HookJSONOutput {
-  return askTool(toolName, filesystemReadScopeAskReason(toolName, filePath, scopeRoot));
 }
 
 function evaluateNetworkToolPolicy(

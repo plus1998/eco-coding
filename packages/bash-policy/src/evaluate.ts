@@ -6,10 +6,10 @@ import { matchDeny } from "./rules/match";
 import { AUTO_APPROVAL_SCORE_THRESHOLD, riskLevelFromScore, scoreShellAst } from "./scorer";
 import type { BashPolicyDecision, BashPolicyInput, BashPolicyRules, BashReviewMode, ShellAst } from "./types";
 
-export function evaluateBashPolicy(
-  input: BashPolicyInput,
+function evaluateBashHardDenyCore(
+  input: Omit<BashPolicyInput, "mode">,
   rules: BashPolicyRules = DEFAULT_BASH_POLICY_RULES,
-): BashPolicyDecision {
+): BashPolicyDecision | undefined {
   const command = input.command.trim();
   if (!command) {
     return denyDecision(100, "Empty command is not allowed", "empty_command");
@@ -39,6 +39,27 @@ export function evaluateBashPolicy(
     return denyDecision(100, denyMatch.reason, denyMatch.matchedRule);
   }
 
+  return undefined;
+}
+
+/** Hard deny checks only (profile, allow/denylist, cwd, global deny rules). No risk scoring. */
+export function evaluateBashHardDeny(
+  input: Omit<BashPolicyInput, "mode">,
+  rules: BashPolicyRules = DEFAULT_BASH_POLICY_RULES,
+): BashPolicyDecision | undefined {
+  return evaluateBashHardDenyCore(input, rules);
+}
+
+export function evaluateBashPolicy(
+  input: BashPolicyInput,
+  rules: BashPolicyRules = DEFAULT_BASH_POLICY_RULES,
+): BashPolicyDecision {
+  const hardDeny = evaluateBashHardDenyCore(input, rules);
+  if (hardDeny) {
+    return hardDeny;
+  }
+
+  const ast = parseShellCommand(input.command.trim());
   const riskScore = scoreShellAst(ast, rules);
   const riskLevel = riskLevelFromScore(riskScore);
   return decideByMode(input.mode, riskScore, riskLevel, resolveAutoAskReason(ast));

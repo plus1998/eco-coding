@@ -131,9 +131,11 @@ SDK canUseTool          → Desktop 运行时审批（含 Bash 面板）
 Eco PreToolUse hook     → Profile 工具策略（disallowed / filesystem / network / bash）
 ```
 
-**Bash 审批模式**（Composer 里的「请求批准 / 替我审批 / 完全访问权限」）只影响 `canUseTool` / bash policy 的风险评估，**不等于**给 Agent 开启 Bash 工具。
+**执行确认**（Composer 三档：每次确认 / 风险时确认 / 自动执行）在 `canUseTool` 统一生效，**不等于**给 Agent 开启 Bash。
 
-执行阶段若配置了 `toolPermissionHandler`，Eco 会 `stripBashAutoApprovedTools()`，确保 Bash **不会**通过 `allowedTools` 被 SDK 自动批准，必须走 Desktop 的 Bash 审批流。
+执行阶段若配置了 `toolPermissionHandler`，Eco 会 `stripBashAutoApprovedTools()`，确保 Bash 走执行确认流。
+
+详见 [tool-confirmation.md](./tool-confirmation.md)。
 
 只读 Ask 阶段使用 `permissionMode: "dontAsk"` + 只读 `allowedTools`，并在 SDK `disallowedTools` 中显式禁用写/Bash/`EnterPlanMode`/`ExitPlanMode`。Eco 不进入 ExitPlanMode 审批流程。
 
@@ -281,9 +283,10 @@ Skill 可加载性和 Agent 文件读取权限是两件事：
 | SDK query 选项（phase、allowedTools、disallowedTools） | `packages/runtime/src/claude-agent-sdk.ts` |
 | ExitPlanMode / 两层模型注释 | `packages/runtime/src/eco-sdk-hooks.ts` |
 | Profile → SDK policy | `packages/runtime/src/agent-orchestration.ts` |
-| Desktop Bash 审批 | `apps/desktop/src/main/index.ts` → `createThreadToolPermissionHandler` |
-| Bash 风险评估 | `apps/desktop/src/main/thread-bash-permission.ts` |
-| Composer Bash 审批模式 UI | `apps/desktop/src/shared/bash-review-ui.ts` |
+| Desktop 执行确认 | `apps/desktop/src/main/index.ts` → `createThreadToolPermissionHandler` |
+| 确认决策 | `packages/runtime/src/tool-confirmation.ts` |
+| Composer 执行确认 UI | `apps/desktop/src/shared/bash-review-ui.ts` |
+| 执行确认产品说明 | `docs/tool-confirmation.md` |
 | Profile 工具能力表单 | `apps/desktop/src/renderer/tool-capability-groups.ts` |
 | Skills 注入和隐式读根 | `apps/desktop/src/shared/skills.ts` |
 

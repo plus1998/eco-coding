@@ -1,47 +1,47 @@
 import { expect, test } from "bun:test";
-import { evaluateThreadBashPermission } from "../src/main/thread-bash-permission";
+import { evaluateThreadToolConfirmation } from "../src/main/thread-bash-permission";
 
 const workspace = "/repo";
 const cwd = "/repo";
 
 test("always mode asks for safe commands", () => {
-  const decision = evaluateThreadBashPermission({
+  const decision = evaluateThreadToolConfirmation({
     command: "echo ok",
     cwd,
     workspacePath: workspace,
-    bashReviewMode: "always",
+    confirmationMode: "always",
   });
   expect(decision.action).toBe("ask");
 });
 
 test("auto mode allows low-risk commands", () => {
-  const decision = evaluateThreadBashPermission({
+  const decision = evaluateThreadToolConfirmation({
     command: "python3 -c 'print(1)'",
     cwd,
     workspacePath: workspace,
-    bashReviewMode: "auto",
+    confirmationMode: "auto",
   });
   expect(decision.action).toBe("allow");
 });
 
 test("allow_all mode still denies rm -rf /", () => {
-  const decision = evaluateThreadBashPermission({
+  const decision = evaluateThreadToolConfirmation({
     command: "rm -rf /",
     cwd,
     workspacePath: workspace,
-    bashReviewMode: "allow_all",
+    confirmationMode: "allow_all",
   });
   expect(decision.action).toBe("deny");
 });
 
-test("plan phase denies bash when phaseAllowsBash is false", () => {
-  const decision = evaluateThreadBashPermission({
+test("plan phase denies bash when phaseAllowsExecution is false", () => {
+  const decision = evaluateThreadToolConfirmation({
     command: "grep -R foo .",
     cwd,
     workspacePath: workspace,
-    bashReviewMode: "allow_all",
-    phaseAllowsBash: false,
+    confirmationMode: "allow_all",
+    phaseAllowsExecution: false,
   });
   expect(decision.action).toBe("deny");
-  expect(decision.matchedRule).toBe("phase_bash_disabled");
+  expect(decision.matchedRule).toBe("phase_execution_disabled");
 });
