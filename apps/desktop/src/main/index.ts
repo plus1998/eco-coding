@@ -2984,7 +2984,7 @@ function applyMainThreadRunDecisionEffects(
   });
 }
 
-async function runQuestionThread(
+async function runAskThread(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
   runtimeConfig: RuntimeConfig,
@@ -3027,12 +3027,12 @@ async function runQuestionThread(
             }
             try {
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "question");
-              if (!driver.runQuestion) {
-                throw new Error("Runtime driver does not support question answering.");
+              if (!driver.runAsk) {
+                throw new Error("Runtime driver does not support ask mode.");
               }
 
               return await consumeSdkRunEvents({
-                events: driver.runQuestion(
+                events: driver.runAsk(
                   buildSdkRunInput({
                     threadId: thread.id,
                     prompt,
@@ -3092,8 +3092,6 @@ async function runQuestionThread(
     });
   }
 }
-
-const runAskThread = runQuestionThread;
 
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
@@ -4859,17 +4857,11 @@ async function runThreadContinuation(
               });
 
               let eventStream: AsyncIterable<AgentEvent>;
-              if (mode === "question") {
-                if (!driver.runQuestion) {
-                  throw new Error("Runtime driver does not support question answering.");
-                }
-                eventStream = driver.runQuestion(runInput);
-              } else {
-                if (!driver.runContinuation) {
-                  throw new Error("Runtime driver does not support session continuation.");
-                }
-                eventStream = driver.runContinuation(runInput, mode, planningContext);
+              if (!driver.runContinuation) {
+                throw new Error("Runtime driver does not support session continuation.");
               }
+              const continuationMode = mode === "question" ? "ask" : mode;
+              eventStream = driver.runContinuation(runInput, continuationMode, planningContext);
 
               return await consumeSdkRunEvents({
                 events: eventStream,

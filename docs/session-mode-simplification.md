@@ -206,9 +206,9 @@ type RunPhase = "autonomous" | "planning" | "execution" | "ask";
 
 **验收**
 
-- [ ] `runQuestion` 无外部调用（仅 deprecated 转发一层，或直接删除）
-- [ ] Ask / Agent / Plan 共用 `runSingleSession`，diff 仅在 params
-- [ ] 现有 question 相关测试改为 ask phase 测试并通过
+- [x] `runQuestion` 无外部调用（仅 deprecated 转发一层，或直接删除）
+- [x] Ask / Agent / Plan 共用 `runSingleSession`，diff 仅在 params
+- [x] 现有 question 相关测试改为 ask phase 测试并通过
 
 ---
 

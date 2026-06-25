@@ -176,10 +176,34 @@ const universalEcoBasePromptAppend = [
 ].join("\n");
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
+const askSessionPhaseAppend = "Session mode: ask (read-only).";
 const defaultSettingSources = ["project"] as const;
 
 function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
   return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
+}
+
+function isAskContinuationMode(mode: string): boolean {
+  return mode === "ask" || mode === "question";
+}
+
+function buildAskSessionPhase(input: AgentRuntimeRunInput): {
+  prompt: string;
+  permissionMode: "plan";
+  allowedTools: string[];
+  phaseAppend: string;
+  agents: Record<string, unknown>;
+  availability: SubagentAvailability;
+} {
+  const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
+  return {
+    prompt: input.prompt,
+    permissionMode: "plan",
+    allowedTools: [...questionAllowedTools],
+    phaseAppend: askSessionPhaseAppend,
+    agents: createAskAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
+    availability,
+  };
 }
 
 /** Universal profiles use custom rosters, so the hands-on boundary points at the roster instead of eco_* keys. */
@@ -201,15 +225,6 @@ function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "auton
     phaseLine,
     `Use Agent(...) with Eco agent keys shown in the active profile roster, or Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) for complex multi-step work that needs both exploration and action.`,
     "Do not use other SDK built-in agents or the SDK Workflow tool.",
-  ].join("\n");
-}
-
-function buildUniversalQuestionPrompt(userPrompt: string): string {
-  return [
-    "User question:",
-    userPrompt.trim(),
-    "",
-    "Answer directly. Use available Eco subagents only when they improve the answer.",
   ].join("\n");
 }
 
@@ -514,22 +529,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runAutonomous(input);
   }
 
-  async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
+  async *runAsk(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     yield createPhaseBoundaryEvent(input.threadId, "answer", "【问答】只读回答");
-    yield* this.runSingleSession(input, {
-      prompt: universalProfile
-        ? buildUniversalQuestionPrompt(input.prompt)
-        : buildQuestionAnswerPrompt(input.prompt, availability),
-      permissionMode: readOnlyPermissionMode,
-      allowedTools: [...questionAllowedTools],
-      phaseAppend: universalProfile
-        ? buildUniversalPhaseAppend("answer")
-        : buildQuestionAnswerSystemAppend(availability),
-      agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-      availability,
-    });
+    yield* this.runSingleSession(input, buildAskSessionPhase(input));
+  }
+
+  /** @deprecated Use {@link runAsk} */
+  async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield* this.runAsk(input);
   }
 
   async *compactSession(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
@@ -589,25 +596,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   async *runContinuation(
     input: AgentRuntimeRunInput,
-    mode: "planning" | "execution" | "question",
+    mode: "planning" | "execution" | "ask" | "question",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    if (mode === "question") {
-      const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
+    if (isAskContinuationMode(mode)) {
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
-      yield* this.runSingleSession(input, {
-        prompt: universalProfile
-          ? buildUniversalQuestionPrompt(input.prompt)
-          : buildQuestionAnswerPrompt(input.prompt, availability),
-        permissionMode: readOnlyPermissionMode,
-        allowedTools: [...questionAllowedTools],
-        phaseAppend: universalProfile
-          ? buildUniversalPhaseAppend("answer")
-          : buildQuestionAnswerSystemAppend(availability),
-        agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
-        availability,
-      });
+      yield* this.runSingleSession(input, buildAskSessionPhase(input));
       return;
     }
 
@@ -1130,6 +1125,9 @@ export function createQuestionAgentDefinitions(
 
   return filterAgentDefinitions(definitions, availability);
 }
+
+/** Ask-mode agent roster: explore plus profile read-only agents (via dynamic registry merge). */
+export const createAskAgentDefinitions = createQuestionAgentDefinitions;
 
 /** @deprecated Import from ./prompts/execution-agents.js */
 export { reviewerAgentPrompt };

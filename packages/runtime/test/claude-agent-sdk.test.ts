@@ -1437,7 +1437,7 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   })) {
     // drain
   }
-  for await (const _event of driver.runQuestion({
+  for await (const _event of driver.runAsk({
     ...runInput,
     signal: new AbortController().signal,
   })) {
@@ -1472,6 +1472,7 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   const questionAgents = capturedOptions[1]?.agents as Record<string, { model?: string }> | undefined;
   expect(Object.keys(questionAgents ?? {})).toEqual([ecoSubagentKeyForRole("explore")]);
   expect(questionAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
+  expect(capturedOptions[1]?.permissionMode).toBe("plan");
 
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
@@ -1519,7 +1520,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     }),
   });
 
-  for await (const _event of driver.runQuestion({
+  for await (const _event of driver.runAsk({
     threadId: "thr_universal",
     prompt: "Summarize the 2026 market landscape.",
     workspacePath: "/tmp/workspace",
@@ -1536,7 +1537,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   }
 
   const query = capturedQueries[0];
-  expect(query?.prompt).toContain("Summarize the 2026 market landscape.");
+  expect(query?.prompt).toBe("Summarize the 2026 market landscape.");
   expect(query?.prompt).not.toContain("For a known file or symbol");
   expect(query?.prompt).not.toContain("Do not create an implementation plan");
 
@@ -1582,11 +1583,12 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
 
   const systemPrompt = options.systemPrompt as string;
   expect(systemPrompt).toContain("Coordinate a research answer without assuming a coding task.");
-  expect(systemPrompt).toContain("Eco universal orchestration.");
+  expect(systemPrompt).toContain("Session mode: ask (read-only).");
   expect(systemPrompt).toContain("Agent(eco_explore)");
   expect(systemPrompt).toContain("Agent(eco_researcher)");
   expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
   expect(systemPrompt).not.toContain("File edits apply directly");
+  expect(systemPrompt).not.toContain("Eco universal orchestration.");
 });
 
 test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic permissions", async () => {
@@ -1643,7 +1645,7 @@ test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic per
   });
 
   const events = [];
-  for await (const event of driver.runQuestion({
+  for await (const event of driver.runAsk({
     threadId: "thr_denied",
     prompt: "Research with a denied command.",
     workspacePath: "/tmp/workspace",
@@ -1768,7 +1770,7 @@ test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {
   });
 
   const events: string[] = [];
-  for await (const event of driver.runQuestion({
+  for await (const event of driver.runAsk({
     threadId: "thr_resume",
     prompt: "Follow up",
     workspacePath: "/tmp/workspace",
@@ -1876,7 +1878,7 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
     }),
   });
 
-  for await (const _event of driver.runQuestion({
+  for await (const _event of driver.runAsk({
     threadId: "thr_cache",
     prompt: "What changed?",
     workspacePath: "/tmp/workspace",

@@ -74,10 +74,12 @@ export interface EcoPlanningContext {
 
 export interface AgentRuntimeDriver {
   run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  runAsk?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  /** @deprecated Use {@link runAsk} */
   runQuestion?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
   runContinuation?(
     input: AgentRuntimeRunInput,
-    mode: "planning" | "execution" | "question",
+    mode: "planning" | "execution" | "ask" | "question",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent>;
   /** Sends `/compact` on an existing session (requires resume). */
