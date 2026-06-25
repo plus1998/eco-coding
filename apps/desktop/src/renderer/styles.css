@@ -6159,6 +6159,17 @@ html[data-window-focused="true"] .codex-sidebar {
   border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
 }
 
+.context-card-cache-invalidated {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-info-fg, #1d4ed8);
+  background: color-mix(in srgb, #3b82f6 10%, transparent);
+  border: 1px solid color-mix(in srgb, #3b82f6 28%, transparent);
+}
+
 .context-card-compact-error {
   margin: 0 0 0.5rem;
   font-size: 0.75rem;

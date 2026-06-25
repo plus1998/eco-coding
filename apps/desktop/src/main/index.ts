@@ -283,6 +283,12 @@ import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap"
 import { checkMcpServerConnection } from "./mcp-checker";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
+import {
+  formatPromptCacheBreakLog,
+  formatPromptCacheBreakMessage,
+  resolveClaudeMdDigest,
+  type PromptCacheBreakReason,
+} from "./prompt-cache-fingerprint";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { launchInExternalTerminal } from "./open-external-terminal";
 import { PackageJsonWatcher } from "./package-json-watcher";
@@ -291,6 +297,10 @@ import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
 import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
+import {
+  ThreadPromptCacheMonitor,
+  resolveThreadPromptCacheFingerprint,
+} from "./thread-prompt-cache-monitor";
 import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
@@ -516,6 +526,7 @@ let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
 let billingRuntimeEnvironment: BillingRuntimeEnvironment;
 let contextMonitor: ContextWindowMonitor;
+let threadPromptCacheMonitor: ThreadPromptCacheMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
@@ -635,6 +646,7 @@ app.whenReady().then(async () => {
     lookupPricing: lookupUsageBillingPricing,
   });
   contextMonitor = new ContextWindowMonitor(pricingCache);
+  threadPromptCacheMonitor = new ThreadPromptCacheMonitor();
   const resolveProxyRoutesForThread = (threadId: string) => {
     try {
       const roleRoutes = resolveRoleRoutesForThread(threadId);
@@ -4586,6 +4598,7 @@ function clearThreadRuntimeMemory(threadId: string): void {
   activeRunBillingState.clearRun(threadId);
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
+  threadPromptCacheMonitor.clearThread(threadId);
   subagentMetricsRegistry.clearThread(threadId);
   clearThreadSubagentLaunchRegistry(threadId);
   subagentDelegationLinkersByThread.delete(threadId);
@@ -5698,6 +5711,17 @@ async function buildSdkSessionOptions(
     ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
     : undefined;
   const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
+  await auditThreadPromptCacheBeforeSdkSession({
+    threadId,
+    profileId:
+      profile?.id?.trim() ||
+      hydrated?.runtimeConfig?.agentProfileId?.trim() ||
+      hydrated?.runtimeConfig?.routeProfileId?.trim() ||
+      "unknown",
+    mcpServerKeys: enabledMcpServers,
+    ...(workspacePath ? { workspacePath } : {}),
+    includeUserClaudeMd: skillConfig.settingSources.includes("user"),
+  });
   return {
     settingSources: skillConfig.settingSources,
     ...(skillConfig.skills.length > 0 ? { skills: skillConfig.skills } : {}),
@@ -6106,6 +6130,67 @@ function formatContextCompactionMessage(
     return trigger === "manual" ? "正在手动压缩上下文" : "正在自动压缩上下文";
   }
   return trigger === "manual" ? "上下文已手动压缩" : "上下文已自动压缩";
+}
+
+async function auditThreadPromptCacheBeforeSdkSession(input: {
+  threadId: string;
+  profileId: string;
+  mcpServerKeys: readonly string[];
+  workspacePath?: string;
+  includeUserClaudeMd: boolean;
+}): Promise<void> {
+  if (!conversationStore.getThread(input.threadId)) {
+    return;
+  }
+  const fingerprint = await resolveThreadPromptCacheFingerprint({
+    profileId: input.profileId,
+    mcpServerKeys: input.mcpServerKeys,
+    ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
+    userHomeDir: os.homedir(),
+    includeUserClaudeMd: input.includeUserClaudeMd,
+    resolveClaudeMdDigest: resolveClaudeMdDigest,
+  });
+  const reasons = threadPromptCacheMonitor.observe(input.threadId, fingerprint);
+  if (reasons.length === 0) {
+    return;
+  }
+  process.stderr.write(
+    `[eco] prompt cache invalidated thread=${input.threadId} reasons=${formatPromptCacheBreakLog(reasons)}\n`,
+  );
+  emitPromptCacheInvalidated(input.threadId, reasons);
+}
+
+function emitPromptCacheInvalidated(threadId: string, reasons: readonly PromptCacheBreakReason[]): void {
+  if (!conversationStore.getThread(threadId)) {
+    return;
+  }
+  const message = formatPromptCacheBreakMessage(reasons);
+  const now = new Date().toISOString();
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const runAttemptId = resolveCurrentRunAttemptId(threadId);
+  const metadata: Record<string, unknown> = {
+    liveType: "context.cache_invalidated",
+    promptCache: {
+      reasons: [...reasons],
+    },
+  };
+  try {
+    conversationStore.appendThreadRunEvent({
+      id: `tre:${threadId}:context-cache-invalidated:${unique}`,
+      threadId,
+      eventType: "context.cache_invalidated",
+      scope: "main",
+      streamState: "none",
+      message,
+      observedAt: now,
+      ...(runAttemptId && { runAttemptId }),
+      metadata,
+    });
+    scheduleThreadRunProjectionUpdated(threadId);
+    emitThreadEvent(threadId, "context.cache_invalidated", message, "system");
+  } catch (error) {
+    process.stderr.write(`[eco] prompt cache invalidation event write failed: ${errorMessage(error)}\n`);
+  }
 }
 
 function recordThreadRunEventFromLiveEvent(input: {

@@ -705,6 +705,12 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
   if (item.eventType == 'context.compaction.failed') {
     return text.isEmpty ? '上下文压缩失败' : text;
   }
+  if (item.eventType == 'context.compaction.suspended') {
+    return text.isEmpty ? '自动上下文压缩已暂停' : text;
+  }
+  if (item.eventType == 'context.cache_invalidated') {
+    return text.isEmpty ? '本会话 prompt cache 已失效' : text;
+  }
   if (item.eventType == 'request.retry_scheduled') {
     return text.isEmpty ? '准备重试' : text;
   }

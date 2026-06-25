@@ -1,0 +1,33 @@
+import { expect, test } from "bun:test";
+import { buildPromptCacheFingerprint } from "../src/main/prompt-cache-fingerprint";
+import { ThreadPromptCacheMonitor } from "../src/main/thread-prompt-cache-monitor";
+
+function fingerprint(profileId: string, mcp: string[], digest = "digest-a") {
+  return buildPromptCacheFingerprint({
+    profileId,
+    mcpServerKeys: mcp,
+    claudeMdDigest: digest,
+  });
+}
+
+test("ThreadPromptCacheMonitor sets baseline on first observe", () => {
+  const monitor = new ThreadPromptCacheMonitor();
+  expect(monitor.observe("t1", fingerprint("profile-a", ["github"]))).toEqual([]);
+});
+
+test("ThreadPromptCacheMonitor reports breaks only when fingerprint changes", () => {
+  const monitor = new ThreadPromptCacheMonitor();
+  monitor.observe("t1", fingerprint("profile-a", ["github"]));
+  expect(monitor.observe("t1", fingerprint("profile-a", ["github"]))).toEqual([]);
+  expect(monitor.observe("t1", fingerprint("profile-a", ["github", "mongo"]))).toEqual([
+    "mcp_servers_changed",
+  ]);
+  expect(monitor.observe("t1", fingerprint("profile-a", ["github", "mongo"]))).toEqual([]);
+});
+
+test("ThreadPromptCacheMonitor clearThread resets baseline", () => {
+  const monitor = new ThreadPromptCacheMonitor();
+  monitor.observe("t1", fingerprint("profile-a", ["github"]));
+  monitor.clearThread("t1");
+  expect(monitor.observe("t1", fingerprint("profile-b", ["mongo"]))).toEqual([]);
+});

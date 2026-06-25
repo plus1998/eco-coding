@@ -12,6 +12,7 @@ import {
   isProjectionUserPromptItem,
   isThreadContextCompactionInFlight,
   isThreadAutoCompactSuspended,
+  isThreadPromptCacheInvalidated,
   projectionItemToDetailBlock,
   resolveSubagentCardMissionText,
 } from "../src/renderer/thread-run-projection-view";
@@ -1314,6 +1315,23 @@ test("isThreadAutoCompactSuspended tracks suspended until successful compact", (
       }),
     ),
   ).toBe(false);
+});
+
+test("isThreadPromptCacheInvalidated tracks cache invalidation events", () => {
+  expect(isThreadPromptCacheInvalidated(undefined)).toBe(false);
+  expect(
+    isThreadPromptCacheInvalidated(
+      projection({
+        timeline: [
+          item({
+            id: "cache-broken",
+            eventType: "context.cache_invalidated",
+            text: "MCP 配置已变更，本会话 prompt cache 已失效",
+          }),
+        ],
+      }),
+    ),
+  ).toBe(true);
 });
 
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {

@@ -24,6 +24,7 @@ interface ContextCardProps {
   threadStatus?: ThreadStatus;
   contextCompactionInFlight?: boolean;
   autoCompactSuspended?: boolean;
+  promptCacheInvalidated?: boolean;
   onDismiss?: () => void;
 }
 
@@ -298,6 +299,7 @@ export function ContextCard({
   threadStatus,
   contextCompactionInFlight = false,
   autoCompactSuspended = false,
+  promptCacheInvalidated = false,
   onDismiss,
 }: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
@@ -407,6 +409,12 @@ export function ContextCard({
       {autoCompactSuspended ? (
         <p className="context-card-compact-suspended" role="status">
           自动压缩已暂停（连续失败 3 次）。请使用右侧按钮手动压缩，或开启新会话。
+        </p>
+      ) : null}
+
+      {promptCacheInvalidated ? (
+        <p className="context-card-cache-invalidated" role="status">
+          本会话 prompt cache 已失效，后续请求可能无法复用缓存，费用或延迟或上升。
         </p>
       ) : null}
 

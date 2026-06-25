@@ -544,6 +544,15 @@ export function isThreadAutoCompactSuspended(
   return suspended;
 }
 
+/** Prompt cache was invalidated at least once in this thread projection. */
+export function isThreadPromptCacheInvalidated(
+  projection: ThreadRunProjectionSnapshot | undefined,
+): boolean {
+  return (
+    projection?.timeline.some((item) => item.eventType === "context.cache_invalidated") ?? false
+  );
+}
+
 /** Orphaned compaction.started without a terminal event stops blocking the UI after this long. */
 const COMPACTION_IN_FLIGHT_STALE_MS = 2 * 60 * 1000;
 
@@ -1123,6 +1132,9 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
   }
   if (item.eventType === "context.compaction.suspended") {
     return text || "自动上下文压缩已暂停";
+  }
+  if (item.eventType === "context.cache_invalidated") {
+    return text || "本会话 prompt cache 已失效";
   }
   if (item.eventType === "agent.started") {
     return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已启动`;

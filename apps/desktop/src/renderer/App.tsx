@@ -172,7 +172,7 @@ import {
   queuedThreadFollowUps,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
-import { isThreadAutoCompactSuspended, isThreadContextCompactionInFlight } from "./thread-run-projection-view";
+import { isThreadAutoCompactSuspended, isThreadContextCompactionInFlight, isThreadPromptCacheInvalidated } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import { subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
@@ -1586,6 +1586,7 @@ function App() {
   const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
   const autoCompactSuspended = isThreadAutoCompactSuspended(runProjection);
+  const promptCacheInvalidated = isThreadPromptCacheInvalidated(runProjection);
 
   const canSendFollowUp = Boolean(
     currentProjectPath &&
@@ -4024,6 +4025,7 @@ function App() {
           {...(activeThread && threadUsageSummary && { usageSummary: threadUsageSummary })}
           contextCompactionInFlight={contextCompactionInFlight}
           autoCompactSuspended={autoCompactSuspended}
+          promptCacheInvalidated={promptCacheInvalidated}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
           agentThemes={activeRuntimeAgentThemes}
         />
