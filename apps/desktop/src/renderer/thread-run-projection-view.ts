@@ -35,6 +35,10 @@ import {
   isThreadFollowUpLiveEvent,
 } from "../shared/thread-follow-up-events";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
+import {
+  collapsePromptCacheTimelineItems,
+  readPromptCacheTimelineMetadata,
+} from "../shared/prompt-cache-timeline";
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
@@ -288,7 +292,9 @@ function filterProjectionTimelineForDetailFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
-  const displayTimeline = buildProjectionDisplayTimelineItems(timeline, requestSpansById);
+  const displayTimeline = collapsePromptCacheTimelineItems(
+    buildProjectionDisplayTimelineItems(timeline, requestSpansById),
+  );
   const requestsWithStreamRows = new Set(
     displayTimeline
       .filter(isStreamingRequestDisplayItem)
@@ -960,6 +966,14 @@ export function projectionItemToDetailBlock(
 
   const phaseLabel = resolveProjectionPhaseLabel(item);
   if (phaseLabel) {
+    const timeline = readPromptCacheTimelineMetadata(item.metadata);
+    if (timeline) {
+      return {
+        kind: "prompt-cache-timeline",
+        narrative: timeline.narrative,
+        steps: timeline.steps,
+      };
+    }
     return { kind: "phase", label: phaseLabel };
   }
   return undefined;
@@ -1133,11 +1147,17 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
   if (item.eventType === "context.compaction.suspended") {
     return text || "自动上下文压缩已暂停";
   }
+  if (item.eventType === "context.cache_config_drift") {
+    return text || "Composer 配置已变更";
+  }
   if (item.eventType === "context.cache_invalidated") {
     return text || "本会话 prompt cache 已失效";
   }
   if (item.eventType === "billing.cache_hit_dropped") {
     return text || "Prompt cache 命中率大幅下降";
+  }
+  if (item.eventType === "context.tool_output_truncated") {
+    return text || "Tool 输出已截断";
   }
   if (item.eventType === "agent.started") {
     return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已启动`;

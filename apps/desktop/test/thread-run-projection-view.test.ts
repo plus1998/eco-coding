@@ -1348,6 +1348,43 @@ test("resolveProjectionPhaseLabel maps cache hit drop events", () => {
   });
 });
 
+test("buildThreadRunProjectionViewModel collapses prompt cache timeline events in main feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "drift",
+          sequence: 1,
+          eventType: "context.cache_config_drift",
+          text: "MCP 配置已变更（Composer）",
+          metadata: { promptCacheEpisodeId: "pce_1" },
+        }),
+        item({
+          id: "invalidated",
+          sequence: 2,
+          eventType: "context.cache_invalidated",
+          text: "MCP 配置已变更，本会话 prompt cache 已失效",
+          metadata: { promptCacheEpisodeId: "pce_1" },
+        }),
+        item({
+          id: "msg",
+          sequence: 3,
+          eventType: "message.final",
+          text: "继续",
+        }),
+      ],
+    }),
+  );
+  const timelineEntries = view.mainFeedEntries.filter((entry) => entry.kind === "timeline");
+  expect(timelineEntries).toHaveLength(2);
+  const cacheEntry = timelineEntries[0];
+  expect(cacheEntry?.kind).toBe("timeline");
+  if (cacheEntry?.kind === "timeline") {
+    const detail = projectionItemToDetailBlock(cacheEntry.item);
+    expect(detail?.kind).toBe("prompt-cache-timeline");
+  }
+});
+
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

@@ -4201,6 +4201,59 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #60a5fa;
 }
 
+.run-log-prompt-cache-timeline {
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) minmax(0, auto) minmax(32px, 1fr);
+  align-items: start;
+  gap: 14px;
+  margin: 12px 0 14px;
+  color: #93c5fd;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.run-log-prompt-cache-timeline-body {
+  min-width: 0;
+  max-width: min(720px, 78vw);
+}
+
+.run-log-prompt-cache-timeline-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.run-log-prompt-cache-timeline-title svg {
+  color: #60a5fa;
+}
+
+.run-log-prompt-cache-timeline-narrative {
+  margin: 0 0 8px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.run-log-prompt-cache-timeline-steps {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 4px;
+  color: color-mix(in srgb, #93c5fd 88%, #ffffff);
+}
+
+.run-log-prompt-cache-timeline-steps li {
+  display: grid;
+  gap: 2px;
+}
+
+.run-log-prompt-cache-timeline-steps time {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  font-size: 11px;
+}
+
 .run-log-surfaced-detail {
   margin: 0;
 }

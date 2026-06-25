@@ -823,6 +823,9 @@ function DetailBlock({
       />
     );
   }
+  if (block.kind === "prompt-cache-timeline") {
+    return <PromptCacheTimelineBlock narrative={block.narrative} steps={block.steps} />;
+  }
   if (block.kind === "subagent-mission") {
     return (
       <SubagentMissionBlock
@@ -975,7 +978,9 @@ function isPromptCacheNoticePhaseLabel(label: string): boolean {
   return (
     /prompt cache 已失效/u.test(label) ||
     /Prompt cache 命中率从/u.test(label) ||
-    /已变更，本会话 prompt cache 已失效/u.test(label)
+    /已变更，本会话 prompt cache 已失效/u.test(label) ||
+    /已变更（Composer）/u.test(label) ||
+    /输出已截断/u.test(label)
   );
 }
 
@@ -990,6 +995,51 @@ function PromptCacheNoticeDivider({ label }: { label: string }) {
       <div className="run-log-prompt-cache-notice-line" aria-hidden />
     </div>
   );
+}
+
+function PromptCacheTimelineBlock({
+  narrative,
+  steps,
+}: {
+  narrative: string;
+  steps: Array<{
+    kind: "config_drift" | "invalidated" | "hit_dropped";
+    at: string;
+    label: string;
+    episodeId?: string;
+  }>;
+}) {
+  return (
+    <div className="run-log-prompt-cache-timeline" role="status">
+      <div className="run-log-prompt-cache-notice-line" aria-hidden />
+      <div className="run-log-prompt-cache-timeline-body">
+        <div className="run-log-prompt-cache-timeline-title">
+          <Sparkles size={14} aria-hidden />
+          <span>Prompt cache 时间线</span>
+        </div>
+        <p className="run-log-prompt-cache-timeline-narrative">{narrative}</p>
+        {steps.length > 1 ? (
+          <ol className="run-log-prompt-cache-timeline-steps">
+            {steps.map((step, index) => (
+              <li key={`${step.kind}-${step.at}-${index}`}>
+                <time dateTime={step.at}>{formatPromptCacheTimelineTime(step.at)}</time>
+                <span>{step.label}</span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </div>
+      <div className="run-log-prompt-cache-notice-line" aria-hidden />
+    </div>
+  );
+}
+
+function formatPromptCacheTimelineTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function ContextCompactionDivider({ label }: { label: string }) {

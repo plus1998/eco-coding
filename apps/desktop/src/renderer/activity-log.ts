@@ -32,6 +32,16 @@ export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agen
 
 export type ActivityDetailBlock =
   | { kind: "phase"; label: string; reconnecting?: boolean; reconnectDetail?: string }
+  | {
+      kind: "prompt-cache-timeline";
+      narrative: string;
+      steps: Array<{
+        kind: "config_drift" | "invalidated" | "hit_dropped";
+        at: string;
+        label: string;
+        episodeId?: string;
+      }>;
+    }
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string; agentId?: string }
   | { kind: "model-request"; role?: string }
   | { kind: "agent-request"; subagent?: string; agentId?: string }

@@ -25,8 +25,10 @@ export type ThreadRunEventType =
   | "context.compaction.completed"
   | "context.compaction.failed"
   | "context.compaction.suspended"
+  | "context.cache_config_drift"
   | "context.cache_invalidated"
   | "billing.cache_hit_dropped"
+  | "context.tool_output_truncated"
   | "message.delta"
   | "message.final"
   | "thinking.delta"
@@ -49,6 +51,9 @@ export interface ThreadRunToolMetadata {
   /** Human-readable Bash title from Agent tool input.description */
   description?: string;
   fileChange?: ThreadRunFileChangeMetadata;
+  outputTruncated?: boolean;
+  outputOriginalChars?: number;
+  outputKeptChars?: number;
 }
 
 export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";

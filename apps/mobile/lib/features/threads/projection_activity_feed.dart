@@ -708,11 +708,17 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
   if (item.eventType == 'context.compaction.suspended') {
     return text.isEmpty ? '自动上下文压缩已暂停' : text;
   }
+  if (item.eventType == 'context.cache_config_drift') {
+    return text.isEmpty ? 'Composer 配置已变更' : text;
+  }
   if (item.eventType == 'context.cache_invalidated') {
     return text.isEmpty ? '本会话 prompt cache 已失效' : text;
   }
   if (item.eventType == 'billing.cache_hit_dropped') {
     return text.isEmpty ? 'Prompt cache 命中率大幅下降' : text;
+  }
+  if (item.eventType == 'context.tool_output_truncated') {
+    return text.isEmpty ? 'Tool 输出已截断' : text;
   }
   if (item.eventType == 'request.retry_scheduled') {
     return text.isEmpty ? '准备重试' : text;

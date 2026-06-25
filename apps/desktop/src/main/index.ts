@@ -154,6 +154,12 @@ import {
 } from "../shared/ipc";
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
+import {
+  diffPromptCacheRuntimeSignatures,
+  resolvePromptCacheRuntimeSignature,
+} from "../shared/prompt-cache-config";
+import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
+import { emitToolOutputTruncated as emitToolOutputTruncatedEvent } from "./tool-output-run-events";
 import { isExternalPackageScriptTarget } from "../shared/package-script-target";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
@@ -302,15 +308,9 @@ import {
   resolveThreadPromptCacheFingerprint,
 } from "./thread-prompt-cache-monitor";
 import {
-  formatPromptCacheHitDropMessage,
-  ThreadCacheHitMonitor,
-  type CacheHitDropDetection,
-} from "./thread-cache-hit-monitor";
-import {
-  formatPromptCacheHitDropMessage,
-  type CacheHitDropDetection,
   ThreadCacheHitMonitor,
 } from "./thread-cache-hit-monitor";
+import { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-episode";
 import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
@@ -537,6 +537,8 @@ let pricingCatalogReady: Promise<void> = Promise.resolve();
 let billingRuntimeEnvironment: BillingRuntimeEnvironment;
 let contextMonitor: ContextWindowMonitor;
 let threadPromptCacheMonitor: ThreadPromptCacheMonitor;
+let threadPromptCacheEpisodeMonitor: ThreadPromptCacheEpisodeMonitor;
+let promptCacheRunEventEmitter: ReturnType<typeof createPromptCacheRunEventEmitter>;
 let threadCacheHitMonitor: ThreadCacheHitMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
@@ -658,6 +660,18 @@ app.whenReady().then(async () => {
   });
   contextMonitor = new ContextWindowMonitor(pricingCache);
   threadPromptCacheMonitor = new ThreadPromptCacheMonitor();
+  threadPromptCacheEpisodeMonitor = new ThreadPromptCacheEpisodeMonitor();
+  promptCacheRunEventEmitter = createPromptCacheRunEventEmitter(
+    {
+      getThread: (threadId) => conversationStore.getThread(threadId),
+      appendThreadRunEvent: (event) => conversationStore.appendThreadRunEvent(event),
+      scheduleProjectionUpdated: (threadId) => scheduleThreadRunProjectionUpdated(threadId),
+      emitThreadEvent: (threadId, type, message) => emitThreadEvent(threadId, type, message, "system"),
+      resolveCurrentRunAttemptId: (threadId) => resolveCurrentRunAttemptId(threadId),
+      writeStderr: (message) => process.stderr.write(message),
+    },
+    threadPromptCacheEpisodeMonitor,
+  );
   threadCacheHitMonitor = new ThreadCacheHitMonitor();
   const resolveProxyRoutesForThread = (threadId: string) => {
     try {
@@ -1381,6 +1395,24 @@ function registerIpcHandlers(): void {
       noteSdkSessionRouteChange(threadId, roleRoutes);
     }
     const updatedThread = ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread);
+    if (configChanged && existing) {
+      const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
+      const driftKinds = diffPromptCacheRuntimeSignatures(
+        resolvePromptCacheRuntimeSignature({
+          runtimeConfig: existing,
+          settings,
+          availableMcpServerKeys,
+        }),
+        resolvePromptCacheRuntimeSignature({
+          runtimeConfig,
+          settings,
+          availableMcpServerKeys,
+        }),
+      );
+      if (driftKinds.length > 0) {
+        promptCacheRunEventEmitter.emitConfigDrift(threadId, driftKinds);
+      }
+    }
     if (configChanged) {
       emitThreadEvent(threadId, "thread.runtime_config_updated", "", "system", false, {
         runtimeConfig,
@@ -4611,6 +4643,7 @@ function clearThreadRuntimeMemory(threadId: string): void {
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
   threadPromptCacheMonitor.clearThread(threadId);
+  threadPromptCacheEpisodeMonitor.clearThread(threadId);
   threadCacheHitMonitor.clearThread(threadId);
   subagentMetricsRegistry.clearThread(threadId);
   clearThreadSubagentLaunchRegistry(threadId);
@@ -5240,6 +5273,30 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
             }
           : undefined,
       );
+      if (
+        type === "tool.completed" &&
+        extras?.tool?.outputTruncated &&
+        extras.tool.outputOriginalChars !== undefined &&
+        extras.tool.outputKeptChars !== undefined
+      ) {
+        emitToolOutputTruncatedEvent(
+          {
+            getThread: (id) => conversationStore.getThread(id),
+            appendThreadRunEvent: (event) => conversationStore.appendThreadRunEvent(event),
+            scheduleProjectionUpdated: (id) => scheduleThreadRunProjectionUpdated(id),
+            emitThreadEvent: (id, type, message) => emitThreadEvent(id, type, message, "system"),
+            resolveCurrentRunAttemptId: (id) => resolveCurrentRunAttemptId(id),
+            writeStderr: (message) => process.stderr.write(message),
+          },
+          id,
+          {
+            toolName: extras.tool.name,
+            originalChars: extras.tool.outputOriginalChars,
+            keptChars: extras.tool.outputKeptChars,
+            toolUseId: extras.tool.toolUseId,
+          },
+        );
+      }
     },
     undefined,
     activityAgentId || sdkParentToolUseId
@@ -5397,7 +5454,7 @@ function maybeEmitPromptCacheHitDrop(input: SingleUsageBillingRequest): void {
   process.stderr.write(
     `[eco] prompt cache hit dropped thread=${input.threadId} ${Math.round(detection.previousRatio * 100)}%→${Math.round(detection.currentRatio * 100)}%\n`,
   );
-  emitPromptCacheHitDropped(input.threadId, detection, {
+  promptCacheRunEventEmitter.emitHitDropped(input.threadId, detection, {
     ...(input.requestKey && { requestKey: input.requestKey }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
   });
@@ -6192,82 +6249,7 @@ async function auditThreadPromptCacheBeforeSdkSession(input: {
   process.stderr.write(
     `[eco] prompt cache invalidated thread=${input.threadId} reasons=${formatPromptCacheBreakLog(reasons)}\n`,
   );
-  emitPromptCacheInvalidated(input.threadId, reasons);
-}
-
-function emitPromptCacheInvalidated(threadId: string, reasons: readonly PromptCacheBreakReason[]): void {
-  if (!conversationStore.getThread(threadId)) {
-    return;
-  }
-  const message = formatPromptCacheBreakMessage(reasons);
-  const now = new Date().toISOString();
-  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const runAttemptId = resolveCurrentRunAttemptId(threadId);
-  const metadata: Record<string, unknown> = {
-    liveType: "context.cache_invalidated",
-    promptCache: {
-      reasons: [...reasons],
-    },
-  };
-  try {
-    conversationStore.appendThreadRunEvent({
-      id: `tre:${threadId}:context-cache-invalidated:${unique}`,
-      threadId,
-      eventType: "context.cache_invalidated",
-      scope: "main",
-      streamState: "none",
-      message,
-      observedAt: now,
-      ...(runAttemptId && { runAttemptId }),
-      metadata,
-    });
-    scheduleThreadRunProjectionUpdated(threadId);
-    emitThreadEvent(threadId, "context.cache_invalidated", message, "system");
-  } catch (error) {
-    process.stderr.write(`[eco] prompt cache invalidation event write failed: ${errorMessage(error)}\n`);
-  }
-}
-
-function emitPromptCacheHitDropped(
-  threadId: string,
-  detection: CacheHitDropDetection,
-  context?: { requestKey?: string; runAttemptId?: string },
-): void {
-  if (!conversationStore.getThread(threadId)) {
-    return;
-  }
-  const message = formatPromptCacheHitDropMessage(detection);
-  const now = new Date().toISOString();
-  const unique = context?.requestKey ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const runAttemptId = context?.runAttemptId ?? resolveCurrentRunAttemptId(threadId);
-  const metadata: Record<string, unknown> = {
-    liveType: "billing.cache_hit_dropped",
-    promptCacheHit: {
-      previousRatio: detection.previousRatio,
-      currentRatio: detection.currentRatio,
-      dropPoints: detection.dropPoints,
-      inputTokens: detection.inputTokens,
-      cacheReadTokens: detection.cacheReadTokens,
-      cacheCreationTokens: detection.cacheCreationTokens,
-    },
-  };
-  try {
-    conversationStore.appendThreadRunEvent({
-      id: `tre:${threadId}:cache-hit-dropped:${unique}`,
-      threadId,
-      eventType: "billing.cache_hit_dropped",
-      scope: "main",
-      streamState: "none",
-      message,
-      observedAt: now,
-      ...(runAttemptId && { runAttemptId }),
-      metadata,
-    });
-    scheduleThreadRunProjectionUpdated(threadId);
-    emitThreadEvent(threadId, "billing.cache_hit_dropped", message, "system");
-  } catch (error) {
-    process.stderr.write(`[eco] prompt cache hit drop event write failed: ${errorMessage(error)}\n`);
-  }
+  promptCacheRunEventEmitter.emitInvalidated(input.threadId, reasons);
 }
 
 function recordThreadRunEventFromLiveEvent(input: {
