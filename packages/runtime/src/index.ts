@@ -260,6 +260,15 @@ export {
   splitSubagentActivityForHandoff,
   type SubagentHandoffActivityLine,
 } from "./subagent-handoff.js";
+export {
+  buildStructuredCompactFallback,
+  formatStructuredCompactSections,
+  parseStructuredCompactSections,
+  structuredCompactInstructionSuffix,
+  STRUCTURED_COMPACT_HEADINGS,
+  type StructuredCompactHeading,
+  type StructuredCompactSections,
+} from "./structured-compact-summary.js";
 export * from "./subagent-availability";
 export * from "./agent-orchestration";
 export * from "./tool-permission-policy.js";

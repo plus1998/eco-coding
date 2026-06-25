@@ -1,6 +1,7 @@
 import type { ThreadActivityLine } from "../shared/ipc";
 import {
   buildCompactionSummaryPrompt,
+  buildStructuredEcoCompactFallbackSummary,
   estimateHandoffPostTokens,
   splitUserMessagesForCompact,
 } from "../shared/eco-compact-handoff";
@@ -158,7 +159,7 @@ async function requestCompactionSummary(
         max_tokens: 2_048,
         temperature: 0,
         system:
-          "你是编码对话压缩器。根据用户提供的较早消息生成简洁摘要，保留任务目标、文件路径、测试结果与关键决策。只输出摘要正文。",
+          "你是编码对话压缩器。根据用户提供的较早消息生成结构化摘要，按 ## 任务目标 / 已读/已改文件 / 测试结果与错误 / 已做决策 / 未完成事项 分段输出。只输出摘要正文。",
         messages: [{ role: "user", content: prompt }],
       }),
       signal,
@@ -193,13 +194,10 @@ function extractSummaryText(body: unknown): string | undefined {
 }
 
 function buildFallbackSummary(threadPrompt: string, olderMessages: readonly string[]): string {
-  const lines = [
-    threadPrompt.trim() && `任务：${threadPrompt.trim()}`,
-    olderMessages.length > 0 && `较早用户消息（${olderMessages.length} 条，未生成 LLM 摘要）：`,
-    ...olderMessages.slice(-8).map((message, index) => `${index + 1}. ${message}`),
-  ].filter((line): line is string => Boolean(line));
-
-  return lines.join("\n").trim() || "（上下文已压缩，无更早对话内容）";
+  return buildStructuredEcoCompactFallbackSummary({
+    threadPrompt,
+    olderMessages,
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

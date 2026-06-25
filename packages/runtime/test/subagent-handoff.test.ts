@@ -40,8 +40,9 @@ test("buildSubagentHandoffPrompt includes summary and fresh-instance note", () =
   expect(prompt).toContain("Found JWT in middleware.ts");
 });
 
-test("buildFallbackSubagentHandoffSummary truncates older messages", () => {
+test("buildFallbackSubagentHandoffSummary uses structured headings", () => {
   const summary = buildFallbackSubagentHandoffSummary("Task", ["first finding", "x".repeat(500)]);
-  expect(summary).toContain("1. first finding");
-  expect(summary).toContain("…");
+  expect(summary).toContain("## 任务目标");
+  expect(summary).toContain("Task");
+  expect(summary).toContain("first finding");
 });

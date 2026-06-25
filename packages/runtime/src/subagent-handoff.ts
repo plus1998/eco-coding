@@ -1,4 +1,9 @@
 import { computeOccupancyRatio } from "./models-dev-limits.js";
+import {
+  buildStructuredCompactFallback,
+  formatStructuredCompactSections,
+  structuredCompactInstructionSuffix,
+} from "./structured-compact-summary.js";
 
 export const DEFAULT_SUBAGENT_HANDOFF_THRESHOLD = 0.85;
 
@@ -75,9 +80,8 @@ export function buildSubagentCompactionSummaryPrompt(
       : "（无更早输出）";
 
   return [
-    `请将以下 ${role} 子代理会话中较早的输出压缩为一份简洁摘要，供新的子代理实例继续任务。`,
-    "必须保留：已读/已查文件路径、关键发现、测试/命令结果、已做决策及理由、未完成事项。",
-    "使用与原任务相同的语言。只输出摘要正文，不要 markdown 标题、不要 JSON、不要解释压缩过程。",
+    structuredCompactInstructionSuffix("subagent"),
+  `角色：${role}`,
     "",
     "## 原始任务",
     originalPrompt.trim() || "（无）",
@@ -92,14 +96,14 @@ export function buildFallbackSubagentHandoffSummary(
   olderMessages: readonly string[],
 ): string {
   if (olderMessages.length === 0) {
-    return originalPrompt.trim() || "（无可用摘要）";
+    return formatStructuredCompactSections({
+      任务目标: originalPrompt.trim() || "无",
+    });
   }
-  const bullets = olderMessages.slice(-8).map((message) => {
-    const compact = message.replace(/\s+/g, " ").trim();
-    const limit = 400;
-    return compact.length > limit ? `${compact.slice(0, limit)}…` : compact;
+  return buildStructuredCompactFallback({
+    taskGoal: originalPrompt.trim() || undefined,
+    olderMessages,
   });
-  return bullets.map((line, index) => `${index + 1}. ${line}`).join("\n");
 }
 
 export function buildSubagentHandoffPrompt(
@@ -123,7 +127,7 @@ export function buildSubagentHandoffPrompt(
     "## 子代理上下文交接（Eco）",
     `${resumeNote} 已接近上下文上限，因此未 Resume 完整历史，改为全新实例继续。`,
     "",
-    "### 工作摘要",
+    "### 工作摘要（结构化）",
     handoff.summary.trim() || "（无摘要）",
     "",
     "### 近期输出（原文保留）",

@@ -52,7 +52,7 @@ test("buildEcoCompactHandoffPrompt includes summary, recent messages, and follow
   );
 
   expect(prompt).toContain("实现登录功能");
-  expect(prompt).toContain("## 对话摘要（自动压缩）");
+  expect(prompt).toContain("## 对话摘要（结构化压缩）");
   expect(prompt).toContain("已完成路由骨架");
   expect(prompt).toContain("## 近期用户消息（原文保留）");
   expect(prompt).toContain("1. 补上 OAuth");

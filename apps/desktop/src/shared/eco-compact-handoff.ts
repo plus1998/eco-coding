@@ -1,4 +1,8 @@
 import type { ActivityContextLine } from "./thread-continuation";
+import {
+  buildStructuredCompactFallback,
+  structuredCompactInstructionSuffix,
+} from "@eco/runtime";
 
 export interface ThreadCompactHandoffData {
   summary: string;
@@ -55,9 +59,7 @@ export function buildCompactionSummaryPrompt(threadPrompt: string, olderContext:
       : "（无更早的用户消息）";
 
   return [
-    "请将以下编码对话中较早的用户消息压缩为一份简洁摘要，供后续续聊使用。",
-    "必须保留：任务目标与验收标准、已读/已改文件路径、测试结果与错误信息、已做决策及理由。",
-    "使用与用户消息相同的语言。只输出摘要正文，不要 markdown 标题、不要 JSON、不要解释压缩过程。",
+    structuredCompactInstructionSuffix("thread"),
     "",
     "## 原始任务",
     threadPrompt.trim() || "（无）",
@@ -81,7 +83,7 @@ export function buildEcoCompactHandoffPrompt(
     threadPrompt.trim(),
     "",
     "---",
-    "## 对话摘要（自动压缩）",
+    "## 对话摘要（结构化压缩）",
     handoff.summary.trim() || "（无摘要）",
     "",
     "## 近期用户消息（原文保留）",
@@ -91,6 +93,16 @@ export function buildEcoCompactHandoffPrompt(
     "后续消息：",
     followUp.trim(),
   ].join("\n");
+}
+
+export function buildStructuredEcoCompactFallbackSummary(input: {
+  threadPrompt: string;
+  olderMessages: readonly string[];
+}): string {
+  return buildStructuredCompactFallback({
+    taskGoal: input.threadPrompt.trim() || undefined,
+    olderMessages: input.olderMessages,
+  });
 }
 
 export function estimateHandoffPostTokens(
