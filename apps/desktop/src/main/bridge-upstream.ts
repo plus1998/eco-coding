@@ -267,9 +267,14 @@ export function buildBridgeUpstreamMessagesPayload(
     return payload;
   }
 
+  // OpenAI Chat Completions (llama.cpp / DeepSeek / etc.) use reasoning_content deltas,
+  // not OpenAI reasoning_effort. Provider connectivity tests expect this field absent.
+  responsesReq.reasoning = undefined;
+
   const chatReq = responsesToChatCompletionsRequest(responsesReq);
   chatReq.model = modelId;
   chatReq.stream = stream;
+  delete chatReq.reasoning_effort;
   const payload = chatReq as unknown as Record<string, unknown>;
   applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
   return payload;

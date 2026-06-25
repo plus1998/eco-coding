@@ -531,6 +531,7 @@ let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 250;
+const RUN_PROJECTION_STREAMING_EMIT_MS = 50;
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -6327,7 +6328,12 @@ function recordThreadRunEventFromLiveEvent(input: {
   }
   try {
     conversationStore.appendThreadRunEvent(event);
-    scheduleThreadRunProjectionUpdated(input.threadId);
+    const projectionStreaming =
+      input.stream ? true : input.type === "message.delta" ? false : undefined;
+    scheduleThreadRunProjectionUpdated(
+      input.threadId,
+      ...(projectionStreaming !== undefined ? [{ streaming: projectionStreaming }] : []),
+    );
     if (input.extras?.tool?.fileChange) {
       scheduleWorkspaceGitStatusPublishForThread(input.threadId);
     }
@@ -6511,10 +6517,30 @@ function shortProjectionId(id: string): string {
   return id.length > 24 ? id.slice(-24) : id;
 }
 
-function scheduleThreadRunProjectionUpdated(threadId: string): void {
+function scheduleThreadRunProjectionUpdated(
+  threadId: string,
+  options?: { streaming?: boolean },
+): void {
   const existing = runProjectionEmitTimers.get(threadId);
+  if (options?.streaming) {
+    if (existing) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      runProjectionEmitTimers.delete(threadId);
+      emitThreadRunProjectionUpdated(threadId);
+    }, RUN_PROJECTION_STREAMING_EMIT_MS);
+    runProjectionEmitTimers.set(threadId, timer);
+    return;
+  }
+
   if (existing) {
     clearTimeout(existing);
+    runProjectionEmitTimers.delete(threadId);
+  }
+  if (options?.streaming === false) {
+    emitThreadRunProjectionUpdated(threadId);
+    return;
   }
   const timer = setTimeout(() => {
     runProjectionEmitTimers.delete(threadId);

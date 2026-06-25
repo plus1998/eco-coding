@@ -57,6 +57,25 @@ test("buildBridgeUpstreamMessagesPayload maps max_tokens for openai chat complet
   expect(body.max_completion_tokens).toBe(4096);
 });
 
+test("buildBridgeUpstreamMessagesPayload omits reasoning_effort for openai chat completions", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    stream: true,
+    thinking: { type: "adaptive" },
+    effort: "medium",
+    messages: [{ role: "user", content: "hi" }],
+  };
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "local-model",
+    true,
+  );
+  expect(body.stream).toBe(true);
+  expect(body).not.toHaveProperty("reasoning_effort");
+});
+
 test("applyUpstreamMaxOutputLimit keeps only max_tokens for openai chat (New API → llama.cpp)", () => {
   const body: Record<string, unknown> = {
     model: "local-model",
