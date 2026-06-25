@@ -302,6 +302,16 @@ import {
   resolveThreadPromptCacheFingerprint,
 } from "./thread-prompt-cache-monitor";
 import {
+  formatPromptCacheHitDropMessage,
+  ThreadCacheHitMonitor,
+  type CacheHitDropDetection,
+} from "./thread-cache-hit-monitor";
+import {
+  formatPromptCacheHitDropMessage,
+  type CacheHitDropDetection,
+  ThreadCacheHitMonitor,
+} from "./thread-cache-hit-monitor";
+import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
   normalizeProxyBridgeSettingsSnapshot,
@@ -527,6 +537,7 @@ let pricingCatalogReady: Promise<void> = Promise.resolve();
 let billingRuntimeEnvironment: BillingRuntimeEnvironment;
 let contextMonitor: ContextWindowMonitor;
 let threadPromptCacheMonitor: ThreadPromptCacheMonitor;
+let threadCacheHitMonitor: ThreadCacheHitMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
@@ -647,6 +658,7 @@ app.whenReady().then(async () => {
   });
   contextMonitor = new ContextWindowMonitor(pricingCache);
   threadPromptCacheMonitor = new ThreadPromptCacheMonitor();
+  threadCacheHitMonitor = new ThreadCacheHitMonitor();
   const resolveProxyRoutesForThread = (threadId: string) => {
     try {
       const roleRoutes = resolveRoleRoutesForThread(threadId);
@@ -4599,6 +4611,7 @@ function clearThreadRuntimeMemory(threadId: string): void {
   threadUsageAccumulator.clear(threadId);
   contextScheduler.clearThread(threadId);
   threadPromptCacheMonitor.clearThread(threadId);
+  threadCacheHitMonitor.clearThread(threadId);
   subagentMetricsRegistry.clearThread(threadId);
   clearThreadSubagentLaunchRegistry(threadId);
   subagentDelegationLinkersByThread.delete(threadId);
@@ -5365,7 +5378,29 @@ async function processUsageBilling(
   }
 
   await applySingleUsageBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
+  maybeEmitPromptCacheHitDrop(input);
   return resolved.requestBillingLog;
+}
+
+function maybeEmitPromptCacheHitDrop(input: SingleUsageBillingRequest): void {
+  if (input.reconciliationOnly || input.role !== "planner") {
+    return;
+  }
+  const detection = threadCacheHitMonitor.observePlannerUsage(input.threadId, {
+    inputTokens: input.inputTokens,
+    cacheReadTokens: input.cacheReadTokens,
+    cacheCreationTokens: input.cacheCreationTokens,
+  });
+  if (!detection) {
+    return;
+  }
+  process.stderr.write(
+    `[eco] prompt cache hit dropped thread=${input.threadId} ${Math.round(detection.previousRatio * 100)}%→${Math.round(detection.currentRatio * 100)}%\n`,
+  );
+  emitPromptCacheHitDropped(input.threadId, detection, {
+    ...(input.requestKey && { requestKey: input.requestKey }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+  });
 }
 
 /** Best-effort compaction before resume; failures must not block the main agent run. */
@@ -6190,6 +6225,48 @@ function emitPromptCacheInvalidated(threadId: string, reasons: readonly PromptCa
     emitThreadEvent(threadId, "context.cache_invalidated", message, "system");
   } catch (error) {
     process.stderr.write(`[eco] prompt cache invalidation event write failed: ${errorMessage(error)}\n`);
+  }
+}
+
+function emitPromptCacheHitDropped(
+  threadId: string,
+  detection: CacheHitDropDetection,
+  context?: { requestKey?: string; runAttemptId?: string },
+): void {
+  if (!conversationStore.getThread(threadId)) {
+    return;
+  }
+  const message = formatPromptCacheHitDropMessage(detection);
+  const now = new Date().toISOString();
+  const unique = context?.requestKey ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const runAttemptId = context?.runAttemptId ?? resolveCurrentRunAttemptId(threadId);
+  const metadata: Record<string, unknown> = {
+    liveType: "billing.cache_hit_dropped",
+    promptCacheHit: {
+      previousRatio: detection.previousRatio,
+      currentRatio: detection.currentRatio,
+      dropPoints: detection.dropPoints,
+      inputTokens: detection.inputTokens,
+      cacheReadTokens: detection.cacheReadTokens,
+      cacheCreationTokens: detection.cacheCreationTokens,
+    },
+  };
+  try {
+    conversationStore.appendThreadRunEvent({
+      id: `tre:${threadId}:cache-hit-dropped:${unique}`,
+      threadId,
+      eventType: "billing.cache_hit_dropped",
+      scope: "main",
+      streamState: "none",
+      message,
+      observedAt: now,
+      ...(runAttemptId && { runAttemptId }),
+      metadata,
+    });
+    scheduleThreadRunProjectionUpdated(threadId);
+    emitThreadEvent(threadId, "billing.cache_hit_dropped", message, "system");
+  } catch (error) {
+    process.stderr.write(`[eco] prompt cache hit drop event write failed: ${errorMessage(error)}\n`);
   }
 }
 

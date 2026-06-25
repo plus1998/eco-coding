@@ -26,6 +26,7 @@ export type ThreadRunEventType =
   | "context.compaction.failed"
   | "context.compaction.suspended"
   | "context.cache_invalidated"
+  | "billing.cache_hit_dropped"
   | "message.delta"
   | "message.final"
   | "thinking.delta"

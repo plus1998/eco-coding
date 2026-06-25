@@ -1136,6 +1136,9 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
   if (item.eventType === "context.cache_invalidated") {
     return text || "本会话 prompt cache 已失效";
   }
+  if (item.eventType === "billing.cache_hit_dropped") {
+    return text || "Prompt cache 命中率大幅下降";
+  }
   if (item.eventType === "agent.started") {
     return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已启动`;
   }

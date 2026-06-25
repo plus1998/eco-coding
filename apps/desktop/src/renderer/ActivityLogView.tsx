@@ -934,6 +934,9 @@ function PhaseBlock({
   if (isContextCompactionPhaseLabel(label)) {
     return <ContextCompactionDivider label={label} />;
   }
+  if (isPromptCacheNoticePhaseLabel(label)) {
+    return <PromptCacheNoticeDivider label={label} />;
+  }
   if (reconnecting) {
     const isFailure = label.startsWith("连接失败");
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
@@ -965,6 +968,27 @@ function isContextCompactionPhaseLabel(label: string): boolean {
     /^正在(?:自动|手动)压缩上下文$/u.test(label) ||
     /^上下文已(?:自动|手动)压缩$/u.test(label) ||
     /^上下文压缩失败/u.test(label)
+  );
+}
+
+function isPromptCacheNoticePhaseLabel(label: string): boolean {
+  return (
+    /prompt cache 已失效/u.test(label) ||
+    /Prompt cache 命中率从/u.test(label) ||
+    /已变更，本会话 prompt cache 已失效/u.test(label)
+  );
+}
+
+function PromptCacheNoticeDivider({ label }: { label: string }) {
+  return (
+    <div className="run-log-prompt-cache-notice" role="status">
+      <div className="run-log-prompt-cache-notice-line" aria-hidden />
+      <div className="run-log-prompt-cache-notice-label">
+        <Sparkles size={14} aria-hidden />
+        <span>{label}</span>
+      </div>
+      <div className="run-log-prompt-cache-notice-line" aria-hidden />
+    </div>
   );
 }
 

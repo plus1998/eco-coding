@@ -1334,6 +1334,20 @@ test("isThreadPromptCacheInvalidated tracks cache invalidation events", () => {
   ).toBe(true);
 });
 
+test("resolveProjectionPhaseLabel maps cache hit drop events", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "cache-hit-drop",
+      eventType: "billing.cache_hit_dropped",
+      text: "Prompt cache 命中率从 78% 降至 12%（↓66pp），可能由 cache break 引起。",
+    }),
+  );
+  expect(detail).toEqual({
+    kind: "phase",
+    label: "Prompt cache 命中率从 78% 降至 12%（↓66pp），可能由 cache break 引起。",
+  });
+});
+
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

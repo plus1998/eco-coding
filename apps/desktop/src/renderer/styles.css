@@ -4167,6 +4167,40 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #c9a0a0;
 }
 
+.run-log-prompt-cache-notice {
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) minmax(0, auto) minmax(32px, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0 14px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.run-log-prompt-cache-notice-line {
+  height: 1px;
+  min-width: 0;
+  background: color-mix(in srgb, #3b82f6 35%, #333333);
+}
+
+.run-log-prompt-cache-notice-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  max-width: min(720px, 78vw);
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.run-log-prompt-cache-notice-label svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #60a5fa;
+}
+
 .run-log-surfaced-detail {
   margin: 0;
 }

@@ -711,6 +711,9 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
   if (item.eventType == 'context.cache_invalidated') {
     return text.isEmpty ? '本会话 prompt cache 已失效' : text;
   }
+  if (item.eventType == 'billing.cache_hit_dropped') {
+    return text.isEmpty ? 'Prompt cache 命中率大幅下降' : text;
+  }
   if (item.eventType == 'request.retry_scheduled') {
     return text.isEmpty ? '准备重试' : text;
   }
