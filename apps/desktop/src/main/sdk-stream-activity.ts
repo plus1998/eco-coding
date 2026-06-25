@@ -10,6 +10,7 @@ import {
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
+import { limitToolOutputForContext } from "../shared/tool-output-limit.js";
 import { activityStreamKey } from "./activity-agent-id.js";
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
@@ -260,6 +261,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readString(record.stdout) ??
     readString(record.result) ??
     readString(record.content);
+  const limitedOutput = output ? limitToolOutputForContext(output) : undefined;
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
@@ -270,12 +272,17 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     : undefined;
   const fileChange = enrichFileChangeFromToolOutput(
     fileChangeFromInput,
-    output ?? record.result ?? record.content,
+    limitedOutput?.text ?? output ?? record.result ?? record.content,
   );
   return {
     name,
     ...(command && { detail: command }),
-    ...(output && { output }),
+    ...(limitedOutput?.text && { output: limitedOutput.text }),
+    ...(limitedOutput?.truncated && {
+      outputTruncated: true,
+      outputOriginalChars: limitedOutput.originalChars,
+      outputKeptChars: limitedOutput.keptChars,
+    }),
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
     ...(fileChange && { fileChange }),
