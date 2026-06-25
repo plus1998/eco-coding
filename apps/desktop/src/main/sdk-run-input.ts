@@ -7,7 +7,17 @@ import type {
   EcoAgentRuntimeConfig,
 } from "@eco/runtime";
 
-export type SdkRunMode = "planning" | "execution" | "question" | "ask";
+export type SdkRunMode = "planning" | "execution" | "ask";
+
+export function normalizeSdkRunMode(value: unknown): SdkRunMode | undefined {
+  if (value === "question") {
+    return "ask";
+  }
+  if (value === "planning" || value === "execution" || value === "ask") {
+    return value;
+  }
+  return undefined;
+}
 
 export interface BuildSdkRunInput {
   threadId: string;
@@ -40,5 +50,5 @@ export function buildSdkRunInput(input: BuildSdkRunInput): AgentRuntimeRunInput 
 }
 
 export function sdkRunPhaseFromMode(mode: SdkRunMode): SubagentRunPhase {
-  return mode === "ask" ? "question" : mode;
+  return mode;
 }

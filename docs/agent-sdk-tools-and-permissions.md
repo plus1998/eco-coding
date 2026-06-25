@@ -297,7 +297,7 @@ Eco Composer 三档模式由用户显式选择（`sessionMode: agent | plan | as
 |---------------|----------------------|----------|
 | **agent** | `acceptEdits` | `driver.run()` / execution continuation |
 | **plan** | `plan` | `runContinuation("planning")` |
-| **ask** | `plan`（只读工具集） | `driver.runAsk()` / `runContinuation("ask")` |
+| **ask** | `plan`（只读工具集 + `AskUserQuestion`） | `driver.runAsk()` / `runContinuation("ask")` |
 
 ### Eco 子代理 vs SDK 内置
 

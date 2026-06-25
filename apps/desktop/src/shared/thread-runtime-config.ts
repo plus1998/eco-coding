@@ -271,12 +271,20 @@ export function isPlanModeThreadRuntime(config: ThreadRuntimeConfig): boolean {
   return resolveSessionMode(config) === "plan";
 }
 
-/** ExitPlanMode ends the planning phase; keep thread config aligned with the UI toggle. */
-export function withPlanModeDisabled(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
-  if (resolveSessionMode(config) !== "plan") {
+/** ExitPlanMode ends the planning phase; align thread config with Agent session mode. */
+export function withAgentSessionMode(
+  config: ThreadRuntimeConfig,
+  sessionMode: SessionMode = "agent",
+): ThreadRuntimeConfig {
+  if (resolveSessionMode(config) === sessionMode) {
     return config;
   }
-  return { ...config, sessionMode: "agent" };
+  return { ...config, sessionMode };
+}
+
+/** @deprecated Use {@link withAgentSessionMode} */
+export function withPlanModeDisabled(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
+  return withAgentSessionMode(config, "agent");
 }
 
 /** True when `after` differs from `before` only by `bashReviewMode`. */

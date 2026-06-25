@@ -90,8 +90,7 @@ test("buildSdkRunInput omits blank execution prompt override", () => {
 });
 
 test("sdkRunPhaseFromMode maps continuation modes to subagent phases", () => {
-  expect(sdkRunPhaseFromMode("question")).toBe("question");
-  expect(sdkRunPhaseFromMode("ask")).toBe("question");
+  expect(sdkRunPhaseFromMode("ask")).toBe("ask");
   expect(sdkRunPhaseFromMode("planning")).toBe("planning");
   expect(sdkRunPhaseFromMode("execution")).toBe("execution");
 });

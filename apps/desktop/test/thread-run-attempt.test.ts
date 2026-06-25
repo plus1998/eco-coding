@@ -94,7 +94,7 @@ test("runThreadRequestWithLifecycleAutoRetry marks thrown aborted attempts as ca
   await expect(
     runThreadRequestWithLifecycleAutoRetry({
       threadId: "thr_cancel",
-      phase: "question",
+      phase: "ask",
       signal: controller.signal,
       runOnce: async () => {
         controller.abort();

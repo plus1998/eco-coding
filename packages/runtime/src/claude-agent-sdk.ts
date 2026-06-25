@@ -147,12 +147,13 @@ const planningContinuationAllowedTools = [
 ] as const;
 // Plan submission tools are user-approval boundaries; never let SDK allow-rules auto-approve them.
 const protectedPlanModeToolNames = ["EnterPlanMode", "ExitPlanMode", "mcp__eco_plan__finalize_plan"] as const;
-const questionAllowedTools = [
+const askAllowedTools = [
   "Agent",
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
+  "AskUserQuestion",
 ] as const;
 const exploreSubagentTools = ["Read", "Glob", "Grep"] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
@@ -181,10 +182,6 @@ function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
   return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
 }
 
-function isAskContinuationMode(mode: string): boolean {
-  return mode === "ask" || mode === "question";
-}
-
 function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   prompt: string;
   permissionMode: "plan";
@@ -197,7 +194,7 @@ function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   return {
     prompt: input.prompt,
     permissionMode: "plan",
-    allowedTools: [...questionAllowedTools],
+    allowedTools: [...askAllowedTools],
     phaseAppend: askSessionPhaseAppend,
     agents: createAskAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
     availability,
@@ -550,11 +547,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSingleSession(input, buildAskSessionPhase(input));
   }
 
-  /** @deprecated Use {@link runAsk} */
-  async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    yield* this.runAsk(input);
-  }
-
   async *compactSession(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
   }
@@ -612,11 +604,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   async *runContinuation(
     input: AgentRuntimeRunInput,
-    mode: "planning" | "execution" | "ask" | "question",
+    mode: "planning" | "execution" | "ask",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    if (isAskContinuationMode(mode)) {
+    if (mode === "ask") {
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
       yield* this.runSingleSession(input, buildAskSessionPhase(input));
       return;
@@ -1132,7 +1124,7 @@ export function createPlanningAgentDefinitions(
   return definitions;
 }
 
-export function createQuestionAgentDefinitions(
+export function createAskAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
@@ -1144,8 +1136,8 @@ export function createQuestionAgentDefinitions(
   return filterAgentDefinitions(definitions, availability);
 }
 
-/** Ask-mode agent roster: explore plus profile read-only agents (via dynamic registry merge). */
-export const createAskAgentDefinitions = createQuestionAgentDefinitions;
+/** @deprecated Use {@link createAskAgentDefinitions} */
+export const createQuestionAgentDefinitions = createAskAgentDefinitions;
 
 /** @deprecated Import from ./prompts/execution-agents.js */
 export { reviewerAgentPrompt };

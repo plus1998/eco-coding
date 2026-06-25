@@ -1,6 +1,17 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
 
-export type RunAttemptPhase = "planning" | "execution" | "question" | "continuation";
+export type RunAttemptPhase = "planning" | "execution" | "ask" | "continuation";
+
+/** Coerce legacy persisted phases after the question → ask rename. */
+export function normalizeRunAttemptPhase(value: unknown): RunAttemptPhase | undefined {
+  if (value === "question") {
+    return "ask";
+  }
+  if (value === "planning" || value === "execution" || value === "ask" || value === "continuation") {
+    return value;
+  }
+  return undefined;
+}
 export type RunAttemptStatus = "running" | "completed" | "failed" | "cancelled";
 export type AgentInstanceKind = "planner" | "subagent";
 export type AgentInstanceStatus = "launching" | "active" | "stopped" | "abandoned";

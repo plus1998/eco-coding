@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/session_mode.dart';
+import '../../core/constants/session_mode_ui.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_theme_provider.dart';
@@ -34,6 +35,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _sessionMode = workflow?.sessionMode ?? 'agent';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _saveSessionMode(SessionMode nextMode) async {
+    setState(() => _sessionMode = nextMode);
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    try {
+      final workflow = await ref.read(workflowSettingsProvider.future);
+      await rpc.saveWorkflowSettings(
+        WorkflowSettingsSnapshot(
+          sessionMode: nextMode,
+          mcpServersEnabled: workflow?.mcpServersEnabled,
+        ),
+      );
+      ref.invalidate(workflowSettingsProvider);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
     }
   }
 
@@ -103,33 +126,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        SwitchListTile(
-                          title: const Text('全局 Plan Mode'),
-                          subtitle: const Text('workflow-settings:save'),
-                          value: _sessionMode == 'plan',
-                          onChanged: (value) async {
-                            final nextMode = value ? 'plan' : 'agent';
-                            setState(() => _sessionMode = nextMode);
-                            final rpc = ref.read(desktopRpcProvider);
-                            if (rpc == null) return;
-                            try {
-                              final workflow =
-                                  await ref.read(workflowSettingsProvider.future);
-                              await rpc.saveWorkflowSettings(
-                                WorkflowSettingsSnapshot(
-                                  sessionMode: nextMode,
-                                  mcpServersEnabled: workflow?.mcpServersEnabled,
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '默认 Session 模式',
+                                  style: Theme.of(context).textTheme.titleSmall,
                                 ),
-                              );
-                              ref.invalidate(workflowSettingsProvider);
-                            } catch (error) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(error.toString())),
-                                );
-                              }
-                            }
-                          },
+                                const SizedBox(height: 4),
+                                Text(
+                                  '新建线程的默认 Composer 模式（workflow-settings:save）',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                const SizedBox(height: 12),
+                                ...sessionModeUiOptions.map((option) {
+                                  final selected = _sessionMode == option.value;
+                                  return RadioListTile<SessionMode>(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(option.title),
+                                    subtitle: Text(option.description),
+                                    value: option.value,
+                                    groupValue: _sessionMode,
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      _saveSessionMode(value);
+                                    },
+                                    selected: selected,
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
                         ),
                         if (signedIn) ...[
                           const Divider(height: 32),

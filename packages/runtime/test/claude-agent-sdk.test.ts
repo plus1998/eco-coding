@@ -19,7 +19,7 @@ import {
   createPhaseBoundaryEvent,
   createPlanningAgentDefinitions,
   createPlanReadyEvent,
-  createQuestionAgentDefinitions,
+  createAskAgentDefinitions,
   createSessionCapturedEvent,
   createToolPermissionDeniedEvent,
   deleteClaudeAgentSdkSession,
@@ -548,7 +548,7 @@ test("planning explore uses only codebase read tools while architect keeps netwo
 });
 
 test("question explore subagent uses only codebase read tools", () => {
-  const definitions = createQuestionAgentDefinitions(routes);
+  const definitions = createAskAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     model: "claude-haiku-explore",
     tools: ["Read", "Glob", "Grep"],
@@ -1530,6 +1530,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     "NotebookRead",
     "WebSearch",
     "WebFetch",
+    "AskUserQuestion",
     "TaskCreate",
     "TaskUpdate",
     "TodoWrite",

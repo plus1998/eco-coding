@@ -1,6 +1,6 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
 
-export type SubagentRunPhase = "planning" | "execution" | "question";
+export type SubagentRunPhase = "planning" | "execution" | "ask";
 
 export type SubagentSessionStatus = "active" | "stopped" | "handed_off";
 

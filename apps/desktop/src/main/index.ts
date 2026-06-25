@@ -156,7 +156,7 @@ import {
   type WorktreeApplyResult,
   type WorktreeCancelDisposition,
   type WorktreeStatusResult,
-  withPlanModeDisabled,
+  withAgentSessionMode,
 } from "../shared/ipc";
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
@@ -370,7 +370,7 @@ import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
-  resolveQuestionRunOutcome,
+  resolveAskRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
 import { buildThreadRunProjection } from "./thread-run-projection";
@@ -1128,12 +1128,6 @@ function resolveAgentRuntimeConfigForThreadId(threadId: string): EcoAgentRuntime
   return thread ? resolveAgentRuntimeConfigForThread(thread) : undefined;
 }
 
-function threadPlanModeEnabled(threadId: string): boolean {
-  const thread = conversationStore.getThread(threadId);
-  const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
-  return config ? resolveSessionMode(config) === "plan" : resolveSessionMode(workflowSettingsStore.get()) === "plan";
-}
-
 function threadSessionMode(threadId: string): import("../shared/session-mode").SessionMode {
   const thread = conversationStore.getThread(threadId);
   const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
@@ -1152,7 +1146,7 @@ function disableThreadPlanMode(threadId: string): ThreadRuntimeConfig | undefine
   if (!config) {
     return undefined;
   }
-  const next = withPlanModeDisabled(config);
+  const next = withAgentSessionMode(config, "agent");
   if (next === config) {
     return config;
   }
@@ -2991,7 +2985,7 @@ async function runAskThread(
   try {
     const outcome = await runThreadRequestWithAutoRetry(
       thread.id,
-      "question",
+      "ask",
       controller.signal,
       async () => {
         return runThreadRequestWithRuntimeProxy({
@@ -3015,7 +3009,7 @@ async function runAskThread(
               await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
             }
             try {
-              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "question");
+              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "ask");
               if (!driver.runAsk) {
                 throw new Error("Runtime driver does not support ask mode.");
               }
@@ -3052,7 +3046,7 @@ async function runAskThread(
       },
     );
 
-    const decision = resolveQuestionRunOutcome(outcome);
+    const decision = resolveAskRunOutcome(outcome);
     await applyMainThreadRunDecisionEffects({
       threadId: thread.id,
       decision,
@@ -6078,15 +6072,25 @@ function resolveThreadFollowUpEnqueueMetadata(threadId: string): {
   };
 }
 
+function normalizeThreadFollowUpRunPhase(value: unknown): ThreadFollowUpRunPhase | undefined {
+  if (value === "question") {
+    return "ask";
+  }
+  if (value === "planning" || value === "execution" || value === "ask" || value === "continuation") {
+    return value;
+  }
+  return undefined;
+}
+
 function resolveRunAttemptPhase(threadId: string, attemptId: string): ThreadFollowUpRunPhase | undefined {
   const phase = conversationStore
     .listRunAttempts(threadId)
     .find((attempt) => attempt.attemptId === attemptId)?.phase;
-  return isThreadFollowUpRunPhase(phase) ? phase : undefined;
+  return normalizeThreadFollowUpRunPhase(phase);
 }
 
 function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPhase {
-  return value === "planning" || value === "execution" || value === "question" || value === "continuation";
+  return normalizeThreadFollowUpRunPhase(value) !== undefined;
 }
 
 function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionSnapshot | undefined {
@@ -6503,7 +6507,7 @@ function createThreadToolPermissionHandler(
       cwd,
       workspacePath: thread.workspacePath,
       bashReviewMode: runtimeConfig?.bashReviewMode ?? "always",
-      phaseAllowsBash: runPhase !== "planning" && runPhase !== "question",
+      phaseAllowsBash: runPhase !== "planning" && runPhase !== "ask",
       ...(agentRegistry ? { agentRegistry } : {}),
       ...(request.agentId ? { agentId: request.agentId } : {}),
       ...(request.agentType ? { agentType: request.agentType } : {}),

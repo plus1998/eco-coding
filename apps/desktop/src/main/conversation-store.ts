@@ -50,6 +50,7 @@ import type {
   RunAttemptPhase,
   RunAttemptRecord,
   RunAttemptStatus,
+  normalizeRunAttemptPhase,
   UsageAttribution,
   UsageLedgerEvent,
   UsageLedgerKind,
@@ -2710,7 +2711,7 @@ function rowToRunAttempt(row: {
   return {
     threadId: row.thread_id,
     attemptId: row.attempt_id,
-    phase: row.phase as RunAttemptPhase,
+    phase: normalizeRunAttemptPhase(row.phase) ?? "execution",
     retryIndex: row.retry_index,
     status: row.status as RunAttemptStatus,
     startedAt: row.started_at,
@@ -3044,8 +3045,8 @@ function rowToThreadPendingFollowUp(row: ThreadPendingFollowUpRow): ThreadPendin
     ...(row.applied_at ? { appliedAt: row.applied_at } : {}),
     ...(row.source_run_attempt_id ? { sourceRunAttemptId: row.source_run_attempt_id } : {}),
     ...(row.target_run_attempt_id ? { targetRunAttemptId: row.target_run_attempt_id } : {}),
-    ...(isThreadFollowUpRunPhase(row.queued_during_phase)
-      ? { queuedDuringPhase: row.queued_during_phase }
+    ...(normalizeThreadFollowUpRunPhase(row.queued_during_phase)
+      ? { queuedDuringPhase: normalizeThreadFollowUpRunPhase(row.queued_during_phase) }
       : {}),
     ...(isThreadFollowUpBoundary(row.delivery_boundary) ? { deliveryBoundary: row.delivery_boundary } : {}),
     ...(row.error ? { error: row.error } : {}),
@@ -3111,8 +3112,18 @@ function isThreadFollowUpDeliveryMode(value: unknown): value is ThreadFollowUpDe
   );
 }
 
+function normalizeThreadFollowUpRunPhase(value: unknown): ThreadFollowUpRunPhase | undefined {
+  if (value === "question") {
+    return "ask";
+  }
+  if (value === "planning" || value === "execution" || value === "ask" || value === "continuation") {
+    return value;
+  }
+  return undefined;
+}
+
 function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPhase {
-  return value === "planning" || value === "execution" || value === "question" || value === "continuation";
+  return normalizeThreadFollowUpRunPhase(value) !== undefined;
 }
 
 function isThreadFollowUpBoundary(value: unknown): value is ThreadFollowUpBoundary {

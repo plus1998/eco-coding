@@ -4,12 +4,17 @@ import {
   validateBuiltInPresetEvalScenario,
   validateBuiltInPresetEvalSuite,
 } from "../src/shared/agent-preset-evals";
+import { createBuiltInPresetCatalog } from "../src/shared/agent-orchestration";
 
-test("built-in preset eval suite expands every preset case", () => {
+test("built-in preset eval suite expands every catalog eval case", () => {
   const scenarios = createBuiltInPresetEvalScenarios();
-  expect(scenarios).toHaveLength(18);
+  const expectedCount = createBuiltInPresetCatalog().reduce(
+    (total, preset) => total + preset.evals.length,
+    0,
+  );
+  expect(scenarios).toHaveLength(expectedCount);
   expect(new Set(scenarios.map((scenario) => scenario.presetId))).toEqual(
-    new Set(["coding", "research", "writing", "product", "data", "ops"]),
+    new Set(createBuiltInPresetCatalog().map((preset) => preset.id)),
   );
   for (const scenario of scenarios) {
     expect(scenario.profile.agents.length).toBeGreaterThanOrEqual(3);
@@ -26,19 +31,19 @@ test("built-in preset eval suite validates runnable profiles and prompt boundari
 
 test("preset eval validation reports missing expected agents", () => {
   const scenario = createBuiltInPresetEvalScenarios().find(
-    (candidate) => candidate.id === "research.research-citation-support",
+    (candidate) => candidate.id === "coding.coding-regression",
   );
   if (!scenario) {
-    throw new Error("Missing research citation eval scenario.");
+    throw new Error("Missing coding regression eval scenario.");
   }
   const broken = {
     ...scenario,
     profile: {
       ...scenario.profile,
-      agents: scenario.profile.agents.filter((agent) => agent.agentKey !== "source_verifier"),
+      agents: scenario.profile.agents.filter((agent) => agent.agentKey !== "coder"),
     },
   };
   const result = validateBuiltInPresetEvalScenario(broken);
   expect(result.ok).toBe(false);
-  expect(result.errors).toContain("Expected agent is not enabled: source_verifier");
+  expect(result.errors).toContain("Expected agent is not enabled: coder");
 });

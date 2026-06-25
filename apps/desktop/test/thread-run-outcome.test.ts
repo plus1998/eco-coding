@@ -1,24 +1,24 @@
 import { expect, test } from "bun:test";
 import {
   isRequestAttemptAborted,
+  resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
   resolvePlanningRunOutcome,
-  resolveQuestionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "../src/main/thread-run-outcome";
 
-test("resolveQuestionRunOutcome maps cancelled failed and completed results", () => {
-  expect(resolveQuestionRunOutcome({ ok: false, reason: "stop", aborted: true })).toEqual({
+test("resolveAskRunOutcome maps cancelled failed and completed results", () => {
+  expect(resolveAskRunOutcome({ ok: false, reason: "stop", aborted: true })).toEqual({
     kind: "cancelled",
     reason: "cancelled by user",
   });
-  expect(resolveQuestionRunOutcome({ ok: false, reason: "upstream failed" })).toEqual({
+  expect(resolveAskRunOutcome({ ok: false, reason: "upstream failed" })).toEqual({
     kind: "failed",
     reason: "upstream failed",
   });
-  expect(resolveQuestionRunOutcome({ ok: true })).toEqual({
+  expect(resolveAskRunOutcome({ ok: true })).toEqual({
     kind: "completed",
     message: "回答完成。",
   });
@@ -61,7 +61,7 @@ test("resolveContinuationRunOutcome keeps mode-specific success decisions", () =
     resolveContinuationRunOutcome({ ok: true }, { mode: "execution", planningPlanCaptured: false }),
   ).toEqual({ kind: "completed" });
   expect(
-    resolveContinuationRunOutcome({ ok: true }, { mode: "question", planningPlanCaptured: false }),
+    resolveContinuationRunOutcome({ ok: true }, { mode: "ask", planningPlanCaptured: false }),
   ).toEqual({
     kind: "completed",
     message: "回答完成。",
@@ -81,8 +81,7 @@ test("resolveContinuationRunOutcome keeps mode-specific success decisions", () =
 });
 
 test("runAttemptPhaseFromThreadMode and isRequestAttemptAborted expose shared run helpers", () => {
-  expect(runAttemptPhaseFromThreadMode("question")).toBe("question");
-  expect(runAttemptPhaseFromThreadMode("ask")).toBe("question");
+  expect(runAttemptPhaseFromThreadMode("ask")).toBe("ask");
   expect(runAttemptPhaseFromThreadMode("planning")).toBe("planning");
   expect(runAttemptPhaseFromThreadMode("execution")).toBe("execution");
   expect(isRequestAttemptAborted({ ok: false, reason: "stop", aborted: true })).toBe(true);

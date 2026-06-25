@@ -614,6 +614,7 @@ export {
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
+  withAgentSessionMode,
   withPlanModeDisabled,
 } from "./thread-runtime-config";
 export type { McpServersEnabledSettings, ThreadRuntimeConfig, ThreadRuntimeConfigInput };
@@ -782,7 +783,7 @@ export type ThreadFollowUpPriority = "normal" | "escalated";
 
 export type ThreadFollowUpDeliveryMode = "queued" | "resume" | "interrupt_resume" | "streaming_push";
 
-export type ThreadFollowUpRunPhase = "planning" | "execution" | "question" | "continuation";
+export type ThreadFollowUpRunPhase = "planning" | "execution" | "ask" | "continuation";
 
 export type ThreadFollowUpBoundary = "safe_boundary" | "forced_interrupt";
 

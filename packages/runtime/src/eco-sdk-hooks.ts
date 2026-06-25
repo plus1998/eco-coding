@@ -87,7 +87,7 @@ export interface EcoPreCompactHookInput {
   sessionId?: string;
 }
 
-export type SubagentRunPhase = "planning" | "execution" | "question";
+export type SubagentRunPhase = "planning" | "execution" | "ask";
 
 export interface EcoSubagentSessionHooks {
   phase: SubagentRunPhase;

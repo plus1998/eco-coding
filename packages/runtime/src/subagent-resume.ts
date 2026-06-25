@@ -88,7 +88,7 @@ export function buildResumeAgentPrompt(agentId: string, originalPrompt: string):
 export type SubagentResumeResolveInput = {
   threadId: string;
   role: RuntimeAgentRole;
-  phase: "planning" | "execution" | "question";
+  phase: "planning" | "execution" | "ask";
   prompt: string;
   todoIdHint?: string;
 };

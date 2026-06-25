@@ -20,7 +20,8 @@ import {
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   serializeThreadRuntimeConfig,
-  withPlanModeDisabled,
+  withAgentSessionMode,
+  withAgentSessionMode,
 } from "../src/shared/thread-runtime-config";
 
 const threadSubagentEnabled: SubagentEnabledSettings = {
@@ -282,14 +283,14 @@ test("buildThreadRuntimeConfigFromDefaults supports ask workflow default", () =>
   expect(config.sessionMode).toBe("ask");
 });
 
-test("withPlanModeDisabled switches plan to agent without mutating the original config", () => {
+test("withAgentSessionMode switches plan to agent without mutating the original config", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
     workflowDefaults: { sessionMode: "plan" },
   });
-  expect(withPlanModeDisabled(config)).toEqual({ ...config, sessionMode: "agent" });
+  expect(withAgentSessionMode(config, "agent")).toEqual({ ...config, sessionMode: "agent" });
   expect(config.sessionMode).toBe("plan");
-  expect(withPlanModeDisabled({ ...config, sessionMode: "agent" })).toEqual({
+  expect(withAgentSessionMode({ ...config, sessionMode: "agent" }, "agent")).toEqual({
     ...config,
     sessionMode: "agent",
   });
