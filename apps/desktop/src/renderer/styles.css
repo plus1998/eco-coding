@@ -6148,6 +6148,23 @@ html[data-window-focused="true"] .codex-sidebar {
   animation: context-card-compact-spin 0.8s linear infinite;
 }
 
+.context-card-compact-suspended {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-warning-fg, #b45309);
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+}
+
+.context-card-compact-error {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-danger-fg, #dc2626);
+}
+
 @keyframes context-card-compact-spin {
   to {
     transform: rotate(360deg);

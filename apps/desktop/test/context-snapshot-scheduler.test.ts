@@ -447,7 +447,13 @@ test("runCompactSession emits completed when SDK omits compact_boundary", async 
 
 test("ensureHeadroom clears compact in flight after failure", async () => {
   let compactInFlight = false;
-  const compactionStatuses: Array<{ stage: string; trigger: string; detail?: string }> = [];
+  let failureCount = 0;
+  const compactionStatuses: Array<{
+    stage: string;
+    trigger: string;
+    detail?: string;
+    consecutiveFailures?: number;
+  }> = [];
   const monitor = {
     getSnapshot: () => undefined,
     restoreFromContextSnapshot: () => {},
@@ -458,6 +464,10 @@ test("ensureHeadroom clears compact in flight after failure", async () => {
     },
     clearCompactInFlight: () => {
       compactInFlight = false;
+    },
+    recordAutoCompactFailure: () => {
+      failureCount += 1;
+      return { tripped: false, failures: failureCount };
     },
     markCompactCompleted: () => ({}),
     updateFromUsage: async () => undefined,
@@ -477,9 +487,55 @@ test("ensureHeadroom clears compact in flight after failure", async () => {
 
   await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
   expect(compactInFlight).toBe(false);
+  expect(failureCount).toBe(1);
   expect(compactionStatuses).toEqual([
     { stage: "started", trigger: "auto" },
-    { stage: "failed", trigger: "auto", detail: "driver unavailable" },
+    { stage: "failed", trigger: "auto", detail: "driver unavailable", consecutiveFailures: 1 },
+  ]);
+});
+
+test("ensureHeadroom emits suspended after third consecutive auto compact failure", async () => {
+  let failureCount = 0;
+  const compactionStatuses: Array<{
+    stage: string;
+    trigger: string;
+    consecutiveFailures?: number;
+  }> = [];
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => failureCount < 3,
+    markCompactInFlight: () => {},
+    clearCompactInFlight: () => {},
+    recordAutoCompactFailure: () => {
+      failureCount += 1;
+      return { tripped: failureCount >= 3, failures: failureCount };
+    },
+    markCompactCompleted: () => ({}),
+    updateFromUsage: async () => undefined,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async () => {
+      throw new Error("compact failed");
+    },
+    emitContext: () => {},
+    emitCompactionStatus: (_threadId, status) => {
+      compactionStatuses.push(status);
+    },
+  });
+
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
+
+  expect(failureCount).toBe(3);
+  expect(compactionStatuses.filter((status) => status.stage === "suspended")).toEqual([
+    { stage: "suspended", trigger: "auto", consecutiveFailures: 3 },
   ]);
 });
 

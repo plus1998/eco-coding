@@ -254,7 +254,7 @@ import { type CompactionAuditService, createCompactionAuditService } from "./com
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
-import { ContextWindowMonitor } from "./context-window-monitor";
+import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
@@ -6041,14 +6041,15 @@ function emitThreadEvent(
 function emitContextCompactionStatus(
   threadId: string,
   input: {
-    stage: "started" | "completed" | "failed";
-    trigger?: "auto" | "manual";
-    sessionId?: string;
-    archiveId?: string;
-    preTokens?: number;
-    postTokens?: number;
-    detail?: string;
-  },
+  stage: "started" | "completed" | "failed" | "suspended";
+  trigger?: "auto" | "manual";
+  sessionId?: string;
+  archiveId?: string;
+  preTokens?: number;
+  postTokens?: number;
+  detail?: string;
+  consecutiveFailures?: number;
+},
 ): void {
   if (!conversationStore.getThread(threadId)) {
     return;
@@ -6069,6 +6070,7 @@ function emitContextCompactionStatus(
       ...(input.preTokens !== undefined && { preTokens: input.preTokens }),
       ...(input.postTokens !== undefined && { postTokens: input.postTokens }),
       ...(input.detail && { detail: input.detail }),
+      ...(input.consecutiveFailures !== undefined && { consecutiveFailures: input.consecutiveFailures }),
     },
   };
   try {
@@ -6090,10 +6092,13 @@ function emitContextCompactionStatus(
 }
 
 function formatContextCompactionMessage(
-  stage: "started" | "completed" | "failed",
+  stage: "started" | "completed" | "failed" | "suspended",
   trigger: "auto" | "manual",
   detail?: string,
 ): string {
+  if (stage === "suspended") {
+    return `自动上下文压缩已暂停（连续失败 ${MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES} 次）。请手动压缩或开启新会话。`;
+  }
   if (stage === "failed") {
     return detail ? `上下文压缩失败：${detail}` : "上下文压缩失败";
   }

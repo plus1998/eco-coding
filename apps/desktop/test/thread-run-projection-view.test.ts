@@ -11,6 +11,7 @@ import {
   isProjectionRequestActive,
   isProjectionUserPromptItem,
   isThreadContextCompactionInFlight,
+  isThreadAutoCompactSuspended,
   projectionItemToDetailBlock,
   resolveSubagentCardMissionText,
 } from "../src/renderer/thread-run-projection-view";
@@ -1276,6 +1277,41 @@ test("isThreadContextCompactionInFlight ignores stale started without terminal e
         ],
       }),
       now,
+    ),
+  ).toBe(false);
+});
+
+test("isThreadAutoCompactSuspended tracks suspended until successful compact", () => {
+  expect(isThreadAutoCompactSuspended(undefined)).toBe(false);
+  expect(
+    isThreadAutoCompactSuspended(
+      projection({
+        timeline: [
+          item({
+            id: "compact-suspended",
+            eventType: "context.compaction.suspended",
+            text: "自动上下文压缩已暂停",
+          }),
+        ],
+      }),
+    ),
+  ).toBe(true);
+  expect(
+    isThreadAutoCompactSuspended(
+      projection({
+        timeline: [
+          item({
+            id: "compact-suspended",
+            eventType: "context.compaction.suspended",
+            text: "自动上下文压缩已暂停",
+          }),
+          item({
+            id: "compact-done",
+            eventType: "context.compaction.completed",
+            text: "上下文已手动压缩",
+          }),
+        ],
+      }),
     ),
   ).toBe(false);
 });

@@ -50,10 +50,11 @@ export interface ContextSnapshotSchedulerOptions {
   emitCompactionStatus: (
     threadId: string,
     status: {
-      stage: "started" | "completed" | "failed";
+      stage: "started" | "completed" | "failed" | "suspended";
       trigger: "auto" | "manual";
       detail?: string;
       postTokens?: number;
+      consecutiveFailures?: number;
     },
   ) => void;
   onCompactionBoundary?: (
@@ -184,7 +185,20 @@ export class ContextSnapshotScheduler {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.options.monitor.clearCompactInFlight(threadId);
-      this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "auto", detail });
+      const failure = this.options.monitor.recordAutoCompactFailure(threadId);
+      this.options.emitCompactionStatus(threadId, {
+        stage: "failed",
+        trigger: "auto",
+        detail,
+        consecutiveFailures: failure.failures,
+      });
+      if (failure.tripped) {
+        this.options.emitCompactionStatus(threadId, {
+          stage: "suspended",
+          trigger: "auto",
+          consecutiveFailures: failure.failures,
+        });
+      }
       process.stderr.write(`[eco] context compact failed: ${detail}\n`);
     }
   }

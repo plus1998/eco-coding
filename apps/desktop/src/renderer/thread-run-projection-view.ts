@@ -519,8 +519,29 @@ function isProjectionContextCompactionItem(item: ThreadRunProjectionTimelineItem
   return (
     item.eventType === "context.compaction.started" ||
     item.eventType === "context.compaction.completed" ||
-    item.eventType === "context.compaction.failed"
+    item.eventType === "context.compaction.failed" ||
+    item.eventType === "context.compaction.suspended"
   );
+}
+
+/** Auto compaction circuit breaker tripped until a successful manual/auto compact completes. */
+export function isThreadAutoCompactSuspended(
+  projection: ThreadRunProjectionSnapshot | undefined,
+): boolean {
+  if (!projection?.timeline.length) {
+    return false;
+  }
+  let suspended = false;
+  for (const item of projection.timeline) {
+    if (item.eventType === "context.compaction.completed") {
+      suspended = false;
+      continue;
+    }
+    if (item.eventType === "context.compaction.suspended") {
+      suspended = true;
+    }
+  }
+  return suspended;
 }
 
 /** Orphaned compaction.started without a terminal event stops blocking the UI after this long. */
@@ -1099,6 +1120,9 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
   }
   if (item.eventType === "context.compaction.failed") {
     return text || "上下文压缩失败";
+  }
+  if (item.eventType === "context.compaction.suspended") {
+    return text || "自动上下文压缩已暂停";
   }
   if (item.eventType === "agent.started") {
     return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已启动`;

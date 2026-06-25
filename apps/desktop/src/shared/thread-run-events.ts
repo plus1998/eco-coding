@@ -24,6 +24,7 @@ export type ThreadRunEventType =
   | "context.compaction.started"
   | "context.compaction.completed"
   | "context.compaction.failed"
+  | "context.compaction.suspended"
   | "message.delta"
   | "message.final"
   | "thinking.delta"

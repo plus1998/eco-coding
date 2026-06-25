@@ -18,6 +18,8 @@ import { logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco
 
 const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
+/** Stop automatic compaction after this many consecutive auto failures (Claude Code style). */
+export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;
 
 const ROLE_ORDER: readonly AgentRole[] = ["planner", "explore", "architect", "coder", "reviewer", "tester"];
 const ROLE_ORDER_INDEX = new Map<string, number>(ROLE_ORDER.map((role, index) => [role, index]));
@@ -68,6 +70,8 @@ interface ThreadMonitorState {
   seenMessageIds: Set<string>;
   compactInFlight: boolean;
   lastCompactAt: number;
+  consecutiveAutoCompactFailures: number;
+  autoCompactSuspended: boolean;
 }
 
 export class ContextWindowMonitor {
@@ -254,6 +258,8 @@ export class ContextWindowMonitor {
     const state = this.getOrCreateState(threadId);
     state.compactInFlight = false;
     state.lastCompactAt = Date.now();
+    state.consecutiveAutoCompactFailures = 0;
+    state.autoCompactSuspended = false;
     state.seenMessageIds.clear();
     const planner = state.byRole.planner;
     const nextOccupied =
@@ -361,7 +367,7 @@ export class ContextWindowMonitor {
 
   shouldCompact(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
     const state = this.states.get(threadId);
-    if (!state || state.compactInFlight) {
+    if (!state || state.compactInFlight || state.autoCompactSuspended) {
       return false;
     }
     if (Date.now() - state.lastCompactAt < COMPACT_COOLDOWN_MS) {
@@ -381,6 +387,35 @@ export class ContextWindowMonitor {
 
   clearThread(threadId: string): void {
     this.states.delete(threadId);
+  }
+
+  isAutoCompactSuspended(threadId: string): boolean {
+    return this.states.get(threadId)?.autoCompactSuspended ?? false;
+  }
+
+  getAutoCompactFailureCount(threadId: string): number {
+    return this.states.get(threadId)?.consecutiveAutoCompactFailures ?? 0;
+  }
+
+  /** Record an automatic compaction failure; returns whether the circuit breaker tripped. */
+  recordAutoCompactFailure(threadId: string): { tripped: boolean; failures: number } {
+    const state = this.getOrCreateState(threadId);
+    state.consecutiveAutoCompactFailures += 1;
+    const failures = state.consecutiveAutoCompactFailures;
+    if (failures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
+      state.autoCompactSuspended = true;
+      return { tripped: true, failures };
+    }
+    return { tripped: false, failures };
+  }
+
+  clearAutoCompactSuspension(threadId: string): void {
+    const state = this.states.get(threadId);
+    if (!state) {
+      return;
+    }
+    state.consecutiveAutoCompactFailures = 0;
+    state.autoCompactSuspended = false;
   }
 
   clearSubagentRoles(threadId: string): ContextMonitorSnapshot | undefined {
@@ -466,6 +501,8 @@ export class ContextWindowMonitor {
         seenMessageIds: new Set(),
         compactInFlight: false,
         lastCompactAt: 0,
+        consecutiveAutoCompactFailures: 0,
+        autoCompactSuspended: false,
       };
       this.states.set(threadId, state);
     }

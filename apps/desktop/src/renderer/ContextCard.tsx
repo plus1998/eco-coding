@@ -23,6 +23,7 @@ interface ContextCardProps {
   threadId?: string;
   threadStatus?: ThreadStatus;
   contextCompactionInFlight?: boolean;
+  autoCompactSuspended?: boolean;
   onDismiss?: () => void;
 }
 
@@ -296,6 +297,7 @@ export function ContextCard({
   threadId,
   threadStatus,
   contextCompactionInFlight = false,
+  autoCompactSuspended = false,
   onDismiss,
 }: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
@@ -401,6 +403,18 @@ export function ContextCard({
           ) : null}
         </div>
       </div>
+
+      {autoCompactSuspended ? (
+        <p className="context-card-compact-suspended" role="status">
+          自动压缩已暂停（连续失败 3 次）。请使用右侧按钮手动压缩，或开启新会话。
+        </p>
+      ) : null}
+
+      {compactError ? (
+        <p className="context-card-compact-error" role="alert">
+          {compactError}
+        </p>
+      ) : null}
 
       <section className="context-card-main" aria-label="主 Agent 上下文">
         <div className="context-card-main-head">

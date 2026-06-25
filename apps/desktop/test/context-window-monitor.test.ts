@@ -303,3 +303,45 @@ test("shouldCompact uses effective context limit", async () => {
   );
   expect(monitor.shouldCompact("t1")).toBe(true);
 });
+
+async function seedCompactEligible(monitor: ContextWindowMonitor, threadId = "t1") {
+  await monitor.updateFromUsage(
+    threadId,
+    {
+      inputTokens: 90_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    },
+    { role: "planner", modelId: "planner-model", providerBaseUrl: "https://api.example" },
+  );
+}
+
+test("recordAutoCompactFailure suspends auto compact after three failures", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(100_000));
+  await seedCompactEligible(monitor);
+  expect(monitor.shouldCompact("t1")).toBe(true);
+
+  expect(monitor.recordAutoCompactFailure("t1")).toEqual({ tripped: false, failures: 1 });
+  expect(monitor.shouldCompact("t1")).toBe(true);
+  expect(monitor.recordAutoCompactFailure("t1")).toEqual({ tripped: false, failures: 2 });
+  expect(monitor.shouldCompact("t1")).toBe(true);
+
+  expect(monitor.recordAutoCompactFailure("t1")).toEqual({ tripped: true, failures: 3 });
+  expect(monitor.isAutoCompactSuspended("t1")).toBe(true);
+  expect(monitor.shouldCompact("t1")).toBe(false);
+});
+
+test("markCompactCompleted clears auto compact suspension", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(100_000));
+  await seedCompactEligible(monitor);
+  monitor.recordAutoCompactFailure("t1");
+  monitor.recordAutoCompactFailure("t1");
+  monitor.recordAutoCompactFailure("t1");
+  expect(monitor.isAutoCompactSuspended("t1")).toBe(true);
+
+  monitor.markCompactCompleted("t1", 20_000);
+  expect(monitor.isAutoCompactSuspended("t1")).toBe(false);
+  expect(monitor.getAutoCompactFailureCount("t1")).toBe(0);
+  expect(monitor.shouldCompact("t1")).toBe(false);
+});

@@ -80,6 +80,7 @@ interface ThreadInfoPanelProps {
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
   contextCompactionInFlight?: boolean;
+  autoCompactSuspended?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
 }
@@ -638,6 +639,7 @@ function ThreadInfoFloatStack({
   context,
   contextPlaceholder,
   contextCompactionInFlight = false,
+  autoCompactSuspended = false,
   agentDisplayNames,
   agentThemes,
 }: {
@@ -652,6 +654,7 @@ function ThreadInfoFloatStack({
   context?: ThreadContextSnapshot;
   contextPlaceholder: string;
   contextCompactionInFlight?: boolean;
+  autoCompactSuspended?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
 }) {
@@ -710,6 +713,7 @@ function ThreadInfoFloatStack({
                 {...(threadId !== undefined && { threadId })}
                 {...(threadStatus !== undefined && { threadStatus })}
                 contextCompactionInFlight={contextCompactionInFlight}
+                autoCompactSuspended={autoCompactSuspended}
                 {...(agentDisplayNames && { agentDisplayNames })}
                 {...(agentThemes && { agentThemes })}
                 onDismiss={closePanel}
@@ -756,6 +760,7 @@ export function ThreadInfoPanel({
   threadStatus,
   usageSummary,
   contextCompactionInFlight = false,
+  autoCompactSuspended = false,
   agentDisplayNames,
   agentThemes,
 }: ThreadInfoPanelProps) {
@@ -852,6 +857,7 @@ export function ThreadInfoPanel({
           {...(usageSummary?.context !== undefined && { context: usageSummary.context })}
           contextPlaceholder={contextCardPlaceholder(threadStatus)}
           contextCompactionInFlight={contextCompactionInFlight}
+          autoCompactSuspended={autoCompactSuspended}
           {...(agentDisplayNames && { agentDisplayNames })}
           {...(agentThemes && { agentThemes })}
         />
