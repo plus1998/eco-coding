@@ -609,7 +609,7 @@ function App() {
             thread.id === event.threadId ? { ...thread, title: event.title ?? thread.title } : thread,
           ),
         );
-        if (event.type === "thread.title_updated") {
+        if (event.type === "thread.title_updated" || event.type === "thread.title_delta") {
           return;
         }
       }

@@ -4,6 +4,7 @@ import {
   buildThreadTitleUserMessage,
   extractTitleJsonFromThinking,
   extractTitleText,
+  previewThreadTitleFromStream,
   parseThreadTitleJson,
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
@@ -227,6 +228,33 @@ test("summarizeThreadTitle recovers title from thinking-only upstream responses"
   });
 
   expect(title).toBe("模型身份询问");
+});
+
+test("previewThreadTitleFromStream reads partial JSON while streaming", () => {
+  expect(previewThreadTitleFromStream('{"title":"导出筛')).toBe("导出筛");
+  expect(previewThreadTitleFromStream('{"title":"任务 TODO 面板"}')).toBe("任务 TODO 面板");
+});
+
+test("summarizeThreadTitle streams title preview through onTitleDelta", async () => {
+  const previews: string[] = [];
+  const title = await summarizeThreadTitle(
+    routes,
+    "实现导出筛选",
+    async () =>
+      new Response(
+        JSON.stringify({
+          type: "message",
+          content: [{ type: "text", text: '{"title":"导出筛选功能"}' }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    (preview) => {
+      previews.push(preview);
+    },
+  );
+
+  expect(title).toBe("导出筛选功能");
+  expect(previews).toEqual(["导出筛选功能"]);
 });
 
 test("summarizeThreadTitle routes openai chat through bridge with disable-thinking kwargs", async () => {

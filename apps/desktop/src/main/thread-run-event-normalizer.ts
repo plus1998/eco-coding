@@ -23,6 +23,7 @@ const METRICS_ONLY_THREAD_LIVE_TYPES = new Set([
   "thread.subagent_timing_updated",
   "thread.todos_updated",
   "thread.title_updated",
+  "thread.title_delta",
   "thread.title_failed",
 ]);
 

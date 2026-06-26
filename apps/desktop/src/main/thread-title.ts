@@ -139,6 +139,7 @@ export async function summarizeThreadTitle(
   routes: readonly AnthropicProxyRoute[],
   prompt: string,
   fetcher: Fetcher = fetch,
+  onTitleDelta?: (preview: string) => void,
 ): Promise<string | undefined> {
   const titleRoute = resolveThreadTitleRoute(routes);
   if (!titleRoute) {
@@ -148,11 +149,18 @@ export async function summarizeThreadTitle(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS);
   try {
-    const structured = await requestThreadTitle(titleRoute, prompt, fetcher, controller.signal, true);
+    const structured = await requestThreadTitle(
+      titleRoute,
+      prompt,
+      fetcher,
+      controller.signal,
+      true,
+      onTitleDelta,
+    );
     if (structured !== undefined) {
       return structured;
     }
-    return requestThreadTitle(titleRoute, prompt, fetcher, controller.signal, false);
+    return requestThreadTitle(titleRoute, prompt, fetcher, controller.signal, false, onTitleDelta);
   } catch (error) {
     logUpstreamError("thread-title-fetch-error", {
       role: titleRoute.role,
@@ -200,15 +208,42 @@ export function shouldReplaceAutoThreadTitle(currentTitle: string): boolean {
   return currentTitle === pendingThreadTitle;
 }
 
+/** Best-effort title preview while JSON is still streaming. */
+export function previewThreadTitleFromStream(text: string | undefined): string | undefined {
+  const fromJson = parseThreadTitleJson(text);
+  if (fromJson) {
+    return fromJson;
+  }
+
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const partialMatch = trimmed.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (partialMatch?.[1]) {
+    const partial = partialMatch[1].replace(/\\"/g, '"').replace(/\\n/g, " ").trim();
+    if (partial) {
+      return partial.length > TITLE_OUTPUT_MAX_CHARS
+        ? `${partial.slice(0, TITLE_OUTPUT_MAX_CHARS - 3)}...`
+        : partial;
+    }
+  }
+
+  return undefined;
+}
+
 async function requestThreadTitle(
   titleRoute: AnthropicProxyRoute,
   prompt: string,
   fetcher: Fetcher,
   signal: AbortSignal,
   useStructuredOutput: boolean,
+  onTitleDelta?: (preview: string) => void,
 ): Promise<string | undefined> {
   const tryStructuredOutput =
     useStructuredOutput && resolveRouteApiCompat(titleRoute) === "anthropic";
+  let lastPreview = "";
   const result = await postAuxiliaryBridgeRequest({
     route: titleRoute,
     anthropicBody: buildThreadTitleRequestBody(titleRoute, prompt, tryStructuredOutput),
@@ -218,6 +253,16 @@ async function requestThreadTitle(
     }),
     logEventPrefix: "thread-title",
     fetcher,
+    ...(onTitleDelta && {
+      onTextDelta: (_delta, text) => {
+        const preview = previewThreadTitleFromStream(text);
+        if (!preview || preview === lastPreview) {
+          return;
+        }
+        lastPreview = preview;
+        onTitleDelta(preview);
+      },
+    }),
   });
 
   if (!result.ok) {

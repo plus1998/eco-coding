@@ -48,6 +48,7 @@ const threadSummaryMessageExclusions = new Set([
   "thread.usage_updated",
   "thread.todos_updated",
   "thread.title_updated",
+  "thread.title_delta",
   "thread.title_failed",
   "thread.runtime_config_updated",
 ]);

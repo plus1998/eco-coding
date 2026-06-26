@@ -2792,6 +2792,14 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function emitThreadTitleDelta(threadId: string, preview: string): void {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
+    return;
+  }
+  emitThreadEvent(threadId, "thread.title_delta", "", "system", false, { title: preview });
+}
+
 function applyThreadTitleSummary(threadId: string, title: string): void {
   const thread = conversationStore.getThread(threadId);
   if (!thread || thread.title === title || !shouldReplaceAutoThreadTitle(thread.title)) {
@@ -2817,7 +2825,14 @@ function scheduleThreadTitleSummary(threadId: string, runtimeConfig: RuntimeConf
   }
 
   const prompt = thread.prompt;
-  void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch)
+  let lastEmittedPreview = "";
+  void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch, (preview) => {
+    if (preview === lastEmittedPreview) {
+      return;
+    }
+    lastEmittedPreview = preview;
+    emitThreadTitleDelta(threadId, preview);
+  })
     .then((title) => {
       if (title) {
         applyThreadTitleSummary(threadId, title);

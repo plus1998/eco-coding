@@ -428,6 +428,7 @@ test("buildThreadRunEventFromLiveEvent skips metrics-only thread live events", (
     "thread.subagent_timing_updated",
     "thread.todos_updated",
     "thread.title_updated",
+    "thread.title_delta",
     "thread.title_failed",
   ]) {
     expect(isMetricsOnlyThreadLiveEvent(liveType)).toBe(true);
