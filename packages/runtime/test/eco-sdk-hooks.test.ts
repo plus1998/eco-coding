@@ -5,7 +5,6 @@ import path from "node:path";
 import type {
   PreCompactHookInput,
   PreToolUseHookInput,
-  PostToolUseHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
   TaskCreatedHookInput,
@@ -13,8 +12,6 @@ import type {
 import {
   buildEcoSdkHooks,
   captureDeferredExitPlanModeFromResult,
-  createAskUserQuestionPreToolHook,
-  createAskUserQuestionPostToolHook,
   createDisabledSubagentPreToolHook,
   createExitPlanModeAwaitApprovalHook,
   createExitPlanModePermissionRequestHook,
@@ -39,72 +36,6 @@ import {
   parseExitPlanModeOutput,
 } from "../src/eco-sdk-hooks";
 import { ecoSubagentKeyForRole, SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "../src/subagent-availability";
-
-test("createAskUserQuestionPreToolHook returns updated input", async () => {
-  const hook = createAskUserQuestionPreToolHook(async () => ({
-    questions: [{ question: "Q", answer: "REST" }],
-  }));
-  expect(hook).toBeDefined();
-
-  const result = await hook!(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "AskUserQuestion",
-      tool_input: { questions: [{ question: "Q", options: [{ label: "REST" }] }] },
-      tool_use_id: "tool_1",
-      session_id: "s1",
-      cwd: "/tmp",
-    } satisfies PreToolUseHookInput,
-    "tool_1",
-    { signal: new AbortController().signal },
-  );
-
-  expect(result.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "allow",
-    updatedInput: { questions: [{ question: "Q", answer: "REST" }] },
-  });
-});
-
-test("createAskUserQuestionPostToolHook injects Claude Code tool_result wording", async () => {
-  const preHook = createAskUserQuestionPreToolHook(async () => ({
-    questions: [{ question: "Q", options: [{ label: "REST" }] }],
-    answers: { Q: "REST" },
-  }));
-  await preHook!(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "AskUserQuestion",
-      tool_input: { questions: [{ question: "Q", options: [{ label: "REST" }] }] },
-      tool_use_id: "tool_1",
-      session_id: "s1",
-      cwd: "/tmp",
-    } satisfies PreToolUseHookInput,
-    "tool_1",
-    { signal: new AbortController().signal },
-  );
-
-  const postHook = createAskUserQuestionPostToolHook();
-  const result = await postHook(
-    {
-      hook_event_name: "PostToolUse",
-      tool_name: "AskUserQuestion",
-      tool_input: { questions: [{ question: "Q", options: [{ label: "REST" }] }] },
-      tool_response: {},
-      tool_use_id: "tool_1",
-      session_id: "s1",
-      cwd: "/tmp",
-    } satisfies PostToolUseHookInput,
-    "tool_1",
-    { signal: new AbortController().signal },
-  );
-
-  expect(result.hookSpecificOutput).toMatchObject({
-    hookEventName: "PostToolUse",
-    updatedToolOutput:
-      'User has answered your questions: "Q"="REST". You can now continue with the user\'s answers in mind.',
-  });
-});
 
 test("parseExitPlanModeInput reads injected plan payload", () => {
   const parsed = parseExitPlanModeInput({
@@ -2426,7 +2357,6 @@ test("createSubagentStartHook resolves launch via unique prompt when ids mismatc
 
 test("buildEcoSdkHooks registers expected hook events", () => {
   const hooks = buildEcoSdkHooks({
-    askUserQuestion: async () => ({}),
     resolveChangedFiles: async () => [],
     taskTracker: {
       onPreToolUse() {},
@@ -2463,9 +2393,8 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(hooks.PreCompact).toHaveLength(1);
 });
 
-test("buildEcoSdkHooks registers AskUserQuestion PreToolUse hook last", () => {
+test("buildEcoSdkHooks does not register AskUserQuestion PreToolUse hooks", () => {
   const hooks = buildEcoSdkHooks({
-    askUserQuestion: async () => ({ questions: [], answers: {} }),
     toolPermissions: {
       main: { allowed: ["*"], disallowed: [] },
     },
@@ -2473,9 +2402,8 @@ test("buildEcoSdkHooks registers AskUserQuestion PreToolUse hook last", () => {
     onPreCompact: async () => {},
   });
   const preToolUse = hooks.PreToolUse ?? [];
-  const askIndex = preToolUse.findIndex((matcher) => matcher.matcher === "AskUserQuestion");
-  expect(askIndex).toBeGreaterThanOrEqual(0);
-  expect(askIndex).toBe(preToolUse.length - 1);
+  expect(preToolUse.some((matcher) => matcher.matcher === "AskUserQuestion")).toBe(false);
+  expect(hooks.PostToolUse ?? []).toHaveLength(0);
 });
 
 test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without planning capture", async () => {

@@ -46,7 +46,6 @@ import {
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
 import { resolveSkillDisplayName } from "./skill-display";
-import { extractPlanningDeliverables, findPlanSectionStart } from "./phase-deliverable.js";
 import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
@@ -515,25 +514,6 @@ interface FinalizePlanPayload {
   planFilePath?: string;
 }
 
-function resolvePlanningFinalizedPlanFromTranscript(
-  transcript: string,
-): FinalizePlanPayload | undefined {
-  // Only an explicit plan section counts; arbitrary assistant text is not a plan.
-  if (findPlanSectionStart(transcript.trim()) < 0) {
-    return undefined;
-  }
-  const deliverables = extractPlanningDeliverables(transcript);
-  if (!deliverables.plan.trim()) {
-    return undefined;
-  }
-  return {
-    analysis:
-      deliverables.analysis.trim() ||
-      "Plan captured from the planning session transcript after ExitPlanMode hooks had no SDK injection.",
-    plan: deliverables.plan,
-  };
-}
-
 function buildExitPlanModeAnalysis(submission: { planFilePath?: string }): string {
   return [
     "Claude official Plan Mode submitted this plan via ExitPlanMode.",
@@ -666,6 +646,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const sessionResult = yield* this.runSingleSession(input, {
       prompt: continuationPrompt,
       permissionMode: "acceptEdits",
+      approveDeferredExitPlanMode: true,
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
         universalProfile

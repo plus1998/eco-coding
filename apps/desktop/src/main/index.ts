@@ -16,9 +16,12 @@ import {
   evaluateFilesystemReadConfirmation,
   isReadFilesystemTool,
   normalizeSdkSubagentType,
+  composeCanUseToolHandlers,
+  createAskUserQuestionHandler,
   type ParsedUsage,
   type PlanReadyPayload,
   readFilesystemPath,
+  type SdkAskUserQuestionRequest,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
   type SdkToolPermissionDecision,
@@ -569,6 +572,13 @@ type SubagentDelegationLinker = (input: {
   todoId?: string;
 }) => void;
 const subagentDelegationLinkersByThread = new Map<string, SubagentDelegationLinker>();
+
+/** After bridge plan approval: end the planning SDK pass, then start execution. */
+const endPlanningPassAfterPlanReady = new Set<string>();
+const deferredPlanExecutionByThread = new Map<
+  string,
+  { runtimeConfig: RuntimeConfig; routesOverride?: readonly RuntimeRoleRouteConfig[] }
+>();
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -2548,6 +2558,11 @@ function registerIpcHandlers(): void {
       if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
         throw new Error("No pending plan approval is active for this thread.");
       }
+      endPlanningPassAfterPlanReady.add(threadId);
+      deferredPlanExecutionByThread.set(threadId, {
+        runtimeConfig: approval.runtimeConfig,
+        ...(approval.roleRoutes ? { routesOverride: approval.roleRoutes } : {}),
+      });
       return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
     }
 
@@ -3366,6 +3381,9 @@ async function runPlanThread(
                       payload: event.payload,
                       awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
                     });
+                    if (endPlanningPassAfterPlanReady.delete(thread.id)) {
+                      controller.abort();
+                    }
                   }
                 },
               });
@@ -3403,12 +3421,26 @@ async function runPlanThread(
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePathResolved = resolveThreadWorktreePath(thread.id);
+    const deferredExecution = deferredPlanExecutionByThread.get(thread.id);
+    if (deferredExecution) {
+      deferredPlanExecutionByThread.delete(thread.id);
+      endPlanningPassAfterPlanReady.delete(thread.id);
+    }
     await finalizeMainThreadRunCleanup({
       threadId: thread.id,
       worktreePath: worktreePathResolved,
       cancelClarificationsReason: "run finished",
-      idleFallbackMessage: "计划阶段已结束。",
+      ...(deferredExecution ? {} : { idleFallbackMessage: "计划阶段已结束。" }),
     });
+    if (deferredExecution) {
+      updateThread(thread.id, {
+        status: "running",
+        message: "正在按计划执行…",
+      });
+      void runCodingThreadExecution(thread.id, deferredExecution.runtimeConfig, {
+        ...(deferredExecution.routesOverride ? { routesOverride: deferredExecution.routesOverride } : {}),
+      });
+    }
   }
 }
 
@@ -6681,6 +6713,40 @@ function recordCompactionLedgerBoundary(
   compactionAuditService.recordBoundary(threadId, payload, sourceEventId);
 }
 
+async function handleThreadAskUserQuestion(
+  threadId: string,
+  parsed: SdkAskUserQuestionRequest & { toolUseId: string },
+): Promise<Record<string, unknown>> {
+  patchThreadSummary(threadId, { status: "running", message: "等待你的回答…" });
+  const clarificationRequest: ThreadLiveEvent["clarification"] = {
+    toolUseId: parsed.toolUseId,
+    threadId,
+    questions: parsed.questions,
+  };
+  const answersPromise = registerPendingClarification(threadId, parsed.toolUseId, parsed);
+  emitThreadEvent(threadId, "clarification.requested", "Planner 需要你回答几个问题。", "planner", false, {
+    clarification: clarificationRequest,
+  });
+  const answers = await answersPromise;
+  patchThreadSummary(threadId, { status: "running", message: "正在分析并制定计划…" });
+  emitThreadEvent(
+    threadId,
+    "clarification.answered",
+    formatClarificationAnswersSummary(
+      { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
+      answers,
+    ),
+    "planner",
+    false,
+  );
+  void retryDeferredRunCleanupIfNeeded(threadId);
+  return buildAskUserQuestionUpdatedInput(
+    { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
+    answers,
+    parsed.rawInput,
+  );
+}
+
 function createThreadHookContext(threadId: string): EcoHookContext {
   return {
     awaitPlanApproval: async (request) => {
@@ -6743,36 +6809,6 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       });
       void retryDeferredRunCleanupIfNeeded(threadId);
       return "denied";
-    },
-    askUserQuestion: async (parsed) => {
-      patchThreadSummary(threadId, { status: "running", message: "等待你的回答…" });
-      const clarificationRequest: ThreadLiveEvent["clarification"] = {
-        toolUseId: parsed.toolUseId,
-        threadId,
-        questions: parsed.questions,
-      };
-      const answersPromise = registerPendingClarification(threadId, parsed.toolUseId, parsed);
-      emitThreadEvent(threadId, "clarification.requested", "Planner 需要你回答几个问题。", "planner", false, {
-        clarification: clarificationRequest,
-      });
-      const answers = await answersPromise;
-      patchThreadSummary(threadId, { status: "running", message: "正在分析并制定计划…" });
-      emitThreadEvent(
-        threadId,
-        "clarification.answered",
-        formatClarificationAnswersSummary(
-          { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
-          answers,
-        ),
-        "planner",
-        false,
-      );
-      void retryDeferredRunCleanupIfNeeded(threadId);
-      return buildAskUserQuestionUpdatedInput(
-        { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
-        answers,
-        parsed.rawInput,
-      );
     },
     resolveChangedFiles: async () => {
       const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
@@ -6877,6 +6913,17 @@ function resolveThreadBashApprovalAgentId(
 }
 
 function createThreadToolPermissionHandler(
+  threadId: string,
+  runPhase: SubagentRunPhase = "execution",
+): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
+  return composeCanUseToolHandlers(
+    createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
+    bashAndFilesystemHandler,
+  );
+}
+
+function createThreadBashAndFilesystemToolPermissionHandler(
   threadId: string,
   runPhase: SubagentRunPhase = "execution",
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {

@@ -445,7 +445,9 @@ function App() {
     Record<string, ClarificationRequest>
   >({});
   const [clarificationBusy, setClarificationBusy] = useState(false);
-  const [pendingBashApproval, setPendingBashApproval] = useState<BashApprovalRequest>();
+  const [pendingBashApprovalsByThread, setPendingBashApprovalsByThread] = useState<
+    Record<string, BashApprovalRequest>
+  >({});
   const [bashApprovalBusy, setBashApprovalBusy] = useState(false);
   const [followUpsByThread, setFollowUpsByThread] = useState<Record<string, ThreadPendingFollowUp[]>>({});
   const [followUpBusy, setFollowUpBusy] = useState(false);
@@ -691,7 +693,7 @@ function App() {
       }
 
       if (event.type === "bash_approval.requested" && event.bashApproval) {
-        setPendingBashApproval(event.bashApproval);
+        upsertPendingBashApprovalForThread(event.threadId, event.bashApproval);
       }
 
       if (event.type === "plan_approval.requested" && event.plan) {
@@ -762,7 +764,7 @@ function App() {
         event.type === "thread.idle" ||
         event.type === "thread.stopped"
       ) {
-        setPendingBashApproval((current) => (current?.threadId === event.threadId ? undefined : current));
+        clearPendingBashApprovalForThread(event.threadId);
       }
       if (event.type === "plan_approval.denied") {
         clearPendingPlanForThread(event.threadId);
@@ -909,7 +911,11 @@ function App() {
           if (cancelled) {
             return;
           }
-          setPendingBashApproval(approval);
+        if (approval) {
+          upsertPendingBashApprovalForThread(selectedThreadId, approval);
+        } else {
+          clearPendingBashApprovalForThread(selectedThreadId);
+        }
         });
       }
       if (typeof window.eco.listThreadFollowUps === "function") {
@@ -1163,6 +1169,7 @@ function App() {
   );
   const pendingPlan = activeThread ? pendingPlansByThread[activeThread.id] : undefined;
   const pendingClarification = activeThread ? pendingClarificationsByThread[activeThread.id] : undefined;
+  const pendingBashApproval = activeThread ? pendingBashApprovalsByThread[activeThread.id] : undefined;
 
   function upsertPendingPlanForThread(threadId: string, plan: ThreadPendingPlan) {
     setPendingPlansByThread((current) => ({ ...current, [threadId]: plan }));
@@ -1178,6 +1185,14 @@ function App() {
 
   function clearPendingClarificationForThread(threadId: string) {
     setPendingClarificationsByThread((current) => removeRecordKey(current, threadId));
+  }
+
+  function upsertPendingBashApprovalForThread(threadId: string, approval: BashApprovalRequest) {
+    setPendingBashApprovalsByThread((current) => ({ ...current, [threadId]: approval }));
+  }
+
+  function clearPendingBashApprovalForThread(threadId: string) {
+    setPendingBashApprovalsByThread((current) => removeRecordKey(current, threadId));
   }
   const composerContextKey = useMemo(
     () => composerContextKeyFromParts(activeThread?.id, activeThread ? undefined : currentProjectPath),
@@ -1632,8 +1647,7 @@ function App() {
     : areCodingRoutesReady(activeRoutes, providerById);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(activeThread && isLiveFollowUpThreadStatus(activeThread.status));
-  const activeBashApproval =
-    activeThread && pendingBashApproval?.threadId === activeThread.id ? pendingBashApproval : undefined;
+  const showBashApproval = Boolean(pendingBashApproval);
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
   const canPasteComposerImages = plannerSupportsImages;
@@ -1705,7 +1719,7 @@ function App() {
       !clarificationBusy &&
       !bashApprovalBusy &&
       !pendingClarification &&
-      !activeBashApproval &&
+      !pendingBashApproval &&
       !contextCompactionInFlight &&
       threadAcceptsInput,
   );
@@ -1714,7 +1728,6 @@ function App() {
 
   const showClarification = Boolean(pendingClarification);
 
-  const showBashApproval = Boolean(activeBashApproval);
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
   const retryBannerDetail = activeThread
     ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
@@ -1769,7 +1782,7 @@ function App() {
       !clarificationBusy &&
       !bashApprovalBusy &&
       !pendingClarification &&
-      !activeBashApproval &&
+      !pendingBashApproval &&
       !retryBusy &&
       (activeThread.status === "failed" ||
         activeThread.status === "blocked" ||
@@ -2234,8 +2247,10 @@ function App() {
     } else {
       clearPendingClarificationForThread(threadId);
     }
-    if (threadId === selectedThreadId) {
-      setPendingBashApproval(bashApproval);
+    if (bashApproval) {
+      upsertPendingBashApprovalForThread(threadId, bashApproval);
+    } else {
+      clearPendingBashApprovalForThread(threadId);
     }
     setFollowUpsByThread((current) => ({ ...current, [threadId]: sortThreadFollowUps(followUps.followUps) }));
     setTodosByThread((current) => ({ ...current, [threadId]: todos }));
@@ -2543,7 +2558,7 @@ function App() {
         toolUseId: pendingBashApproval.toolUseId,
         decision,
       });
-      setPendingBashApproval(undefined);
+      clearPendingBashApprovalForThread(pendingBashApproval.threadId);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -3422,7 +3437,7 @@ function App() {
     setFollowUpsByThread((current) => removeRecordKey(current, threadId));
     clearPendingPlanForThread(threadId);
     clearPendingClarificationForThread(threadId);
-    setPendingBashApproval((current) => (current?.threadId === threadId ? undefined : current));
+    clearPendingBashApprovalForThread(threadId);
   }
 
   async function deleteThread(thread: ThreadSummary) {

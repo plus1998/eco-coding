@@ -58,7 +58,6 @@ test("finalizeThreadRunCleanup preserves cleanup order and running fallback idle
 
   expect(calls).toEqual([
     "cancel:thr_cleanup:run finished",
-    "get:thr_cleanup",
     "cancel-plan:thr_cleanup:run finished",
     "reset:thr_cleanup",
     "flush:start:thr_cleanup",

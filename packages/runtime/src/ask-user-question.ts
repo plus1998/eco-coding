@@ -22,25 +22,6 @@ export type SdkToolPermissionHandler = (
   request: SdkToolPermissionRequest,
 ) => Promise<SdkToolPermissionDecision>;
 
-const pendingAskUserQuestionAnswers = new Map<string, Record<string, string | string[]>>();
-
-export function stashAskUserQuestionAnswers(
-  toolUseId: string,
-  answers: Record<string, string | string[]>,
-): void {
-  pendingAskUserQuestionAnswers.set(toolUseId, answers);
-}
-
-export function takeAskUserQuestionAnswers(
-  toolUseId: string,
-): Record<string, string | string[]> | undefined {
-  const answers = pendingAskUserQuestionAnswers.get(toolUseId);
-  if (answers) {
-    pendingAskUserQuestionAnswers.delete(toolUseId);
-  }
-  return answers;
-}
-
 /** Matches Claude Code AskUserQuestionTool.mapToolResultToToolResultBlockParam content. */
 export function formatAskUserQuestionToolResult(
   answers: Record<string, string | string[]>,

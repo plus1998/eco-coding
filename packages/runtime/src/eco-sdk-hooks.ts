@@ -6,7 +6,6 @@ import type {
   NotificationHookInput,
   PermissionRequestHookInput,
   PreCompactHookInput,
-  PostToolUseHookInput,
   PreToolUseHookInput,
   StopHookInput,
   SubagentStartHookInput,
@@ -14,13 +13,6 @@ import type {
   TaskCompletedHookInput,
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
-import {
-  formatAskUserQuestionToolResult,
-  parseAskUserQuestionInput,
-  stashAskUserQuestionAnswers,
-  takeAskUserQuestionAnswers,
-  type SdkAskUserQuestionRequest,
-} from "./ask-user-question";
 import {
   readPlanFileContent,
   readPlanFromPhaseTranscript,
@@ -141,9 +133,6 @@ export interface EcoSubagentAttributionHooks {
 
 export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
-  askUserQuestion?: (
-    request: SdkAskUserQuestionRequest & { toolUseId: string },
-  ) => Promise<Record<string, unknown>>;
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
   /** Blocks until the user approves or denies ExitPlanMode (Eco PermissionRequest bridge). */
   awaitPlanApproval?: (
@@ -617,73 +606,6 @@ export function createWorkflowDenyPreToolHook(): HookCallback {
         permissionDecision: "deny",
         permissionDecisionReason:
           "SDK Dynamic Workflows are disabled in Eco. Orchestrate with Eco Agent keys instead.",
-      },
-    };
-  };
-}
-
-export function createAskUserQuestionPreToolHook(
-  delegate: EcoHookContext["askUserQuestion"],
-): HookCallback | undefined {
-  if (!delegate) {
-    return undefined;
-  }
-
-  return async (input, toolUseID) => {
-    if (input.hook_event_name !== "PreToolUse") {
-      return {};
-    }
-    const preInput = input as PreToolUseHookInput;
-    if (preInput.tool_name !== "AskUserQuestion") {
-      return {};
-    }
-
-    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    const parsed = parseAskUserQuestionInput(toolInput);
-    const updatedInput = await delegate({
-      ...parsed,
-      toolUseId: toolUseID ?? preInput.tool_use_id,
-    });
-    const resolvedToolUseId = toolUseID ?? preInput.tool_use_id;
-    if (isRecord(updatedInput.answers)) {
-      const answers = updatedInput.answers as Record<string, string | string[]>;
-      if (Object.keys(answers).length > 0) {
-        stashAskUserQuestionAnswers(resolvedToolUseId, answers);
-      }
-    }
-
-
-    return {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        updatedInput,
-      },
-    };
-  };
-}
-
-export function createAskUserQuestionPostToolHook(): HookCallback {
-  return async (input) => {
-    if (input.hook_event_name !== "PostToolUse") {
-      return {};
-    }
-    const postInput = input as PostToolUseHookInput;
-    if (postInput.tool_name !== "AskUserQuestion") {
-      return {};
-    }
-
-    const answers = takeAskUserQuestionAnswers(postInput.tool_use_id);
-    if (!answers || Object.keys(answers).length === 0) {
-      return {};
-    }
-
-    const updatedToolOutput = formatAskUserQuestionToolResult(answers);
-
-    return {
-      hookSpecificOutput: {
-        hookEventName: "PostToolUse",
-        updatedToolOutput,
       },
     };
   };
@@ -1605,13 +1527,6 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     pushHook(hooks, "TaskCreated", createTaskCreatedHook(ctx.taskTracker, subagentLaunchRegistry));
     pushHook(hooks, "TaskCompleted", createTaskCompletedHook(ctx.taskTracker));
     pushHook(hooks, "Stop", createStopHook(ctx));
-  }
-
-  // AskUserQuestion must run after every other PreToolUse hook: later hooks that return
-  // allow without updatedInput clobber the answers payload (anthropics/claude-code#15897).
-  pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
-  if (ctx.askUserQuestion) {
-    pushHook(hooks, "PostToolUse", createAskUserQuestionPostToolHook(), "AskUserQuestion");
   }
 
   pushHook(hooks, "Notification", createNotificationHook(ctx.onNotification));
