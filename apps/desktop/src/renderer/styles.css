@@ -4124,14 +4124,6 @@ html[data-window-focused="true"] .codex-sidebar {
   overflow-x: clip;
 }
 
-.run-log-thinking.streaming {
-  transition: opacity 0.16s ease;
-}
-
-.run-log-thinking.streaming.is-feed-fading {
-  opacity: 0;
-}
-
 .run-log-progress {
   display: inline-flex;
   align-items: center;

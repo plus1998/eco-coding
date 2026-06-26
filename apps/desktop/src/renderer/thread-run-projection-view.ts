@@ -478,7 +478,7 @@ export function buildProjectionDisplayTimelineItems(
     if (streamKey) {
       const current = latestStreamDisplayByKey.get(streamKey);
       if (!current || compareTimelineItems(current, item) <= 0) {
-        latestStreamDisplayByKey.set(streamKey, item);
+        latestStreamDisplayByKey.set(streamKey, mergeStreamDisplayTimelineItem(current, item));
       }
     }
 
@@ -502,19 +502,49 @@ export function buildProjectionDisplayTimelineItems(
       continue;
     }
     const streamKey = projectionStreamDisplayKey(item);
-    if (streamKey && latestStreamDisplayByKey.get(streamKey)?.id !== item.id) {
-      continue;
+    let displayItem = item;
+    if (streamKey) {
+      const latestStream = latestStreamDisplayByKey.get(streamKey);
+      if (!latestStream || latestStream.id !== item.id) {
+        continue;
+      }
+      displayItem = latestStream;
     }
     const toolKey = projectionToolDisplayKey(item);
     if (toolKey && latestToolDisplayByKey.get(toolKey)?.id !== item.id) {
       continue;
     }
-    const settled = settleTerminalStreamDisplayItem(item, requestSpansById);
+    const settled = settleTerminalStreamDisplayItem(displayItem, requestSpansById);
     if (settled) {
       displayItems.push(settled);
     }
   }
   return displayItems;
+}
+
+function mergeStreamDisplayTimelineItem(
+  current: ThreadRunProjectionTimelineItem | undefined,
+  item: ThreadRunProjectionTimelineItem,
+): ThreadRunProjectionTimelineItem {
+  if (!current || compareTimelineItems(current, item) > 0) {
+    return item;
+  }
+  const isThinkingStream =
+    item.eventType === "thinking.delta" || item.eventType === "thinking.final";
+  if (!isThinkingStream) {
+    return item;
+  }
+  const preservedText = !item.text.trim()
+    ? current.text
+    : !current.text.trim()
+      ? item.text
+      : item.text.length >= current.text.length
+        ? item.text
+        : current.text;
+  if (preservedText === item.text) {
+    return item;
+  }
+  return { ...item, text: preservedText };
 }
 
 function settleTerminalStreamDisplayItem(
@@ -803,6 +833,13 @@ function resolveFeedEntrySortLane(
     if (!span || isProjectionRequestActive(span)) {
       return FEED_SORT_LANE_STREAM_THINKING;
     }
+  }
+  if (
+    item.eventType === "thinking.final" &&
+    item.text.trim() &&
+    item.requestId?.trim()
+  ) {
+    return FEED_SORT_LANE_STREAM_THINKING;
   }
   if (item.eventType === "message.delta") {
     const span = projectionRequestSpan(item, requestSpansById);

@@ -63,7 +63,6 @@ import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } fr
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { ActivityFeedLayoutContext } from "./activity-feed-layout-context";
-import { useThinkingFeedFade } from "./use-thinking-feed-fade";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import {
   shouldScheduleThinkingAutoCollapse,
@@ -241,11 +240,10 @@ function ProjectionActivityLogView({
           <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />,
         )
       ) : null}
-      {viewModel.mainFeedEntries.map((entry, feedIndex) => (
+      {viewModel.mainFeedEntries.map((entry) => (
         <ProjectionMainFeedEntry
           key={entry.key}
           entry={entry}
-          feedIndex={feedIndex}
           requestSpansById={requestSpansById}
           expandedAgentKeys={expandedAgentKeys}
           onToggleAgent={(agentId) => {
@@ -293,7 +291,6 @@ function wrapRunLogFeedEntry(
 
 function ProjectionMainFeedEntry({
   entry,
-  feedIndex,
   requestSpansById,
   expandedAgentKeys,
   onToggleAgent,
@@ -302,7 +299,6 @@ function ProjectionMainFeedEntry({
   agentThemes,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
-  feedIndex: number;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
@@ -314,7 +310,6 @@ function ProjectionMainFeedEntry({
     return (
       <ProjectionTimelineEntry
         item={entry.item}
-        feedIndex={feedIndex}
         requestSpansById={requestSpansById}
         {...(onRestorePrompt && { onRestorePrompt })}
       />
@@ -334,11 +329,7 @@ function ProjectionMainFeedEntry({
     );
   }
   return wrapRunLogFeedEntry(
-    <ProjectionAgentEchoEntry
-      entry={entry}
-      feedIndex={feedIndex}
-      requestSpansById={requestSpansById}
-    />,
+    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />,
     { tight: isTightAgentEchoEntry(entry) },
   );
 }
@@ -352,11 +343,9 @@ function isTightAgentEchoEntry(
 
 function ProjectionAgentEchoEntry({
   entry,
-  feedIndex,
   requestSpansById,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>;
-  feedIndex: number;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
@@ -391,7 +380,6 @@ function ProjectionAgentEchoEntry({
       >
         <ThinkingBlock
           text={block.text}
-          feedIndex={feedIndex}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
           {...(requestSpan && { requestSpan })}
         />
@@ -580,13 +568,11 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
 
 function ProjectionTimelineEntry({
   item,
-  feedIndex,
   requestSpansById,
   onRestorePrompt,
   compact = false,
 }: {
   item: ThreadRunProjectionTimelineItem;
-  feedIndex?: number;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
@@ -630,7 +616,6 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <ThinkingBlock
         text={block.text}
-        {...(feedIndex !== undefined && { feedIndex })}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(requestSpan && { requestSpan })}
       />,
@@ -1151,15 +1136,12 @@ function resolveRequestDurationMs(
 function ThinkingBlock({
   text,
   streaming,
-  feedIndex,
   requestSpan,
 }: {
   text: string;
   streaming?: boolean;
-  feedIndex?: number;
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
-  const feedFading = useThinkingFeedFade(streaming, feedIndex);
   const [collapsed, setCollapsed] = useState(false);
   const [showDuration, setShowDuration] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
@@ -1277,7 +1259,6 @@ function ThinkingBlock({
         streaming ? "streaming" : "",
         waitingEmpty ? "empty" : "",
         streaming && hasBody ? "is-streaming-capped" : "",
-        feedFading ? "is-feed-fading" : "",
         collapsed && !isCollapsing ? "is-collapsed" : "",
         isCollapsing ? "is-collapsing" : "",
         bodyOpen ? "is-expanded" : "",

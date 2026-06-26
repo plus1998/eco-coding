@@ -795,6 +795,64 @@ test("buildThreadRunProjectionViewModel collapses superseded stream deltas after
   }
 });
 
+test("buildThreadRunProjectionViewModel preserves thinking text across empty stream placeholders", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_think",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-delta",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_think",
+          streamKey: "thinking:sk:thr_test:thinking",
+          text: "较长的思考内容",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "thinking-placeholder",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_think",
+          streamKey: "thinking:sk:thr_test:thinking",
+          text: "",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+        }),
+        item({
+          id: "thinking-shorter",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_think",
+          streamKey: "thinking:sk:thr_test:thinking",
+          text: "短",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 4,
+        }),
+      ],
+    }),
+  );
+
+  const entry = view.mainFeedEntries.find(
+    (candidate) => candidate.kind === "timeline" && candidate.item.eventType.includes("thinking"),
+  );
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(entry.item)).toMatchObject({
+      kind: "thinking",
+      text: "较长的思考内容",
+      streaming: true,
+    });
+  }
+});
+
 test("buildThreadRunProjectionViewModel settles terminal deltas when final event is missing", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
