@@ -14,6 +14,7 @@ import {
   isThreadAutoCompactSuspended,
   isThreadPromptCacheInvalidated,
   projectionItemToDetailBlock,
+  projectionMainFeedEntryKey,
   resolveSubagentCardMissionText,
 } from "../src/renderer/thread-run-projection-view";
 
@@ -239,10 +240,10 @@ test("buildThreadRunProjectionViewModel interleaves planner and agent speech by 
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:planner-first",
+    "main:stream:thinking:role:thinking",
     "agent-card:coder_agent_00000001",
-    "agent:coder_agent_00000001:coder-middle",
-    "main:planner-last",
+    "agent:coder_agent_00000001:stream:message:agent:coder_agent_00000001",
+    "main:stream:message:role:planner",
   ]);
 });
 
@@ -280,7 +281,7 @@ test("buildThreadRunProjectionViewModel does not echo request or lifecycle noise
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:main",
+    "main:stream:message:role:planner",
     "agent-card:coder_agent_00000001",
   ]);
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
@@ -344,7 +345,10 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:approval-approved"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:prompt",
+    "main:stream:message:sk:activity-line-approved",
+  ]);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:generic-wait")).toBe(false);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:approval-wait")).toBe(false);
 });
@@ -465,7 +469,10 @@ test("buildThreadRunProjectionViewModel removes main feed status and usage noise
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:substantive"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:prompt",
+    "main:stream:message:role:planner",
+  ]);
 });
 
 test("buildThreadRunProjectionViewModel hides follow-up interrupt and resume status noise", () => {
@@ -515,7 +522,10 @@ test("buildThreadRunProjectionViewModel hides follow-up interrupt and resume sta
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:substantive"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:prompt",
+    "main:stream:message:role:planner",
+  ]);
 });
 
 test("isProjectionUserPromptItem only accepts recorded user prompts", () => {
@@ -773,7 +783,7 @@ test("buildThreadRunProjectionViewModel collapses superseded stream deltas after
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:thinking-final"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:thinking:role:thinking"]);
   const entry = view.mainFeedEntries[0];
   expect(entry?.kind).toBe("timeline");
   if (entry?.kind === "timeline") {
@@ -936,7 +946,7 @@ test("buildThreadRunProjectionViewModel hides request placeholders once owner ou
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-delta"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:role:planner"]);
 });
 
 test("buildThreadRunProjectionViewModel hides request placeholder for completed message-only responses", () => {
@@ -973,7 +983,7 @@ test("buildThreadRunProjectionViewModel hides request placeholder for completed 
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-final"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:role:planner"]);
 });
 
 test("buildThreadRunProjectionViewModel keeps follow-up request placeholder after prior planner output", () => {
@@ -1026,7 +1036,7 @@ test("buildThreadRunProjectionViewModel keeps follow-up request placeholder afte
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:turn-1-final",
+    "main:stream:message:role:planner",
     "main:turn-2-user",
     "main:turn-2-request",
   ]);
@@ -1074,7 +1084,7 @@ test("buildThreadRunProjectionViewModel keeps final main agent text after empty 
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-final"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:sk:act_weather"]);
   const entry = view.mainFeedEntries[0];
   expect(entry?.kind).toBe("timeline");
   if (entry?.kind === "timeline") {
@@ -1135,7 +1145,7 @@ test("buildThreadRunProjectionViewModel collapses agent card stream rows without
   expect(view.subagentCards[0]?.timelineIds).toEqual(["agent-final"]);
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
     "agent-card:coder_agent_00000001",
-    "agent:coder_agent_00000001:agent-final",
+    "agent:coder_agent_00000001:stream:message:agent:coder_agent_00000001",
   ]);
   const echo = view.mainFeedEntries[1];
   expect(echo?.kind).toBe("agent-echo");
@@ -1146,6 +1156,147 @@ test("buildThreadRunProjectionViewModel collapses agent card stream rows without
       text: "广州今天有阵雨。",
     });
   }
+});
+
+test("projectionMainFeedEntryKey stays stable across superseded stream deltas", () => {
+  const deltaOne = item({
+    id: "delta-1",
+    eventType: "message.delta",
+    role: "planner",
+    requestId: "req_stream",
+    text: "A",
+    sequence: 1,
+  });
+  const deltaTwo = item({
+    id: "delta-2",
+    eventType: "message.delta",
+    role: "planner",
+    requestId: "req_stream",
+    text: "AB",
+    sequence: 2,
+  });
+  expect(projectionMainFeedEntryKey(deltaOne)).toBe(projectionMainFeedEntryKey(deltaTwo));
+});
+
+test("projectionMainFeedEntryKey stays stable when requestId appears mid-stream", () => {
+  const withoutRequest = item({
+    id: "delta-1",
+    eventType: "message.delta",
+    role: "planner",
+    text: "A",
+    sequence: 1,
+  });
+  const withRequest = item({
+    id: "delta-2",
+    eventType: "message.delta",
+    role: "planner",
+    requestId: "req_planner",
+    text: "AB",
+    sequence: 2,
+  });
+  expect(projectionMainFeedEntryKey(withoutRequest)).toBe(projectionMainFeedEntryKey(withRequest));
+});
+
+test("buildThreadRunProjectionViewModel keeps active thinking below bash cards", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_think",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "bash-start",
+          eventType: "tool.started",
+          role: "tool",
+          text: "Tool: Bash · ls",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: {
+            liveType: "tool.started",
+            tool: { name: "Bash", toolUseId: "toolu_bash_1", detail: "ls", status: "started" },
+          },
+        }),
+        item({
+          id: "bash-done",
+          eventType: "tool.completed",
+          role: "tool",
+          text: "Tool: Bash · ls",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: {
+            liveType: "tool.completed",
+            tool: { name: "Bash", toolUseId: "toolu_bash_1", detail: "ls", status: "completed" },
+          },
+        }),
+        item({
+          id: "thinking-delta",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_think",
+          text: "继续分析",
+          at: "2026-01-01T00:00:01.500Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  const keys = view.mainFeedEntries.map((entry) => entry.key);
+  expect(keys.indexOf("main:lifecycle:toolu_bash_1")).toBeLessThan(
+    keys.indexOf("main:stream:thinking:role:thinking"),
+  );
+});
+
+test("buildThreadRunProjectionViewModel keeps bash card order when tool completes", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "bash-a-start",
+          eventType: "tool.started",
+          role: "tool",
+          text: "Tool: Bash · ls",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: {
+            liveType: "tool.started",
+            tool: { name: "Bash", toolUseId: "toolu_bash_a", detail: "ls", status: "started" },
+          },
+        }),
+        item({
+          id: "bash-b-start",
+          eventType: "tool.started",
+          role: "tool",
+          text: "Tool: Bash · pwd",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: {
+            liveType: "tool.started",
+            tool: { name: "Bash", toolUseId: "toolu_bash_b", detail: "pwd", status: "started" },
+          },
+        }),
+        item({
+          id: "bash-a-done",
+          eventType: "tool.completed",
+          role: "tool",
+          text: "Tool: Bash · ls",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+          metadata: {
+            liveType: "tool.completed",
+            tool: { name: "Bash", toolUseId: "toolu_bash_a", detail: "ls", status: "completed" },
+          },
+        }),
+      ],
+    }),
+  );
+
+  const keys = view.mainFeedEntries.map((entry) => entry.key);
+  expect(keys).toEqual(["main:lifecycle:toolu_bash_a", "main:lifecycle:toolu_bash_b"]);
 });
 
 test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta per stream", () => {

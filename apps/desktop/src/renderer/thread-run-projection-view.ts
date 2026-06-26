@@ -138,39 +138,48 @@ function buildProjectionMainFeedEntries(
     subagentCards,
     requestSpansById,
   );
-  const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => ({
-    kind: "timeline",
-    key: `main:${item.id}`,
-    item,
-    at: item.at,
-    sequence: item.sequence,
-  }));
+  const toolSortAnchors = buildToolLifecycleSortAnchors([
+    ...mainTimeline,
+    ...subagentCards.flatMap((card) => card.agent.timeline),
+  ]);
+  const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => {
+    const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
+    return {
+      kind: "timeline",
+      key: projectionMainFeedEntryKey(item),
+      item,
+      at: sortAnchor.at,
+      sequence: sortAnchor.sequence,
+    };
+  });
 
   for (const card of subagentCards) {
+    const cardSortAnchor = { at: card.agent.startedAt, sequence: card.agent.timeline[0]?.sequence ?? 0 };
     entries.push({
       kind: "agent-card",
       key: `agent-card:${card.agent.agentId}`,
       card,
-      at: card.agent.startedAt,
-      sequence: card.agent.timeline[0]?.sequence ?? 0,
+      at: cardSortAnchor.at,
+      sequence: cardSortAnchor.sequence,
     });
 
     const echoItems = card.agent.timeline.filter(isAgentEchoTimelineItem);
     for (const item of echoItems) {
+      const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
       entries.push({
         kind: "agent-echo",
-        key: `agent:${card.agent.agentId}:${item.id}`,
+        key: projectionMainFeedEntryKey(item, { agentId: card.agent.agentId }),
         item,
         agent: card.agent,
         agentLabel: formatProjectionAgentLabel(card.agent, agentDisplayNames),
         shortAgentId: shortProjectionAgentId(card.agent.agentId),
-        at: item.at,
-        sequence: item.sequence,
+        at: sortAnchor.at,
+        sequence: sortAnchor.sequence,
       });
     }
   }
 
-  return entries.sort(compareMainFeedEntries);
+  return entries.sort((left, right) => compareMainFeedEntries(left, right, requestSpansById));
 }
 
 function filterMainTimelineForFeed(
@@ -704,13 +713,114 @@ function projectionReconnectDisplayKey(item: ThreadRunProjectionTimelineItem): s
   return parseReconnectActivityMessage(item.text.trim()) ? "reconnect" : undefined;
 }
 
+export function projectionMainFeedEntryKey(
+  item: ThreadRunProjectionTimelineItem,
+  options?: { agentId?: string },
+): string {
+  const scope = options?.agentId ? `agent:${options.agentId}` : "main";
+  const streamKey = projectionStreamDisplayKey(item);
+  if (streamKey) {
+    return `${scope}:stream:${streamKey}`;
+  }
+  const lifecycleKey = projectionToolLifecycleKey(item);
+  if (lifecycleKey) {
+    return `${scope}:${lifecycleKey}`;
+  }
+  const toolKey = projectionToolDisplayKey(item);
+  if (toolKey) {
+    return `${scope}:${toolKey}`;
+  }
+  return `${scope}:${item.id}`;
+}
+
 function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
   if (!isStreamingRequestDisplayItem(item)) {
     return undefined;
   }
   const channel =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
-  return `${channel}:${projectionRequestKey(item) ?? projectionOwnerKey(item) ?? item.id}`;
+  const streamKey = item.streamKey?.trim();
+  if (streamKey) {
+    return `${channel}:sk:${streamKey}`;
+  }
+  const ownerKey = projectionOwnerKey(item);
+  if (ownerKey) {
+    return `${channel}:${ownerKey}`;
+  }
+  const requestKey = projectionRequestKey(item);
+  if (requestKey) {
+    return `${channel}:${requestKey}`;
+  }
+  return `${channel}:${item.id}`;
+}
+
+const FEED_SORT_LANE_NORMAL = 0;
+const FEED_SORT_LANE_STREAM_MESSAGE = 1;
+const FEED_SORT_LANE_STREAM_THINKING = 2;
+
+function buildToolLifecycleSortAnchors(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): Map<string, { at: string; sequence: number }> {
+  const anchors = new Map<string, { at: string; sequence: number }>();
+  for (const item of timeline) {
+    const toolUseId =
+      readProjectionToolMetadata(item)?.toolUseId?.trim() ??
+      readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
+    if (!toolUseId) {
+      continue;
+    }
+    const candidate = { at: item.at, sequence: item.sequence };
+    const existing = anchors.get(toolUseId);
+    if (!existing || candidate.sequence < existing.sequence) {
+      anchors.set(toolUseId, candidate);
+    }
+  }
+  return anchors;
+}
+
+function resolveFeedEntrySortAnchor(
+  item: ThreadRunProjectionTimelineItem,
+  toolAnchors: ReadonlyMap<string, { at: string; sequence: number }>,
+): { at: string; sequence: number } {
+  const toolUseId =
+    readProjectionToolMetadata(item)?.toolUseId?.trim() ??
+    readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
+  if (toolUseId) {
+    const anchored = toolAnchors.get(toolUseId);
+    if (anchored) {
+      return anchored;
+    }
+  }
+  return { at: item.at, sequence: item.sequence };
+}
+
+function resolveFeedEntrySortLane(
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): number {
+  if (item.eventType === "thinking.delta") {
+    const span = projectionRequestSpan(item, requestSpansById);
+    if (!span || isProjectionRequestActive(span)) {
+      return FEED_SORT_LANE_STREAM_THINKING;
+    }
+  }
+  if (item.eventType === "message.delta") {
+    const span = projectionRequestSpan(item, requestSpansById);
+    if (!span || isProjectionRequestActive(span)) {
+      return FEED_SORT_LANE_STREAM_MESSAGE;
+    }
+  }
+  return FEED_SORT_LANE_NORMAL;
+}
+
+function resolveMainFeedEntrySortLane(
+  entry: ThreadRunProjectionMainFeedEntry,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): number {
+  if (entry.kind === "timeline" || entry.kind === "agent-echo") {
+    return resolveFeedEntrySortLane(entry.item, requestSpansById);
+  }
+  return FEED_SORT_LANE_NORMAL;
 }
 
 function projectionToolDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -818,7 +928,14 @@ function compareTimelineItems(
 function compareMainFeedEntries(
   left: ThreadRunProjectionMainFeedEntry,
   right: ThreadRunProjectionMainFeedEntry,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): number {
+  const laneDiff =
+    resolveMainFeedEntrySortLane(left, requestSpansById) -
+    resolveMainFeedEntrySortLane(right, requestSpansById);
+  if (laneDiff !== 0) {
+    return laneDiff;
+  }
   const atDiff = left.at.localeCompare(right.at);
   if (atDiff !== 0) {
     return atDiff;

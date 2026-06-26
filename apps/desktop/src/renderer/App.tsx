@@ -341,6 +341,7 @@ const ACTIVITY_FEED_STICK_THRESHOLD_PX = 120;
 const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
+const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
 
 type ActivityFeedScrollJump = "bottom" | "top";
 type ActivityFeedUserScrollDirection = "up" | "down";
@@ -1840,6 +1841,8 @@ function App() {
   const activityFeedUserScrollDirectionRef = useRef<ActivityFeedUserScrollDirection | null>(null);
   const activityFeedScrollJumpRef = useRef<ActivityFeedScrollJump | null>(null);
   const [activityFeedScrollJump, setActivityFeedScrollJump] = useState<ActivityFeedScrollJump | null>(null);
+  const activityFeedLayoutScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityFeedLayoutScrollAtRef = useRef(0);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
   const runProjectionLayoutSignature = useMemo(() => {
@@ -1907,6 +1910,45 @@ function App() {
     });
   }, []);
 
+  const scheduleActivityFeedLayoutScroll = useCallback(() => {
+    const now = Date.now();
+    const elapsed = now - lastActivityFeedLayoutScrollAtRef.current;
+    if (elapsed >= ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS) {
+      lastActivityFeedLayoutScrollAtRef.current = now;
+      scrollActivityFeedToEnd();
+      requestAnimationFrame(() => scrollActivityFeedToEnd());
+      return;
+    }
+    if (activityFeedLayoutScrollTimerRef.current) {
+      return;
+    }
+    activityFeedLayoutScrollTimerRef.current = setTimeout(() => {
+      activityFeedLayoutScrollTimerRef.current = null;
+      lastActivityFeedLayoutScrollAtRef.current = Date.now();
+      scrollActivityFeedToEnd();
+      requestAnimationFrame(() => scrollActivityFeedToEnd());
+    }, ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS - elapsed);
+  }, [scrollActivityFeedToEnd]);
+
+  const flushActivityFeedLayoutScroll = useCallback(() => {
+    if (activityFeedLayoutScrollTimerRef.current) {
+      clearTimeout(activityFeedLayoutScrollTimerRef.current);
+      activityFeedLayoutScrollTimerRef.current = null;
+    }
+    lastActivityFeedLayoutScrollAtRef.current = Date.now();
+    scrollActivityFeedToEnd();
+    requestAnimationFrame(() => scrollActivityFeedToEnd());
+  }, [scrollActivityFeedToEnd]);
+
+  useEffect(
+    () => () => {
+      if (activityFeedLayoutScrollTimerRef.current) {
+        clearTimeout(activityFeedLayoutScrollTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
     userDetachedFromBottomRef.current = false;
@@ -1949,8 +1991,8 @@ function App() {
   }, [activityFeedScrollJump, jumpActivityFeedToTop, requestActivityFeedForceScroll]);
 
   const handleActivityPlannerLayoutChange = useCallback(() => {
-    scrollActivityFeedToEnd();
-  }, [scrollActivityFeedToEnd]);
+    scheduleActivityFeedLayoutScroll();
+  }, [scheduleActivityFeedLayoutScroll]);
 
   useEffect(() => {
     const container = activityMessagesRef.current;
@@ -2005,14 +2047,33 @@ function App() {
   }, [activeThread?.id, requestActivityFeedForceScroll]);
 
   useLayoutEffect(() => {
-    if (!runProjectionLayoutSignature) {
+    if (!runProjectionLayoutSignature || !activeThread) {
       return;
     }
     const forceScroll = Date.now() < forceActivityFeedScrollUntilRef.current;
-    scrollActivityFeedToEnd(forceScroll);
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(forceScroll));
+    if (forceScroll) {
+      scrollActivityFeedToEnd(true);
+      const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    if (userDetachedFromBottomRef.current) {
+      return;
+    }
+    if (activeThread.status === "running") {
+      scheduleActivityFeedLayoutScroll();
+      return;
+    }
+    flushActivityFeedLayoutScroll();
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(true));
     return () => cancelAnimationFrame(frame);
-  }, [runProjectionLayoutSignature, scrollActivityFeedToEnd]);
+  }, [
+    activeThread?.id,
+    activeThread?.status,
+    flushActivityFeedLayoutScroll,
+    runProjectionLayoutSignature,
+    scheduleActivityFeedLayoutScroll,
+    scrollActivityFeedToEnd,
+  ]);
 
   useLayoutEffect(() => {
     if (!showPlanApproval || !activeThread) {
