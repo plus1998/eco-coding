@@ -51,7 +51,7 @@ test("mergeThreadRunProjectionUpdate keeps fuller timeline when event count matc
   expect(mergeThreadRunProjectionUpdate(trimmed, full)).toBe(full);
 });
 
-test("mergeThreadRunProjectionUpdate rejects trimmed newer feed while preserving history", () => {
+test("mergeThreadRunProjectionUpdate merges trimmed newer feed without dropping history", () => {
   const full = makeProjection({ sourceEventCount: 100, timeline: Array.from({ length: 120 }, (_, i) => ({
     id: `evt_${i}`,
     kind: "narrative" as const,
@@ -62,15 +62,14 @@ test("mergeThreadRunProjectionUpdate rejects trimmed newer feed while preserving
   const trimmed = makeProjection({ sourceEventCount: 101, timeline: Array.from({ length: 80 }, (_, i) => ({
     id: `evt_${i + 40}`,
     kind: "narrative" as const,
-    text: `line ${i + 40}`,
+    text: `updated ${i + 40}`,
     role: "planner" as const,
     observedAt: new Date().toISOString(),
   })) });
 
-  expect(
-    mergeThreadRunProjectionUpdate(full, trimmed, { preserveHistory: true }),
-  ).toBe(full);
-  expect(
-    mergeThreadRunProjectionUpdate(full, trimmed, { preserveHistory: false }),
-  ).toBe(trimmed);
+  const merged = mergeThreadRunProjectionUpdate(full, trimmed, { preserveHistory: false });
+  expect(merged.timeline).toHaveLength(120);
+  expect(merged.sourceEventCount).toBe(101);
+  expect(merged.timeline[40]?.text).toBe("updated 40");
+  expect(merged.timeline[0]?.text).toBe("line 0");
 });

@@ -855,7 +855,7 @@ function App() {
         }
         setRunProjectionByThread((current) => ({
           ...current,
-          [selectedThreadId]: projection,
+          [selectedThreadId]: mergeThreadRunProjectionUpdate(current[selectedThreadId], projection),
         }));
       });
     }
@@ -1917,6 +1917,23 @@ function App() {
     return container.scrollHeight - container.scrollTop - container.clientHeight;
   }, []);
 
+  const clampActivityFeedOverscroll = useCallback(
+    (container: HTMLElement): boolean => {
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      if (container.scrollTop <= maxScrollTop) {
+        return false;
+      }
+      programmaticActivityFeedScrollRef.current = true;
+      container.scrollTop = maxScrollTop;
+      activityFeedScrollTopRef.current = container.scrollTop;
+      requestAnimationFrame(() => {
+        programmaticActivityFeedScrollRef.current = false;
+      });
+      return true;
+    },
+    [],
+  );
+
   const syncActivityFeedScrollJump = useCallback(
     (container: HTMLElement) => {
       const next = resolveActivityFeedScrollJump(
@@ -1942,7 +1959,8 @@ function App() {
       return;
     }
     programmaticActivityFeedScrollRef.current = true;
-    container.scrollTop = container.scrollHeight;
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTop = maxScrollTop;
     activityFeedScrollTopRef.current = container.scrollTop;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -2073,6 +2091,45 @@ function App() {
     return () => container.removeEventListener("scroll", onScroll);
   }, [activeThread?.id, distanceFromActivityFeedBottom, syncActivityFeedScrollJump]);
 
+  useEffect(() => {
+    const container = activityMessagesRef.current;
+    if (!container || !activeThread?.id) {
+      return;
+    }
+    const content = container.querySelector(".run-log");
+    if (!(content instanceof HTMLElement)) {
+      return;
+    }
+    let lastContentHeight = content.getBoundingClientRect().height;
+    const observer = new ResizeObserver(() => {
+      const nextContentHeight = content.getBoundingClientRect().height;
+      const shrank = nextContentHeight < lastContentHeight - 1;
+      lastContentHeight = nextContentHeight;
+      const distanceFromBottom = distanceFromActivityFeedBottom(container);
+      clampActivityFeedOverscroll(container);
+      const stuckAboveBottom =
+        !userDetachedFromBottomRef.current &&
+        distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
+      if (userDetachedFromBottomRef.current) {
+        return;
+      }
+      if (stuckAboveBottom || shrank) {
+        scrollActivityFeedToEnd();
+        requestAnimationFrame(() => scrollActivityFeedToEnd());
+        return;
+      }
+      scheduleActivityFeedLayoutScroll();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [
+    activeThread?.id,
+    clampActivityFeedOverscroll,
+    distanceFromActivityFeedBottom,
+    scheduleActivityFeedLayoutScroll,
+    scrollActivityFeedToEnd,
+  ]);
+
   useLayoutEffect(() => {
     activityFeedUserScrollDirectionRef.current = null;
     activityFeedScrollJumpRef.current = null;
@@ -2094,6 +2151,10 @@ function App() {
     if (!runProjectionLayoutSignature || !activeThread) {
       return;
     }
+    const container = activityMessagesRef.current;
+    if (container) {
+      clampActivityFeedOverscroll(container);
+    }
     const forceScroll = Date.now() < forceActivityFeedScrollUntilRef.current;
     if (forceScroll) {
       scrollActivityFeedToEnd(true);
@@ -2113,6 +2174,7 @@ function App() {
   }, [
     activeThread?.id,
     activeThread?.status,
+    clampActivityFeedOverscroll,
     flushActivityFeedLayoutScroll,
     runProjectionLayoutSignature,
     scheduleActivityFeedLayoutScroll,

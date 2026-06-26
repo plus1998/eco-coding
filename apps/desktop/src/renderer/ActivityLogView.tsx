@@ -62,7 +62,7 @@ import {
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
-import { ActivityFeedLayoutContext } from "./activity-feed-layout-context";
+import { ActivityFeedLayoutContext, useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import {
   shouldScheduleThinkingAutoCollapse,
@@ -1142,6 +1142,7 @@ function ThinkingBlock({
   streaming?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
+  const onLayoutChange = useActivityFeedLayoutChange();
   const [collapsed, setCollapsed] = useState(false);
   const [showDuration, setShowDuration] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
@@ -1189,8 +1190,9 @@ function ThinkingBlock({
       collapseAnimRef.current = null;
       setCollapsed(true);
       setIsCollapsing(false);
+      onLayoutChange?.();
     }, THINKING_COLLAPSE_MS);
-  }, [clearCollapseTimers]);
+  }, [clearCollapseTimers, onLayoutChange]);
 
   useEffect(() => {
     if (streaming) {
