@@ -26,6 +26,9 @@ function trimTimeline(
 }
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
+  if (item.eventType === "thinking.delta" || item.eventType === "message.delta") {
+    return item;
+  }
   const { text, truncated } = truncateText(item.text, FEED_PROJECTION_MAX_TEXT_CHARS);
   if (!truncated) {
     return item;

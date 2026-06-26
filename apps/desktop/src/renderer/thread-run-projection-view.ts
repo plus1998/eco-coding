@@ -522,6 +522,31 @@ export function buildProjectionDisplayTimelineItems(
   return displayItems;
 }
 
+function appendThinkingStreamScopeSuffix(
+  key: string,
+  item: ThreadRunProjectionTimelineItem,
+): string {
+  const isThinking =
+    item.eventType === "thinking.delta" || item.eventType === "thinking.final";
+  if (!isThinking) {
+    return key;
+  }
+  const requestId = item.requestId?.trim();
+  return requestId ? `${key}:req:${requestId}` : key;
+}
+
+function shouldResetThinkingStreamMerge(
+  current: ThreadRunProjectionTimelineItem,
+  item: ThreadRunProjectionTimelineItem,
+): boolean {
+  const currentRequestId = current.requestId?.trim();
+  const itemRequestId = item.requestId?.trim();
+  if (currentRequestId && itemRequestId && currentRequestId !== itemRequestId) {
+    return true;
+  }
+  return current.eventType === "thinking.final";
+}
+
 function mergeStreamDisplayTimelineItem(
   current: ThreadRunProjectionTimelineItem | undefined,
   item: ThreadRunProjectionTimelineItem,
@@ -532,6 +557,9 @@ function mergeStreamDisplayTimelineItem(
   const isThinkingStream =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final";
   if (!isThinkingStream) {
+    return item;
+  }
+  if (shouldResetThinkingStreamMerge(current, item)) {
     return item;
   }
   const preservedText = !item.text.trim()
@@ -771,15 +799,15 @@ function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): stri
     item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
   const streamKey = item.streamKey?.trim();
   if (streamKey) {
-    return `${channel}:sk:${streamKey}`;
+    return appendThinkingStreamScopeSuffix(`${channel}:sk:${streamKey}`, item);
   }
   const ownerKey = projectionOwnerKey(item);
   if (ownerKey) {
-    return `${channel}:${ownerKey}`;
+    return appendThinkingStreamScopeSuffix(`${channel}:${ownerKey}`, item);
   }
   const requestKey = projectionRequestKey(item);
   if (requestKey) {
-    return `${channel}:${requestKey}`;
+    return appendThinkingStreamScopeSuffix(`${channel}:${requestKey}`, item);
   }
   return `${channel}:${item.id}`;
 }

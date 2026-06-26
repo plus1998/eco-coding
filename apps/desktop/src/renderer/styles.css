@@ -5384,6 +5384,15 @@ html[data-window-focused="true"] .codex-sidebar {
   word-break: break-word;
 }
 
+.run-log-thinking-body-plain {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #8a8a8a;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .run-log-thinking-body .markdown-content {
   color: #8a8a8a;
   font-size: 13px;
@@ -13943,6 +13952,14 @@ html[data-window-focused="true"] .settings-nav {
   color: #a8a8a8;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-body-plain {
+  color: var(--codex-log-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content {

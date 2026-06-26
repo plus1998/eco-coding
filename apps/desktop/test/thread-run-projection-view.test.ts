@@ -795,6 +795,65 @@ test("buildThreadRunProjectionViewModel collapses superseded stream deltas after
   }
 });
 
+test("buildThreadRunProjectionViewModel does not bleed prior thinking into a new request", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_old",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:02.000Z",
+        },
+        {
+          requestId: "req_new",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-old-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req_old",
+          streamKey: "thr_test:thinking",
+          text: "The user wants to download a GGUF model with a very long prior thought.",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "thinking-new-delta",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_new",
+          streamKey: "thr_test:thinking",
+          text: "Good, starting fresh.",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  const entries = view.mainFeedEntries.filter(
+    (entry) => entry.kind === "timeline" && entry.item.eventType.includes("thinking"),
+  );
+  expect(entries.map((entry) => entry.key)).toEqual([
+    "main:stream:thinking:sk:thr_test:thinking:req:req_old",
+    "main:stream:thinking:sk:thr_test:thinking:req:req_new",
+  ]);
+  const latest = entries.at(-1);
+  expect(latest?.kind).toBe("timeline");
+  if (latest?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(latest.item)).toMatchObject({
+      kind: "thinking",
+      text: "Good, starting fresh.",
+      streaming: true,
+    });
+  }
+});
+
 test("buildThreadRunProjectionViewModel preserves thinking text across empty stream placeholders", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
@@ -1305,7 +1364,7 @@ test("buildThreadRunProjectionViewModel keeps active thinking below bash cards",
 
   const keys = view.mainFeedEntries.map((entry) => entry.key);
   expect(keys.indexOf("main:lifecycle:toolu_bash_1")).toBeLessThan(
-    keys.indexOf("main:stream:thinking:role:thinking"),
+    keys.indexOf("main:stream:thinking:role:thinking:req:req_think"),
   );
 });
 

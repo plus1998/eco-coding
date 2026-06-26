@@ -61,6 +61,36 @@ test("trimProjectionForFeed truncates long timeline text and keeps metadata flag
   expect(trimmed.agents[0]?.delegationPrompt).toHaveLength(2_000);
 });
 
+test("trimProjectionForFeed keeps streaming deltas untruncated", () => {
+  const longText = "b".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
+  const projection: ThreadRunProjectionSnapshot = {
+    thread: {
+      threadId: "thr_1",
+      status: "running",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    attempts: [],
+    agents: [],
+    requestSpans: [],
+    timeline: [
+      {
+        id: "think_delta",
+        sequence: 1,
+        eventType: "thinking.delta",
+        scope: "main",
+        text: longText,
+        at: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    diagnostics: [],
+    sourceEventCount: 1,
+  };
+
+  const trimmed = trimProjectionForFeed(projection);
+  expect(trimmed.timeline[0]?.text).toBe(longText);
+  expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
+});
+
 test("trimProjectionForFeed keeps only the most recent timeline items", () => {
   const items = Array.from({ length: 150 }, (_, index) => ({
     id: `evt_${index}`,

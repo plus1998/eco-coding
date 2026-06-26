@@ -6501,7 +6501,9 @@ function resolveLiveRequestId(
     !input.type.startsWith("request.") &&
     input.type !== "thread.api_error" &&
     !input.stream &&
-    input.type !== "message.delta"
+    input.type !== "message.delta" &&
+    input.type !== "thinking.delta" &&
+    input.type !== "thinking.final"
   ) {
     return undefined;
   }

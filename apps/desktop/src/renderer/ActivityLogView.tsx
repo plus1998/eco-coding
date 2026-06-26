@@ -62,6 +62,7 @@ import {
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
+import { MarkdownContent } from "./MarkdownContent";
 import { ActivityFeedLayoutContext, useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import {
@@ -1143,6 +1144,7 @@ function ThinkingBlock({
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
   const onLayoutChange = useActivityFeedLayoutChange();
+  const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [showDuration, setShowDuration] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
@@ -1252,6 +1254,20 @@ function ThinkingBlock({
 
   useEffect(() => () => clearCollapseTimers(), [clearCollapseTimers]);
 
+  useLayoutEffect(() => {
+    if (!streaming || !hasBody) {
+      return;
+    }
+    const bodyInner = thinkingBodyInnerRef.current;
+    if (!bodyInner) {
+      return;
+    }
+    const distanceFromBottom = bodyInner.scrollHeight - bodyInner.scrollTop - bodyInner.clientHeight;
+    if (distanceFromBottom <= 48) {
+      bodyInner.scrollTop = bodyInner.scrollHeight;
+    }
+  }, [streaming, hasBody, text]);
+
   const waitingEmpty = Boolean(streaming) && !hasBody;
 
   return (
@@ -1320,9 +1336,13 @@ function ThinkingBlock({
         <div
           className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}
         >
-          <div className="run-log-thinking-body-inner">
+          <div className="run-log-thinking-body-inner" ref={thinkingBodyInnerRef}>
             <div className="run-log-thinking-body">
-              <StreamingMarkdownContent text={text} {...(streaming !== undefined && { streaming })} />
+              {streaming ? (
+                <div className="run-log-thinking-body-plain">{text}</div>
+              ) : (
+                <MarkdownContent text={text} className="markdown-content" />
+              )}
             </div>
           </div>
         </div>
