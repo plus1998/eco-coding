@@ -79,7 +79,7 @@ export function buildThreadTitleRequestBody(
 ): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: titleRoute.modelId,
-    max_tokens: TITLE_MAX_OUTPUT_TOKENS,
+    // max_tokens: TITLE_MAX_OUTPUT_TOKENS,
     temperature: 0,
     thinking: { type: "disabled" },
     system: THREAD_TITLE_SYSTEM_PROMPT,
