@@ -2162,6 +2162,9 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
   expect(setPermissionModeMode).toBe("acceptEdits");
   expect(capturedOptions[0]?.permissionMode).toBe("acceptEdits");
   expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain("Bash");
+  expect(capturedOptions[0]?.disallowedTools).toEqual(
+    expect.arrayContaining(["ExitPlanMode", "EnterPlanMode"]),
+  );
   expect(capturedOptions[0]?.agents).toBeDefined();
   const hooks = capturedOptions[0]?.hooks as
     | Partial<Record<string, Array<{ matcher?: string }>>>
@@ -2208,6 +2211,9 @@ test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", 
 
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.allowedTools).not.toContain("ExitPlanMode");
+  expect(capturedOptions[0]?.disallowedTools).toEqual(
+    expect.arrayContaining(["ExitPlanMode", "EnterPlanMode", "mcp__eco_plan__finalize_plan"]),
+  );
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });

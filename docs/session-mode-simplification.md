@@ -34,7 +34,7 @@
 
 | `sessionMode` | UI | SDK `permissionMode` | 写/Bash | 子代理 | 计划审批 |
 |---------------|-----|----------------------|---------|--------|----------|
-| `agent` | Agent | `acceptEdits` | 按 profile | 全量 enabled | 主代理可自行 `ExitPlanMode` |
+| `agent` | Agent | `acceptEdits` | 按 profile | 全量 enabled | 禁用 Enter/ExitPlanMode（正式计划用 Plan 模式） |
 | `plan` | Plan | `plan` | 禁止 | 只读子集 + `Agent(Plan)` 可选 | **必须** ExitPlanMode 桥接 |
 | `ask` | Ask | `dontAsk` + 只读 `allowedTools` + 显式禁用写/Bash/Plan 工具 | 禁止 | 仅 `explore` | 不进入 |
 

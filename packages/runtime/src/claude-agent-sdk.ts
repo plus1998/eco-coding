@@ -154,6 +154,8 @@ const askAllowedTools = [
   ...networkAllowedTools,
 ] as const;
 const askDisallowedSdkTools = [...planningDisallowedSdkTools, ...protectedPlanModeToolNames] as const;
+/** Agent / execution: Plan tools belong to sessionMode plan only (align with Ask). */
+const agentDisallowedSdkTools = [...protectedPlanModeToolNames] as const;
 const exploreSubagentTools = ["Read", "Glob", "Grep"] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
 const readOnlySubagentBashTools = [
@@ -845,6 +847,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       toolPermissions?.main.disallowed,
       phase.planningPhase ? planningDisallowedSdkTools : [],
       phase.askPhase ? askDisallowedSdkTools : [],
+      !phase.planningPhase && !phase.askPhase && !approveDeferredExitPlanMode ? agentDisallowedSdkTools : [],
     );
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
     // attributed to the planner role; raw profile model ids are ambiguous when multiple

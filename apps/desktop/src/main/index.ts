@@ -3402,7 +3402,6 @@ async function runCodingThreadAutonomous(
                 taskRunHooks.hookContextExtras,
                 "execution",
               );
-              let planCaptured = false;
               const result = await consumeSdkRunEvents({
                 events: driver.run(
                   buildSdkRunInput({
@@ -3424,23 +3423,13 @@ async function runCodingThreadAutonomous(
                 captureSession: captureSdkSessionFromEvent,
                 emitActivity: emitSdkStreamActivity,
                 onEvent: (event) => {
-                  if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    planCaptured = captureThreadPlanReady({
-                      threadId: thread.id,
-                      workspacePath: workspace.path,
-                      worktreePath: cwd,
-                      routesJson: JSON.stringify(routes),
-                      payload: event.payload,
-                      awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
-                    });
-                  }
                   taskRuntime.handleEvent(event);
                 },
               });
               if (!result.ok) {
                 return result;
               }
-              return { ok: true, planCaptured };
+              return { ok: true };
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -3454,7 +3443,7 @@ async function runCodingThreadAutonomous(
 
     const runDecision = resolveAutonomousRunOutcome(runOutcome, {
       hasPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
-      planCaptured: runOutcome.ok && "planCaptured" in runOutcome && runOutcome.planCaptured === true,
+      planCaptured: false,
     });
 
     if (
