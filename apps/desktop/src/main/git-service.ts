@@ -178,6 +178,7 @@ export async function handleGitGenerateCommitMessage(
     gitSettingsStore: GitSettingsStore;
     pricingCache: ModelsDevPricingCache;
     run?: GitRunner;
+    onCommitMessageDelta?: (text: string) => void;
   },
 ): Promise<GitGenerateCommitMessageResult> {
   const run = deps.run ?? defaultGitRunner;
@@ -199,7 +200,13 @@ export async function handleGitGenerateCommitMessage(
     pricingCache: deps.pricingCache,
   });
   const commitInstructions = deps.gitSettingsStore.get().commitMessageInstructions;
-  const message = await summarizeCommitMessage(route, context, fetch, commitInstructions);
+  const message = await summarizeCommitMessage(
+    route,
+    context,
+    fetch,
+    commitInstructions,
+    deps.onCommitMessageDelta,
+  );
   if (!message?.trim()) {
     logUpstreamError("git-commit-message-failed", {
       profileId: request.profileId,

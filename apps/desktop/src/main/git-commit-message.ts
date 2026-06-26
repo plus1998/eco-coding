@@ -90,6 +90,7 @@ export async function summarizeCommitMessage(
   context: CommitDiffContext,
   fetcher: Fetcher = fetch,
   instructions?: string,
+  onTextDelta?: (text: string) => void,
 ): Promise<string | undefined> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), COMMIT_MESSAGE_TIMEOUT_MS);
@@ -100,6 +101,11 @@ export async function summarizeCommitMessage(
       signal: controller.signal,
       logEventPrefix: "git-commit-message",
       fetcher,
+      ...(onTextDelta && {
+        onTextDelta: (_delta, text) => {
+          onTextDelta(text);
+        },
+      }),
     });
     if (!result.ok) {
       return undefined;

@@ -476,6 +476,13 @@ desktopEventCenter.subscribe(
     });
   }),
 );
+
+function broadcastGitCommitMessageDelta(requestId: string, text: string): void {
+  const payload = { requestId, text };
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.gitGenerateCommitMessageDelta, payload);
+  });
+}
 const packageScriptRunner = new PackageScriptRunner((event) => {
   desktopEventCenter.publishPackageScriptEvent(event);
 });
@@ -2078,12 +2085,18 @@ function registerIpcHandlers(): void {
     if (!isGitGenerateCommitMessageRequest(payload)) {
       throw new Error("Invalid git generate commit message request.");
     }
+    const requestId = payload.requestId?.trim();
     return handleGitGenerateCommitMessage(payload, {
       providerStore,
       agentOrchestrationStore,
       gitSettingsStore,
       pricingCache,
       run: runGitCommand,
+      ...(requestId && {
+        onCommitMessageDelta: (text) => {
+          broadcastGitCommitMessageDelta(requestId, text);
+        },
+      }),
     });
   });
 

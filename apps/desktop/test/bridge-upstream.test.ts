@@ -4,6 +4,7 @@ import {
   buildBridgeUpstreamMessagesPayload,
   forwardMessagesViaBridge,
   parseAnthropicStreamEventBlock,
+  parseBridgeProbeReply,
   splitSseBlocks,
 } from "../src/main/bridge-upstream";
 import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
@@ -231,4 +232,31 @@ test("splitSseBlocks splits event stream chunks", () => {
   const { blocks, remainder } = splitSseBlocks("event: ping\ndata: {}\n\nevent: done\ndata: {}\n\npart");
   expect(blocks).toHaveLength(2);
   expect(remainder).toBe("part");
+});
+
+test("parseBridgeProbeReply invokes onTextDelta for buffered anthropic replies", async () => {
+  const deltas: string[] = [];
+  const result = await parseBridgeProbeReply({
+    apiCompat: "anthropic",
+    modelId: "claude-sonnet-4-6",
+    anthropicRequest: {
+      model: "claude-sonnet-4-6",
+      max_tokens: 256,
+      messages: [{ role: "user", content: "hi" }],
+    },
+    response: new Response(
+      JSON.stringify({
+        type: "message",
+        content: [{ type: "text", text: "feat(ui): hello" }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ),
+    preferStream: false,
+    onTextDelta: (_delta, text) => {
+      deltas.push(text);
+    },
+  });
+
+  expect(result.reply).toBe("feat(ui): hello");
+  expect(deltas).toEqual(["feat(ui): hello"]);
 });

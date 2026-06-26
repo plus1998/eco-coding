@@ -4,6 +4,7 @@ import {
   buildCommitMessageUserMessage,
   extractCommitMessageText,
   sanitizeCommitMessage,
+  summarizeCommitMessage,
 } from "../src/main/git-commit-message";
 import type { CommitDiffContext } from "../src/main/git-operations";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
@@ -116,4 +117,27 @@ test("extractCommitMessageText ignores redacted thinking blocks", () => {
     ],
   });
   expect(text).toBe("fix(git): handle empty diff");
+});
+
+test("summarizeCommitMessage streams accumulated text through onTextDelta", async () => {
+  const streamed: string[] = [];
+  const message = await summarizeCommitMessage(
+    route,
+    context,
+    async () =>
+      new Response(
+        JSON.stringify({
+          type: "message",
+          content: [{ type: "text", text: "feat(git): stream commit text" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    undefined,
+    (text) => {
+      streamed.push(text);
+    },
+  );
+
+  expect(message).toBe("feat(git): stream commit text");
+  expect(streamed).toEqual(["feat(git): stream commit text"]);
 });

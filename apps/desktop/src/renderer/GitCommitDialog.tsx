@@ -179,13 +179,21 @@ export function GitCommitDialog({
     }
     setGeneratingMessage(true);
     setError(undefined);
+    setMessage("");
     try {
-      const result = await window.eco.generateGitCommitMessage({
-        workspacePath,
-        profileId,
-        includeUnstaged,
-        ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
-      });
+      const result = await window.eco.generateGitCommitMessage(
+        {
+          workspacePath,
+          profileId,
+          includeUnstaged,
+          ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
+        },
+        {
+          onDelta: (text) => {
+            setMessage(text);
+          },
+        },
+      );
       setMessage(result.message);
       setModelMenuOpen(false);
     } catch (caught) {

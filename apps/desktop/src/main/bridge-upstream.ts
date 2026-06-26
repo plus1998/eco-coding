@@ -375,6 +375,8 @@ export type BridgeProbeParseResult = {
   upstreamError?: string;
 };
 
+export type BridgeTextDeltaHandler = (delta: string, text: string) => void;
+
 export function parseAnthropicStreamEventBlock(block: string): AnthropicStreamEvent | null {
   let eventType = "";
   const dataLines: string[] = [];
@@ -1186,6 +1188,7 @@ export async function parseBridgeProbeReply(params: {
   anthropicRequest: AnthropicRequest;
   response: Response;
   preferStream: boolean;
+  onTextDelta?: BridgeTextDeltaHandler;
 }): Promise<BridgeProbeParseResult> {
   const contentType = params.response.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
@@ -1202,6 +1205,7 @@ export async function parseBridgeProbeReply(params: {
     params.anthropicRequest,
   );
   if (reply) {
+    params.onTextDelta?.(reply, reply);
     return { reply };
   }
   const bufferedError = extractResponsesStreamEventErrorFromBody(raw);
@@ -1229,6 +1233,7 @@ async function collectBridgeProbeStreamReply(params: {
   modelId: string;
   anthropicRequest: AnthropicRequest;
   response: Response;
+  onTextDelta?: BridgeTextDeltaHandler;
 }): Promise<BridgeProbeParseResult> {
   const toolNames = extractAnthropicRequestToolNames(params.anthropicRequest);
   const textParts: string[] = [];
@@ -1243,6 +1248,7 @@ async function collectBridgeProbeStreamReply(params: {
       }
       if (event.delta.type === "text_delta" && event.delta.text) {
         textParts.push(event.delta.text);
+        params.onTextDelta?.(event.delta.text, textParts.join(""));
       }
       if (event.delta.type === "thinking_delta" && event.delta.thinking) {
         thinkingParts.push(event.delta.thinking);

@@ -125,6 +125,7 @@ export const IPC_CHANNELS = {
   gitCheckoutBranch: "git:checkout-branch",
   gitCreateBranch: "git:create-branch",
   gitGenerateCommitMessage: "git:generate-commit-message",
+  gitGenerateCommitMessageDelta: "git:generate-commit-message-delta",
   gitListCommitModelOptions: "git:list-commit-model-options",
   gitCommit: "git:commit",
   gitPush: "git:push",
@@ -401,9 +402,17 @@ export interface GitGenerateCommitMessageRequest {
   workspacePath: string;
   profileId: string;
   includeUnstaged: boolean;
+  /** Correlates streaming deltas pushed on gitGenerateCommitMessageDelta. */
+  requestId?: string;
   /** @deprecated Use candidateModelId */
   role?: RuntimeAgentRole | "auto";
   candidateModelId?: string | "auto";
+}
+
+export interface GitGenerateCommitMessageDeltaPayload {
+  requestId: string;
+  /** Accumulated assistant text so far. */
+  text: string;
 }
 
 export interface GitGenerateCommitMessageResult {

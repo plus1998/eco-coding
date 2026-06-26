@@ -28,6 +28,7 @@ export interface PostAuxiliaryBridgeRequestInput {
   anthropicExtraHeaders?: Record<string, string>;
   logEventPrefix: string;
   fetcher?: Fetcher;
+  onTextDelta?: (delta: string, text: string) => void;
 }
 
 export interface PostAuxiliaryBridgeRequestResult {
@@ -108,6 +109,7 @@ export async function postAuxiliaryBridgeRequest(
       anthropicRequest,
       response,
       preferStream,
+      ...(input.onTextDelta && { onTextDelta: input.onTextDelta }),
     });
 
     if (parsed.upstreamError) {

@@ -106,6 +106,7 @@ import {
   type GitCommitResult,
   type GitGenerateCommitMessageRequest,
   type GitGenerateCommitMessageResult,
+  type GitGenerateCommitMessageDeltaPayload,
   type GitListCommitModelOptionsRequest,
   type GitListCommitModelOptionsResult,
   type GitListCommitsRequest,
@@ -344,8 +345,26 @@ const api = {
   createGitBranch(request: GitCreateBranchRequest): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitCreateBranch, request);
   },
-  generateGitCommitMessage(request: GitGenerateCommitMessageRequest): Promise<GitGenerateCommitMessageResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.gitGenerateCommitMessage, request);
+  generateGitCommitMessage(
+    request: GitGenerateCommitMessageRequest,
+    options?: { onDelta?: (text: string) => void },
+  ): Promise<GitGenerateCommitMessageResult> {
+    const requestId = `commit-msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const listener = (_event: Electron.IpcRendererEvent, payload: GitGenerateCommitMessageDeltaPayload) => {
+      if (payload.requestId === requestId) {
+        options?.onDelta?.(payload.text);
+      }
+    };
+    if (options?.onDelta) {
+      ipcRenderer.on(IPC_CHANNELS.gitGenerateCommitMessageDelta, listener);
+    }
+    return ipcRenderer
+      .invoke(IPC_CHANNELS.gitGenerateCommitMessage, { ...request, requestId })
+      .finally(() => {
+        if (options?.onDelta) {
+          ipcRenderer.off(IPC_CHANNELS.gitGenerateCommitMessageDelta, listener);
+        }
+      });
   },
   listGitCommitModelOptions(request: GitListCommitModelOptionsRequest): Promise<GitListCommitModelOptionsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitListCommitModelOptions, request);
