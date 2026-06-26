@@ -46,6 +46,7 @@ test("runEcoCompact saves handoff, clears sdk session, and returns token estimat
     fetcher: async () =>
       new Response(
         JSON.stringify({
+          type: "message",
           content: [{ type: "text", text: "已完成路由与测试摘要" }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },

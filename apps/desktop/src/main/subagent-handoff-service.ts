@@ -6,9 +6,8 @@ import {
 } from "@eco/runtime";
 import type { RuntimeAgentRole, ThreadActivityLine } from "../shared/ipc";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
-import { buildProviderRequestBaseUrl } from "./provider-models";
+import { postAuxiliaryBridgeRequest } from "./bridge-auxiliary-request";
 
-const ANTHROPIC_VERSION = "2023-06-01";
 const SUMMARY_TIMEOUT_MS = 30_000;
 const SUMMARY_ROUTE_ROLES = ["planner", "explore", "coder"] as const;
 
@@ -121,41 +120,18 @@ async function requestSubagentHandoffSummary(
   fetcher: Fetcher,
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    "anthropic-version": ANTHROPIC_VERSION,
-  };
-  const apiKey = summaryRoute.provider.apiKey.trim();
-  if (apiKey) {
-    headers["x-api-key"] = apiKey;
-  }
-
-  const response = await fetcher(
-    `${buildProviderRequestBaseUrl(summaryRoute.provider.baseUrl, summaryRoute.provider.requestPath)}/v1/messages`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: summaryRoute.modelId,
-        max_tokens: 2_048,
-        temperature: 0,
-        messages: [{ role: "user", content: prompt }],
-      }),
-      signal,
+  const result = await postAuxiliaryBridgeRequest({
+    route: summaryRoute,
+    anthropicBody: {
+      model: summaryRoute.modelId,
+      max_tokens: 2_048,
+      temperature: 0,
+      thinking: { type: "disabled" },
+      messages: [{ role: "user", content: prompt }],
     },
-  );
-
-  if (!response.ok) {
-    return undefined;
-  }
-
-  const payload = (await response.json()) as {
-    content?: Array<{ type?: string; text?: string }>;
-  };
-  const text = payload.content
-    ?.filter((block) => block.type === "text" && typeof block.text === "string")
-    .map((block) => block.text!.trim())
-    .filter(Boolean)
-    .join("\n\n");
-  return text?.trim() || undefined;
+    signal,
+    logEventPrefix: "subagent-handoff-summary",
+    fetcher,
+  });
+  return result.ok ? result.text : undefined;
 }

@@ -77,9 +77,9 @@ test("sanitizeCommitMessage truncates overly long output", () => {
   expect(sanitizeCommitMessage(long)?.length).toBe(2000);
 });
 
-test("buildCommitMessageRequestBody does not disable thinking or cap tokens by default", () => {
+test("buildCommitMessageRequestBody disables thinking", () => {
   const body = buildCommitMessageRequestBody(route, context);
-  expect(body.thinking).toBeUndefined();
+  expect(body.thinking).toEqual({ type: "disabled" });
   expect(body.max_tokens).toBeUndefined();
 });
 

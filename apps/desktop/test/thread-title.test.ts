@@ -95,9 +95,13 @@ test("summarizes thread title through the explore route with structured output",
       headers,
     });
     return new Response(
-      JSON.stringify({ content: [{ type: "text", text: '{"title":"任务 TODO 面板"}' }] }),
+      JSON.stringify({
+        type: "message",
+        content: [{ type: "text", text: '{"title":"任务 TODO 面板"}' }],
+      }),
       {
         status: 200,
+        headers: { "content-type": "application/json" },
       },
     );
   });
@@ -128,8 +132,11 @@ test("summarizeThreadTitle retries without structured output when schema request
       return new Response("unsupported", { status: 400 });
     }
     return new Response(
-      JSON.stringify({ content: [{ type: "text", text: '{"title":"导出筛选功能"}' }] }),
-      { status: 200 },
+      JSON.stringify({
+        type: "message",
+        content: [{ type: "text", text: '{"title":"导出筛选功能"}' }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
     );
   });
 
@@ -207,6 +214,7 @@ test("summarizeThreadTitle recovers title from thinking-only upstream responses"
     return new Response(
       JSON.stringify({
         stop_reason: "max_tokens",
+        type: "message",
         content: [
           {
             type: "thinking",
@@ -214,9 +222,50 @@ test("summarizeThreadTitle recovers title from thinking-only upstream responses"
           },
         ],
       }),
-      { status: 200 },
+      { status: 200, headers: { "content-type": "application/json" } },
     );
   });
 
   expect(title).toBe("模型身份询问");
+});
+
+test("summarizeThreadTitle routes openai chat through bridge with disable-thinking kwargs", async () => {
+  const qwenRoutes: AnthropicProxyRoute[] = [
+    {
+      role: "explore",
+      apiCompat: "openai_chat_completions",
+      provider: {
+        id: "p0",
+        name: "llama.cpp",
+        baseUrl: "http://127.0.0.1:8080",
+        requestPath: "",
+        defaultModel: "qwen3.6-27b",
+        enabled: true,
+        hasApiKey: true,
+        apiKey: "",
+        apiCompat: "openai_chat_completions",
+        createdAt: "",
+        updatedAt: "",
+      },
+      modelId: "qwen3.6-27b",
+    },
+  ];
+
+  let requestUrl = "";
+  let upstreamBody: Record<string, unknown> | undefined;
+  const title = await summarizeThreadTitle(qwenRoutes, "实现导出筛选", async (url, init) => {
+    requestUrl = String(url);
+    upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { role: "assistant", content: '{"title":"导出筛选"}' } }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+
+  expect(title).toBe("导出筛选");
+  expect(requestUrl).toBe("http://127.0.0.1:8080/v1/chat/completions");
+  expect(upstreamBody?.chat_template_kwargs).toEqual({ enable_thinking: false });
+  expect(upstreamBody?.stream).toBe(true);
 });

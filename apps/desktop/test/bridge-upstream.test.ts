@@ -76,6 +76,38 @@ test("buildBridgeUpstreamMessagesPayload omits reasoning_effort for openai chat 
   expect(body).not.toHaveProperty("reasoning_effort");
 });
 
+test("buildBridgeUpstreamMessagesPayload adds disable-thinking kwargs for openai chat", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    thinking: { type: "disabled" },
+    messages: [{ role: "user", content: "hi" }],
+  };
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "local-model",
+    false,
+  );
+  expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+});
+
+test("buildBridgeUpstreamMessagesPayload does not add chat kwargs when thinking is enabled", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    thinking: { type: "adaptive" },
+    messages: [{ role: "user", content: "hi" }],
+  };
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "local-model",
+    false,
+  );
+  expect(body).not.toHaveProperty("chat_template_kwargs");
+});
+
 test("applyUpstreamMaxOutputLimit keeps only max_tokens for openai chat (New API → llama.cpp)", () => {
   const body: Record<string, unknown> = {
     model: "local-model",

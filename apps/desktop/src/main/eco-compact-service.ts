@@ -6,10 +6,9 @@ import {
   splitUserMessagesForCompact,
 } from "../shared/eco-compact-handoff";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
-import { buildProviderRequestBaseUrl } from "./provider-models";
+import { postAuxiliaryBridgeRequest } from "./bridge-auxiliary-request";
 import type { ThreadCompactHandoffRecord } from "./conversation-store";
 
-const ANTHROPIC_VERSION = "2023-06-01";
 const SUMMARY_TIMEOUT_MS = 30_000;
 
 const SUMMARY_ROUTE_ROLES = ["planner", "explore", "coder"] as const;
@@ -140,57 +139,22 @@ async function requestCompactionSummary(
   fetcher: Fetcher,
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    "anthropic-version": ANTHROPIC_VERSION,
-  };
-  const apiKey = summaryRoute.provider.apiKey.trim();
-  if (apiKey) {
-    headers["x-api-key"] = apiKey;
-  }
-
-  const response = await fetcher(
-    `${buildProviderRequestBaseUrl(summaryRoute.provider.baseUrl, summaryRoute.provider.requestPath)}/v1/messages`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: summaryRoute.modelId,
-        max_tokens: 2_048,
-        temperature: 0,
-        system:
-          "你是编码对话压缩器。根据用户提供的较早消息生成结构化摘要，按 ## 任务目标 / 已读/已改文件 / 测试结果与错误 / 已做决策 / 未完成事项 分段输出。只输出摘要正文。",
-        messages: [{ role: "user", content: prompt }],
-      }),
-      signal,
+  const result = await postAuxiliaryBridgeRequest({
+    route: summaryRoute,
+    anthropicBody: {
+      model: summaryRoute.modelId,
+      max_tokens: 2_048,
+      temperature: 0,
+      thinking: { type: "disabled" },
+      system:
+        "你是编码对话压缩器。根据用户提供的较早消息生成结构化摘要，按 ## 任务目标 / 已读/已改文件 / 测试结果与错误 / 已做决策 / 未完成事项 分段输出。只输出摘要正文。",
+      messages: [{ role: "user", content: prompt }],
     },
-  );
-
-  if (!response.ok) {
-    return undefined;
-  }
-
-  const responseBody = (await response.json()) as unknown;
-  return extractSummaryText(responseBody);
-}
-
-function extractSummaryText(body: unknown): string | undefined {
-  if (!isRecord(body) || !Array.isArray(body.content)) {
-    return undefined;
-  }
-
-  const parts: string[] = [];
-  for (const block of body.content) {
-    if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
-      const text = block.text.trim();
-      if (text) {
-        parts.push(text);
-      }
-    }
-  }
-
-  const joined = parts.join("\n\n").trim();
-  return joined || undefined;
+    signal,
+    logEventPrefix: "eco-compact-summary",
+    fetcher,
+  });
+  return result.ok ? result.text : undefined;
 }
 
 function buildFallbackSummary(threadPrompt: string, olderMessages: readonly string[]): string {
@@ -198,8 +162,4 @@ function buildFallbackSummary(threadPrompt: string, olderMessages: readonly stri
     threadPrompt,
     olderMessages,
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

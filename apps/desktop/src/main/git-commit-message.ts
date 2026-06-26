@@ -1,14 +1,8 @@
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
-import { buildProviderRequestBaseUrl } from "./provider-models";
+import { postAuxiliaryBridgeRequest } from "./bridge-auxiliary-request";
 import type { CommitDiffContext } from "./git-operations";
-import {
-  headersToLoggable,
-  logUpstream,
-  logUpstreamError,
-  truncateForLog,
-} from "./upstream-log";
+import { logUpstreamError } from "./upstream-log";
 
-const ANTHROPIC_VERSION = "2023-06-01";
 const COMMIT_MESSAGE_TIMEOUT_MS = 90_000;
 const COMMIT_MESSAGE_MAX_CHARS = 2_000;
 
@@ -76,6 +70,7 @@ export function buildCommitMessageRequestBody(
   const body: Record<string, unknown> = {
     model: route.modelId,
     temperature: 0,
+    thinking: { type: "disabled" },
     system: systemParts.join(" "),
     messages: [
       {
@@ -98,79 +93,29 @@ export async function summarizeCommitMessage(
 ): Promise<string | undefined> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), COMMIT_MESSAGE_TIMEOUT_MS);
-  const requestUrl = `${buildProviderRequestBaseUrl(route.provider.baseUrl, route.provider.requestPath)}/v1/messages`;
-  const requestBody = buildCommitMessageRequestBody(route, context, instructions);
   try {
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      "anthropic-version": ANTHROPIC_VERSION,
-    };
-    const apiKey = route.provider.apiKey.trim();
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-    logUpstream("git-commit-message-request", {
-      role: route.role,
-      provider: route.provider.name,
-      modelId: route.modelId,
-      url: requestUrl,
-      headers: headersToLoggable(headers),
-      body: requestBody,
-    });
-    const response = await fetcher(requestUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
+    const result = await postAuxiliaryBridgeRequest({
+      route,
+      anthropicBody: buildCommitMessageRequestBody(route, context, instructions),
       signal: controller.signal,
+      logEventPrefix: "git-commit-message",
+      fetcher,
     });
-    const responseText = await response.text();
-    if (!response.ok) {
-      logUpstreamError("git-commit-message-response-error", {
-        role: route.role,
-        provider: route.provider.name,
-        modelId: route.modelId,
-        status: response.status,
-        statusText: response.statusText,
-        body: truncateForLog(responseText),
-      });
+    if (!result.ok) {
       return undefined;
     }
-    let body: unknown;
-    try {
-      body = JSON.parse(responseText) as unknown;
-    } catch (error) {
-      logUpstreamError("git-commit-message-parse-error", {
-        role: route.role,
-        provider: route.provider.name,
-        modelId: route.modelId,
-        status: response.status,
-        body: truncateForLog(responseText),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    }
-    const extracted = extractCommitMessageText(body);
-    const sanitized = sanitizeCommitMessage(extracted);
-    logUpstream("git-commit-message-response", {
-      role: route.role,
-      provider: route.provider.name,
-      modelId: route.modelId,
-      status: response.status,
-      body: body,
-      extractedText: extracted,
-      sanitizedMessage: sanitized,
-    });
+    const sanitized = sanitizeCommitMessage(result.text);
     if (!sanitized?.trim()) {
       logUpstreamError("git-commit-message-invalid", {
         role: route.role,
         provider: route.provider.name,
         modelId: route.modelId,
-        reason: !extracted?.trim()
+        reason: !result.text?.trim()
           ? "empty-extracted-text"
-          : COMMIT_REFUSAL_PATTERN.test((extracted ?? "").split("\n")[0] ?? "")
+          : COMMIT_REFUSAL_PATTERN.test((result.text ?? "").split("\n")[0] ?? "")
             ? "refusal-pattern"
             : "empty-after-sanitize",
-        extractedText: extracted,
+        extractedText: result.text,
       });
     }
     return sanitized;
@@ -179,7 +124,6 @@ export async function summarizeCommitMessage(
       role: route.role,
       provider: route.provider.name,
       modelId: route.modelId,
-      url: requestUrl,
       error: error instanceof Error ? error.message : String(error),
     });
     return undefined;

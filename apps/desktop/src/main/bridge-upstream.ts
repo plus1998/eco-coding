@@ -66,6 +66,7 @@ import {
   parseJsonForLog,
   formatUpstreamFetchError,
 } from "./upstream-log";
+import { applyDisableThinkingUpstreamPatch } from "./disable-thinking-patch";
 
 export interface BridgeForwardRoute {
   role: RuntimeAgentRole;
@@ -277,6 +278,7 @@ export function buildBridgeUpstreamMessagesPayload(
   delete chatReq.reasoning_effort;
   const payload = chatReq as unknown as Record<string, unknown>;
   applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
+  applyDisableThinkingUpstreamPatch(payload, apiCompat, anthropicRequest);
   return payload;
 }
 
