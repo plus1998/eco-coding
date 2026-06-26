@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
+  formatAskUserQuestionToolResult,
   parseAskUserQuestionInput,
 } from "../src/ask-user-question";
 import type { SdkToolPermissionRequest } from "../src/claude-agent-sdk";
@@ -41,6 +42,17 @@ test("createAskUserQuestionHandler returns updated input", async () => {
   expect(decision.updatedInput).toEqual({
     questions: [{ question: "Q", answer: "REST" }],
   });
+});
+
+test("formatAskUserQuestionToolResult matches Claude Code tool_result wording", () => {
+  expect(
+    formatAskUserQuestionToolResult({
+      "Which API?": "REST",
+      "Pick stacks": ["Vue", "Pinia"],
+    }),
+  ).toBe(
+    'User has answered your questions: "Which API?"="REST", "Pick stacks"="Vue, Pinia". You can now continue with the user\'s answers in mind.',
+  );
 });
 
 test("composeCanUseToolHandlers short-circuits on AskUserQuestion", async () => {

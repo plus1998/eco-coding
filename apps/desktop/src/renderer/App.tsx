@@ -440,8 +440,10 @@ function App() {
   const [isOpening, setIsOpening] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [planActionBusy, setPlanActionBusy] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState<ThreadPendingPlan>();
-  const [pendingClarification, setPendingClarification] = useState<ClarificationRequest>();
+  const [pendingPlansByThread, setPendingPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
+  const [pendingClarificationsByThread, setPendingClarificationsByThread] = useState<
+    Record<string, ClarificationRequest>
+  >({});
   const [clarificationBusy, setClarificationBusy] = useState(false);
   const [pendingBashApproval, setPendingBashApproval] = useState<BashApprovalRequest>();
   const [bashApprovalBusy, setBashApprovalBusy] = useState(false);
@@ -649,11 +651,11 @@ function App() {
       }
 
       if (event.type === "thread.plan_cleared" || event.type === "thread.completed") {
-        setPendingPlan(undefined);
+        clearPendingPlanForThread(event.threadId);
       }
 
       if (event.plan && event.threadId) {
-        setPendingPlan({
+        upsertPendingPlanForThread(event.threadId, {
           threadId: event.threadId,
           userPrompt: event.plan.userPrompt,
           analysis: event.plan.analysis,
@@ -674,11 +676,16 @@ function App() {
 
       if (event.type.startsWith("clarification.")) {
         if (event.type === "clarification.requested" && event.clarification) {
-          setPendingClarification(event.clarification);
+          upsertPendingClarificationForThread(event.threadId, event.clarification);
+          return;
         }
         if (window.eco) {
           void window.eco.getPendingClarification(event.threadId).then((clarification) => {
-            setPendingClarification(clarification);
+            if (clarification) {
+              upsertPendingClarificationForThread(event.threadId, clarification);
+            } else {
+              clearPendingClarificationForThread(event.threadId);
+            }
           });
         }
       }
@@ -688,7 +695,7 @@ function App() {
       }
 
       if (event.type === "plan_approval.requested" && event.plan) {
-        setPendingPlan({
+        upsertPendingPlanForThread(event.threadId, {
           threadId: event.threadId,
           userPrompt: event.plan.userPrompt,
           analysis: event.plan.analysis,
@@ -738,7 +745,7 @@ function App() {
               ? {
                   ...thread,
                   message: event.message,
-                  status: event.type === "plan_approval.requested" ? "running" : thread.status,
+                  status: event.type === "plan_approval.requested" ? "awaiting_plan" : thread.status,
                   updatedAt: new Date().toISOString(),
                 }
               : thread,
@@ -758,7 +765,7 @@ function App() {
         setPendingBashApproval((current) => (current?.threadId === event.threadId ? undefined : current));
       }
       if (event.type === "plan_approval.denied") {
-        setPendingPlan((current) => (current?.threadId === event.threadId ? undefined : current));
+        clearPendingPlanForThread(event.threadId);
       }
 
       if (event.type === "thread.usage_updated" && event.usage) {
@@ -814,7 +821,7 @@ function App() {
       ) {
         void window.eco.getPendingPlan(event.threadId).then((plan) => {
           if (plan) {
-            setPendingPlan(plan);
+            upsertPendingPlanForThread(event.threadId, plan);
           }
         });
       }
@@ -881,13 +888,21 @@ function App() {
         if (cancelled) {
           return;
         }
-        setPendingPlan(plan);
+        if (plan) {
+          upsertPendingPlanForThread(selectedThreadId, plan);
+        } else {
+          clearPendingPlanForThread(selectedThreadId);
+        }
       });
       void window.eco.getPendingClarification(selectedThreadId).then((clarification) => {
         if (cancelled) {
           return;
         }
-        setPendingClarification(clarification);
+        if (clarification) {
+          upsertPendingClarificationForThread(selectedThreadId, clarification);
+        } else {
+          clearPendingClarificationForThread(selectedThreadId);
+        }
       });
       if (typeof window.eco.getPendingBashApproval === "function") {
         void window.eco.getPendingBashApproval(selectedThreadId).then((approval) => {
@@ -1146,6 +1161,24 @@ function App() {
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
   );
+  const pendingPlan = activeThread ? pendingPlansByThread[activeThread.id] : undefined;
+  const pendingClarification = activeThread ? pendingClarificationsByThread[activeThread.id] : undefined;
+
+  function upsertPendingPlanForThread(threadId: string, plan: ThreadPendingPlan) {
+    setPendingPlansByThread((current) => ({ ...current, [threadId]: plan }));
+  }
+
+  function clearPendingPlanForThread(threadId: string) {
+    setPendingPlansByThread((current) => removeRecordKey(current, threadId));
+  }
+
+  function upsertPendingClarificationForThread(threadId: string, clarification: ClarificationRequest) {
+    setPendingClarificationsByThread((current) => ({ ...current, [threadId]: clarification }));
+  }
+
+  function clearPendingClarificationForThread(threadId: string) {
+    setPendingClarificationsByThread((current) => removeRecordKey(current, threadId));
+  }
   const composerContextKey = useMemo(
     () => composerContextKeyFromParts(activeThread?.id, activeThread ? undefined : currentProjectPath),
     [activeThread?.id, currentProjectPath],
@@ -1677,11 +1710,10 @@ function App() {
       threadAcceptsInput,
   );
   const canSend = composerFollowUpMode ? canSendFollowUp : canSendThreadMessage;
-  const showPlanApproval = Boolean(
-    activeThread && pendingPlan?.threadId === activeThread.id,
-  );
-  const showClarification =
-    pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
+  const showPlanApproval = Boolean(activeThread && pendingPlan);
+
+  const showClarification = Boolean(pendingClarification);
+
   const showBashApproval = Boolean(activeBashApproval);
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
   const retryBannerDetail = activeThread
@@ -1742,8 +1774,7 @@ function App() {
       (activeThread.status === "failed" ||
         activeThread.status === "blocked" ||
         (activeThread.status === "awaiting_plan" ||
-          (activeThread.status === "running" &&
-            pendingPlan?.threadId === activeThread.id)) &&
+          (activeThread.status === "running" && pendingPlan)) &&
           Boolean(planFailureMessage))
   );
   const canStopThread =
@@ -2193,9 +2224,17 @@ function App() {
     if (subagentMetrics) {
       setSubagentMetricsByThread((current) => ({ ...current, [threadId]: subagentMetrics }));
     }
+    if (plan) {
+      upsertPendingPlanForThread(threadId, plan);
+    } else {
+      clearPendingPlanForThread(threadId);
+    }
+    if (clarification) {
+      upsertPendingClarificationForThread(threadId, clarification);
+    } else {
+      clearPendingClarificationForThread(threadId);
+    }
     if (threadId === selectedThreadId) {
-      setPendingPlan(plan);
-      setPendingClarification(clarification);
       setPendingBashApproval(bashApproval);
     }
     setFollowUpsByThread((current) => ({ ...current, [threadId]: sortThreadFollowUps(followUps.followUps) }));
@@ -2337,7 +2376,7 @@ function App() {
         setThreads((current) =>
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
-        setPendingPlan(undefined);
+        clearPendingPlanForThread(result.thread.id);
         await refreshThreadState(result.thread.id);
       } else {
         const result = await window.eco.startThread({
@@ -2351,7 +2390,7 @@ function App() {
           ...current.filter((thread) => thread.id !== result.thread.id),
         ]);
         setSelectedThreadId(result.thread.id);
-        setPendingPlan(undefined);
+        clearPendingPlanForThread(result.thread.id);
         setTodosByThread((current) => ({
           ...current,
           [result.thread.id]: [],
@@ -2471,7 +2510,9 @@ function App() {
     setError(undefined);
     try {
       await window.eco.submitClarification(answers);
-      setPendingClarification(undefined);
+      if (activeThread) {
+        clearPendingClarificationForThread(activeThread.id);
+      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -2485,7 +2526,7 @@ function App() {
     setError(undefined);
     try {
       await window.eco.dismissClarification(pendingClarification.toolUseId);
-      setPendingClarification(undefined);
+      clearPendingClarificationForThread(pendingClarification.threadId);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -2521,7 +2562,7 @@ function App() {
           current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),
         );
       }
-      setPendingPlan(undefined);
+      clearPendingPlanForThread(activeThread.id);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -2795,7 +2836,7 @@ function App() {
         ...current.filter((thread) => thread.id !== result.thread.id),
       ]);
       setSelectedThreadId(result.thread.id);
-      setPendingPlan(undefined);
+      clearPendingPlanForThread(result.thread.id);
       await refreshThreadState(result.thread.id);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -3379,8 +3420,8 @@ function App() {
     setModelByThread((current) => removeRecordKey(current, threadId));
     setTodosByThread((current) => removeRecordKey(current, threadId));
     setFollowUpsByThread((current) => removeRecordKey(current, threadId));
-    setPendingPlan((current) => (current?.threadId === threadId ? undefined : current));
-    setPendingClarification((current) => (current?.threadId === threadId ? undefined : current));
+    clearPendingPlanForThread(threadId);
+    clearPendingClarificationForThread(threadId);
     setPendingBashApproval((current) => (current?.threadId === threadId ? undefined : current));
   }
 

@@ -6,6 +6,7 @@ import type {
   NotificationHookInput,
   PermissionRequestHookInput,
   PreCompactHookInput,
+  PostToolUseHookInput,
   PreToolUseHookInput,
   StopHookInput,
   SubagentStartHookInput,
@@ -13,7 +14,13 @@ import type {
   TaskCompletedHookInput,
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
-import { parseAskUserQuestionInput, type SdkAskUserQuestionRequest } from "./ask-user-question";
+import {
+  formatAskUserQuestionToolResult,
+  parseAskUserQuestionInput,
+  stashAskUserQuestionAnswers,
+  takeAskUserQuestionAnswers,
+  type SdkAskUserQuestionRequest,
+} from "./ask-user-question";
 import {
   readPlanFileContent,
   readPlanFromPhaseTranscript,
@@ -637,12 +644,46 @@ export function createAskUserQuestionPreToolHook(
       ...parsed,
       toolUseId: toolUseID ?? preInput.tool_use_id,
     });
+    const resolvedToolUseId = toolUseID ?? preInput.tool_use_id;
+    if (isRecord(updatedInput.answers)) {
+      const answers = updatedInput.answers as Record<string, string | string[]>;
+      if (Object.keys(answers).length > 0) {
+        stashAskUserQuestionAnswers(resolvedToolUseId, answers);
+      }
+    }
+
 
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "allow",
         updatedInput,
+      },
+    };
+  };
+}
+
+export function createAskUserQuestionPostToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PostToolUse") {
+      return {};
+    }
+    const postInput = input as PostToolUseHookInput;
+    if (postInput.tool_name !== "AskUserQuestion") {
+      return {};
+    }
+
+    const answers = takeAskUserQuestionAnswers(postInput.tool_use_id);
+    if (!answers || Object.keys(answers).length === 0) {
+      return {};
+    }
+
+    const updatedToolOutput = formatAskUserQuestionToolResult(answers);
+
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        updatedToolOutput,
       },
     };
   };
@@ -765,7 +806,11 @@ export function createToolPermissionPreToolHook(
       return {};
     }
     const preInput = input as PreToolUseHookInput;
-    if (preInput.tool_name === "EnterPlanMode" || preInput.tool_name === "ExitPlanMode") {
+    if (
+      preInput.tool_name === "EnterPlanMode" ||
+      preInput.tool_name === "ExitPlanMode" ||
+      preInput.tool_name === "AskUserQuestion"
+    ) {
       return {};
     }
     const actor = resolveToolPermissionActor(preInput);
@@ -1455,7 +1500,6 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   const availability = ctx.subagentAvailability ?? normalizeSubagentAvailability();
 
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
-  pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
   const exitPlanHookOptions = {
     ...(ctx.workspacePath ? { workspacePath: ctx.workspacePath } : {}),
     ...(ctx.getPhaseTranscript ? { getPhaseTranscript: ctx.getPhaseTranscript } : {}),
@@ -1561,6 +1605,13 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     pushHook(hooks, "TaskCreated", createTaskCreatedHook(ctx.taskTracker, subagentLaunchRegistry));
     pushHook(hooks, "TaskCompleted", createTaskCompletedHook(ctx.taskTracker));
     pushHook(hooks, "Stop", createStopHook(ctx));
+  }
+
+  // AskUserQuestion must run after every other PreToolUse hook: later hooks that return
+  // allow without updatedInput clobber the answers payload (anthropics/claude-code#15897).
+  pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
+  if (ctx.askUserQuestion) {
+    pushHook(hooks, "PostToolUse", createAskUserQuestionPostToolHook(), "AskUserQuestion");
   }
 
   pushHook(hooks, "Notification", createNotificationHook(ctx.onNotification));

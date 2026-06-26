@@ -3,6 +3,7 @@ import type { ClarificationAnswers, ClarificationRequest } from "../shared/ipc";
 interface PendingClarification {
   threadId: string;
   request: ClarificationRequest;
+  promise: Promise<ClarificationAnswers>;
   resolve: (answers: ClarificationAnswers) => void;
   reject: (error: Error) => void;
 }
@@ -18,18 +19,35 @@ export function registerPendingClarification(
     return Promise.reject(new Error(`Clarification ${toolUseId} is already pending.`));
   }
 
-  return new Promise<ClarificationAnswers>((resolve, reject) => {
-    pending.set(toolUseId, {
-      threadId,
-      request: {
-        toolUseId,
-        threadId,
-        questions: parsed.questions,
-      },
-      resolve,
-      reject,
-    });
+  let resolveAnswers!: (answers: ClarificationAnswers) => void;
+  let rejectAnswers!: (error: Error) => void;
+  const promise = new Promise<ClarificationAnswers>((resolve, reject) => {
+    resolveAnswers = resolve;
+    rejectAnswers = reject;
   });
+  pending.set(toolUseId, {
+    threadId,
+    request: {
+      toolUseId,
+      threadId,
+      questions: parsed.questions,
+    },
+    promise,
+    resolve: resolveAnswers,
+    reject: rejectAnswers,
+  });
+  return promise;
+}
+
+export function getPendingClarificationWaitForThread(
+  threadId: string,
+): Promise<ClarificationAnswers> | undefined {
+  for (const entry of pending.values()) {
+    if (entry.threadId === threadId) {
+      return entry.promise;
+    }
+  }
+  return undefined;
 }
 
 export function getPendingClarificationForThread(threadId: string): ClarificationRequest | undefined {
@@ -80,16 +98,17 @@ export function buildAskUserQuestionUpdatedInput(
 ): Record<string, unknown> {
   const answersMap: Record<string, string | string[]> = {};
 
+  const rawQuestions = rawInput?.questions;
+
   for (const [index, question] of request.questions.entries()) {
     const selected = answers.selections[index] ?? [];
+    const answerKey = readRawAskUserQuestionKey(rawQuestions, index, question.question);
     if (question.multiSelect) {
-      answersMap[question.question] = selected;
+      answersMap[answerKey] = selected;
     } else {
-      answersMap[question.question] = selected[0] ?? "";
+      answersMap[answerKey] = selected[0] ?? "";
     }
   }
-
-  const rawQuestions = rawInput?.questions;
   const questions =
     Array.isArray(rawQuestions) && rawQuestions.length > 0
       ? rawQuestions
@@ -124,4 +143,20 @@ export function formatClarificationAnswersSummary(
     return `${preview} → ${selected.join("、")}`;
   });
   return `澄清回答：${parts.join("；")}`;
+}
+
+function readRawAskUserQuestionKey(
+  rawQuestions: unknown,
+  index: number,
+  fallback: string,
+): string {
+  if (!Array.isArray(rawQuestions)) {
+    return fallback;
+  }
+  const entry = rawQuestions[index];
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return fallback;
+  }
+  const question = (entry as { question?: unknown }).question;
+  return typeof question === "string" && question.length > 0 ? question : fallback;
 }

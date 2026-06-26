@@ -6,6 +6,19 @@ export function shouldDrainThreadFollowUps(status: ThreadStatus): boolean {
   return (DRAINABLE_FOLLOW_UP_STATUSES as readonly string[]).includes(status);
 }
 
+/** Block auto-drain while plan approval or clarification is still waiting on the user. */
+export function shouldBlockThreadFollowUpDrain(input: {
+  hasPendingBridgeApproval: boolean;
+  hasPendingClarification: boolean;
+  threadStatus?: ThreadStatus;
+  hasStoredPendingPlan: boolean;
+}): boolean {
+  if (input.hasPendingBridgeApproval || input.hasPendingClarification) {
+    return true;
+  }
+  return input.threadStatus === "awaiting_plan" && input.hasStoredPendingPlan;
+}
+
 export function buildThreadFollowUpDisplayPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
   const queued = followUps.filter((followUp) => followUp.status === "delivered");
   if (queued.length === 0) {

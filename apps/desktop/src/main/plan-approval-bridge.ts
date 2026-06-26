@@ -3,6 +3,7 @@ import type { PlanApprovalDecision, PlanApprovalRequest } from "../shared/ipc";
 interface PendingPlanApproval {
   threadId: string;
   request: PlanApprovalRequest;
+  promise: Promise<PlanApprovalDecision>;
   resolve: (decision: PlanApprovalDecision) => void;
   reject: (error: Error) => void;
 }
@@ -17,14 +18,31 @@ export function registerPendingPlanApproval(
     return Promise.reject(new Error(`Plan approval ${request.toolUseId} is already pending.`));
   }
 
-  return new Promise<PlanApprovalDecision>((resolve, reject) => {
-    pending.set(request.toolUseId, {
-      threadId,
-      request,
-      resolve,
-      reject,
-    });
+  let resolveDecision!: (decision: PlanApprovalDecision) => void;
+  let rejectDecision!: (error: Error) => void;
+  const promise = new Promise<PlanApprovalDecision>((resolve, reject) => {
+    resolveDecision = resolve;
+    rejectDecision = reject;
   });
+  pending.set(request.toolUseId, {
+    threadId,
+    request,
+    promise,
+    resolve: resolveDecision,
+    reject: rejectDecision,
+  });
+  return promise;
+}
+
+export function getPendingPlanApprovalWaitForThread(
+  threadId: string,
+): Promise<PlanApprovalDecision> | undefined {
+  for (const entry of pending.values()) {
+    if (entry.threadId === threadId) {
+      return entry.promise;
+    }
+  }
+  return undefined;
 }
 
 export function getPendingPlanApprovalForThread(threadId: string): PlanApprovalRequest | undefined {

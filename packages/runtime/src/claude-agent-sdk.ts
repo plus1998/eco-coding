@@ -704,9 +704,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
-    const finalizedPlan =
-      sessionResult.finalizedPlan ??
-      resolvePlanningFinalizedPlanFromTranscript(sessionResult.transcript);
+    const finalizedPlan = sessionResult.finalizedPlan;
     if (finalizedPlan) {
       yield createPlanReadyEvent(input.threadId, {
         userPrompt: input.prompt,
@@ -1014,10 +1012,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       // call (`deferred_tool_use`). The PreToolUse capture covers the same tool use id, so
       // this only lands when the hook path missed it.
       if (onExitPlanMode) {
-        await captureDeferredExitPlanModeFromResult(message, onExitPlanMode, exitPlanCaptureState, {
-          searchRoots: [input.workspacePath, sessionCwd],
-          getPhaseTranscript: () => phaseTranscriptBox.text,
-        });
+        await captureDeferredExitPlanModeFromResult(
+          message,
+          onExitPlanMode,
+          exitPlanCaptureState,
+          {
+            searchRoots: [input.workspacePath, sessionCwd],
+            getPhaseTranscript: () => phaseTranscriptBox.text,
+          },
+        );
       }
 
       if (input.signal.aborted) {

@@ -5,6 +5,7 @@ import path from "node:path";
 import type {
   PreCompactHookInput,
   PreToolUseHookInput,
+  PostToolUseHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
   TaskCreatedHookInput,
@@ -13,6 +14,7 @@ import {
   buildEcoSdkHooks,
   captureDeferredExitPlanModeFromResult,
   createAskUserQuestionPreToolHook,
+  createAskUserQuestionPostToolHook,
   createDisabledSubagentPreToolHook,
   createExitPlanModeAwaitApprovalHook,
   createExitPlanModePermissionRequestHook,
@@ -61,6 +63,46 @@ test("createAskUserQuestionPreToolHook returns updated input", async () => {
     hookEventName: "PreToolUse",
     permissionDecision: "allow",
     updatedInput: { questions: [{ question: "Q", answer: "REST" }] },
+  });
+});
+
+test("createAskUserQuestionPostToolHook injects Claude Code tool_result wording", async () => {
+  const preHook = createAskUserQuestionPreToolHook(async () => ({
+    questions: [{ question: "Q", options: [{ label: "REST" }] }],
+    answers: { Q: "REST" },
+  }));
+  await preHook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "AskUserQuestion",
+      tool_input: { questions: [{ question: "Q", options: [{ label: "REST" }] }] },
+      tool_use_id: "tool_1",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_1",
+    { signal: new AbortController().signal },
+  );
+
+  const postHook = createAskUserQuestionPostToolHook();
+  const result = await postHook(
+    {
+      hook_event_name: "PostToolUse",
+      tool_name: "AskUserQuestion",
+      tool_input: { questions: [{ question: "Q", options: [{ label: "REST" }] }] },
+      tool_response: {},
+      tool_use_id: "tool_1",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PostToolUseHookInput,
+    "tool_1",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PostToolUse",
+    updatedToolOutput:
+      'User has answered your questions: "Q"="REST". You can now continue with the user\'s answers in mind.',
   });
 });
 
@@ -2419,6 +2461,21 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(hooks.Stop).toHaveLength(1);
   expect(hooks.Notification).toHaveLength(1);
   expect(hooks.PreCompact).toHaveLength(1);
+});
+
+test("buildEcoSdkHooks registers AskUserQuestion PreToolUse hook last", () => {
+  const hooks = buildEcoSdkHooks({
+    askUserQuestion: async () => ({ questions: [], answers: {} }),
+    toolPermissions: {
+      main: { allowed: ["*"], disallowed: [] },
+    },
+    onNotification() {},
+    onPreCompact: async () => {},
+  });
+  const preToolUse = hooks.PreToolUse ?? [];
+  const askIndex = preToolUse.findIndex((matcher) => matcher.matcher === "AskUserQuestion");
+  expect(askIndex).toBeGreaterThanOrEqual(0);
+  expect(askIndex).toBe(preToolUse.length - 1);
 });
 
 test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without planning capture", async () => {

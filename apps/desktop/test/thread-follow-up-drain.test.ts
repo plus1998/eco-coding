@@ -4,6 +4,7 @@ import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
+  shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
 } from "../src/shared/thread-follow-up-drain";
 
@@ -24,6 +25,41 @@ function followUp(
     ...patch,
   };
 }
+
+test("shouldBlockThreadFollowUpDrain while plan or clarification awaits user", () => {
+  expect(
+    shouldBlockThreadFollowUpDrain({
+      hasPendingBridgeApproval: true,
+      hasPendingClarification: false,
+      threadStatus: "running",
+      hasStoredPendingPlan: false,
+    }),
+  ).toBe(true);
+  expect(
+    shouldBlockThreadFollowUpDrain({
+      hasPendingBridgeApproval: false,
+      hasPendingClarification: true,
+      threadStatus: "running",
+      hasStoredPendingPlan: false,
+    }),
+  ).toBe(true);
+  expect(
+    shouldBlockThreadFollowUpDrain({
+      hasPendingBridgeApproval: false,
+      hasPendingClarification: false,
+      threadStatus: "awaiting_plan",
+      hasStoredPendingPlan: true,
+    }),
+  ).toBe(true);
+  expect(
+    shouldBlockThreadFollowUpDrain({
+      hasPendingBridgeApproval: false,
+      hasPendingClarification: false,
+      threadStatus: "completed",
+      hasStoredPendingPlan: true,
+    }),
+  ).toBe(false);
+});
 
 test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
   expect(shouldDrainThreadFollowUps("completed")).toBe(true);
