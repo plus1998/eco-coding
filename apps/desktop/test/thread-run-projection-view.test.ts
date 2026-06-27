@@ -840,7 +840,7 @@ test("buildThreadRunProjectionViewModel does not bleed prior thinking into a new
     (entry) => entry.kind === "timeline" && entry.item.eventType.includes("thinking"),
   );
   expect(entries.map((entry) => entry.key)).toEqual([
-    "main:stream:thinking:sk:thr_test:thinking:req:req_old",
+    "main:stream:thinking:request:req_old:req:req_old",
     "main:stream:thinking:sk:thr_test:thinking:req:req_new",
   ]);
   const latest = entries.at(-1);
@@ -1100,7 +1100,9 @@ test("buildThreadRunProjectionViewModel hides request placeholder for completed 
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:role:planner"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:stream:message:request:req_planner",
+  ]);
 });
 
 test("buildThreadRunProjectionViewModel keeps follow-up request placeholder after prior planner output", () => {
@@ -1153,7 +1155,7 @@ test("buildThreadRunProjectionViewModel keeps follow-up request placeholder afte
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:stream:message:role:planner",
+    "main:stream:message:request:req_turn_1",
     "main:turn-2-user",
     "main:turn-2-request",
   ]);
@@ -1165,6 +1167,69 @@ test("buildThreadRunProjectionViewModel keeps follow-up request placeholder afte
       role: "planner",
     });
   }
+});
+
+test("buildThreadRunProjectionViewModel keeps completed planner replies from prior turns", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_turn_1",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+        {
+          requestId: "req_turn_2",
+          status: "completed",
+          startedAt: "2026-01-01T00:01:00.000Z",
+          endedAt: "2026-01-01T00:01:05.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "turn-1-final",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_turn_1",
+          streamKey: "thr_view:planner",
+          text: "第一轮回复。",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "turn-2-user",
+          eventType: "thread.status",
+          role: "user",
+          text: "继续帮我查一下。",
+          metadata: { liveType: "thread.user_prompt" },
+          at: "2026-01-01T00:00:59.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "turn-2-final",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_turn_2",
+          streamKey: "thr_view:planner",
+          text: "第二轮回复。",
+          at: "2026-01-01T00:01:05.000Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:stream:message:request:req_turn_1",
+    "main:turn-2-user",
+    "main:stream:message:request:req_turn_2",
+  ]);
+  const narratives = view.mainFeedEntries
+    .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
+    .map((entry) => projectionItemToDetailBlock(entry.item))
+    .filter((block) => block?.kind === "narrative");
+  expect(narratives.map((block) => block?.text)).toEqual(["第一轮回复。", "第二轮回复。"]);
 });
 
 test("buildThreadRunProjectionViewModel keeps final main agent text after empty placeholder sharing a streamKey", () => {

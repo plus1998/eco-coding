@@ -153,7 +153,7 @@ function buildProjectionMainFeedEntries(
     const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
     return {
       kind: "timeline",
-      key: projectionMainFeedEntryKey(item),
+      key: projectionMainFeedEntryKey(item, { requestSpansById }),
       item,
       at: sortAnchor.at,
       sequence: sortAnchor.sequence,
@@ -175,7 +175,7 @@ function buildProjectionMainFeedEntries(
       const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
       entries.push({
         kind: "agent-echo",
-        key: projectionMainFeedEntryKey(item, { agentId: card.agent.agentId }),
+        key: projectionMainFeedEntryKey(item, { agentId: card.agent.agentId, requestSpansById }),
         item,
         agent: card.agent,
         agentLabel: formatProjectionAgentLabel(card.agent, agentDisplayNames),
@@ -504,7 +504,7 @@ export function buildProjectionDisplayTimelineItems(
       }
     }
 
-    const streamKey = projectionStreamDisplayKey(item);
+    const streamKey = projectionStreamDisplayKey(item, requestSpansById);
     if (streamKey) {
       const current = latestStreamDisplayByKey.get(streamKey);
       if (!current || compareTimelineItems(current, item) <= 0) {
@@ -548,7 +548,7 @@ export function buildProjectionDisplayTimelineItems(
     if (lifecycleKey && latestLifecycleDisplayByKey.get(lifecycleKey)?.id !== item.id) {
       continue;
     }
-    const streamKey = projectionStreamDisplayKey(item);
+    const streamKey = projectionStreamDisplayKey(item, requestSpansById);
     let displayItem = item;
     if (streamKey) {
       const latestStream = latestStreamDisplayByKey.get(streamKey);
@@ -827,10 +827,13 @@ function projectionUpstreamErrorDisplayKey(item: ThreadRunProjectionTimelineItem
 
 export function projectionMainFeedEntryKey(
   item: ThreadRunProjectionTimelineItem,
-  options?: { agentId?: string },
+  options?: {
+    agentId?: string;
+    requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  },
 ): string {
   const scope = options?.agentId ? `agent:${options.agentId}` : "main";
-  const streamKey = projectionStreamDisplayKey(item);
+  const streamKey = projectionStreamDisplayKey(item, options?.requestSpansById);
   if (streamKey) {
     return `${scope}:stream:${streamKey}`;
   }
@@ -845,7 +848,10 @@ export function projectionMainFeedEntryKey(
   return `${scope}:${item.id}`;
 }
 
-function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+function projectionStreamDisplayKey(
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): string | undefined {
   if (!isStreamingRequestDisplayItem(item)) {
     return undefined;
   }
@@ -855,6 +861,13 @@ function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): stri
   }
   const channel =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
+  const requestId = item.requestId?.trim();
+  if (requestId && requestSpansById) {
+    const span = requestSpansById.get(requestId);
+    if (span && !isProjectionRequestActive(span)) {
+      return appendThinkingStreamScopeSuffix(`${channel}:request:${requestId}`, item);
+    }
+  }
   const streamKey = item.streamKey?.trim();
   if (streamKey) {
     return appendThinkingStreamScopeSuffix(`${channel}:sk:${streamKey}`, item);
