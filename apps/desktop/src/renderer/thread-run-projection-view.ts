@@ -19,6 +19,7 @@ import {
 import {
   isReconnectActivityOrigin,
   isRequestFailureFeedNoiseOrigin,
+  isTimelineItemSupersededByRecovery,
   isUpstreamErrorPhaseOrigin,
   resolveReconnectPhaseDisplay,
   resolveThreadActivityOrigin,
@@ -526,12 +527,22 @@ export function buildProjectionDisplayTimelineItems(
       continue;
     }
     const reconnectKey = projectionReconnectDisplayKey(item);
-    if (reconnectKey && latestReconnectDisplayByKey.get(reconnectKey)?.id !== item.id) {
-      continue;
+    if (reconnectKey) {
+      if (latestReconnectDisplayByKey.get(reconnectKey)?.id !== item.id) {
+        continue;
+      }
+      if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineItems)) {
+        continue;
+      }
     }
     const upstreamErrorKey = projectionUpstreamErrorDisplayKey(item);
-    if (upstreamErrorKey && latestOriginalApiErrorDisplayByKey.get(upstreamErrorKey)?.id !== item.id) {
-      continue;
+    if (upstreamErrorKey) {
+      if (latestOriginalApiErrorDisplayByKey.get(upstreamErrorKey)?.id !== item.id) {
+        continue;
+      }
+      if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineItems)) {
+        continue;
+      }
     }
     const lifecycleKey = projectionToolLifecycleKey(item);
     if (lifecycleKey && latestLifecycleDisplayByKey.get(lifecycleKey)?.id !== item.id) {

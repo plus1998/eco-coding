@@ -1504,6 +1504,27 @@ test("buildProjectionDisplayTimelineItems keeps only the latest reconnect status
   expect(rows.map((row) => row.id)).toEqual(["r3"]);
 });
 
+test("buildProjectionDisplayTimelineItems drops reconnect after agent recovers", () => {
+  const timeline = [
+    item({
+      id: "retry",
+      sequence: 1,
+      eventType: "request.retry_scheduled",
+      text: "API retry 2/5…",
+      metadata: { activityOrigin: "sdk.api_retry", retry: { attempt: 2, maxRetries: 5 } },
+    }),
+    item({
+      id: "reply",
+      sequence: 2,
+      eventType: "message.final",
+      text: "好的，我已经完成分析。",
+      role: "planner",
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["reply"]);
+});
+
 test("buildProjectionDisplayTimelineItems collapses SDK api_retry rows and final failure", () => {
   const timeline = [
     item({
@@ -1591,6 +1612,35 @@ test("buildProjectionDisplayTimelineItems keeps reconnect summary and one origin
     kind: "phase",
     label: rawApiError,
   });
+});
+
+test("buildProjectionDisplayTimelineItems drops reconnect and upstream error after agent recovers", () => {
+  const rawApiError = "API Error: 503 Loading model.";
+  const timeline = [
+    item({
+      id: "retry",
+      sequence: 1,
+      eventType: "request.retry_scheduled",
+      text: "API retry 2/5…",
+      metadata: { activityOrigin: "sdk.api_retry", retry: { attempt: 2, maxRetries: 5 } },
+    }),
+    item({
+      id: "phase",
+      sequence: 2,
+      eventType: "message.final",
+      text: rawApiError,
+      metadata: { activityOrigin: "sdk.upstream_error" },
+    }),
+    item({
+      id: "reply",
+      sequence: 3,
+      eventType: "message.final",
+      text: "问题已修复，请查看变更。",
+      role: "planner",
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["reply"]);
 });
 
 test("buildProjectionDisplayTimelineItems collapses duplicate tool rows by toolUseId", () => {

@@ -1,4 +1,4 @@
-import { parseReconnectActivityMessage, type ParsedReconnectActivity } from "./activity-display";
+import { parseReconnectActivityMessage, shouldClearReconnectActivity, type ParsedReconnectActivity } from "./activity-display";
 
 /** Who produced an activity/run-event line — used for feed dedupe, never inferred from message text in UI. */
 export type ThreadActivityOrigin =
@@ -124,4 +124,64 @@ export function resolveReconnectPhaseDisplay(input: {
     return null;
   }
   return parseReconnectActivityMessage(input.text.trim());
+}
+
+/** True when a later timeline row proves upstream resumed — drop reconnect / error status rows. */
+export function shouldClearReconnectTimelineItem(item: {
+  eventType: string;
+  text: string;
+  role?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}): boolean {
+  const origin = resolveThreadActivityOrigin(item);
+  if (isReconnectActivityOrigin(origin) || parseReconnectActivityMessage(item.text.trim())) {
+    return false;
+  }
+  if (isRequestFailureFeedNoiseOrigin(origin) || isUpstreamErrorPhaseOrigin(origin)) {
+    return false;
+  }
+
+  if (
+    item.eventType === "request.completed" ||
+    item.eventType === "request.first_token"
+  ) {
+    return true;
+  }
+  if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
+    return true;
+  }
+  if (item.eventType === "message.final" || item.eventType === "thinking.final") {
+    return item.text.trim().length > 0;
+  }
+  if (item.eventType === "message.delta" || item.eventType === "thinking.delta") {
+    return item.text.trim().length > 0;
+  }
+
+  return shouldClearReconnectActivity({
+    message: item.text,
+    role: item.role ?? "",
+  });
+}
+
+export function isTimelineItemSupersededByRecovery(
+  timeline: readonly { at: string; sequence: number; id: string; eventType: string; text: string; role?: string; metadata?: Record<string, unknown> }[],
+  anchor: { at: string; sequence: number; id: string },
+  compare: (left: { at: string; sequence: number; id: string }, right: { at: string; sequence: number; id: string }) => number,
+): boolean {
+  for (const later of timeline) {
+    if (compare(anchor, later) >= 0) {
+      continue;
+    }
+    if (
+      shouldClearReconnectTimelineItem({
+        eventType: later.eventType,
+        text: later.text,
+        ...(later.role && { role: later.role }),
+        metadata: later.metadata,
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
