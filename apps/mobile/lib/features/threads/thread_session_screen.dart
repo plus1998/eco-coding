@@ -19,8 +19,10 @@ import '../composer/follow_up_queue_bar.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
 import 'activity_feed.dart';
+import 'activity_feed_scroll_coordinator.dart';
 import 'thread_info_sheets.dart';
 import 'thread_menu_sheets.dart';
+import 'thread_session_layout.dart';
 import 'thread_providers.dart';
 import 'thread_session_app_bar.dart';
 
@@ -38,6 +40,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     with WidgetsBindingObserver {
   final _promptController = TextEditingController();
   final _scrollController = ScrollController();
+  late final ActivityFeedScrollCoordinator _scrollCoordinator =
+      ActivityFeedScrollCoordinator(_scrollController);
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   String? _shownApprovalKey;
@@ -46,10 +50,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
   String? _followUpEscalateBusyId;
-  Timer? _scrollToBottomTimer;
   double _lastKeyboardInset = 0;
-  final _composerDockKey = GlobalKey();
-  double _composerDockHeight = 180;
 
   @override
   void initState() {
@@ -79,8 +80,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final inset = MediaQuery.viewInsetsOf(context).bottom;
-      if (inset > _lastKeyboardInset && _isNearScrollBottom(tolerance: 360)) {
-        _scheduleScrollToBottom(animated: false);
+      if (inset > _lastKeyboardInset &&
+          !_scrollCoordinator.userDetachedFromBottom) {
+        _scrollCoordinator.scrollToEnd();
       }
       _lastKeyboardInset = inset;
     });
@@ -99,42 +101,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     }
   }
 
-  bool _isNearScrollBottom({double tolerance = 220}) {
-    if (!_scrollController.hasClients) return true;
-    final position = _scrollController.position;
-    if (!position.hasPixels || !position.hasContentDimensions) return true;
-    return position.maxScrollExtent - position.pixels <= tolerance;
-  }
-
-  void _scheduleScrollToBottom({
-    bool animated = true,
-    bool onlyIfNearBottom = false,
-  }) {
-    if (onlyIfNearBottom && !_isNearScrollBottom()) return;
-    _scrollToBottomTimer?.cancel();
-    _scrollToBottomTimer = Timer(
-      animated ? const Duration(milliseconds: 80) : Duration.zero,
-      () {
-        if (!mounted) return;
-        _scrollToBottom(animated: animated);
-      },
-    );
-  }
-
-  void _scrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      final target = _scrollController.position.maxScrollExtent;
-      if (animated) {
-        _scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      } else {
-        _scrollController.jumpTo(target);
-      }
-    });
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _promptController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   String? _approvalKey(ThreadSessionState session) {
@@ -162,26 +134,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   bool _isRunning(ThreadSummary? thread) {
     if (thread == null) return false;
     return thread.status == 'running' || thread.status == 'queued';
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _scrollToBottomTimer?.cancel();
-    _promptController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _scheduleComposerDockMeasure() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final height = _composerDockKey.currentContext?.size?.height;
-      if (height == null) return;
-      if ((height - _composerDockHeight).abs() > 0.5) {
-        setState(() => _composerDockHeight = height);
-      }
-    });
   }
 
   @override
@@ -264,21 +216,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       }
       final previousProjection = previous?.runProjection;
       final nextProjection = next.runProjection;
-      final previousEventCount = previousProjection?.sourceEventCount ?? 0;
-      final nextEventCount = nextProjection?.sourceEventCount ?? 0;
       final projectionBecameReady =
           !isProjectionFeedReady(previousProjection) &&
           isProjectionFeedReady(nextProjection);
-      final projectionAdvanced =
-          nextEventCount > previousEventCount ||
-          (nextEventCount > 0 &&
-              nextEventCount == previousEventCount &&
-              nextProjection?.generatedAt != previousProjection?.generatedAt);
-      if (projectionBecameReady || projectionAdvanced) {
-        _scheduleScrollToBottom(
-          animated: false,
-          onlyIfNearBottom: !projectionBecameReady,
-        );
+      if (projectionBecameReady) {
+        _scrollCoordinator.forceScrollToEnd();
       }
       final prevThread = previous?.thread;
       final nextThread = next.thread;
@@ -292,8 +234,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         }
       }
     });
-
-    _scheduleComposerDockMeasure();
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -309,120 +249,104 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         isRunning: isRunning,
         gitStatus: gitStatus,
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: session.loading
-                ? const Center(child: CircularProgressIndicator())
-                : session.error != null
-                ? Center(child: Text(session.error!))
-                : showLanding
-                ? Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      32,
-                      sessionToolbarFrostHeight(context),
-                      32,
-                      _composerDockHeight + 32,
+      body: ThreadSessionConversationLayout(
+        feed: session.loading
+            ? const Center(child: CircularProgressIndicator())
+            : session.error != null
+            ? Center(child: Text(session.error!))
+            : showLanding
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Text(
+                    landingHero,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
                     ),
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Text(
-                        landingHero,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              height: 1.35,
-                            ),
-                      ),
-                    ),
-                  )
-                : _ThreadSessionFeedPane(
-                    threadId: widget.threadId,
-                    scrollController: _scrollController,
-                    isRunning: isRunning,
-                    bottomPadding: _composerDockHeight,
                   ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: AnimatedPadding(
-              duration: const Duration(milliseconds: 100),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: ComposerDockShell(
-                key: _composerDockKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    WorkspaceChangesPill(
-                      summary: workspaceChanges,
-                      busy: changesLoading,
-                      onTap: workspacePath.isNotEmpty
-                          ? () {
-                              refreshWorkspaceChanges(ref, workspacePath);
-                              showWorkspaceDiffReviewSheet(
-                                context: context,
-                                ref: ref,
-                                workspacePath: workspacePath,
-                              );
-                            }
-                          : null,
-                    ),
-                    if (queuedFollowUps.isNotEmpty)
-                      FollowUpQueueBar(
-                        followUps: queuedFollowUps,
-                        cancelBusyId: _followUpCancelBusyId,
-                        escalateBusyId: _followUpEscalateBusyId,
-                        onEscalate: (followUp) => _escalateFollowUp(followUp),
-                        onEdit: _startEditingFollowUp,
-                        onDelete: (followUp) => _deleteFollowUp(followUp),
-                      ),
-                    if (_editingFollowUpId != null)
-                      _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
-                    if (isAwaitingPlan && session.pendingPlan != null)
-                      _PlanApprovalBanner(
-                        failureMessage: planFailureMessage,
-                        onViewPlan: () => _showApprovalSheets(
-                          ref.read(threadSessionProvider(widget.threadId)),
-                        ),
-                        onApprove: () => _handlePlanApproval(approve: true),
-                        onDismiss: () => _handlePlanApproval(approve: false),
-                      ),
-                    SessionComposer(
-                      controller: _promptController,
-                      attachments: _attachments,
-                      runtimeConfig: runtimeConfig,
-                      threadId: widget.threadId,
-                      isRunning: isRunning,
-                      canStopThread: canStopThread,
-                      followUpMode: followUpMode,
-                      sendBusy: _followUpBusy,
-                      hasActivity: session.projectionReady,
-                      inputHint: _editingFollowUpId != null
-                          ? '编辑引导消息…'
-                          : (showLanding ? composerLandingPlaceholder : null),
-                      contextSnapshot: session.contextSnapshot,
-                      threadStatus: thread?.status,
-                      onPickImage: _pickImage,
-                      onRemoveAttachment: (index) =>
-                          setState(() => _attachments.removeAt(index)),
-                      onSend: () => _sendMessage(runtimeConfig),
-                      onStop: () => _stopThread(),
-                      onRuntimeConfigChanged: (config) {
-                        ref.read(runtimeConfigProvider.notifier).state = config;
-                      },
-                    ),
-                  ],
                 ),
+              )
+            : _ThreadSessionFeedPane(
+                threadId: widget.threadId,
+                scrollController: _scrollController,
+                scrollCoordinator: _scrollCoordinator,
+                isRunning: isRunning,
               ),
+        composer: AnimatedPadding(
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: ComposerDockShell(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                WorkspaceChangesPill(
+                  summary: workspaceChanges,
+                  busy: changesLoading,
+                  onTap: workspacePath.isNotEmpty
+                      ? () {
+                          refreshWorkspaceChanges(ref, workspacePath);
+                          showWorkspaceDiffReviewSheet(
+                            context: context,
+                            ref: ref,
+                            workspacePath: workspacePath,
+                          );
+                        }
+                      : null,
+                ),
+                if (queuedFollowUps.isNotEmpty)
+                  FollowUpQueueBar(
+                    followUps: queuedFollowUps,
+                    cancelBusyId: _followUpCancelBusyId,
+                    escalateBusyId: _followUpEscalateBusyId,
+                    onEscalate: (followUp) => _escalateFollowUp(followUp),
+                    onEdit: _startEditingFollowUp,
+                    onDelete: (followUp) => _deleteFollowUp(followUp),
+                  ),
+                if (_editingFollowUpId != null)
+                  _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
+                if (isAwaitingPlan && session.pendingPlan != null)
+                  _PlanApprovalBanner(
+                    failureMessage: planFailureMessage,
+                    onViewPlan: () => _showApprovalSheets(
+                      ref.read(threadSessionProvider(widget.threadId)),
+                    ),
+                    onApprove: () => _handlePlanApproval(approve: true),
+                    onDismiss: () => _handlePlanApproval(approve: false),
+                  ),
+                SessionComposer(
+                  controller: _promptController,
+                  attachments: _attachments,
+                  runtimeConfig: runtimeConfig,
+                  threadId: widget.threadId,
+                  isRunning: isRunning,
+                  canStopThread: canStopThread,
+                  followUpMode: followUpMode,
+                  sendBusy: _followUpBusy,
+                  hasActivity: session.projectionReady,
+                  inputHint: _editingFollowUpId != null
+                      ? '编辑引导消息…'
+                      : (showLanding ? composerLandingPlaceholder : null),
+                  contextSnapshot: session.contextSnapshot,
+                  threadStatus: thread?.status,
+                  onPickImage: _pickImage,
+                  onRemoveAttachment: (index) =>
+                      setState(() => _attachments.removeAt(index)),
+                  onSend: () => _sendMessage(runtimeConfig),
+                  onStop: () => _stopThread(),
+                  onRuntimeConfigChanged: (config) {
+                    ref.read(runtimeConfigProvider.notifier).state = config;
+                  },
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -664,28 +588,29 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
   const _ThreadSessionFeedPane({
     required this.threadId,
     required this.scrollController,
+    required this.scrollCoordinator,
     required this.isRunning,
-    this.bottomPadding = 12,
   });
 
   final String threadId;
   final ScrollController scrollController;
+  final ActivityFeedScrollCoordinator scrollCoordinator;
   final bool isRunning;
-  final double bottomPadding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Stack(
+      clipBehavior: Clip.hardEdge,
       children: [
         _ActivityFeedView(
           threadId: threadId,
           scrollController: scrollController,
+          scrollCoordinator: scrollCoordinator,
           isRunning: isRunning,
-          bottomPadding: bottomPadding,
         ),
         Positioned(
+          top: 8,
           right: 8,
-          bottom: 8,
           child: _ThreadUsageOverlay(threadId: threadId),
         ),
       ],
@@ -697,14 +622,14 @@ class _ActivityFeedView extends ConsumerWidget {
   const _ActivityFeedView({
     required this.threadId,
     required this.scrollController,
+    required this.scrollCoordinator,
     required this.isRunning,
-    this.bottomPadding = 12,
   });
 
   final String threadId;
   final ScrollController scrollController;
+  final ActivityFeedScrollCoordinator scrollCoordinator;
   final bool isRunning;
-  final double bottomPadding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -747,12 +672,7 @@ class _ActivityFeedView extends ConsumerWidget {
     if (!projectionReady) {
       return Center(
         child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            sessionContentTopPadding(context),
-            24,
-            24,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
             isRunning ? '运行投影加载中…' : '运行投影尚未就绪',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -767,8 +687,7 @@ class _ActivityFeedView extends ConsumerWidget {
     return ActivityFeedList(
       entries: displayFeedEntries,
       scrollController: scrollController,
-      topPadding: sessionContentTopPadding(context),
-      bottomPadding: bottomPadding,
+      scrollCoordinator: scrollCoordinator,
       agentProfile: agentProfile,
     );
   }

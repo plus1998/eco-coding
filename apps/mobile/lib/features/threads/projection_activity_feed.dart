@@ -111,9 +111,10 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
       })
       .toList();
 
+  final rawMainTimeline = _mainProjectionTimelineItems(projection);
   final mainTimeline = _filterAbsorbedSubagentDelegations(
     _filterMainTimelineForFeed(
-      _mainProjectionTimelineItems(projection),
+      rawMainTimeline,
       requestSpansById,
     ),
     subagentCards,
@@ -121,14 +122,18 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   );
 
   for (final item in mainTimeline) {
-    final entry = _projectionItemToFeedEntry(item);
+    final entry = _buildProjectionFeedEntry(
+      item,
+      requestSpansById,
+      rawMainTimeline,
+    );
     if (entry == null) continue;
     slots.add(
       _ProjectionFeedSlot(
         entry: entry,
         at: item.at,
         sequence: item.sequence,
-        sortKey: 'main:${item.id}',
+        sortKey: entry.id,
       ),
     );
   }
@@ -166,14 +171,20 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     );
 
     for (final item in card.displayTimeline.where(_isAgentEchoTimelineItem)) {
-      final entry = _projectionItemToFeedEntry(item, agentRole: role);
+      final entry = _buildProjectionFeedEntry(
+        item,
+        requestSpansById,
+        rawMainTimeline,
+        agentId: agent.agentId,
+        agentRole: role,
+      );
       if (entry == null) continue;
       slots.add(
         _ProjectionFeedSlot(
           entry: entry,
           at: item.at,
           sequence: item.sequence,
-          sortKey: 'agent:${agent.agentId}:${item.id}',
+          sortKey: entry.id,
         ),
       );
     }
@@ -188,6 +199,49 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   });
 
   return slots.map((slot) => slot.entry).toList();
+}
+
+ActivityFeedEntry? _buildProjectionFeedEntry(
+  ThreadRunProjectionTimelineItem item,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+  List<ThreadRunProjectionTimelineItem> rawMainTimeline, {
+  String? agentId,
+  String? agentRole,
+}) {
+  final feedId = _projectionMainFeedEntryKey(
+    item,
+    requestSpansById,
+    rawMainTimeline,
+    agentId: agentId,
+  );
+  return _projectionItemToFeedEntry(
+    item,
+    feedId: feedId,
+    agentRole: agentRole,
+  );
+}
+
+String _projectionMainFeedEntryKey(
+  ThreadRunProjectionTimelineItem item,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+  List<ThreadRunProjectionTimelineItem> rawMainTimeline, {
+  String? agentId,
+}) {
+  final scope = agentId != null ? 'agent:$agentId' : 'main';
+  final streamKey =
+      _projectionStreamDisplayKey(item, requestSpansById, rawMainTimeline);
+  if (streamKey != null) {
+    return '$scope:stream:$streamKey';
+  }
+  final lifecycleKey = _projectionToolLifecycleKey(item);
+  if (lifecycleKey != null) {
+    return '$scope:$lifecycleKey';
+  }
+  final toolKey = _projectionToolDisplayKey(item);
+  if (toolKey != null) {
+    return '$scope:$toolKey';
+  }
+  return '$scope:${item.id}';
 }
 
 List<ThreadRunProjectionTimelineItem> _mainProjectionTimelineItems(
@@ -359,11 +413,12 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
       }
     }
 
-    final streamKey = _projectionStreamDisplayKey(item);
+    final streamKey = _projectionStreamDisplayKey(item, requestSpansById, timeline);
     if (streamKey != null) {
       final current = latestStreamDisplayByKey[streamKey];
       if (current == null || _compareTimelineItems(current, item) <= 0) {
-        latestStreamDisplayByKey[streamKey] = item;
+        latestStreamDisplayByKey[streamKey] =
+            _mergeStreamDisplayTimelineItem(current, item, timeline);
       }
     }
 
@@ -388,7 +443,7 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
         latestLifecycleDisplayByKey[lifecycleKey]?.id != item.id) {
       continue;
     }
-    final streamKey = _projectionStreamDisplayKey(item);
+    final streamKey = _projectionStreamDisplayKey(item, requestSpansById, timeline);
     if (streamKey != null && latestStreamDisplayByKey[streamKey]?.id != item.id) {
       continue;
     }
@@ -402,6 +457,221 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
     }
   }
   return displayItems;
+}
+
+bool _hasUserPromptBetween(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  ThreadRunProjectionTimelineItem current,
+  ThreadRunProjectionTimelineItem item,
+) {
+  final currentIndex = timeline.indexWhere((entry) => entry.id == current.id);
+  final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
+  if (currentIndex < 0 || itemIndex < 0 || itemIndex <= currentIndex) {
+    return false;
+  }
+  for (var index = currentIndex + 1; index < itemIndex; index += 1) {
+    final entry = timeline[index];
+    if (_isProjectionUserPromptItem(entry)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _shouldResetThinkingStreamMerge(
+  ThreadRunProjectionTimelineItem current,
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  final currentRequestId = current.requestId?.trim();
+  final itemRequestId = item.requestId?.trim();
+  if (currentRequestId != null &&
+      currentRequestId.isNotEmpty &&
+      itemRequestId != null &&
+      itemRequestId.isNotEmpty &&
+      currentRequestId != itemRequestId) {
+    return true;
+  }
+  if (current.eventType == 'thinking.final') {
+    return true;
+  }
+  return _hasUserPromptBetween(timeline, current, item);
+}
+
+ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
+  ThreadRunProjectionTimelineItem? current,
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  if (current == null || _compareTimelineItems(current, item) > 0) {
+    return item;
+  }
+  final isThinkingStream =
+      item.eventType == 'thinking.delta' || item.eventType == 'thinking.final';
+  if (!isThinkingStream) {
+    return item;
+  }
+  if (_shouldResetThinkingStreamMerge(current, item, timeline)) {
+    return item;
+  }
+  final preservedText = item.text.trim().isEmpty
+      ? current.text
+      : current.text.trim().isEmpty
+      ? item.text
+      : item.text.length >= current.text.length
+      ? item.text
+      : current.text;
+  if (preservedText == item.text) {
+    return item;
+  }
+  return ThreadRunProjectionTimelineItem(
+    id: item.id,
+    sequence: item.sequence,
+    eventType: item.eventType,
+    scope: item.scope,
+    text: preservedText,
+    at: item.at,
+    role: item.role,
+    agentId: item.agentId,
+    requestId: item.requestId,
+    streamKey: item.streamKey,
+    metadata: item.metadata,
+  );
+}
+
+int _resolveTurnBoundaryIndex(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  int itemIndex,
+) {
+  for (var index = itemIndex - 1; index >= 0; index -= 1) {
+    final entry = timeline[index];
+    if (_isProjectionUserPromptItem(entry)) {
+      return index;
+    }
+    if (entry.eventType == 'message.final' && entry.role == 'planner') {
+      return index;
+    }
+    if (entry.eventType == 'thinking.final') {
+      return index;
+    }
+  }
+  return -1;
+}
+
+int _resolveTurnSegmentEndIndex(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  int itemIndex,
+) {
+  for (var index = itemIndex + 1; index < timeline.length; index += 1) {
+    final entry = timeline[index];
+    if (_isProjectionUserPromptItem(entry)) {
+      return index;
+    }
+  }
+  return timeline.length;
+}
+
+String? _resolveNearestPlannerRequestId(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+) {
+  final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
+  if (itemIndex < 0) {
+    return null;
+  }
+  final turnBoundaryIndex = _resolveTurnBoundaryIndex(timeline, itemIndex);
+  final searchStart = turnBoundaryIndex >= 0 ? turnBoundaryIndex + 1 : 0;
+  final searchEnd = _resolveTurnSegmentEndIndex(timeline, itemIndex);
+  for (var index = itemIndex; index >= searchStart; index -= 1) {
+    final entry = timeline[index];
+    final requestId = entry.requestId?.trim();
+    if (requestId == null || requestId.isEmpty) {
+      continue;
+    }
+    if (entry.eventType == 'request.started' && entry.role == 'planner') {
+      return requestId;
+    }
+    if (entry.role == 'planner' && requestSpansById.containsKey(requestId)) {
+      return requestId;
+    }
+  }
+  for (var index = itemIndex + 1; index < searchEnd; index += 1) {
+    final entry = timeline[index];
+    final requestId = entry.requestId?.trim();
+    if (requestId == null || requestId.isEmpty) {
+      continue;
+    }
+    if (entry.eventType == 'request.started' && entry.role == 'planner') {
+      return requestId;
+    }
+    if (entry.role == 'planner' && requestSpansById.containsKey(requestId)) {
+      return requestId;
+    }
+  }
+  return null;
+}
+
+String? _resolveEffectiveStreamRequestId(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+) {
+  final isThinkingStream = item.role == 'thinking' ||
+      item.eventType == 'thinking.delta' ||
+      item.eventType == 'thinking.final';
+  if (isThinkingStream) {
+    final plannerRequestId =
+        _resolveNearestPlannerRequestId(item, timeline, requestSpansById);
+    if (plannerRequestId != null) {
+      return plannerRequestId;
+    }
+    final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
+    final turnBoundaryIndex =
+        itemIndex >= 0 ? _resolveTurnBoundaryIndex(timeline, itemIndex) : -1;
+    final boundaryItem =
+        turnBoundaryIndex >= 0 ? timeline[turnBoundaryIndex] : null;
+    final hasUserPromptInTurn =
+        boundaryItem != null && _isProjectionUserPromptItem(boundaryItem);
+    if (!hasUserPromptInTurn) {
+      final itemRequestId = item.requestId?.trim();
+      if (itemRequestId != null &&
+          itemRequestId.isNotEmpty &&
+          requestSpansById.containsKey(itemRequestId)) {
+        return itemRequestId;
+      }
+    }
+    return null;
+  }
+  final itemRequestId = item.requestId?.trim();
+  return itemRequestId != null && itemRequestId.isNotEmpty ? itemRequestId : null;
+}
+
+String? _projectionOwnerKey(ThreadRunProjectionTimelineItem item) {
+  final agentId = item.agentId?.trim();
+  if (agentId != null && agentId.isNotEmpty) {
+    return 'agent:$agentId';
+  }
+  final role = item.role?.trim();
+  if (role != null && role.isNotEmpty) {
+    return 'role:$role';
+  }
+  final scope = item.scope.trim();
+  return scope.isNotEmpty ? 'scope:$scope' : null;
+}
+
+String _appendThinkingStreamScopeSuffix(
+  String key,
+  ThreadRunProjectionTimelineItem item,
+  String? effectiveRequestId,
+) {
+  final isThinking =
+      item.eventType == 'thinking.delta' || item.eventType == 'thinking.final';
+  if (!isThinking) {
+    return key;
+  }
+  final requestId = effectiveRequestId?.trim() ?? item.requestId?.trim();
+  return requestId != null && requestId.isNotEmpty ? '$key:req:$requestId' : key;
 }
 
 ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
@@ -427,6 +697,7 @@ ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
     role: item.role,
     agentId: item.agentId,
     requestId: item.requestId,
+    streamKey: item.streamKey,
     metadata: item.metadata,
   );
 }
@@ -485,6 +756,7 @@ bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
 
 ActivityFeedEntry? _projectionItemToFeedEntry(
   ThreadRunProjectionTimelineItem item, {
+  required String feedId,
   String? agentRole,
 }) {
   final text = item.text.trim();
@@ -495,7 +767,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   );
   if (reconnect != null) {
     return ActivityFeedEntry(
-      id: item.id,
+      id: feedId,
       kind: ActivityFeedKind.phase,
       text: reconnect.summary,
       detail: reconnect.detail,
@@ -505,7 +777,11 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
 
   final bashApproval = readBashApprovalMetadata(item.metadata);
   if (bashApproval != null && item.scope != 'agent') {
-    return _buildProjectionToolActionEntry(item, bashApproval: bashApproval);
+    return _buildProjectionToolActionEntry(
+      item,
+      feedId: feedId,
+      bashApproval: bashApproval,
+    );
   }
 
   if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
@@ -513,13 +789,13 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     if (isLegacyBashApprovalActivityText(text)) return null;
     if (parseClarificationAnswersSummary(text) != null) {
       return ActivityFeedEntry(
-        id: item.id,
+        id: feedId,
         kind: ActivityFeedKind.clarificationAnswer,
         text: item.text,
       );
     }
     return ActivityFeedEntry(
-      id: item.id,
+      id: feedId,
       kind: ActivityFeedKind.assistant,
       text: item.text,
       streaming: item.eventType == 'message.delta',
@@ -529,7 +805,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
 
   if (item.eventType == 'thinking.delta' || item.eventType == 'thinking.final') {
     return ActivityFeedEntry(
-      id: item.id,
+      id: feedId,
       kind: ActivityFeedKind.thinking,
       text: item.text,
       streaming: item.eventType == 'thinking.delta',
@@ -539,13 +815,13 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   if (item.eventType == 'tool.started' ||
       item.eventType == 'tool.completed' ||
       item.eventType == 'tool.failed') {
-    return _buildProjectionToolActionEntry(item);
+    return _buildProjectionToolActionEntry(item, feedId: feedId);
   }
 
   if (item.eventType == 'api.error') {
     final apiError = _readProjectionApiError(item);
     return ActivityFeedEntry(
-      id: item.id,
+      id: feedId,
       kind: ActivityFeedKind.error,
       text: apiError?.message ?? text,
     );
@@ -554,7 +830,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   final phaseLabel = _resolveProjectionPhaseLabel(item);
   if (phaseLabel != null) {
     return ActivityFeedEntry(
-      id: item.id,
+      id: feedId,
       kind: ActivityFeedKind.phase,
       text: phaseLabel,
     );
@@ -565,6 +841,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
 
 ActivityFeedEntry _buildProjectionToolActionEntry(
   ThreadRunProjectionTimelineItem item, {
+  required String feedId,
   ThreadRunBashApprovalMetadata? bashApproval,
 }) {
   bashApproval ??= readBashApprovalMetadata(item.metadata);
@@ -590,7 +867,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
   final command = tool?.detail?.trim() ?? bashApproval?.detail?.trim();
   final fileChange = resolveFileChangeCardDisplay(tool?.fileChange);
   return ActivityFeedEntry(
-    id: item.id,
+    id: feedId,
     kind: ActivityFeedKind.action,
     text: label,
     actionIcon: iconForToolName(toolName),
@@ -810,17 +1087,29 @@ String? _projectionReconnectDisplayKey(ThreadRunProjectionTimelineItem item) {
   return isReconnectActivityMessage(item.text.trim()) ? 'reconnect' : null;
 }
 
-String? _projectionStreamDisplayKey(ThreadRunProjectionTimelineItem item) {
+String? _projectionStreamDisplayKey(
+  ThreadRunProjectionTimelineItem item,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
   if (!_isStreamingRequestDisplayItem(item)) return null;
   final channel = item.eventType.startsWith('thinking') ? 'thinking' : 'message';
-  final requestId = item.requestId?.trim();
-  if (requestId != null && requestId.isNotEmpty) {
-    return '$channel:request:$requestId';
+  final requestId = _resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
+  if (requestId != null) {
+    final span = requestSpansById[requestId];
+    if (span != null && !_isProjectionRequestActive(span)) {
+      return '$channel:request:$requestId';
+    }
   }
-  final owner = item.agentId != null
-      ? 'agent:${item.agentId}'
-      : (item.role != null ? 'role:${item.role}' : 'scope:${item.scope}');
-  return '$channel:$owner';
+  final streamKey = item.streamKey?.trim();
+  if (streamKey != null && streamKey.isNotEmpty) {
+    return _appendThinkingStreamScopeSuffix('${channel}:sk:$streamKey', item, requestId);
+  }
+  final ownerKey = _projectionOwnerKey(item);
+  if (ownerKey != null) {
+    return _appendThinkingStreamScopeSuffix('$channel:$ownerKey', item, requestId);
+  }
+  return '$channel:${item.id}';
 }
 
 bool _isStreamingRequestDisplayItem(ThreadRunProjectionTimelineItem item) {

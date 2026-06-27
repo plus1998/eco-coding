@@ -353,7 +353,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       return;
     }
     try {
-      final projection = await rpc.getRunProjection(threadId, mode: 'feed');
+      final projection = await rpc.getRunProjection(threadId, mode: 'full');
       if (!mounted || projection == null) {
         return;
       }
@@ -402,7 +402,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     try {
       final results = await Future.wait([
         rpc.sessionBootstrap(threadId),
-        rpc.getRunProjection(threadId, mode: 'feed'),
+        rpc.getRunProjection(threadId, mode: 'full'),
       ]);
       final bootstrap = results[0] as ThreadSessionBootstrapResult;
       final projection = results[1] as ThreadRunProjectionSnapshot?;

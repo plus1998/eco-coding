@@ -91,7 +91,7 @@ test("trimProjectionForFeed keeps streaming deltas untruncated", () => {
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
 });
 
-test("trimProjectionForFeed keeps only the most recent timeline items", () => {
+test("trimProjectionForFeed keeps full timeline history", () => {
   const items = Array.from({ length: 150 }, (_, index) => ({
     id: `evt_${index}`,
     sequence: index + 1,
@@ -114,8 +114,8 @@ test("trimProjectionForFeed keeps only the most recent timeline items", () => {
     sourceEventCount: items.length,
   });
 
-  expect(trimmed.timeline).toHaveLength(FEED_PROJECTION_MAX_TIMELINE_ITEMS);
-  expect(trimmed.timeline[0]?.id).toBe(`evt_${items.length - FEED_PROJECTION_MAX_TIMELINE_ITEMS}`);
+  expect(trimmed.timeline).toHaveLength(items.length);
+  expect(trimmed.timeline[0]?.id).toBe("evt_0");
   expect(trimmed.timeline.at(-1)?.id).toBe("evt_149");
 });
 

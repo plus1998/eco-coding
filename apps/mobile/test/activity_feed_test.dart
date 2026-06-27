@@ -964,4 +964,253 @@ void main() {
     );
     expect(card.missionPrompt, 'Implement export filters in src/api.ts');
   });
+
+  test('buildActivityFeed keeps completed planner replies from prior turns', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 3,
+        agents: const [],
+        requestSpans: const [
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_turn_1',
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:01.000Z',
+            endedAt: '2026-01-01T00:00:03.000Z',
+          ),
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_turn_2',
+            status: 'completed',
+            startedAt: '2026-01-01T00:01:00.000Z',
+            endedAt: '2026-01-01T00:01:05.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-1-final',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_turn_1',
+            streamKey: 'thr_view:planner',
+            text: '第一轮回复。',
+            at: '2026-01-01T00:00:03.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-user',
+            sequence: 2,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            text: '继续帮我查一下。',
+            at: '2026-01-01T00:00:59.000Z',
+            metadata: const {'liveType': 'thread.user_prompt'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-final',
+            sequence: 3,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_turn_2',
+            streamKey: 'thr_view:planner',
+            text: '第二轮回复。',
+            at: '2026-01-01T00:01:05.000Z',
+          ),
+        ],
+      ),
+    );
+
+    final assistantTexts = feed
+        .where((entry) => entry.kind == ActivityFeedKind.assistant)
+        .map((entry) => entry.text)
+        .toList();
+    expect(assistantTexts, ['第一轮回复。', '第二轮回复。']);
+  });
+
+  test('buildActivityFeed keeps early turns after many thinking deltas', () {
+    final deltas = List<ThreadRunProjectionTimelineItem>.generate(
+      100,
+      (index) => ThreadRunProjectionTimelineItem(
+        id: 'thinking-delta-$index',
+        sequence: index + 1,
+        eventType: 'thinking.delta',
+        scope: 'main',
+        role: 'thinking',
+        requestId: 'req_long',
+        streamKey: 'thr_test:thinking',
+        text: 'x' * (index + 1),
+        at: '2026-01-01T00:00:${(index + 1).toString().padLeft(2, '0')}.000Z',
+      ),
+    );
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: deltas.length + 2,
+        agents: const [],
+        requestSpans: const [
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_long',
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:01.000Z',
+            endedAt: '2026-01-01T00:02:00.000Z',
+          ),
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_turn_2',
+            status: 'completed',
+            startedAt: '2026-01-01T00:03:00.000Z',
+            endedAt: '2026-01-01T00:03:05.000Z',
+          ),
+        ],
+        timeline: [
+          ...deltas,
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-1-final',
+            sequence: 101,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_long',
+            streamKey: 'thr_test:planner',
+            text: '第一轮回复。',
+            at: '2026-01-01T00:02:01.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-final',
+            sequence: 102,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_turn_2',
+            streamKey: 'thr_test:planner',
+            text: '第二轮回复。',
+            at: '2026-01-01T00:03:05.000Z',
+          ),
+        ],
+      ),
+    );
+
+    final assistantTexts = feed
+        .where((entry) => entry.kind == ActivityFeedKind.assistant)
+        .map((entry) => entry.text)
+        .toList();
+    expect(assistantTexts, ['第一轮回复。', '第二轮回复。']);
+  });
+
+  test('buildActivityFeed keeps stable ids while streaming thinking advances', () {
+    ThreadRunProjectionSnapshot projectionForDelta(String id, String text) {
+      return ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        agents: const [],
+        requestSpans: const [
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_stream',
+            status: 'streaming',
+            startedAt: '2026-01-01T00:00:01.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: id,
+            sequence: 1,
+            eventType: 'thinking.delta',
+            scope: 'main',
+            role: 'thinking',
+            requestId: 'req_stream',
+            streamKey: 'thr_test:thinking',
+            text: text,
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+        ],
+      );
+    }
+
+    final firstFeed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: projectionForDelta('delta-1', '第一段思考'),
+    );
+    final secondFeed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: projectionForDelta('delta-2', '第一段思考扩展'),
+    );
+
+    expect(firstFeed.length, 1);
+    expect(secondFeed.length, 1);
+    expect(firstFeed.first.id, secondFeed.first.id);
+    expect(secondFeed.first.text, '第一段思考扩展');
+  });
+
+  test('shouldAutoScrollActivityFeed ignores bash action insertions', () {
+    const previous = [
+      ActivityFeedEntry(
+        id: 'user-1',
+        kind: ActivityFeedKind.user,
+        text: '帮我跑测试',
+      ),
+      ActivityFeedEntry(
+        id: 'thinking-1',
+        kind: ActivityFeedKind.thinking,
+        text: '思考中',
+        streaming: true,
+      ),
+    ];
+    final next = [
+      previous[0],
+      const ActivityFeedEntry(
+        id: 'bash-1',
+        kind: ActivityFeedKind.action,
+        text: 'Run tests',
+      ),
+      previous[1],
+    ];
+
+    expect(
+      shouldAutoScrollActivityFeed(previous: previous, next: next),
+      isFalse,
+    );
+    expect(
+      listMiddleInsertedFeedEntries(previous: previous, next: next)
+          .single
+          .id,
+      'bash-1',
+    );
+  });
+
+  test('shouldFollowStreamingTail only tracks assistant and thinking', () {
+    const previous = [
+      ActivityFeedEntry(
+        id: 'assistant-1',
+        kind: ActivityFeedKind.assistant,
+        text: 'hello',
+        streaming: true,
+      ),
+    ];
+    final next = [
+      const ActivityFeedEntry(
+        id: 'assistant-1',
+        kind: ActivityFeedKind.assistant,
+        text: 'hello world',
+        streaming: true,
+      ),
+    ];
+
+    expect(
+      shouldFollowStreamingTail(previous: previous, next: next),
+      isTrue,
+    );
+  });
 }

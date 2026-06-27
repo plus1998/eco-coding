@@ -45,6 +45,7 @@ class ThreadRunProjectionTimelineItem {
     this.role,
     this.agentId,
     this.requestId,
+    this.streamKey,
     this.metadata,
   });
 
@@ -59,6 +60,7 @@ class ThreadRunProjectionTimelineItem {
         role: json['role'] as String?,
         agentId: json['agentId'] as String?,
         requestId: json['requestId'] as String?,
+        streamKey: json['streamKey'] as String?,
         metadata: json['metadata'] is Map<String, dynamic>
             ? json['metadata'] as Map<String, dynamic>
             : null,
@@ -73,6 +75,7 @@ class ThreadRunProjectionTimelineItem {
   final String? role;
   final String? agentId;
   final String? requestId;
+  final String? streamKey;
   final Map<String, dynamic>? metadata;
 }
 

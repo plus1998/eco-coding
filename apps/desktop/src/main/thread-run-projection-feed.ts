@@ -18,11 +18,7 @@ function truncateText(text: string, maxChars: number): { text: string; truncated
 function trimTimeline(
   items: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem[] {
-  const trimmed = items.map(trimTimelineItem);
-  if (trimmed.length <= FEED_PROJECTION_MAX_TIMELINE_ITEMS) {
-    return trimmed;
-  }
-  return trimmed.slice(-FEED_PROJECTION_MAX_TIMELINE_ITEMS);
+  return items.map(trimTimelineItem);
 }
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
@@ -66,9 +62,10 @@ function trimAgent(agent: ThreadRunProjectionAgent): ThreadRunProjectionAgent {
 export function trimProjectionForFeed(
   snapshot: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
-  return {
+  const result = {
     ...snapshot,
     timeline: trimTimeline(snapshot.timeline),
     agents: snapshot.agents.map(trimAgent),
   };
+  return result;
 }

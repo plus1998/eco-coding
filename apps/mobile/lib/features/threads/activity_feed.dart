@@ -15,7 +15,9 @@ import '../../core/utils/subagent_session_timing.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
 import '../../core/widgets/shimmer_text.dart';
+import 'activity_feed_scroll_coordinator.dart';
 import 'projection_activity_feed.dart';
+import 'thread_session_layout.dart';
 
 enum ActivityFeedKind {
   user,
@@ -93,41 +95,243 @@ List<ActivityFeedEntry> buildActivityFeed({
   );
 }
 
-class ActivityFeedList extends StatelessWidget {
+bool shouldAutoScrollActivityFeed({
+  required List<ActivityFeedEntry> previous,
+  required List<ActivityFeedEntry> next,
+}) {
+  if (next.length <= previous.length) return false;
+  final previousIds = {for (final entry in previous) entry.id};
+  final added = next.where((entry) => !previousIds.contains(entry.id)).toList();
+  if (added.isEmpty) return false;
+  if (added.any(
+    (entry) =>
+        entry.kind == ActivityFeedKind.action ||
+        entry.kind == ActivityFeedKind.subagentMission ||
+        entry.kind == ActivityFeedKind.phase,
+  )) {
+    return false;
+  }
+  final firstNewIndex = next.indexWhere((entry) => !previousIds.contains(entry.id));
+  return firstNewIndex >= previous.length;
+}
+
+bool shouldFollowStreamingTail({
+  required List<ActivityFeedEntry> previous,
+  required List<ActivityFeedEntry> next,
+}) {
+  if (next.isEmpty) return false;
+  final last = next.last;
+  if (!last.streaming) return false;
+  if (last.kind != ActivityFeedKind.assistant &&
+      last.kind != ActivityFeedKind.thinking) {
+    return false;
+  }
+  if (previous.isEmpty) return true;
+  final previousLast = previous.last;
+  if (previousLast.id != last.id) return false;
+  return last.text.length > previousLast.text.length;
+}
+
+String activityFeedLayoutSignature(List<ActivityFeedEntry> entries) {
+  if (entries.isEmpty) return '';
+  final last = entries.last;
+  return '${entries.length}:${last.id}:${last.text.length}:${last.streaming}';
+}
+
+bool activityFeedContentChanged({
+  required List<ActivityFeedEntry> previous,
+  required List<ActivityFeedEntry> next,
+}) {
+  if (previous.length != next.length) return true;
+  for (var index = 0; index < previous.length; index += 1) {
+    final before = previous[index];
+    final after = next[index];
+    if (before.id != after.id) return true;
+    if (before.text != after.text) return true;
+    if (before.streaming != after.streaming) return true;
+    if (before.lifecycle != after.lifecycle) return true;
+  }
+  return false;
+}
+
+List<ActivityFeedEntry> listMiddleInsertedFeedEntries({
+  required List<ActivityFeedEntry> previous,
+  required List<ActivityFeedEntry> next,
+}) {
+  if (next.length <= previous.length) return const [];
+  var prefix = 0;
+  while (prefix < previous.length &&
+      prefix < next.length &&
+      previous[prefix].id == next[prefix].id) {
+    prefix += 1;
+  }
+  if (prefix >= previous.length) {
+    return const [];
+  }
+  final previousIds = {for (final entry in previous) entry.id};
+  final inserted = <ActivityFeedEntry>[];
+  for (var index = prefix; index < next.length; index += 1) {
+    final entry = next[index];
+    if (!previousIds.contains(entry.id)) {
+      inserted.add(entry);
+    } else {
+      break;
+    }
+  }
+  return inserted;
+}
+
+class ActivityFeedList extends StatefulWidget {
   const ActivityFeedList({
     super.key,
     required this.entries,
     required this.scrollController,
-    this.topPadding = 8,
-    this.bottomPadding = 12,
+    this.scrollCoordinator,
     this.agentProfile,
   });
 
   final List<ActivityFeedEntry> entries;
   final ScrollController scrollController;
-  final double topPadding;
-  final double bottomPadding;
+  final ActivityFeedScrollCoordinator? scrollCoordinator;
   final OrchestrationProfile? agentProfile;
 
   @override
+  State<ActivityFeedList> createState() => _ActivityFeedListState();
+}
+
+class _ActivityFeedListState extends State<ActivityFeedList> {
+  late ActivityFeedScrollCoordinator _coordinator;
+  String _layoutSignature = '';
+  bool _showScrollJump = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _coordinator =
+        widget.scrollCoordinator ??
+        ActivityFeedScrollCoordinator(widget.scrollController);
+    _layoutSignature = activityFeedLayoutSignature(widget.entries);
+  }
+
+  @override
+  void didUpdateWidget(ActivityFeedList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextSignature = activityFeedLayoutSignature(widget.entries);
+    if (nextSignature == _layoutSignature) return;
+    _layoutSignature = nextSignature;
+    _scheduleLayoutScroll();
+  }
+
+  void _scheduleLayoutScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _coordinator.scrollToEnd();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _coordinator.scrollToEnd();
+      });
+    });
+  }
+
+  void _syncScrollJumpVisibility() {
+    final next = _coordinator.userDetachedFromBottom;
+    if (next != _showScrollJump) {
+      setState(() => _showScrollJump = next);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-      behavior: HitTestBehavior.translucent,
-      child: ListView.builder(
-        controller: scrollController,
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: EdgeInsets.fromLTRB(12, topPadding, 12, bottomPadding),
-        cacheExtent: 600,
-        itemCount: entries.length,
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          return _ActivityFeedEntryTile(
-            key: ValueKey(entry.id),
-            entry: entry,
-            agentProfile: agentProfile,
-          );
-        },
+    final displayEntries = widget.entries.reversed.toList(growable: false);
+
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        GestureDetector(
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          behavior: HitTestBehavior.translucent,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              _coordinator.onScrollNotification(notification);
+              _syncScrollJumpVisibility();
+              return false;
+            },
+            child: ListView.builder(
+              controller: widget.scrollController,
+              reverse: true,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(
+                threadSessionFeedHorizontalPadding,
+                threadSessionComposerGap,
+                threadSessionFeedHorizontalPadding,
+                0,
+              ),
+              cacheExtent: 600,
+              itemCount: displayEntries.length,
+              itemBuilder: (context, index) {
+                final entry = displayEntries[index];
+                return _ActivityFeedEntryTile(
+                  key: ValueKey(entry.id),
+                  entry: entry,
+                  agentProfile: widget.agentProfile,
+                );
+              },
+            ),
+          ),
+        ),
+        if (_showScrollJump)
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: _ScrollToBottomButton(
+              onPressed: () {
+                _coordinator.forceScrollToEnd();
+                setState(() => _showScrollJump = false);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ScrollToBottomButton extends StatelessWidget {
+  const _ScrollToBottomButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ecoColors(context);
+    return Material(
+      color: colors.cardSurface.withValues(alpha: 0.92),
+      elevation: 2,
+      shadowColor: Colors.black26,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.arrow_downward_rounded,
+                size: 16,
+                color: colors.textPrimary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '回到底部',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
