@@ -6343,6 +6343,15 @@ function resolveLiveRequestId(
   if (existing) {
     return existing;
   }
+  if (input.role === "thinking") {
+    const plannerRequestId = threadLiveRequestRegistry.resolve(threadId, {
+      role: "planner",
+      ...(input.agentId && { agentId: input.agentId }),
+    });
+    if (plannerRequestId) {
+      return plannerRequestId;
+    }
+  }
   if (input.type === "request.started") {
     return threadLiveRequestRegistry.beginRequest(threadId, scope);
   }

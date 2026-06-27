@@ -153,7 +153,7 @@ function buildProjectionMainFeedEntries(
     const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
     return {
       kind: "timeline",
-      key: projectionMainFeedEntryKey(item, { requestSpansById }),
+      key: projectionMainFeedEntryKey(item, { requestSpansById, timeline: mainTimeline }),
       item,
       at: sortAnchor.at,
       sequence: sortAnchor.sequence,
@@ -175,7 +175,11 @@ function buildProjectionMainFeedEntries(
       const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
       entries.push({
         kind: "agent-echo",
-        key: projectionMainFeedEntryKey(item, { agentId: card.agent.agentId, requestSpansById }),
+        key: projectionMainFeedEntryKey(item, {
+          agentId: card.agent.agentId,
+          requestSpansById,
+          timeline: card.agent.timeline,
+        }),
         item,
         agent: card.agent,
         agentLabel: formatProjectionAgentLabel(card.agent, agentDisplayNames),
@@ -504,11 +508,11 @@ export function buildProjectionDisplayTimelineItems(
       }
     }
 
-    const streamKey = projectionStreamDisplayKey(item, requestSpansById);
+    const streamKey = projectionStreamDisplayKey(item, requestSpansById, timeline);
     if (streamKey) {
       const current = latestStreamDisplayByKey.get(streamKey);
       if (!current || compareTimelineItems(current, item) <= 0) {
-        latestStreamDisplayByKey.set(streamKey, mergeStreamDisplayTimelineItem(current, item));
+        latestStreamDisplayByKey.set(streamKey, mergeStreamDisplayTimelineItem(current, item, timeline));
       }
     }
 
@@ -548,7 +552,7 @@ export function buildProjectionDisplayTimelineItems(
     if (lifecycleKey && latestLifecycleDisplayByKey.get(lifecycleKey)?.id !== item.id) {
       continue;
     }
-    const streamKey = projectionStreamDisplayKey(item, requestSpansById);
+    const streamKey = projectionStreamDisplayKey(item, requestSpansById, timeline);
     let displayItem = item;
     if (streamKey) {
       const latestStream = latestStreamDisplayByKey.get(streamKey);
@@ -572,31 +576,59 @@ export function buildProjectionDisplayTimelineItems(
 function appendThinkingStreamScopeSuffix(
   key: string,
   item: ThreadRunProjectionTimelineItem,
+  effectiveRequestId?: string,
 ): string {
   const isThinking =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final";
   if (!isThinking) {
     return key;
   }
-  const requestId = item.requestId?.trim();
+  const requestId = effectiveRequestId?.trim() || item.requestId?.trim();
   return requestId ? `${key}:req:${requestId}` : key;
+}
+
+function hasUserPromptBetween(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  current: ThreadRunProjectionTimelineItem,
+  item: ThreadRunProjectionTimelineItem,
+): boolean {
+  const currentIndex = timeline.findIndex((entry) => entry.id === current.id);
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  if (currentIndex < 0 || itemIndex < 0 || itemIndex <= currentIndex) {
+    return false;
+  }
+  for (let index = currentIndex + 1; index < itemIndex; index += 1) {
+    const entry = timeline[index];
+    if (entry && isProjectionUserPromptItem(entry)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function shouldResetThinkingStreamMerge(
   current: ThreadRunProjectionTimelineItem,
   item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
 ): boolean {
   const currentRequestId = current.requestId?.trim();
   const itemRequestId = item.requestId?.trim();
   if (currentRequestId && itemRequestId && currentRequestId !== itemRequestId) {
     return true;
   }
-  return current.eventType === "thinking.final";
+  if (current.eventType === "thinking.final") {
+    return true;
+  }
+  if (hasUserPromptBetween(timeline, current, item)) {
+    return true;
+  }
+  return false;
 }
 
 function mergeStreamDisplayTimelineItem(
   current: ThreadRunProjectionTimelineItem | undefined,
   item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem {
   if (!current || compareTimelineItems(current, item) > 0) {
     return item;
@@ -606,7 +638,7 @@ function mergeStreamDisplayTimelineItem(
   if (!isThinkingStream) {
     return item;
   }
-  if (shouldResetThinkingStreamMerge(current, item)) {
+  if (shouldResetThinkingStreamMerge(current, item, timeline)) {
     return item;
   }
   const preservedText = !item.text.trim()
@@ -830,10 +862,11 @@ export function projectionMainFeedEntryKey(
   options?: {
     agentId?: string;
     requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+    timeline?: readonly ThreadRunProjectionTimelineItem[];
   },
 ): string {
   const scope = options?.agentId ? `agent:${options.agentId}` : "main";
-  const streamKey = projectionStreamDisplayKey(item, options?.requestSpansById);
+  const streamKey = projectionStreamDisplayKey(item, options?.requestSpansById, options?.timeline);
   if (streamKey) {
     return `${scope}:stream:${streamKey}`;
   }
@@ -848,9 +881,121 @@ export function projectionMainFeedEntryKey(
   return `${scope}:${item.id}`;
 }
 
+function resolveTurnBoundaryIndex(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  itemIndex: number,
+): number {
+  for (let index = itemIndex - 1; index >= 0; index -= 1) {
+    const entry = timeline[index];
+    if (!entry) {
+      continue;
+    }
+    if (isProjectionUserPromptItem(entry)) {
+      return index;
+    }
+    if (entry.eventType === "message.final" && entry.role === "planner") {
+      return index;
+    }
+    if (entry.eventType === "thinking.final") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function resolveTurnSegmentEndIndex(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  itemIndex: number,
+): number {
+  for (let index = itemIndex + 1; index < timeline.length; index += 1) {
+    const entry = timeline[index];
+    if (entry && isProjectionUserPromptItem(entry)) {
+      return index;
+    }
+  }
+  return timeline.length;
+}
+
+function resolveNearestPlannerRequestId(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): string | undefined {
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  if (itemIndex < 0) {
+    return undefined;
+  }
+  const turnBoundaryIndex = resolveTurnBoundaryIndex(timeline, itemIndex);
+  const searchStart = turnBoundaryIndex >= 0 ? turnBoundaryIndex + 1 : 0;
+  const searchEnd = resolveTurnSegmentEndIndex(timeline, itemIndex);
+  for (let index = itemIndex; index >= searchStart; index -= 1) {
+    const entry = timeline[index];
+    if (!entry) {
+      continue;
+    }
+    const requestId = entry.requestId?.trim();
+    if (!requestId) {
+      continue;
+    }
+    if (entry.eventType === "request.started" && entry.role === "planner") {
+      return requestId;
+    }
+    if (entry.role === "planner" && requestSpansById?.has(requestId)) {
+      return requestId;
+    }
+  }
+  for (let index = itemIndex + 1; index < searchEnd; index += 1) {
+    const entry = timeline[index];
+    if (!entry) {
+      continue;
+    }
+    const requestId = entry.requestId?.trim();
+    if (!requestId) {
+      continue;
+    }
+    if (entry.eventType === "request.started" && entry.role === "planner") {
+      return requestId;
+    }
+    if (entry.role === "planner" && requestSpansById?.has(requestId)) {
+      return requestId;
+    }
+  }
+  return undefined;
+}
+
+function resolveEffectiveStreamRequestId(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): string | undefined {
+  const isThinkingStream =
+    item.role === "thinking" ||
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final";
+  if (isThinkingStream) {
+    const plannerRequestId = resolveNearestPlannerRequestId(item, timeline, requestSpansById);
+    if (plannerRequestId) {
+      return plannerRequestId;
+    }
+    const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+    const turnBoundaryIndex = itemIndex >= 0 ? resolveTurnBoundaryIndex(timeline, itemIndex) : -1;
+    const boundaryItem = turnBoundaryIndex >= 0 ? timeline[turnBoundaryIndex] : undefined;
+    const hasUserPromptInTurn = Boolean(boundaryItem && isProjectionUserPromptItem(boundaryItem));
+    if (!hasUserPromptInTurn) {
+      const itemRequestId = item.requestId?.trim();
+      if (itemRequestId && requestSpansById?.has(itemRequestId)) {
+        return itemRequestId;
+      }
+    }
+    return undefined;
+  }
+  return item.requestId?.trim() || undefined;
+}
+
 function projectionStreamDisplayKey(
   item: ThreadRunProjectionTimelineItem,
   requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+  timeline: readonly ThreadRunProjectionTimelineItem[] = [],
 ): string | undefined {
   if (!isStreamingRequestDisplayItem(item)) {
     return undefined;
@@ -861,24 +1006,24 @@ function projectionStreamDisplayKey(
   }
   const channel =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
-  const requestId = item.requestId?.trim();
+  const requestId = resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
   if (requestId && requestSpansById) {
     const span = requestSpansById.get(requestId);
     if (span && !isProjectionRequestActive(span)) {
-      return appendThinkingStreamScopeSuffix(`${channel}:request:${requestId}`, item);
+      return `${channel}:request:${requestId}`;
     }
   }
   const streamKey = item.streamKey?.trim();
   if (streamKey) {
-    return appendThinkingStreamScopeSuffix(`${channel}:sk:${streamKey}`, item);
+    return appendThinkingStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
   }
   const ownerKey = projectionOwnerKey(item);
   if (ownerKey) {
-    return appendThinkingStreamScopeSuffix(`${channel}:${ownerKey}`, item);
+    return appendThinkingStreamScopeSuffix(`${channel}:${ownerKey}`, item, requestId);
   }
   const requestKey = projectionRequestKey(item);
   if (requestKey) {
-    return appendThinkingStreamScopeSuffix(`${channel}:${requestKey}`, item);
+    return appendThinkingStreamScopeSuffix(`${channel}:${requestKey}`, item, requestId);
   }
   return `${channel}:${item.id}`;
 }
@@ -938,7 +1083,10 @@ function resolveFeedEntrySortLane(
     item.text.trim() &&
     item.requestId?.trim()
   ) {
-    return FEED_SORT_LANE_STREAM_THINKING;
+    const span = projectionRequestSpan(item, requestSpansById);
+    if (!span || isProjectionRequestActive(span)) {
+      return FEED_SORT_LANE_STREAM_THINKING;
+    }
   }
   if (item.eventType === "message.delta") {
     const span = projectionRequestSpan(item, requestSpansById);
