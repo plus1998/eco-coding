@@ -1457,27 +1457,140 @@ test("projectionItemToDetailBlock maps reconnect activity to collapsible phase",
   const detail = projectionItemToDetailBlock(
     item({
       id: "reconnect-1",
-      eventType: "message.final",
+      eventType: "api.error",
       scope: "main",
       text: "【连接失败】HTTP 500：upstream error: do request failed",
+      metadata: {
+        liveType: "thread.api_error",
+        activityOrigin: "proxy.connection_error",
+        apiError: { statusCode: 500, message: "upstream error: do request failed" },
+      },
     }),
   );
   expect(detail).toMatchObject({
     kind: "phase",
     label: "连接失败 · HTTP 500",
     reconnecting: true,
-    reconnectDetail: "upstream error: do request failed",
+    reconnectFailed: true,
   });
+  expect(detail).not.toHaveProperty("reconnectDetail");
 });
 
 test("buildProjectionDisplayTimelineItems keeps only the latest reconnect status", () => {
   const timeline = [
-    item({ id: "r1", sequence: 1, eventType: "message.final", text: "【连接失败】HTTP 500：first" }),
-    item({ id: "r2", sequence: 2, eventType: "request.retry_scheduled", text: "【自动重试 1/5】reason" }),
-    item({ id: "r3", sequence: 3, eventType: "request.retry_scheduled", text: "【自动重试 2/5】reason" }),
+    item({
+      id: "r1",
+      sequence: 1,
+      eventType: "api.error",
+      text: "【连接失败】HTTP 500：first",
+      metadata: { activityOrigin: "proxy.connection_error", apiError: { statusCode: 500, message: "first" } },
+    }),
+    item({
+      id: "r2",
+      sequence: 2,
+      eventType: "request.retry_scheduled",
+      text: "【自动重试 1/5】reason",
+      metadata: { activityOrigin: "eco.auto_retry", retry: { attempt: 1, maxRetries: 5 } },
+    }),
+    item({
+      id: "r3",
+      sequence: 3,
+      eventType: "request.retry_scheduled",
+      text: "【自动重试 2/5】reason",
+      metadata: { activityOrigin: "eco.auto_retry", retry: { attempt: 2, maxRetries: 5 } },
+    }),
   ];
   const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
   expect(rows.map((row) => row.id)).toEqual(["r3"]);
+});
+
+test("buildProjectionDisplayTimelineItems collapses SDK api_retry rows and final failure", () => {
+  const timeline = [
+    item({
+      id: "r1",
+      sequence: 1,
+      eventType: "request.retry_scheduled",
+      text: "API retry 1/5…",
+      metadata: { activityOrigin: "sdk.api_retry", retry: { attempt: 1, maxRetries: 5 } },
+    }),
+    item({
+      id: "r2",
+      sequence: 2,
+      eventType: "request.retry_scheduled",
+      text: "API retry 2/5…",
+      metadata: { activityOrigin: "sdk.api_retry", retry: { attempt: 2, maxRetries: 5 } },
+    }),
+    item({
+      id: "r3",
+      sequence: 3,
+      eventType: "api.error",
+      text: "【连接失败】HTTP 502：upstream unavailable",
+      metadata: {
+        activityOrigin: "proxy.connection_error",
+        apiError: { statusCode: 502, message: "upstream unavailable" },
+      },
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["r3"]);
+  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+    kind: "phase",
+    label: "连接失败 · HTTP 502",
+    reconnecting: true,
+    reconnectFailed: true,
+  });
+});
+
+test("buildProjectionDisplayTimelineItems keeps reconnect summary and one original API error phase", () => {
+  const rawApiError =
+    "API Error: 503 Loading model. This is a server-side issue, usually temporary — try again in a moment.";
+  const wrappedFailure = `Claude Code returned an error result: ${rawApiError}`;
+  const blockedWithHint = `${wrappedFailure} 可在下方继续对话、切换模型后重试，或点击「重试此次请求」。`;
+  const timeline = [
+    item({
+      id: "reconnect",
+      sequence: 1,
+      eventType: "api.error",
+      text: "【连接失败】HTTP 503：upstream unavailable",
+      metadata: {
+        activityOrigin: "proxy.connection_error",
+        apiError: { statusCode: 503, message: "upstream unavailable" },
+      },
+    }),
+    item({
+      id: "phase",
+      sequence: 2,
+      eventType: "message.final",
+      text: rawApiError,
+      metadata: { activityOrigin: "sdk.upstream_error", liveType: "message.delta" },
+    }),
+    item({
+      id: "wrapped",
+      sequence: 3,
+      eventType: "message.final",
+      text: wrappedFailure,
+      metadata: { activityOrigin: "sdk.run_failure", liveType: "message.delta" },
+    }),
+    item({
+      id: "blocked",
+      sequence: 4,
+      eventType: "thread.status",
+      text: blockedWithHint,
+      metadata: { activityOrigin: "eco.thread_blocked", liveType: "thread.blocked" },
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["reconnect", "phase"]);
+  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+    kind: "phase",
+    label: "连接失败 · HTTP 503",
+    reconnecting: true,
+    reconnectFailed: true,
+  });
+  expect(projectionItemToDetailBlock(rows[1]!)).toEqual({
+    kind: "phase",
+    label: rawApiError,
+  });
 });
 
 test("buildProjectionDisplayTimelineItems collapses duplicate tool rows by toolUseId", () => {

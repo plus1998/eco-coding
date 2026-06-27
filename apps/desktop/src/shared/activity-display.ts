@@ -21,6 +21,7 @@ const reconnectClearSystemNoise = [
 export interface ParsedReconnectActivity {
   summary: string;
   detail?: string;
+  failed?: boolean;
 }
 
 /** Auto-retry or upstream connection failure status — should replace prior line, not stack. */
@@ -28,47 +29,43 @@ export function isReconnectActivityMessage(message: string): boolean {
   return parseReconnectActivityMessage(message) !== null;
 }
 
+/** Parse Eco-constructed reconnect status messages (not SDK/Proxy raw text). */
 export function parseReconnectActivityMessage(message: string): ParsedReconnectActivity | null {
   const trimmed = message.trim();
-  const autoRetry = trimmed.match(/^【自动重试\s*(\d+)\/(\d+)】\s*([\s\S]*)$/);
+  const autoRetry = trimmed.match(/^【自动重试\s*(\d+)\/(\d+)】/);
   if (autoRetry?.[1] && autoRetry[2]) {
-    const detail = autoRetry[3]?.trim();
     return {
       summary: `重连 ${autoRetry[1]}/${autoRetry[2]}`,
-      ...(detail && { detail }),
     };
   }
 
   const connectionFailed = trimmed.match(/^【连接失败】\s*([\s\S]*)$/);
   if (connectionFailed) {
     const body = connectionFailed[1]?.trim() ?? "";
-    const httpMatch = body.match(/^HTTP\s*(\d{3})\s*(?:[：:]\s*([\s\S]*))?$/);
+    const httpMatch = body.match(/^HTTP\s*(\d{3})\b/);
     if (httpMatch?.[1]) {
-      const detail = httpMatch[2]?.trim() || undefined;
       return {
         summary: `连接失败 · HTTP ${httpMatch[1]}`,
-        ...(detail && { detail }),
+        failed: true,
       };
     }
-    const colonSplit = body.match(/^([^：:]+)[：:]\s*([\s\S]+)$/);
-    if (colonSplit?.[1] && colonSplit[2]) {
+    const colonSplit = body.match(/^([^：:]+)[：:]/);
+    if (colonSplit?.[1]) {
       return {
         summary: `连接失败 · ${colonSplit[1].trim()}`,
-        detail: colonSplit[2].trim(),
+        failed: true,
       };
     }
     return {
       summary: "连接失败",
-      ...(body && { detail: body }),
+      failed: true,
     };
   }
 
-  const legacyRetry = trimmed.match(/^上游不可用，正在重试\s*(\d+)\/(\d+)[^：:]*[：:]\s*([\s\S]*)$/);
+  const legacyRetry = trimmed.match(/^上游不可用，正在重试\s*(\d+)\/(\d+)/);
   if (legacyRetry?.[1] && legacyRetry[2]) {
-    const detail = legacyRetry[3]?.trim();
     return {
       summary: `重连 ${legacyRetry[1]}/${legacyRetry[2]}`,
-      ...(detail && { detail }),
     };
   }
 

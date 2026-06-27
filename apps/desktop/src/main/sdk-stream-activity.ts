@@ -12,6 +12,7 @@ import {
 import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { limitToolOutputForContext } from "../shared/tool-output-limit.js";
 import { activityStreamKey } from "./activity-agent-id.js";
+import { classifySdkStreamMessageOrigin } from "./sdk-activity-origin.js";
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
 
@@ -86,7 +87,15 @@ export class SdkStreamActivityBridge {
         return;
       }
       this.flushPending(threadId, emit);
-      emit(threadId, status.type, status.message, String(display.role), false, activityAgentId);
+      emit(
+        threadId,
+        status.type,
+        status.message,
+        String(display.role),
+        false,
+        activityAgentId,
+        status.metadata ? { metadata: status.metadata } : undefined,
+      );
       return;
     }
 
@@ -121,6 +130,7 @@ export class SdkStreamActivityBridge {
         last?.role ?? role,
         false,
         last?.agentId ?? activityAgentId,
+        mergeSdkActivityEmitExtras(finalizedMessage),
       );
       this.lastStreamLine.delete(streamKey);
       return;
@@ -158,7 +168,7 @@ export class SdkStreamActivityBridge {
       return;
     }
 
-    const emitExtras = resolveSdkActivityToolMetadata(event);
+    const emitExtras = mergeSdkActivityEmitExtras(message, resolveSdkActivityToolMetadata(event));
 
     this.flushPending(threadId, emit);
     if (stream) {
@@ -177,7 +187,7 @@ export class SdkStreamActivityBridge {
       role,
       stream,
       activityAgentId,
-      emitExtras ? { tool: emitExtras } : undefined,
+      emitExtras,
     );
   }
 
@@ -202,7 +212,7 @@ export class SdkStreamActivityBridge {
       ...(agentId && { agentId }),
       timer: setTimeout(() => {
         this.pendingDeltas.delete(streamKey);
-        emit(threadId, type, message, role, stream, agentId);
+        emit(threadId, type, message, role, stream, agentId, mergeSdkActivityEmitExtras(message));
       }, STREAM_THROTTLE_MS),
     };
     this.pendingDeltas.set(streamKey, pending);
@@ -222,7 +232,15 @@ export class SdkStreamActivityBridge {
         message: pending.message,
         ...(pending.agentId && { agentId: pending.agentId }),
       });
-      emit(threadId, "message.delta", pending.message, pending.role, pending.stream, pending.agentId);
+      emit(
+        threadId,
+        "message.delta",
+        pending.message,
+        pending.role,
+        pending.stream,
+        pending.agentId,
+        mergeSdkActivityEmitExtras(pending.message),
+      );
     }
   }
 }
@@ -318,7 +336,9 @@ function isSdkToolInputPlaceholder(payload: unknown): boolean {
   return !input || (typeof input === "object" && !Array.isArray(input) && Object.keys(input).length === 0);
 }
 
-function resolveSdkAgentStatusActivity(payload: unknown): { type: string; message: string } | undefined {
+function resolveSdkAgentStatusActivity(
+  payload: unknown,
+): { type: string; message: string; metadata?: Record<string, unknown> } | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
@@ -338,9 +358,21 @@ function resolveSdkAgentStatusActivity(payload: unknown): { type: string; messag
     return { type: "agent.started", message: "Compacting context…" };
   }
   if (record.subtype === "api_retry") {
-    const attempt = typeof record.attempt === "number" ? record.attempt : "?";
-    const maxRetries = typeof record.max_retries === "number" ? record.max_retries : "?";
-    return { type: "request.retry_scheduled", message: `API retry ${attempt}/${maxRetries}…` };
+    const attempt = typeof record.attempt === "number" ? record.attempt : undefined;
+    const maxRetries = typeof record.max_retries === "number" ? record.max_retries : undefined;
+    const attemptLabel = attempt ?? "?";
+    const maxLabel = maxRetries ?? "?";
+    return {
+      type: "request.retry_scheduled",
+      message: `API retry ${attemptLabel}/${maxLabel}…`,
+      metadata: {
+        activityOrigin: "sdk.api_retry",
+        ...(attempt !== undefined &&
+          maxRetries !== undefined && {
+            retry: { attempt, maxRetries },
+          }),
+      },
+    };
   }
   return undefined;
 }
@@ -509,4 +541,19 @@ function pathBasename(filePath: string): string {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function mergeSdkActivityEmitExtras(
+  message: string,
+  tool?: ThreadRunToolMetadata,
+): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
+  const activityOrigin = classifySdkStreamMessageOrigin(message);
+  const metadata = activityOrigin ? { activityOrigin } : undefined;
+  if (!tool && !metadata) {
+    return undefined;
+  }
+  return {
+    ...(tool && { tool }),
+    ...(metadata && { metadata }),
+  };
 }

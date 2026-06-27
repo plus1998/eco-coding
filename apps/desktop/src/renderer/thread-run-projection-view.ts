@@ -18,6 +18,13 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import {
+  isReconnectActivityOrigin,
+  isRequestFailureFeedNoiseOrigin,
+  isUpstreamErrorPhaseOrigin,
+  resolveReconnectPhaseDisplay,
+  resolveThreadActivityOrigin,
+} from "../shared/thread-activity-origin";
+import {
   isSubagentMissionEnvelope,
   parseSubagentMissionMessage,
   resolveMissionDisplayText,
@@ -396,6 +403,9 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   if (isProjectionUserPromptItem(item)) {
     return false;
   }
+  if (isRequestFailureFeedNoiseItem(item)) {
+    return true;
+  }
   if (isProjectionInternalMessageText(item.text) || isThreadFollowUpActivityMessage(item.text)) {
     return true;
   }
@@ -422,6 +432,17 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
 
 function isProjectionUsageNoiseText(text: string): boolean {
   return /^[↑↓⊙][↑↓⊙\d\s.,kKmM$%·+()-]*$/u.test(text);
+}
+
+function isRequestFailureFeedNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {
+  const origin = resolveThreadActivityOrigin(item);
+  if (isRequestFailureFeedNoiseOrigin(origin)) {
+    return true;
+  }
+  if (item.eventType === "message.delta" && isUpstreamErrorPhaseOrigin(origin)) {
+    return true;
+  }
+  return false;
 }
 
 function isProjectionInternalMessageText(text: string): boolean {
@@ -457,12 +478,21 @@ export function buildProjectionDisplayTimelineItems(
   const latestToolDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestLifecycleDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestReconnectDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  const latestOriginalApiErrorDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   for (const item of timeline) {
     const reconnectKey = projectionReconnectDisplayKey(item);
     if (reconnectKey) {
       const current = latestReconnectDisplayByKey.get(reconnectKey);
       if (!current || compareTimelineItems(current, item) <= 0) {
         latestReconnectDisplayByKey.set(reconnectKey, item);
+      }
+    }
+
+    const upstreamErrorKey = projectionUpstreamErrorDisplayKey(item);
+    if (upstreamErrorKey && !isRequestFailureFeedNoiseItem(item)) {
+      const current = latestOriginalApiErrorDisplayByKey.get(upstreamErrorKey);
+      if (!current || compareTimelineItems(current, item) <= 0) {
+        latestOriginalApiErrorDisplayByKey.set(upstreamErrorKey, item);
       }
     }
 
@@ -493,8 +523,15 @@ export function buildProjectionDisplayTimelineItems(
 
   const displayItems: ThreadRunProjectionTimelineItem[] = [];
   for (const item of timeline) {
+    if (isRequestFailureFeedNoiseItem(item)) {
+      continue;
+    }
     const reconnectKey = projectionReconnectDisplayKey(item);
     if (reconnectKey && latestReconnectDisplayByKey.get(reconnectKey)?.id !== item.id) {
+      continue;
+    }
+    const upstreamErrorKey = projectionUpstreamErrorDisplayKey(item);
+    if (upstreamErrorKey && latestOriginalApiErrorDisplayByKey.get(upstreamErrorKey)?.id !== item.id) {
       continue;
     }
     const lifecycleKey = projectionToolLifecycleKey(item);
@@ -768,7 +805,18 @@ function projectionRequestSpanId(item: ThreadRunProjectionTimelineItem): string 
 }
 
 function projectionReconnectDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const origin = resolveThreadActivityOrigin(item);
+  if (isReconnectActivityOrigin(origin)) {
+    return "reconnect";
+  }
   return parseReconnectActivityMessage(item.text.trim()) ? "reconnect" : undefined;
+}
+
+function projectionUpstreamErrorDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (item.eventType !== "message.final") {
+    return undefined;
+  }
+  return isUpstreamErrorPhaseOrigin(resolveThreadActivityOrigin(item)) ? "upstream-api-error" : undefined;
 }
 
 export function projectionMainFeedEntryKey(
@@ -793,6 +841,10 @@ export function projectionMainFeedEntryKey(
 
 function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
   if (!isStreamingRequestDisplayItem(item)) {
+    return undefined;
+  }
+  const origin = resolveThreadActivityOrigin(item);
+  if (isRequestFailureFeedNoiseOrigin(origin) || isUpstreamErrorPhaseOrigin(origin)) {
     return undefined;
   }
   const channel =
@@ -1097,12 +1149,17 @@ export function projectionItemToDetailBlock(
   item: ThreadRunProjectionTimelineItem,
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
-  const reconnect = parseReconnectActivityMessage(text);
+  const reconnect = resolveReconnectPhaseDisplay({
+    text,
+    metadata: item.metadata,
+    apiError: readProjectionApiError(item),
+  });
   if (reconnect) {
     return {
       kind: "phase",
       label: reconnect.summary,
       reconnecting: true,
+      ...(reconnect.failed && { reconnectFailed: true }),
       ...(reconnect.detail && { reconnectDetail: reconnect.detail }),
     };
   }
@@ -1141,6 +1198,13 @@ export function projectionItemToDetailBlock(
   if (item.eventType === "message.delta" || item.eventType === "message.final") {
     if (!text && item.eventType !== "message.delta") {
       return undefined;
+    }
+    const origin = resolveThreadActivityOrigin(item);
+    if (isRequestFailureFeedNoiseOrigin(origin)) {
+      return undefined;
+    }
+    if (isUpstreamErrorPhaseOrigin(origin) && item.eventType === "message.final") {
+      return { kind: "phase", label: text };
     }
     const subagent = resolveProjectionSubagent(item);
     return {

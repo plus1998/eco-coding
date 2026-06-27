@@ -186,6 +186,7 @@ import {
 import {
   buildPlanExecutionFailureMessage,
   planExecutionFailurePrefix,
+  stripThreadInterruptedSuffix,
 } from "../shared/thread-failure-message";
 import {
   buildThreadFollowUpDisplayPrompt,
@@ -2915,11 +2916,13 @@ function markThreadInterrupted(threadId: string, reason: string): void {
   const summary = formatUserFacingRequestError(reason);
   const truncated = summary.length > 240 ? `${summary.slice(0, 237)}…` : summary;
   process.stderr.write(`[eco] thread blocked (${threadId}): ${truncated}\n`);
-  updateThread(threadId, {
+  patchThreadSummary(threadId, {
     status: "blocked",
     message: `${truncated} ${THREAD_INTERRUPTED_CONTINUE_HINT}`,
   });
-  emitThreadEvent(threadId, "thread.blocked", truncated, "system");
+  emitThreadEvent(threadId, "thread.blocked", truncated, "system", false, {
+    metadata: { activityOrigin: "eco.thread_blocked" },
+  });
 }
 
 function clearSdkSessionAfterResumeFailure(threadId: string, hadResume: boolean): void {
@@ -2966,7 +2969,12 @@ function runThreadRequestWithAutoRetry(
     onRetryScheduled: (retryIndex, maxRetries, reason) => {
       const short = reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
       const message = `【自动重试 ${retryIndex}/${maxRetries}】${short}`;
-      emitThreadEvent(threadId, "thread.auto_retry", message, "system");
+      emitThreadEvent(threadId, "thread.auto_retry", message, "system", false, {
+        metadata: {
+          activityOrigin: "eco.auto_retry",
+          retry: { attempt: retryIndex, maxRetries },
+        },
+      });
       updateThread(threadId, { status: "running", message });
     },
   });
@@ -6079,10 +6087,14 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
   const pendingPlan = patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
+  const activityMessage =
+    patch.status === "blocked" || patch.status === "failed"
+      ? stripThreadInterruptedSuffix(message)
+      : message;
   emitThreadEvent(
     threadId,
     `thread.${patch.status}`,
-    message,
+    activityMessage,
     "system",
     false,
     pendingPlan ? { plan: buildThreadPlanLivePayload(pendingPlan) } : undefined,
@@ -7276,6 +7288,7 @@ function emitUpstreamConnectionErrorActivity(
       message: detail,
       ...(statusCode !== undefined && { statusCode }),
     },
+    metadata: { activityOrigin: "proxy.connection_error" },
   });
 }
 

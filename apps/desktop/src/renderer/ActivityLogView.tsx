@@ -1,4 +1,5 @@
 import {
+  AlertCircle,
   Bot,
   ChevronDown,
   FileText,
@@ -628,6 +629,7 @@ function ProjectionTimelineEntry({
       <PhaseBlock
         label={block.label}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
+        {...(block.reconnectFailed && { reconnectFailed: block.reconnectFailed })}
         {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
       />,
       { compact },
@@ -832,6 +834,7 @@ function DetailBlock({
       <PhaseBlock
         label={block.label}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
+        {...(block.reconnectFailed && { reconnectFailed: block.reconnectFailed })}
         {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
       />
     );
@@ -935,10 +938,12 @@ function DetailBlock({
 function PhaseBlock({
   label,
   reconnecting,
+  reconnectFailed,
   reconnectDetail,
 }: {
   label: string;
   reconnecting?: boolean;
+  reconnectFailed?: boolean;
   reconnectDetail?: string;
 }) {
   if (isContextCompactionPhaseLabel(label)) {
@@ -948,11 +953,16 @@ function PhaseBlock({
     return <PromptCacheNoticeDivider label={label} />;
   }
   if (reconnecting) {
-    const isFailure = label.startsWith("连接失败");
+    const isFailure = Boolean(reconnectFailed);
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
+    const ReconnectIcon = isFailure ? AlertCircle : RefreshCw;
     const summaryRow = (
       <>
-        <RefreshCw size={14} className="run-log-reconnect-icon spinning" aria-hidden />
+        <ReconnectIcon
+          size={14}
+          className={`run-log-reconnect-icon${isFailure ? "" : " spinning"}`}
+          aria-hidden
+        />
         <span>{label}</span>
       </>
     );

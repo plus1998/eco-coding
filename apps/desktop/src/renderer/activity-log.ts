@@ -31,7 +31,7 @@ export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityDetailBlock =
-  | { kind: "phase"; label: string; reconnecting?: boolean; reconnectDetail?: string }
+  | { kind: "phase"; label: string; reconnecting?: boolean; reconnectFailed?: boolean; reconnectDetail?: string }
   | {
       kind: "prompt-cache-timeline";
       narrative: string;
