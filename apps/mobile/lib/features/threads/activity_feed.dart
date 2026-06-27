@@ -281,7 +281,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
         ),
         if (_showScrollJump)
           Positioned(
-            right: 12,
+            left: 12,
             bottom: 12,
             child: _ScrollToBottomButton(
               onPressed: () {

@@ -103,8 +103,8 @@ class EcoClippedFadeBody extends StatelessWidget {
     Widget body = child;
     if (!expanded) {
       body = ClipRect(
-        child: SizedBox(
-          height: collapsedMaxHeight,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: collapsedMaxHeight),
           child: SingleChildScrollView(
             physics: const NeverScrollableScrollPhysics(),
             clipBehavior: Clip.hardEdge,

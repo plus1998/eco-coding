@@ -609,7 +609,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           isRunning: isRunning,
         ),
         Positioned(
-          top: 8,
+          bottom: 8,
           right: 8,
           child: _ThreadUsageOverlay(threadId: threadId),
         ),
