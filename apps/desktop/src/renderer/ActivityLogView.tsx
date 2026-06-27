@@ -63,7 +63,7 @@ import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } fr
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { MarkdownContent } from "./MarkdownContent";
-import { ActivityFeedLayoutContext, useActivityFeedLayoutChange } from "./activity-feed-layout-context";
+import { ActivityFeedLayoutContext, useActivityFeedLayoutChange, type ActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import {
   shouldScheduleThinkingAutoCollapse,
@@ -125,7 +125,7 @@ function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIden
 
 function usePlannerLayoutChangeEffect(
   layoutSignature: string,
-  onPlannerLayoutChange?: () => void,
+  onPlannerLayoutChange?: ActivityFeedLayoutChange,
 ) {
   const onPlannerLayoutChangeRef = useRef(onPlannerLayoutChange);
   onPlannerLayoutChangeRef.current = onPlannerLayoutChange;
@@ -148,7 +148,7 @@ interface ActivityLogViewProps {
   subagentTimings?: ThreadSubagentSessionTiming[];
   subagentMetrics?: ThreadSubagentMetricsSummary[];
   /** Called when planner / main-window log content changes — scroll the activity feed. */
-  onPlannerLayoutChange?: () => void;
+  onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }
 
 function ProjectionFeedLoading() {
@@ -192,7 +192,7 @@ function ProjectionActivityLogView({
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   onRestorePrompt?: RestorePromptHandler;
-  onPlannerLayoutChange?: () => void;
+  onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }) {
   const requestSpansById = useMemo(
     () => new Map(projection.requestSpans.map((span) => [span.requestId, span])),
@@ -1187,12 +1187,13 @@ function ThinkingBlock({
       return;
     }
     clearCollapseTimers();
+    onLayoutChange?.({ immediate: true });
     setIsCollapsing(true);
     collapseAnimRef.current = setTimeout(() => {
       collapseAnimRef.current = null;
       setCollapsed(true);
       setIsCollapsing(false);
-      onLayoutChange?.();
+      onLayoutChange?.({ immediate: true });
     }, THINKING_COLLAPSE_MS);
   }, [clearCollapseTimers, onLayoutChange]);
 
@@ -1253,6 +1254,10 @@ function ThinkingBlock({
   }, [streaming, hasBody, collapsed, autoCollapseReadKey, startCollapseAnimation]);
 
   useEffect(() => () => clearCollapseTimers(), [clearCollapseTimers]);
+
+  useLayoutEffect(() => {
+    onLayoutChange?.({ immediate: !bodyOpen });
+  }, [bodyOpen, onLayoutChange]);
 
   useLayoutEffect(() => {
     if (!streaming || !hasBody) {
@@ -1332,7 +1337,7 @@ function ThinkingBlock({
           </span>
         ) : null}
       </button>
-      {hasBody ? (
+      {hasBody && (bodyOpen || isCollapsing) ? (
         <div
           className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}
         >

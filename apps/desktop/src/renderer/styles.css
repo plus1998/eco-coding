@@ -5356,6 +5356,13 @@ html[data-window-focused="true"] .codex-sidebar {
     opacity 0.36s cubic-bezier(0.4, 0, 0.6, 1);
 }
 
+.run-log-thinking.is-collapsed .run-log-thinking-body-shell {
+  grid-template-rows: 0fr;
+  max-height: 0;
+  opacity: 0;
+  transition: none;
+}
+
 .run-log-thinking-body-inner {
   min-height: 0;
   overflow: hidden;

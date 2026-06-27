@@ -2052,9 +2052,20 @@ function App() {
     requestActivityFeedForceScroll();
   }, [activityFeedScrollJump, jumpActivityFeedToTop, requestActivityFeedForceScroll]);
 
-  const handleActivityPlannerLayoutChange = useCallback(() => {
-    scheduleActivityFeedLayoutScroll();
-  }, [scheduleActivityFeedLayoutScroll]);
+  const handleActivityPlannerLayoutChange = useCallback(
+    (options?: { immediate?: boolean }) => {
+      if (options?.immediate) {
+        const container = activityMessagesRef.current;
+        if (container) {
+          clampActivityFeedOverscroll(container);
+        }
+        flushActivityFeedLayoutScroll();
+        return;
+      }
+      scheduleActivityFeedLayoutScroll();
+    },
+    [clampActivityFeedOverscroll, flushActivityFeedLayoutScroll, scheduleActivityFeedLayoutScroll],
+  );
 
   useEffect(() => {
     const container = activityMessagesRef.current;
