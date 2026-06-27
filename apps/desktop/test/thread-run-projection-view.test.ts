@@ -1489,15 +1489,15 @@ test("buildProjectionDisplayTimelineItems keeps only the latest reconnect status
       id: "r2",
       sequence: 2,
       eventType: "request.retry_scheduled",
-      text: "【自动重试 1/5】reason",
-      metadata: { activityOrigin: "eco.auto_retry", retry: { attempt: 1, maxRetries: 5 } },
+      text: "API retry 1/5…",
+      metadata: { activityOrigin: "sdk.api_retry", retry: { attempt: 1, maxRetries: 5 } },
     }),
     item({
       id: "r3",
       sequence: 3,
       eventType: "request.retry_scheduled",
-      text: "【自动重试 2/5】reason",
-      metadata: { activityOrigin: "eco.auto_retry", retry: { attempt: 2, maxRetries: 5 } },
+      text: "API retry 2/5…",
+      metadata: { activityOrigin: "sdk.api_retry", retry: { attempt: 2, maxRetries: 5 } },
     }),
   ];
   const rows = buildProjectionDisplayTimelineItems(timeline, new Map());

@@ -10,7 +10,6 @@ import {
   compareToolActionLifecyclePriority,
   formatToolDisplayLabel,
   formatToolStatusPreview,
-  parseReconnectActivityMessage,
   resolveBashRunCardDisplay,
   resolveFileChangeCardDisplay,
   readBashApprovalMetadata,
@@ -805,11 +804,7 @@ function projectionRequestSpanId(item: ThreadRunProjectionTimelineItem): string 
 }
 
 function projectionReconnectDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
-  const origin = resolveThreadActivityOrigin(item);
-  if (isReconnectActivityOrigin(origin)) {
-    return "reconnect";
-  }
-  return parseReconnectActivityMessage(item.text.trim()) ? "reconnect" : undefined;
+  return isReconnectActivityOrigin(resolveThreadActivityOrigin(item)) ? "reconnect" : undefined;
 }
 
 function projectionUpstreamErrorDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {

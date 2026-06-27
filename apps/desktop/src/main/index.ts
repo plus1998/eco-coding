@@ -326,7 +326,6 @@ import {
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import {
   formatUserFacingRequestError,
-  REQUEST_AUTO_RETRY_INTERVAL_MS,
   type RequestAttemptResult,
 } from "./request-retry";
 import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
@@ -376,7 +375,7 @@ import {
 } from "./plan-approval-bridge";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
 import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
-import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
+import { runThreadRequestWithLifecycle } from "./thread-run-attempt";
 import { resolveOrphanedThreadRecoveryAction } from "./thread-orphan-recovery";
 import {
   type FinalizeThreadRunCleanupInput,
@@ -1135,18 +1134,8 @@ function resolveRuntimeConfigForThreadId(
   );
 }
 
-function resolveRoleRoutesForThread(
-  threadId: string,
-  agentProfileIdOverride?: string,
-): RuntimeRoleRouteConfig[] {
+function resolveRoleRoutesForThread(threadId: string): RuntimeRoleRouteConfig[] {
   const settings = getModelSettingsSnapshot();
-  if (agentProfileIdOverride) {
-    const profile = getAgentProfileById(settings, agentProfileIdOverride);
-    if (!profile) {
-      throw new Error(`找不到 Agent Profile：${agentProfileIdOverride}`);
-    }
-    return resolveCandidateModelDefaults(runtimeRoleRoutesFromAgentProfile(profile));
-  }
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
     throw new Error("Thread was not found.");
@@ -2910,7 +2899,7 @@ function captureThreadPlanReady(input: {
   return result.planCaptured;
 }
 
-const THREAD_INTERRUPTED_CONTINUE_HINT = "可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
+const THREAD_INTERRUPTED_CONTINUE_HINT = "可在下方继续对话，或切换配置后重新发送。";
 
 function markThreadInterrupted(threadId: string, reason: string): void {
   const summary = formatUserFacingRequestError(reason);
@@ -2946,37 +2935,23 @@ function threadHasResumableCheckpoint(
   return activityLines.some(
     (line) =>
       line.role === "system" &&
-      (line.message.includes("已停止") ||
-        line.message.includes("检查点") ||
-        line.message.includes("自动重试") ||
-        line.message.includes("上游不可用")),
+      (line.message.includes("已停止") || line.message.includes("检查点")),
   );
 }
 
-function runThreadRequestWithAutoRetry(
+function runThreadRequestOnce(
   threadId: string,
   phase: RunAttemptPhase,
   signal: AbortSignal | undefined,
   runOnce: () => Promise<RequestAttemptResult>,
 ): Promise<RequestAttemptResult> {
-  return runThreadRequestWithLifecycleAutoRetry({
+  return runThreadRequestWithLifecycle({
     threadId,
     phase,
     runOnce,
     lifecycle: agentLifecycle,
     settlements: usageLedgerCoordinator,
     ...(signal && { signal }),
-    onRetryScheduled: (retryIndex, maxRetries, reason) => {
-      const short = reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
-      const message = `【自动重试 ${retryIndex}/${maxRetries}】${short}`;
-      emitThreadEvent(threadId, "thread.auto_retry", message, "system", false, {
-        metadata: {
-          activityOrigin: "eco.auto_retry",
-          retry: { attempt: retryIndex, maxRetries },
-        },
-      });
-      updateThread(threadId, { status: "running", message });
-    },
   });
 }
 
@@ -3206,7 +3181,7 @@ async function runAskThread(
   resetSubagentContextWindows(thread.id);
 
   try {
-    const outcome = await runThreadRequestWithAutoRetry(
+    const outcome = await runThreadRequestOnce(
       thread.id,
       "ask",
       controller.signal,
@@ -3326,7 +3301,7 @@ async function runPlanThread(
     const effectiveCwd = worktreePath?.trim() || resolvedCwd;
     activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
 
-    const outcome = await runThreadRequestWithAutoRetry(
+    const outcome = await runThreadRequestOnce(
       thread.id,
       "planning",
       controller.signal,
@@ -3510,7 +3485,7 @@ async function runCodingThreadAutonomous(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const runOutcome = await runThreadRequestWithAutoRetry(
+    const runOutcome = await runThreadRequestOnce(
       thread.id,
       "execution",
       controller.signal,
@@ -3688,7 +3663,7 @@ async function runCodingThreadExecution(
     conversationStore.clearPendingPlan(threadId);
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
-    const executionOutcome = await runThreadRequestWithAutoRetry(
+    const executionOutcome = await runThreadRequestOnce(
       threadId,
       "execution",
       controller.signal,
@@ -3947,13 +3922,8 @@ function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
   if (typeof payload === "object" && payload !== null && "threadId" in payload) {
     const raw = payload as ThreadRetryRequest;
     if (typeof raw.threadId === "string" && raw.threadId.trim()) {
-      const agentProfileId =
-        (typeof raw.agentProfileId === "string" && raw.agentProfileId.trim()) ||
-        (typeof raw.routeProfileId === "string" && raw.routeProfileId.trim()) ||
-        undefined;
       return {
         threadId: raw.threadId.trim(),
-        ...(agentProfileId ? { agentProfileId } : {}),
       };
     }
   }
@@ -4118,16 +4088,11 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
     throw new Error("对话正在运行中。");
   }
 
-  const settings = getModelSettingsSnapshot();
-  const routesOverride = resolveRoleRoutesForThread(threadId, request.agentProfileId);
+  const routesOverride = resolveRoleRoutesForThread(threadId);
 
   noteSdkSessionRouteChange(threadId, routesOverride);
 
-  const runtimeConfig = resolveRuntimeConfigForThreadId(
-    threadId,
-    routesOverride,
-    request.agentProfileId ? { requireCompleteCodingRoutes: true } : undefined,
-  );
+  const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, routesOverride);
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
   }
@@ -4138,18 +4103,9 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
     throw new Error("没有可重试的需求内容。");
   }
 
-  const retryLabel = request.agentProfileId
-    ? (getAgentProfileById(settings, request.agentProfileId)?.name ?? "备用 Profile")
-    : undefined;
-
   if (thread.status === "awaiting_plan" && pending) {
     updateThread(threadId, { status: "running", message: "正在重试执行…" });
-    emitThreadEvent(
-      threadId,
-      "thread.retry",
-      retryLabel ? `正在使用「${retryLabel}」重试执行计划…` : "正在重试执行计划…",
-      "system",
-    );
+    emitThreadEvent(threadId, "thread.retry", "正在重试执行计划…", "system");
     void runCodingThreadExecution(threadId, runtimeConfig, routesOverride ? { routesOverride } : undefined);
     return { thread: conversationStore.getThread(threadId) ?? thread };
   }
@@ -4173,12 +4129,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
     status: "running",
     message: runningMessage,
   });
-  emitThreadEvent(
-    threadId,
-    "thread.retry",
-    retryLabel ? `正在使用「${retryLabel}」${runningMessage}` : runningMessage,
-    "system",
-  );
+  emitThreadEvent(threadId, "thread.retry", runningMessage, "system");
   emitTodoList(threadId, []);
 
   const updated: ThreadSummary = {
@@ -5198,7 +5149,7 @@ async function runThreadContinuation(
 
     const resumeOptsForContinuation = resumeOverride ?? resolveResumeOptions(thread.id, cwd);
 
-    const outcome = await runThreadRequestWithAutoRetry(
+    const outcome = await runThreadRequestOnce(
       thread.id,
       runAttemptPhaseFromThreadMode(mode),
       controller.signal,

@@ -78,7 +78,6 @@ export function buildThreadRunEventFromLiveEvent(
   }
   if (
     input.liveType.startsWith("thread.") &&
-    input.liveType !== "thread.auto_retry" &&
     input.liveType !== "thread.retry" &&
     input.liveType !== "thread.api_error" &&
     input.liveType !== "thread.user_prompt" &&
@@ -207,9 +206,6 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
       return "tool.started";
     }
     return "thread.status";
-  }
-  if (input.liveType === "thread.auto_retry" || input.liveType === "thread.retry") {
-    return "request.retry_scheduled";
   }
   if (input.liveType.startsWith("thread.")) {
     return "thread.status";

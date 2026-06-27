@@ -1,7 +1,4 @@
-import {
-  runWithRequestAutoRetry,
-  type RequestAttemptResult,
-} from "./request-retry";
+import type { RequestAttemptResult } from "./request-retry";
 import type { RunAttemptPhase, RunAttemptRecord, RunAttemptStatus } from "./usage-ledger";
 
 export interface ThreadRunAttemptLifecycle {
@@ -21,26 +18,23 @@ export interface ThreadRunAttemptSettlementQueue {
   ): void;
 }
 
-export interface RunThreadRequestWithLifecycleAutoRetryInput {
+export interface RunThreadRequestWithLifecycleInput {
   threadId: string;
   phase: RunAttemptPhase;
   signal?: AbortSignal;
   runOnce: () => Promise<RequestAttemptResult>;
   lifecycle: ThreadRunAttemptLifecycle;
   settlements: ThreadRunAttemptSettlementQueue;
-  retryIntervalMs?: number;
-  onRetryScheduled?: (retryIndex: number, maxRetries: number, reason: string) => void;
 }
 
-export function runThreadRequestWithLifecycleAutoRetry(
-  input: RunThreadRequestWithLifecycleAutoRetryInput,
+export function runThreadRequestWithLifecycle(
+  input: RunThreadRequestWithLifecycleInput,
 ): Promise<RequestAttemptResult> {
-  let retryIndex = 0;
-  const wrappedRunOnce = async (): Promise<RequestAttemptResult> => {
+  return (async () => {
     const attempt = input.lifecycle.startRunAttempt({
       threadId: input.threadId,
       phase: input.phase,
-      retryIndex,
+      retryIndex: 0,
     });
     try {
       const result = await input.runOnce();
@@ -53,16 +47,8 @@ export function runThreadRequestWithLifecycleAutoRetry(
       input.settlements.queueInterruptedStreamSettlement(input.threadId, attempt.attemptId, status);
       input.lifecycle.finishRunAttempt(input.threadId, status);
       throw error;
-    } finally {
-      retryIndex += 1;
     }
-  };
-
-  return runWithRequestAutoRetry(wrappedRunOnce, {
-    ...(input.signal && { signal: input.signal }),
-    ...(input.retryIntervalMs !== undefined && { retryIntervalMs: input.retryIntervalMs }),
-    ...(input.onRetryScheduled && { onRetryScheduled: input.onRetryScheduled }),
-  });
+  })();
 }
 
 export function runAttemptStatusFromResult(
@@ -73,3 +59,6 @@ export function runAttemptStatusFromResult(
   }
   return result.aborted ? "cancelled" : "failed";
 }
+
+/** @deprecated Use runThreadRequestWithLifecycle */
+export const runThreadRequestWithLifecycleAutoRetry = runThreadRequestWithLifecycle;

@@ -881,10 +881,6 @@ export interface ThreadFollowUpMutationResult extends ThreadFollowUpListResult {
 
 export interface ThreadRetryRequest {
   threadId: string;
-  /** One-off retry with another Agent Profile. */
-  agentProfileId?: string;
-  /** @deprecated Use agentProfileId. */
-  routeProfileId?: string;
 }
 
 export interface ThreadRetryResult {

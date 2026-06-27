@@ -670,8 +670,12 @@ void main() {
             sequence: 2,
             eventType: 'request.retry_scheduled',
             scope: 'main',
-            text: '【自动重试 2/5】upstream error',
+            text: 'API retry 2/5…',
             at: '2026-01-01T00:00:00.001Z',
+            metadata: {
+              'activityOrigin': 'sdk.api_retry',
+              'retry': {'attempt': 2, 'maxRetries': 5},
+            },
           ),
         ],
       ),
@@ -681,7 +685,7 @@ void main() {
         feed.where((entry) => entry.reconnecting).toList(growable: false);
     expect(reconnectEntries, hasLength(1));
     expect(reconnectEntries.first.text, '重连 2/5');
-    expect(reconnectEntries.first.detail, 'upstream error');
+    expect(reconnectEntries.first.detail, isNull);
   });
 
   test('buildActivityFeed treats recorded user prompts as right-aligned user bubbles', () {

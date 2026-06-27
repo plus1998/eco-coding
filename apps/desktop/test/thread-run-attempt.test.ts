@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   runAttemptStatusFromResult,
-  runThreadRequestWithLifecycleAutoRetry,
+  runThreadRequestWithLifecycle,
   type ThreadRunAttemptLifecycle,
   type ThreadRunAttemptSettlementQueue,
 } from "../src/main/thread-run-attempt";
@@ -32,16 +32,15 @@ function createHarness() {
   return { starts, finishes, settlements, lifecycle, settlementQueue };
 }
 
-test("runThreadRequestWithLifecycleAutoRetry settles completed attempts", async () => {
+test("runThreadRequestWithLifecycle settles completed attempts", async () => {
   const harness = createHarness();
 
-  const result = await runThreadRequestWithLifecycleAutoRetry({
+  const result = await runThreadRequestWithLifecycle({
     threadId: "thr_run",
     phase: "execution",
     runOnce: async () => ({ ok: true }),
     lifecycle: harness.lifecycle,
     settlements: harness.settlementQueue,
-    retryIntervalMs: 0,
   });
 
   expect(result).toEqual({ ok: true });
@@ -52,47 +51,33 @@ test("runThreadRequestWithLifecycleAutoRetry settles completed attempts", async 
   ]);
 });
 
-test("runThreadRequestWithLifecycleAutoRetry increments retry index across retries", async () => {
+test("runThreadRequestWithLifecycle does not rerun failed attempts", async () => {
   const harness = createHarness();
-  const scheduled: Array<{ retryIndex: number; maxRetries: number; reason: string }> = [];
   let calls = 0;
 
-  const result = await runThreadRequestWithLifecycleAutoRetry({
+  const result = await runThreadRequestWithLifecycle({
     threadId: "thr_retry",
     phase: "planning",
     runOnce: async () => {
       calls += 1;
-      if (calls === 1) {
-        return { ok: false, reason: "API Error: bad gateway" };
-      }
-      return { ok: true };
+      return { ok: false, reason: "API Error: bad gateway" };
     },
     lifecycle: harness.lifecycle,
     settlements: harness.settlementQueue,
-    retryIntervalMs: 0,
-    onRetryScheduled: (retryIndex, maxRetries, reason) => {
-      scheduled.push({ retryIndex, maxRetries, reason });
-    },
   });
 
-  expect(result).toEqual({ ok: true });
-  expect(harness.starts.map((start) => start.retryIndex)).toEqual([0, 1]);
-  expect(harness.finishes.map((finish) => finish.status)).toEqual(["failed", "completed"]);
-  expect(harness.settlements.map((settlement) => settlement.status)).toEqual([
-    "failed",
-    "completed",
-  ]);
-  expect(scheduled).toEqual([
-    { retryIndex: 1, maxRetries: 2, reason: "API Error: bad gateway" },
-  ]);
+  expect(result).toEqual({ ok: false, reason: "API Error: bad gateway" });
+  expect(calls).toBe(1);
+  expect(harness.starts.map((start) => start.retryIndex)).toEqual([0]);
+  expect(harness.finishes.map((finish) => finish.status)).toEqual(["failed"]);
 });
 
-test("runThreadRequestWithLifecycleAutoRetry marks thrown aborted attempts as cancelled", async () => {
+test("runThreadRequestWithLifecycle marks thrown aborted attempts as cancelled", async () => {
   const harness = createHarness();
   const controller = new AbortController();
 
   await expect(
-    runThreadRequestWithLifecycleAutoRetry({
+    runThreadRequestWithLifecycle({
       threadId: "thr_cancel",
       phase: "ask",
       signal: controller.signal,
@@ -102,7 +87,6 @@ test("runThreadRequestWithLifecycleAutoRetry marks thrown aborted attempts as ca
       },
       lifecycle: harness.lifecycle,
       settlements: harness.settlementQueue,
-      retryIntervalMs: 0,
     }),
   ).rejects.toThrow("cancelled by user");
 

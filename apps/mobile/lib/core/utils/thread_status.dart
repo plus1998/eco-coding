@@ -44,7 +44,6 @@ String threadStatusFromLiveEvent(String eventType, String fallback) {
     case 'thread.started':
     case 'thread.queued':
     case 'thread.retry':
-    case 'thread.auto_retry':
       return 'running';
     default:
       return fallback;

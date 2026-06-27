@@ -11,9 +11,6 @@ test("resolveThreadActivityOrigin maps legacy liveType values", () => {
   expect(resolveThreadActivityOrigin({ metadata: { liveType: "thread.api_error" } })).toBe(
     "proxy.connection_error",
   );
-  expect(resolveThreadActivityOrigin({ metadata: { liveType: "thread.auto_retry" } })).toBe(
-    "eco.auto_retry",
-  );
   expect(resolveThreadActivityOrigin({ metadata: { liveType: "thread.blocked" } })).toBe(
     "eco.thread_blocked",
   );

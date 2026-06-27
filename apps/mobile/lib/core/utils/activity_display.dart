@@ -98,7 +98,6 @@ final _progressPatterns = <({RegExp pattern, String verb})>[
   (pattern: RegExp(r'^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$', caseSensitive: false), verb: '运行命令'),
 ];
 
-final _autoRetryPattern = RegExp(r'^【自动重试\s*(\d+)/(\d+)】\s*([\s\S]*)$');
 final _connectionFailedPattern = RegExp(r'^【连接失败】\s*([\s\S]*)$');
 
 enum ActivityActionIcon { search, file, edit, terminal, agent }
@@ -881,14 +880,6 @@ ActivityActionIcon iconForActivityMessage(String message) {
 
 ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
   final trimmed = message.trim();
-  final autoRetry = _autoRetryPattern.firstMatch(trimmed);
-  if (autoRetry != null) {
-    final detail = autoRetry.group(3)?.trim();
-    return ParsedReconnectActivity(
-      summary: '重连 ${autoRetry.group(1)}/${autoRetry.group(2)}',
-      detail: detail == null || detail.isEmpty ? null : detail,
-    );
-  }
 
   final connectionFailed = _connectionFailedPattern.firstMatch(trimmed);
   if (connectionFailed != null) {
@@ -909,6 +900,36 @@ ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
   }
 
   return null;
+}
+
+ParsedReconnectActivity? resolveReconnectPhaseDisplay({
+  required String text,
+  Map<String, dynamic>? metadata,
+  int? apiErrorStatusCode,
+}) {
+  final origin = metadata?['activityOrigin'];
+  if (origin == 'sdk.api_retry') {
+    final retry = metadata?['retry'];
+    if (retry is Map) {
+      final attempt = retry['attempt'];
+      final maxRetries = retry['maxRetries'];
+      if (attempt is num && maxRetries is num) {
+        return ParsedReconnectActivity(
+          summary: '重连 ${attempt.toInt()}/${maxRetries.toInt()}',
+        );
+      }
+    }
+  }
+  if (origin == 'proxy.connection_error' && apiErrorStatusCode != null) {
+    return ParsedReconnectActivity(
+      summary: '连接失败 · HTTP $apiErrorStatusCode',
+    );
+  }
+  return parseReconnectActivityMessage(text);
+}
+
+bool isReconnectActivityOrigin(String? origin) {
+  return origin == 'sdk.api_retry' || origin == 'proxy.connection_error';
 }
 
 bool isReconnectActivityMessage(String message) {

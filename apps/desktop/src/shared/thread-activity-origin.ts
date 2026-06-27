@@ -3,7 +3,6 @@ import { parseReconnectActivityMessage, type ParsedReconnectActivity } from "./a
 /** Who produced an activity/run-event line — used for feed dedupe, never inferred from message text in UI. */
 export type ThreadActivityOrigin =
   | "proxy.connection_error"
-  | "eco.auto_retry"
   | "eco.thread_blocked"
   | "eco.thread_failed"
   | "sdk.api_retry"
@@ -17,7 +16,6 @@ export interface ThreadActivityRetryMetadata {
 
 const ACTIVITY_ORIGIN_VALUES = new Set<string>([
   "proxy.connection_error",
-  "eco.auto_retry",
   "eco.thread_blocked",
   "eco.thread_failed",
   "sdk.api_retry",
@@ -51,9 +49,6 @@ export function resolveThreadActivityOrigin(input: {
   if (liveType === "thread.api_error") {
     return "proxy.connection_error";
   }
-  if (liveType === "thread.auto_retry" || liveType === "thread.retry") {
-    return "eco.auto_retry";
-  }
   if (liveType === "thread.blocked") {
     return "eco.thread_blocked";
   }
@@ -83,11 +78,7 @@ export function readThreadActivityRetryMetadata(
 }
 
 export function isReconnectActivityOrigin(origin: ThreadActivityOrigin | undefined): boolean {
-  return (
-    origin === "proxy.connection_error" ||
-    origin === "eco.auto_retry" ||
-    origin === "sdk.api_retry"
-  );
+  return origin === "proxy.connection_error" || origin === "sdk.api_retry";
 }
 
 export function isRequestFailureFeedNoiseOrigin(origin: ThreadActivityOrigin | undefined): boolean {
@@ -121,7 +112,7 @@ export function resolveReconnectPhaseDisplay(input: {
     }
     return parseReconnectActivityMessage(input.text.trim());
   }
-  if (origin === "eco.auto_retry" || origin === "sdk.api_retry") {
+  if (origin === "sdk.api_retry") {
     const retry = readThreadActivityRetryMetadata(input.metadata);
     if (retry) {
       return {

@@ -29,15 +29,9 @@ export function isReconnectActivityMessage(message: string): boolean {
   return parseReconnectActivityMessage(message) !== null;
 }
 
-/** Parse Eco-constructed reconnect status messages (not SDK/Proxy raw text). */
+/** Parse proxy connection failure messages for legacy persisted rows. */
 export function parseReconnectActivityMessage(message: string): ParsedReconnectActivity | null {
   const trimmed = message.trim();
-  const autoRetry = trimmed.match(/^【自动重试\s*(\d+)\/(\d+)】/);
-  if (autoRetry?.[1] && autoRetry[2]) {
-    return {
-      summary: `重连 ${autoRetry[1]}/${autoRetry[2]}`,
-    };
-  }
 
   const connectionFailed = trimmed.match(/^【连接失败】\s*([\s\S]*)$/);
   if (connectionFailed) {
@@ -59,13 +53,6 @@ export function parseReconnectActivityMessage(message: string): ParsedReconnectA
     return {
       summary: "连接失败",
       failed: true,
-    };
-  }
-
-  const legacyRetry = trimmed.match(/^上游不可用，正在重试\s*(\d+)\/(\d+)/);
-  if (legacyRetry?.[1] && legacyRetry[2]) {
-    return {
-      summary: `重连 ${legacyRetry[1]}/${legacyRetry[2]}`,
     };
   }
 

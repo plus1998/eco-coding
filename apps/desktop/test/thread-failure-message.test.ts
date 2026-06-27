@@ -4,9 +4,7 @@ import {
   buildPlanExecutionFailureMessage,
   extractPlanFailureMessage,
   planExecutionFailurePrefix,
-  quotaRetryBannerHint,
   resolveRetryBannerDetail,
-  resolveRetryBannerHint,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
   stripThreadInterruptedSuffix,
@@ -52,7 +50,7 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores context and usage telemetry
 
 test("resolveRetryBannerDetail keeps blocked reason after context refresh message would have applied", () => {
   const blocked =
-    "规划阶段未完成：模型未通过 ExitPlanMode 提交计划。可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
+    "规划阶段未完成：模型未通过 ExitPlanMode 提交计划。可在下方继续对话，或切换配置后重新发送。";
   expect(resolveRetryBannerDetail(blocked, "blocked")).toContain("规划阶段未完成");
   expect(resolveRetryBannerDetail("上下文已更新", "blocked")).toBeUndefined();
 });
@@ -78,14 +76,8 @@ test("resolveRetryBannerDetail returns undefined when blocked message is operati
 
 test("stripThreadInterruptedSuffix removes continue hint suffix", () => {
   expect(
-    stripThreadInterruptedSuffix("API error 可在下方继续对话、切换模型后重试，或点击「重试此次请求」。"),
+    stripThreadInterruptedSuffix("API error 可在下方继续对话，或切换配置后重新发送。"),
   ).toBe("API error");
-});
-
-test("resolveRetryBannerHint only adds guidance for quota failures", () => {
-  expect(resolveRetryBannerHint("API Error: 429 rate limit exceeded")).toBe(quotaRetryBannerHint);
-  expect(resolveRetryBannerHint("fetch failed")).toBeUndefined();
-  expect(resolveRetryBannerHint(undefined)).toBeUndefined();
 });
 
 test("formatUserFacingRequestError translates structured upstream 502 failures", () => {

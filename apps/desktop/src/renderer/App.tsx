@@ -113,7 +113,6 @@ import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
   extractPlanFailureMessage,
   resolveRetryBannerDetail,
-  resolveRetryBannerHint,
   resolveThreadMessageFromLiveEvent,
   retryBannerNoDetailHint,
   shouldUpdateThreadSummaryFromLiveEvent,
@@ -1732,19 +1731,6 @@ function App() {
   const retryBannerDetail = activeThread
     ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
     : undefined;
-  const retryBannerHint = retryBannerDetail ? resolveRetryBannerHint(retryBannerDetail) : undefined;
-  const alternateAgentProfiles = useMemo(
-    () =>
-      settings.orchestrationProfiles.filter(
-        (profile) => profile.id !== composerRuntimeConfig?.agentProfileId,
-      ),
-    [settings.orchestrationProfiles, composerRuntimeConfig?.agentProfileId],
-  );
-  const [retryAgentProfileId, setRetryAgentProfileId] = useState<string>("");
-
-  useEffect(() => {
-    setRetryAgentProfileId("");
-  }, [activeThread?.id]);
 
   useEffect(() => {
     const prevKey = prevComposerContextKeyRef.current;
@@ -2549,7 +2535,7 @@ function App() {
     }
   }
 
-  async function retryActiveThread(agentProfileId?: string) {
+  async function retryActiveThread() {
     if (!activeThread || !window.eco) {
       return;
     }
@@ -2558,7 +2544,6 @@ function App() {
     try {
       const result = await window.eco.retryThread({
         threadId: activeThread.id,
-        ...(agentProfileId ? { agentProfileId } : {}),
       });
       if (result.thread) {
         setThreads((current) =>
@@ -4119,57 +4104,20 @@ function App() {
                       ) : (
                         <p className="thread-retry-banner-hint">{retryBannerNoDetailHint}</p>
                       )}
-                      {retryBannerHint ? <p className="thread-retry-banner-hint">{retryBannerHint}</p> : null}
                     </div>
                     <div className="thread-retry-banner-actions">
-                      {alternateAgentProfiles.length > 0 ? (
-                        <label className="thread-retry-banner-route-picker">
-                          <span>智能体配置</span>
-                          <select
-                            className="mcp-field-input"
-                            value={retryAgentProfileId}
-                            disabled={retryBusy}
-                            onChange={(event) => setRetryAgentProfileId(event.target.value)}
-                          >
-                            <option value="">请选择…</option>
-                            {alternateAgentProfiles.map((profile) => (
-                              <option key={profile.id} value={profile.id}>
-                                {profile.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : null}
-                      <div className="thread-retry-banner-buttons">
-                        {alternateAgentProfiles.length > 0 && retryAgentProfileId ? (
-                          <button
-                            type="button"
-                            className="plan-button primary"
-                            onClick={() => void retryActiveThread(retryAgentProfileId)}
-                            disabled={retryBusy}
-                          >
-                            {retryBusy ? "正在重试…" : "用所选 Profile 重试"}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className={
-                            alternateAgentProfiles.length > 0 && retryAgentProfileId
-                              ? "plan-button"
-                              : "plan-button primary"
-                          }
-                          onClick={() => void retryActiveThread()}
-                          disabled={retryBusy}
-                        >
-                          {retryBusy
-                            ? "正在重试…"
-                            : activeThread?.status === "awaiting_plan"
-                              ? "重试执行"
-                              : alternateAgentProfiles.length > 0
-                                ? "仍用当前 Profile 重试"
-                                : "重试此次请求"}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="plan-button primary"
+                        onClick={() => void retryActiveThread()}
+                        disabled={retryBusy}
+                      >
+                        {retryBusy
+                          ? "正在重试…"
+                          : activeThread?.status === "awaiting_plan"
+                            ? "重试执行"
+                            : "重试此次请求"}
+                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -4616,8 +4564,7 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
     type === "thread.running" ||
     type === "thread.started" ||
     type === "thread.queued" ||
-    type === "thread.retry" ||
-    type === "thread.auto_retry"
+    type === "thread.retry"
   ) {
     return "running";
   }

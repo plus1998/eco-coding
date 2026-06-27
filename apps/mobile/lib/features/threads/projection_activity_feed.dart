@@ -488,7 +488,11 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   String? agentRole,
 }) {
   final text = item.text.trim();
-  final reconnect = parseReconnectActivityMessage(text);
+  final reconnect = resolveReconnectPhaseDisplay(
+    text: text,
+    metadata: item.metadata,
+    apiErrorStatusCode: _readProjectionApiError(item)?.statusCode,
+  );
   if (reconnect != null) {
     return ActivityFeedEntry(
       id: item.id,
@@ -783,6 +787,14 @@ String? _projectionToolDisplayKey(ThreadRunProjectionTimelineItem item) {
 }
 
 String? _projectionReconnectDisplayKey(ThreadRunProjectionTimelineItem item) {
+  final origin = item.metadata?['activityOrigin'];
+  if (origin is String && isReconnectActivityOrigin(origin)) {
+    return 'reconnect';
+  }
+  final liveType = _projectionLiveType(item);
+  if (liveType == 'request.retry_scheduled') {
+    return 'reconnect';
+  }
   return isReconnectActivityMessage(item.text.trim()) ? 'reconnect' : null;
 }
 
