@@ -63,7 +63,6 @@ export const IPC_CHANNELS = {
   threadFollowUpUpdate: "thread:follow-up-update",
   threadFollowUpList: "thread:follow-up-list",
   threadFollowUpCancel: "thread:follow-up-cancel",
-  threadRetry: "thread:retry",
   threadGetPendingPlan: "thread:get-pending-plan",
   threadGetUsageSnapshot: "thread:get-usage-snapshot",
   threadUsageLedgerEventsList: "thread:usage-ledger-events-list",
@@ -877,14 +876,6 @@ export interface ThreadFollowUpListResult {
 
 export interface ThreadFollowUpMutationResult extends ThreadFollowUpListResult {
   followUp: ThreadPendingFollowUp;
-}
-
-export interface ThreadRetryRequest {
-  threadId: string;
-}
-
-export interface ThreadRetryResult {
-  thread: ThreadSummary;
 }
 
 export interface ThreadDeleteResult {

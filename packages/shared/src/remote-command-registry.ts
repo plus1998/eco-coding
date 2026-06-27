@@ -35,7 +35,6 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   ]),
   command("thread:continue", "Continue thread", "execute", RPC_INVOKE, [objectArg(["threadId", "prompt"])]),
   command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
-  command("thread:retry", "Retry thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:activity-list", "List thread activity", "read", RPC_INVOKE, [stringArg()]),
   command("thread:get-usage-snapshot", "Get thread usage snapshot", "read", RPC_INVOKE, [
     stringArg(),

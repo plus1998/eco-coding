@@ -129,8 +129,6 @@ import {
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
   type PlanApprovalRequest,
-  type ThreadRetryRequest,
-  type ThreadRetryResult,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
@@ -186,7 +184,6 @@ import {
 import {
   buildPlanExecutionFailureMessage,
   planExecutionFailurePrefix,
-  stripThreadInterruptedSuffix,
 } from "../shared/thread-failure-message";
 import {
   buildThreadFollowUpDisplayPrompt,
@@ -2692,11 +2689,6 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(followUp);
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadRetry, async (payload: unknown) => {
-    const request = parseThreadRetryRequest(payload);
-    return retryThread(request);
-  });
-
   registerDesktopCommand(IPC_CHANNELS.threadCancel, async (payload: unknown) => {
     const request = parseThreadCancelRequest(payload);
     if (!request) {
@@ -2899,15 +2891,13 @@ function captureThreadPlanReady(input: {
   return result.planCaptured;
 }
 
-const THREAD_INTERRUPTED_CONTINUE_HINT = "可在下方继续对话，或切换配置后重新发送。";
-
 function markThreadInterrupted(threadId: string, reason: string): void {
   const summary = formatUserFacingRequestError(reason);
   const truncated = summary.length > 240 ? `${summary.slice(0, 237)}…` : summary;
   process.stderr.write(`[eco] thread blocked (${threadId}): ${truncated}\n`);
   patchThreadSummary(threadId, {
     status: "blocked",
-    message: `${truncated} ${THREAD_INTERRUPTED_CONTINUE_HINT}`,
+    message: truncated,
   });
   emitThreadEvent(threadId, "thread.blocked", truncated, "system", false, {
     metadata: { activityOrigin: "eco.thread_blocked" },
@@ -3915,21 +3905,6 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   } satisfies ThreadContinueResult;
 }
 
-function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
-  if (typeof payload === "string" && payload.trim()) {
-    return { threadId: payload.trim() };
-  }
-  if (typeof payload === "object" && payload !== null && "threadId" in payload) {
-    const raw = payload as ThreadRetryRequest;
-    if (typeof raw.threadId === "string" && raw.threadId.trim()) {
-      return {
-        threadId: raw.threadId.trim(),
-      };
-    }
-  }
-  throw new Error("Thread id is required.");
-}
-
 function parseThreadFollowUpEnqueueRequest(payload: unknown): ThreadFollowUpEnqueueRequest {
   if (!isRecord(payload)) {
     throw new Error("Invalid follow-up payload.");
@@ -4073,112 +4048,6 @@ function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly Runtim
 
 function recordThreadRouteFingerprint(threadId: string, routes: readonly RuntimeRoute[]): void {
   conversationStore.saveRouteFingerprint(threadId, computeRouteFingerprint(roleRoutesFromRuntime(routes)));
-}
-
-async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResult> {
-  const threadId = request.threadId;
-  const thread = conversationStore.getThread(threadId);
-  if (!thread) {
-    throw new Error("Thread was not found.");
-  }
-  if (activeRunRuntimeState.hasRun(threadId)) {
-    throw new Error("请等待当前运行结束后再重试。");
-  }
-  if (thread.status === "running" || thread.status === "queued") {
-    throw new Error("对话正在运行中。");
-  }
-
-  const routesOverride = resolveRoleRoutesForThread(threadId);
-
-  noteSdkSessionRouteChange(threadId, routesOverride);
-
-  const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, routesOverride);
-  if (!runtimeConfig.ok) {
-    throw new Error(runtimeConfig.reason);
-  }
-
-  const pending = conversationStore.getPendingPlan(threadId);
-  const prompt = thread.prompt.trim();
-  if (!prompt) {
-    throw new Error("没有可重试的需求内容。");
-  }
-
-  if (thread.status === "awaiting_plan" && pending) {
-    updateThread(threadId, { status: "running", message: "正在重试执行…" });
-    emitThreadEvent(threadId, "thread.retry", "正在重试执行计划…", "system");
-    void runCodingThreadExecution(threadId, runtimeConfig, routesOverride ? { routesOverride } : undefined);
-    return { thread: conversationStore.getThread(threadId) ?? thread };
-  }
-
-  if (thread.status !== "failed" && thread.status !== "blocked") {
-    throw new Error("当前状态不支持重试，请发送新消息继续。");
-  }
-
-  const workspace = await ensureWorkspace(thread.workspacePath);
-  const sessionMode = threadSessionMode(threadId);
-  const routeAsk = sessionMode === "ask";
-  const routePlan = sessionMode === "plan";
-  const activityLines = conversationStore.listActivityLines(threadId);
-  conversationStore.clearCoderTodos(threadId);
-  const runningMessage = routeAsk
-    ? "正在重试回答…"
-    : routePlan
-      ? "正在重试分析并制定计划…"
-      : "正在重试交给主代理处理…";
-  updateThread(threadId, {
-    status: "running",
-    message: runningMessage,
-  });
-  emitThreadEvent(threadId, "thread.retry", runningMessage, "system");
-  emitTodoList(threadId, []);
-
-  const updated: ThreadSummary = {
-    ...thread,
-    status: "running",
-    message: runningMessage,
-  };
-  const sdkSession = conversationStore.getSdkSession(threadId);
-  const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
-  const existingWorktreePlan = createSessionPlan(workspace.path, threadId);
-  const resume = resolveResumeOptions(threadId, cwd);
-  const agentPrompt = resume
-    ? prompt
-    : buildAgentPromptWithContext(prompt, "请继续完成未完成的任务。", activityLines);
-  if (routeAsk) {
-    void runAskThread(
-      updated,
-      workspace,
-      runtimeConfig,
-      agentPrompt,
-      cwd !== workspace.path ? cwd : undefined,
-      resume,
-      undefined,
-      routesOverride,
-    );
-  } else if (routePlan) {
-    void runPlanThread(
-      updated,
-      workspace,
-      runtimeConfig,
-      agentPrompt,
-      cwd !== workspace.path ? cwd : undefined,
-      resume,
-      undefined,
-      routesOverride,
-    );
-  } else {
-    void runCodingThreadAutonomous(
-      updated,
-      workspace,
-      runtimeConfig,
-      agentPrompt,
-      existingWorktreePlan,
-      resume,
-      undefined,
-      routesOverride,
-    );
-  }
-  return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? updated) };
 }
 
 /** After a crash, SQLite may still say running while no runtime run is active. */
@@ -6038,14 +5907,10 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
   const pendingPlan = patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
-  const activityMessage =
-    patch.status === "blocked" || patch.status === "failed"
-      ? stripThreadInterruptedSuffix(message)
-      : message;
   emitThreadEvent(
     threadId,
     `thread.${patch.status}`,
-    activityMessage,
+    message,
     "system",
     false,
     pendingPlan ? { plan: buildThreadPlanLivePayload(pendingPlan) } : undefined,

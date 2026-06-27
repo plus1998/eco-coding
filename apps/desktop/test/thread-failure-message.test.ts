@@ -4,10 +4,8 @@ import {
   buildPlanExecutionFailureMessage,
   extractPlanFailureMessage,
   planExecutionFailurePrefix,
-  resolveRetryBannerDetail,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
-  stripThreadInterruptedSuffix,
 } from "../src/shared/thread-failure-message";
 
 test("resolveThreadMessageFromLiveEvent rebuilds execution failure message", () => {
@@ -46,38 +44,6 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores context and usage telemetry
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.context_updated")).toBe(false);
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.usage_updated")).toBe(false);
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.runtime_config_updated")).toBe(false);
-});
-
-test("resolveRetryBannerDetail keeps blocked reason after context refresh message would have applied", () => {
-  const blocked =
-    "规划阶段未完成：模型未通过 ExitPlanMode 提交计划。可在下方继续对话，或切换配置后重新发送。";
-  expect(resolveRetryBannerDetail(blocked, "blocked")).toContain("规划阶段未完成");
-  expect(resolveRetryBannerDetail("上下文已更新", "blocked")).toBeUndefined();
-});
-
-test("resolveRetryBannerDetail ignores operational cleanup message on failed thread", () => {
-  expect(resolveRetryBannerDetail("已清理隔离工作树。", "failed")).toBeUndefined();
-});
-
-test("resolveRetryBannerDetail keeps formatted upstream error", () => {
-  const detail = formatUserFacingRequestError("fetch failed");
-  expect(resolveRetryBannerDetail(detail, "failed")).toBe(detail);
-});
-
-test("resolveRetryBannerDetail surfaces route config errors for blocked threads", () => {
-  expect(
-    resolveRetryBannerDetail("Configure a planner route before starting a coding thread.", "blocked"),
-  ).toBe("Configure a planner route before starting a coding thread.");
-});
-
-test("resolveRetryBannerDetail returns undefined when blocked message is operational only", () => {
-  expect(resolveRetryBannerDetail("Local model router ready: http://127.0.0.1:1", "blocked")).toBeUndefined();
-});
-
-test("stripThreadInterruptedSuffix removes continue hint suffix", () => {
-  expect(
-    stripThreadInterruptedSuffix("API error 可在下方继续对话，或切换配置后重新发送。"),
-  ).toBe("API error");
 });
 
 test("formatUserFacingRequestError translates structured upstream 502 failures", () => {

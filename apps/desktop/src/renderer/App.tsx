@@ -16,7 +16,6 @@ import {
   PanelRight,
   Pencil,
   Plug,
-  RefreshCw,
   RotateCcw,
   Search,
   Settings2,
@@ -112,9 +111,7 @@ import {
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
   extractPlanFailureMessage,
-  resolveRetryBannerDetail,
   resolveThreadMessageFromLiveEvent,
-  retryBannerNoDetailHint,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
@@ -475,7 +472,6 @@ function App() {
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
-  const [retryBusy, setRetryBusy] = useState(false);
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
   const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
@@ -1728,9 +1724,6 @@ function App() {
   const showClarification = Boolean(pendingClarification);
 
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
-  const retryBannerDetail = activeThread
-    ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
-    : undefined;
 
   useEffect(() => {
     const prevKey = prevComposerContextKeyRef.current;
@@ -1760,22 +1753,6 @@ function App() {
     }
   }, [composerContextKey]);
 
-  const canRetryThread = Boolean(
-    activeThread &&
-      routesReady &&
-      !isStarting &&
-      !planActionBusy &&
-      !clarificationBusy &&
-      !bashApprovalBusy &&
-      !pendingClarification &&
-      !pendingBashApproval &&
-      !retryBusy &&
-      (activeThread.status === "failed" ||
-        activeThread.status === "blocked" ||
-        (activeThread.status === "awaiting_plan" ||
-          (activeThread.status === "running" && pendingPlan)) &&
-          Boolean(planFailureMessage))
-  );
   const canStopThread =
     activeThread?.status === "running" ||
     activeThread?.status === "queued" ||
@@ -2187,27 +2164,6 @@ function App() {
     return () => cancelAnimationFrame(frame);
   }, [activeThread?.id, scrollActivityFeedToEnd, showPlanApproval]);
 
-  useLayoutEffect(() => {
-    if (
-      !canRetryThread ||
-      showPlanApproval ||
-      !activeThread ||
-      (!planFailureMessage && activeThread.status !== "failed")
-    ) {
-      return;
-    }
-    scrollActivityFeedToEnd();
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd());
-    return () => cancelAnimationFrame(frame);
-  }, [
-    activeThread?.id,
-    activeThread?.status,
-    canRetryThread,
-    planFailureMessage,
-    scrollActivityFeedToEnd,
-    showPlanApproval,
-  ]);
-
   async function openWorkspace() {
     setError(undefined);
     if (!window.eco) {
@@ -2532,28 +2488,6 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setFollowUpEscalateBusyId(undefined);
-    }
-  }
-
-  async function retryActiveThread() {
-    if (!activeThread || !window.eco) {
-      return;
-    }
-    setError(undefined);
-    setRetryBusy(true);
-    try {
-      const result = await window.eco.retryThread({
-        threadId: activeThread.id,
-      });
-      if (result.thread) {
-        setThreads((current) =>
-          current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
-        );
-      }
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setRetryBusy(false);
     }
   }
 
@@ -4056,20 +3990,6 @@ function App() {
               {activeThread && (
                 <header className="activity-header">
                   <h2 title={activeThread.title}>{activeThread.title}</h2>
-                  <div className="activity-header-actions">
-                    {canRetryThread ? (
-                      <button
-                        type="button"
-                        className="activity-icon-button"
-                        onClick={() => void retryActiveThread()}
-                        disabled={retryBusy}
-                        title="使用相同需求重试此次请求"
-                        aria-label="重试此次请求"
-                      >
-                        <RefreshCw size={15} className={retryBusy ? "spinning" : undefined} />
-                      </button>
-                    ) : null}
-                  </div>
                 </header>
               )}
               {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
@@ -4091,36 +4011,6 @@ function App() {
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />
-                {canRetryThread &&
-                !showPlanApproval &&
-                (planFailureMessage ||
-                  activeThread?.status === "failed" ||
-                  activeThread?.status === "blocked") ? (
-                  <div className="thread-retry-banner" role="alert">
-                    <div className="thread-retry-banner-body">
-                      <strong>{activeThread?.status === "blocked" ? "会话受阻" : "此次请求失败"}</strong>
-                      {retryBannerDetail ? (
-                        <p>{retryBannerDetail}</p>
-                      ) : (
-                        <p className="thread-retry-banner-hint">{retryBannerNoDetailHint}</p>
-                      )}
-                    </div>
-                    <div className="thread-retry-banner-actions">
-                      <button
-                        type="button"
-                        className="plan-button primary"
-                        onClick={() => void retryActiveThread()}
-                        disabled={retryBusy}
-                      >
-                        {retryBusy
-                          ? "正在重试…"
-                          : activeThread?.status === "awaiting_plan"
-                            ? "重试执行"
-                            : "重试此次请求"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel
                     request={pendingClarification}

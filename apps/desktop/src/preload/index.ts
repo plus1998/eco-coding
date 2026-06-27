@@ -81,8 +81,6 @@ import {
   type ThreadFollowUpListResult,
   type ThreadFollowUpMutationResult,
   type ThreadPendingPlan,
-  type ThreadRetryRequest,
-  type ThreadRetryResult,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
@@ -466,9 +464,6 @@ const api = {
   },
   updateThreadFollowUp(request: ThreadFollowUpUpdateRequest): Promise<ThreadFollowUpMutationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpUpdate, request);
-  },
-  retryThread(request: ThreadRetryRequest | string): Promise<ThreadRetryResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadRetry, request);
   },
   cancelThread(request: ThreadCancelRequest | string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadCancel, request);

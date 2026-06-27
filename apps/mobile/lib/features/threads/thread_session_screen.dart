@@ -809,7 +809,7 @@ class _PlanApprovalBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final retryMode = failureMessage != null;
+    final failed = failureMessage != null;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: ecoColors(context).accentSoft,
@@ -830,7 +830,7 @@ class _PlanApprovalBanner extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    retryMode ? '执行失败，计划待确认' : '计划已生成，等待确认',
+                    failed ? '执行失败，计划待确认' : '计划已生成，等待确认',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: ecoColors(context).accentText,
                     ),
@@ -868,13 +868,15 @@ class _PlanApprovalBanner extends StatelessWidget {
                     child: const Text('驳回'),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => onApprove(),
-                    child: Text(retryMode ? '重试执行' : '批准执行'),
+                if (!failed) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => onApprove(),
+                      child: const Text('批准执行'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],

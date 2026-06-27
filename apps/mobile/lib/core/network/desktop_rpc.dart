@@ -89,15 +89,6 @@ class DesktopRpc {
     await _client.invoke(desktopDeviceId, 'thread:cancel', [threadId]);
   }
 
-  Future<ThreadSummary> retryThread(String threadId) async {
-    final result = await _client.invoke<Map<String, dynamic>>(
-      desktopDeviceId,
-      'thread:retry',
-      [threadId],
-    );
-    return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
-  }
-
   Future<List<ThreadActivityLine>> activityList(String threadId) async {
     final result = await _client.invoke<List<dynamic>>(
       desktopDeviceId,
