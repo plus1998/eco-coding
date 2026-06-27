@@ -749,9 +749,15 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
 }
 
 class _ProjectionApiError {
-  const _ProjectionApiError({required this.message});
+  const _ProjectionApiError({
+    required this.message,
+    this.statusCode,
+    this.code,
+  });
 
   final String message;
+  final int? statusCode;
+  final String? code;
 }
 
 _ProjectionApiError? _readProjectionApiError(ThreadRunProjectionTimelineItem item) {
@@ -759,7 +765,13 @@ _ProjectionApiError? _readProjectionApiError(ThreadRunProjectionTimelineItem ite
   if (raw is! Map<String, dynamic>) return null;
   final message = (raw['message'] as String?)?.trim() ?? '';
   if (message.isEmpty) return null;
-  return _ProjectionApiError(message: message);
+  final statusCode = raw['statusCode'];
+  final code = (raw['code'] as String?)?.trim();
+  return _ProjectionApiError(
+    message: message,
+    statusCode: statusCode is int ? statusCode : null,
+    code: code != null && code.isNotEmpty ? code : null,
+  );
 }
 
 String? _projectionToolLifecycleKey(ThreadRunProjectionTimelineItem item) {
