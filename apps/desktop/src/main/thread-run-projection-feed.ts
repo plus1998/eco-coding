@@ -62,10 +62,9 @@ function trimAgent(agent: ThreadRunProjectionAgent): ThreadRunProjectionAgent {
 export function trimProjectionForFeed(
   snapshot: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
-  const result = {
+  return {
     ...snapshot,
     timeline: trimTimeline(snapshot.timeline),
     agents: snapshot.agents.map(trimAgent),
   };
-  return result;
 }

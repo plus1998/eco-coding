@@ -573,18 +573,30 @@ export function buildProjectionDisplayTimelineItems(
   return displayItems;
 }
 
+function appendStreamScopeSuffix(
+  key: string,
+  item: ThreadRunProjectionTimelineItem,
+  effectiveRequestId?: string,
+): string {
+  const isStream =
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final" ||
+    item.eventType === "message.delta" ||
+    item.eventType === "message.final";
+  if (!isStream) {
+    return key;
+  }
+  const requestId = effectiveRequestId?.trim() || item.requestId?.trim();
+  return requestId ? `${key}:req:${requestId}` : key;
+}
+
+/** @deprecated Use appendStreamScopeSuffix */
 function appendThinkingStreamScopeSuffix(
   key: string,
   item: ThreadRunProjectionTimelineItem,
   effectiveRequestId?: string,
 ): string {
-  const isThinking =
-    item.eventType === "thinking.delta" || item.eventType === "thinking.final";
-  if (!isThinking) {
-    return key;
-  }
-  const requestId = effectiveRequestId?.trim() || item.requestId?.trim();
-  return requestId ? `${key}:req:${requestId}` : key;
+  return appendStreamScopeSuffix(key, item, effectiveRequestId);
 }
 
 function hasUserPromptBetween(
@@ -1109,15 +1121,15 @@ function projectionStreamDisplayKey(
   }
   const streamKey = item.streamKey?.trim();
   if (streamKey) {
-    return appendThinkingStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
   }
   const ownerKey = projectionOwnerKey(item);
   if (ownerKey) {
-    return appendThinkingStreamScopeSuffix(`${channel}:${ownerKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:${ownerKey}`, item, requestId);
   }
   const requestKey = projectionRequestKey(item);
   if (requestKey) {
-    return appendThinkingStreamScopeSuffix(`${channel}:${requestKey}`, item, requestId);
+    return appendStreamScopeSuffix(`${channel}:${requestKey}`, item, requestId);
   }
   return `${channel}:${item.id}`;
 }

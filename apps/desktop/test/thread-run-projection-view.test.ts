@@ -1568,6 +1568,63 @@ test("buildThreadRunProjectionViewModel does not bleed prior thinking text into 
   expect(thinking.map((entry) => entry.item.text)).toEqual(["旧思考内容很长", "新思考"]);
 });
 
+test("buildThreadRunProjectionViewModel keeps prior message.final when next turn streams with shared streamKey", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_turn_1",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+        {
+          requestId: "req_turn_2",
+          status: "streaming",
+          startedAt: "2026-01-01T00:01:00.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "turn-1-final",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_turn_1",
+          streamKey: "thr_view:planner",
+          text: "第一轮回复。",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "turn-2-user",
+          eventType: "thread.status",
+          role: "user",
+          text: "继续。",
+          metadata: { liveType: "thread.user_prompt" },
+          at: "2026-01-01T00:00:59.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "turn-2-delta",
+          eventType: "message.delta",
+          role: "planner",
+          requestId: "req_turn_2",
+          streamKey: "thr_view:planner",
+          text: "第二轮",
+          at: "2026-01-01T00:01:01.000Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  const narratives = view.mainFeedEntries
+    .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
+    .map((entry) => projectionItemToDetailBlock(entry.item))
+    .filter((block) => block?.kind === "narrative");
+  expect(narratives.map((block) => block?.text)).toEqual(["第一轮回复。", "第二轮"]);
+});
+
 test("buildThreadRunProjectionViewModel does not bleed prior thinking delta into a new thinking delta on the same request", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
@@ -1739,7 +1796,7 @@ test("projectionMainFeedEntryKey stays stable across superseded stream deltas", 
   expect(projectionMainFeedEntryKey(deltaOne)).toBe(projectionMainFeedEntryKey(deltaTwo));
 });
 
-test("projectionMainFeedEntryKey stays stable when requestId appears mid-stream", () => {
+test("projectionMainFeedEntryKey scopes message stream by requestId when present", () => {
   const withoutRequest = item({
     id: "delta-1",
     eventType: "message.delta",
@@ -1755,7 +1812,10 @@ test("projectionMainFeedEntryKey stays stable when requestId appears mid-stream"
     text: "AB",
     sequence: 2,
   });
-  expect(projectionMainFeedEntryKey(withoutRequest)).toBe(projectionMainFeedEntryKey(withRequest));
+  expect(projectionMainFeedEntryKey(withoutRequest)).toBe("main:stream:message:role:planner");
+  expect(projectionMainFeedEntryKey(withRequest)).toBe(
+    "main:stream:message:role:planner:req:req_planner",
+  );
 });
 
 test("buildThreadRunProjectionViewModel keeps active thinking below bash cards", () => {

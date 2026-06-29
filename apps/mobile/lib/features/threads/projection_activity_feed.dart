@@ -744,18 +744,29 @@ String? _projectionOwnerKey(ThreadRunProjectionTimelineItem item) {
   return scope.isNotEmpty ? 'scope:$scope' : null;
 }
 
+String _appendStreamScopeSuffix(
+  String key,
+  ThreadRunProjectionTimelineItem item,
+  String? effectiveRequestId,
+) {
+  final isStream =
+      item.eventType == 'thinking.delta' ||
+      item.eventType == 'thinking.final' ||
+      item.eventType == 'message.delta' ||
+      item.eventType == 'message.final';
+  if (!isStream) {
+    return key;
+  }
+  final requestId = effectiveRequestId?.trim() ?? item.requestId?.trim();
+  return requestId != null && requestId.isNotEmpty ? '$key:req:$requestId' : key;
+}
+
 String _appendThinkingStreamScopeSuffix(
   String key,
   ThreadRunProjectionTimelineItem item,
   String? effectiveRequestId,
 ) {
-  final isThinking =
-      item.eventType == 'thinking.delta' || item.eventType == 'thinking.final';
-  if (!isThinking) {
-    return key;
-  }
-  final requestId = effectiveRequestId?.trim() ?? item.requestId?.trim();
-  return requestId != null && requestId.isNotEmpty ? '$key:req:$requestId' : key;
+  return _appendStreamScopeSuffix(key, item, effectiveRequestId);
 }
 
 ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
@@ -1187,11 +1198,11 @@ String? _projectionStreamDisplayKey(
   }
   final streamKey = item.streamKey?.trim();
   if (streamKey != null && streamKey.isNotEmpty) {
-    return _appendThinkingStreamScopeSuffix('${channel}:sk:$streamKey', item, requestId);
+    return _appendStreamScopeSuffix('${channel}:sk:$streamKey', item, requestId);
   }
   final ownerKey = _projectionOwnerKey(item);
   if (ownerKey != null) {
-    return _appendThinkingStreamScopeSuffix('$channel:$ownerKey', item, requestId);
+    return _appendStreamScopeSuffix('$channel:$ownerKey', item, requestId);
   }
   return '$channel:${item.id}';
 }
