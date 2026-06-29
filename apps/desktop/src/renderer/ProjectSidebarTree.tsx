@@ -462,18 +462,20 @@ export function ProjectSidebarTree({
                             )}
                           </button>
                         ) : null}
-                        <button
-                          type="button"
-                          className="chat-item-row-action chat-item-row-action-danger"
-                          title="删除对话"
-                          aria-label={`删除对话 ${thread.title}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeleteThread(thread);
-                          }}
-                        >
-                          <Trash2 size={14} aria-hidden />
-                        </button>
+                        {!isThreadBusy ? (
+                          <button
+                            type="button"
+                            className="chat-item-row-action chat-item-row-action-danger"
+                            title="删除对话"
+                            aria-label={`删除对话 ${thread.title}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDeleteThread(thread);
+                            }}
+                          >
+                            <Trash2 size={14} aria-hidden />
+                          </button>
+                        ) : null}
                       </span>
                     </span>
                   </div>
