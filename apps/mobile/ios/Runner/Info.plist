@@ -24,6 +24,8 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>NSCameraUsageDescription</key>
+		<string>用于扫描配对二维码以绑定 PC。</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>用于语音输入，将语音识别为可编辑文字。</string>
 		<key>NSSpeechRecognitionUsageDescription</key>

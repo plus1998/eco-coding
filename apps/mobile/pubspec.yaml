@@ -14,7 +14,7 @@ dependencies:
   go_router: ^14.8.1
   dio: ^5.8.0+1
   web_socket_channel: ^3.0.2
-  flutter_secure_storage: ^9.2.4
+  flutter_secure_storage: ^10.3.1
   shared_preferences: ^2.5.3
   mobile_scanner: ^6.0.6
   image_picker: ^1.1.2
