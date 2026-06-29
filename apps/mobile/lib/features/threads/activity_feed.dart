@@ -686,6 +686,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
 
     final preview = _hasBody ? thinkingPreviewLine(widget.text) : '';
     final showPreview = _hasBody && _collapsed && !widget.streaming;
+    final collapsedHeader = _hasBody && _collapsed && !widget.streaming;
     final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
       color: ecoColors(context).textMuted,
       fontWeight: FontWeight.w500,
@@ -693,7 +694,12 @@ class _ThinkingTileState extends State<_ThinkingTile> {
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+      padding: EdgeInsets.fromLTRB(
+        2,
+        collapsedHeader ? 3 : 6,
+        2,
+        collapsedHeader ? 2 : 6,
+      ),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: ecoColors(context).cardSurface.withValues(alpha: 0.55),
@@ -716,9 +722,9 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                         setState(() => _collapsed = !_collapsed);
                       },
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
+                  padding: EdgeInsets.symmetric(
                     horizontal: 12,
-                    vertical: 10,
+                    vertical: collapsedHeader ? 8 : 10,
                   ),
                   child: Row(
                     children: [

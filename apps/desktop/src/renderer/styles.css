@@ -13859,6 +13859,17 @@ html[data-window-focused="true"] .settings-nav {
   background: transparent;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-thinking.is-collapsed:not(.empty) {
+  min-height: 0;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry--tight:has(.run-log-thinking.is-collapsed:not(.empty))
+  + .run-log-feed-entry {
+  margin-top: 2px;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-thinking-header {
   gap: 8px;
   padding: 0;
