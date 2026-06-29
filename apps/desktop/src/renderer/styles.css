@@ -5873,7 +5873,7 @@ html[data-window-focused="true"] .codex-sidebar {
   width: 100%;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--codex-log-line, rgba(255, 255, 255, 0.1));
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
 }
@@ -5887,7 +5887,7 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .run-log-fs-target-card-title {
   min-width: 0;
-  color: #e8e8e8;
+  color: var(--codex-log-text, #e8e8e8);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.4;
@@ -5896,7 +5896,7 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .run-log-fs-target-card-scope {
   flex: 0 0 auto;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--codex-log-faint, rgba(255, 255, 255, 0.52));
   font-size: 12px;
   line-height: 1.4;
 }
@@ -5904,11 +5904,11 @@ html[data-window-focused="true"] .codex-sidebar {
 .run-log-fs-target-card-divider {
   height: 1px;
   margin: 8px 0;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
 }
 
 .run-log-fs-target-card-path {
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--codex-log-muted, rgba(255, 255, 255, 0.58));
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
   font-size: 12px;
@@ -5917,7 +5917,7 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-fs-target-card.is-running .run-log-fs-target-card-title {
-  color: #c8c8c8;
+  color: var(--codex-log-text, #c8c8c8);
 }
 
 .run-log-action--file-change-card {
@@ -13860,6 +13860,37 @@ html[data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-file-change-line.is-remove {
   background: rgba(215, 0, 21, 0.04);
   border-left-color: rgba(215, 0, 21, 0.2);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-fs-target-card {
+  border-color: var(--codex-log-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-fs-target-card-title {
+  color: var(--codex-log-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-fs-target-card-scope {
+  color: var(--codex-log-faint);
+  font-size: 12px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-fs-target-card-divider {
+  background: var(--codex-log-line-subtle);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-fs-target-card-path {
+  color: var(--codex-log-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-fs-target-card.is-running .run-log-fs-target-card-title {
+  color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {
