@@ -13948,9 +13948,15 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing)
   .run-log
+  > .run-log-feed-entry + .run-log-feed-entry--tight:has(.run-log-thinking.is-collapsed:not(.empty)) {
+  margin-top: 10px;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log
   > .run-log-feed-entry--tight:has(.run-log-thinking.is-collapsed:not(.empty))
   + .run-log-feed-entry {
-  margin-top: 2px;
+  margin-top: 5px;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-header {
