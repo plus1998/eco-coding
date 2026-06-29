@@ -131,7 +131,13 @@ export function buildThreadRunProjection(
         discoveredAgentsById.set(discovered.agentId, discovered);
       }
     }
-    const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByParentToolUseId, diagnostics);
+    const resolvedAgentId = resolveProjectionEventAgentId(
+      event,
+      agentsByParentToolUseId,
+      input.agents,
+      discoveredAgentsById,
+      diagnostics,
+    );
     if (event.scope !== "agent" && event.scope !== "both") {
       continue;
     }
@@ -268,6 +274,8 @@ function buildAgentsByParentToolUseId(
 function resolveProjectionEventAgentId(
   event: ThreadRunEvent,
   agentsByParentToolUseId: ReadonlyMap<string, AgentInstanceRecord>,
+  agents: readonly AgentInstanceRecord[],
+  discoveredAgentsById: ReadonlyMap<string, AgentInstanceRecord>,
   diagnostics: ThreadRunProjectionDiagnostic[],
 ): string | undefined {
   if (event.scope !== "agent" && event.scope !== "both") {
@@ -286,6 +294,11 @@ function resolveProjectionEventAgentId(
     return undefined;
   }
 
+  const uniqueRoleAgentId = resolveUniqueSubagentForRole(event, agents, discoveredAgentsById);
+  if (uniqueRoleAgentId) {
+    return uniqueRoleAgentId;
+  }
+
   if (!event.role || !subagentRoleSet.has(event.role)) {
     return undefined;
   }
@@ -296,6 +309,46 @@ function resolveProjectionEventAgentId(
     eventId: event.id,
   });
   return undefined;
+}
+
+/** Resolve role-only agent events when the run has exactly one subagent of that role. */
+function resolveUniqueSubagentForRole(
+  event: ThreadRunEvent,
+  agents: readonly AgentInstanceRecord[],
+  discoveredAgentsById: ReadonlyMap<string, AgentInstanceRecord>,
+): string | undefined {
+  if (!event.role || !subagentRoleSet.has(event.role)) {
+    return undefined;
+  }
+  const attemptId = event.runAttemptId?.trim();
+  const pool = [...agents, ...discoveredAgentsById.values()].filter(
+    (agent) =>
+      agent.kind === "subagent" &&
+      agent.role === event.role &&
+      (!attemptId || agent.runAttemptId === attemptId),
+  );
+  const uniqueById = new Map(pool.map((agent) => [agent.agentId, agent]));
+  if (uniqueById.size !== 1) {
+    return undefined;
+  }
+  const agent = [...uniqueById.values()][0];
+  if (!agent) {
+    return undefined;
+  }
+  const observedMs = Date.parse(event.observedAt);
+  const startedMs = Date.parse(agent.startedAt);
+  if (!Number.isFinite(observedMs) || !Number.isFinite(startedMs)) {
+    return agent.agentId;
+  }
+  const preStartGraceMs = 15_000;
+  const endedMs = agent.endedAt ? Date.parse(agent.endedAt) : Number.POSITIVE_INFINITY;
+  if (observedMs < startedMs - preStartGraceMs) {
+    return undefined;
+  }
+  if (Number.isFinite(endedMs) && observedMs > endedMs + preStartGraceMs) {
+    return undefined;
+  }
+  return agent.agentId;
 }
 
 function readEventParentToolUseId(event: ThreadRunEvent): string | undefined {

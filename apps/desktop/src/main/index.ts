@@ -36,7 +36,13 @@ import {
   resolveResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
 import { isRemoteCommandChannel } from "@eco/shared";
-import { type CommandRunner, createSessionPlan, GitWorktreeService, type WorktreePlan } from "@eco/workspace";
+import {
+  type CommandRunner,
+  createSessionPlan,
+  GitWorktreeService,
+  isDirectWorkspacePlan,
+  type WorktreePlan,
+} from "@eco/workspace";
 import {
   app,
   BrowserWindow,
@@ -3420,6 +3426,10 @@ async function runPlanThread(
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
   emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
+  if (isDirectWorkspacePlan(worktreePlan)) {
+    return;
+  }
+
   try {
     const { files, diff } = await gitWorktrees.collectWorktreeChanges(worktreePlan);
     if (files.length > 0) {
@@ -4132,11 +4142,13 @@ async function restoreAfterExecutionFailure(
   reason: string,
   pendingPlan?: ThreadPendingPlan & { routesJson: string },
 ): Promise<void> {
-  try {
-    await gitWorktrees.discardWorktreeChanges(worktreePlan);
-    emitThreadEvent(threadId, "worktree.restored", "已回退隔离工作树中的未批准更改。", "system");
-  } catch (error) {
-    console.error("Failed to restore worktree after execution failure:", error);
+  if (!isDirectWorkspacePlan(worktreePlan)) {
+    try {
+      await gitWorktrees.discardWorktreeChanges(worktreePlan);
+      emitThreadEvent(threadId, "worktree.restored", "已回退隔离工作树中的未批准更改。", "system");
+    } catch (error) {
+      console.error("Failed to restore worktree after execution failure:", error);
+    }
   }
 
   if (pendingPlan) {
@@ -4275,6 +4287,10 @@ async function getWorkspaceChangeStatus(threadId: string): Promise<WorktreeStatu
     return { exists: false, worktreePath: "", workspacePath: "", changedFiles: [] };
   }
   const plan = createSessionPlan(workspacePath, threadId);
+  if (isDirectWorkspacePlan(plan)) {
+    return { exists: false, worktreePath: workspacePath, workspacePath, changedFiles: [] };
+  }
+
   try {
     const changedFiles = await gitWorktrees.changedFiles(plan);
     return {
@@ -4292,6 +4308,10 @@ async function getWorkspaceChangeStatus(threadId: string): Promise<WorktreeStatu
 async function applyWorktreeChanges(
   plan: WorktreePlan,
 ): Promise<{ files: string[]; diff: string; threadMessage: string; activityMessage: string }> {
+  if (isDirectWorkspacePlan(plan)) {
+    throw new Error("该对话没有可合并的隔离工作树。");
+  }
+
   if (!(await fileExists(plan.worktreePath))) {
     throw new Error(`找不到隔离工作树：${plan.worktreePath}`);
   }
@@ -4479,6 +4499,7 @@ function buildSdkHookContextExtras(
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
+    attribution: subagentAttribution,
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
     onProxyAttributionSettled: ({ agentId, role, parentToolUseId }) => {
       usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, {
@@ -5198,15 +5219,17 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   if (isSdkCompactionBoundaryEvent(event)) {
     return;
   }
-  const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId;
-  const activityAgentId = resolveActivityAgentId(threadId, event, {
-    ...(plannerSessionId && { plannerSessionId }),
-    metricsRegistry: subagentMetricsRegistry,
-  });
   const sdkParentToolUseId = readSdkEventParentToolUseId(event);
   if (sdkParentToolUseId) {
     tryResolveStreamSubagentDelegation(threadId, sdkParentToolUseId);
   }
+  const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId?.trim();
+  const streamAttributedAgentId = readStreamAttributedAgentId(event.agentId, plannerSessionId);
+  const activityAgentId =
+    resolveActivityAgentId(threadId, event, {
+      ...(plannerSessionId && { plannerSessionId }),
+      metricsRegistry: subagentMetricsRegistry,
+    }) ?? streamAttributedAgentId;
   sdkStreamBridge.handleEvent(
     threadId,
     event,
@@ -6386,6 +6409,17 @@ function readSdkEventParentToolUseId(event: AgentEventLike): string | undefined 
   return typeof parentToolUseId === "string" && parentToolUseId.trim()
     ? parentToolUseId.trim()
     : undefined;
+}
+
+function readStreamAttributedAgentId(
+  agentId: string | undefined,
+  plannerSessionId: string | undefined,
+): string | undefined {
+  const trimmed = agentId?.trim();
+  if (!trimmed || trimmed === "unknown-session" || trimmed === plannerSessionId) {
+    return undefined;
+  }
+  return trimmed;
 }
 
 function resolveCurrentRunAttemptId(threadId: string): string | undefined {

@@ -83,11 +83,12 @@ test("mergeThreadRunProjectionUpdate keeps longer thinking text when feed update
     timeline: [
       {
         id: "think_1",
-        kind: "narrative" as const,
+        sequence: 1,
+        scope: "main" as const,
         eventType: "thinking.delta",
         text: "a".repeat(1500),
         role: "thinking" as const,
-        observedAt: new Date().toISOString(),
+        at: "2026-01-01T00:00:01.000Z",
       },
     ],
   });
@@ -96,15 +97,63 @@ test("mergeThreadRunProjectionUpdate keeps longer thinking text when feed update
     timeline: [
       {
         id: "think_1",
-        kind: "narrative" as const,
+        sequence: 1,
+        scope: "main" as const,
         eventType: "thinking.delta",
         text: "a".repeat(1200),
         role: "thinking" as const,
-        observedAt: new Date().toISOString(),
+        at: "2026-01-01T00:00:01.000Z",
       },
     ],
   });
 
   const merged = mergeThreadRunProjectionUpdate(current, incoming);
   expect(merged.timeline[0]?.text).toHaveLength(1500);
+});
+
+test("mergeThreadRunProjectionUpdate resets thinking text across user prompt boundary", () => {
+  const current = makeProjection({
+    sourceEventCount: 10,
+    timeline: [
+      {
+        id: "think_1",
+        sequence: 1,
+        scope: "main" as const,
+        eventType: "thinking.delta",
+        text: "old thinking text that is much longer",
+        role: "thinking" as const,
+        streamKey: "thr_1:thinking",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ],
+  });
+  const incoming = makeProjection({
+    sourceEventCount: 12,
+    timeline: [
+      {
+        id: "prompt_2",
+        sequence: 2,
+        scope: "main" as const,
+        eventType: "thread.status",
+        text: "继续。",
+        role: "user" as const,
+        at: "2026-01-01T00:00:10.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "think_1",
+        sequence: 3,
+        scope: "main" as const,
+        eventType: "thinking.delta",
+        text: "new",
+        role: "thinking" as const,
+        streamKey: "thr_1:thinking",
+        at: "2026-01-01T00:00:11.000Z",
+      },
+    ],
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+  const thinking = merged.timeline.find((item) => item.id === "think_1");
+  expect(thinking?.text).toBe("new");
 });

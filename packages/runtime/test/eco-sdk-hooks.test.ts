@@ -2046,11 +2046,15 @@ test("TaskCreated hook links SDK task id so SubagentStart can resolve without ca
 test("createSubagentLaunchPreToolHook registers launch and forwards attribution", async () => {
   const registry = new SubagentLaunchRegistry();
   const taskTools: Array<{ toolUseId: string; role?: string }> = [];
+  const registered: Array<{ role?: string; parentToolUseId?: string; agentId?: string }> = [];
   const hook = createSubagentLaunchPreToolHook({
     registry,
     attribution: {
       onTaskToolUse(toolUseId, input) {
         taskTools.push({ toolUseId, ...(input?.role && { role: input.role }) });
+      },
+      onSubagentRegistered(input) {
+        registered.push(input);
       },
     },
   });
@@ -2069,6 +2073,7 @@ test("createSubagentLaunchPreToolHook registers launch and forwards attribution"
   );
 
   expect(taskTools).toEqual([{ toolUseId: "toolu_delegate", role: "coder" }]);
+  expect(registered).toEqual([{ role: "coder", parentToolUseId: "toolu_delegate" }]);
   expect(registry.peek("toolu_delegate")).toMatchObject({
     parentToolUseId: "toolu_delegate",
     role: "coder",

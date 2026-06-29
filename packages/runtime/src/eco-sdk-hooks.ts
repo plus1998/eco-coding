@@ -129,6 +129,12 @@ export interface EcoSubagentAttributionHooks {
     sessionId: string;
   }): string | undefined;
   onTaskToolUse?(toolUseId: string, input?: { role?: RuntimeAgentRole }): void;
+  /** Seed runtime stream context when a subagent instance is known (SubagentStart / delegation link). */
+  onSubagentRegistered?(input: {
+    role: RuntimeAgentRole;
+    agentId?: string;
+    parentToolUseId?: string;
+  }): void;
 }
 
 export interface EcoHookContext {
@@ -1172,6 +1178,7 @@ export function createSubagentLaunchPreToolHook(input: {
       prompt,
       ...(todoIdHint && { todoIdHint }),
     });
+    attribution?.onSubagentRegistered?.({ role, parentToolUseId });
     onAgentToolCapture?.({
       role,
       prompt,
@@ -1185,20 +1192,25 @@ export function createSubagentLaunchPreToolHook(input: {
 export function createSubagentToolAttributionPreToolHook(
   attribution?: EcoSubagentAttributionHooks,
 ): HookCallback | undefined {
-  if (!attribution?.onTaskToolUse) {
+  if (!attribution?.onTaskToolUse && !attribution?.onSubagentRegistered) {
     return undefined;
   }
   const onTaskToolUse = attribution.onTaskToolUse;
+  const onSubagentRegistered = attribution.onSubagentRegistered;
   return async (input, toolUseID) => {
     if (input.hook_event_name !== "PreToolUse") {
       return {};
     }
     const preInput = input as PreToolUseHookInput;
     if (typeof toolUseID === "string" && (preInput.tool_name === "Task" || preInput.tool_name === "Agent")) {
+      const parentToolUseId = toolUseID.trim() || preInput.tool_use_id.trim();
       const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
       const rawType = readAgentSubagentType(toolInput);
       const role = normalizeSdkBuiltinOrEcoAgentRole(rawType);
-      onTaskToolUse(toolUseID, role ? { role } : undefined);
+      if (parentToolUseId && role) {
+        onSubagentRegistered?.({ role, parentToolUseId });
+      }
+      onTaskToolUse?.(toolUseID, role ? { role } : undefined);
     }
     return {};
   };
@@ -1263,6 +1275,7 @@ export function createSubagentStartHook(handlers: {
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
   subagentLaunchRegistry?: SubagentLaunchRegistry;
+  attribution?: EcoSubagentAttributionHooks;
 }): HookCallback {
   return async (input, toolUseID) => {
     if (input.hook_event_name !== "SubagentStart") {
@@ -1303,6 +1316,11 @@ export function createSubagentStartHook(handlers: {
     };
     handlers.taskTracker?.onSubagentStart(payload);
     handlers.subagentSessions?.onStart(payload);
+    handlers.attribution?.onSubagentRegistered?.({
+      role: agentType as RuntimeAgentRole,
+      agentId: started.agent_id,
+      ...(resolvedParentToolUseId && { parentToolUseId: resolvedParentToolUseId }),
+    });
     return {};
   };
 }
@@ -1511,6 +1529,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     ...(ctx.taskTracker && { taskTracker: ctx.taskTracker }),
     ...(ctx.subagentSessions && { subagentSessions: ctx.subagentSessions }),
     ...(subagentLaunchRegistry && { subagentLaunchRegistry }),
+    ...(ctx.subagentAttribution && { attribution: ctx.subagentAttribution }),
   };
   if (subagentHandlers.taskTracker || subagentHandlers.subagentSessions) {
     pushHook(hooks, "SubagentStart", createSubagentStartHook(subagentHandlers));

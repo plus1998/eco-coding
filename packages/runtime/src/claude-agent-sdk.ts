@@ -40,8 +40,10 @@ import type {
 } from "./index";
 import {
   applySubagentUsageAttribution,
+  createAttributedAgentEvent,
   createSdkStreamContext,
   mapStreamEventToEvents,
+  registerSubagentOnStreamContext,
   type SdkStreamContext,
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
@@ -912,17 +914,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       queryOptions.agents = phase.agents;
     }
 
-    const query = sdk.query({
-      prompt: phase.prompt,
-      options: queryOptions,
-    });
-
-    input.signal.addEventListener("abort", () => query.close?.(), { once: true });
-
-    let transcript = "";
-    const phaseTranscriptBox = { text: "" };
-    let sessionCaptured = false;
-    let activeSessionId = "unknown-session";
     const resolveSubagent = this.options.hookContext?.subagentAttribution?.resolveAgentId;
     const streamCtx = createSdkStreamContext({
       ...(resolveSubagent && {
@@ -934,6 +925,26 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           }),
       }),
     });
+    const subagentAttribution = this.options.hookContext?.subagentAttribution;
+    if (subagentAttribution) {
+      const priorOnSubagentRegistered = subagentAttribution.onSubagentRegistered;
+      subagentAttribution.onSubagentRegistered = (input) => {
+        registerSubagentOnStreamContext(streamCtx, input);
+        priorOnSubagentRegistered?.(input);
+      };
+    }
+
+    const query = sdk.query({
+      prompt: phase.prompt,
+      options: queryOptions,
+    });
+
+    input.signal.addEventListener("abort", () => query.close?.(), { once: true });
+
+    let transcript = "";
+    const phaseTranscriptBox = { text: "" };
+    let sessionCaptured = false;
+    let activeSessionId = "unknown-session";
     const slashPrompt = phase.prompt.trim().startsWith("/");
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
@@ -1659,23 +1670,27 @@ function mapTaskSystemMessageToEvents(
   if (!payload) {
     return [];
   }
-  const streamMeta = readSdkMessageAttribution(message, streamCtx);
   const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
+  const messageParentToolUseId =
+    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
 
   return [
-    createAgentEvent({
-      id: `${uuid}:todo`,
-      threadId,
-      agentId: sessionId,
-      role: streamRole,
-      type: "todo.updated",
-      payload: {
-        ...payload,
-        ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
-        ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
-        ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
+    createAttributedAgentEvent(
+      {
+        id: `${uuid}:todo`,
+        threadId,
+        sessionId,
+        role: streamRole,
+        type: "todo.updated",
+        payload: {
+          ...payload,
+          ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+          ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+        },
+        messageParentToolUseId,
       },
-    }),
+      streamCtx,
+    ),
   ];
 }
 
@@ -1715,26 +1730,6 @@ function mapCompactBoundaryToEvents(
       },
     }),
   ];
-}
-
-function readSdkMessageAttribution(
-  message: Record<string, unknown>,
-  streamCtx?: SdkStreamContext,
-): {
-  parentToolUseId?: string;
-  subagentType?: string;
-  agentType?: string;
-} {
-  const parentFromMessage =
-    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id.trim() : "";
-  const parentFromCtx =
-    typeof streamCtx?.parentToolUseId === "string" ? streamCtx.parentToolUseId.trim() : "";
-  return {
-    ...(parentFromMessage && { parentToolUseId: parentFromMessage }),
-    ...(!parentFromMessage && parentFromCtx && { parentToolUseId: parentFromCtx }),
-    ...(typeof message.subagent_type === "string" && { subagentType: message.subagent_type }),
-    ...(typeof message.agent_type === "string" && { agentType: message.agent_type }),
-  };
 }
 
 function resolveSdkMessageStreamRole(
@@ -1802,23 +1797,27 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "tool_progress") {
-    const streamMeta = readSdkMessageAttribution(message, streamCtx);
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
     const toolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id : uuid;
+    const messageParentToolUseId =
+      typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
     return [
-      createAgentEvent({
-        id: `${uuid}:tool-progress:${toolUseId}`,
-        threadId,
-        agentId: sessionId,
-        role: streamRole,
-        type: "tool.started",
-        payload: {
-          ...message,
-          ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
-          ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
-          ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
+      createAttributedAgentEvent(
+        {
+          id: `${uuid}:tool-progress:${toolUseId}`,
+          threadId,
+          sessionId,
+          role: streamRole,
+          type: "tool.started",
+          payload: {
+            ...message,
+            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          },
+          messageParentToolUseId,
         },
-      }),
+        streamCtx,
+      ),
     ];
   }
 
@@ -1887,22 +1886,26 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "tool_use_summary") {
-    const streamMeta = readSdkMessageAttribution(message, streamCtx);
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
+    const messageParentToolUseId =
+      typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
     return [
-      createAgentEvent({
-        id: `${uuid}:tool-summary`,
-        threadId,
-        agentId: sessionId,
-        role: streamRole,
-        type: "tool.completed",
-        payload: {
-          ...message,
-          ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
-          ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
-          ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
+      createAttributedAgentEvent(
+        {
+          id: `${uuid}:tool-summary`,
+          threadId,
+          sessionId,
+          role: streamRole,
+          type: "tool.completed",
+          payload: {
+            ...message,
+            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          },
+          messageParentToolUseId,
         },
-      }),
+        streamCtx,
+      ),
     ];
   }
 
@@ -2014,31 +2017,35 @@ function mapAssistantMessageToEvents(
     if (toolUseId && streamCtx?.emittedToolUseIds.has(toolUseId)) {
       continue;
     }
-    const streamMeta = readSdkMessageAttribution(message, streamCtx);
     const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
+    const messageParentToolUseId =
+      typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
 
     events.push(
-      createAgentEvent({
-        id: `${uuid}:tool:${index}`,
-        threadId,
-        agentId: sessionId,
-        role: streamRole,
-        type: "tool.started",
-        payload: {
-          type: "tool_use",
-          tool_name: block.name,
-          input: block.input,
-          ...(toolUseId && { tool_use_id: toolUseId }),
-          ...(streamMeta.parentToolUseId && { parent_tool_use_id: streamMeta.parentToolUseId }),
-          ...(streamMeta.subagentType && { subagent_type: streamMeta.subagentType }),
-          ...(streamMeta.agentType && { agent_type: streamMeta.agentType }),
-          ...(block.name === "Agent" &&
-            isRecord(block.input) &&
-            typeof block.input.subagent_type === "string" && {
-              subagent_type: block.input.subagent_type,
-            }),
+      createAttributedAgentEvent(
+        {
+          id: `${uuid}:tool:${index}`,
+          threadId,
+          sessionId,
+          role: streamRole,
+          type: "tool.started",
+          payload: {
+            type: "tool_use",
+            tool_name: block.name,
+            input: block.input,
+            ...(toolUseId && { tool_use_id: toolUseId }),
+            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+            ...(block.name === "Agent" &&
+              isRecord(block.input) &&
+              typeof block.input.subagent_type === "string" && {
+                subagent_type: block.input.subagent_type,
+              }),
+          },
+          messageParentToolUseId,
         },
-      }),
+        streamCtx,
+      ),
     );
   }
 

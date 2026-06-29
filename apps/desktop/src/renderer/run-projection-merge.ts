@@ -2,6 +2,10 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
+import {
+  isRecordedUserPromptLiveEvent,
+  isThreadFollowUpActivityMessage,
+} from "../shared/thread-follow-up-events";
 
 export interface MergeThreadRunProjectionOptions {
   /** When true, reject trimmed feed updates that would drop older timeline items. */
@@ -28,11 +32,40 @@ function isStreamTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
   );
 }
 
+function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const liveType = item.metadata?.liveType;
+  return typeof liveType === "string" ? liveType : undefined;
+}
+
+function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (!isRecordedUserPromptLiveEvent(projectionLiveType(item))) {
+    return false;
+  }
+  return item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
+}
+
+function hasUserPromptBetween(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  current: ThreadRunProjectionTimelineItem,
+  incoming: ThreadRunProjectionTimelineItem,
+): boolean {
+  if (compareTimelineItems(current, incoming) >= 0) {
+    return false;
+  }
+  return timeline.some(
+    (item) =>
+      isProjectionUserPromptItem(item) &&
+      compareTimelineItems(current, item) < 0 &&
+      compareTimelineItems(item, incoming) < 0,
+  );
+}
+
 function preserveStreamTimelineText(
   current: ThreadRunProjectionTimelineItem,
   incoming: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
 ): string {
-  if (shouldResetThinkingStreamMergeForMerge(current, incoming)) {
+  if (shouldResetThinkingStreamMergeForMerge(current, incoming, timeline)) {
     return incoming.text;
   }
   if (!incoming.text.trim()) {
@@ -47,6 +80,7 @@ function preserveStreamTimelineText(
 function shouldResetThinkingStreamMergeForMerge(
   current: ThreadRunProjectionTimelineItem,
   incoming: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
 ): boolean {
   const isThinking =
     current.eventType === "thinking.delta" ||
@@ -61,17 +95,21 @@ function shouldResetThinkingStreamMergeForMerge(
   if (currentRequestId && incomingRequestId && currentRequestId !== incomingRequestId) {
     return true;
   }
+  if (hasUserPromptBetween(timeline, current, incoming)) {
+    return true;
+  }
   return current.eventType === "thinking.final" && current.id !== incoming.id;
 }
 
 function mergeStreamTimelineItem(
   current: ThreadRunProjectionTimelineItem,
   incoming: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem {
   if (!isStreamTimelineItem(current) || !isStreamTimelineItem(incoming)) {
     return incoming;
   }
-  const text = preserveStreamTimelineText(current, incoming);
+  const text = preserveStreamTimelineText(current, incoming, timeline);
   if (text === incoming.text) {
     return incoming;
   }
@@ -85,7 +123,7 @@ function mergeProjectionTimelines(
   const incomingById = new Map(incoming.map((item) => [item.id, item]));
   const merged = current.map((item) => {
     const update = incomingById.get(item.id);
-    return update ? mergeStreamTimelineItem(item, update) : item;
+    return update ? mergeStreamTimelineItem(item, update, incoming) : item;
   });
   const knownIds = new Set(merged.map((item) => item.id));
   for (const item of incoming) {

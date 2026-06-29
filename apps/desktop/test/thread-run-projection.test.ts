@@ -227,6 +227,44 @@ test("buildThreadRunProjection surfaces role-only agent events as missing_agent_
   expect(projection.agents.every((row) => row.timeline.length === 0)).toBe(true);
 });
 
+test("buildThreadRunProjection resolves role-only explore events for a unique subagent", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:10.000Z" }],
+    agents: [
+      agent({
+        agentId: "explore_a",
+        role: "explore",
+        status: "stopped",
+        parentToolUseId: "call_delegate",
+        startedAt: "2026-01-01T00:00:02.000Z",
+        endedAt: "2026-01-01T00:00:08.000Z",
+      }),
+    ],
+    events: [
+      event({
+        id: "early_progress",
+        sequence: 1,
+        eventType: "tool.started",
+        scope: "agent",
+        role: "explore",
+        message: "Tool: Read · src/auth.ts",
+        observedAt: "2026-01-01T00:00:01.995Z",
+      }),
+    ],
+  });
+
+  expect(projection.diagnostics).toEqual([]);
+  expect(projection.agents[0]?.timeline).toMatchObject([
+    {
+      id: "early_progress",
+      role: "explore",
+      agentId: "explore_a",
+    },
+  ]);
+});
+
 test("buildThreadRunProjection resolves agent-scoped events via parentToolUseId", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",

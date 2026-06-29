@@ -16,6 +16,10 @@ export interface SdkStreamContext {
   activeSubagentRole?: RuntimeAgentRole;
   /** Remembers each subagent's role so interleaved parallel streams keep correct roles. */
   subagentRoleByParentToolUseId: Map<string, RuntimeAgentRole>;
+  /** Subagent instance ids registered from SubagentStart before stream parent_tool_use_id arrives. */
+  registeredSubagentByParentToolUseId: Map<string, string>;
+  /** Latest subagent instance id per role when parent_tool_use_id is not yet known. */
+  registeredSubagentByRole: Map<RuntimeAgentRole, string>;
   emittedToolUseIds: Set<string>;
   resolveSubagentAgentId?: (input: {
     role: RuntimeAgentRole;
@@ -33,9 +37,90 @@ export function createSdkStreamContext(options?: {
     currentToolInputJson: "",
     parentToolUseId: null,
     subagentRoleByParentToolUseId: new Map(),
+    registeredSubagentByParentToolUseId: new Map(),
+    registeredSubagentByRole: new Map(),
     emittedToolUseIds: new Set(),
     ...(options?.resolveSubagentAgentId && { resolveSubagentAgentId: options.resolveSubagentAgentId }),
   };
+}
+
+/** Resolve parent tool id from stream context when the SDK message omits it. */
+export function resolveParentToolUseIdFromStreamContext(
+  streamCtx: SdkStreamContext | undefined,
+  role?: RuntimeAgentRole,
+): string | undefined {
+  if (!streamCtx) {
+    return undefined;
+  }
+  const direct = streamCtx.parentToolUseId?.trim();
+  if (direct) {
+    return direct;
+  }
+  const targetRole = role ?? streamCtx.activeSubagentRole;
+  if (!targetRole) {
+    return undefined;
+  }
+  const matches: string[] = [];
+  for (const [parentId, subRole] of streamCtx.subagentRoleByParentToolUseId) {
+    if (subRole === targetRole) {
+      matches.push(parentId);
+    }
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** Seed stream attribution from PreToolUse / SubagentStart before SDK stream carries parent_tool_use_id. */
+export function registerSubagentOnStreamContext(
+  streamCtx: SdkStreamContext,
+  input: { role: RuntimeAgentRole; agentId?: string; parentToolUseId?: string },
+): void {
+  const agentId = input.agentId?.trim();
+  const parentToolUseId = input.parentToolUseId?.trim();
+  if (!agentId && !parentToolUseId) {
+    return;
+  }
+  streamCtx.activeSubagentRole = input.role;
+  if (agentId) {
+    streamCtx.registeredSubagentByRole.set(input.role, agentId);
+  }
+  if (parentToolUseId) {
+    streamCtx.subagentRoleByParentToolUseId.set(parentToolUseId, input.role);
+    streamCtx.parentToolUseId = parentToolUseId;
+    if (agentId) {
+      streamCtx.registeredSubagentByParentToolUseId.set(parentToolUseId, agentId);
+    }
+  }
+}
+
+export function createAttributedAgentEvent(
+  input: {
+    id: string;
+    threadId: string;
+    sessionId: string;
+    role: RuntimeAgentRole;
+    type: AgentEvent["type"];
+    payload: Record<string, unknown>;
+    messageParentToolUseId?: string | null;
+  },
+  streamCtx?: SdkStreamContext,
+): AgentEvent {
+  const attributed = applySubagentUsageAttribution(
+    {
+      role: input.role,
+      sessionId: input.sessionId,
+      payload: input.payload,
+      messageParentToolUseId: input.messageParentToolUseId,
+    },
+    streamCtx,
+  );
+  return createAgentEvent({
+    id: input.id,
+    threadId: input.threadId,
+    agentId: attributed.agentId,
+    role: input.role,
+    type: input.type,
+    payload: attributed.payload,
+  });
 }
 
 /** Attach subagent agent_id to usage events when desktop attribution resolver is wired. */
@@ -57,9 +142,38 @@ export function applySubagentUsageAttribution(
   if (explicit === null) {
     return { agentId: input.sessionId, payload: input.payload };
   }
-  const parentToolUseId = explicit ?? streamCtx?.parentToolUseId ?? undefined;
+  const parentFromPayload =
+    typeof input.payload.parent_tool_use_id === "string" ? input.payload.parent_tool_use_id.trim() : "";
   const attributionRole =
     explicit !== undefined ? input.role : (streamCtx?.activeSubagentRole ?? input.role);
+  const parentToolUseId =
+    (typeof explicit === "string" && explicit.trim()) ||
+    parentFromPayload ||
+    resolveParentToolUseIdFromStreamContext(streamCtx, attributionRole) ||
+    undefined;
+
+  const registeredAgentId =
+    parentToolUseId && streamCtx?.registeredSubagentByParentToolUseId.get(parentToolUseId);
+  if (registeredAgentId) {
+    return {
+      agentId: registeredAgentId,
+      payload: {
+        ...input.payload,
+        ...(parentToolUseId && { parent_tool_use_id: parentToolUseId }),
+      },
+    };
+  }
+
+  const roleRegisteredAgentId = streamCtx?.registeredSubagentByRole.get(attributionRole);
+  if (roleRegisteredAgentId) {
+    return {
+      agentId: roleRegisteredAgentId,
+      payload: parentToolUseId
+        ? { ...input.payload, parent_tool_use_id: parentToolUseId }
+        : input.payload,
+    };
+  }
+
   const subagentAgentId = streamCtx?.resolveSubagentAgentId?.({
     role: attributionRole,
     sessionId: input.sessionId,
@@ -235,7 +349,7 @@ export function mapStreamEventToEvents(
           ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
           streaming: true,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
       return events;
     }
@@ -248,7 +362,7 @@ export function mapStreamEventToEvents(
           blockKind: "thinking",
           streamPlaceholder: true,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
       return events;
     }
@@ -261,7 +375,7 @@ export function mapStreamEventToEvents(
           blockKind: "text",
           streamPlaceholder: true,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
       return events;
     }
@@ -293,7 +407,7 @@ export function mapStreamEventToEvents(
                 text: block.text,
                 streamFinalize: true,
                 ...streamMeta,
-              }),
+              }, ctx, parentToolUseId),
             );
           } else if (
             block.type === "thinking" &&
@@ -307,7 +421,7 @@ export function mapStreamEventToEvents(
                 text: block.thinking,
                 streamFinalize: true,
                 ...streamMeta,
-              }),
+              }, ctx, parentToolUseId),
             );
           } else if (block.type === "tool_use" && typeof block.name === "string") {
             const toolUseId = typeof block.id === "string" ? block.id : undefined;
@@ -324,7 +438,7 @@ export function mapStreamEventToEvents(
                 ...(toolUseId && { tool_use_id: toolUseId }),
                 ...(isRecord(block.input) && { input: block.input }),
                 ...streamMeta,
-              }),
+              }, ctx, parentToolUseId),
             );
           }
         }
@@ -336,7 +450,7 @@ export function mapStreamEventToEvents(
           blockKind: "text",
           text,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
       return events;
     }
@@ -351,7 +465,7 @@ export function mapStreamEventToEvents(
           blockKind: "thinking",
           text: thinking,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
       return events;
     }
@@ -371,7 +485,7 @@ export function mapStreamEventToEvents(
             streaming: true,
             input_complete: true,
             ...streamMeta,
-          }),
+          }, ctx, parentToolUseId),
         );
       }
     } else if (ctx.activeBlockKind === "thinking") {
@@ -381,7 +495,7 @@ export function mapStreamEventToEvents(
           blockKind: "thinking",
           streamFinalize: true,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
     } else if (ctx.activeBlockKind === "text") {
       events.push(
@@ -390,7 +504,7 @@ export function mapStreamEventToEvents(
           blockKind: "text",
           streamFinalize: true,
           ...streamMeta,
-        }),
+        }, ctx, parentToolUseId),
       );
     }
     ctx.inToolBlock = false;
@@ -438,15 +552,21 @@ function createStreamDeltaEvent(
   role: RuntimeAgentRole,
   uuid: string,
   payload: EcoStreamPayload & { type: "eco_stream" },
+  streamCtx: SdkStreamContext,
+  messageParentToolUseId?: string | null,
 ): AgentEvent {
-  return createAgentEvent({
-    id: `${uuid}:stream`,
-    threadId,
-    agentId: sessionId,
-    role,
-    type: "message.delta",
-    payload,
-  });
+  return createAttributedAgentEvent(
+    {
+      id: `${uuid}:stream`,
+      threadId,
+      sessionId,
+      role,
+      type: "message.delta",
+      payload: payload as Record<string, unknown>,
+      messageParentToolUseId,
+    },
+    streamCtx,
+  );
 }
 
 function createToolStartedEvent(
@@ -455,16 +575,22 @@ function createToolStartedEvent(
   role: RuntimeAgentRole,
   uuid: string,
   payload: EcoStreamPayload & { type: "tool_use" },
+  streamCtx: SdkStreamContext,
+  messageParentToolUseId?: string | null,
 ): AgentEvent {
   const toolUseId = payload.tool_use_id;
-  return createAgentEvent({
-    id: `${uuid}:tool:${toolUseId ?? payload.tool_name}`,
-    threadId,
-    agentId: sessionId,
-    role,
-    type: "tool.started",
-    payload,
-  });
+  return createAttributedAgentEvent(
+    {
+      id: `${uuid}:tool:${toolUseId ?? payload.tool_name}`,
+      threadId,
+      sessionId,
+      role,
+      type: "tool.started",
+      payload: payload as Record<string, unknown>,
+      messageParentToolUseId,
+    },
+    streamCtx,
+  );
 }
 
 export function isEcoStreamPayload(payload: unknown): payload is EcoStreamPayload {

@@ -213,6 +213,10 @@ export class GitWorktreeService {
 
   /** Stage agent edits (including new untracked files) so diff/apply can merge them. */
   private async stageWorktreeChanges(plan: WorktreePlan): Promise<void> {
+    if (isDirectWorkspacePlan(plan)) {
+      return;
+    }
+
     const result = await this.runner.run(["git", "add", "-A"], plan.worktreePath);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to stage worktree changes: ${result.stderr || result.stdout}`);
@@ -273,6 +277,10 @@ export class GitWorktreeService {
   }
 
   async discardWorktreeChanges(plan: WorktreePlan): Promise<void> {
+    if (isDirectWorkspacePlan(plan)) {
+      return;
+    }
+
     const reset = await this.runner.run(["git", "reset", "--hard", "HEAD"], plan.worktreePath);
     if (reset.exitCode !== 0) {
       throw new Error(`Failed to reset worktree: ${reset.stderr || reset.stdout}`);

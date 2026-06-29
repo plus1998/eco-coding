@@ -354,3 +354,50 @@ test("collectWorktreeChanges stages untracked files before diffing", async () =>
     cwd: plan.worktreePath,
   });
 });
+
+test("collectWorktreeChanges does not stage direct workspace plans", async () => {
+  const plan = createSessionPlan("/repo", "thr_direct");
+  const calls: Array<{ command: string[]; cwd: string }> = [];
+  const runner: CommandRunner = {
+    async run(command, cwd) {
+      calls.push({ command, cwd });
+      if (command[1] === "merge-base") {
+        return { exitCode: 0, stdout: "base123\n", stderr: "" };
+      }
+      if (command[1] === "diff" && command.includes("--name-only")) {
+        return { exitCode: 0, stdout: "src/direct.ts\n", stderr: "" };
+      }
+      if (command[1] === "diff" && command.includes("--binary")) {
+        return {
+          exitCode: 0,
+          stdout: "diff --git a/src/direct.ts b/src/direct.ts\n",
+          stderr: "",
+        };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  const { files, diff } = await service.collectWorktreeChanges(plan);
+
+  expect(files).toEqual(["src/direct.ts"]);
+  expect(diff).toContain("src/direct.ts");
+  expect(calls.some((call) => call.command.join(" ") === "git add -A")).toBe(false);
+});
+
+test("discardWorktreeChanges no-ops for direct workspace plans", async () => {
+  const plan = createSessionPlan("/repo", "thr_direct");
+  const calls: Array<{ command: string[]; cwd: string }> = [];
+  const runner: CommandRunner = {
+    async run(command, cwd) {
+      calls.push({ command, cwd });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  await service.discardWorktreeChanges(plan);
+
+  expect(calls).toEqual([]);
+});

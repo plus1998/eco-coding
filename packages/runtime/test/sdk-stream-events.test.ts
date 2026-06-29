@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mapSdkMessageToEvents } from "../src/claude-agent-sdk";
-import { createSdkStreamContext, mapStreamEventToEvents } from "../src/sdk-stream-events";
+import { createSdkStreamContext, mapStreamEventToEvents, registerSubagentOnStreamContext } from "../src/sdk-stream-events";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("maps tool_use content_block_start to tool.started", () => {
@@ -527,6 +527,112 @@ test("task_progress carries stream context parent_tool_use_id", () => {
   });
   expect(events[0]?.payload).toMatchObject({
     parent_tool_use_id: "toolu_delegate",
+    sdkKind: "task_progress",
+  });
+});
+
+test("task_progress recovers parent_tool_use_id from subagent role map when context was cleared", () => {
+  const ctx = createSdkStreamContext();
+  ctx.subagentRoleByParentToolUseId.set("call_delegate", "explore");
+  ctx.activeSubagentRole = "explore";
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+      last_tool_name: "Read",
+      uuid: "sdk_task_2",
+      session_id: "session_1",
+      role: "explore",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events[0]?.payload).toMatchObject({
+    parent_tool_use_id: "call_delegate",
+    sdkKind: "task_progress",
+  });
+});
+
+test("task_progress carries parent_tool_use_id from PreToolUse registration without agentId", () => {
+  const ctx = createSdkStreamContext();
+  registerSubagentOnStreamContext(ctx, {
+    role: "explore",
+    parentToolUseId: "call_delegate",
+  });
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+      last_tool_name: "Read",
+      uuid: "sdk_task_pre",
+      session_id: "session_planner",
+      role: "explore",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events[0]?.payload).toMatchObject({
+    parent_tool_use_id: "call_delegate",
+    sdkKind: "task_progress",
+  });
+  expect(events[0]?.agentId).toBe("session_planner");
+});
+
+test("task_progress carries agentId registered from SubagentStart role map without parent", () => {
+  const ctx = createSdkStreamContext();
+  registerSubagentOnStreamContext(ctx, {
+    role: "explore",
+    agentId: "agent_explore_a",
+  });
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+      last_tool_name: "Read",
+      uuid: "sdk_task_role",
+      session_id: "session_planner",
+      role: "explore",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events[0]?.agentId).toBe("agent_explore_a");
+});
+
+test("task_progress carries agentId registered from SubagentStart", () => {
+  const ctx = createSdkStreamContext();
+  registerSubagentOnStreamContext(ctx, {
+    role: "explore",
+    agentId: "agent_explore_a",
+    parentToolUseId: "call_delegate",
+  });
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+      last_tool_name: "Read",
+      uuid: "sdk_task_3",
+      session_id: "session_planner",
+      role: "explore",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events[0]?.agentId).toBe("agent_explore_a");
+  expect(events[0]?.payload).toMatchObject({
+    parent_tool_use_id: "call_delegate",
     sdkKind: "task_progress",
   });
 });

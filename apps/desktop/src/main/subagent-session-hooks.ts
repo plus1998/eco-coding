@@ -1,4 +1,4 @@
-import type { EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
+import type { EcoSubagentAttributionHooks, EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
 import { summarizeAgentObjective } from "@eco/runtime";
 import { resolveSubagentSessionRole } from "../shared/subagent-roles.js";
 import type { RuntimeAgentRole } from "../shared/ipc";
@@ -32,6 +32,7 @@ export function createSubagentSessionHooks(
       runAttemptId?: string;
     }) => void;
     onSubagentBillingStampClear?: (input: { agentId: string }) => void;
+    attribution?: Pick<EcoSubagentAttributionHooks, "onSubagentRegistered">;
     contextMonitor?: Pick<ContextWindowMonitor, "shouldHandoffSubagentResume" | "getInstanceOccupancy">;
     handoffService?: SubagentHandoffService;
   },
@@ -128,6 +129,11 @@ export function createSubagentSessionHooks(
         ...(missionKey && { missionKey }),
       });
       options?.metricsRegistry?.linkToolUseToAgent(threadId, parentToolUseId, input.agentId);
+      options?.attribution?.onSubagentRegistered?.({
+        role,
+        agentId: input.agentId,
+        parentToolUseId,
+      });
       options?.lifecycle?.linkSubagentParentToolUse({
         threadId,
         agentId: input.agentId,
