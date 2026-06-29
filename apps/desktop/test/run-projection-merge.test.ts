@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
+import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 import { mergeThreadRunProjectionUpdate } from "../src/renderer/run-projection-merge";
 
 function makeProjection(

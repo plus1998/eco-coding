@@ -606,6 +606,78 @@ function hasUserPromptBetween(
   return false;
 }
 
+/** Same thinking block grows by prefix extension; a new block is not a continuation. */
+export function isThinkingTextContinuation(previous: string, next: string): boolean {
+  const prev = previous.trim();
+  const nextTrim = next.trim();
+  if (!nextTrim) {
+    return true;
+  }
+  if (!prev) {
+    return true;
+  }
+  return nextTrim.startsWith(prev) || prev.startsWith(nextTrim);
+}
+
+function hasThinkingStreamBoundaryBetween(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  current: ThreadRunProjectionTimelineItem,
+  item: ThreadRunProjectionTimelineItem,
+): boolean {
+  const currentIndex = timeline.findIndex((entry) => entry.id === current.id);
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  if (currentIndex < 0 || itemIndex < 0 || itemIndex <= currentIndex) {
+    return false;
+  }
+  for (let index = currentIndex + 1; index < itemIndex; index += 1) {
+    const entry = timeline[index];
+    if (!entry) {
+      continue;
+    }
+    if (isProjectionUserPromptItem(entry)) {
+      return true;
+    }
+    if (entry.eventType === "thinking.final" || entry.eventType === "message.final") {
+      return true;
+    }
+    if (
+      entry.eventType === "tool.started" ||
+      entry.eventType === "tool.completed" ||
+      entry.eventType === "tool.failed"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasOnlyEmptyThinkingBefore(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  item: ThreadRunProjectionTimelineItem,
+): boolean {
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  if (itemIndex <= 0) {
+    return false;
+  }
+  let sawEmptyThinking = false;
+  for (let index = itemIndex - 1; index >= 0; index -= 1) {
+    const entry = timeline[index];
+    if (!entry) {
+      continue;
+    }
+    const isThinking =
+      entry.eventType === "thinking.delta" || entry.eventType === "thinking.final";
+    if (!isThinking) {
+      return false;
+    }
+    if (entry.text.trim()) {
+      return sawEmptyThinking;
+    }
+    sawEmptyThinking = true;
+  }
+  return false;
+}
+
 function shouldResetThinkingStreamMerge(
   current: ThreadRunProjectionTimelineItem,
   item: ThreadRunProjectionTimelineItem,
@@ -620,6 +692,27 @@ function shouldResetThinkingStreamMerge(
     return true;
   }
   if (hasUserPromptBetween(timeline, current, item)) {
+    return true;
+  }
+  if (
+    current.id !== item.id &&
+    !item.text.trim() &&
+    current.text.trim() &&
+    hasThinkingStreamBoundaryBetween(timeline, current, item)
+  ) {
+    return true;
+  }
+  if (current.id !== item.id && !isThinkingTextContinuation(current.text, item.text)) {
+    if (hasThinkingStreamBoundaryBetween(timeline, current, item)) {
+      return true;
+    }
+    if (
+      item.text.trim() &&
+      item.text.length < current.text.length &&
+      hasOnlyEmptyThinkingBefore(timeline, item)
+    ) {
+      return false;
+    }
     return true;
   }
   return false;
@@ -638,7 +731,8 @@ function mergeStreamDisplayTimelineItem(
   if (!isThinkingStream) {
     return item;
   }
-  if (shouldResetThinkingStreamMerge(current, item, timeline)) {
+  const shouldReset = shouldResetThinkingStreamMerge(current, item, timeline);
+  if (shouldReset) {
     return item;
   }
   const preservedText = !item.text.trim()
@@ -1030,7 +1124,6 @@ function projectionStreamDisplayKey(
 
 const FEED_SORT_LANE_NORMAL = 0;
 const FEED_SORT_LANE_STREAM_MESSAGE = 1;
-const FEED_SORT_LANE_STREAM_THINKING = 2;
 
 function buildToolLifecycleSortAnchors(
   timeline: readonly ThreadRunProjectionTimelineItem[],
@@ -1072,22 +1165,6 @@ function resolveFeedEntrySortLane(
   item: ThreadRunProjectionTimelineItem,
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): number {
-  if (item.eventType === "thinking.delta") {
-    const span = projectionRequestSpan(item, requestSpansById);
-    if (!span || isProjectionRequestActive(span)) {
-      return FEED_SORT_LANE_STREAM_THINKING;
-    }
-  }
-  if (
-    item.eventType === "thinking.final" &&
-    item.text.trim() &&
-    item.requestId?.trim()
-  ) {
-    const span = projectionRequestSpan(item, requestSpansById);
-    if (!span || isProjectionRequestActive(span)) {
-      return FEED_SORT_LANE_STREAM_THINKING;
-    }
-  }
   if (item.eventType === "message.delta") {
     const span = projectionRequestSpan(item, requestSpansById);
     if (!span || isProjectionRequestActive(span)) {

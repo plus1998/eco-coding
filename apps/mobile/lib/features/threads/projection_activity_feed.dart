@@ -478,6 +478,69 @@ bool _hasUserPromptBetween(
   return false;
 }
 
+bool _isThinkingTextContinuation(String previous, String next) {
+  final prev = previous.trim();
+  final nextTrim = next.trim();
+  if (nextTrim.isEmpty) {
+    return true;
+  }
+  if (prev.isEmpty) {
+    return true;
+  }
+  return nextTrim.startsWith(prev) || prev.startsWith(nextTrim);
+}
+
+bool _hasThinkingStreamBoundaryBetween(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  ThreadRunProjectionTimelineItem current,
+  ThreadRunProjectionTimelineItem item,
+) {
+  final currentIndex = timeline.indexWhere((entry) => entry.id == current.id);
+  final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
+  if (currentIndex < 0 || itemIndex < 0 || itemIndex <= currentIndex) {
+    return false;
+  }
+  for (var index = currentIndex + 1; index < itemIndex; index += 1) {
+    final entry = timeline[index];
+    if (_isProjectionUserPromptItem(entry)) {
+      return true;
+    }
+    if (entry.eventType == 'thinking.final' || entry.eventType == 'message.final') {
+      return true;
+    }
+    if (entry.eventType == 'tool.started' ||
+        entry.eventType == 'tool.completed' ||
+        entry.eventType == 'tool.failed') {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _hasOnlyEmptyThinkingBefore(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  ThreadRunProjectionTimelineItem item,
+) {
+  final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
+  if (itemIndex <= 0) {
+    return false;
+  }
+  var sawEmptyThinking = false;
+  for (var index = itemIndex - 1; index >= 0; index -= 1) {
+    final entry = timeline[index];
+    final isThinking =
+        entry.eventType == 'thinking.delta' || entry.eventType == 'thinking.final';
+    if (!isThinking) {
+      return false;
+    }
+    if (entry.text.trim().isNotEmpty) {
+      return sawEmptyThinking;
+    }
+    sawEmptyThinking = true;
+  }
+  return false;
+}
+
 bool _shouldResetThinkingStreamMerge(
   ThreadRunProjectionTimelineItem current,
   ThreadRunProjectionTimelineItem item,
@@ -495,7 +558,28 @@ bool _shouldResetThinkingStreamMerge(
   if (current.eventType == 'thinking.final') {
     return true;
   }
-  return _hasUserPromptBetween(timeline, current, item);
+  if (_hasUserPromptBetween(timeline, current, item)) {
+    return true;
+  }
+  if (current.id != item.id &&
+      item.text.trim().isEmpty &&
+      current.text.trim().isNotEmpty &&
+      _hasThinkingStreamBoundaryBetween(timeline, current, item)) {
+    return true;
+  }
+  if (current.id != item.id &&
+      !_isThinkingTextContinuation(current.text, item.text)) {
+    if (_hasThinkingStreamBoundaryBetween(timeline, current, item)) {
+      return true;
+    }
+    if (item.text.trim().isNotEmpty &&
+        item.text.length < current.text.length &&
+        _hasOnlyEmptyThinkingBefore(timeline, item)) {
+      return false;
+    }
+    return true;
+  }
+  return false;
 }
 
 ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(

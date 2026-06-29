@@ -854,6 +854,112 @@ test("buildThreadRunProjectionViewModel does not bleed prior thinking into a new
   }
 });
 
+test("buildThreadRunProjectionViewModel keeps historical thinking without requestId in chronological order", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_1",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:05.000Z",
+        },
+        {
+          requestId: "req_2",
+          status: "streaming",
+          startedAt: "2026-01-01T00:01:00.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "t1-think",
+          eventType: "thinking.delta",
+          role: "thinking",
+          streamKey: "thr_test:thinking",
+          text: "第一轮思考",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "t1-msg",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_1",
+          text: "第一轮回复",
+          at: "2026-01-01T00:00:05.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "user",
+          eventType: "thread.status",
+          role: "user",
+          text: "继续",
+          metadata: { liveType: "thread.user_prompt" },
+          at: "2026-01-01T00:00:59.000Z",
+          sequence: 3,
+        }),
+        item({
+          id: "t2-think",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_2",
+          streamKey: "thr_test:thinking",
+          text: "第二轮思考",
+          at: "2026-01-01T00:01:02.000Z",
+          sequence: 4,
+        }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries
+      .filter((entry) => entry.kind === "timeline")
+      .map((entry) => entry.item.id),
+  ).toEqual(["t1-think", "t1-msg", "user", "t2-think"]);
+});
+
+test("buildThreadRunProjectionViewModel keeps streaming thinking above streaming message body", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_1",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-delta",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_1",
+          streamKey: "thr_test:thinking",
+          text: "正在思考",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "message-delta",
+          eventType: "message.delta",
+          role: "planner",
+          requestId: "req_1",
+          text: "正文输出",
+          at: "2026-01-01T00:00:05.000Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries
+      .filter((entry) => entry.kind === "timeline")
+      .map((entry) => entry.item.id),
+  ).toEqual(["thinking-delta", "message-delta"]);
+});
+
 test("buildThreadRunProjectionViewModel preserves thinking text across empty stream placeholders", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
@@ -1460,6 +1566,49 @@ test("buildThreadRunProjectionViewModel does not bleed prior thinking text into 
       entry.kind === "timeline" && entry.item.eventType.includes("thinking"),
   );
   expect(thinking.map((entry) => entry.item.text)).toEqual(["旧思考内容很长", "新思考"]);
+});
+
+test("buildThreadRunProjectionViewModel does not bleed prior thinking delta into a new thinking delta on the same request", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_1",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "think-1",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_1",
+          streamKey: "thr_test:thinking",
+          text: "旧思考内容很长",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "think-2",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_1",
+          streamKey: "thr_test:thinking",
+          text: "新思考",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  const thinking = view.mainFeedEntries.filter(
+    (entry): entry is Extract<typeof entry, { kind: "timeline" }> =>
+      entry.kind === "timeline" && entry.item.eventType.includes("thinking"),
+  );
+  expect(thinking.map((entry) => entry.item.text)).toEqual(["新思考"]);
 });
 
 test("buildThreadRunProjectionViewModel keeps final main agent text after empty placeholder sharing a streamKey", () => {

@@ -6,6 +6,7 @@ import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
 } from "../shared/thread-follow-up-events";
+import { isThinkingTextContinuation } from "./thread-run-projection-view";
 
 export interface MergeThreadRunProjectionOptions {
   /** When true, reject trimmed feed updates that would drop older timeline items. */
@@ -98,7 +99,13 @@ function shouldResetThinkingStreamMergeForMerge(
   if (hasUserPromptBetween(timeline, current, incoming)) {
     return true;
   }
-  return current.eventType === "thinking.final" && current.id !== incoming.id;
+  if (current.eventType === "thinking.final" && current.id !== incoming.id) {
+    return true;
+  }
+  if (current.id !== incoming.id && !isThinkingTextContinuation(current.text, incoming.text)) {
+    return true;
+  }
+  return false;
 }
 
 function mergeStreamTimelineItem(
@@ -189,11 +196,13 @@ export function mergeThreadRunProjectionUpdate(
     return current;
   }
 
+  // sourceEventCount decreased — likely due to context compaction.
+  // Always merge so that post-compaction timeline items are not lost.
   if (incoming.timeline.length > current.timeline.length) {
-    return mergeIncomingProjection(current, incoming);
+    return mergeTrimmedIncomingProjection(current, incoming);
   }
   if (preserveHistory) {
-    return current;
+    return mergeTrimmedIncomingProjection(current, incoming);
   }
-  return current;
+  return mergeTrimmedIncomingProjection(current, incoming);
 }
