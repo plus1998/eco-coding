@@ -17,6 +17,11 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import {
+  formatThreadRunToolDetailLabel,
+  resolveGrepToolTargetDisplay,
+  resolveReadToolTargetDisplay,
+} from "../shared/tool-target";
+import {
   isReconnectActivityOrigin,
   isRequestFailureFeedNoiseOrigin,
   isTimelineItemSupersededByRecovery,
@@ -35,6 +40,10 @@ import {
   type ActivityDetailBlock,
 } from "./activity-log";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change";
+import {
+  parseThreadRunGrepToolTarget,
+  parseThreadRunReadToolTarget,
+} from "../shared/tool-target";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isRecordedUserPromptLiveEvent,
@@ -1266,6 +1275,8 @@ function projectionToolDisplayRichness(item: ThreadRunProjectionTimelineItem): n
     return 0;
   }
   return (
+    (metadataTool.readTarget ? 6 : 0) +
+    (metadataTool.grepTarget ? 6 : 0) +
     (metadataTool.detail ? 4 : 0) +
     (metadataTool.fileChange ? 8 : 0) +
     (metadataTool.durationMs !== undefined ? 2 : 0) +
@@ -1389,6 +1400,8 @@ function buildProjectionToolActionBlock(
     ...(description && { description }),
   });
   const fileChange = resolveFileChangeCardDisplay(metadataTool?.fileChange);
+  const readTarget = resolveReadToolTargetDisplay(metadataTool?.readTarget);
+  const grepTarget = resolveGrepToolTargetDisplay(metadataTool?.grepTarget);
   return {
     kind: "action",
     icon: iconForToolName(input.toolName),
@@ -1396,6 +1409,8 @@ function buildProjectionToolActionBlock(
     ...(input.lifecycle && { lifecycle: input.lifecycle }),
     ...(bashRun && { bashRun }),
     ...(fileChange && { fileChange }),
+    ...(readTarget && { readTarget }),
+    ...(grepTarget && { grepTarget }),
     ...(subagent && { subagent }),
     ...(item.agentId && { agentId: item.agentId }),
   };
@@ -1674,6 +1689,9 @@ function readProjectionToolMetadata(
   if (!name) {
     return undefined;
   }
+  const fileChange = parseThreadRunFileChangeMetadata(record.fileChange);
+  const readTarget = parseThreadRunReadToolTarget(record.readTarget);
+  const grepTarget = parseThreadRunGrepToolTarget(record.grepTarget);
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
@@ -1685,10 +1703,9 @@ function readProjectionToolMetadata(
     ...(isProjectionToolStatus(record.status) && { status: record.status }),
     ...(typeof record.description === "string" &&
       record.description.trim() && { description: record.description.trim() }),
-    ...((): { fileChange?: ThreadRunToolMetadata["fileChange"] } => {
-      const fileChange = parseThreadRunFileChangeMetadata(record.fileChange);
-      return fileChange ? { fileChange } : {};
-    })(),
+    ...(fileChange && { fileChange }),
+    ...(readTarget && { readTarget }),
+    ...(grepTarget && { grepTarget }),
   };
 }
 
@@ -1786,7 +1803,10 @@ function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
 function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineItem): string {
   const metadataTool = readProjectionToolMetadata(item);
   if (metadataTool) {
-    const base = formatToolStatusPreview(metadataTool.name, metadataTool.detail);
+    const base = formatToolStatusPreview(
+      metadataTool.name,
+      formatThreadRunToolDetailLabel(metadataTool),
+    );
     if (metadataTool.durationMs === undefined) {
       return base;
     }
@@ -1797,7 +1817,8 @@ function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineIte
 }
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
-  return formatToolDisplayLabel(tool.name, tool.detail);
+  const structuredDetail = formatThreadRunToolDetailLabel(tool);
+  return formatToolDisplayLabel(tool.name, structuredDetail);
 }
 
 function readProjectionDelegationMetadata(

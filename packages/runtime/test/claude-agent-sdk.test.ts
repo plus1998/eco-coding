@@ -784,11 +784,11 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
     payload: {
       type: "tool_use",
       tool_name: "Read",
-      input: { file_path: "/tmp/project/src/styles.css" },
+      input: { file_path: "/tmp/project/src/styles.css", offset: 120, limit: 40 },
     },
   });
   expect(toolDisplay).toEqual({
-    message: "Tool: Read · styles.css",
+    message: "Tool: Read · styles.css:L120-159",
     role: "coder",
     stream: false,
   });

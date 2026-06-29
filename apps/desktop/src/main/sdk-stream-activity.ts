@@ -11,6 +11,11 @@ import {
 } from "../shared/file-change.js";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { limitToolOutputForContext } from "../shared/tool-output-limit.js";
+import {
+  formatThreadRunGrepTargetLabel,
+  formatThreadRunReadTargetLabel,
+  resolveThreadRunToolTargets,
+} from "../shared/tool-target.js";
 import { activityStreamKey } from "./activity-agent-id.js";
 import { classifySdkStreamMessageOrigin } from "./sdk-activity-origin.js";
 
@@ -394,7 +399,11 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     return undefined;
   }
   const name = record.tool_name.trim();
-  const detail = resolveSdkToolDisplayDetail(name, record.input);
+  const targets = resolveThreadRunToolTargets(name, record.input);
+  const detail =
+    (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ||
+    (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
+    resolveSdkToolDisplayDetail(name, record.input);
   const toolUseId = readString(record.tool_use_id);
   const description = name === "Bash" ? readBashDescriptionFromToolInput(record.input) : undefined;
   const fileChange = isFileChangeToolName(name)
@@ -406,6 +415,8 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
     ...(fileChange && { fileChange }),
+    ...(targets.readTarget && { readTarget: targets.readTarget }),
+    ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
   };
 }
 

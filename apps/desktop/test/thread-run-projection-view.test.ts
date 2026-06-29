@@ -2477,6 +2477,45 @@ test("projectionItemToDetailBlock maps API errors and request ownership", () => 
   expect(mainRequest).toMatchObject({ kind: "model-request", role: "planner" });
 });
 
+test("projectionItemToDetailBlock maps Read tool.started with structured line range", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "read-range",
+      eventType: "tool.started",
+      scope: "agent",
+      role: "coder",
+      text: "Tool: Read · ActivityLogView.tsx:L120-159",
+      metadata: {
+        liveType: "tool.started",
+        tool: {
+          name: "Read",
+          detail: "ActivityLogView.tsx:L120-159",
+          toolUseId: "toolu_read_1",
+          status: "started",
+          readTarget: {
+            filePath: "/repo/apps/desktop/src/renderer/ActivityLogView.tsx",
+            offset: 120,
+            limit: 40,
+          },
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "action",
+    icon: "file",
+    label: "ActivityLogView.tsx:L120-159",
+    readTarget: {
+      fileName: "ActivityLogView.tsx",
+      filePath: "/repo/apps/desktop/src/renderer/ActivityLogView.tsx",
+      offset: 120,
+      limit: 40,
+      lineRange: "L120-159",
+    },
+  });
+});
+
 test("projectionItemToDetailBlock maps planner Agent tool.started with metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({

@@ -45,6 +45,11 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
 
 test("formatPromptCacheBreakMessage combines multiple reasons", () => {
   expect(formatPromptCacheBreakMessage(["mcp_servers_changed", "claude_md_changed"])).toBe(
-    "MCP 配置与CLAUDE.md已变更，本会话 prompt cache 已失效",
+    "MCP 配置已变更，CLAUDE.md 已变更，本会话 prompt cache 已失效",
   );
+  expect(
+    formatPromptCacheBreakMessage(["profile_changed"], {
+      profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
+    }),
+  ).toBe("已经变更为 GPT+DeepSeek（Composer），本会话 prompt cache 已失效");
 });

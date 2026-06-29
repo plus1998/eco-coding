@@ -1,4 +1,9 @@
 import type { ThreadRunProjectionTimelineItem } from "./ipc";
+import {
+  formatPromptCacheConfigDriftMessage as formatPromptCacheConfigDriftMessageFromConfig,
+  type PromptCacheProfileLabel,
+} from "./prompt-cache-config";
+import type { PromptCacheConfigDriftKind } from "./prompt-cache-config";
 
 export type PromptCacheTimelineStepKind =
   | "config_drift"
@@ -86,13 +91,21 @@ export function buildPromptCacheTimelineNarrative(steps: readonly PromptCacheTim
 function shortenPromptCacheStepLabel(step: PromptCacheTimelineStep): string {
   const text = step.label.trim();
   if (step.kind === "config_drift") {
-    const match = text.match(/^(.+?)已变更/u);
-    if (match?.[1]) {
-      return `Composer 变更 ${match[1].trim()}`;
+    const switchMatch = text.match(/^已经变更为\s+(.+?)（.+?）$/u);
+    if (switchMatch?.[1]) {
+      return `Composer 变更 ${switchMatch[1].trim()}`;
+    }
+    const legacyMatch = text.match(/^(.+?)已变更/u);
+    if (legacyMatch?.[1]) {
+      return `Composer 变更 ${legacyMatch[1].trim()}`;
     }
     return text || "Composer 配置已变更";
   }
   if (step.kind === "invalidated") {
+    const switchMatch = text.match(/^已经变更为\s+(.+?)（.+?），本会话 prompt cache 已失效/u);
+    if (switchMatch?.[1]) {
+      return `发消息后 cache 失效（${switchMatch[1].trim()}）`;
+    }
     if (/已变更，本会话 prompt cache 已失效/u.test(text)) {
       const prefix = text.replace(/已变更，本会话 prompt cache 已失效.*$/u, "").trim();
       return prefix ? `发消息后 cache 失效（${prefix}）` : "发消息后 cache 失效";
@@ -215,17 +228,8 @@ function buildSyntheticPromptCacheTimelineItem(
 }
 
 export function formatPromptCacheConfigDriftMessage(
-  kinds: readonly ("profile" | "mcp")[],
+  kinds: readonly PromptCacheConfigDriftKind[],
+  options?: { profileLabel?: PromptCacheProfileLabel },
 ): string {
-  const parts: string[] = [];
-  if (kinds.includes("profile")) {
-    parts.push("Agent Profile");
-  }
-  if (kinds.includes("mcp")) {
-    parts.push("MCP 配置");
-  }
-  if (parts.length === 0) {
-    return "Composer 配置已变更";
-  }
-  return `${parts.join("与")}已变更（Composer）`;
+  return formatPromptCacheConfigDriftMessageFromConfig(kinds, options);
 }

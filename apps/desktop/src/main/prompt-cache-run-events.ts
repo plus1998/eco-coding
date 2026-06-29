@@ -1,8 +1,8 @@
 import {
   PROMPT_CACHE_EPISODE_METADATA_KEY,
-  formatPromptCacheConfigDriftMessage,
 } from "../shared/prompt-cache-timeline";
-import type { PromptCacheConfigDriftKind } from "../shared/prompt-cache-config";
+import type { PromptCacheConfigDriftKind, PromptCacheProfileLabel } from "../shared/prompt-cache-config";
+import { formatPromptCacheConfigDriftMessage } from "../shared/prompt-cache-config";
 import type { PromptCacheBreakReason } from "./prompt-cache-fingerprint";
 import { formatPromptCacheBreakMessage } from "./prompt-cache-fingerprint";
 import type { CacheHitDropDetection } from "./thread-cache-hit-monitor";
@@ -29,8 +29,16 @@ export interface PromptCacheRunEventWriter {
 }
 
 export interface PromptCacheRunEventEmitter {
-  emitConfigDrift(threadId: string, kinds: readonly PromptCacheConfigDriftKind[]): void;
-  emitInvalidated(threadId: string, reasons: readonly PromptCacheBreakReason[]): void;
+  emitConfigDrift(
+    threadId: string,
+    kinds: readonly PromptCacheConfigDriftKind[],
+    options?: { profileLabel?: PromptCacheProfileLabel },
+  ): void;
+  emitInvalidated(
+    threadId: string,
+    reasons: readonly PromptCacheBreakReason[],
+    options?: { profileLabel?: PromptCacheProfileLabel },
+  ): void;
   emitHitDropped(
     threadId: string,
     detection: CacheHitDropDetection,
@@ -43,12 +51,12 @@ export function createPromptCacheRunEventEmitter(
   episodeMonitor: ThreadPromptCacheEpisodeMonitor,
 ): PromptCacheRunEventEmitter {
   return {
-    emitConfigDrift(threadId, kinds) {
+    emitConfigDrift(threadId, kinds, options) {
       if (!writer.getThread(threadId) || kinds.length === 0) {
         return;
       }
       const episodeId = episodeMonitor.beginOrContinue(threadId);
-      const message = formatPromptCacheConfigDriftMessage(kinds);
+      const message = formatPromptCacheConfigDriftMessage(kinds, options);
       const now = new Date().toISOString();
       const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const runAttemptId = writer.resolveCurrentRunAttemptId(threadId);
@@ -73,17 +81,16 @@ export function createPromptCacheRunEventEmitter(
           metadata,
         });
         writer.scheduleProjectionUpdated(threadId);
-        writer.emitThreadEvent(threadId, "context.cache_config_drift", message);
       } catch (error) {
         writer.writeStderr(`[eco] prompt cache config drift event write failed: ${String(error)}\n`);
       }
     },
 
-    emitInvalidated(threadId, reasons) {
+    emitInvalidated(threadId, reasons, options) {
       if (!writer.getThread(threadId)) {
         return;
       }
-      const message = formatPromptCacheBreakMessage(reasons);
+      const message = formatPromptCacheBreakMessage(reasons, options);
       const episodeId = episodeMonitor.beginOrContinue(threadId);
       const now = new Date().toISOString();
       const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -109,7 +116,6 @@ export function createPromptCacheRunEventEmitter(
           metadata,
         });
         writer.scheduleProjectionUpdated(threadId);
-        writer.emitThreadEvent(threadId, "context.cache_invalidated", message);
       } catch (error) {
         writer.writeStderr(`[eco] prompt cache invalidation event write failed: ${String(error)}\n`);
       }
@@ -150,7 +156,6 @@ export function createPromptCacheRunEventEmitter(
           metadata,
         });
         writer.scheduleProjectionUpdated(threadId);
-        writer.emitThreadEvent(threadId, "billing.cache_hit_dropped", message);
       } catch (error) {
         writer.writeStderr(`[eco] prompt cache hit drop event write failed: ${String(error)}\n`);
       }

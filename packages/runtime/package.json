@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./sdk": "./src/claude-agent-sdk.ts",
-    "./anthropic-content-normalize": "./src/anthropic-content-normalize.ts"
+    "./anthropic-content-normalize": "./src/anthropic-content-normalize.ts",
+    "./tool-target": "./src/tool-target.ts"
   }
 }

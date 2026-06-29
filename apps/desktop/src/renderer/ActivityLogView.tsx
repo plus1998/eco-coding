@@ -265,7 +265,7 @@ function ProjectionActivityLogView({
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange)) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange || block.readTarget || block.grepTarget)) {
     return false;
   }
   return (
@@ -751,11 +751,13 @@ function SubagentRunCardButton({
             ) : null}
           </span>
           <span className="subagent-run-title-trailing">
-            <span className={`subagent-run-status-badge tone-${statusBadge.tone}`}>
-              {statusBadge.label}
-            </span>
             {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
             {running ? <span className="subagent-run-loading" aria-hidden /> : null}
+            {!running ? (
+              <span className={`subagent-run-status-badge tone-${statusBadge.tone}`}>
+                {statusBadge.label}
+              </span>
+            ) : null}
             <ChevronDown
               size={16}
               className={`subagent-run-chevron${expanded ? " open" : ""}`}
@@ -877,6 +879,8 @@ function DetailBlock({
         label={block.label}
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
+        {...(block.readTarget && { readTarget: block.readTarget })}
+        {...(block.grepTarget && { grepTarget: block.grepTarget })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -995,6 +999,7 @@ function isPromptCacheNoticePhaseLabel(label: string): boolean {
   return (
     /prompt cache 已失效/u.test(label) ||
     /Prompt cache 命中率从/u.test(label) ||
+    /已经变更为/u.test(label) ||
     /已变更，本会话 prompt cache 已失效/u.test(label) ||
     /已变更（Composer）/u.test(label) ||
     /输出已截断/u.test(label)
@@ -1603,6 +1608,8 @@ function RunLogAction({
   lifecycle,
   bashRun,
   fileChange,
+  readTarget,
+  grepTarget,
   subagent,
   modelByRole,
   omitRoleLabel,
@@ -1612,6 +1619,8 @@ function RunLogAction({
   lifecycle?: ToolActionLifecycle;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
+  readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
+  grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
@@ -1702,6 +1711,21 @@ function RunLogAction({
     );
   }
 
+  if (readTarget || grepTarget) {
+    return (
+      <div className="run-log-action run-log-action--fs-target-card">
+        {showRoleLabel ? (
+          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+        ) : null}
+        <RunLogFilesystemTargetCard
+          {...(readTarget && { readTarget })}
+          {...(grepTarget && { grepTarget })}
+          {...(lifecycle && { lifecycle })}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}>
       {showRoleLabel ? (
@@ -1729,6 +1753,48 @@ function RunLogAction({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function RunLogFilesystemTargetCard({
+  readTarget,
+  grepTarget,
+  lifecycle,
+}: {
+  readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
+  grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
+  lifecycle?: ToolActionLifecycle;
+}) {
+  const title = readTarget
+    ? readTarget.lineRange
+      ? `${readTarget.fileName} · ${readTarget.lineRange}`
+      : readTarget.fileName
+    : grepTarget?.pattern ?? "";
+  const meta = readTarget?.filePath ?? grepTarget?.path ?? (grepTarget?.glob ? `glob:${grepTarget.glob}` : undefined);
+
+  return (
+    <div
+      className={[
+        "run-log-fs-target-card",
+        lifecycle === "running" ? "is-running" : "",
+        lifecycle === "failed" ? "is-failed" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="run-log-fs-target-card-header">
+        <span className="run-log-fs-target-card-title">{title}</span>
+        {grepTarget?.scopeLabel && !readTarget ? (
+          <span className="run-log-fs-target-card-scope">{grepTarget.scopeLabel}</span>
+        ) : null}
+      </div>
+      {meta ? (
+        <>
+          <div className="run-log-fs-target-card-divider" aria-hidden />
+          <div className="run-log-fs-target-card-path">{meta}</div>
+        </>
+      ) : null}
     </div>
   );
 }

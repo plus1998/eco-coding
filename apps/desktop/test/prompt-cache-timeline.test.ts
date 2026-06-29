@@ -20,8 +20,16 @@ function item(
 }
 
 test("formatPromptCacheConfigDriftMessage describes composer drift", () => {
-  expect(formatPromptCacheConfigDriftMessage(["profile"])).toContain("Composer");
-  expect(formatPromptCacheConfigDriftMessage(["profile", "mcp"])).toContain("Agent Profile");
+  expect(
+    formatPromptCacheConfigDriftMessage(["profile"], {
+      profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
+    }),
+  ).toContain("Composer");
+  expect(
+    formatPromptCacheConfigDriftMessage(["profile", "mcp"], {
+      profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
+    }),
+  ).toContain("GPT+DeepSeek");
 });
 
 test("buildPromptCacheTimelineNarrative joins steps with arrows", () => {
@@ -29,12 +37,12 @@ test("buildPromptCacheTimelineNarrative joins steps with arrows", () => {
     {
       kind: "config_drift",
       at: "t1",
-      label: "Agent Profile与MCP 配置已变更（Composer）",
+      label: "已经变更为 GPT+DeepSeek（Composer）",
     },
     {
       kind: "invalidated",
       at: "t2",
-      label: "MCP 配置已变更，本会话 prompt cache 已失效",
+      label: "已经变更为 GPT+DeepSeek（Composer），本会话 prompt cache 已失效",
     },
     {
       kind: "hit_dropped",
@@ -51,13 +59,13 @@ test("collapsePromptCacheTimelineItems merges consecutive cache events", () => {
     item({
       id: "drift",
       eventType: "context.cache_config_drift",
-      text: "Agent Profile已变更（Composer）",
+      text: "已经变更为 GPT+DeepSeek（Composer）",
       metadata: { promptCacheEpisodeId: "pce_1" },
     }),
     item({
       id: "invalidated",
       eventType: "context.cache_invalidated",
-      text: "Agent Profile已变更，本会话 prompt cache 已失效",
+      text: "已经变更为 GPT+DeepSeek（Composer），本会话 prompt cache 已失效",
       metadata: { promptCacheEpisodeId: "pce_1" },
     }),
     item({

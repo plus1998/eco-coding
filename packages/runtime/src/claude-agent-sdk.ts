@@ -51,6 +51,12 @@ import { resolveSkillDisplayName } from "./skill-display";
 import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
+import {
+  formatGrepTargetLabel,
+  formatReadTargetLabel,
+  resolveGrepTargetFromToolInput,
+  resolveReadTargetFromToolInput,
+} from "./tool-target.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
 export { SubagentLaunchRegistry, type SubagentLaunchRecord } from "./eco-sdk-hooks.js";
@@ -2661,6 +2667,16 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
       }
       return label;
     }
+  }
+
+  const readTarget = resolveReadTargetFromToolInput(toolName, input);
+  if (readTarget) {
+    return formatReadTargetLabel(readTarget);
+  }
+
+  const grepTarget = resolveGrepTargetFromToolInput(toolName, input);
+  if (grepTarget) {
+    return formatGrepTargetLabel(grepTarget);
   }
 
   const filePath =

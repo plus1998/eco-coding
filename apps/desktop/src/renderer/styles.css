@@ -746,11 +746,6 @@ html[data-window-focused="true"] .codex-sidebar {
   width: 48px;
 }
 
-.chat-item-row:hover .chat-item-trailing-actions-only .chat-item-trailing-actions,
-.chat-item-row:focus-within .chat-item-trailing-actions-only .chat-item-trailing-actions {
-  width: 24px;
-}
-
 .project-empty {
   margin: 0;
   padding: 2px 12px 4px 36px;
@@ -4160,7 +4155,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .run-log-prompt-cache-notice-line {
   height: 1px;
   min-width: 0;
-  background: color-mix(in srgb, #3b82f6 35%, #333333);
+  background: color-mix(in srgb, #3b82f6 12%, transparent);
 }
 
 .run-log-prompt-cache-notice-label {
@@ -5865,6 +5860,63 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-bash-card.is-running .run-log-bash-card-title {
+  color: #c8c8c8;
+}
+
+.run-log-action--fs-target-card {
+  display: block;
+  width: 100%;
+}
+
+.run-log-fs-target-card {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.run-log-fs-target-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-log-fs-target-card-title {
+  min-width: 0;
+  color: #e8e8e8;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.run-log-fs-target-card-scope {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.run-log-fs-target-card-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.run-log-fs-target-card-path {
+  color: rgba(255, 255, 255, 0.58);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.run-log-fs-target-card.is-running .run-log-fs-target-card-title {
   color: #c8c8c8;
 }
 

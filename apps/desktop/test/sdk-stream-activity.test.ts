@@ -52,6 +52,45 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("preserves Read line range in structured tool metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    tool?: {
+      name: string;
+      detail?: string;
+      readTarget?: { filePath: string; offset?: number; limit?: number };
+    };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "coder",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        tool_use_id: "toolu_read_1",
+        input: { file_path: "/repo/apps/desktop/src/renderer/ActivityLogView.tsx", offset: 120, limit: 40 },
+      },
+    },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      emitted.push({ ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted[0]?.tool).toEqual({
+    name: "Read",
+    detail: "ActivityLogView.tsx:L120-159",
+    toolUseId: "toolu_read_1",
+    readTarget: {
+      filePath: "/repo/apps/desktop/src/renderer/ActivityLogView.tsx",
+      offset: 120,
+      limit: 40,
+    },
+  });
+});
+
 test("preserves Bash description in structured tool metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ tool?: { name: string; detail?: string; description?: string } }> = [];

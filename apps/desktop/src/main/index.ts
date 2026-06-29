@@ -163,6 +163,7 @@ import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import {
   diffPromptCacheRuntimeSignatures,
+  resolvePromptCacheProfileLabel,
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
 import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
@@ -1438,7 +1439,12 @@ function registerIpcHandlers(): void {
         }),
       );
       if (driftKinds.length > 0) {
-        promptCacheRunEventEmitter.emitConfigDrift(threadId, driftKinds);
+        const profileLabel = driftKinds.includes("profile")
+          ? resolvePromptCacheProfileLabel(settings, runtimeConfig)
+          : undefined;
+        promptCacheRunEventEmitter.emitConfigDrift(threadId, driftKinds, {
+          ...(profileLabel && { profileLabel }),
+        });
       }
     }
     if (configChanged) {
@@ -6233,10 +6239,18 @@ async function auditThreadPromptCacheBeforeSdkSession(input: {
   if (reasons.length === 0) {
     return;
   }
+  const settings = getModelSettingsSnapshot();
+  const thread = conversationStore.getThread(input.threadId);
+  const profileLabel =
+    reasons.includes("profile_changed") && thread?.runtimeConfig
+      ? resolvePromptCacheProfileLabel(settings, thread.runtimeConfig)
+      : undefined;
   process.stderr.write(
     `[eco] prompt cache invalidated thread=${input.threadId} reasons=${formatPromptCacheBreakLog(reasons)}\n`,
   );
-  promptCacheRunEventEmitter.emitInvalidated(input.threadId, reasons);
+  promptCacheRunEventEmitter.emitInvalidated(input.threadId, reasons, {
+    ...(profileLabel && { profileLabel }),
+  });
 }
 
 function recordThreadRunEventFromLiveEvent(input: {

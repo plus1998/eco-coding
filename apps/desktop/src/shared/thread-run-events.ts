@@ -40,6 +40,7 @@ export type ThreadRunEventType =
   | "diagnostic";
 
 import type { ThreadRunFileChangeMetadata } from "./file-change";
+import type { ThreadRunGrepToolTarget, ThreadRunReadToolTarget } from "./tool-target";
 
 export interface ThreadRunToolMetadata {
   name: string;
@@ -51,6 +52,8 @@ export interface ThreadRunToolMetadata {
   /** Human-readable Bash title from Agent tool input.description */
   description?: string;
   fileChange?: ThreadRunFileChangeMetadata;
+  readTarget?: ThreadRunReadToolTarget;
+  grepTarget?: ThreadRunGrepToolTarget;
   outputTruncated?: boolean;
   outputOriginalChars?: number;
   outputKeptChars?: number;

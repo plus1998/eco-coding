@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { PromptCacheProfileLabel } from "../shared/prompt-cache-config";
+import { formatPromptCacheProfileSwitchPhrase } from "../shared/prompt-cache-config";
 
 export type PromptCacheBreakReason = "profile_changed" | "mcp_servers_changed" | "claude_md_changed";
 
@@ -39,21 +41,28 @@ export function diffPromptCacheFingerprint(
   return reasons;
 }
 
-export function formatPromptCacheBreakMessage(reasons: readonly PromptCacheBreakReason[]): string {
+export function formatPromptCacheBreakMessage(
+  reasons: readonly PromptCacheBreakReason[],
+  options?: { profileLabel?: PromptCacheProfileLabel },
+): string {
   if (reasons.length === 0) {
     return "本会话 prompt cache 已失效";
   }
   const parts: string[] = [];
   if (reasons.includes("profile_changed")) {
-    parts.push("Agent Profile");
+    parts.push(
+      options?.profileLabel
+        ? formatPromptCacheProfileSwitchPhrase(options.profileLabel)
+        : "Agent Profile 已变更",
+    );
   }
   if (reasons.includes("mcp_servers_changed")) {
-    parts.push("MCP 配置");
+    parts.push("MCP 配置已变更");
   }
   if (reasons.includes("claude_md_changed")) {
-    parts.push("CLAUDE.md");
+    parts.push("CLAUDE.md 已变更");
   }
-  return `${parts.join("与")}已变更，本会话 prompt cache 已失效`;
+  return `${parts.join("，")}，本会话 prompt cache 已失效`;
 }
 
 export function formatPromptCacheBreakLog(reasons: readonly PromptCacheBreakReason[]): string {

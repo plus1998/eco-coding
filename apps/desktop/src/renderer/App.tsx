@@ -44,9 +44,11 @@ import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   formatPromptCacheConfigDriftHint,
   resolvePromptCacheConfigDrift,
+  resolvePromptCacheProfileLabel,
 } from "../shared/prompt-cache-config";
 import {
   buildThreadRuntimeConfigFromDefaults,
+  normalizeThreadRuntimeConfig,
   type BashApprovalRequest,
   type ClarificationRequest,
   type CoderTodoItem,
@@ -350,16 +352,13 @@ function resolveActivityFeedScrollJump(
   if (!userScrollDirection) {
     return null;
   }
-  if (userScrollDirection === "up") {
-    if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
-      return null;
-    }
-    return "top";
-  }
   if (distanceFromBottom <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
     return null;
   }
-  return "bottom";
+  if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
+    return null;
+  }
+  return userScrollDirection === "up" ? "top" : "bottom";
 }
 
 function App() {
@@ -1691,8 +1690,15 @@ function App() {
     runProjection?.timeline.length,
     settings,
   ]);
+  const composerPromptCacheProfileLabel =
+    composerPromptCacheDrift?.includes("profile") && composerRuntimeConfig
+      ? resolvePromptCacheProfileLabel(settings, composerRuntimeConfig)
+      : undefined;
   const composerPromptCacheHint = composerPromptCacheDrift
-    ? formatPromptCacheConfigDriftHint(composerPromptCacheDrift)
+    ? formatPromptCacheConfigDriftHint(
+        composerPromptCacheDrift,
+        composerPromptCacheProfileLabel ? { profileLabel: composerPromptCacheProfileLabel } : undefined,
+      )
     : null;
 
   const canSendFollowUp = Boolean(
@@ -1928,12 +1934,19 @@ function App() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         programmaticActivityFeedScrollRef.current = false;
-        if (activityMessagesRef.current) {
-          activityFeedScrollTopRef.current = activityMessagesRef.current.scrollTop;
+        const el = activityMessagesRef.current;
+        if (!el) {
+          return;
         }
+        activityFeedScrollTopRef.current = el.scrollTop;
+        if (distanceFromActivityFeedBottom(el) <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+          userDetachedFromBottomRef.current = false;
+          activityFeedUserScrollDirectionRef.current = null;
+        }
+        syncActivityFeedScrollJump(el);
       });
     });
-  }, []);
+  }, [distanceFromActivityFeedBottom, syncActivityFeedScrollJump]);
 
   const scheduleActivityFeedLayoutScroll = useCallback(() => {
     const now = Date.now();
@@ -2056,8 +2069,12 @@ function App() {
         }
       } else if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
         userDetachedFromBottomRef.current = false;
+        activityFeedUserScrollDirectionRef.current = null;
       }
       activityFeedScrollTopRef.current = scrollTop;
+      if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
+        activityFeedUserScrollDirectionRef.current = null;
+      }
       syncActivityFeedScrollJump(container);
     };
     container.addEventListener("scroll", onScroll, { passive: true });
@@ -2113,9 +2130,15 @@ function App() {
   useLayoutEffect(() => {
     const container = activityMessagesRef.current;
     if (container) {
+      const distanceFromBottom = distanceFromActivityFeedBottom(container);
+      if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+        activityFeedUserScrollDirectionRef.current = null;
+      } else if (container.scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
+        activityFeedUserScrollDirectionRef.current = null;
+      }
       syncActivityFeedScrollJump(container);
     }
-  }, [runProjectionLayoutSignature, syncActivityFeedScrollJump]);
+  }, [distanceFromActivityFeedBottom, runProjectionLayoutSignature, syncActivityFeedScrollJump]);
 
   useLayoutEffect(() => {
     requestActivityFeedForceScroll();
@@ -2373,6 +2396,11 @@ function App() {
         setComposerAttachments([]);
         setComposerImageNotice(undefined);
         requestActivityFeedForceScroll();
+        // 用户已发送消息，接受当前的 prompt cache 配置漂移
+        if (composerRuntimeConfig) {
+          promptCacheBaselineByThreadRef.current[activeThread.id] = composerRuntimeConfig;
+          setPromptCacheBaselineVersion((v) => v + 1);
+        }
       } catch (caught) {
         setError(errorMessage(caught));
       } finally {
@@ -2408,6 +2436,11 @@ function App() {
         );
         clearPendingPlanForThread(result.thread.id);
         await refreshThreadState(result.thread.id);
+        // 用户已发送消息，接受当前的 prompt cache 配置漂移
+        if (composerRuntimeConfig) {
+          promptCacheBaselineByThreadRef.current[activeThread.id] = composerRuntimeConfig;
+          setPromptCacheBaselineVersion((v) => v + 1);
+        }
       } else {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
@@ -2425,6 +2458,11 @@ function App() {
           ...current,
           [result.thread.id]: [],
         }));
+        // 用户已发送消息，接受当前的 prompt cache 配置漂移
+        if (composerRuntimeConfig) {
+          promptCacheBaselineByThreadRef.current[result.thread.id] = composerRuntimeConfig;
+          setPromptCacheBaselineVersion((v) => v + 1);
+        }
       }
       clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
       setPrompt("");

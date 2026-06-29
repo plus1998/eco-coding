@@ -32,6 +32,13 @@ import {
   parseThreadRuntimeConfigJson,
   serializeThreadRuntimeConfig,
 } from "../shared/thread-runtime-config";
+import {
+  parseThreadRunFileChangeMetadata,
+} from "../shared/file-change.js";
+import {
+  parseThreadRunGrepToolTarget,
+  parseThreadRunReadToolTarget,
+} from "../shared/tool-target.js";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 import {
   normalizeSubagentMissionKey,
@@ -2880,6 +2887,8 @@ function mergeThreadRunToolMetadata(
     ...existing,
     ...incoming,
     ...(description !== undefined ? { description } : {}),
+    ...(incoming.readTarget ? { readTarget: incoming.readTarget } : existing.readTarget ? { readTarget: existing.readTarget } : {}),
+    ...(incoming.grepTarget ? { grepTarget: incoming.grepTarget } : existing.grepTarget ? { grepTarget: existing.grepTarget } : {}),
   };
 }
 
@@ -2896,7 +2905,9 @@ function isRicherThreadRunToolMetadata(
         incoming.toolUseId ||
         incoming.durationMs !== undefined ||
         incoming.status ||
-        incoming.description,
+        incoming.description ||
+        incoming.readTarget ||
+        incoming.grepTarget,
     );
   }
   if (existing.name !== incoming.name) {
@@ -2908,7 +2919,9 @@ function isRicherThreadRunToolMetadata(
       (incoming.toolUseId && incoming.toolUseId !== existing.toolUseId) ||
       (incoming.durationMs !== undefined && incoming.durationMs !== existing.durationMs) ||
       (incoming.status && incoming.status !== existing.status) ||
-      (incoming.description && incoming.description !== existing.description),
+      (incoming.description && incoming.description !== existing.description) ||
+      (incoming.readTarget && !existing.readTarget) ||
+      (incoming.grepTarget && !existing.grepTarget),
   );
 }
 
@@ -2923,6 +2936,9 @@ function readThreadRunToolMetadata(
   if (!name) {
     return undefined;
   }
+  const fileChange = parseThreadRunFileChangeMetadata(raw.fileChange);
+  const readTarget = parseThreadRunReadToolTarget(raw.readTarget);
+  const grepTarget = parseThreadRunGrepToolTarget(raw.grepTarget);
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
@@ -2932,6 +2948,9 @@ function readThreadRunToolMetadata(
     ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),
     ...(typeof raw.description === "string" &&
       raw.description.trim() && { description: raw.description.trim() }),
+    ...(fileChange && { fileChange }),
+    ...(readTarget && { readTarget }),
+    ...(grepTarget && { grepTarget }),
   };
 }
 

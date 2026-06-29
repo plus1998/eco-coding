@@ -308,6 +308,8 @@ function normalizeThreadRunToolMetadata(tool: ThreadRunToolMetadata): ThreadRunT
     ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
     ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),
     ...(tool.fileChange && { fileChange: tool.fileChange }),
+    ...(tool.readTarget && { readTarget: tool.readTarget }),
+    ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
   };
 }
 
