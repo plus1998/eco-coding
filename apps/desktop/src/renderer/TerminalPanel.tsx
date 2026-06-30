@@ -15,6 +15,8 @@ interface TerminalPanelProps {
   state: ProjectTerminalState;
   onStateChange: (next: ProjectTerminalState) => void;
   onClose: () => void;
+  injectedSessionId?: string | null;
+  onInjectedSessionConsumed?: () => void;
 }
 
 type SessionCache = Map<string, Map<string, string>>;
@@ -25,6 +27,8 @@ export function TerminalPanel({
   state,
   onStateChange,
   onClose,
+  injectedSessionId,
+  onInjectedSessionConsumed,
 }: TerminalPanelProps) {
   const sessionCacheRef = useRef<SessionCache>(new Map());
   const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>();
@@ -33,6 +37,25 @@ export function TerminalPanel({
   const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
 
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0];
+
+  useEffect(() => {
+    if (!injectedSessionId || !activeTab) {
+      return;
+    }
+    let projectSessions = sessionCacheRef.current.get(workspacePath);
+    if (!projectSessions) {
+      projectSessions = new Map();
+      sessionCacheRef.current.set(workspacePath, projectSessions);
+    }
+    projectSessions.set(activeTab.id, injectedSessionId);
+    setSessionsByTabId((current) => ({ ...current, [activeTab.id]: injectedSessionId }));
+    setErrorsByTabId((current) => {
+      const next = { ...current };
+      delete next[activeTab.id];
+      return next;
+    });
+    onInjectedSessionConsumed?.();
+  }, [activeTab, injectedSessionId, onInjectedSessionConsumed, workspacePath]);
 
   const syncSessionsFromCache = useCallback(() => {
     const projectSessions = sessionCacheRef.current.get(workspacePath);
@@ -281,7 +304,7 @@ export function TerminalPanel({
               ) : null}
               {!error && (isActive || sessionId) ? (
                 <GhosttyTerminal
-                  key={`${workspacePath}:${tab.id}`}
+                  key={`${workspacePath}:${tab.id}:${sessionId ?? "pending"}`}
                   sessionId={sessionId ?? null}
                   active={isActive}
                   onDimensionsReady={

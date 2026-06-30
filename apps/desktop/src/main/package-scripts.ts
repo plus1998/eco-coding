@@ -7,6 +7,8 @@ import type {
   RunPackageScriptRequest,
 } from "../shared/ipc";
 import { buildRunCommand } from "../shared/package-script-run";
+import { buildShellCommandLine, resolveCommandExecutable } from "./resolve-command-executable";
+import type { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { detectPackageManager } from "./workspace-inspect";
 
 export { buildRunCommand } from "../shared/package-script-run";
@@ -100,4 +102,18 @@ export async function preparePackageScriptRun(
     script: scriptName,
     command,
   };
+}
+
+export function runPreparedPackageScriptInTerminal(
+  manager: InteractiveTerminalManager,
+  prepared: { workspacePath: string; script: string; command: string[] },
+): { sessionId: string; script: string; command: string[] } {
+  const executableName = prepared.command[0];
+  if (!executableName) {
+    throw new Error("Missing executable.");
+  }
+  const resolvedCommand = [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
+  const { sessionId } = manager.spawn(prepared.workspacePath);
+  manager.write(sessionId, `${buildShellCommandLine(resolvedCommand)}\r`);
+  return { sessionId, script: prepared.script, command: resolvedCommand };
 }

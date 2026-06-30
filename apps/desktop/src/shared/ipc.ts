@@ -11,8 +11,7 @@ export const IPC_CHANNELS = {
   workspaceWatchPackageJson: "workspace:watch-package-json",
   workspacePackageJsonChanged: "workspace:package-json-changed",
   workspaceStartPackageScript: "workspace:start-package-script",
-  workspaceStopPackageScript: "workspace:stop-package-script",
-  workspacePackageScriptEvent: "workspace:package-script-event",
+  workspacePackageScriptTerminal: "workspace:package-script-terminal",
   workspacePrepareGit: "workspace:prepare-git",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
@@ -277,29 +276,26 @@ export interface PackageScriptsListResult {
   scripts: PackageScriptInfo[];
 }
 
-export type PackageScriptRunTarget = "embedded" | "terminal" | "iterm";
-
 export interface RunPackageScriptRequest {
   workspacePath: string;
   script: string;
   args?: string;
-  target?: PackageScriptRunTarget;
 }
 
 export type StartPackageScriptRequest = RunPackageScriptRequest;
 
 export interface StartPackageScriptResult {
-  runId?: string;
   script: string;
   command: string[];
-  target: PackageScriptRunTarget;
-  externalLauncherName?: string;
+  sessionId: string;
 }
 
-export type PackageScriptStreamEvent =
-  | { type: "output"; runId: string; data: string }
-  | { type: "exit"; runId: string; exitCode: number; signal?: number }
-  | { type: "error"; runId: string; message: string };
+export interface PackageScriptTerminalLaunchPayload {
+  workspacePath: string;
+  sessionId: string;
+  script: string;
+  command: string[];
+}
 
 export interface TerminalSpawnRequest {
   workspacePath: string;
@@ -1552,29 +1548,24 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
   return (
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
-    (record.args === undefined || typeof record.args === "string") &&
-    (record.target === undefined ||
-      record.target === "embedded" ||
-      record.target === "terminal" ||
-      record.target === "iterm")
+    (record.args === undefined || typeof record.args === "string")
   );
 }
 
-export function isPackageScriptStreamEvent(value: unknown): value is PackageScriptStreamEvent {
+export function isPackageScriptTerminalLaunchPayload(
+  value: unknown,
+): value is PackageScriptTerminalLaunchPayload {
   if (!value || typeof value !== "object") {
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (record.type === "output") {
-    return typeof record.runId === "string" && typeof record.data === "string";
-  }
-  if (record.type === "exit") {
-    return typeof record.runId === "string" && typeof record.exitCode === "number";
-  }
-  if (record.type === "error") {
-    return typeof record.runId === "string" && typeof record.message === "string";
-  }
-  return false;
+  return (
+    typeof record.workspacePath === "string" &&
+    typeof record.sessionId === "string" &&
+    typeof record.script === "string" &&
+    Array.isArray(record.command) &&
+    record.command.every((entry) => typeof entry === "string")
+  );
 }
 
 export function isTerminalSpawnRequest(value: unknown): value is TerminalSpawnRequest {

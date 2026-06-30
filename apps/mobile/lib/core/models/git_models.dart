@@ -351,25 +351,19 @@ class StartPackageScriptResult {
   const StartPackageScriptResult({
     required this.script,
     required this.command,
-    required this.target,
-    this.runId,
-    this.externalLauncherName,
+    required this.sessionId,
   });
 
   factory StartPackageScriptResult.fromJson(Map<String, dynamic> json) =>
       StartPackageScriptResult(
-        runId: json['runId'] as String?,
+        sessionId: json['sessionId'] as String? ?? '',
         script: json['script'] as String? ?? '',
         command: (json['command'] as List<dynamic>? ?? [])
             .map((entry) => entry as String)
             .toList(),
-        target: json['target'] as String? ?? 'embedded',
-        externalLauncherName: json['externalLauncherName'] as String?,
       );
 
-  final String? runId;
+  final String sessionId;
   final String script;
   final List<String> command;
-  final String target;
-  final String? externalLauncherName;
 }

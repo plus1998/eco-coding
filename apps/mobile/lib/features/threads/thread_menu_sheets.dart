@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/git_models.dart';
-import '../../core/models/package_script_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/package_script_run.dart';
-import 'package_script_providers.dart';
 import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
 
@@ -407,11 +405,10 @@ class _NpmScriptsSheet extends ConsumerStatefulWidget {
 
 class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   late Future<PackageScriptsListResult> _future;
-  final ScrollController _outputScrollController = ScrollController();
-  int _prevOutputLength = 0;
   Map<String, String> _scriptArgsByName = {};
   String? _editingScript;
   final TextEditingController _argsInputController = TextEditingController();
+  bool _running = false;
 
   @override
   void initState() {
@@ -448,7 +445,6 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   @override
   void dispose() {
     _argsInputController.dispose();
-    _outputScrollController.dispose();
     super.dispose();
   }
 
@@ -471,64 +467,35 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     String? args,
   }) async {
     final rpc = ref.read(desktopRpcProvider);
-    final runState = ref.read(packageScriptRunProvider);
-    if (rpc == null || (runState?.running ?? false)) {
+    if (rpc == null || _running) {
       return;
     }
+    setState(() => _running = true);
     try {
-      final result = await rpc.startPackageScript(
+      await rpc.startPackageScript(
         workspacePath: widget.workspacePath,
         script: script.name,
         args: args,
       );
       if (!mounted) return;
-      if (result.runId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已启动 ${script.name}')),
-        );
-        return;
-      }
-      ref.read(packageScriptRunProvider.notifier).beginRun(
-            runId: result.runId!,
-            script: result.script,
-            command: result.command,
-          );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已在 Desktop 终端中启动 ${script.name}')),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.toString())),
       );
-    }
-  }
-
-  void _scrollOutputToEnd() {
-    if (!_outputScrollController.hasClients) {
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_outputScrollController.hasClients) {
-        return;
+    } finally {
+      if (mounted) {
+        setState(() => _running = false);
       }
-      _outputScrollController.animateTo(
-        _outputScrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-      );
-    });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final runState = ref.watch(packageScriptRunProvider);
-    final outputLength = runState?.output.length ?? 0;
-    if (outputLength > _prevOutputLength) {
-      _prevOutputLength = outputLength;
-      _scrollOutputToEnd();
-    } else if (outputLength < _prevOutputLength) {
-      _prevOutputLength = outputLength;
-    }
-
     return SafeArea(
       child: Column(
         children: [
@@ -557,7 +524,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                 final subtitle = listing.packageName != null
                     ? '${listing.packageName} · ${listing.packageManager}'
                     : listing.packageManager;
-                final isRunning = runState?.running ?? false;
+                final isRunning = _running;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -582,8 +549,6 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                             else
                               ...listing.scripts.map(
                                 (script) {
-                                  final scriptRunning = isRunning &&
-                                      runState?.script == script.name;
                                   final savedArgs =
                                       _scriptArgsByName[script.name] ?? '';
                                   final isEditingArgs =
@@ -602,9 +567,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                         color: eco.bgElevated,
                                         borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
-                                          color: scriptRunning
-                                              ? eco.accentText
-                                              : eco.borderSubtle,
+                                          color: eco.borderSubtle,
                                         ),
                                       ),
                                       child: Padding(
@@ -658,20 +621,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                 ),
                                                 IconButton(
                                                   tooltip: '运行',
-                                                  icon: scriptRunning
-                                                      ? const SizedBox(
-                                                          width: 18,
-                                                          height: 18,
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                          ),
-                                                        )
-                                                      : const Icon(
-                                                          Icons
-                                                              .play_arrow_rounded,
-                                                          size: 22,
-                                                        ),
+                                                  icon: const Icon(
+                                                    Icons.play_arrow_rounded,
+                                                    size: 22,
+                                                  ),
                                                   onPressed: isRunning
                                                       ? null
                                                       : () => _runScript(
@@ -733,157 +686,12 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                         ),
                       ),
                     ),
-                    if (runState != null)
-                      _PackageScriptOutputPanel(
-                        runState: runState,
-                        outputScrollController: _outputScrollController,
-                        onStop: runState.running
-                            ? () => ref
-                                .read(packageScriptRunProvider.notifier)
-                                .stopRun()
-                            : null,
-                        onClose: () => ref
-                            .read(packageScriptRunProvider.notifier)
-                            .clearRun(),
-                      ),
                   ],
                 );
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PackageScriptOutputPanel extends StatelessWidget {
-  const _PackageScriptOutputPanel({
-    required this.runState,
-    required this.outputScrollController,
-    this.onStop,
-    required this.onClose,
-  });
-
-  final PackageScriptRunViewState runState;
-  final ScrollController outputScrollController;
-  final VoidCallback? onStop;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    final commandText = runState.command.join(' ');
-    final outputText = runState.output.isEmpty
-        ? (runState.running ? '…' : '（无输出）')
-        : runState.output;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: eco.bgElevated,
-        border: Border(top: BorderSide(color: eco.borderSubtle)),
-      ),
-      child: SizedBox(
-        height: 220,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-              child: Row(
-                children: [
-                  Icon(
-                    EcoIcons.terminal,
-                    size: 16,
-                    color: runState.running ? eco.accentText : eco.textMuted,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      runState.script,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: eco.textHeading,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ),
-                  if (runState.running)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: eco.accentSoft,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '运行中',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: eco.accentText,
-                            ),
-                      ),
-                    )
-                  else if (runState.exitCode != null)
-                    Text(
-                      'exit ${runState.exitCode}',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: runState.exitCode == 0
-                                ? eco.success
-                                : eco.danger,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                    ),
-                  if (onStop != null) ...[
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: onStop,
-                      style: TextButton.styleFrom(
-                        foregroundColor: eco.danger,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text('停止'),
-                    ),
-                  ],
-                  IconButton(
-                    icon: const Icon(EcoIcons.close, size: 18),
-                    tooltip: '关闭输出',
-                    onPressed: onClose,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: eco.borderSubtle),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: outputScrollController,
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                child: SelectableText(
-                  outputText,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textSecondary,
-                        fontFamily: 'Menlo',
-                        height: 1.45,
-                      ),
-                ),
-              ),
-            ),
-            if (commandText.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                child: Text(
-                  commandText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: eco.textMuted,
-                        fontFamily: 'Menlo',
-                      ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

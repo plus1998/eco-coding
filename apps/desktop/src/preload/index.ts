@@ -119,7 +119,7 @@ import {
   type PackageScriptsListResult,
   type RunPackageScriptRequest,
   type StartPackageScriptResult,
-  type PackageScriptStreamEvent,
+  type PackageScriptTerminalLaunchPayload,
   type TerminalInputRequest,
   type TerminalKillRequest,
   type TerminalResizeRequest,
@@ -189,15 +189,20 @@ const api = {
   startPackageScript(request: RunPackageScriptRequest): Promise<StartPackageScriptResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceStartPackageScript, request);
   },
-  stopPackageScript(runId: string): Promise<{ stopped: boolean }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.workspaceStopPackageScript, runId);
-  },
-  onPackageScriptEvent(callback: (event: PackageScriptStreamEvent) => void): () => void {
+  onPackageScriptTerminalLaunch(
+    callback: (payload: PackageScriptTerminalLaunchPayload) => void,
+  ): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-      callback(payload as PackageScriptStreamEvent);
+      if (
+        payload &&
+        typeof payload === "object" &&
+        typeof (payload as PackageScriptTerminalLaunchPayload).sessionId === "string"
+      ) {
+        callback(payload as PackageScriptTerminalLaunchPayload);
+      }
     };
-    ipcRenderer.on(IPC_CHANNELS.workspacePackageScriptEvent, listener);
-    return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageScriptEvent, listener);
+    ipcRenderer.on(IPC_CHANNELS.workspacePackageScriptTerminal, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageScriptTerminal, listener);
   },
   spawnTerminal(request: TerminalSpawnRequest): Promise<TerminalSpawnResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.terminalSpawn, request);

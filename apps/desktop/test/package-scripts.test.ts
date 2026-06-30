@@ -12,7 +12,9 @@ import {
   readPackageJson,
   resolvePackageManager,
   preparePackageScriptRun,
+  runPreparedPackageScriptInTerminal,
 } from "../src/main/package-scripts";
+import type { InteractiveTerminalManager } from "../src/main/interactive-terminal-manager";
 
 let tempDir = "";
 
@@ -127,4 +129,28 @@ test("preparePackageScriptRun rejects unknown script names", async () => {
   await expect(
     preparePackageScriptRun({ workspacePath: tempDir, script: "missing" }),
   ).rejects.toThrow("Unknown script: missing");
+});
+
+test("runPreparedPackageScriptInTerminal spawns shell and writes command", () => {
+  const writes: Array<{ sessionId: string; data: string }> = [];
+  const manager = {
+    spawn: () => ({ sessionId: "session_1" }),
+    write: (sessionId: string, data: string) => {
+      writes.push({ sessionId, data });
+    },
+  } as unknown as InteractiveTerminalManager;
+
+  const result = runPreparedPackageScriptInTerminal(manager, {
+    workspacePath: tempDir,
+    script: "dev",
+    command: ["bun", "run", "dev"],
+  });
+
+  expect(result.sessionId).toBe("session_1");
+  expect(result.script).toBe("dev");
+  expect(result.command[1]).toBe("run");
+  expect(result.command[2]).toBe("dev");
+  expect(writes).toHaveLength(1);
+  expect(writes[0]?.sessionId).toBe("session_1");
+  expect(writes[0]?.data.endsWith("run dev\r")).toBe(true);
 });

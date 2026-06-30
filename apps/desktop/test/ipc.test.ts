@@ -6,8 +6,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspacePrepareGit).toBe("workspace:prepare-git");
   expect(IPC_CHANNELS.workspaceListPackageScripts).toBe("workspace:list-package-scripts");
   expect(IPC_CHANNELS.workspaceStartPackageScript).toBe("workspace:start-package-script");
-  expect(IPC_CHANNELS.workspaceStopPackageScript).toBe("workspace:stop-package-script");
-  expect(IPC_CHANNELS.workspacePackageScriptEvent).toBe("workspace:package-script-event");
+  expect(IPC_CHANNELS.workspacePackageScriptTerminal).toBe("workspace:package-script-terminal");
   expect(IPC_CHANNELS.terminalSpawn).toBe("terminal:spawn");
   expect(IPC_CHANNELS.terminalInput).toBe("terminal:input");
   expect(IPC_CHANNELS.terminalResize).toBe("terminal:resize");

@@ -125,14 +125,6 @@ export class DesktopEventCenter {
     });
   }
 
-  publishPackageScriptEvent(payload: EventCenterPayloadMap["workspace.package_script"]): EventCenterEnvelope {
-    return this.publish({
-      kind: "workspace.package_script",
-      payload,
-      aggregateKey: `package-script:${payload.runId}`,
-    });
-  }
-
   publishTerminalEvent(payload: EventCenterPayloadMap["workspace.terminal"]): EventCenterEnvelope {
     return this.publish({
       kind: "workspace.terminal",
@@ -273,9 +265,6 @@ export function createElectronEventSink(
   return {
     publish(envelope, _notification) {
       switch (envelope.kind) {
-        case "workspace.package_script":
-          send(IPC_CHANNELS.workspacePackageScriptEvent, envelope.payload);
-          return;
         case "workspace.terminal":
           send(IPC_CHANNELS.terminalEvent, envelope.payload);
           return;

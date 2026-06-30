@@ -138,7 +138,7 @@ test("electron sink preserves legacy desktop event channels", () => {
     }),
   );
 
-  center.publishPackageScriptEvent({ type: "output", runId: "pkg_1", data: "ready" });
+  center.publishTerminalEvent({ type: "output", sessionId: "term_1", data: "ready" });
   center.publishPackageJsonChanged("/repo/app");
   center.publishGitStatusChanged({
     workspacePath: "/repo/app",
@@ -149,8 +149,8 @@ test("electron sink preserves legacy desktop event channels", () => {
   center.publishThreadLiveEvent(makeThreadEvent({ type: "thread.completed", message: "done" }));
 
   expect(sent[0]).toEqual({
-    channel: IPC_CHANNELS.workspacePackageScriptEvent,
-    payload: { type: "output", runId: "pkg_1", data: "ready" },
+    channel: IPC_CHANNELS.terminalEvent,
+    payload: { type: "output", sessionId: "term_1", data: "ready" },
   });
   expect(sent[1]).toEqual({
     channel: IPC_CHANNELS.workspacePackageJsonChanged,

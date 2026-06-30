@@ -88,7 +88,6 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("workspace:start-package-script", "Start npm script", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "script"]),
   ]),
-  command("workspace:stop-package-script", "Stop npm script", "execute", RPC_INVOKE, [stringArg()]),
 
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),

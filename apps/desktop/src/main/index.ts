@@ -172,7 +172,6 @@ import {
 } from "../shared/prompt-cache-config";
 import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
 import { emitToolOutputTruncated as emitToolOutputTruncatedEvent } from "./tool-output-run-events";
-import { isExternalPackageScriptTarget } from "../shared/package-script-target";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
@@ -315,11 +314,9 @@ import {
   type PromptCacheBreakReason,
 } from "./prompt-cache-fingerprint";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
-import { launchInExternalTerminal } from "./open-external-terminal";
 import { PackageJsonWatcher } from "./package-json-watcher";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
-import { PackageScriptRunner } from "./package-script-runner";
-import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
+import { listPackageScripts, preparePackageScriptRun, runPreparedPackageScriptInTerminal } from "./package-scripts";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
 import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
@@ -508,9 +505,16 @@ function broadcastGitCommitMessageDelta(requestId: string, text: string): void {
     window.webContents.send(IPC_CHANNELS.gitGenerateCommitMessageDelta, payload);
   });
 }
-const packageScriptRunner = new PackageScriptRunner((event) => {
-  desktopEventCenter.publishPackageScriptEvent(event);
-});
+function broadcastPackageScriptTerminalLaunch(payload: {
+  workspacePath: string;
+  sessionId: string;
+  script: string;
+  command: string[];
+}): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.workspacePackageScriptTerminal, payload);
+  });
+}
 const interactiveTerminalManager = new InteractiveTerminalManager((event) => {
   desktopEventCenter.publishTerminalEvent(event);
 });
@@ -1303,36 +1307,17 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid start package script request.");
     }
     const prepared = await preparePackageScriptRun(payload);
-    const target = payload.target ?? "embedded";
-    if (isExternalPackageScriptTarget(target)) {
-      ensureDesktopPath();
-      const spawnEnv = toSpawnEnv();
-      const executableName = prepared.command[0];
-      if (!executableName) {
-        throw new Error("Missing executable.");
-      }
-      const resolvedCommand = [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
-      const pathValue = spawnEnv.PATH ?? "";
-      const { launcherName } = launchInExternalTerminal(target, {
-        command: resolvedCommand,
-        cwd: prepared.workspacePath,
-        pathValue,
-      });
-      return {
-        script: prepared.script,
-        command: resolvedCommand,
-        target,
-        externalLauncherName: launcherName,
-      };
-    }
-    return packageScriptRunner.start(prepared.command, prepared.workspacePath, prepared.script);
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.workspaceStopPackageScript, async (runId: unknown) => {
-    if (typeof runId !== "string" || !runId.trim()) {
-      throw new Error("Run id is required.");
-    }
-    return { stopped: packageScriptRunner.stop(runId.trim()) };
+    const launched = runPreparedPackageScriptInTerminal(interactiveTerminalManager, prepared);
+    const result = {
+      script: launched.script,
+      command: launched.command,
+      sessionId: launched.sessionId,
+    };
+    broadcastPackageScriptTerminalLaunch({
+      workspacePath: prepared.workspacePath,
+      ...result,
+    });
+    return result;
   });
 
   registerDesktopCommand(IPC_CHANNELS.terminalSpawn, async (payload: unknown) => {

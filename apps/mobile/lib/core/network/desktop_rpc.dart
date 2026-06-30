@@ -538,20 +538,10 @@ class DesktopRpc {
           'workspacePath': workspacePath,
           'script': script,
           if (args != null && args.isNotEmpty) 'args': args,
-          'target': 'embedded',
         },
       ],
       deadlineMs: 120000,
     );
     return StartPackageScriptResult.fromJson(result);
-  }
-
-  Future<bool> stopPackageScript(String runId) async {
-    final result = await _client.invoke<Map<String, dynamic>>(
-      desktopDeviceId,
-      'workspace:stop-package-script',
-      [runId],
-    );
-    return result['stopped'] as bool? ?? false;
   }
 }

@@ -66,7 +66,6 @@ import {
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
-  type PackageScriptRunTarget,
   type ProxyBridgeSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -97,7 +96,6 @@ import {
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { externalPackageScriptTargetLabel, isExternalPackageScriptTarget } from "../shared/package-script-target";
 import {
   HOME_PROJECT_DISPLAY_NAME,
   HOME_PROJECT_IMPORTED_AT,
@@ -150,7 +148,8 @@ import {
 } from "./composer-skills";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
-import { PackageScriptsDialog, type PackageScriptRunViewState } from "./PackageScriptsDialog";
+import { PackageScriptsDialog } from "./PackageScriptsDialog";
+import { waitForOverlayDismiss } from "./package-script-ui";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ProjectSidebarTree } from "./ProjectSidebarTree";
 import {
@@ -492,15 +491,11 @@ function App() {
     readTerminalWorkspaceState(),
   );
   const [scriptsBusy, setScriptsBusy] = useState(false);
+  const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
   const [threadInfoDrawerOpen, setThreadInfoDrawerOpen] = useState(false);
   const [threadInfoCompact, setThreadInfoCompact] = useState(
     () => typeof window !== "undefined" && window.matchMedia(threadInfoCompactQuery).matches,
   );
-  const [runningScript, setRunningScript] = useState<string>();
-  const [scriptRunState, setScriptRunState] = useState<PackageScriptRunViewState>({
-    output: "",
-    running: false,
-  });
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
   useEffect(() => {
@@ -1283,7 +1278,7 @@ function App() {
     saveTerminalWorkspaceState(terminalByProject);
   }, [terminalByProject]);
   useEffect(() => {
-    if (!activeThread) {
+    if (!currentProjectPath) {
       return undefined;
     }
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -1298,7 +1293,7 @@ function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeThread, toggleTerminalForCurrentProject]);
+  }, [currentProjectPath, toggleTerminalForCurrentProject]);
   const activeComposerRewindTarget =
     activeThread && composerRewindTarget?.threadId === activeThread.id ? composerRewindTarget : undefined;
   useEffect(() => {
@@ -1404,112 +1399,76 @@ function App() {
     packageScripts?.hasPackageJson && packageScripts.scripts.length > 0,
   );
 
-  useEffect(() => {
-    if (!window.eco?.onPackageScriptEvent) {
-      return undefined;
-    }
-    return window.eco.onPackageScriptEvent((event) => {
-      setScriptRunState((current) => {
-        if (event.type === "output") {
-          if (current.runId && event.runId !== current.runId) {
-            return current;
-          }
-          return { ...current, output: current.output + event.data };
-        }
-        if (event.type === "exit") {
-          if (current.runId && event.runId !== current.runId) {
-            return current;
-          }
-          return { ...current, exitCode: event.exitCode, running: false };
-        }
-        if (event.type === "error") {
-          if (current.runId && event.runId !== current.runId) {
-            return current;
-          }
-          return {
-            ...current,
-            output: `${current.output}${event.message}`,
-            exitCode: 1,
-            running: false,
-          };
-        }
-        return current;
-      });
-      if (event.type === "exit" || event.type === "error") {
-        setRunningScript(undefined);
-        setScriptsBusy(false);
-      }
-    });
+  const dismissPackageScriptRunOverlays = useCallback(() => {
+    setScriptsDialogOpen(false);
+    setThreadInfoDrawerOpen(false);
   }, []);
 
+  const openPackageScriptTerminalSession = useCallback(
+    (workspacePath: string, sessionId: string) => {
+      setTerminalByProject((current) => {
+        const existing = getProjectTerminalState(current, workspacePath);
+        const nextState = existing
+          ? { ...existing, open: true }
+          : createProjectTerminalState(
+              projects.find((item) => item.path === workspacePath)?.name ??
+                pathToName(workspacePath),
+              true,
+            );
+        return { ...current, [workspacePath]: nextState };
+      });
+      setInjectedTerminalSessionId(sessionId);
+    },
+    [projects],
+  );
+
+  const presentPackageScriptTerminal = useCallback(
+    async (workspacePath: string, sessionId: string) => {
+      const dismissStartedAt = performance.now();
+      dismissPackageScriptRunOverlays();
+      await waitForOverlayDismiss(dismissStartedAt);
+      openPackageScriptTerminalSession(workspacePath, sessionId);
+    },
+    [dismissPackageScriptRunOverlays, openPackageScriptTerminalSession],
+  );
+
+  useEffect(() => {
+    if (!window.eco?.onPackageScriptTerminalLaunch) {
+      return undefined;
+    }
+    return window.eco.onPackageScriptTerminalLaunch((payload) => {
+      if (!currentProjectPath || payload.workspacePath !== currentProjectPath) {
+        return;
+      }
+      void presentPackageScriptTerminal(payload.workspacePath, payload.sessionId);
+    });
+  }, [currentProjectPath, presentPackageScriptTerminal]);
+
   const startPackageScript = useCallback(
-    async (scriptName: string, args?: string, target: PackageScriptRunTarget = "embedded") => {
+    async (scriptName: string, args?: string) => {
       if (!currentProjectPath || !window.eco) {
         return;
       }
       const trimmedArgs = args?.trim();
-      const isExternal = isExternalPackageScriptTarget(target);
+      const dismissStartedAt = performance.now();
+      dismissPackageScriptRunOverlays();
       setScriptsBusy(true);
-      if (!isExternal) {
-        setRunningScript(scriptName);
-        setScriptRunState({ output: "", running: true, script: scriptName });
-      }
       try {
         const result = await window.eco.startPackageScript({
           workspacePath: currentProjectPath,
           script: scriptName,
-          target,
           ...(trimmedArgs && { args: trimmedArgs }),
         });
-        if (result.target !== "embedded") {
-          const terminalLabel = externalPackageScriptTargetLabel(
-            result.target,
-            window.eco.platform,
-            result.externalLauncherName,
-          );
-          setScriptRunState({
-            output: `已在 ${terminalLabel} 中启动。\n\n${result.command.join(" ")}`,
-            running: false,
-            script: scriptName,
-            command: result.command,
-          });
-          setScriptsBusy(false);
-          return;
-        }
-        if (!result.runId) {
-          throw new Error("Package script run id is missing.");
-        }
-        const runId = result.runId;
-        setScriptRunState((current) => ({
-          ...current,
-          runId,
-          command: result.command,
-          script: result.script,
-        }));
+        await waitForOverlayDismiss(dismissStartedAt);
+        openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
       } catch (error) {
-        setScriptRunState({
-          output: error instanceof Error ? error.message : String(error),
-          running: false,
-          exitCode: 1,
-          script: scriptName,
-        });
+        console.error(error);
+      } finally {
         setScriptsBusy(false);
-        setRunningScript(undefined);
       }
     },
-    [currentProjectPath],
+    [currentProjectPath, dismissPackageScriptRunOverlays, openPackageScriptTerminalSession],
   );
-
-  const stopPackageScript = useCallback(async () => {
-    const runId = scriptRunState.runId;
-    if (!runId || !window.eco) {
-      return;
-    }
-    await window.eco.stopPackageScript(runId);
-    setScriptRunState((current) => ({ ...current, running: false }));
-    setScriptsBusy(false);
-    setRunningScript(undefined);
-  }, [scriptRunState.runId]);
 
   useEffect(() => {
     void refreshGitStatus();
@@ -4180,12 +4139,14 @@ function App() {
           {!showLanding ? composer : null}
         </div>
 
-        {!showLanding && currentProjectPath && currentTerminalState?.open ? (
+        {currentProjectPath && currentTerminalState?.open ? (
           <TerminalPanel
             workspacePath={currentProjectPath}
             workspaceLabel={currentProjectName}
             state={currentTerminalState}
             onStateChange={updateCurrentProjectTerminal}
+            injectedSessionId={injectedTerminalSessionId}
+            onInjectedSessionConsumed={() => setInjectedTerminalSessionId(null)}
             onClose={() =>
               updateCurrentProjectTerminal({
                 ...currentTerminalState,
@@ -4195,9 +4156,9 @@ function App() {
           />
         ) : null}
 
-        {!showLanding || threadInfoDrawerMode ? (
+        {currentProjectPath || threadInfoDrawerMode ? (
           <div className="codex-main-toolbar">
-            {!showLanding ? (
+            {currentProjectPath ? (
               <button
                 type="button"
                 className={
@@ -4314,11 +4275,8 @@ function App() {
           packageManager={packageScripts?.packageManager ?? projectWorkspace?.packageManager ?? "npm"}
           scripts={packageScripts?.scripts ?? []}
           busy={scriptsBusy}
-          {...(runningScript && { runningScript })}
-          runState={scriptRunState}
           onClose={() => setScriptsDialogOpen(false)}
           onRun={startPackageScript}
-          onStop={stopPackageScript}
           onRefresh={refreshPackageScripts}
         />
       ) : null}
