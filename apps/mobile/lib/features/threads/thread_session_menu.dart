@@ -422,28 +422,55 @@ Future<void> pullChangesFromMenu({
   final rpc = ref.read(desktopRpcProvider);
   if (rpc == null) return;
 
-  final result = await rpc.pullChanges(
-    workspacePath: workspacePath,
-    branch: branch,
-  );
-  refreshWorkspaceChanges(ref, workspacePath);
   if (!context.mounted) return;
-
-  if (result.conflicted) {
-    final files = result.conflictFiles.join(', ');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          files.isEmpty ? '拉取产生冲突，请在 Desktop 处理' : '拉取冲突：$files',
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => const Center(
+      child: Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('正在拉取…'),
+            ],
+          ),
         ),
       ),
-    );
-    return;
-  }
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步'),
     ),
   );
+
+  try {
+    final result = await rpc.pullChanges(
+      workspacePath: workspacePath,
+      branch: branch,
+    );
+    refreshWorkspaceChanges(ref, workspacePath);
+    if (!context.mounted) return;
+
+    if (result.conflicted) {
+      final files = result.conflictFiles.join(', ');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            files.isEmpty ? '拉取产生冲突，请在 Desktop 处理' : '拉取冲突：$files',
+          ),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步'),
+      ),
+    );
+  } finally {
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
 }

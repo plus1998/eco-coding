@@ -50,6 +50,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   bool _bashApprovalBusy = false;
   bool _planActionBusy = false;
   bool _followUpBusy = false;
+  bool _sendBusy = false;
+  bool _stopBusy = false;
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
   String? _followUpEscalateBusyId;
@@ -416,7 +418,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                           isRunning: isRunning,
                           canStopThread: canStopThread,
                           followUpMode: followUpMode,
-                          sendBusy: _followUpBusy,
+                          sendBusy: _followUpBusy || _sendBusy,
+                          stopBusy: _stopBusy,
                           hasActivity: session.projectionReady,
                           inputHint: _editingFollowUpId != null
                               ? '编辑引导消息…'
@@ -535,6 +538,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   Future<void> _sendMessage(ThreadRuntimeConfigInput runtimeConfig) async {
     final prompt = _promptController.text.trim();
     if (prompt.isEmpty && _attachments.isEmpty) return;
+    if (_sendBusy || _followUpBusy) return;
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
     final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
@@ -568,17 +572,24 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         }
         await _refreshFollowUps();
       } else {
-        await rpc.continueThread(
-          threadId: widget.threadId,
-          prompt: prompt,
-          attachments: _attachments.isEmpty ? null : List.of(_attachments),
-          runtimeConfig: runtimeConfig,
-        );
-        ref.invalidate(threadListProvider);
-        FocusManager.instance.primaryFocus?.unfocus();
-        _promptController.clear();
-        if (mounted) {
-          setState(() => _attachments.clear());
+        setState(() => _sendBusy = true);
+        try {
+          await rpc.continueThread(
+            threadId: widget.threadId,
+            prompt: prompt,
+            attachments: _attachments.isEmpty ? null : List.of(_attachments),
+            runtimeConfig: runtimeConfig,
+          );
+          ref.invalidate(threadListProvider);
+          FocusManager.instance.primaryFocus?.unfocus();
+          _promptController.clear();
+          if (mounted) {
+            setState(() => _attachments.clear());
+          }
+        } finally {
+          if (mounted) {
+            setState(() => _sendBusy = false);
+          }
         }
       }
     } catch (error) {
@@ -596,7 +607,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   Future<void> _stopThread() async {
     final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) return;
+    if (rpc == null || _stopBusy) return;
+    setState(() => _stopBusy = true);
     try {
       await rpc.cancelThread(widget.threadId);
     } catch (error) {
@@ -604,6 +616,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _stopBusy = false);
       }
     }
   }

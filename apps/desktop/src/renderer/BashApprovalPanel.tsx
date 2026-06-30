@@ -1,4 +1,4 @@
-import { AlertTriangle, Pencil, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import {
@@ -259,7 +259,14 @@ export function BashApprovalPanel({
 
       <footer className="bash-approval-footer">
         <button type="button" className="bash-approval-dismiss" disabled={busy} onClick={onSkip}>
-          跳过
+          {busy ? (
+            <>
+              <Loader2 size={14} className="spinning" aria-hidden />
+              处理中…
+            </>
+          ) : (
+            "跳过"
+          )}
         </button>
         <button
           type="button"
@@ -267,7 +274,16 @@ export function BashApprovalPanel({
           disabled={busy || (denyHighlighted && !denyFeedback.trim())}
           onClick={submitHighlightedChoice}
         >
-          提交 <kbd aria-hidden>↵</kbd>
+          {busy ? (
+            <>
+              <Loader2 size={14} className="spinning" aria-hidden />
+              处理中…
+            </>
+          ) : (
+            <>
+              提交 <kbd aria-hidden>↵</kbd>
+            </>
+          )}
         </button>
       </footer>
     </>

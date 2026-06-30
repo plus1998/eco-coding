@@ -40,6 +40,7 @@ interface ProjectSidebarTreeProps {
   onRemoveProject: (path: string) => void;
   onPinThread: (threadId: string) => void;
   onUnpinThread: (threadId: string) => void;
+  deletingThreadId?: string | undefined;
   onDeleteThread: (thread: ThreadSummary) => void;
 }
 
@@ -73,6 +74,7 @@ export function ProjectSidebarTree({
   onRemoveProject,
   onPinThread,
   onUnpinThread,
+  deletingThreadId,
   onDeleteThread,
 }: ProjectSidebarTreeProps) {
   const [fileDropActive, setFileDropActive] = useState(false);
@@ -468,12 +470,17 @@ export function ProjectSidebarTree({
                             className="chat-item-row-action chat-item-row-action-danger"
                             title="删除对话"
                             aria-label={`删除对话 ${thread.title}`}
+                            disabled={deletingThreadId === thread.id}
                             onClick={(event) => {
                               event.stopPropagation();
                               onDeleteThread(thread);
                             }}
                           >
-                            <Trash2 size={14} aria-hidden />
+                            {deletingThreadId === thread.id ? (
+                              <LoaderCircle size={14} className="spinning" aria-hidden />
+                            ) : (
+                              <Trash2 size={14} aria-hidden />
+                            )}
                           </button>
                         ) : null}
                       </span>

@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import type { ThreadPendingPlan } from "../shared/ipc";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -49,7 +50,14 @@ export function PlanApprovalPanel({
           onClick={onDismiss}
           disabled={busy}
         >
-          忽略
+          {busy ? (
+            <>
+              <Loader2 size={14} className="spinning" aria-hidden />
+              处理中…
+            </>
+          ) : (
+            "忽略"
+          )}
         </button>
         {!failureMessage ? (
           <button
@@ -58,7 +66,12 @@ export function PlanApprovalPanel({
             onClick={onApprove}
             disabled={busy || !planTrimmed}
           >
-            {docked ? (
+            {busy ? (
+              <>
+                <Loader2 size={14} className="spinning" aria-hidden />
+                处理中…
+              </>
+            ) : docked ? (
               <>
                 执行计划 <kbd aria-hidden>↵</kbd>
               </>

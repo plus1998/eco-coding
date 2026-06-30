@@ -445,6 +445,7 @@ function App() {
   const [isOpening, setIsOpening] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [planActionBusy, setPlanActionBusy] = useState(false);
+  const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [pendingPlansByThread, setPendingPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
   const [pendingClarificationsByThread, setPendingClarificationsByThread] = useState<
     Record<string, ClarificationRequest>
@@ -2374,6 +2375,9 @@ function App() {
     if (!currentProjectPath || !window.eco || (!prompt.trim() && composerAttachments.length === 0)) {
       return;
     }
+    if (isStarting || followUpBusy) {
+      return;
+    }
     if (contextCompactionInFlight) {
       setError("上下文正在压缩中，请稍候。");
       return;
@@ -3515,6 +3519,10 @@ function App() {
       setError("请先停止当前运行后再删除对话。");
       return;
     }
+    if (deletingThreadId) {
+      return;
+    }
+    setDeletingThreadId(thread.id);
     try {
       await window.eco.deleteThread(thread.id);
       clearThreadClientState(thread.id);
@@ -3529,6 +3537,8 @@ function App() {
       });
     } catch (caught) {
       setError(errorMessage(caught));
+    } finally {
+      setDeletingThreadId(undefined);
     }
   }
 
@@ -4065,6 +4075,7 @@ function App() {
             onRemoveProject={removeProject}
             onPinThread={pinThread}
             onUnpinThread={unpinThread}
+            deletingThreadId={deletingThreadId}
             onDeleteThread={(thread) => void deleteThread(thread)}
           />
         </div>

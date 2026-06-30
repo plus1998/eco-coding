@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClarificationAnswers, ClarificationRequest } from "../shared/ipc";
 import {
@@ -342,7 +342,16 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
 
       <footer className="clarification-footer">
         <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>
-          忽略 <kbd>ESC</kbd>
+          {busy ? (
+            <>
+              <Loader2 size={14} className="spinning" aria-hidden />
+              处理中…
+            </>
+          ) : (
+            <>
+              忽略 <kbd>ESC</kbd>
+            </>
+          )}
         </button>
         <button
           type="button"
@@ -350,7 +359,16 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
           disabled={busy || !questionReady}
           onClick={continueFlow}
         >
-          {isLastQuestion ? "确认提交" : "下一题"} <kbd>↵</kbd>
+          {busy ? (
+            <>
+              <Loader2 size={14} className="spinning" aria-hidden />
+              提交中…
+            </>
+          ) : (
+            <>
+              {isLastQuestion ? "确认提交" : "下一题"} <kbd>↵</kbd>
+            </>
+          )}
         </button>
       </footer>
     </section>

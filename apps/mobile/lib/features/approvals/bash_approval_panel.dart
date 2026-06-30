@@ -158,7 +158,7 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                         foregroundColor: colors.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
-                      child: const Text('跳过'),
+                      child: Text(widget.busy ? '处理中…' : '跳过'),
                     ),
                     const Spacer(),
                     FilledButton(
@@ -176,7 +176,18 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         shape: const StadiumBorder(),
                       ),
-                      child: const Text('提交 ↵'),
+                      child: widget.busy
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: isDark
+                                    ? colors.composerSendText
+                                    : Colors.white,
+                              ),
+                            )
+                          : const Text('提交 ↵'),
                     ),
                   ],
                 ),

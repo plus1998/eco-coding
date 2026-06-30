@@ -172,7 +172,8 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                           attachments: _attachments,
                           runtimeConfig: runtimeConfig,
                           threadId: '',
-                          isRunning: _starting,
+                          isRunning: false,
+                          sendBusy: _starting,
                           hasActivity: false,
                           inputHint: composerLandingPlaceholder,
                           onPickImage: _pickImage,
@@ -212,6 +213,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   Future<void> _startThread() async {
     final prompt = _promptController.text.trim();
     if (prompt.isEmpty && _attachments.isEmpty) return;
+    if (_starting) return;
 
     final rpc = ref.read(desktopRpcProvider);
     final workspacePath = ref.read(selectedProjectPathProvider).valueOrNull;

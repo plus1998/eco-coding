@@ -109,7 +109,7 @@ class PlanApprovalPanel extends StatelessWidget {
                         foregroundColor: colors.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
-                      child: const Text('忽略'),
+                      child: Text(busy ? '处理中…' : '忽略'),
                     ),
                     const Spacer(),
                     if (canApprove)
@@ -124,7 +124,18 @@ class PlanApprovalPanel extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           shape: const StadiumBorder(),
                         ),
-                        child: const Text('执行计划 ↵'),
+                        child: busy
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: isDark
+                                      ? colors.composerSendText
+                                      : Colors.white,
+                                ),
+                              )
+                            : const Text('执行计划 ↵'),
                       ),
                   ],
                 ),

@@ -1,4 +1,4 @@
-import { ChevronLeft, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone, Trash2 } from "lucide-react";
+import { ChevronLeft, Loader2, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import type {
@@ -71,12 +71,14 @@ export function CenterServerSettingsPanel({
   const [testing, setTesting] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
   const [serverReachable, setServerReachable] = useState(false);
   const [error, setError] = useState<string>();
 
   const registered = snapshot.settings.hasDeviceSecret || snapshot.settings.hasRefreshToken;
   const hasUrl = form.serverUrl.trim().length > 0;
-  const actionBusy = busy || testing || pairingBusy || connectionBusy || bindingsLoading;
+  const actionBusy = busy || testing || pairingBusy || connectionBusy || bindingsLoading || saveBusy || authBusy;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const needsReauth =
@@ -166,6 +168,7 @@ export function CenterServerSettingsPanel({
     }
 
     setError(undefined);
+    setSaveBusy(true);
     try {
       await onSave({
         ...form,
@@ -180,6 +183,8 @@ export function CenterServerSettingsPanel({
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaveBusy(false);
     }
   }
 
@@ -190,6 +195,7 @@ export function CenterServerSettingsPanel({
       return;
     }
     setError(undefined);
+    setAuthBusy(true);
     try {
       if (authMode === "signup") {
         await onSignUp({
@@ -212,6 +218,8 @@ export function CenterServerSettingsPanel({
       setView("list");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAuthBusy(false);
     }
   }
 
@@ -638,7 +646,16 @@ function ServerEditor({
             测试
           </button>
           <button type="button" className="cs-btn" disabled={busy} onClick={onSave}>
-            {registered ? "保存" : "继续"}
+            {busy ? (
+              <>
+                <Loader2 size={15} strokeWidth={1.75} className="cs-spin" aria-hidden />
+                保存中…
+              </>
+            ) : registered ? (
+              "保存"
+            ) : (
+              "继续"
+            )}
           </button>
         </div>
       </div>
@@ -764,7 +781,16 @@ function AccountEditor({
           disabled={busy || !email.trim() || !password.trim()}
           onClick={onSubmit}
         >
-          {authMode === "signup" ? "注册并绑定" : "登录并绑定"}
+          {busy ? (
+            <>
+              <Loader2 size={15} strokeWidth={1.75} className="cs-spin" aria-hidden />
+              {authMode === "signup" ? "注册中…" : "登录中…"}
+            </>
+          ) : authMode === "signup" ? (
+            "注册并绑定"
+          ) : (
+            "登录并绑定"
+          )}
         </button>
       </div>
     </>

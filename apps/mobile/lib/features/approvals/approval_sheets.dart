@@ -245,6 +245,7 @@ Future<void> showClarificationSheet({
     isScrollControlled: true,
     useSafeArea: true,
     builder: (context) {
+      var submitting = false;
       return StatefulBuilder(
         builder: (context, setState) {
           return _ScrollableSheetFrame(
@@ -254,13 +255,29 @@ Future<void> showClarificationSheet({
               children: [
                 const SizedBox(height: 12),
                 FilledButton(
-                  onPressed: selections.every((s) => s.isNotEmpty)
-                      ? () async {
-                          await onSubmit(selections);
-                          if (context.mounted) Navigator.pop(context);
-                        }
-                      : null,
-                  child: const Text('提交'),
+                  onPressed: submitting || !selections.every((s) => s.isNotEmpty)
+                      ? null
+                      : () async {
+                          setState(() => submitting = true);
+                          try {
+                            await onSubmit(selections);
+                            if (context.mounted) Navigator.pop(context);
+                          } finally {
+                            if (context.mounted) {
+                              setState(() => submitting = false);
+                            }
+                          }
+                        },
+                  child: submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('提交'),
                 ),
               ],
             ),

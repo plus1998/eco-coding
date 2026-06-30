@@ -2819,6 +2819,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .clarification-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 10px;
   border: none;
   border-radius: 8px;
@@ -2833,6 +2836,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .clarification-continue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 16px;
   border: none;
   border-radius: 10px;
@@ -3418,6 +3424,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .bash-approval-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 10px;
   border: none;
   border-radius: 8px;
@@ -3647,6 +3656,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .plan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 14px;
   border-radius: 999px;
   font-size: 13px;

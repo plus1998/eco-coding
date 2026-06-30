@@ -21,6 +21,7 @@ class SessionComposer extends ConsumerStatefulWidget {
     this.canStopThread = false,
     this.followUpMode = false,
     this.sendBusy = false,
+    this.stopBusy = false,
     required this.hasActivity,
     required this.onPickImage,
     required this.onRemoveAttachment,
@@ -40,6 +41,7 @@ class SessionComposer extends ConsumerStatefulWidget {
   final bool canStopThread;
   final bool followUpMode;
   final bool sendBusy;
+  final bool stopBusy;
   final bool hasActivity;
   final VoidCallback onPickImage;
   final void Function(int index) onRemoveAttachment;
@@ -104,6 +106,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   }
 
   void _handleStop() {
+    if (widget.stopBusy) return;
     _focusNode.unfocus();
     widget.onStop();
   }
@@ -306,13 +309,23 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         if (widget.followUpMode)
                           _hasContent
                               ? _SendButton(
+                                  busy: widget.sendBusy,
                                   onSend: _canSend ? _handleSend : null,
                                 )
-                              : _StopButton(onStop: _handleStop)
+                              : _StopButton(
+                                  busy: widget.stopBusy,
+                                  onStop: _handleStop,
+                                )
                         else if (widget.isRunning || widget.canStopThread)
-                          _StopButton(onStop: _handleStop)
+                          _StopButton(
+                            busy: widget.stopBusy,
+                            onStop: _handleStop,
+                          )
                         else
-                          _SendButton(onSend: _canSend ? _handleSend : null),
+                          _SendButton(
+                            busy: widget.sendBusy,
+                            onSend: _canSend ? _handleSend : null,
+                          ),
                       ],
                     ),
                   ],
@@ -325,15 +338,18 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 }
 
 class _SendButton extends StatelessWidget {
-  const _SendButton({required this.onSend});
+  const _SendButton({required this.busy, required this.onSend});
 
+  final bool busy;
   final VoidCallback? onSend;
 
   @override
   Widget build(BuildContext context) {
+    final colors = ecoColors(context);
     final enabled = onSend != null;
+    final showBusy = busy && !enabled;
     return Material(
-      color: enabled ? ecoColors(context).composerSendBg : ecoColors(context).borderSubtle,
+      color: enabled || showBusy ? colors.composerSendBg : colors.borderSubtle,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onSend,
@@ -341,11 +357,19 @@ class _SendButton extends StatelessWidget {
         child: SizedBox(
           width: kComposerToolbarHitSize,
           height: kComposerToolbarHitSize,
-          child: Icon(
-            EcoIcons.send,
-            size: composerToolbarGlyphSize(EcoIcons.send),
-            color: enabled ? ecoColors(context).composerSendText : ecoColors(context).textMuted,
-          ),
+          child: showBusy
+              ? Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.composerSendText,
+                  ),
+                )
+              : Icon(
+                  EcoIcons.send,
+                  size: composerToolbarGlyphSize(EcoIcons.send),
+                  color: enabled ? colors.composerSendText : colors.textMuted,
+                ),
         ),
       ),
     );
@@ -353,8 +377,9 @@ class _SendButton extends StatelessWidget {
 }
 
 class _StopButton extends StatelessWidget {
-  const _StopButton({required this.onStop});
+  const _StopButton({required this.busy, required this.onStop});
 
+  final bool busy;
   final VoidCallback onStop;
 
   @override
@@ -364,20 +389,28 @@ class _StopButton extends StatelessWidget {
       color: colors.voiceRecordBg,
       shape: const CircleBorder(),
       child: InkWell(
-        onTap: onStop,
+        onTap: busy ? null : onStop,
         customBorder: const CircleBorder(),
         child: SizedBox(
           width: kComposerToolbarHitSize,
           height: kComposerToolbarHitSize,
-          child: Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: colors.onAccent,
-                borderRadius: BorderRadius.all(Radius.circular(2.5)),
-              ),
-              child: SizedBox(width: 12, height: 12),
-            ),
-          ),
+          child: busy
+              ? Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.onAccent,
+                  ),
+                )
+              : Center(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.onAccent,
+                      borderRadius: BorderRadius.all(Radius.circular(2.5)),
+                    ),
+                    child: SizedBox(width: 12, height: 12),
+                  ),
+                ),
         ),
       ),
     );
