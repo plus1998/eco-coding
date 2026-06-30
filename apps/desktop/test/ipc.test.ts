@@ -8,6 +8,11 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspaceStartPackageScript).toBe("workspace:start-package-script");
   expect(IPC_CHANNELS.workspaceStopPackageScript).toBe("workspace:stop-package-script");
   expect(IPC_CHANNELS.workspacePackageScriptEvent).toBe("workspace:package-script-event");
+  expect(IPC_CHANNELS.terminalSpawn).toBe("terminal:spawn");
+  expect(IPC_CHANNELS.terminalInput).toBe("terminal:input");
+  expect(IPC_CHANNELS.terminalResize).toBe("terminal:resize");
+  expect(IPC_CHANNELS.terminalKill).toBe("terminal:kill");
+  expect(IPC_CHANNELS.terminalEvent).toBe("terminal:event");
   expect(IPC_CHANNELS.modelSettingsGet).toBe("model-settings:get");
   expect(IPC_CHANNELS.modelProviderSave).toBe("model-provider:save");
   expect(IPC_CHANNELS.modelRouteProfileSave).toBe("model-route-profile:save");
@@ -91,5 +96,7 @@ test("guards unknown channels", () => {
   expect(isKnownIpcChannel("thread:start")).toBe(true);
   expect(isKnownIpcChannel("thread:follow-up-enqueue")).toBe(true);
   expect(isKnownIpcChannel("thread:follow-up-escalate")).toBe(true);
+  expect(isKnownIpcChannel("terminal:spawn")).toBe(true);
+  expect(isKnownIpcChannel("terminal:event")).toBe(true);
   expect(isKnownIpcChannel("unknown")).toBe(false);
 });

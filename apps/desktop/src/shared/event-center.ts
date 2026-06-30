@@ -1,4 +1,4 @@
-import type { IpcChannel, PackageScriptStreamEvent, ThreadLiveEvent } from "./ipc";
+import type { IpcChannel, PackageScriptStreamEvent, TerminalStreamEvent, ThreadLiveEvent } from "./ipc";
 
 export const EVENT_CENTER_PROTOCOL_VERSION = 1 as const;
 export const EVENT_CENTER_JSON_RPC_VERSION = "2.0" as const;
@@ -26,6 +26,7 @@ export type EventCenterEventKind =
   | "thread.projection"
   | "settings.updated"
   | "workspace.package_script"
+  | "workspace.terminal"
   | "workspace.package_json_changed"
   | "workspace.git_remote_fetched"
   | "workspace.git_status_changed";
@@ -33,6 +34,7 @@ export type EventCenterEventKind =
 export type ThreadEventCenterEventKind = Exclude<
   EventCenterEventKind,
   | "workspace.package_script"
+  | "workspace.terminal"
   | "workspace.package_json_changed"
   | "workspace.git_remote_fetched"
   | "workspace.git_status_changed"
@@ -128,6 +130,7 @@ export interface EventCenterPayloadMap {
   "thread.projection": ThreadLiveEvent;
   "settings.updated": ThreadLiveEvent;
   "workspace.package_script": PackageScriptStreamEvent;
+  "workspace.terminal": TerminalStreamEvent;
   "workspace.package_json_changed": EventCenterPackageJsonChangedPayload;
   "workspace.git_remote_fetched": EventCenterGitRemoteFetchedPayload;
   "workspace.git_status_changed": EventCenterGitStatusChangedPayload;

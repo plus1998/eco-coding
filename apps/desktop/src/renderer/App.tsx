@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
+  Terminal,
   Trash2,
   type LucideIcon,
   X,
@@ -168,6 +169,15 @@ import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import { ThreadInfoPanel } from "./ThreadInfoPanel";
+import { TerminalPanel } from "./TerminalPanel";
+import {
+  createProjectTerminalState,
+  getProjectTerminalState,
+  readTerminalWorkspaceState,
+  saveTerminalWorkspaceState,
+  type ProjectTerminalState,
+  type TerminalWorkspaceState,
+} from "./terminal-panel-storage";
 import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
@@ -477,6 +487,9 @@ function App() {
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
+  const [terminalByProject, setTerminalByProject] = useState<TerminalWorkspaceState>(() =>
+    readTerminalWorkspaceState(),
+  );
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [threadInfoDrawerOpen, setThreadInfoDrawerOpen] = useState(false);
   const [threadInfoCompact, setThreadInfoCompact] = useState(
@@ -1157,6 +1170,43 @@ function App() {
     const project = projects.find((item) => item.path === currentProjectPath);
     return project?.name ?? pathToName(currentProjectPath);
   }, [currentProjectPath, projects]);
+  const currentTerminalState = useMemo(() => {
+    if (!currentProjectPath) {
+      return undefined;
+    }
+    return getProjectTerminalState(terminalByProject, currentProjectPath);
+  }, [currentProjectPath, terminalByProject]);
+  const updateCurrentProjectTerminal = useCallback(
+    (next: ProjectTerminalState) => {
+      if (!currentProjectPath) {
+        return;
+      }
+      setTerminalByProject((current) => ({
+        ...current,
+        [currentProjectPath]: next,
+      }));
+    },
+    [currentProjectPath],
+  );
+  const toggleTerminalForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    setTerminalByProject((current) => {
+      const existing = current[currentProjectPath];
+      if (existing?.open) {
+        return {
+          ...current,
+          [currentProjectPath]: { ...existing, open: false },
+        };
+      }
+      const next = existing ?? createProjectTerminalState(currentProjectName, true);
+      return {
+        ...current,
+        [currentProjectPath]: { ...next, open: true },
+      };
+    });
+  }, [currentProjectName, currentProjectPath]);
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
@@ -1228,6 +1278,26 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [threadInfoDrawerOpen, threadInfoCompact]);
+  useEffect(() => {
+    saveTerminalWorkspaceState(terminalByProject);
+  }, [terminalByProject]);
+  useEffect(() => {
+    if (!activeThread) {
+      return undefined;
+    }
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "`" && event.key !== "~") {
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      toggleTerminalForCurrentProject();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeThread, toggleTerminalForCurrentProject]);
   const activeComposerRewindTarget =
     activeThread && composerRewindTarget?.threadId === activeThread.id ? composerRewindTarget : undefined;
   useEffect(() => {
@@ -4010,107 +4080,145 @@ function App() {
         </button>
       </aside>
 
-      <section className={showLanding ? "codex-main codex-main-landing" : "codex-main"}>
-        <div className="codex-main-scroll">
-          {showLanding ? (
-            <div className="codex-landing">
-              <h1 className="codex-hero">
-                {currentProjectPath
-                  ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
-                    ? "你在忙什么？"
-                    : `我们应该在 ${currentProjectName} 中构建什么？`
-                  : "打开一个项目开始编码"}
-              </h1>
-              {composer}
-            </div>
-          ) : (
-            <div className="activity-feed">
-              {activeThread && (
-                <header className="activity-header">
-                  <h2 title={activeThread.title}>{activeThread.title}</h2>
-                </header>
-              )}
-              {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
-              <div className="activity-messages-shell">
-                <div ref={activityMessagesRef} className="activity-messages">
-                <ActivityLogView
-                  {...(activeThread && { thread: activeThread })}
-                  {...(runProjection && { projection: runProjection })}
-                  {...(activeThread &&
-                    billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
-                  onRestorePrompt={restorePrompt}
-                  onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                  {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
-                  agentDisplayNames={activeRuntimeAgentDisplayNames}
-                  agentThemes={activeRuntimeAgentThemes}
-                  {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                  {...(subagentTimings && { subagentTimings })}
-                  {...(subagentMetrics && { subagentMetrics })}
-                  {...(activeThread &&
-                    contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
-                />
-                {showClarification && pendingClarification ? (
-                  <ClarificationPanel
-                    request={pendingClarification}
-                    busy={clarificationBusy}
-                    onSubmit={submitClarificationAnswers}
-                    onDismiss={() => void dismissPendingClarification()}
-                  />
-                ) : null}
-                {showBashApproval && pendingBashApproval ? (
-                  <BashApprovalPanel
-                    request={pendingBashApproval}
-                    busy={bashApprovalBusy}
-                    onApprove={() => void resolvePendingBashApproval("approved")}
-                    onDeny={() => void resolvePendingBashApproval("denied")}
-                  />
-                ) : null}
-                {showPlanApproval && pendingPlan && (
-                  <PlanApprovalPanel
-                    plan={pendingPlan}
-                    busy={planActionBusy}
-                    {...(planFailureMessage && { failureMessage: planFailureMessage })}
-                    onApprove={approvePendingPlan}
-                    onDismiss={dismissPendingPlan}
-                  />
-                )}
-                <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
-                </div>
-                {activityFeedScrollJump ? (
-                  <button
-                    type="button"
-                    className="activity-feed-scroll-jump is-visible"
-                    onClick={handleActivityFeedScrollJump}
-                    aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                    title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                  >
-                    {activityFeedScrollJump === "top" ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </button>
-                ) : null}
+      <section
+        className={
+          showLanding ? "codex-main codex-main-landing" : "codex-main codex-main-has-toolbar"
+        }
+      >
+        <div className="codex-main-pane">
+          <div className="codex-main-scroll">
+            {showLanding ? (
+              <div className="codex-landing">
+                <h1 className="codex-hero">
+                  {currentProjectPath
+                    ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
+                      ? "你在忙什么？"
+                      : `我们应该在 ${currentProjectName} 中构建什么？`
+                    : "打开一个项目开始编码"}
+                </h1>
+                {composer}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="activity-feed">
+                {activeThread && (
+                  <header className="activity-header">
+                    <h2 title={activeThread.title}>{activeThread.title}</h2>
+                  </header>
+                )}
+                {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
+                <div className="activity-messages-shell">
+                  <div ref={activityMessagesRef} className="activity-messages">
+                  <ActivityLogView
+                    {...(activeThread && { thread: activeThread })}
+                    {...(runProjection && { projection: runProjection })}
+                    {...(activeThread &&
+                      billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
+                    onRestorePrompt={restorePrompt}
+                    onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                    {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
+                    agentDisplayNames={activeRuntimeAgentDisplayNames}
+                    agentThemes={activeRuntimeAgentThemes}
+                    {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                    {...(subagentTimings && { subagentTimings })}
+                    {...(subagentMetrics && { subagentMetrics })}
+                    {...(activeThread &&
+                      contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
+                  />
+                  {showClarification && pendingClarification ? (
+                    <ClarificationPanel
+                      request={pendingClarification}
+                      busy={clarificationBusy}
+                      onSubmit={submitClarificationAnswers}
+                      onDismiss={() => void dismissPendingClarification()}
+                    />
+                  ) : null}
+                  {showBashApproval && pendingBashApproval ? (
+                    <BashApprovalPanel
+                      request={pendingBashApproval}
+                      busy={bashApprovalBusy}
+                      onApprove={() => void resolvePendingBashApproval("approved")}
+                      onDeny={() => void resolvePendingBashApproval("denied")}
+                    />
+                  ) : null}
+                  {showPlanApproval && pendingPlan && (
+                    <PlanApprovalPanel
+                      plan={pendingPlan}
+                      busy={planActionBusy}
+                      {...(planFailureMessage && { failureMessage: planFailureMessage })}
+                      onApprove={approvePendingPlan}
+                      onDismiss={dismissPendingPlan}
+                    />
+                  )}
+                  <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                  </div>
+                  {activityFeedScrollJump ? (
+                    <button
+                      type="button"
+                      className="activity-feed-scroll-jump is-visible"
+                      onClick={handleActivityFeedScrollJump}
+                      aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                      title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                    >
+                      {activityFeedScrollJump === "top" ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!showLanding ? composer : null}
         </div>
 
-        {!showLanding ? composer : null}
+        {!showLanding && currentProjectPath && currentTerminalState?.open ? (
+          <TerminalPanel
+            workspacePath={currentProjectPath}
+            workspaceLabel={currentProjectName}
+            state={currentTerminalState}
+            onStateChange={updateCurrentProjectTerminal}
+            onClose={() =>
+              updateCurrentProjectTerminal({
+                ...currentTerminalState,
+                open: false,
+              })
+            }
+          />
+        ) : null}
 
-        {threadInfoDrawerMode ? (
+        {!showLanding ? (
           <div className="codex-main-toolbar">
             <button
               type="button"
               className={
-                threadInfoDrawerOpen
+                currentTerminalState?.open
                   ? "codex-main-toolbar-button is-active"
                   : "codex-main-toolbar-button"
               }
-              onClick={() => setThreadInfoDrawerOpen((open) => !open)}
-              title={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
-              aria-label={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
-              aria-expanded={threadInfoDrawerOpen}
-              aria-controls="thread-info-panel"
+              onClick={toggleTerminalForCurrentProject}
+              title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
+              aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
+              aria-expanded={currentTerminalState?.open === true}
+              aria-controls="terminal-panel"
             >
-              <PanelRight size={15} aria-hidden />
+              <Terminal size={15} aria-hidden />
             </button>
+            {threadInfoDrawerMode ? (
+              <button
+                type="button"
+                className={
+                  threadInfoDrawerOpen
+                    ? "codex-main-toolbar-button is-active"
+                    : "codex-main-toolbar-button"
+                }
+                onClick={() => setThreadInfoDrawerOpen((open) => !open)}
+                title={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
+                aria-label={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
+                aria-expanded={threadInfoDrawerOpen}
+                aria-controls="thread-info-panel"
+              >
+                <PanelRight size={15} aria-hidden />
+              </button>
+            ) : null}
           </div>
         ) : null}
       </section>

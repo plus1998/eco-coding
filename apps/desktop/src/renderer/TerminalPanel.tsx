@@ -1,0 +1,305 @@
+import { Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { GhosttyTerminal, type TerminalDimensions } from "./GhosttyTerminal";
+import {
+  clampTerminalHeight,
+  createTerminalTab,
+  nextTerminalTabLabel,
+  type ProjectTerminalState,
+  type TerminalTabRecord,
+} from "./terminal-panel-storage";
+
+interface TerminalPanelProps {
+  workspacePath: string;
+  workspaceLabel: string;
+  state: ProjectTerminalState;
+  onStateChange: (next: ProjectTerminalState) => void;
+  onClose: () => void;
+}
+
+type SessionCache = Map<string, Map<string, string>>;
+
+export function TerminalPanel({
+  workspacePath,
+  workspaceLabel,
+  state,
+  onStateChange,
+  onClose,
+}: TerminalPanelProps) {
+  const sessionCacheRef = useRef<SessionCache>(new Map());
+  const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>();
+  const [sessionsByTabId, setSessionsByTabId] = useState<Record<string, string>>({});
+  const [busyTabIds, setBusyTabIds] = useState<Record<string, boolean>>({});
+  const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
+
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0];
+
+  const syncSessionsFromCache = useCallback(() => {
+    const projectSessions = sessionCacheRef.current.get(workspacePath);
+    if (!projectSessions) {
+      setSessionsByTabId({});
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const tab of state.tabs) {
+      const sessionId = projectSessions.get(tab.id);
+      if (sessionId) {
+        next[tab.id] = sessionId;
+      }
+    }
+    setSessionsByTabId(next);
+  }, [state.tabs, workspacePath]);
+
+  const ensureTabSession = useCallback(
+    async (tabId: string, dimensions?: TerminalDimensions) => {
+      if (!window.eco) {
+        return undefined;
+      }
+
+      let projectSessions = sessionCacheRef.current.get(workspacePath);
+      if (!projectSessions) {
+        projectSessions = new Map();
+        sessionCacheRef.current.set(workspacePath, projectSessions);
+      }
+
+      const cached = projectSessions.get(tabId);
+      if (cached) {
+        setSessionsByTabId((current) => ({ ...current, [tabId]: cached }));
+        return cached;
+      }
+
+      if (!dimensions) {
+        return undefined;
+      }
+
+      setBusyTabIds((current) => ({ ...current, [tabId]: true }));
+      setErrorsByTabId((current) => {
+        const next = { ...current };
+        delete next[tabId];
+        return next;
+      });
+
+      try {
+        const result = await window.eco.spawnTerminal({
+          workspacePath,
+          cols: dimensions.cols,
+          rows: dimensions.rows,
+        });
+        projectSessions.set(tabId, result.sessionId);
+        setSessionsByTabId((current) => ({ ...current, [tabId]: result.sessionId }));
+        return result.sessionId;
+      } catch (spawnError) {
+        const message = spawnError instanceof Error ? spawnError.message : String(spawnError);
+        setErrorsByTabId((current) => ({ ...current, [tabId]: message }));
+        return undefined;
+      } finally {
+        setBusyTabIds((current) => {
+          const next = { ...current };
+          delete next[tabId];
+          return next;
+        });
+      }
+    },
+    [workspacePath],
+  );
+
+  useEffect(() => {
+    syncSessionsFromCache();
+  }, [syncSessionsFromCache, workspacePath]);
+
+  const clearTabSession = useCallback((tabId: string) => {
+    const projectSessions = sessionCacheRef.current.get(workspacePath);
+    projectSessions?.delete(tabId);
+    setSessionsByTabId((current) => {
+      const next = { ...current };
+      delete next[tabId];
+      return next;
+    });
+  }, [workspacePath]);
+
+  const killTabSession = useCallback((tabId: string) => {
+    const projectSessions = sessionCacheRef.current.get(workspacePath);
+    const sessionId = projectSessions?.get(tabId);
+    if (sessionId && window.eco) {
+      void window.eco.killTerminal(sessionId);
+    }
+    projectSessions?.delete(tabId);
+    setSessionsByTabId((current) => {
+      const next = { ...current };
+      delete next[tabId];
+      return next;
+    });
+    setErrorsByTabId((current) => {
+      const next = { ...current };
+      delete next[tabId];
+      return next;
+    });
+  }, [workspacePath]);
+
+  const handleSelectTab = (tabId: string) => {
+    if (tabId === state.activeTabId) {
+      return;
+    }
+    onStateChange({ ...state, activeTabId: tabId });
+  };
+
+  const handleAddTab = () => {
+    const label = nextTerminalTabLabel(workspaceLabel, state.tabs);
+    const tab = createTerminalTab(label);
+    onStateChange({
+      ...state,
+      tabs: [...state.tabs, tab],
+      activeTabId: tab.id,
+    });
+  };
+
+  const handleCloseTab = (tab: TerminalTabRecord) => {
+    killTabSession(tab.id);
+    const remaining = state.tabs.filter((item) => item.id !== tab.id);
+    if (remaining.length === 0) {
+      onClose();
+      return;
+    }
+    const activeTabId =
+      state.activeTabId === tab.id ? remaining[remaining.length - 1]!.id : state.activeTabId;
+    onStateChange({
+      ...state,
+      tabs: remaining,
+      activeTabId,
+    });
+  };
+
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragStateRef.current = { startY: event.clientY, startHeight: state.height };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleResizePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag) {
+      return;
+    }
+    const delta = drag.startY - event.clientY;
+    onStateChange({
+      ...state,
+      height: clampTerminalHeight(drag.startHeight + delta),
+    });
+  };
+
+  const handleResizePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragStateRef.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  if (!state.open || state.tabs.length === 0 || !activeTab) {
+    return null;
+  }
+
+  return (
+    <section
+      id="terminal-panel"
+      className="terminal-panel"
+      style={{ height: state.height }}
+      aria-label="终端"
+    >
+      <div
+        className="terminal-panel-resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="调整终端高度"
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={handleResizePointerUp}
+        onPointerCancel={handleResizePointerUp}
+      />
+      <div className="terminal-panel-tabs" role="tablist" aria-label="终端标签">
+        {state.tabs.map((tab) => {
+          const isActive = tab.id === state.activeTabId;
+          return (
+            <div
+              key={tab.id}
+              className={isActive ? "terminal-panel-tab is-active" : "terminal-panel-tab"}
+            >
+              <button
+                type="button"
+                className="terminal-panel-tab-button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`terminal-panel-tab-${tab.id}`}
+                onClick={() => handleSelectTab(tab.id)}
+              >
+                <TerminalIcon size={13} strokeWidth={1.75} aria-hidden />
+                <span className="terminal-panel-tab-label">{tab.label}</span>
+              </button>
+              <button
+                type="button"
+                className="terminal-panel-tab-close"
+                aria-label={`关闭 ${tab.label}`}
+                onClick={() => handleCloseTab(tab)}
+              >
+                <X size={10} strokeWidth={2.5} aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          className="terminal-panel-tab-add"
+          aria-label="新建终端标签"
+          onClick={handleAddTab}
+        >
+          <Plus size={14} aria-hidden />
+        </button>
+      </div>
+      <div className="terminal-panel-body">
+        {state.tabs.map((tab) => {
+          const sessionId = sessionsByTabId[tab.id];
+          const busy = busyTabIds[tab.id] === true;
+          const error = errorsByTabId[tab.id];
+          const isActive = tab.id === state.activeTabId;
+          return (
+            <div
+              key={tab.id}
+              id={`terminal-panel-tab-${tab.id}`}
+              className="terminal-panel-tab-pane"
+              role="tabpanel"
+              hidden={!isActive}
+            >
+              {busy ? (
+                <div className="terminal-panel-loading" aria-live="polite">
+                  <Loader2 size={16} className="terminal-panel-spinner" aria-hidden />
+                  <span>正在启动 shell…</span>
+                </div>
+              ) : null}
+              {error ? (
+                <p className="terminal-panel-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {!error && (isActive || sessionId) ? (
+                <GhosttyTerminal
+                  key={`${workspacePath}:${tab.id}`}
+                  sessionId={sessionId ?? null}
+                  active={isActive}
+                  onDimensionsReady={
+                    sessionId
+                      ? undefined
+                      : (dimensions) => {
+                          void ensureTabSession(tab.id, dimensions);
+                        }
+                  }
+                  onExit={() => {
+                    clearTabSession(tab.id);
+                  }}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}

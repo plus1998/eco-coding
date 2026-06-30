@@ -81,6 +81,9 @@ export const IPC_CHANNELS = {
   worktreeGetStatus: "worktree:get-status",
   terminalSpawn: "terminal:spawn",
   terminalInput: "terminal:input",
+  terminalResize: "terminal:resize",
+  terminalKill: "terminal:kill",
+  terminalEvent: "terminal:event",
   mcpSettingsGet: "mcp-settings:get",
   mcpServerSave: "mcp-server:save",
   mcpServerDelete: "mcp-server:delete",
@@ -297,6 +300,36 @@ export type PackageScriptStreamEvent =
   | { type: "output"; runId: string; data: string }
   | { type: "exit"; runId: string; exitCode: number; signal?: number }
   | { type: "error"; runId: string; message: string };
+
+export interface TerminalSpawnRequest {
+  workspacePath: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface TerminalSpawnResult {
+  sessionId: string;
+}
+
+export interface TerminalInputRequest {
+  sessionId: string;
+  data: string;
+}
+
+export interface TerminalResizeRequest {
+  sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface TerminalKillRequest {
+  sessionId: string;
+}
+
+export type TerminalStreamEvent =
+  | { type: "output"; sessionId: string; data: string }
+  | { type: "exit"; sessionId: string; exitCode: number; signal?: number }
+  | { type: "error"; sessionId: string; message: string };
 
 export interface WorkspaceOpenResult {
   canceled: boolean;
@@ -1538,6 +1571,63 @@ export function isPackageScriptStreamEvent(value: unknown): value is PackageScri
   }
   if (record.type === "error") {
     return typeof record.runId === "string" && typeof record.message === "string";
+  }
+  return false;
+}
+
+export function isTerminalSpawnRequest(value: unknown): value is TerminalSpawnRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    (record.cols === undefined || typeof record.cols === "number") &&
+    (record.rows === undefined || typeof record.rows === "number")
+  );
+}
+
+export function isTerminalInputRequest(value: unknown): value is TerminalInputRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.sessionId === "string" && typeof record.data === "string";
+}
+
+export function isTerminalResizeRequest(value: unknown): value is TerminalResizeRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.sessionId === "string" &&
+    typeof record.cols === "number" &&
+    typeof record.rows === "number"
+  );
+}
+
+export function isTerminalKillRequest(value: unknown): value is TerminalKillRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.sessionId === "string";
+}
+
+export function isTerminalStreamEvent(value: unknown): value is TerminalStreamEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.type === "output") {
+    return typeof record.sessionId === "string" && typeof record.data === "string";
+  }
+  if (record.type === "exit") {
+    return typeof record.sessionId === "string" && typeof record.exitCode === "number";
+  }
+  if (record.type === "error") {
+    return typeof record.sessionId === "string" && typeof record.message === "string";
   }
   return false;
 }

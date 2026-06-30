@@ -93,6 +93,10 @@ import {
   isGitPushRequest,
   isKnownIpcChannel,
   isRunPackageScriptRequest,
+  isTerminalInputRequest,
+  isTerminalKillRequest,
+  isTerminalResizeRequest,
+  isTerminalSpawnRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
   type McpServerConfigInput,
@@ -307,6 +311,7 @@ import {
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { launchInExternalTerminal } from "./open-external-terminal";
 import { PackageJsonWatcher } from "./package-json-watcher";
+import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { PackageScriptRunner } from "./package-script-runner";
 import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
@@ -499,6 +504,9 @@ function broadcastGitCommitMessageDelta(requestId: string, text: string): void {
 }
 const packageScriptRunner = new PackageScriptRunner((event) => {
   desktopEventCenter.publishPackageScriptEvent(event);
+});
+const interactiveTerminalManager = new InteractiveTerminalManager((event) => {
+  desktopEventCenter.publishTerminalEvent(event);
 });
 const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
   desktopEventCenter.publishPackageJsonChanged(workspacePath);
@@ -1319,6 +1327,49 @@ function registerIpcHandlers(): void {
       throw new Error("Run id is required.");
     }
     return { stopped: packageScriptRunner.stop(runId.trim()) };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.terminalSpawn, async (payload: unknown) => {
+    if (!isTerminalSpawnRequest(payload)) {
+      throw new Error("Invalid terminal spawn request.");
+    }
+    const workspacePath = payload.workspacePath.trim();
+    if (!workspacePath) {
+      throw new Error("Workspace path is required.");
+    }
+    const cols = payload.cols;
+    const rows = payload.rows;
+    const size =
+      typeof cols === "number" &&
+      typeof rows === "number" &&
+      Number.isFinite(cols) &&
+      Number.isFinite(rows) &&
+      cols > 0 &&
+      rows > 0
+        ? { cols: Math.floor(cols), rows: Math.floor(rows) }
+        : undefined;
+    return interactiveTerminalManager.spawn(workspacePath, size);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.terminalInput, async (payload: unknown) => {
+    if (!isTerminalInputRequest(payload)) {
+      throw new Error("Invalid terminal input request.");
+    }
+    interactiveTerminalManager.write(payload.sessionId, payload.data);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.terminalResize, async (payload: unknown) => {
+    if (!isTerminalResizeRequest(payload)) {
+      throw new Error("Invalid terminal resize request.");
+    }
+    interactiveTerminalManager.resize(payload.sessionId, payload.cols, payload.rows);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.terminalKill, async (payload: unknown) => {
+    if (!isTerminalKillRequest(payload)) {
+      throw new Error("Invalid terminal kill request.");
+    }
+    return { killed: interactiveTerminalManager.kill(payload.sessionId) };
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspacePrepareGit, async (payload: unknown) => {

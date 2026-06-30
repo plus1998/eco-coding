@@ -133,6 +133,14 @@ export class DesktopEventCenter {
     });
   }
 
+  publishTerminalEvent(payload: EventCenterPayloadMap["workspace.terminal"]): EventCenterEnvelope {
+    return this.publish({
+      kind: "workspace.terminal",
+      payload,
+      aggregateKey: `terminal:${payload.sessionId}`,
+    });
+  }
+
   publishPackageJsonChanged(workspacePath: string): EventCenterEnvelope {
     return this.publish({
       kind: "workspace.package_json_changed",
@@ -267,6 +275,9 @@ export function createElectronEventSink(
       switch (envelope.kind) {
         case "workspace.package_script":
           send(IPC_CHANNELS.workspacePackageScriptEvent, envelope.payload);
+          return;
+        case "workspace.terminal":
+          send(IPC_CHANNELS.terminalEvent, envelope.payload);
           return;
         case "workspace.package_json_changed":
           send(

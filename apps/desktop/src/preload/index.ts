@@ -120,6 +120,12 @@ import {
   type RunPackageScriptRequest,
   type StartPackageScriptResult,
   type PackageScriptStreamEvent,
+  type TerminalInputRequest,
+  type TerminalKillRequest,
+  type TerminalResizeRequest,
+  type TerminalSpawnRequest,
+  type TerminalSpawnResult,
+  type TerminalStreamEvent,
   type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
@@ -192,6 +198,25 @@ const api = {
     };
     ipcRenderer.on(IPC_CHANNELS.workspacePackageScriptEvent, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageScriptEvent, listener);
+  },
+  spawnTerminal(request: TerminalSpawnRequest): Promise<TerminalSpawnResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.terminalSpawn, request);
+  },
+  writeTerminalInput(request: TerminalInputRequest): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.terminalInput, request);
+  },
+  resizeTerminal(request: TerminalResizeRequest): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.terminalResize, request);
+  },
+  killTerminal(sessionId: string): Promise<{ killed: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.terminalKill, { sessionId });
+  },
+  onTerminalEvent(callback: (event: TerminalStreamEvent) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      callback(payload as TerminalStreamEvent);
+    };
+    ipcRenderer.on(IPC_CHANNELS.terminalEvent, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.terminalEvent, listener);
   },
   getModelSettings(): Promise<ModelSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelSettingsGet);
