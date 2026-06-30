@@ -11,13 +11,12 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/device_display.dart';
+import '../../core/widgets/adaptive_toolbar_icon.dart'
+    show AdaptiveToolbarIcon, sessionToolbarButtonGap, sessionToolbarButtonSize;
 import '../projects/project_providers.dart';
 import 'thread_session_menu.dart';
 
 const threadSessionToolbarHeight = 52.0;
-const sessionToolbarButtonSize = 32.0;
-const sessionToolbarIconSize = 18.0;
-const sessionToolbarButtonGap = 8.0;
 const sessionTopFrostBlurSigma = 20.0;
 const sessionTopFrostTintOpacity = 0.52;
 /// Pull the first content row slightly under the frosted header fade.
@@ -220,36 +219,11 @@ class SessionToolbarIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    final enabled = onPressed != null;
-
-    return Tooltip(
-      message: tooltip,
-      child: SizedBox(
-        width: sessionToolbarButtonSize,
-        height: sessionToolbarButtonSize,
-        child: Material(
-          color: eco.bgElevated.withValues(alpha: 0.88),
-          shape: CircleBorder(
-            side: BorderSide(
-              color: eco.borderSubtle.withValues(alpha: 0.7),
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onPressed,
-            child: Center(
-              child: Icon(
-                icon,
-                size: sessionToolbarIconSize,
-                color: enabled
-                    ? eco.textHeading
-                    : eco.textHeading.withValues(alpha: 0.38),
-              ),
-            ),
-          ),
-        ),
-      ),
+    return AdaptiveToolbarIcon(
+      icon: icon,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      size: sessionToolbarButtonSize,
     );
   }
 }

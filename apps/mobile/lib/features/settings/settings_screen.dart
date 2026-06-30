@@ -10,7 +10,8 @@ import '../../core/providers/app_theme_provider.dart';
 import '../../core/theme/app_theme_preference.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
-import '../../core/widgets/liquid_glass_nav_bar.dart';
+import '../../core/widgets/adaptive_nav_bar.dart';
+import '../../core/widgets/shell_toolbar_actions.dart';
 import '../threads/thread_providers.dart';
 
 const settingsFontScale = 1.2;
@@ -88,7 +89,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Theme(
       data: _settingsTheme(context),
       child: Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+        backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('设置'),
+        actions: const [
+          ShellToolbarActions(),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : credentials.when(
@@ -100,7 +107,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     20,
                     8,
                     20,
-                    liquidGlassNavOverlayInset(context),
+                    adaptiveNavOverlayInset(context),
                   ),
                   children: [
                     _AccountHeader(

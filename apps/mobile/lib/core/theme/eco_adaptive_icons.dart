@@ -1,0 +1,31 @@
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:flutter/material.dart';
+
+import 'eco_icons.dart';
+
+/// SF Symbol name for an [EcoIcons] glyph on iOS 26+ native widgets.
+String? ecoIconSfSymbol(IconData icon) {
+  return switch (icon) {
+    EcoIcons.sessions => 'bubble.left.and.bubble.right',
+    EcoIcons.settings => 'gearshape',
+    EcoIcons.desktop => 'display',
+    EcoIcons.folderOpen => 'folder',
+    EcoIcons.chevronLeft => 'chevron.left',
+    EcoIcons.newThread => 'square.and.pencil',
+    EcoIcons.more => 'ellipsis.circle',
+    EcoIcons.todos => 'checklist',
+    EcoIcons.codeReview => 'doc.text.magnifyingglass',
+    EcoIcons.commitPush => 'arrow.up.doc',
+    EcoIcons.pull => 'arrow.down.circle',
+    EcoIcons.npmScripts => 'terminal',
+    _ => null,
+  };
+}
+
+/// Icon payload for adaptive widgets: SF Symbol [String] on iOS 26+, else [IconData].
+dynamic adaptivePlatformIcon(IconData icon) {
+  if (PlatformInfo.isIOS26OrHigher()) {
+    return ecoIconSfSymbol(icon) ?? icon;
+  }
+  return icon;
+}

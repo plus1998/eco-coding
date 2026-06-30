@@ -96,3 +96,119 @@ Future<void> showProjectActionSheet({
     },
   );
 }
+
+Future<void> showOpenProjectSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      return _OpenProjectSheet(
+        onOpen: (path) async {
+          try {
+            await openProjectPath(ref, path);
+            if (sheetContext.mounted) {
+              Navigator.pop(sheetContext);
+            }
+            messenger.showSnackBar(
+              const SnackBar(content: Text('项目已打开')),
+            );
+          } catch (error) {
+            messenger.showSnackBar(
+              SnackBar(content: Text(error.toString())),
+            );
+            rethrow;
+          }
+        },
+      );
+    },
+  );
+}
+
+class _OpenProjectSheet extends StatefulWidget {
+  const _OpenProjectSheet({required this.onOpen});
+
+  final Future<void> Function(String path) onOpen;
+
+  @override
+  State<_OpenProjectSheet> createState() => _OpenProjectSheetState();
+}
+
+class _OpenProjectSheetState extends State<_OpenProjectSheet> {
+  final _pathController = TextEditingController();
+  bool _opening = false;
+
+  @override
+  void dispose() {
+    _pathController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('打开项目', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            '输入 Desktop 上的项目绝对路径',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: eco.textMuted,
+                ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _pathController,
+            enabled: !_opening,
+            decoration: const InputDecoration(
+              labelText: '项目路径',
+              hintText: '/Users/you/projects/my-app',
+            ),
+            autofocus: true,
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _opening
+                ? null
+                : () async {
+                    final path = _pathController.text.trim();
+                    if (path.isEmpty) return;
+                    setState(() => _opening = true);
+                    try {
+                      await widget.onOpen(path);
+                    } catch (_) {
+                      if (mounted) {
+                        setState(() => _opening = false);
+                      }
+                    }
+                  },
+            child: _opening
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('打开'),
+          ),
+        ],
+      ),
+    );
+  }
+}

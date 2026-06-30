@@ -8,7 +8,7 @@ import 'core/providers/app_session.dart';
 import 'core/providers/app_theme_provider.dart';
 import 'core/theme/eco_icons.dart';
 import 'core/theme/eco_theme.dart';
-import 'core/widgets/liquid_glass_nav_bar.dart';
+import 'core/widgets/adaptive_nav_bar.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
 import 'features/settings/settings_screen.dart';
@@ -104,31 +104,44 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class MainShell extends StatelessWidget {
+class MainShell extends ConsumerWidget {
   const MainShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      body: navigationShell,
-      bottomNavigationBar: LiquidGlassNavBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: navigationShell.goBranch,
-        destinations: const [
-          LiquidGlassNavDestination(
-            icon: EcoIcons.sessions,
-            selectedIcon: EcoIcons.sessionsSelected,
-            label: '会话',
-          ),
-          LiquidGlassNavDestination(
-            icon: EcoIcons.settings,
-            selectedIcon: EcoIcons.settings,
-            label: '设置',
-          ),
-        ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final eco = ecoColors(context);
+
+    return ColoredBox(
+      color: eco.bgMain,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            navigationShell,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AdaptiveNavBar(
+                selectedIndex: navigationShell.currentIndex,
+                onDestinationSelected: navigationShell.goBranch,
+                destinations: const [
+                  AdaptiveNavDestination(
+                    icon: EcoIcons.sessions,
+                    label: '会话',
+                  ),
+                  AdaptiveNavDestination(
+                    icon: EcoIcons.settings,
+                    label: '设置',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
