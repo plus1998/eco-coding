@@ -213,6 +213,73 @@ export function ComposerRoutePopover({
   );
 }
 
+export function ComposerRouteCardBody({
+  settings,
+  selectedProfileId,
+  runtimeConfig,
+  busy,
+  onSelectProfile,
+  onSaveCurrentProfile,
+  onOpenFullSettings,
+}: {
+  settings: ModelSettingsSnapshot;
+  selectedProfileId?: string | undefined;
+  runtimeConfig?: ThreadRuntimeConfig | undefined;
+  busy?: boolean | undefined;
+  onSelectProfile: (profileId: string) => void | Promise<void>;
+  onSaveCurrentProfile?: (() => void | Promise<void>) | undefined;
+  onOpenFullSettings: () => void;
+}) {
+  const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
+
+  return (
+    <div className="composer-route-card-body">
+      <ul className="composer-route-popover-list">
+        {profileSummaries.map((summary) => (
+          <AgentProfileOption
+            key={summary.selectionId}
+            summary={summary}
+            selected={summary.selectionId === selectedProfileId}
+            disabled={busy}
+            onSelect={() => {
+              if (summary.selectionId) {
+                void onSelectProfile(summary.selectionId);
+              }
+            }}
+          />
+        ))}
+      </ul>
+      {profileSummaries.length === 0 ? (
+        <p className="composer-route-popover-empty">尚未配置可运行的智能体配置</p>
+      ) : null}
+      {onSaveCurrentProfile ? (
+        <button
+          type="button"
+          className="composer-route-popover-settings"
+          disabled={busy}
+          onClick={() => {
+            void onSaveCurrentProfile();
+          }}
+        >
+          <Save size={14} />
+          保存当前为 Profile
+          <ChevronRight size={14} />
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="composer-route-popover-settings"
+        disabled={busy}
+        onClick={onOpenFullSettings}
+      >
+        <Settings2 size={14} />
+        打开智能体构建器
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+}
+
 function AgentProfileOption({
   summary,
   selected,

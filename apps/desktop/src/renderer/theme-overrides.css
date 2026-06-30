@@ -1007,6 +1007,14 @@
   filter: brightness(1.05);
 }
 
+[data-theme="light"] .composer-switch-track {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .composer-switch input:checked + .composer-switch-track {
+  background: var(--accent);
+}
+
 @media (min-width: 720px) {
   .theme-picker {
     grid-template-columns: repeat(3, minmax(0, 1fr));

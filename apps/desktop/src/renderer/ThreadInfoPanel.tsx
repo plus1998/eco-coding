@@ -324,8 +324,29 @@ function ContextOccupancyRing({
   );
 }
 
-function BillingFloatPillLabel({ billing }: { billing?: ThreadBillingSnapshot }) {
+function BillingFloatPillLabel({
+  billing,
+  minimal = false,
+}: {
+  billing?: ThreadBillingSnapshot;
+  minimal?: boolean;
+}) {
   const cost = billing?.ecoCostUsd ?? 0;
+  if (minimal) {
+    return (
+      <span
+        className={[
+          "thread-info-float-pill-label",
+          "composer-usage-pill-minimal",
+          cost > 0 ? "thread-info-float-pill-cost" : "thread-info-float-pill-cost is-empty",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {formatBillingPillCost(billing)}
+      </span>
+    );
+  }
   return (
     <span className="thread-info-float-pill-label">
       <span>计费</span>
@@ -336,8 +357,21 @@ function BillingFloatPillLabel({ billing }: { billing?: ThreadBillingSnapshot })
   );
 }
 
-function ContextFloatPillLabel({ context }: { context?: ThreadContextSnapshot }) {
+function ContextFloatPillLabel({
+  context,
+  minimal = false,
+}: {
+  context?: ThreadContextSnapshot;
+  minimal?: boolean;
+}) {
   const occupancyPct = resolvePlannerOccupancyPct(context);
+  if (minimal) {
+    return (
+      <span className="thread-info-float-pill-label composer-usage-pill-minimal composer-usage-pill-ring-only">
+        <ContextOccupancyRing pct={occupancyPct} size={16} strokeWidth={2.25} />
+      </span>
+    );
+  }
   return (
     <span className="thread-info-float-pill-label">
       <ContextOccupancyRing pct={occupancyPct} />
@@ -450,6 +484,7 @@ function ThreadInfoFloatControl({
   width = 320,
   minHeight = 200,
   fixedHeight,
+  openOn = "hover",
   children,
 }: {
   label: ReactNode;
@@ -458,6 +493,7 @@ function ThreadInfoFloatControl({
   width?: number;
   minHeight?: number;
   fixedHeight?: number;
+  openOn?: "hover" | "click";
   children: (closePanel: () => void) => ReactNode;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -466,7 +502,8 @@ function ThreadInfoFloatControl({
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
-  const open = hovered || pinned;
+  const clickOnly = openOn === "click";
+  const open = clickOnly ? pinned : hovered || pinned;
 
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current) {
@@ -575,6 +612,24 @@ function ThreadInfoFloatControl({
     };
   }, [closePanel, open]);
 
+  const hoverTriggerProps = clickOnly
+    ? {}
+    : {
+        onMouseEnter: showPanel,
+        onMouseLeave: scheduleClose,
+        onFocus: showPanel,
+        onBlur: handleBlur,
+      };
+
+  const hoverPopoverProps = clickOnly
+    ? {}
+    : {
+        onMouseEnter: showPanel,
+        onMouseLeave: scheduleClose,
+        onFocus: showPanel,
+        onBlur: handleBlur,
+      };
+
   const popover =
     open &&
     createPortal(
@@ -584,10 +639,7 @@ function ThreadInfoFloatControl({
         role="dialog"
         aria-label={ariaLabel}
         style={panelStyle}
-        onMouseEnter={showPanel}
-        onMouseLeave={scheduleClose}
-        onFocus={showPanel}
-        onBlur={handleBlur}
+        {...hoverPopoverProps}
       >
         <div className="thread-info-float-popover-body">{children(closePanel)}</div>
       </div>,
@@ -607,16 +659,17 @@ function ThreadInfoFloatControl({
         aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onMouseEnter={showPanel}
-        onMouseLeave={scheduleClose}
-        onFocus={showPanel}
-        onBlur={handleBlur}
+        {...hoverTriggerProps}
         onClick={() => {
           if (pinned) {
             closePanel();
             return;
           }
           updatePanelPosition();
+          if (clickOnly) {
+            setPinned(true);
+            return;
+          }
           setHovered(true);
           setPinned(true);
         }}
@@ -628,7 +681,7 @@ function ThreadInfoFloatControl({
   );
 }
 
-function ThreadInfoFloatStack({
+export function ThreadInfoFloatStack({
   threadId,
   showBillingSection,
   billing,
@@ -644,6 +697,7 @@ function ThreadInfoFloatStack({
   promptCacheInvalidated = false,
   agentDisplayNames,
   agentThemes,
+  variant = "panel",
 }: {
   threadId?: string;
   showBillingSection: boolean;
@@ -660,25 +714,47 @@ function ThreadInfoFloatStack({
   promptCacheInvalidated?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
+  variant?: "panel" | "composer";
 }) {
   const showBillingFloat = showBillingSection;
   const showContextFloat = true;
   const contextOccupancyPct = resolvePlannerOccupancyPct(context);
+  const floatOpenOn = variant === "composer" ? "click" : "hover";
 
   if (!showBillingFloat && !showContextFloat) {
     return null;
   }
 
   return (
-    <div className="thread-info-float-stack">
-      <div className="thread-info-float-pills">
+    <div
+      className={[
+        "thread-info-float-stack",
+        variant === "composer" ? "thread-info-float-stack-composer" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div
+        className={[
+          "thread-info-float-pills",
+          variant === "composer" ? "composer-usage-pills" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         {showBillingFloat ? (
           <ThreadInfoFloatControl
-            label={<BillingFloatPillLabel {...(billing !== undefined && { billing })} />}
+            label={
+              <BillingFloatPillLabel
+                minimal={variant === "composer"}
+                {...(billing !== undefined && { billing })}
+              />
+            }
             ariaLabel={`计费对比，当前 ${formatBillingPillCost(billing)}`}
             resetKey={threadId}
             width={320}
             minHeight={220}
+            openOn={floatOpenOn}
           >
             {(closePanel) => (
               <BillingFloatingCard
@@ -697,7 +773,12 @@ function ThreadInfoFloatStack({
         ) : null}
         {showContextFloat ? (
           <ThreadInfoFloatControl
-            label={<ContextFloatPillLabel {...(context !== undefined && { context })} />}
+            label={
+              <ContextFloatPillLabel
+                minimal={variant === "composer"}
+                {...(context !== undefined && { context })}
+              />
+            }
             ariaLabel={
               contextOccupancyPct !== undefined
                 ? `Context，主 Agent 占用 ${contextOccupancyPct}%`
@@ -707,6 +788,7 @@ function ThreadInfoFloatStack({
             width={320}
             minHeight={360}
             fixedHeight={360}
+            openOn={floatOpenOn}
           >
             {(closePanel) => (
               <ContextCard

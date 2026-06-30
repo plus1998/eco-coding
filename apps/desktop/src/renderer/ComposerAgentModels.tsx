@@ -33,6 +33,7 @@ interface ComposerAgentModelsProps {
   canEditSubagents: boolean;
   subagentSaving?: boolean | undefined;
   compact?: boolean | undefined;
+  embedded?: boolean | undefined;
   onToggleSubagent?: (role: SubagentRole, enabled: boolean) => void;
 }
 
@@ -58,6 +59,154 @@ function AgentRowContent({
         {action ? <span className="composer-agent-row-action">{action}</span> : null}
       </span>
     </>
+  );
+}
+
+function SubagentSwitchRows({
+  labels,
+  subagentSettings,
+  canEditSubagents,
+  subagentSaving,
+  onToggleSubagent,
+}: ComposerAgentModelsProps) {
+  const subagentLabels = labels.filter((label) => !label.main);
+
+  return (
+    <>
+      {subagentLabels.map(({ role, displayName, modelId, subagentRole }) => {
+        const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
+        const clickable = Boolean(
+          canEditSubagents &&
+            subagentRole &&
+            subagentRole !== "explore" &&
+            subagentSettings &&
+            onToggleSubagent,
+        );
+        const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
+
+        return (
+          <div key={role} className="composer-mcp-row">
+            <div className="composer-mcp-row-main">
+              <span className="composer-mcp-row-name">{displayName}</span>
+              <span className="composer-mcp-row-transport">{modelShort}</span>
+            </div>
+            {clickable && subagentRole ? (
+              <label
+                className="composer-switch"
+                title={enabled ? `${displayName} · 已启用` : `${displayName} · 已停用`}
+              >
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  disabled={subagentSaving}
+                  aria-label={`${displayName} ${enabled ? "已启用" : "已停用"}`}
+                  onChange={() => onToggleSubagent?.(subagentRole, !enabled)}
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            ) : (
+              <span className="composer-mcp-row-status">{enabled ? "启用" : "停用"}</span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function AgentModelRows({
+  labels,
+  subagentSettings,
+  canEditSubagents,
+  subagentSaving,
+  onToggleSubagent,
+}: ComposerAgentModelsProps) {
+  return (
+    <>
+      {labels.map(({ role, displayName, modelId, title, main, subagentRole }) => {
+        const subagent = !main;
+        const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
+        const clickable = Boolean(
+          canEditSubagents &&
+            subagentRole &&
+            subagentRole !== "explore" &&
+            subagentSettings &&
+            onToggleSubagent,
+        );
+        const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
+        const className = rowClassName({ subagent, enabled, clickable, planner: main });
+        const status = main ? "主 Agent" : enabled ? "启用" : "停用";
+        const action = clickable ? (enabled ? "点击停用" : "点击启用") : undefined;
+        const content = (
+          <AgentRowContent
+            displayName={displayName}
+            modelShort={modelShort}
+            status={status}
+            action={action}
+          />
+        );
+        const tip = main
+          ? title
+          : clickable
+            ? enabled
+              ? `${title} · 点击停用`
+              : `${title} · 点击启用`
+            : title;
+
+        if (clickable && subagentRole) {
+          return (
+            <button
+              key={role}
+              type="button"
+              className={className}
+              title={tip}
+              disabled={subagentSaving}
+              aria-pressed={enabled}
+              onClick={() => onToggleSubagent?.(subagentRole, !enabled)}
+            >
+              {content}
+            </button>
+          );
+        }
+
+        return (
+          <span key={role} className={className} title={tip}>
+            {content}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+export function ComposerAgentModelsCardBody(props: ComposerAgentModelsProps) {
+  if (props.embedded) {
+    return (
+      <div className="composer-agent-models-card-body is-embedded">
+        <div className="composer-agents-list">
+          <SubagentSwitchRows {...props} />
+        </div>
+      </div>
+    );
+  }
+
+  const subagentLabels = props.labels.filter((label) => !label.main);
+  const enabledSubagents = subagentLabels.filter(
+    ({ subagentRole }) => !subagentRole || !props.subagentSettings || props.subagentSettings[subagentRole],
+  ).length;
+  const totalSubagents = subagentLabels.length;
+  const summary = totalSubagents > 0 ? `${enabledSubagents}/${totalSubagents}` : String(props.labels.length);
+
+  return (
+    <div className="composer-agent-models-card-body">
+      <div className="composer-agents-popover-header">
+        <span>子代理</span>
+        <span>{summary}</span>
+      </div>
+      <div className="composer-agents-list">
+        <AgentModelRows {...props} />
+      </div>
+    </div>
   );
 }
 
@@ -142,66 +291,21 @@ export function ComposerAgentModels({
         ref={panelRef}
         className="composer-codex-popover composer-agents-popover"
         role="dialog"
-        aria-label="子代理编排详情"
+        aria-label="子代理详情"
         style={panelStyle}
       >
         <div className="composer-agents-popover-header">
-          <span>子代理编排</span>
+          <span>子代理</span>
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
-          {labels.map(({ role, displayName, modelId, title, main, subagentRole }) => {
-            const subagent = !main;
-            const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
-            const clickable = Boolean(
-              canEditSubagents &&
-                subagentRole &&
-                subagentRole !== "explore" &&
-                subagentSettings &&
-                onToggleSubagent,
-            );
-            const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
-            const className = rowClassName({ subagent, enabled, clickable, planner: main });
-            const status = main ? "主 Agent" : enabled ? "启用" : "停用";
-            const action = clickable ? (enabled ? "点击停用" : "点击启用") : undefined;
-            const content = (
-              <AgentRowContent
-                displayName={displayName}
-                modelShort={modelShort}
-                status={status}
-                action={action}
-              />
-            );
-            const tip = main
-              ? title
-              : clickable
-                ? enabled
-                  ? `${title} · 点击停用`
-                  : `${title} · 点击启用`
-                : title;
-
-            if (clickable && subagentRole) {
-              return (
-                <button
-                  key={role}
-                  type="button"
-                  className={className}
-                  title={tip}
-                  disabled={subagentSaving}
-                  aria-pressed={enabled}
-                  onClick={() => onToggleSubagent?.(subagentRole, !enabled)}
-                >
-                  {content}
-                </button>
-              );
-            }
-
-            return (
-              <span key={role} className={className} title={tip}>
-                {content}
-              </span>
-            );
-          })}
+          <AgentModelRows
+            labels={labels}
+            subagentSettings={subagentSettings}
+            canEditSubagents={canEditSubagents}
+            {...(subagentSaving !== undefined && { subagentSaving })}
+            {...(onToggleSubagent && { onToggleSubagent })}
+          />
         </div>
       </div>,
       document.body,
@@ -220,7 +324,7 @@ export function ComposerAgentModels({
         ]
           .filter(Boolean)
           .join(" ")}
-        aria-label={`查看子代理编排详情，已启用 ${summary}`}
+        aria-label={`查看子代理详情，已启用 ${summary}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {

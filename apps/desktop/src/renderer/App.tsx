@@ -130,6 +130,7 @@ import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
+import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
 import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
@@ -169,7 +170,7 @@ import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
-import { ThreadInfoPanel } from "./ThreadInfoPanel";
+import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import { TerminalPanel } from "./TerminalPanel";
 import {
   createProjectTerminalState,
@@ -179,6 +180,13 @@ import {
   type ProjectTerminalState,
   type TerminalWorkspaceState,
 } from "./terminal-panel-storage";
+import {
+  createProjectWorkspacePanelState,
+  getProjectWorkspacePanelState,
+  readWorkspacePanelWorkspaceState,
+  saveWorkspacePanelWorkspaceState,
+  type WorkspacePanelWorkspaceState,
+} from "./workspace-panel-storage";
 import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
@@ -289,8 +297,6 @@ const emptyGitSettings: GitSettingsSnapshot = {
   commitMessageCandidateModelIdByProfileId: {},
 };
 
-const threadInfoCompactQuery = "(max-width: 1100px)";
-
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
   threadId: string;
 }
@@ -309,6 +315,28 @@ function composerContextKeyFromParts(threadId?: string, projectPath?: string): s
     return `landing:${projectPath}`;
   }
   return undefined;
+}
+
+function measureTopbarFeedOverlap(scrollBody: HTMLElement, topbar: HTMLElement): boolean {
+  const feed = scrollBody.querySelector(".codex-feed-stack");
+  if (!feed) {
+    return false;
+  }
+  const feedRect = feed.getBoundingClientRect();
+  const zones = [
+    topbar.querySelector(".activity-header h2"),
+    topbar.querySelector(".codex-main-toolbar"),
+  ].filter((node): node is Element => node instanceof Element);
+  if (zones.length === 0) {
+    return false;
+  }
+  return zones.some((zone) => {
+    const zoneRect = zone.getBoundingClientRect();
+    if (zoneRect.width <= 0 || zoneRect.height <= 0) {
+      return false;
+    }
+    return feedRect.left < zoneRect.right - 1 && feedRect.right > zoneRect.left + 1;
+  });
 }
 
 function threadIdFromComposerContextKey(key: string): string | undefined {
@@ -494,12 +522,11 @@ function App() {
   const [terminalByProject, setTerminalByProject] = useState<TerminalWorkspaceState>(() =>
     readTerminalWorkspaceState(),
   );
+  const [workspacePanelByProject, setWorkspacePanelByProject] = useState<WorkspacePanelWorkspaceState>(() =>
+    readWorkspacePanelWorkspaceState(),
+  );
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
-  const [threadInfoDrawerOpen, setThreadInfoDrawerOpen] = useState(false);
-  const [threadInfoCompact, setThreadInfoCompact] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(threadInfoCompactQuery).matches,
-  );
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
   useEffect(() => {
@@ -1176,6 +1203,12 @@ function App() {
     }
     return getProjectTerminalState(terminalByProject, currentProjectPath);
   }, [currentProjectPath, terminalByProject]);
+  const currentWorkspacePanelState = useMemo(() => {
+    if (!currentProjectPath) {
+      return undefined;
+    }
+    return getProjectWorkspacePanelState(workspacePanelByProject, currentProjectPath);
+  }, [currentProjectPath, workspacePanelByProject]);
   const updateCurrentProjectTerminal = useCallback(
     (next: ProjectTerminalState) => {
       if (!currentProjectPath) {
@@ -1207,6 +1240,21 @@ function App() {
       };
     });
   }, [currentProjectName, currentProjectPath]);
+  const toggleWorkspacePanelForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    setWorkspacePanelByProject((current) => {
+      const existing = current[currentProjectPath];
+      const nextOpen = !(existing?.open === true);
+      return {
+        ...current,
+        [currentProjectPath]: existing
+          ? { ...existing, open: nextOpen }
+          : createProjectWorkspacePanelState(nextOpen),
+      };
+    });
+  }, [currentProjectPath]);
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
@@ -1251,36 +1299,11 @@ function App() {
   composerAttachmentsRef.current = composerAttachments;
   composerRewindTargetRef.current = composerRewindTarget;
   useEffect(() => {
-    const media = window.matchMedia(threadInfoCompactQuery);
-    const syncCompactLayout = () => {
-      const compact = media.matches;
-      setThreadInfoCompact(compact);
-      if (!compact) {
-        setThreadInfoDrawerOpen(false);
-      }
-    };
-    syncCompactLayout();
-    media.addEventListener("change", syncCompactLayout);
-    return () => media.removeEventListener("change", syncCompactLayout);
-  }, []);
-  useEffect(() => {
-    setThreadInfoDrawerOpen(false);
-  }, [activeThread?.id]);
-  useEffect(() => {
-    if (!threadInfoDrawerOpen || !threadInfoCompact) {
-      return undefined;
-    }
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setThreadInfoDrawerOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [threadInfoDrawerOpen, threadInfoCompact]);
-  useEffect(() => {
     saveTerminalWorkspaceState(terminalByProject);
   }, [terminalByProject]);
+  useEffect(() => {
+    saveWorkspacePanelWorkspaceState(workspacePanelByProject);
+  }, [workspacePanelByProject]);
   useEffect(() => {
     if (!currentProjectPath) {
       return undefined;
@@ -1423,7 +1446,6 @@ function App() {
 
   const dismissPackageScriptRunOverlays = useCallback(() => {
     setScriptsDialogOpen(false);
-    setThreadInfoDrawerOpen(false);
   }, []);
 
   const openPackageScriptTerminalSession = useCallback(
@@ -1901,6 +1923,9 @@ function App() {
   }, [activeRoutes, threadModelByRole]);
   const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  const topbarRef = useRef<HTMLElement>(null);
+  const [topbarSolid, setTopbarSolid] = useState(true);
   const userDetachedFromBottomRef = useRef(false);
   const activityFeedScrollTopRef = useRef(0);
   const programmaticActivityFeedScrollRef = useRef(false);
@@ -3737,18 +3762,50 @@ function App() {
   }
 
   const showWorkspacePanel = Boolean(currentProjectPath);
-  const threadInfoPinned = Boolean(activeThread && !threadInfoCompact);
-  const threadInfoDrawerMode = Boolean(showWorkspacePanel && !threadInfoPinned);
   const showLanding = !activeThread;
-  const shellClassName = [
-    "shell",
-    threadInfoPinned ? "shell-thread-info-pinned" : "",
-    threadInfoDrawerMode ? "shell-thread-info-drawer-mode" : "",
-    threadInfoDrawerMode && threadInfoDrawerOpen ? "shell-thread-info-drawer-open" : "",
-    settingsOpen ? "shell-settings-open" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const syncTopbarMode = useCallback(() => {
+    const scrollBody = scrollBodyRef.current;
+    const topbar = topbarRef.current;
+    if (!scrollBody || !topbar) {
+      return;
+    }
+    setTopbarSolid(measureTopbarFeedOverlap(scrollBody, topbar));
+  }, []);
+  useEffect(() => {
+    if (showLanding || !currentProjectPath) {
+      return undefined;
+    }
+    const scrollBody = scrollBodyRef.current;
+    const topbar = topbarRef.current;
+    if (!scrollBody || !topbar) {
+      return undefined;
+    }
+    const run = () => {
+      requestAnimationFrame(() => {
+        syncTopbarMode();
+      });
+    };
+    run();
+    const observer = new ResizeObserver(run);
+    observer.observe(scrollBody);
+    observer.observe(topbar);
+    const feed = scrollBody.querySelector(".codex-feed-stack");
+    if (feed) {
+      observer.observe(feed);
+    }
+    const title = topbar.querySelector(".activity-header h2");
+    if (title) {
+      observer.observe(title);
+    }
+    return () => observer.disconnect();
+  }, [
+    showLanding,
+    currentProjectPath,
+    activeThread?.id,
+    currentWorkspacePanelState?.open,
+    syncTopbarMode,
+  ]);
+  const shellClassName = ["shell", settingsOpen ? "shell-settings-open" : ""].filter(Boolean).join(" ");
   const composerPlaceholder = showClarification
     ? "补充消息会排队；回答问题请用上方卡片"
     : showBashApproval
@@ -3951,12 +4008,7 @@ function App() {
                 <div className="composer-footer-main">
                   {composerCompact ? (
                     <div className="composer-footer-row composer-footer-compact-row">
-                      <div className="composer-context-group" aria-label="当前方案与子代理编排">
-                        {composerRouteControl}
-                        <span className="composer-context-divider" aria-hidden />
-                        {composerAgentModelsControl}
-                        {composerMcpControl}
-                      </div>
+                      {composerRouteControl}
                       <div className="composer-footer-row composer-footer-config-row">
                         {composerRuntimeConfig ? (
                           <ComposerPlanModeToggle
@@ -3997,6 +4049,18 @@ function App() {
                     </div>
                   )}
                 </div>
+                {activeThread ? (
+                  <ComposerThreadUsagePills
+                    threadId={activeThread.id}
+                    threadStatus={activeThread.status}
+                    {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+                    contextCompactionInFlight={contextCompactionInFlight}
+                    autoCompactSuspended={autoCompactSuspended}
+                    promptCacheInvalidated={promptCacheInvalidated}
+                    agentDisplayNames={activeRuntimeAgentDisplayNames}
+                    agentThemes={activeRuntimeAgentThemes}
+                  />
+                ) : null}
                 {canStopThread ? (
                   <button
                     type="button"
@@ -4106,12 +4170,73 @@ function App() {
       </aside>
 
       <section
-        className={
-          showLanding ? "codex-main codex-main-landing" : "codex-main codex-main-has-toolbar"
-        }
+        className={[
+          "codex-main",
+          showLanding ? "codex-main-landing" : "codex-main-has-toolbar",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <div className="codex-main-pane">
-          <div className="codex-main-scroll">
+          <div
+            className={[
+              "codex-main-scroll",
+              showWorkspacePanel && currentWorkspacePanelState?.open ? "is-workspace-panel-open" : "",
+              !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
+              !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {!showLanding && currentProjectPath ? (
+              <header
+                ref={topbarRef}
+                className={["codex-main-topbar", topbarSolid ? "is-solid" : "is-clear"].filter(Boolean).join(" ")}
+              >
+                {activeThread ? (
+                  <div className="activity-header">
+                    <h2 title={activeThread.title}>{activeThread.title}</h2>
+                  </div>
+                ) : (
+                  <div className="codex-main-topbar-leading" aria-hidden />
+                )}
+                <div className="codex-main-toolbar">
+                  {showWorkspacePanel ? (
+                    <button
+                      type="button"
+                      className={
+                        currentWorkspacePanelState?.open
+                          ? "codex-main-toolbar-button is-active"
+                          : "codex-main-toolbar-button"
+                      }
+                      onClick={toggleWorkspacePanelForCurrentProject}
+                      title={currentWorkspacePanelState?.open ? "收起工作区" : "打开工作区"}
+                      aria-label={currentWorkspacePanelState?.open ? "收起工作区" : "打开工作区"}
+                      aria-expanded={currentWorkspacePanelState?.open === true}
+                      aria-controls="workspace-panel"
+                    >
+                      <PanelRight size={15} aria-hidden />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={
+                      currentTerminalState?.open
+                        ? "codex-main-toolbar-button is-active"
+                        : "codex-main-toolbar-button"
+                    }
+                    onClick={toggleTerminalForCurrentProject}
+                    title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
+                    aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
+                    aria-expanded={currentTerminalState?.open === true}
+                    aria-controls="terminal-panel"
+                  >
+                    <Terminal size={15} aria-hidden />
+                  </button>
+                </div>
+              </header>
+            ) : null}
+            <div ref={scrollBodyRef} className="codex-main-scroll-body">
             {showLanding ? (
               <div className="codex-landing">
                 <h1 className="codex-hero">
@@ -4124,174 +4249,121 @@ function App() {
                 {composer}
               </div>
             ) : (
-              <div className="activity-feed">
-                {activeThread && (
-                  <header className="activity-header">
-                    <h2 title={activeThread.title}>{activeThread.title}</h2>
-                  </header>
-                )}
-                {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
-                <div className="activity-messages-shell">
-                  <div ref={activityMessagesRef} className="activity-messages">
-                  <ActivityLogView
-                    {...(activeThread && { thread: activeThread })}
-                    {...(runProjection && { projection: runProjection })}
-                    {...(activeThread &&
-                      billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
-                    onRestorePrompt={restorePrompt}
-                    onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                    {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
-                    agentDisplayNames={activeRuntimeAgentDisplayNames}
-                    agentThemes={activeRuntimeAgentThemes}
-                    {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                    {...(subagentTimings && { subagentTimings })}
-                    {...(subagentMetrics && { subagentMetrics })}
-                    {...(activeThread &&
-                      contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
-                  />
-                  {showClarification && pendingClarification ? (
-                    <ClarificationPanel
-                      request={pendingClarification}
-                      busy={clarificationBusy}
-                      onSubmit={submitClarificationAnswers}
-                      onDismiss={() => void dismissPendingClarification()}
+              <div className="codex-feed-stack">
+                <div className="activity-feed">
+                  <div className="activity-messages-shell">
+                    <div ref={activityMessagesRef} className="activity-messages">
+                    <ActivityLogView
+                      {...(activeThread && { thread: activeThread })}
+                      {...(runProjection && { projection: runProjection })}
+                      {...(activeThread &&
+                        billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
+                      onRestorePrompt={restorePrompt}
+                      onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                      {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
+                      agentDisplayNames={activeRuntimeAgentDisplayNames}
+                      agentThemes={activeRuntimeAgentThemes}
+                      {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                      {...(subagentTimings && { subagentTimings })}
+                      {...(subagentMetrics && { subagentMetrics })}
+                      {...(activeThread &&
+                        contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                     />
-                  ) : null}
-                  <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                    {showClarification && pendingClarification ? (
+                      <ClarificationPanel
+                        request={pendingClarification}
+                        busy={clarificationBusy}
+                        onSubmit={submitClarificationAnswers}
+                        onDismiss={() => void dismissPendingClarification()}
+                      />
+                    ) : null}
+                    <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                    </div>
+                    {activityFeedScrollJump ? (
+                      <button
+                        type="button"
+                        className="activity-feed-scroll-jump is-visible"
+                        onClick={handleActivityFeedScrollJump}
+                        aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                        title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                      >
+                        {activityFeedScrollJump === "top" ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
+                    ) : null}
                   </div>
-                  {activityFeedScrollJump ? (
-                    <button
-                      type="button"
-                      className="activity-feed-scroll-jump is-visible"
-                      onClick={handleActivityFeedScrollJump}
-                      aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                      title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                    >
-                      {activityFeedScrollJump === "top" ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                    </button>
-                  ) : null}
                 </div>
+                {composer}
               </div>
             )}
-          </div>
+            {currentProjectPath && currentTerminalState?.open ? (
+              <TerminalPanel
+                workspacePath={currentProjectPath}
+                workspaceLabel={currentProjectName}
+                state={currentTerminalState}
+                onStateChange={updateCurrentProjectTerminal}
+                injectedSessionId={injectedTerminalSessionId}
+                onInjectedSessionConsumed={() => setInjectedTerminalSessionId(null)}
+                onClose={() =>
+                  updateCurrentProjectTerminal({
+                    ...currentTerminalState,
+                    open: false,
+                  })
+                }
+              />
+            ) : null}
+            </div>
 
-          {!showLanding ? composer : null}
+          {showWorkspacePanel && currentWorkspacePanelState?.open ? (
+            <aside id="workspace-panel" className="workspace-panel" aria-label="工作区面板">
+              <WorkspaceFloatingCards
+                todos={activeThread ? coderTodos : []}
+                hasActiveThread={Boolean(activeThread)}
+                agentModelLabels={agentModelLabels}
+                {...(composerRuntimeConfig && { composerRuntimeConfig })}
+                subagentEnabled={defaultSubagentAvailability()}
+                canEditComposerConfig={canEditComposerConfig}
+                isSavingSettings={isSavingSettings}
+                mcpServers={mcpSettings.servers}
+                composerMcpSettings={composerMcpSettings}
+                onToggleComposerSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+                onToggleComposerMcpServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
+                {...(projectWorkspace && { workspace: projectWorkspace })}
+                {...(currentProjectPath && { workspacePath: currentProjectPath })}
+                workspaceLabel={currentProjectName}
+                {...(gitStatus && { gitStatus })}
+                gitBusy={gitStatusBusy || gitStatusLoading}
+                commitDisabled={
+                  activeThread
+                    ? activeThread.status === "running" || activeThread.status === "queued"
+                    : false
+                }
+                onCheckoutGitBranch={handleGitCheckoutBranch}
+                onCreateGitBranch={handleGitCreateBranch}
+                onOpenGitSettings={openGitSettings}
+                {...(selectedRuntimeProfileId && { profileId: selectedRuntimeProfileId })}
+                gitSettings={gitSettings}
+                onSaveCommitModelPreference={saveCommitMessageModelPreference}
+                onCommitSuccess={() => void handleGitCommitSuccess()}
+                onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
+                onPullSuccess={() => void handleGitPullSuccess()}
+                onResolveConflictsWithAgent={(conflictFiles) =>
+                  void handleGitPullConflictsWithAgent(conflictFiles)
+                }
+                {...(showPackageScriptsEntry && {
+                  scriptsDisabled: activeThread
+                    ? activeThread.status === "running" || activeThread.status === "queued"
+                    : false,
+                  onOpenScriptsDialog: () => {
+                    void refreshPackageScripts();
+                    setScriptsDialogOpen(true);
+                  },
+                })}
+              />
+            </aside>
+          ) : null}
+          </div>
         </div>
-
-        {currentProjectPath && currentTerminalState?.open ? (
-          <TerminalPanel
-            workspacePath={currentProjectPath}
-            workspaceLabel={currentProjectName}
-            state={currentTerminalState}
-            onStateChange={updateCurrentProjectTerminal}
-            injectedSessionId={injectedTerminalSessionId}
-            onInjectedSessionConsumed={() => setInjectedTerminalSessionId(null)}
-            onClose={() =>
-              updateCurrentProjectTerminal({
-                ...currentTerminalState,
-                open: false,
-              })
-            }
-          />
-        ) : null}
-
-        {currentProjectPath || threadInfoDrawerMode ? (
-          <div className="codex-main-toolbar">
-            {currentProjectPath ? (
-              <button
-                type="button"
-                className={
-                  currentTerminalState?.open
-                    ? "codex-main-toolbar-button is-active"
-                    : "codex-main-toolbar-button"
-                }
-                onClick={toggleTerminalForCurrentProject}
-                title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
-                aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
-                aria-expanded={currentTerminalState?.open === true}
-                aria-controls="terminal-panel"
-              >
-                <Terminal size={15} aria-hidden />
-              </button>
-            ) : null}
-            {threadInfoDrawerMode ? (
-              <button
-                type="button"
-                className={
-                  threadInfoDrawerOpen
-                    ? "codex-main-toolbar-button is-active"
-                    : "codex-main-toolbar-button"
-                }
-                onClick={() => setThreadInfoDrawerOpen((open) => !open)}
-                title={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
-                aria-label={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
-                aria-expanded={threadInfoDrawerOpen}
-                aria-controls="thread-info-panel"
-              >
-                <PanelRight size={15} aria-hidden />
-              </button>
-            ) : null}
-          </div>
-        ) : null}
       </section>
-
-      {threadInfoDrawerMode && threadInfoDrawerOpen ? (
-        <button
-          type="button"
-          className="thread-info-drawer-backdrop"
-          aria-label="关闭工作面板"
-          onClick={() => setThreadInfoDrawerOpen(false)}
-        />
-      ) : null}
-
-      {showWorkspacePanel ? (
-        <ThreadInfoPanel
-          {...(activeThread && { threadId: activeThread.id })}
-          todos={activeThread ? coderTodos : []}
-          {...(activeThread && { threadStatus: activeThread.status })}
-          {...(projectWorkspace && { workspace: projectWorkspace })}
-          {...(currentProjectPath && { workspacePath: currentProjectPath })}
-          workspaceLabel={currentProjectName}
-          {...(gitStatus && { gitStatus })}
-          gitBusy={gitStatusBusy || gitStatusLoading}
-          commitDisabled={
-            activeThread
-              ? activeThread.status === "running" || activeThread.status === "queued"
-              : false
-          }
-          onCheckoutGitBranch={handleGitCheckoutBranch}
-          onCreateGitBranch={handleGitCreateBranch}
-          onOpenGitSettings={openGitSettings}
-          {...(selectedRuntimeProfileId && { profileId: selectedRuntimeProfileId })}
-          agentModelLabels={agentModelLabels}
-          routes={activeRoutes}
-          routePricingHints={routePricingHints}
-          subagentEnabled={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
-          gitSettings={gitSettings}
-          onSaveCommitModelPreference={saveCommitMessageModelPreference}
-          onCommitSuccess={() => void handleGitCommitSuccess()}
-          onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
-          onPullSuccess={() => void handleGitPullSuccess()}
-          onResolveConflictsWithAgent={(conflictFiles) =>
-            void handleGitPullConflictsWithAgent(conflictFiles)
-          }
-          {...(showPackageScriptsEntry && {
-            scriptsDisabled: activeThread
-              ? activeThread.status === "running" || activeThread.status === "queued"
-              : false,
-            onOpenScriptsDialog: () => {
-              void refreshPackageScripts();
-              setScriptsDialogOpen(true);
-            },
-          })}
-          {...(activeThread && threadUsageSummary && { usageSummary: threadUsageSummary })}
-          contextCompactionInFlight={contextCompactionInFlight}
-          autoCompactSuspended={autoCompactSuspended}
-          promptCacheInvalidated={promptCacheInvalidated}
-          agentDisplayNames={activeRuntimeAgentDisplayNames}
-          agentThemes={activeRuntimeAgentThemes}
-        />
-      ) : null}
 
       {stopConfirm ? (
         <StopThreadConfirmDialog

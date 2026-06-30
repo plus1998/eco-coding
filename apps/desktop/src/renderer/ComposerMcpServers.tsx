@@ -17,6 +17,65 @@ interface ComposerMcpServersProps {
   onToggleServer?: (serverKey: string, enabled: boolean) => void;
 }
 
+function McpServerRows({
+  servers,
+  enabledSettings,
+  canEdit,
+  saving,
+  onToggleServer,
+}: ComposerMcpServersProps) {
+  const enabledServers = servers.filter((server) => server.enabled && server.name.trim());
+
+  return (
+    <>
+      {enabledServers.map((server) => {
+        const serverKey = sanitizeMcpServerName(server.name);
+        const enabled = enabledSettings[serverKey] ?? false;
+        const clickable = Boolean(canEdit && onToggleServer);
+
+        return (
+          <div key={server.id} className="composer-mcp-row">
+            <div className="composer-mcp-row-main">
+              <span className="composer-mcp-row-name">{server.name}</span>
+              <span className="composer-mcp-row-transport">{server.transport}</span>
+            </div>
+            {clickable ? (
+              <label className="composer-switch" title={enabled ? `${server.name} · 已启用` : `${server.name} · 已停用`}>
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  disabled={saving}
+                  aria-label={`${server.name} ${enabled ? "已启用" : "已停用"}`}
+                  onChange={() => onToggleServer?.(serverKey, !enabled)}
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            ) : (
+              <span className="composer-mcp-row-status">{enabled ? "启用" : "停用"}</span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export function ComposerMcpCardBody(props: ComposerMcpServersProps) {
+  const enabledServers = props.servers.filter((server) => server.enabled && server.name.trim());
+
+  if (enabledServers.length === 0) {
+    return <p className="floating-workspace-card-empty">未配置 MCP 服务器</p>;
+  }
+
+  return (
+    <div className="composer-mcp-card-body is-embedded">
+      <div className="composer-agents-list">
+        <McpServerRows {...props} />
+      </div>
+    </div>
+  );
+}
+
 export function ComposerMcpServers({
   servers,
   enabledSettings,
@@ -109,56 +168,13 @@ export function ComposerMcpServers({
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
-          {enabledServers.map((server) => {
-            const serverKey = sanitizeMcpServerName(server.name);
-            const enabled = enabledSettings[serverKey] ?? false;
-            const clickable = Boolean(canEdit && onToggleServer);
-            const className = [
-              "composer-agent-row",
-              enabled ? "is-active" : "is-disabled",
-              clickable ? "is-clickable" : "",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            const content = (
-              <>
-                <span className="composer-agent-row-main">
-                  <span className="composer-agent-row-role">{server.name}</span>
-                  <span className="composer-agent-row-model">{server.transport}</span>
-                </span>
-                <span
-                  className={
-                    clickable ? "composer-agent-row-meta is-actionable" : "composer-agent-row-meta"
-                  }
-                >
-                  <span className="composer-agent-row-status">{enabled ? "启用" : "停用"}</span>
-                  {clickable ? (
-                    <span className="composer-agent-row-action">{enabled ? "点击停用" : "点击启用"}</span>
-                  ) : null}
-                </span>
-              </>
-            );
-            if (clickable) {
-              return (
-                <button
-                  key={server.id}
-                  type="button"
-                  className={className}
-                  title={enabled ? `${server.name} · 点击停用` : `${server.name} · 点击启用`}
-                  disabled={saving}
-                  aria-pressed={enabled}
-                  onClick={() => onToggleServer?.(serverKey, !enabled)}
-                >
-                  {content}
-                </button>
-              );
-            }
-            return (
-              <span key={server.id} className={className} title={server.name}>
-                {content}
-              </span>
-            );
-          })}
+          <McpServerRows
+            servers={servers}
+            enabledSettings={enabledSettings}
+            canEdit={canEdit}
+            {...(saving !== undefined && { saving })}
+            {...(onToggleServer && { onToggleServer })}
+          />
         </div>
       </div>,
       document.body,

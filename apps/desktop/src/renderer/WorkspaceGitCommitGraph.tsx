@@ -7,10 +7,16 @@ const COMMITS_PAGE_SIZE = 5;
 export interface WorkspaceGitCommitGraphProps {
   workspacePath: string;
   refreshToken?: string;
+  /** When true, always show graph body (parent card handles collapse). */
+  embedded?: boolean;
 }
 
-export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: WorkspaceGitCommitGraphProps) {
-  const [expanded, setExpanded] = useState(false);
+export function WorkspaceGitCommitGraph({
+  workspacePath,
+  refreshToken = "",
+  embedded = false,
+}: WorkspaceGitCommitGraphProps) {
+  const [expanded, setExpanded] = useState(embedded);
   const [commits, setCommits] = useState<GitCommitRecord[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -51,6 +57,12 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
   );
 
   useEffect(() => {
+    if (embedded) {
+      setExpanded(true);
+    }
+  }, [embedded]);
+
+  useEffect(() => {
     if (!expanded) {
       return;
     }
@@ -78,6 +90,64 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
     return () => observer.disconnect();
   }, [commits.length, expanded, hasMore, loadPage, loading]);
 
+  const graphBody = (
+    <div ref={graphBodyRef} className="thread-info-workspace-git-graph-body">
+      {error ? <p className="thread-info-workspace-git-graph-error">{error}</p> : null}
+      {commits.length === 0 && !loading && !error ? (
+        <p className="thread-info-workspace-git-graph-empty">暂无提交记录</p>
+      ) : (
+        <ol className="thread-info-workspace-git-graph-list">
+          {commits.map((commit, index) => (
+            <li
+              key={commit.sha}
+              className="thread-info-workspace-git-graph-item"
+              title={`${commit.subject}\n${commit.author} · ${commit.relativeDate}`}
+            >
+              <span
+                className={
+                  index === commits.length - 1 && !hasMore
+                    ? "thread-info-workspace-git-graph-rail is-last"
+                    : "thread-info-workspace-git-graph-rail"
+                }
+                aria-hidden
+              >
+                <span className="thread-info-workspace-git-graph-node" />
+              </span>
+              <span className="thread-info-workspace-git-graph-content">
+                <span className="thread-info-workspace-git-graph-message">{commit.subject}</span>
+                {commit.decorations.length > 0 ? (
+                  <span className="thread-info-workspace-git-graph-tags">
+                    {commit.decorations.map((label) => (
+                      <span key={`${commit.sha}-${label}`} className="thread-info-workspace-git-graph-tag">
+                        {label}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          ))}
+          {hasMore ? (
+            <li ref={sentinelRef} className="thread-info-workspace-git-graph-sentinel" aria-hidden>
+              {loading ? <span className="thread-info-workspace-git-graph-loading">加载中…</span> : null}
+            </li>
+          ) : null}
+        </ol>
+      )}
+      {loading && commits.length === 0 ? (
+        <p className="thread-info-workspace-git-graph-loading">加载中…</p>
+      ) : null}
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="thread-info-workspace-git-graph is-expanded is-embedded">
+        {graphBody}
+      </div>
+    );
+  }
+
   return (
     <div className={expanded ? "thread-info-workspace-git-graph is-expanded" : "thread-info-workspace-git-graph"}>
       <button
@@ -94,55 +164,7 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
         />
       </button>
 
-      {expanded ? (
-        <div ref={graphBodyRef} className="thread-info-workspace-git-graph-body">
-          {error ? <p className="thread-info-workspace-git-graph-error">{error}</p> : null}
-          {commits.length === 0 && !loading && !error ? (
-            <p className="thread-info-workspace-git-graph-empty">暂无提交记录</p>
-          ) : (
-            <ol className="thread-info-workspace-git-graph-list">
-              {commits.map((commit, index) => (
-                <li
-                  key={commit.sha}
-                  className="thread-info-workspace-git-graph-item"
-                  title={`${commit.subject}\n${commit.author} · ${commit.relativeDate}`}
-                >
-                  <span
-                    className={
-                      index === commits.length - 1 && !hasMore
-                        ? "thread-info-workspace-git-graph-rail is-last"
-                        : "thread-info-workspace-git-graph-rail"
-                    }
-                    aria-hidden
-                  >
-                    <span className="thread-info-workspace-git-graph-node" />
-                  </span>
-                  <span className="thread-info-workspace-git-graph-content">
-                    <span className="thread-info-workspace-git-graph-message">{commit.subject}</span>
-                    {commit.decorations.length > 0 ? (
-                      <span className="thread-info-workspace-git-graph-tags">
-                        {commit.decorations.map((label) => (
-                          <span key={`${commit.sha}-${label}`} className="thread-info-workspace-git-graph-tag">
-                            {label}
-                          </span>
-                        ))}
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-              {hasMore ? (
-                <li ref={sentinelRef} className="thread-info-workspace-git-graph-sentinel" aria-hidden>
-                  {loading ? <span className="thread-info-workspace-git-graph-loading">加载中…</span> : null}
-                </li>
-              ) : null}
-            </ol>
-          )}
-          {loading && commits.length === 0 ? (
-            <p className="thread-info-workspace-git-graph-loading">加载中…</p>
-          ) : null}
-        </div>
-      ) : null}
+      {expanded ? graphBody : null}
     </div>
   );
 }
