@@ -2652,7 +2652,7 @@ test("buildProjectionDisplayTimelineItems replaces placeholder Read by toolUseId
   });
 });
 
-test("projectionItemToDetailBlock marks bare Read placeholder as loading until file detail exists", () => {
+test("projectionItemToDetailBlock suppresses bare Read placeholder until file detail exists", () => {
   const detail = projectionItemToDetailBlock(
     item({
       id: "read-placeholder",
@@ -2667,16 +2667,10 @@ test("projectionItemToDetailBlock marks bare Read placeholder as loading until f
     }),
   );
 
-  expect(detail).toMatchObject({
-    kind: "action",
-    label: "读取",
-    lifecycle: "running",
-    filesystemToolPending: "read",
-  });
-  expect(detail).not.toHaveProperty("readTarget");
+  expect(detail).toBeUndefined();
 });
 
-test("buildThreadRunProjectionViewModel shows bare Read loading alongside structured Read for different toolUseIds", () => {
+test("buildThreadRunProjectionViewModel hides bare Read placeholder rendering when structured Read exists", () => {
   const viewModel = buildThreadRunProjectionViewModel(
     projection({
       timeline: [
@@ -2717,12 +2711,8 @@ test("buildThreadRunProjectionViewModel shows bare Read loading alongside struct
     .filter((entry) => entry.kind === "timeline")
     .map((entry) => projectionItemToDetailBlock(entry.item))
     .filter(Boolean);
-  expect(visibleBlocks).toHaveLength(2);
+  expect(visibleBlocks).toHaveLength(1);
   expect(visibleBlocks[0]).toMatchObject({
-    filesystemToolPending: "read",
-    lifecycle: "running",
-  });
-  expect(visibleBlocks[1]).toMatchObject({
     readTarget: { fileName: "snake.html" },
   });
 });

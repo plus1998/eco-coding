@@ -900,20 +900,20 @@ function mergeFilesystemToolTimelineMetadata(
   };
 }
 
-function resolveFilesystemToolPending(
+function shouldSuppressFilesystemToolPlaceholder(
   block: ActivityDetailBlock,
   metadataTool: ThreadRunToolMetadata | undefined,
-): "read" | "grep" | undefined {
+): boolean {
   if (block.kind !== "action" || !metadataTool) {
-    return undefined;
+    return false;
   }
   if (metadataTool.name === "Read" || metadataTool.name === "NotebookRead") {
-    return block.readTarget ? undefined : "read";
+    return !block.readTarget;
   }
   if (metadataTool.name === "Grep") {
-    return block.grepTarget ? undefined : "grep";
+    return !block.grepTarget;
   }
-  return undefined;
+  return false;
 }
 
 function settleTerminalStreamDisplayItem(
@@ -1691,13 +1691,8 @@ export function projectionItemToDetailBlock(
       label: resolveProjectionToolActionLabel(item),
       ...(lifecycle && { lifecycle }),
     });
-    const filesystemToolPending = resolveFilesystemToolPending(block, metadataTool);
-    if (filesystemToolPending) {
-      return {
-        ...block,
-        lifecycle: block.lifecycle ?? "running",
-        filesystemToolPending,
-      };
+    if (shouldSuppressFilesystemToolPlaceholder(block, metadataTool)) {
+      return undefined;
     }
     return block;
   }
