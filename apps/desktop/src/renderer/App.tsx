@@ -4185,23 +4185,25 @@ function App() {
           />
         ) : null}
 
-        {!showLanding ? (
+        {!showLanding || threadInfoDrawerMode ? (
           <div className="codex-main-toolbar">
-            <button
-              type="button"
-              className={
-                currentTerminalState?.open
-                  ? "codex-main-toolbar-button is-active"
-                  : "codex-main-toolbar-button"
-              }
-              onClick={toggleTerminalForCurrentProject}
-              title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
-              aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
-              aria-expanded={currentTerminalState?.open === true}
-              aria-controls="terminal-panel"
-            >
-              <Terminal size={15} aria-hidden />
-            </button>
+            {!showLanding ? (
+              <button
+                type="button"
+                className={
+                  currentTerminalState?.open
+                    ? "codex-main-toolbar-button is-active"
+                    : "codex-main-toolbar-button"
+                }
+                onClick={toggleTerminalForCurrentProject}
+                title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
+                aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
+                aria-expanded={currentTerminalState?.open === true}
+                aria-controls="terminal-panel"
+              >
+                <Terminal size={15} aria-hidden />
+              </button>
+            ) : null}
             {threadInfoDrawerMode ? (
               <button
                 type="button"
