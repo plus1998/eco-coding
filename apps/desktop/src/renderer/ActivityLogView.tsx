@@ -62,6 +62,7 @@ import {
 } from "./thread-run-projection-view";
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
+import { formatGrepTargetInlineDetail } from "../shared/tool-target";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { MarkdownContent } from "./MarkdownContent";
 import { ActivityFeedLayoutContext, useActivityFeedLayoutChange, type ActivityFeedLayoutChange } from "./activity-feed-layout-context";
@@ -1711,17 +1712,24 @@ function RunLogAction({
     );
   }
 
-  if (readTarget || grepTarget) {
+  if (readTarget) {
     return (
-      <div className="run-log-action run-log-action--fs-target-card">
+      <div className="run-log-action run-log-action--read-target">
         {showRoleLabel ? (
           <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
         ) : null}
-        <RunLogFilesystemTargetCard
-          {...(readTarget && { readTarget })}
-          {...(grepTarget && { grepTarget })}
-          {...(lifecycle && { lifecycle })}
-        />
+        <RunLogReadTargetLine readTarget={readTarget} {...(lifecycle && { lifecycle })} />
+      </div>
+    );
+  }
+
+  if (grepTarget) {
+    return (
+      <div className="run-log-action run-log-action--grep-target">
+        {showRoleLabel ? (
+          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+        ) : null}
+        <RunLogGrepTargetLine grepTarget={grepTarget} {...(lifecycle && { lifecycle })} />
       </div>
     );
   }
@@ -1757,46 +1765,68 @@ function RunLogAction({
   );
 }
 
-function RunLogFilesystemTargetCard({
+function RunLogReadTargetLine({
   readTarget,
-  grepTarget,
   lifecycle,
 }: {
-  readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
-  grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
+  readTarget: import("../shared/tool-target").ReadToolTargetDisplay;
   lifecycle?: ToolActionLifecycle;
 }) {
-  const title = readTarget
-    ? readTarget.lineRange
-      ? `${readTarget.fileName} · ${readTarget.lineRange}`
-      : readTarget.fileName
-    : grepTarget?.pattern ?? "";
-  const meta = readTarget?.filePath ?? grepTarget?.path ?? (grepTarget?.glob ? `glob:${grepTarget.glob}` : undefined);
-
   return (
-    <div
+    <p
       className={[
-        "run-log-fs-target-card",
+        "run-log-read-target",
         lifecycle === "running" ? "is-running" : "",
         lifecycle === "failed" ? "is-failed" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <div className="run-log-fs-target-card-header">
-        <span className="run-log-fs-target-card-title">{title}</span>
-        {grepTarget?.scopeLabel && !readTarget ? (
-          <span className="run-log-fs-target-card-scope">{grepTarget.scopeLabel}</span>
-        ) : null}
-      </div>
-      {meta ? (
+      <span className="run-log-read-target-verb">Read</span>{" "}
+      <span className="run-log-read-target-file">{readTarget.fileName}</span>
+      {readTarget.lineRange ? (
         <>
-          <div className="run-log-fs-target-card-divider" aria-hidden />
-          <div className="run-log-fs-target-card-path">{meta}</div>
+          {" "}
+          <span className="run-log-read-target-range">{readTarget.lineRange}</span>
         </>
       ) : null}
-    </div>
+    </p>
   );
+}
+
+function RunLogGrepTargetLine({
+  grepTarget,
+  lifecycle,
+}: {
+  grepTarget: import("../shared/tool-target").GrepToolTargetDisplay;
+  lifecycle?: ToolActionLifecycle;
+}) {
+  const isRunning = lifecycle === "running";
+  const detail = formatGrepTargetInlineDetail(grepTarget);
+  const displayDetail = isRunning ? truncateInlineToolDetail(detail) : detail;
+
+  return (
+    <p
+      className={[
+        "run-log-grep-target",
+        isRunning ? "is-running" : "",
+        lifecycle === "failed" ? "is-failed" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <span className="run-log-grep-target-verb">{isRunning ? "Searching" : "Grepped"}</span>{" "}
+      <span className="run-log-grep-target-detail">{displayDetail}</span>
+    </p>
+  );
+}
+
+function truncateInlineToolDetail(text: string, max = 56): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, max - 1)}…`;
 }
 
 function RunLogFileChangeCard({

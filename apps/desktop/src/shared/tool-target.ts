@@ -80,6 +80,17 @@ export function formatThreadRunReadTargetLabel(target: SdkReadToolTarget): strin
   return formatReadTargetLabel(target);
 }
 
+export function formatGrepTargetInlineDetail(target: GrepToolTargetDisplay): string {
+  const parts = [target.pattern];
+  if (target.path) {
+    parts.push(target.path);
+  }
+  if (target.glob) {
+    parts.push(target.glob);
+  }
+  return parts.join("|");
+}
+
 export function formatThreadRunGrepTargetLabel(target: SdkGrepToolTarget): string {
   return formatGrepTargetLabel(target);
 }

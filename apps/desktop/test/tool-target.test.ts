@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import {
+  formatGrepTargetInlineDetail,
   formatThreadRunToolDetailLabel,
   parseThreadRunGrepToolTarget,
   parseThreadRunReadToolTarget,
+  resolveGrepToolTargetDisplay,
   resolveThreadRunToolTargets,
 } from "../src/shared/tool-target";
 
@@ -48,6 +50,18 @@ test("parseThreadRunGrepToolTarget reads persisted metadata", () => {
     path: "/repo",
     contextAfter: 1,
   });
+});
+
+test("formatGrepTargetInlineDetail joins pattern and scope with pipes", () => {
+  expect(
+    formatGrepTargetInlineDetail(
+      resolveGrepToolTargetDisplay({
+        pattern: "Read.*\\.tsx",
+        path: "读取文件",
+        glob: "read.*file",
+      })!,
+    ),
+  ).toBe("Read.*\\.tsx|读取文件|read.*file");
 });
 
 test("formatThreadRunToolDetailLabel prefers structured targets", () => {
