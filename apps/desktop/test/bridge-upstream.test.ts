@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import {
+  appendStreamUtf8Chunk,
   applyUpstreamMaxOutputLimit,
   buildBridgeUpstreamMessagesPayload,
+  createStreamUtf8Decoder,
+  finalizeStreamUtf8Decoder,
   forwardMessagesViaBridge,
   parseAnthropicStreamEventBlock,
   parseBridgeProbeReply,
@@ -232,6 +235,30 @@ test("splitSseBlocks splits event stream chunks", () => {
   const { blocks, remainder } = splitSseBlocks("event: ping\ndata: {}\n\nevent: done\ndata: {}\n\npart");
   expect(blocks).toHaveLength(2);
   expect(remainder).toBe("part");
+});
+
+test("appendStreamUtf8Chunk preserves multibyte UTF-8 split across chunks", () => {
+  const payload = `event: content_block_delta\ndata: ${JSON.stringify({
+    type: "content_block_delta",
+    delta: { type: "text_delta", text: "的多样性" },
+  })}\n\n`;
+  const bytes = Buffer.from(payload, "utf8");
+  const splitAt = payload.indexOf("多");
+  const first = bytes.subarray(0, splitAt);
+  const second = bytes.subarray(splitAt);
+
+  const broken = first.toString("utf8") + second.toString("utf8");
+  expect(broken.includes("\uFFFD")).toBe(true);
+
+  const decoder = createStreamUtf8Decoder();
+  let buffer = "";
+  buffer = appendStreamUtf8Chunk(decoder, buffer, first);
+  buffer = appendStreamUtf8Chunk(decoder, buffer, second);
+  buffer = finalizeStreamUtf8Decoder(decoder, buffer);
+
+  const { blocks } = splitSseBlocks(buffer);
+  const event = parseAnthropicStreamEventBlock(blocks[0] ?? "");
+  expect(event?.delta).toMatchObject({ type: "text_delta", text: "的多样性" });
 });
 
 test("parseBridgeProbeReply invokes onTextDelta for buffered anthropic replies", async () => {

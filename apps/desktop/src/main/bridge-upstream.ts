@@ -1,4 +1,5 @@
 import http from "node:http";
+import { StringDecoder } from "node:string_decoder";
 import {
   anthropicEventToResponsesEvents,
   anthropicToResponses,
@@ -304,6 +305,20 @@ export function splitSseBlocks(buffer: string): { blocks: string[]; remainder: s
   const parts = buffer.split(/\r?\n\r?\n/);
   const remainder = parts.pop() ?? "";
   return { blocks: parts.filter((block) => block.trim()), remainder };
+}
+
+/** Decode UTF-8 stream chunks without splitting multibyte sequences at TCP boundaries. */
+export function createStreamUtf8Decoder(): StringDecoder {
+  return new StringDecoder("utf8");
+}
+
+export function appendStreamUtf8Chunk(decoder: StringDecoder, buffer: string, chunk: Uint8Array): string {
+  return buffer + decoder.write(Buffer.from(chunk));
+}
+
+export function finalizeStreamUtf8Decoder(decoder: StringDecoder, buffer: string): string {
+  const tail = decoder.end();
+  return tail ? buffer + tail : buffer;
 }
 
 export function parseResponsesStreamEventBlock(block: string): ResponsesStreamEvent | null {
@@ -858,6 +873,7 @@ async function forwardOpenAIResponsesMessages(
   const anthropicState = newResponsesEventToAnthropicState(requestToolNames);
   const usageTracker = createStreamingUsageTracker();
   let sseBuffer = "";
+  const utf8Decoder = createStreamUtf8Decoder();
 
   const writeAnthropicSse = (events: ReturnType<typeof responsesEventToAnthropicEvents>) => {
     for (const anthropicEvent of events) {
@@ -874,7 +890,7 @@ async function forwardOpenAIResponsesMessages(
     }
 
     for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
-      sseBuffer += Buffer.from(chunk).toString("utf8");
+      sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, chunk);
       const { blocks, remainder } = splitSseBlocks(sseBuffer);
       sseBuffer = remainder;
       for (const block of blocks) {
@@ -886,6 +902,7 @@ async function forwardOpenAIResponsesMessages(
       }
     }
 
+    sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
     if (sseBuffer.trim()) {
       const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
       for (const block of blocks) {
@@ -1080,6 +1097,7 @@ async function forwardOpenAIChatCompletionsMessages(
   const sseViolations: string[] = [];
   const usageTracker = createStreamingUsageTracker();
   let sseBuffer = "";
+  const utf8Decoder = createStreamUtf8Decoder();
 
   const writeAnthropicSse = (events: ReturnType<typeof responsesEventToAnthropicEvents>) => {
     for (const anthropicEvent of events) {
@@ -1107,7 +1125,7 @@ async function forwardOpenAIChatCompletionsMessages(
     }
 
     for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
-      sseBuffer += Buffer.from(chunk).toString("utf8");
+      sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, chunk);
       const { blocks, remainder } = splitSseBlocks(sseBuffer);
       sseBuffer = remainder;
       for (const block of blocks) {
@@ -1119,6 +1137,7 @@ async function forwardOpenAIChatCompletionsMessages(
       }
     }
 
+    sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
     if (sseBuffer.trim()) {
       const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
       for (const block of blocks) {
@@ -1240,6 +1259,7 @@ async function collectBridgeProbeStreamReply(params: {
   const thinkingParts: string[] = [];
   const streamErrors: string[] = [];
   let sseBuffer = "";
+  const utf8Decoder = createStreamUtf8Decoder();
 
   const pushText = (events: ReturnType<typeof responsesEventToAnthropicEvents>) => {
     for (const event of events) {
@@ -1259,7 +1279,7 @@ async function collectBridgeProbeStreamReply(params: {
   if (params.apiCompat === "openai_responses") {
     const state = newResponsesEventToAnthropicState(toolNames);
     for await (const chunk of params.response.body as AsyncIterable<Uint8Array>) {
-      sseBuffer += Buffer.from(chunk).toString("utf8");
+      sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, chunk);
       const { blocks, remainder } = splitSseBlocks(sseBuffer);
       sseBuffer = remainder;
       for (const block of blocks) {
@@ -1274,6 +1294,7 @@ async function collectBridgeProbeStreamReply(params: {
         pushText(responsesEventToAnthropicEvents(responsesEvent, state));
       }
     }
+    sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
     if (sseBuffer.trim()) {
       const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
       for (const block of blocks) {
@@ -1292,7 +1313,7 @@ async function collectBridgeProbeStreamReply(params: {
     const ccState = newChatCompletionsToResponsesStreamState(params.modelId);
     const anthropicState = newResponsesEventToAnthropicState(toolNames);
     for await (const chunk of params.response.body as AsyncIterable<Uint8Array>) {
-      sseBuffer += Buffer.from(chunk).toString("utf8");
+      sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, chunk);
       const { blocks, remainder } = splitSseBlocks(sseBuffer);
       sseBuffer = remainder;
       for (const block of blocks) {
@@ -1305,6 +1326,7 @@ async function collectBridgeProbeStreamReply(params: {
         }
       }
     }
+    sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
     if (sseBuffer.trim()) {
       const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
       for (const block of blocks) {
@@ -1324,7 +1346,7 @@ async function collectBridgeProbeStreamReply(params: {
     const anthToResState = newAnthropicEventToResponsesState();
     const anthropicState = newResponsesEventToAnthropicState(toolNames);
     for await (const chunk of params.response.body as AsyncIterable<Uint8Array>) {
-      sseBuffer += Buffer.from(chunk).toString("utf8");
+      sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, chunk);
       const { blocks, remainder } = splitSseBlocks(sseBuffer);
       sseBuffer = remainder;
       for (const block of blocks) {
@@ -1337,6 +1359,7 @@ async function collectBridgeProbeStreamReply(params: {
         }
       }
     }
+    sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
     if (sseBuffer.trim()) {
       const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
       for (const block of blocks) {

@@ -1,4 +1,5 @@
 import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "@eco/runtime";
+import { StringDecoder } from "node:string_decoder";
 
 export interface StreamingUsageTracker {
   push(chunk: Uint8Array): void;
@@ -135,6 +136,7 @@ function mergeStreamingUsage(current: ParsedUsage | null, incoming: ParsedUsage 
 export function createStreamingUsageTracker(): StreamingUsageTracker {
   let buffer = "";
   let latest: ParsedUsage | null = null;
+  const utf8Decoder = new StringDecoder("utf8");
 
   const processBlock = (block: string) => {
     const dataLines = block
@@ -158,7 +160,7 @@ export function createStreamingUsageTracker(): StreamingUsageTracker {
 
   return {
     push(chunk) {
-      buffer += Buffer.from(chunk).toString("utf8");
+      buffer += utf8Decoder.write(Buffer.from(chunk));
       const parts = buffer.split(/\r?\n\r?\n/);
       buffer = parts.pop() ?? "";
       for (const part of parts) {
@@ -166,6 +168,10 @@ export function createStreamingUsageTracker(): StreamingUsageTracker {
       }
     },
     finish() {
+      const tail = utf8Decoder.end();
+      if (tail) {
+        buffer += tail;
+      }
       if (buffer.trim()) {
         processBlock(buffer);
       }
