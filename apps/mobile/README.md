@@ -25,16 +25,23 @@ ECO_SERVER_HOST=0.0.0.0 ECO_SERVER_TOKEN_SECRET="your-secret-at-least-32-chars" 
 
 ## Android 真机调试
 
+开发与正式版使用不同包名，可**同时安装**在同一台手机上：
+
+| Flavor | 包名 | 桌面显示名 |
+|--------|------|------------|
+| `prod` | `com.eco.eco_mobile` | Eco Mobile |
+| `dev` | `com.eco.eco_mobile.dev` | Eco Mobile Dev |
+
 1. 手机与 PC 处于同一 Wi‑Fi
 2. 在 App「PC」页填写 `http://<电脑局域网IP>:3128`
-3. Debug 构建已启用 `usesCleartextTraffic`（仅 debug）
-4. 运行：
+3. `dev` flavor 已启用 `usesCleartextTraffic`（支持本地 HTTP）
+4. 运行开发版（不影响已安装的正式版）：
 
 ```sh
 cd apps/mobile
 flutter pub get
 flutter devices
-flutter run -d <android-device-id>
+flutter run --flavor dev -d <android-device-id>
 ```
 
 或从仓库根目录：
@@ -42,6 +49,24 @@ flutter run -d <android-device-id>
 ```sh
 bun run dev:mobile
 ```
+
+正式版 Release 构建：
+
+```sh
+bun run build:apk
+# 或 flutter build apk --flavor prod
+```
+
+## iOS 真机调试
+
+iOS 开发版 Bundle ID 为 `com.plus.ecoding.dev`（显示名 Eco Mobile Dev），与正式版 `com.plus.ecoding` 可并存。
+
+```sh
+cd apps/mobile
+flutter run --flavor dev -d <ios-device-id>
+```
+
+首次在真机安装 `dev` 版前，需在 Apple Developer / Xcode 中为 `com.plus.ecoding.dev` 配置签名。
 
 ## 架构
 
