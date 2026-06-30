@@ -59,6 +59,7 @@ export type ActivityDetailBlock =
       fileChange?: FileChangeCardDisplay;
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
+      filesystemToolPending?: "read" | "grep";
     }
   | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
   | {

@@ -2609,6 +2609,124 @@ test("buildThreadRunProjectionViewModel hides Searching progress rows when struc
   });
 });
 
+test("buildProjectionDisplayTimelineItems replaces placeholder Read by toolUseId", () => {
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "read-placeholder",
+        eventType: "tool.started",
+        text: "Tool: Read",
+        sequence: 1,
+        metadata: {
+          tool: {
+            name: "Read",
+            toolUseId: "toolu_read_same",
+          },
+        },
+      }),
+      item({
+        id: "read-structured",
+        eventType: "tool.completed",
+        text: "Tool: Read · snake.html",
+        sequence: 2,
+        metadata: {
+          tool: {
+            name: "Read",
+            detail: "snake.html",
+            toolUseId: "toolu_read_same",
+            status: "completed",
+            readTarget: {
+              filePath: "/repo/snake.html",
+            },
+          },
+        },
+      }),
+    ],
+    new Map(),
+  );
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.id).toBe("read-structured");
+  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+    readTarget: { fileName: "snake.html" },
+  });
+});
+
+test("projectionItemToDetailBlock marks bare Read placeholder as loading until file detail exists", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "read-placeholder",
+      eventType: "tool.started",
+      text: "Tool: Read",
+      metadata: {
+        tool: {
+          name: "Read",
+          toolUseId: "toolu_read_placeholder",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "action",
+    label: "读取",
+    lifecycle: "running",
+    filesystemToolPending: "read",
+  });
+  expect(detail).not.toHaveProperty("readTarget");
+});
+
+test("buildThreadRunProjectionViewModel shows bare Read loading alongside structured Read for different toolUseIds", () => {
+  const viewModel = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "read-placeholder",
+          eventType: "tool.started",
+          text: "Tool: Read",
+          sequence: 1,
+          metadata: {
+            tool: {
+              name: "Read",
+              toolUseId: "toolu_read_placeholder",
+            },
+          },
+        }),
+        item({
+          id: "read-structured",
+          eventType: "tool.completed",
+          text: "Tool: Read · snake.html",
+          sequence: 2,
+          metadata: {
+            tool: {
+              name: "Read",
+              detail: "snake.html",
+              toolUseId: "toolu_read_structured",
+              status: "completed",
+              readTarget: {
+                filePath: "/repo/snake.html",
+              },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+
+  const visibleBlocks = viewModel.mainFeedEntries
+    .filter((entry) => entry.kind === "timeline")
+    .map((entry) => projectionItemToDetailBlock(entry.item))
+    .filter(Boolean);
+  expect(visibleBlocks).toHaveLength(2);
+  expect(visibleBlocks[0]).toMatchObject({
+    filesystemToolPending: "read",
+    lifecycle: "running",
+  });
+  expect(visibleBlocks[1]).toMatchObject({
+    readTarget: { fileName: "snake.html" },
+  });
+});
+
 test("projectionItemToDetailBlock maps planner Agent tool.started with metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({

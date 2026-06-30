@@ -95,7 +95,8 @@ export function resolveReadToolTargetDisplayFromToolMetadata(tool: {
   if (!READ_TOOL_NAMES.has(tool.name)) {
     return undefined;
   }
-  return resolveReadToolTargetDisplayFromDetail(tool.detail);
+  const fromDetail = resolveReadToolTargetDisplayFromDetail(tool.detail);
+  return fromDetail;
 }
 
 export function resolveGrepToolTargetDisplay(

@@ -470,7 +470,8 @@ function isProjectionToolProgressNoiseItem(
     return false;
   }
 
-  return isToolProgressStatusText(text) || isToolProgressStatusText(detail);
+  const isNoise = isToolProgressStatusText(text) || isToolProgressStatusText(detail);
+  return isNoise;
 }
 
 function buildLatestActiveRequestStartedByOwner(
@@ -615,7 +616,7 @@ export function buildProjectionDisplayTimelineItems(
     if (toolKey) {
       const current = latestToolDisplayByKey.get(toolKey);
       if (!current || compareProjectionToolDisplayItems(current, item) <= 0) {
-        latestToolDisplayByKey.set(toolKey, item);
+        latestToolDisplayByKey.set(toolKey, mergeToolDisplayTimelineItem(current, item));
       }
     }
   }
@@ -853,6 +854,66 @@ function mergeStreamDisplayTimelineItem(
     return item;
   }
   return { ...item, text: preservedText };
+}
+
+function mergeToolDisplayTimelineItem(
+  current: ThreadRunProjectionTimelineItem | undefined,
+  item: ThreadRunProjectionTimelineItem,
+): ThreadRunProjectionTimelineItem {
+  if (!current) {
+    return item;
+  }
+  if (compareProjectionToolDisplayItems(item, current) >= 0) {
+    return mergeFilesystemToolTimelineMetadata(current, item);
+  }
+  return mergeFilesystemToolTimelineMetadata(item, current);
+}
+
+function mergeFilesystemToolTimelineMetadata(
+  placeholder: ThreadRunProjectionTimelineItem,
+  richer: ThreadRunProjectionTimelineItem,
+): ThreadRunProjectionTimelineItem {
+  const placeholderTool = readProjectionToolMetadata(placeholder);
+  const richerTool = readProjectionToolMetadata(richer);
+  if (!richerTool) {
+    return richer;
+  }
+  const mergedTool: ThreadRunToolMetadata = {
+    ...placeholderTool,
+    ...richerTool,
+    ...(richerTool.readTarget || placeholderTool?.readTarget
+      ? { readTarget: richerTool.readTarget ?? placeholderTool?.readTarget }
+      : {}),
+    ...(richerTool.grepTarget || placeholderTool?.grepTarget
+      ? { grepTarget: richerTool.grepTarget ?? placeholderTool?.grepTarget }
+      : {}),
+    detail: richerTool.detail ?? placeholderTool?.detail,
+  };
+  return {
+    ...richer,
+    text: richer.text.trim() || placeholder.text,
+    metadata: {
+      ...(placeholder.metadata ?? {}),
+      ...(richer.metadata ?? {}),
+      tool: mergedTool,
+    },
+  };
+}
+
+function resolveFilesystemToolPending(
+  block: ActivityDetailBlock,
+  metadataTool: ThreadRunToolMetadata | undefined,
+): "read" | "grep" | undefined {
+  if (block.kind !== "action" || !metadataTool) {
+    return undefined;
+  }
+  if (metadataTool.name === "Read" || metadataTool.name === "NotebookRead") {
+    return block.readTarget ? undefined : "read";
+  }
+  if (metadataTool.name === "Grep") {
+    return block.grepTarget ? undefined : "grep";
+  }
+  return undefined;
 }
 
 function settleTerminalStreamDisplayItem(
@@ -1625,11 +1686,20 @@ export function projectionItemToDetailBlock(
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
     const metadataTool = readProjectionToolMetadata(item);
     const lifecycle = toolStatusToLifecycle(metadataTool?.status, item.eventType);
-    return buildProjectionToolActionBlock(item, {
+    const block = buildProjectionToolActionBlock(item, {
       toolName: resolveProjectionToolName(item),
       label: resolveProjectionToolActionLabel(item),
       ...(lifecycle && { lifecycle }),
     });
+    const filesystemToolPending = resolveFilesystemToolPending(block, metadataTool);
+    if (filesystemToolPending) {
+      return {
+        ...block,
+        lifecycle: block.lifecycle ?? "running",
+        filesystemToolPending,
+      };
+    }
+    return block;
   }
 
   const phaseLabel = resolveProjectionPhaseLabel(item);

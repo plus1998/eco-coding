@@ -882,6 +882,7 @@ function DetailBlock({
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.readTarget && { readTarget: block.readTarget })}
         {...(block.grepTarget && { grepTarget: block.grepTarget })}
+        {...(block.filesystemToolPending && { filesystemToolPending: block.filesystemToolPending })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -1611,6 +1612,7 @@ function RunLogAction({
   fileChange,
   readTarget,
   grepTarget,
+  filesystemToolPending,
   subagent,
   modelByRole,
   omitRoleLabel,
@@ -1622,6 +1624,7 @@ function RunLogAction({
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
   grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
+  filesystemToolPending?: "read" | "grep";
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
@@ -1712,6 +1715,22 @@ function RunLogAction({
     );
   }
 
+  if (filesystemToolPending) {
+    return (
+      <div
+        className={[
+          "run-log-action",
+          filesystemToolPending === "read" ? "run-log-action--read-target" : "run-log-action--grep-target",
+        ].join(" ")}
+      >
+        {showRoleLabel ? (
+          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+        ) : null}
+        <RunLogFilesystemToolPendingLine tool={filesystemToolPending} />
+      </div>
+    );
+  }
+
   if (readTarget) {
     return (
       <div className="run-log-action run-log-action--read-target">
@@ -1762,6 +1781,27 @@ function RunLogAction({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function RunLogFilesystemToolPendingLine({ tool }: { tool: "read" | "grep" }) {
+  const isRead = tool === "read";
+  const rootClass = isRead ? "run-log-read-target" : "run-log-grep-target";
+  const verbClass = isRead ? "run-log-read-target-verb" : "run-log-grep-target-verb";
+  const ariaLabel = isRead ? "正在读取文件" : "正在搜索";
+
+  return (
+    <p className={[rootClass, "is-running", "is-pending"].join(" ")} role="status" aria-label={ariaLabel}>
+      <span className={verbClass}>{isRead ? "Read" : "Grepped"}</span>
+      <span className="run-log-filesystem-pending-tail" aria-hidden>
+        <span className="run-log-filesystem-pending-skeleton" />
+        <span className="run-log-filesystem-pending-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+      </span>
+    </p>
   );
 }
 

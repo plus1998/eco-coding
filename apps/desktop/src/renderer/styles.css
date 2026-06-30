@@ -5910,6 +5910,70 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #f87171;
 }
 
+.run-log-read-target.is-pending .run-log-read-target-verb,
+.run-log-grep-target.is-pending .run-log-grep-target-verb {
+  color: var(--codex-log-text, #d4d4d4);
+}
+
+.run-log-filesystem-pending-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 2px;
+  vertical-align: baseline;
+}
+
+.run-log-filesystem-pending-skeleton {
+  display: inline-block;
+  width: clamp(72px, 16vw, 132px);
+  height: 0.68em;
+  margin-top: 0.08em;
+  border-radius: 4px;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--codex-log-muted, rgba(255, 255, 255, 0.58)) 18%, transparent) 0%,
+    color-mix(in srgb, var(--codex-log-muted, rgba(255, 255, 255, 0.58)) 42%, transparent) 50%,
+    color-mix(in srgb, var(--codex-log-muted, rgba(255, 255, 255, 0.58)) 18%, transparent) 100%
+  );
+  background-size: 220% 100%;
+  animation: run-log-filesystem-pending-shimmer 1.45s ease-in-out infinite;
+}
+
+.run-log-filesystem-pending-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.run-log-filesystem-pending-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--codex-log-muted, rgba(255, 255, 255, 0.58)) 72%, transparent);
+  animation: run-log-projection-loading 1.35s ease-in-out infinite;
+}
+
+.run-log-filesystem-pending-dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.run-log-filesystem-pending-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes run-log-filesystem-pending-shimmer {
+  0%,
+  100% {
+    background-position: 100% center;
+    opacity: 0.55;
+  }
+
+  50% {
+    background-position: 0% center;
+    opacity: 0.95;
+  }
+}
+
 .run-log-action--file-change-card {
   display: block;
   width: 100%;
