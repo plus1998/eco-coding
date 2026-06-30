@@ -8,6 +8,7 @@ import '../../core/theme/eco_theme.dart';
 import '../projects/project_list_widgets.dart';
 import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
+import 'thread_menu_sheets.dart';
 
 class ThreadsScreen extends ConsumerWidget {
   const ThreadsScreen({super.key});
@@ -16,6 +17,7 @@ class ThreadsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final projectsAsync = ref.watch(displayProjectsProvider);
     final pinnedPaths = ref.watch(pinnedProjectPathsProvider);
+    final pinnedThreadIds = ref.watch(pinnedThreadIdsProvider).toSet();
     final threadsByProject = ref.watch(threadsByProjectProvider);
     ref.watch(collapsedProjectPathsProvider);
     final collapsedNotifier = ref.read(collapsedProjectPathsProvider.notifier);
@@ -77,6 +79,7 @@ class ThreadsScreen extends ConsumerWidget {
                   threads: threads,
                   isCollapsed: isCollapsed,
                   isPinned: isPinned,
+                  pinnedThreadIds: pinnedThreadIds,
                   onHeaderTap: () =>
                       _onProjectHeaderTap(ref, project: project),
                   onHeaderLongPress: project.isHome
@@ -90,6 +93,11 @@ class ThreadsScreen extends ConsumerWidget {
                       _openNewThread(context, ref, project.path),
                   onThreadTap: (thread) =>
                       context.push('/threads/${thread.id}'),
+                  onThreadLongPress: (thread) => showThreadActionSheet(
+                    context: context,
+                    ref: ref,
+                    thread: thread,
+                  ),
                 );
               },
             ),

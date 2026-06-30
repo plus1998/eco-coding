@@ -310,6 +310,22 @@ int compareThreadsByActivityTime(ThreadSummary a, ThreadSummary b) {
   return b.createdAt.compareTo(a.createdAt);
 }
 
+List<ThreadSummary> sortThreadsForSidebar(
+  List<ThreadSummary> threads,
+  Set<String> pinnedThreadIds,
+) {
+  final sorted = List<ThreadSummary>.of(threads);
+  sorted.sort((a, b) {
+    final aPinned = pinnedThreadIds.contains(a.id);
+    final bPinned = pinnedThreadIds.contains(b.id);
+    if (aPinned != bPinned) {
+      return aPinned ? -1 : 1;
+    }
+    return compareThreadsByActivityTime(a, b);
+  });
+  return sorted;
+}
+
 ({List<ThreadSummary> visible, bool hasMore}) sliceProjectThreads(
   List<ThreadSummary> threads, {
   required bool expanded,

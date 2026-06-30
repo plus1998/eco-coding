@@ -6,7 +6,7 @@ import 'thread_session_app_bar.dart';
 const threadSessionFeedHorizontalPadding = 12.0;
 
 /// Breathing room between the last feed row and the composer dock.
-const threadSessionComposerGap = 8.0;
+const threadSessionComposerGap = 28.0;
 
 /// Column shell: feed fills space below the frosted toolbar; composer docks at bottom.
 ///

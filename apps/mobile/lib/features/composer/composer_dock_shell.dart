@@ -6,6 +6,7 @@ import '../../core/theme/eco_theme.dart';
 
 const composerBottomFrostBlurSigma = 20.0;
 const composerBottomFrostTintOpacity = 0.52;
+const composerDockTopSpacing = 8.0;
 
 double _composerBottomFrostTintAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -40,7 +41,10 @@ class ComposerDockShell extends StatelessWidget {
             },
           ),
         ),
-        child,
+        Padding(
+          padding: const EdgeInsets.only(top: composerDockTopSpacing),
+          child: child,
+        ),
       ],
     );
   }

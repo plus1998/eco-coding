@@ -434,9 +434,13 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
   final displayItems = <ThreadRunProjectionTimelineItem>[];
   for (final item in timeline) {
     final reconnectKey = _projectionReconnectDisplayKey(item);
-    if (reconnectKey != null &&
-        latestReconnectDisplayByKey[reconnectKey]?.id != item.id) {
-      continue;
+    if (reconnectKey != null) {
+      if (latestReconnectDisplayByKey[reconnectKey]?.id != item.id) {
+        continue;
+      }
+      if (_isTimelineItemSupersededByRecovery(timeline, item)) {
+        continue;
+      }
     }
     final lifecycleKey = _projectionToolLifecycleKey(item);
     if (lifecycleKey != null &&
@@ -1180,6 +1184,50 @@ String? _projectionReconnectDisplayKey(ThreadRunProjectionTimelineItem item) {
     return 'reconnect';
   }
   return isReconnectActivityMessage(item.text.trim()) ? 'reconnect' : null;
+}
+
+bool _shouldClearReconnectTimelineItem(ThreadRunProjectionTimelineItem item) {
+  final origin = item.metadata?['activityOrigin'];
+  if (origin is String && isReconnectActivityOrigin(origin)) {
+    return false;
+  }
+  if (isReconnectActivityMessage(item.text.trim())) {
+    return false;
+  }
+
+  if (item.eventType == 'request.completed' ||
+      item.eventType == 'request.first_token') {
+    return true;
+  }
+  if (item.eventType == 'tool.started' || item.eventType == 'tool.completed') {
+    return true;
+  }
+  if (item.eventType == 'message.final' || item.eventType == 'thinking.final') {
+    return item.text.trim().isNotEmpty;
+  }
+  if (item.eventType == 'message.delta' || item.eventType == 'thinking.delta') {
+    return item.text.trim().isNotEmpty;
+  }
+
+  return shouldClearReconnectActivity(
+    message: item.text,
+    role: item.role ?? '',
+  );
+}
+
+bool _isTimelineItemSupersededByRecovery(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  ThreadRunProjectionTimelineItem anchor,
+) {
+  for (final later in timeline) {
+    if (_compareTimelineItems(anchor, later) >= 0) {
+      continue;
+    }
+    if (_shouldClearReconnectTimelineItem(later)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 String? _projectionStreamDisplayKey(

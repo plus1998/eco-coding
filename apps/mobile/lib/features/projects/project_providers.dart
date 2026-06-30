@@ -15,6 +15,8 @@ String _collapsedProjectsKey(String desktopId) =>
 String _pinnedProjectsKey(String desktopId) =>
     'eco.pinned_projects.$desktopId';
 
+String _pinnedThreadsKey(String desktopId) => 'eco.pinned_threads.$desktopId';
+
 String _hiddenProjectsKey(String desktopId) => 'eco.hidden_projects.$desktopId';
 
 class ProjectWorkspaceContext {
@@ -30,7 +32,12 @@ class ProjectWorkspaceContext {
 final threadsByProjectProvider =
     Provider<Map<String, List<ThreadSummary>>>((ref) {
   final threads = ref.watch(threadListProvider).valueOrNull ?? const [];
-  return groupThreadsByProject(threads);
+  final pinnedThreadIds = ref.watch(pinnedThreadIdsProvider).toSet();
+  final grouped = groupThreadsByProject(threads);
+  return {
+    for (final entry in grouped.entries)
+      entry.key: sortThreadsForSidebar(entry.value, pinnedThreadIds),
+  };
 });
 
 final projectWorkspaceContextProvider =
@@ -341,6 +348,63 @@ class PinnedProjectPathsNotifier extends Notifier<List<String>> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_pinnedProjectsKey(desktopId), pinned);
+  }
+}
+
+final pinnedThreadIdsProvider =
+    NotifierProvider<PinnedThreadIdsNotifier, List<String>>(
+  PinnedThreadIdsNotifier.new,
+);
+
+class PinnedThreadIdsNotifier extends Notifier<List<String>> {
+  bool _loaded = false;
+
+  @override
+  List<String> build() {
+    _load();
+    return const [];
+  }
+
+  bool isPinned(String threadId) => state.contains(threadId);
+
+  Future<void> pin(String threadId) async {
+    await _load();
+    if (state.contains(threadId)) return;
+    state = [threadId, ...state];
+    await _persist(state);
+  }
+
+  Future<void> unpin(String threadId) async {
+    await _load();
+    final next = state.where((id) => id != threadId).toList();
+    if (next.length == state.length) return;
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> remove(String threadId) async {
+    await unpin(threadId);
+  }
+
+  Future<void> _load() async {
+    if (_loaded) return;
+    _loaded = true;
+    final desktopId = ref.read(selectedDesktopIdProvider);
+    if (desktopId == null || desktopId.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_pinnedThreadsKey(desktopId));
+    if (saved != null) {
+      state = saved;
+    }
+  }
+
+  Future<void> _persist(List<String> pinned) async {
+    final desktopId = ref.read(selectedDesktopIdProvider);
+    if (desktopId == null || desktopId.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_pinnedThreadsKey(desktopId), pinned);
   }
 }
 

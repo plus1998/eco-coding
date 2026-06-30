@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
     "dev:server": "bun run --cwd apps/server dev",
-    "dev:mobile": "cd apps/mobile && flutter run --flavor dev",
+    "dev:mobile": "cd apps/mobile && flutter run --flavor dev -d ios",
     "start:server": "bun run --cwd apps/server start",
     "build": "bun run --cwd apps/desktop build",
     "build:server": "bun run --cwd apps/server build:linux-amd64",

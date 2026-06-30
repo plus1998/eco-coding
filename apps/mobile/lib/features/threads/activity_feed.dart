@@ -19,6 +19,22 @@ import 'activity_feed_scroll_coordinator.dart';
 import 'projection_activity_feed.dart';
 import 'thread_session_layout.dart';
 
+/// Feed body text is 20% larger than the default body style.
+const activityFeedBodyFontScale = 1.2;
+
+TextStyle? activityFeedBodyStyle(
+  BuildContext context, {
+  Color? color,
+  double height = 1.55,
+}) {
+  final base = Theme.of(context).textTheme.bodyMedium;
+  return base?.copyWith(
+    fontSize: (base.fontSize ?? 13) * activityFeedBodyFontScale,
+    height: height,
+    color: color,
+  );
+}
+
 enum ActivityFeedKind {
   user,
   clarificationAnswer,
@@ -132,6 +148,34 @@ bool shouldFollowStreamingTail({
   return last.text.length > previousLast.text.length;
 }
 
+bool isValidContentAfterThinking(ActivityFeedEntry entry) {
+  switch (entry.kind) {
+    case ActivityFeedKind.thinking:
+    case ActivityFeedKind.phase:
+      return false;
+    case ActivityFeedKind.assistant:
+      return entry.streaming || entry.text.trim().isNotEmpty;
+    case ActivityFeedKind.action:
+    case ActivityFeedKind.subagentMission:
+    case ActivityFeedKind.error:
+    case ActivityFeedKind.user:
+    case ActivityFeedKind.clarificationAnswer:
+      return true;
+  }
+}
+
+bool hasFollowingValidFeedContent(
+  List<ActivityFeedEntry> entries,
+  int thinkingIndex,
+) {
+  for (var index = thinkingIndex + 1; index < entries.length; index += 1) {
+    if (isValidContentAfterThinking(entries[index])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 String activityFeedLayoutSignature(List<ActivityFeedEntry> entries) {
   if (entries.isEmpty) return '';
   final last = entries.last;
@@ -226,9 +270,11 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _coordinator.scrollToEnd();
+      _syncScrollJumpVisibility();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _coordinator.scrollToEnd();
+        _syncScrollJumpVisibility();
       });
     });
   }
@@ -270,10 +316,19 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
               itemCount: displayEntries.length,
               itemBuilder: (context, index) {
                 final entry = displayEntries[index];
+                final chronologicalIndex = widget.entries.length - 1 - index;
+                final thinkingCollapseAfterFollowingContent =
+                    entry.kind == ActivityFeedKind.thinking &&
+                        hasFollowingValidFeedContent(
+                          widget.entries,
+                          chronologicalIndex,
+                        );
                 return _ActivityFeedEntryTile(
                   key: ValueKey(entry.id),
                   entry: entry,
                   agentProfile: widget.agentProfile,
+                  thinkingCollapseAfterFollowingContent:
+                      thinkingCollapseAfterFollowingContent,
                 );
               },
             ),
@@ -342,10 +397,12 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     super.key,
     required this.entry,
     this.agentProfile,
+    this.thinkingCollapseAfterFollowingContent = false,
   });
 
   final ActivityFeedEntry entry;
   final OrchestrationProfile? agentProfile;
+  final bool thinkingCollapseAfterFollowingContent;
 
   @override
   Widget build(BuildContext context) {
@@ -361,7 +418,11 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           usageBadge: entry.usageBadge,
         );
       case ActivityFeedKind.thinking:
-        return _ThinkingTile(text: entry.text, streaming: entry.streaming);
+        return _ThinkingTile(
+          text: entry.text,
+          streaming: entry.streaming,
+          collapseAfterFollowingContent: thinkingCollapseAfterFollowingContent,
+        );
       case ActivityFeedKind.action:
         return _ActionTile(
           label: entry.text,
@@ -412,9 +473,11 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     final eco = ecoColors(context);
     final maxBubbleWidth = MediaQuery.of(context).size.width * 0.88;
     const horizontalPadding = 28.0;
-    final textStyle = Theme.of(
+    final textStyle = activityFeedBodyStyle(
       context,
-    ).textTheme.bodyMedium?.copyWith(height: 1.45, color: eco.textPrimary);
+      height: 1.45,
+      color: eco.textPrimary,
+    );
 
     return Align(
       alignment: Alignment.centerRight,
@@ -566,10 +629,7 @@ class _ClarificationAnswerTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     rows[index].answer.isEmpty ? '（未选择）' : rows[index].answer,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: eco.textPrimary,
-                      height: 1.45,
-                    ),
+                    style: activityFeedBodyStyle(context, height: 1.45),
                   ),
                 ],
               ],
@@ -607,12 +667,16 @@ class _AssistantNarrativeTile extends StatelessWidget {
             streaming
                 ? Text(
                     text,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: activityFeedBodyStyle(
+                      context,
                       color: ecoColors(context).textHeading,
-                      height: 1.55,
                     ),
                   )
-                : EcoMarkdown(text: text, selectable: false),
+                : EcoMarkdown(
+                    text: text,
+                    selectable: false,
+                    fontSizeScale: activityFeedBodyFontScale,
+                  ),
           if (usageBadge != null) ...[
             const SizedBox(height: 6),
             _UsageBadgeLine(badge: usageBadge!),
@@ -634,10 +698,15 @@ class _AssistantNarrativeTile extends StatelessWidget {
 }
 
 class _ThinkingTile extends StatefulWidget {
-  const _ThinkingTile({required this.text, this.streaming = false});
+  const _ThinkingTile({
+    required this.text,
+    this.streaming = false,
+    this.collapseAfterFollowingContent = false,
+  });
 
   final String text;
   final bool streaming;
+  final bool collapseAfterFollowingContent;
 
   @override
   State<_ThinkingTile> createState() => _ThinkingTileState();
@@ -645,16 +714,23 @@ class _ThinkingTile extends StatefulWidget {
 
 class _ThinkingTileState extends State<_ThinkingTile> {
   var _collapsed = false;
+  var _collapseSuppressed = false;
 
   bool get _hasBody => widget.text.trim().isNotEmpty;
 
   bool get _expanded =>
       (widget.streaming && _hasBody) || (!_collapsed && _hasBody);
 
+  bool get _shouldAutoCollapse =>
+      widget.collapseAfterFollowingContent &&
+      !widget.streaming &&
+      _hasBody &&
+      !_collapseSuppressed;
+
   @override
   void initState() {
     super.initState();
-    _collapsed = !widget.streaming && widget.text.trim().isNotEmpty;
+    _collapsed = _shouldAutoCollapse;
   }
 
   @override
@@ -662,10 +738,9 @@ class _ThinkingTileState extends State<_ThinkingTile> {
     super.didUpdateWidget(oldWidget);
     if (widget.streaming && _hasBody) {
       _collapsed = false;
-    } else if (oldWidget.streaming &&
-        !widget.streaming &&
-        _hasBody &&
-        !_collapsed) {
+      return;
+    }
+    if (_shouldAutoCollapse && (!_collapsed || !oldWidget.collapseAfterFollowingContent)) {
       _collapsed = true;
     }
   }
@@ -719,7 +794,10 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                     ? null
                     : () {
                         if (widget.streaming || !_hasBody) return;
-                        setState(() => _collapsed = !_collapsed);
+                        setState(() {
+                          _collapsed = !_collapsed;
+                          _collapseSuppressed = true;
+                        });
                       },
                 child: Padding(
                   padding: EdgeInsets.symmetric(

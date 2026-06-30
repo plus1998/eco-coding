@@ -7,7 +7,7 @@ class ActivityFeedScrollCoordinator {
 
   final ScrollController scrollController;
 
-  static const stickThreshold = 48.0;
+  static const stickThreshold = 96.0;
   static const userScrollDelta = 4.0;
 
   bool userDetachedFromBottom = false;
@@ -29,16 +29,23 @@ class ActivityFeedScrollCoordinator {
     final pixels = scrollController.position.pixels;
     final dist = distanceFromBottom;
 
+    if (notification is ScrollEndNotification && dist <= stickThreshold) {
+      userDetachedFromBottom = false;
+    }
+
     if (notification is ScrollUpdateNotification &&
         notification.dragDetails != null) {
       if (pixels > stickThreshold) {
         userDetachedFromBottom = true;
+      } else if (dist <= stickThreshold) {
+        userDetachedFromBottom = false;
       }
     }
 
-    if (pixels < _lastScrollPixels - userScrollDelta) {
+    // reverse ListView: pixels increase = scroll away from bottom (up).
+    if (pixels > _lastScrollPixels + userScrollDelta) {
       userDetachedFromBottom = true;
-    } else if (pixels > _lastScrollPixels + userScrollDelta) {
+    } else if (pixels < _lastScrollPixels - userScrollDelta) {
       if (dist <= stickThreshold) {
         userDetachedFromBottom = false;
       }
@@ -64,8 +71,14 @@ class ActivityFeedScrollCoordinator {
     if (!hasClients) return;
     if (!force && userDetachedFromBottom) return;
     final pixelsBefore = scrollController.position.pixels;
-    if (!force && pixelsBefore.abs() < 0.5) return;
+    if (!force && pixelsBefore.abs() < 0.5) {
+      userDetachedFromBottom = false;
+      return;
+    }
     _markProgrammatic(() => scrollController.jumpTo(0));
+    if (force) {
+      userDetachedFromBottom = false;
+    }
   }
 
   void forceScrollToEnd() {

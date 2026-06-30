@@ -3,6 +3,7 @@ import 'dart:ui' show Color;
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
 import '../theme/subagent_theme.dart' as subagent_theme;
+import 'agent_mission.dart';
 import 'file_change.dart';
 import 'subagent_session_timing.dart';
 
@@ -934,6 +935,68 @@ bool isReconnectActivityOrigin(String? origin) {
 
 bool isReconnectActivityMessage(String message) {
   return parseReconnectActivityMessage(message) != null;
+}
+
+final _reconnectClearSystemNoise = <RegExp>[
+  RegExp(r'^Local model router ready:', caseSensitive: false),
+  RegExp(r'^Claude Agent SDK ready', caseSensitive: false),
+  RegExp(r'^Agent session started', caseSensitive: false),
+  RegExp(r'^Agent run completed', caseSensitive: false),
+  RegExp(r'^Compacting context', caseSensitive: false),
+  RegExp(r'^API retry ', caseSensitive: false),
+  RegExp(r'^Usage recorded', caseSensitive: false),
+  RegExp(r'^Run finished', caseSensitive: false),
+  RegExp(r'^已从异常退出恢复'),
+];
+
+final _reconnectInProgressPatterns = <RegExp>[
+  RegExp(r'^Requesting model', caseSensitive: false),
+  RegExp(r'^API error', caseSensitive: false),
+];
+
+bool shouldClearReconnectActivity({
+  required String message,
+  String role = '',
+}) {
+  if (isReconnectActivityMessage(message)) {
+    return false;
+  }
+
+  final trimmed = message.trim();
+  if (trimmed.isEmpty ||
+      trimmed == '状态已更新' ||
+      RegExp(r'^状态已更新\s').hasMatch(trimmed)) {
+    return false;
+  }
+  if (_reconnectClearSystemNoise.any((pattern) => pattern.hasMatch(trimmed))) {
+    return false;
+  }
+  if (_reconnectInProgressPatterns.any((pattern) => pattern.hasMatch(trimmed))) {
+    return false;
+  }
+
+  if (isSubagentMissionEnvelope(trimmed)) {
+    return true;
+  }
+  if (RegExp(r'^正在刷新上下文用量').hasMatch(trimmed)) {
+    return false;
+  }
+  if (RegExp(r'^Tool:', caseSensitive: false).hasMatch(trimmed) &&
+      !RegExp(r'^Tool failed:', caseSensitive: false).hasMatch(trimmed)) {
+    return true;
+  }
+  if (RegExp(r'^【\d+/\d+】').hasMatch(trimmed)) {
+    return true;
+  }
+  if (RegExp(r'^(Reading|Writing|Editing|Searching|Running)\s+', caseSensitive: false)
+      .hasMatch(trimmed)) {
+    return true;
+  }
+  if (role == 'thinking' && trimmed.isNotEmpty) {
+    return true;
+  }
+
+  return false;
 }
 
 class ParsedReconnectActivity {

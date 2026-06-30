@@ -7,6 +7,7 @@ import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/package_script_run.dart';
+import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
 
@@ -695,4 +696,121 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
       ),
     );
   }
+}
+
+Future<void> showThreadActionSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+  required ThreadSummary thread,
+}) {
+  final isPinned = ref.read(pinnedThreadIdsProvider.notifier).isPinned(thread.id);
+
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: ecoColors(context).bgMenu,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                thread.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                EcoIcons.pin,
+                size: 20,
+                color: ecoColors(context).textSecondary,
+              ),
+              title: Text(isPinned ? '取消置顶' : '置顶'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                if (isPinned) {
+                  await ref
+                      .read(pinnedThreadIdsProvider.notifier)
+                      .unpin(thread.id);
+                } else {
+                  await ref.read(pinnedThreadIdsProvider.notifier).pin(thread.id);
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                EcoIcons.delete,
+                size: 20,
+                color: ecoColors(context).statusDenyText,
+              ),
+              title: Text(
+                '删除会话',
+                style: TextStyle(color: ecoColors(context).statusDenyText),
+              ),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) {
+                    return AlertDialog(
+                      title: const Text('删除会话'),
+                      content: Text('确定删除「${thread.title}」？此操作不可撤销。'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          child: const Text('取消'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          child: Text(
+                            '删除',
+                            style: TextStyle(
+                              color: ecoColors(context).statusDenyText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+                if (confirmed != true || !context.mounted) return;
+
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  final rpc = ref.read(desktopRpcProvider);
+                  if (rpc == null) {
+                    throw StateError('未选择 PC');
+                  }
+                  await rpc.deleteThread(thread.id);
+                  await ref
+                      .read(pinnedThreadIdsProvider.notifier)
+                      .remove(thread.id);
+                  await ref.read(threadListProvider.notifier).refresh();
+                  if (context.mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('会话已删除')),
+                    );
+                  }
+                } catch (error) {
+                  if (context.mounted) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(error.toString())),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
 }

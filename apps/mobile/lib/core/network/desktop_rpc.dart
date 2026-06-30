@@ -89,6 +89,10 @@ class DesktopRpc {
     await _client.invoke(desktopDeviceId, 'thread:cancel', [threadId]);
   }
 
+  Future<void> deleteThread(String threadId) async {
+    await _client.invoke(desktopDeviceId, 'thread:delete', [threadId]);
+  }
+
   Future<List<ThreadActivityLine>> activityList(String threadId) async {
     final result = await _client.invoke<List<dynamic>>(
       desktopDeviceId,

@@ -57,20 +57,24 @@ class ProjectSectionCard extends StatefulWidget {
     required this.threads,
     required this.isCollapsed,
     required this.isPinned,
+    required this.pinnedThreadIds,
     required this.onHeaderTap,
     this.onHeaderLongPress,
     required this.onNewThread,
     required this.onThreadTap,
+    this.onThreadLongPress,
   });
 
   final EcoProject project;
   final List<ThreadSummary> threads;
   final bool isCollapsed;
   final bool isPinned;
+  final Set<String> pinnedThreadIds;
   final VoidCallback onHeaderTap;
   final VoidCallback? onHeaderLongPress;
   final VoidCallback onNewThread;
   final void Function(ThreadSummary thread) onThreadTap;
+  final void Function(ThreadSummary thread)? onThreadLongPress;
 
   @override
   State<ProjectSectionCard> createState() => _ProjectSectionCardState();
@@ -136,12 +140,19 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                 else ...[
                   const SizedBox(height: 4),
                   ...slice.visible.asMap().entries.map(
-                        (entry) => ProjectThreadRow(
-                          thread: entry.value,
-                          isLast: entry.key == slice.visible.length - 1 &&
-                              !slice.hasMore,
-                          onTap: () => widget.onThreadTap(entry.value),
-                        ),
+                        (entry) {
+                          final thread = entry.value;
+                          return ProjectThreadRow(
+                            thread: thread,
+                            isPinned: widget.pinnedThreadIds.contains(thread.id),
+                            isLast: entry.key == slice.visible.length - 1 &&
+                                !slice.hasMore,
+                            onTap: () => widget.onThreadTap(thread),
+                            onLongPress: widget.onThreadLongPress == null
+                                ? null
+                                : () => widget.onThreadLongPress!(thread),
+                          );
+                        },
                       ),
                 ],
                 if (slice.hasMore)
@@ -212,17 +223,6 @@ class _ProjectHeader extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              AnimatedRotation(
-                turns: isCollapsed ? 0 : 0.25,
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                child: Icon(
-                  EcoIcons.chevronRight,
-                  size: 15,
-                  color: eco.textMuted.withValues(alpha: 0.7),
-                ),
-              ),
-              const SizedBox(width: 6),
               Icon(
                 project.isHome
                     ? EcoIcons.home
@@ -247,7 +247,7 @@ class _ProjectHeader extends StatelessWidget {
                           ),
                           const SizedBox(width: 5),
                         ],
-                        Expanded(
+                        Flexible(
                           child: Text(
                             project.name,
                             maxLines: 1,
@@ -256,13 +256,31 @@ class _ProjectHeader extends StatelessWidget {
                                 .textTheme
                                 .titleSmall
                                 ?.copyWith(
+                                  fontSize: (Theme.of(context)
+                                              .textTheme
+                                              .titleSmall
+                                              ?.fontSize ??
+                                          14) *
+                                      1.2,
                                   fontWeight: FontWeight.w500,
                                   letterSpacing: -0.25,
                                   color: eco.textPrimary,
                                 ),
                           ),
                         ),
-                        if (isCollapsed && threadCount > 0)
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: isCollapsed ? 0 : 0.25,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          child: Icon(
+                            EcoIcons.chevronRight,
+                            size: 15,
+                            color: eco.textMuted.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        if (isCollapsed && threadCount > 0) ...[
+                          const SizedBox(width: 6),
                           Text(
                             '$threadCount',
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -272,6 +290,7 @@ class _ProjectHeader extends StatelessWidget {
                                   ],
                                 ),
                           ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -346,13 +365,17 @@ class ProjectThreadRow extends StatelessWidget {
   const ProjectThreadRow({
     super.key,
     required this.thread,
+    required this.isPinned,
     required this.isLast,
     required this.onTap,
+    this.onLongPress,
   });
 
   final ThreadSummary thread;
+  final bool isPinned;
   final bool isLast;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +388,7 @@ class ProjectThreadRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(6),
         splashColor: eco.navHover,
         highlightColor: eco.navHover,
@@ -386,14 +410,32 @@ class ProjectThreadRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: -0.1,
+                    Row(
+                      children: [
+                        if (isPinned) ...[
+                          Icon(
+                            EcoIcons.pin,
+                            size: 10,
+                            color: eco.textMuted.withValues(alpha: 0.65),
                           ),
+                          const SizedBox(width: 5),
+                        ],
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  fontSize:
+                                      (Theme.of(context).textTheme.bodyMedium?.fontSize ??
+                                              13) *
+                                          1.2,
+                                  fontWeight: FontWeight.w400,
+                                  letterSpacing: -0.1,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                     if (thread.message.isNotEmpty && showStatus) ...[
                       const SizedBox(height: 2),

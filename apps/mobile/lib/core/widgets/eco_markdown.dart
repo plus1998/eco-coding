@@ -10,12 +10,14 @@ class EcoMarkdown extends StatelessWidget {
     this.compact = false,
     this.muted = false,
     this.selectable = true,
+    this.fontSizeScale = 1,
   });
 
   final String text;
   final bool compact;
   final bool muted;
   final bool selectable;
+  final double fontSizeScale;
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +29,7 @@ class EcoMarkdown extends StatelessWidget {
         ? Theme.of(context).textTheme.bodySmall
         : Theme.of(context).textTheme.bodyMedium;
     final base = baseStyle?.copyWith(
+          fontSize: (baseStyle.fontSize ?? 13) * fontSizeScale,
           height: compact ? 1.45 : 1.55,
           color: baseColor,
         );

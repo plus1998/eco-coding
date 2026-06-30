@@ -30,6 +30,8 @@ abstract final class EcoIcons {
   // ── 设备 / 连接 ───────────────────────────────────────
   static const IconData desktop = LucideIcons.monitor;
   static const IconData qrScan = LucideIcons.scanLine;
+  static const IconData flashlight = LucideIcons.flashlight;
+  static const IconData flashlightOn = LucideIcons.flashlightOff;
   static const IconData user = LucideIcons.user;
   static const IconData logout = LucideIcons.logOut;
 

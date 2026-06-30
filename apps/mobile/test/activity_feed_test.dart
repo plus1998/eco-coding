@@ -645,6 +645,90 @@ void main() {
     expect(feed.first.text, 'preview only');
   });
 
+  test('buildActivityFeed drops reconnect after agent recovers', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'reconnect-1',
+            sequence: 1,
+            eventType: 'request.retry_scheduled',
+            scope: 'main',
+            text: 'API retry 2/5…',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: {
+              'activityOrigin': 'sdk.api_retry',
+              'retry': {'attempt': 2, 'maxRetries': 5},
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'reply-1',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            text: '好的，我已经完成分析。',
+            at: '2026-01-01T00:00:00.001Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.where((entry) => entry.reconnecting), isEmpty);
+    expect(feed.any((entry) => entry.text.contains('完成分析')), isTrue);
+  });
+
+  test('hasFollowingValidFeedContent waits for substantive feed rows', () {
+    final thinking = ActivityFeedEntry(
+      id: 'think-1',
+      kind: ActivityFeedKind.thinking,
+      text: '分析项目结构',
+    );
+    final phase = ActivityFeedEntry(
+      id: 'phase-1',
+      kind: ActivityFeedKind.phase,
+      text: '上下文压缩已暂停',
+    );
+    final assistant = ActivityFeedEntry(
+      id: 'reply-1',
+      kind: ActivityFeedKind.assistant,
+      text: '好的，我来处理。',
+    );
+
+    expect(
+      hasFollowingValidFeedContent([thinking], 0),
+      isFalse,
+    );
+    expect(
+      hasFollowingValidFeedContent([thinking, phase], 0),
+      isFalse,
+    );
+    expect(
+      hasFollowingValidFeedContent([thinking, assistant], 0),
+      isTrue,
+    );
+    expect(
+      hasFollowingValidFeedContent(
+        [
+          thinking,
+          ActivityFeedEntry(
+            id: 'tool-1',
+            kind: ActivityFeedKind.action,
+            text: '读取 src/main.dart',
+          ),
+        ],
+        0,
+      ),
+      isTrue,
+    );
+  });
+
   test('buildActivityFeed maps reconnect activity to collapsible phase', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
