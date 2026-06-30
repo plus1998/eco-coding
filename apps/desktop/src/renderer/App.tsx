@@ -121,7 +121,8 @@ import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import { ActivityLogView } from "./ActivityLogView";
 import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
-import { BashApprovalPanel } from "./BashApprovalPanel";
+import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
+import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerMcpServers } from "./ComposerMcpServers";
@@ -2649,14 +2650,15 @@ function App() {
     }
   }
 
-  async function resolvePendingBashApproval(decision: "approved" | "denied") {
+  async function resolvePendingBashApproval(resolution: BashApprovalResolutionInput) {
     if (!pendingBashApproval || !window.eco) return;
     setBashApprovalBusy(true);
     setError(undefined);
     try {
       await window.eco.resolveBashApproval({
         toolUseId: pendingBashApproval.toolUseId,
-        decision,
+        decision: resolution.decision,
+        ...(resolution.feedback ? { feedback: resolution.feedback } : {}),
       });
       clearPendingBashApprovalForThread(pendingBashApproval.threadId);
     } catch (caught) {
@@ -3756,7 +3758,7 @@ function App() {
   const composerPlaceholder = showClarification
     ? "补充消息会排队；回答问题请用上方卡片"
     : showBashApproval
-      ? "补充消息会排队；命令审批请用上方卡片"
+      ? "补充消息会排队；工具授权请用下方卡片"
       : contextCompactionInFlight
         ? "上下文压缩中，请稍候…"
         : activeThread?.status === "awaiting_plan"
@@ -3892,135 +3894,151 @@ function App() {
           ))}
         </ul>
       )}
-      <div
-        className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
-        ref={composerAnchorRef}
-      >
-        <ComposerSkillsSlashMenu
-          open={composerSkillPopoverOpen}
-          query={composerSkillSlash?.query ?? ""}
-          skills={slashPickerSkills}
-          matches={composerSkillMatches}
-          activeIndex={composerSkillActiveIndex}
-          anchorRef={composerAnchorRef}
-          onActiveIndexChange={setComposerSkillActiveIndex}
-          onSelect={selectComposerSkill}
-          onClose={() => syncComposerCursor()}
-        />
-        <div className="composer-primary">
-          <ComposerSkillsInput
-            ref={composerRef}
-            value={prompt}
-            onChange={(next) => {
-              setPrompt(next);
-              if (composerRoutePopoverOpen) {
-                setComposerRoutePopoverOpen(false);
-              }
-            }}
-            skillsByName={composerSkillsByName}
-            onCursorChange={setComposerCursor}
-            onKeyDown={handleComposerKeyDown}
-            maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
-            {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
-            placeholder={composerPlaceholder}
-            disabled={composerDisabled}
-          />
-          <div className="composer-footer">
-            <div className="composer-footer-main">
-              {composerCompact ? (
-                <div className="composer-footer-row composer-footer-compact-row">
-                  <div className="composer-context-group" aria-label="当前方案与子代理编排">
-                    {composerRouteControl}
-                    <span className="composer-context-divider" aria-hidden />
-                    {composerAgentModelsControl}
-                    {composerMcpControl}
-                  </div>
-                  <div className="composer-footer-row composer-footer-config-row">
-                    {composerRuntimeConfig ? (
-                      <ComposerPlanModeToggle
-                        sessionMode={composerRuntimeConfig.sessionMode}
-                        canEdit={canEditComposerConfig}
-                        saving={isSavingSettings}
-                        onSelect={(mode) => void selectComposerSessionMode(mode)}
-                      />
-                    ) : null}
-                    {composerRuntimeConfig ? (
-                      <ComposerBashReviewToggle
-                        bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                        canEdit={canEditBashReviewMode}
-                        saving={isSavingSettings}
-                        onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                      />
-                    ) : null}
-                  </div>
+      <ComposerDockMorph
+        showApproval={showBashApproval}
+        approval={
+          pendingBashApproval ? (
+            <BashApprovalPanel
+              request={pendingBashApproval}
+              busy={bashApprovalBusy}
+              variant="dock"
+              onResolve={(resolution) => void resolvePendingBashApproval(resolution)}
+              onSkip={() => void resolvePendingBashApproval({ decision: "denied" })}
+            />
+          ) : null
+        }
+        composer={
+          <div
+            className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
+            ref={composerAnchorRef}
+          >
+            <ComposerSkillsSlashMenu
+              open={composerSkillPopoverOpen}
+              query={composerSkillSlash?.query ?? ""}
+              skills={slashPickerSkills}
+              matches={composerSkillMatches}
+              activeIndex={composerSkillActiveIndex}
+              anchorRef={composerAnchorRef}
+              onActiveIndexChange={setComposerSkillActiveIndex}
+              onSelect={selectComposerSkill}
+              onClose={() => syncComposerCursor()}
+            />
+            <div className="composer-primary">
+              <ComposerSkillsInput
+                ref={composerRef}
+                value={prompt}
+                onChange={(next) => {
+                  setPrompt(next);
+                  if (composerRoutePopoverOpen) {
+                    setComposerRoutePopoverOpen(false);
+                  }
+                }}
+                skillsByName={composerSkillsByName}
+                onCursorChange={setComposerCursor}
+                onKeyDown={handleComposerKeyDown}
+                maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
+                {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
+                placeholder={composerPlaceholder}
+                disabled={composerDisabled}
+              />
+              <div className="composer-footer">
+                <div className="composer-footer-main">
+                  {composerCompact ? (
+                    <div className="composer-footer-row composer-footer-compact-row">
+                      <div className="composer-context-group" aria-label="当前方案与子代理编排">
+                        {composerRouteControl}
+                        <span className="composer-context-divider" aria-hidden />
+                        {composerAgentModelsControl}
+                        {composerMcpControl}
+                      </div>
+                      <div className="composer-footer-row composer-footer-config-row">
+                        {composerRuntimeConfig ? (
+                          <ComposerPlanModeToggle
+                            sessionMode={composerRuntimeConfig.sessionMode}
+                            canEdit={canEditComposerConfig}
+                            saving={isSavingSettings}
+                            onSelect={(mode) => void selectComposerSessionMode(mode)}
+                          />
+                        ) : null}
+                        {composerRuntimeConfig ? (
+                          <ComposerBashReviewToggle
+                            bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                            canEdit={canEditBashReviewMode}
+                            saving={isSavingSettings}
+                            onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="composer-footer-row composer-footer-config-row">
+                      {composerRuntimeConfig ? (
+                        <ComposerPlanModeToggle
+                          sessionMode={composerRuntimeConfig.sessionMode}
+                          canEdit={canEditComposerConfig}
+                          saving={isSavingSettings}
+                          onSelect={(mode) => void selectComposerSessionMode(mode)}
+                        />
+                      ) : null}
+                      {composerRuntimeConfig ? (
+                        <ComposerBashReviewToggle
+                          bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                          canEdit={canEditBashReviewMode}
+                          saving={isSavingSettings}
+                          onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                        />
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="composer-footer-row composer-footer-config-row">
-                  {composerRuntimeConfig ? (
-                    <ComposerPlanModeToggle
-                      sessionMode={composerRuntimeConfig.sessionMode}
-                      canEdit={canEditComposerConfig}
-                      saving={isSavingSettings}
-                      onSelect={(mode) => void selectComposerSessionMode(mode)}
-                    />
-                  ) : null}
-                  {composerRuntimeConfig ? (
-                    <ComposerBashReviewToggle
-                      bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                      canEdit={canEditBashReviewMode}
-                      saving={isSavingSettings}
-                      onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                    />
-                  ) : null}
-                </div>
+                {canStopThread ? (
+                  <button
+                    type="button"
+                    className="send-button stop"
+                    onClick={() => void requestStopThread()}
+                    disabled={cancelBusy}
+                    title="停止当前运行"
+                    aria-label="停止"
+                  >
+                    {cancelBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <Square size={COMPOSER_SEND_ICON_PX - 2} />}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="send-button"
+                  onClick={sendComposerMessage}
+                  disabled={!canSend}
+                  title={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
+                  aria-label={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
+                >
+                  {isStarting || followUpBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <ArrowUp size={COMPOSER_SEND_ICON_PX} />}
+                </button>
+              </div>
+              {error && (
+                <p className="composer-error">
+                  <AlertCircle size={14} /> {error}
+                </p>
+              )}
+              {!routesReady && !composerFollowUpMode && (
+                <p className="composer-hint">
+                  请先在
+                  <button type="button" className="link-button" onClick={openProviderSettings}>
+                    模型服务商
+                  </button>
+                  中配置模型（API Key 可选）
+                </p>
               )}
             </div>
-            {canStopThread ? (
-              <button
-                type="button"
-                className="send-button stop"
-                onClick={() => void requestStopThread()}
-                disabled={cancelBusy}
-                title="停止当前运行"
-                aria-label="停止"
-              >
-                {cancelBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <Square size={COMPOSER_SEND_ICON_PX - 2} />}
-              </button>
+            {!composerCompact ? (
+              <div className="composer-context-bar">
+                {composerRouteControl}
+                {composerAgentModelsControl}
+                {composerMcpControl}
+              </div>
             ) : null}
-            <button
-              type="button"
-              className="send-button"
-              onClick={sendComposerMessage}
-              disabled={!canSend}
-              title={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
-              aria-label={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
-            >
-              {isStarting || followUpBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <ArrowUp size={COMPOSER_SEND_ICON_PX} />}
-            </button>
           </div>
-          {error && (
-            <p className="composer-error">
-              <AlertCircle size={14} /> {error}
-            </p>
-          )}
-          {!routesReady && !composerFollowUpMode && (
-            <p className="composer-hint">
-              请先在
-              <button type="button" className="link-button" onClick={openProviderSettings}>
-                模型服务商
-              </button>
-              中配置模型（API Key 可选）
-            </p>
-          )}
-        </div>
-        {!composerCompact ? (
-          <div className="composer-context-bar">
-            {composerRouteControl}
-            {composerAgentModelsControl}
-            {composerMcpControl}
-          </div>
-        ) : null}
-      </div>
+        }
+      />
       {showLanding && showProjectSkillsPanel ? (
         <ComposerSkillsBar
           sdkReadySkills={projectSdkReadySkills}
@@ -4130,14 +4148,6 @@ function App() {
                       busy={clarificationBusy}
                       onSubmit={submitClarificationAnswers}
                       onDismiss={() => void dismissPendingClarification()}
-                    />
-                  ) : null}
-                  {showBashApproval && pendingBashApproval ? (
-                    <BashApprovalPanel
-                      request={pendingBashApproval}
-                      busy={bashApprovalBusy}
-                      onApprove={() => void resolvePendingBashApproval("approved")}
-                      onDeny={() => void resolvePendingBashApproval("denied")}
                     />
                   ) : null}
                   {showPlanApproval && pendingPlan && (

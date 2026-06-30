@@ -8,6 +8,7 @@ export interface ActiveRunRuntimeStateInput {
 interface ActiveRunRuntimeState {
   controller: AbortController;
   worktreePlan?: WorktreePlan;
+  bashRememberPrefixes: string[];
 }
 
 export class ActiveRunRuntimeStateStore {
@@ -16,6 +17,7 @@ export class ActiveRunRuntimeStateStore {
   startRun(threadId: string, input: ActiveRunRuntimeStateInput): void {
     this.runs.set(threadId, {
       controller: input.controller,
+      bashRememberPrefixes: [],
       ...(input.worktreePlan && { worktreePlan: input.worktreePlan }),
     });
   }
@@ -47,5 +49,24 @@ export class ActiveRunRuntimeStateStore {
       return;
     }
     run.worktreePlan = worktreePlan;
+  }
+
+  bashRememberPrefixes(threadId: string): readonly string[] {
+    return this.runs.get(threadId)?.bashRememberPrefixes ?? [];
+  }
+
+  rememberBashPrefix(threadId: string, prefix: string): void {
+    const trimmed = prefix.trim();
+    if (!trimmed) {
+      return;
+    }
+    const run = this.runs.get(threadId);
+    if (!run) {
+      return;
+    }
+    if (run.bashRememberPrefixes.includes(trimmed)) {
+      return;
+    }
+    run.bashRememberPrefixes.push(trimmed);
   }
 }

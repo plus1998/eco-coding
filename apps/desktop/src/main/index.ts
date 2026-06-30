@@ -232,8 +232,14 @@ import {
   getPendingBashApprovalForThread,
   registerPendingBashApproval,
   resolvePendingBashApproval,
+  type BashApprovalResolution,
 } from "./bash-approval-bridge";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
+import {
+  deriveBashApprovalRememberPrefix,
+  formatBashApprovalDenyMessage,
+  formatFilesystemApprovalDenyMessage,
+} from "../shared/bash-approval-ui";
 import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
 import {
   lookupRouteCapabilityHints,
@@ -2540,7 +2546,10 @@ function registerIpcHandlers(): void {
     if (!pendingApproval) {
       throw new Error("No pending Bash approval for this tool use.");
     }
-    const ok = resolvePendingBashApproval(payload.toolUseId, payload.decision);
+    const ok = resolvePendingBashApproval(payload.toolUseId, {
+      decision: payload.decision,
+      ...(payload.feedback?.trim() ? { feedback: payload.feedback.trim() } : {}),
+    });
     if (!ok) {
       throw new Error("Failed to resolve Bash approval.");
     }
@@ -6932,8 +6941,8 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
       );
 
-      const decision = await registerPendingBashApproval(threadId, approvalRequest);
-      if (decision === "approved") {
+      const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+      if (isBashApprovalGranted(resolution)) {
         emitThreadEvent(
           threadId,
           "bash_approval.approved",
@@ -6955,7 +6964,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       );
       return {
         behavior: "deny",
-        message: `User denied this ${request.toolName} call.`,
+        message: formatFilesystemApprovalDenyMessage(request.toolName, resolution.feedback),
         interrupt: false,
       };
     }
@@ -6992,6 +7001,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       workspacePath: thread.workspacePath,
       confirmationMode: runtimeConfig?.bashReviewMode ?? "always",
       phaseAllowsExecution: runPhase !== "planning" && runPhase !== "ask",
+      sessionBashRememberPrefixes: activeRunRuntimeState.bashRememberPrefixes(threadId),
       ...(agentRegistry ? { agentRegistry } : {}),
       ...(request.agentId ? { agentId: request.agentId } : {}),
       ...(request.agentType ? { agentType: request.agentType } : {}),
@@ -7066,8 +7076,8 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       ...bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
     });
 
-    const decision = await registerPendingBashApproval(threadId, approvalRequest);
-    if (decision === "approved") {
+    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    if (isBashApprovalGranted(threadId, command, resolution)) {
       emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false, {
         ...bashApprovalEventExtras(approvalRequest, "bash_approval.approved"),
       });
@@ -7079,7 +7089,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
     });
     return {
       behavior: "deny",
-      message: "User denied this Bash command.",
+      message: formatBashApprovalDenyMessage(resolution.feedback),
       interrupt: false,
     };
   };
@@ -7163,8 +7173,41 @@ function isBashApprovalResolvePayload(value: unknown): value is BashApprovalReso
   return (
     typeof payload.toolUseId === "string" &&
     payload.toolUseId.trim().length > 0 &&
-    (payload.decision === "approved" || payload.decision === "denied")
+    (payload.decision === "approved" ||
+      payload.decision === "approved_remember_prefix" ||
+      payload.decision === "denied") &&
+    (payload.feedback === undefined || typeof payload.feedback === "string")
   );
+}
+
+function isBashApprovalGranted(
+  threadId: string,
+  command: string,
+  resolution: BashApprovalResolution,
+): boolean;
+function isBashApprovalGranted(resolution: BashApprovalResolution): boolean;
+function isBashApprovalGranted(
+  threadIdOrResolution: string | BashApprovalResolution,
+  command?: string,
+  resolution?: BashApprovalResolution,
+): boolean {
+  const resolved =
+    typeof threadIdOrResolution === "string"
+      ? resolution!
+      : threadIdOrResolution;
+  if (resolved.decision === "approved") {
+    return true;
+  }
+  if (resolved.decision === "approved_remember_prefix") {
+    if (typeof threadIdOrResolution === "string" && command) {
+      activeRunRuntimeState.rememberBashPrefix(
+        threadIdOrResolution,
+        deriveBashApprovalRememberPrefix(command),
+      );
+    }
+    return true;
+  }
+  return false;
 }
 
 function emitSettingsUpdated(): void {

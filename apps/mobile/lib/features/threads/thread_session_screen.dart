@@ -14,6 +14,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
 import '../approvals/approval_sheets.dart';
+import '../approvals/bash_approval_panel.dart';
 import '../composer/composer_dock_shell.dart';
 import '../composer/follow_up_queue_bar.dart';
 import '../composer/session_composer.dart';
@@ -46,6 +47,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   final _picker = ImagePicker();
   String? _shownApprovalKey;
   bool _planApprovalSheetOpen = false;
+  bool _bashApprovalBusy = false;
   bool _followUpBusy = false;
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
@@ -116,10 +118,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         session.pendingPlan!.threadId == thread.id) {
       return 'plan:${session.pendingPlan!.threadId}';
     }
-    if (session.pendingBash != null &&
-        session.pendingBash!.threadId == thread.id) {
-      return 'bash:${session.pendingBash!.toolUseId}';
-    }
     if (session.pendingClarification != null &&
         session.pendingClarification!.threadId == thread.id) {
       return 'clarification:${session.pendingClarification!.toolUseId}';
@@ -128,7 +126,17 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   }
 
   bool _needsApprovalSheet(ThreadSessionState session) {
-    return _approvalKey(session) != null;
+    final thread = session.thread;
+    if (thread == null) return false;
+    if (session.pendingPlan != null &&
+        session.pendingPlan!.threadId == thread.id) {
+      return true;
+    }
+    if (session.pendingClarification != null &&
+        session.pendingClarification!.threadId == thread.id) {
+      return true;
+    }
+    return false;
   }
 
   bool _isRunning(ThreadSummary? thread) {
@@ -145,6 +153,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           error: state.error,
           thread: state.thread,
           pendingPlan: state.pendingPlan,
+          pendingBash: state.pendingBash,
           followUps: state.followUps,
           contextSnapshot: state.contextSnapshot,
           projectionReady: isProjectionFeedReady(state.runProjection),
@@ -187,6 +196,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ? extractPlanFailureMessage(thread.message)
         : null;
     final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
+    final pendingBash = session.pendingBash;
+    final showBashApproval =
+        pendingBash != null && pendingBash.threadId == thread?.id;
     final queuedFollowUps = queuedThreadFollowUps(
       session.followUps,
     ).where((item) => item.id != _editingFollowUpId).toList();
@@ -319,29 +331,96 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                     onApprove: () => _handlePlanApproval(approve: true),
                     onDismiss: () => _handlePlanApproval(approve: false),
                   ),
-                SessionComposer(
-                  controller: _promptController,
-                  attachments: _attachments,
-                  runtimeConfig: runtimeConfig,
-                  threadId: widget.threadId,
-                  isRunning: isRunning,
-                  canStopThread: canStopThread,
-                  followUpMode: followUpMode,
-                  sendBusy: _followUpBusy,
-                  hasActivity: session.projectionReady,
-                  inputHint: _editingFollowUpId != null
-                      ? '编辑引导消息…'
-                      : (showLanding ? composerLandingPlaceholder : null),
-                  contextSnapshot: session.contextSnapshot,
-                  threadStatus: thread?.status,
-                  onPickImage: _pickImage,
-                  onRemoveAttachment: (index) =>
-                      setState(() => _attachments.removeAt(index)),
-                  onSend: () => _sendMessage(runtimeConfig),
-                  onStop: () => _stopThread(),
-                  onRuntimeConfigChanged: (config) {
-                    ref.read(runtimeConfigProvider.notifier).state = config;
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 280),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(
+                        scale: Tween<double>(begin: 0.96, end: 1).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
+                        alignment: Alignment.bottomCenter,
+                        child: child,
+                      ),
+                    );
                   },
+                  child: showBashApproval
+                      ? BashApprovalPanel(
+                          key: ValueKey('bash-${pendingBash.toolUseId}'),
+                          request: pendingBash,
+                          busy: _bashApprovalBusy,
+                          onResolve: ({required decision, feedback}) async {
+                            setState(() => _bashApprovalBusy = true);
+                            try {
+                              await ref
+                                  .read(
+                                    threadSessionProvider(widget.threadId)
+                                        .notifier,
+                                  )
+                                  .resolveBash(
+                                    pendingBash.toolUseId,
+                                    decision,
+                                    feedback: feedback,
+                                  );
+                            } finally {
+                              if (mounted) {
+                                setState(() => _bashApprovalBusy = false);
+                              }
+                            }
+                          },
+                          onSkip: () async {
+                            setState(() => _bashApprovalBusy = true);
+                            try {
+                              await ref
+                                  .read(
+                                    threadSessionProvider(widget.threadId)
+                                        .notifier,
+                                  )
+                                  .resolveBash(
+                                    pendingBash.toolUseId,
+                                    'denied',
+                                  );
+                            } finally {
+                              if (mounted) {
+                                setState(() => _bashApprovalBusy = false);
+                              }
+                            }
+                          },
+                        )
+                      : SessionComposer(
+                          key: const ValueKey('session-composer'),
+                          controller: _promptController,
+                          attachments: _attachments,
+                          runtimeConfig: runtimeConfig,
+                          threadId: widget.threadId,
+                          isRunning: isRunning,
+                          canStopThread: canStopThread,
+                          followUpMode: followUpMode,
+                          sendBusy: _followUpBusy,
+                          hasActivity: session.projectionReady,
+                          inputHint: _editingFollowUpId != null
+                              ? '编辑引导消息…'
+                              : (showLanding
+                                    ? composerLandingPlaceholder
+                                    : null),
+                          contextSnapshot: session.contextSnapshot,
+                          threadStatus: thread?.status,
+                          onPickImage: _pickImage,
+                          onRemoveAttachment: (index) =>
+                              setState(() => _attachments.removeAt(index)),
+                          onSend: () => _sendMessage(runtimeConfig),
+                          onStop: () => _stopThread(),
+                          onRuntimeConfigChanged: (config) {
+                            ref.read(runtimeConfigProvider.notifier).state =
+                                config;
+                          },
+                        ),
                 ),
               ],
             ),
@@ -559,15 +638,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           );
         });
       });
-    } else if (session.pendingBash != null &&
-        session.pendingBash!.threadId == thread?.id) {
-      showBashApprovalSheet(
-        context: context,
-        request: session.pendingBash!,
-        onResolve: (decision) => ref
-            .read(threadSessionProvider(widget.threadId).notifier)
-            .resolveBash(session.pendingBash!.toolUseId, decision),
-      );
     } else if (session.pendingClarification != null &&
         session.pendingClarification!.threadId == thread?.id) {
       showClarificationSheet(

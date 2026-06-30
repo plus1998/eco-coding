@@ -21,8 +21,8 @@ test("registers and resolves pending Bash approvals", async () => {
 
   expect(getPendingBashApprovalForThread("thread_1")?.command).toBe("date");
   expect(getPendingBashApprovalByToolUseId("tool_bash_1")?.cwd).toBe("/repo");
-  expect(resolvePendingBashApproval("tool_bash_1", "approved")).toBe(true);
-  await expect(pending).resolves.toBe("approved");
+  expect(resolvePendingBashApproval("tool_bash_1", { decision: "approved" })).toBe(true);
+  await expect(pending).resolves.toEqual({ decision: "approved" });
   expect(getPendingBashApprovalForThread("thread_1")).toBeUndefined();
 });
 
@@ -40,5 +40,5 @@ test("cancels pending Bash approvals for a thread", async () => {
 
   cancelBashApprovalsForThread("thread_2", "cancelled by user");
   await expect(pending).rejects.toThrow("cancelled by user");
-  expect(resolvePendingBashApproval("tool_bash_2", "denied")).toBe(false);
+  expect(resolvePendingBashApproval("tool_bash_2", { decision: "denied" })).toBe(false);
 });

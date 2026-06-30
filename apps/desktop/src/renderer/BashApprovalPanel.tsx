@@ -1,52 +1,107 @@
-import { AlertTriangle, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { BashApprovalRequest } from "../shared/ipc";
+import { AlertTriangle, Pencil, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
+import {
+  BASH_APPROVAL_DENY_OPTION_LABEL,
+  BASH_APPROVAL_REMEMBER_PREFIX_INTRO,
+  formatBashApprovalRememberPrefix,
+  type BashApprovalChoice,
+} from "../shared/bash-approval-ui";
 import { ExpandablePreBlock } from "./ExpandablePreBlock";
+
+export interface BashApprovalResolutionInput {
+  decision: BashApprovalDecision;
+  feedback?: string;
+}
 
 interface BashApprovalPanelProps {
   request: BashApprovalRequest;
   busy?: boolean;
-  onApprove: () => void;
-  onDeny: () => void;
+  variant?: "feed" | "dock";
+  onResolve: (resolution: BashApprovalResolutionInput) => void;
+  onSkip: () => void;
 }
-
-type BashApprovalChoice = "approve" | "deny";
 
 interface BashApprovalOption {
   choice: BashApprovalChoice;
-  label: string;
 }
 
-export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashApprovalPanelProps) {
+const CIRCLED_OPTION_MARKERS = ["①", "②", "③", "④", "⑤"] as const;
+
+export function BashApprovalPanel({
+  request,
+  busy,
+  variant = "dock",
+  onResolve,
+  onSkip,
+}: BashApprovalPanelProps) {
   const [highlightIndex, setHighlightIndex] = useState(0);
-  const options = useMemo<BashApprovalOption[]>(
-    () => [
-      { choice: "approve", label: "是" },
-      { choice: "deny", label: "否，请告知 Agent 如何调整" },
-    ],
-    [],
-  );
+  const [denyFeedback, setDenyFeedback] = useState("");
+  const denyInputRef = useRef<HTMLInputElement>(null);
+  const rememberCommand = request.command.trim();
+  const rememberCommandPreview = formatBashApprovalRememberPrefix(rememberCommand);
+  const options = useMemo<BashApprovalOption[]>(() => {
+    const rows: BashApprovalOption[] = [{ choice: "approve" }];
+    if (!request.filesystemTool) {
+      rows.push({ choice: "approve_remember_prefix" });
+    }
+    rows.push({ choice: "deny" });
+    return rows;
+  }, [request.filesystemTool]);
+  const highlightedChoice = options[highlightIndex]?.choice;
+  const denyHighlighted = highlightedChoice === "deny";
+
+  function resolveChoice(choice: BashApprovalChoice) {
+    if (busy) {
+      return;
+    }
+    if (choice === "approve") {
+      onResolve({ decision: "approved" });
+      return;
+    }
+    if (choice === "approve_remember_prefix") {
+      onResolve({ decision: "approved_remember_prefix" });
+      return;
+    }
+    const feedback = denyFeedback.trim();
+    if (!feedback) {
+      denyInputRef.current?.focus();
+      return;
+    }
+    onResolve({ decision: "denied", feedback });
+  }
 
   function submitHighlightedChoice() {
     const option = options[highlightIndex];
-    if (!option || busy) {
+    if (!option) {
       return;
     }
-    if (option.choice === "approve") {
-      onApprove();
-      return;
-    }
-    onDeny();
+    resolveChoice(option.choice);
   }
+
+  useEffect(() => {
+    setHighlightIndex(0);
+    setDenyFeedback("");
+  }, [request.toolUseId]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (busy) {
         return;
       }
+      const target = event.target as HTMLElement | null;
+      const inDenyField = target === denyInputRef.current;
+
       if (event.key === "Escape") {
         event.preventDefault();
-        onDeny();
+        onSkip();
+        return;
+      }
+      if (inDenyField) {
+        if (event.key === "Enter" && denyFeedback.trim()) {
+          event.preventDefault();
+          onResolve({ decision: "denied", feedback: denyFeedback.trim() });
+        }
         return;
       }
       if (event.key === "ArrowDown") {
@@ -67,7 +122,7 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, highlightIndex, onApprove, onDeny, options]);
+  }, [busy, denyFeedback, highlightIndex, onResolve, onSkip, options]);
 
   const title =
     request.description?.trim() ||
@@ -80,6 +135,157 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
     : `正在运行 ${request.command}`;
   const panelLabel = request.filesystemTool ? "工具读取确认" : "Bash 执行确认";
   const detail = request.filesystemPath ?? request.command;
+  const docked = variant === "dock";
+
+  function renderOption(option: BashApprovalOption, optionIndex: number) {
+    const highlighted = highlightIndex === optionIndex;
+
+    if (option.choice === "deny") {
+      return (
+        <li key={option.choice}>
+          <div
+            className={[
+              "bash-approval-option-row",
+              "bash-approval-option-deny",
+              highlighted ? "is-highlighted" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onMouseEnter={() => setHighlightIndex(optionIndex)}
+          >
+            <span className="bash-approval-option-index" aria-hidden>
+              <Pencil size={14} strokeWidth={1.75} />
+            </span>
+            <input
+              ref={denyInputRef}
+              type="text"
+              className="bash-approval-option-deny-input"
+              disabled={busy}
+              value={denyFeedback}
+              placeholder={BASH_APPROVAL_DENY_OPTION_LABEL}
+              aria-label="告知 Eco 如何调整"
+              onFocus={() => setHighlightIndex(optionIndex)}
+              onChange={(event) => setDenyFeedback(event.target.value)}
+            />
+          </div>
+        </li>
+      );
+    }
+
+    if (option.choice === "approve_remember_prefix") {
+      return (
+        <li key={option.choice}>
+          <button
+            type="button"
+            role="option"
+            aria-selected={highlighted}
+            className={["bash-approval-option-row", highlighted ? "is-highlighted" : ""]
+              .filter(Boolean)
+              .join(" ")}
+            disabled={busy}
+            onMouseEnter={() => setHighlightIndex(optionIndex)}
+            onClick={() => {
+              setHighlightIndex(optionIndex);
+              resolveChoice(option.choice);
+            }}
+          >
+            <span className="bash-approval-option-index" aria-hidden>
+              {CIRCLED_OPTION_MARKERS[optionIndex] ?? `${optionIndex + 1}.`}
+            </span>
+            <span className="bash-approval-option-label bash-approval-option-remember">
+              <span className="bash-approval-option-remember-intro">{BASH_APPROVAL_REMEMBER_PREFIX_INTRO}</span>
+              <span className="bash-approval-option-remember-command" title={rememberCommand}>
+                {rememberCommandPreview}
+              </span>
+            </span>
+          </button>
+        </li>
+      );
+    }
+
+    return (
+      <li key={option.choice}>
+        <button
+          type="button"
+          role="option"
+          aria-selected={highlighted}
+          className={["bash-approval-option-row", highlighted ? "is-highlighted" : ""]
+            .filter(Boolean)
+            .join(" ")}
+          disabled={busy}
+          onMouseEnter={() => setHighlightIndex(optionIndex)}
+          onClick={() => {
+            setHighlightIndex(optionIndex);
+            resolveChoice(option.choice);
+          }}
+        >
+          <span className="bash-approval-option-index" aria-hidden>
+            {CIRCLED_OPTION_MARKERS[optionIndex] ?? `${optionIndex + 1}.`}
+          </span>
+          <span className="bash-approval-option-label">是</span>
+        </button>
+      </li>
+    );
+  }
+
+  const panelBody = (
+    <>
+      <header className="bash-approval-top">
+        <p className="bash-approval-title">{title}</p>
+        {!request.filesystemTool && !docked ? (
+          <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
+            <span className="bash-approval-risk-icon" aria-hidden>
+              <RiskLevelIcon level={request.riskLevel} />
+            </span>
+            <span className="bash-approval-risk-label">{formatRiskLevel(request.riskLevel)}</span>
+            <span className="bash-approval-risk-score">{request.riskScore}</span>
+          </span>
+        ) : null}
+      </header>
+
+      <ExpandablePreBlock
+        text={detail}
+        className="bash-approval-command-wrap"
+        wrapClassName="bash-approval-command-body-wrap"
+        preClassName="bash-approval-command"
+        fadeClassName="bash-approval-command-fade"
+        hintClassName="bash-approval-command-hint"
+        maxCollapsedHeight={112}
+      />
+
+      <ul className="bash-approval-option-list" role="listbox" aria-label="工具授权选项">
+        {options.map(renderOption)}
+      </ul>
+
+      <footer className="bash-approval-footer">
+        <button type="button" className="bash-approval-dismiss" disabled={busy} onClick={onSkip}>
+          跳过
+        </button>
+        <button
+          type="button"
+          className="bash-approval-submit"
+          disabled={busy || (denyHighlighted && !denyFeedback.trim())}
+          onClick={submitHighlightedChoice}
+        >
+          提交 <kbd aria-hidden>↵</kbd>
+        </button>
+      </footer>
+    </>
+  );
+
+  if (docked) {
+    return (
+      <div className="codex-composer is-compact bash-approval-dock-shell">
+        <div className="composer-primary bash-approval-dock-inner">{panelBody}</div>
+      </div>
+    );
+  }
+
+  const panel = (
+    <section className="bash-approval-panel codex-style" aria-label={panelLabel}>
+      {panelBody}
+    </section>
+  );
 
   return (
     <div className="bash-approval-shell">
@@ -89,76 +295,7 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
         </span>
         <span className="bash-approval-running-label">{runningLabel}</span>
       </div>
-
-      <section className="bash-approval-panel codex-style" aria-label={panelLabel}>
-        <header className="bash-approval-top">
-          <p className="bash-approval-title">{title}</p>
-          {!request.filesystemTool ? (
-            <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
-              <span className="bash-approval-risk-icon" aria-hidden>
-                <RiskLevelIcon level={request.riskLevel} />
-              </span>
-              <span className="bash-approval-risk-label">{formatRiskLevel(request.riskLevel)}</span>
-              <span className="bash-approval-risk-score">{request.riskScore}</span>
-            </span>
-          ) : null}
-        </header>
-
-        <ExpandablePreBlock
-          text={detail}
-          className="bash-approval-command-wrap"
-          wrapClassName="bash-approval-command-body-wrap"
-          preClassName="bash-approval-command"
-          fadeClassName="bash-approval-command-fade"
-          hintClassName="bash-approval-command-hint"
-          maxCollapsedHeight={160}
-        />
-
-        <ul className="bash-approval-option-list" role="listbox" aria-label="Bash 执行选项">
-          {options.map((option, optionIndex) => {
-            const highlighted = highlightIndex === optionIndex;
-            return (
-              <li key={option.choice}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={highlighted}
-                  className={["bash-approval-option-row", highlighted ? "is-highlighted" : ""]
-                    .filter(Boolean)
-                    .join(" ")}
-                  disabled={busy}
-                  onMouseEnter={() => setHighlightIndex(optionIndex)}
-                  onClick={() => {
-                    setHighlightIndex(optionIndex);
-                    if (option.choice === "approve") {
-                      onApprove();
-                      return;
-                    }
-                    onDeny();
-                  }}
-                >
-                  <span className="bash-approval-option-index">{optionIndex + 1}.</span>
-                  <span className="bash-approval-option-label">{option.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-
-        <footer className="bash-approval-footer">
-          <button type="button" className="bash-approval-dismiss" disabled={busy} onClick={onDeny}>
-            跳过
-          </button>
-          <button
-            type="button"
-            className="bash-approval-submit"
-            disabled={busy}
-            onClick={submitHighlightedChoice}
-          >
-            提交 <kbd>↵</kbd>
-          </button>
-        </footer>
-      </section>
+      {panel}
     </div>
   );
 }

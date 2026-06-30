@@ -2850,6 +2850,260 @@ html[data-window-focused="true"] .codex-sidebar {
   margin-top: 10px;
 }
 
+.composer-dock-morph {
+  width: 100%;
+  min-width: 0;
+}
+
+.composer-dock-morph-surface {
+  width: 100%;
+  min-width: 0;
+  animation: composer-dock-morph-enter 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  transform-origin: center bottom;
+}
+
+@keyframes composer-dock-morph-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.bash-approval-dock-shell.codex-composer {
+  width: 100%;
+}
+
+.bash-approval-dock-shell .composer-primary.bash-approval-dock-inner {
+  margin-bottom: 0;
+  padding: 18px 18px 14px;
+}
+
+.bash-approval-dock-shell .bash-approval-top {
+  margin-bottom: 10px;
+}
+
+.bash-approval-dock-shell .bash-approval-title {
+  margin: 0;
+  color: var(--codex-log-text);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.bash-approval-dock-shell .bash-approval-command-wrap {
+  margin: 0 0 12px;
+}
+
+.bash-approval-dock-shell .bash-approval-command {
+  margin: 0;
+  color: var(--codex-log-muted);
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.bash-approval-dock-shell .bash-approval-command-fade {
+  align-items: flex-end;
+  justify-content: flex-end;
+  height: 40px;
+  padding: 0 2px 1px 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--composer-surface-bg) 78%);
+  pointer-events: none;
+}
+
+.bash-approval-dock-shell .bash-approval-command-hint {
+  margin: 0;
+  padding: 0;
+  color: var(--codex-log-muted);
+  font-size: 13px;
+  font-weight: 400;
+  pointer-events: auto;
+}
+
+.bash-approval-dock-shell .bash-approval-command-hint:hover {
+  color: var(--codex-log-text);
+}
+
+.bash-approval-dock-shell .bash-approval-option-list {
+  margin: 2px 0 0;
+}
+
+.bash-approval-dock-shell .bash-approval-option-row {
+  gap: 8px;
+  margin-bottom: 0;
+  padding: 7px 4px;
+  border-radius: 8px;
+}
+
+.bash-approval-dock-shell .bash-approval-option-row.is-highlighted,
+.bash-approval-dock-shell .bash-approval-option-row:hover:not(:disabled),
+.bash-approval-dock-shell .bash-approval-option-row:focus-visible {
+  background: color-mix(in srgb, var(--codex-log-text) 5%, transparent);
+}
+
+.bash-approval-dock-shell .bash-approval-option-index {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  color: var(--codex-log-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.bash-approval-dock-shell .bash-approval-option-label {
+  color: var(--codex-log-text);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.bash-approval-option-remember {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bash-approval-option-remember-intro {
+  flex-shrink: 0;
+}
+
+.bash-approval-option-remember-command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--codex-log-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.bash-approval-option-deny {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: text;
+}
+
+.bash-approval-option-deny-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--codex-log-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.bash-approval-option-deny-input:disabled {
+  opacity: 0.6;
+}
+
+.bash-approval-option-deny-input::placeholder {
+  color: var(--codex-log-faint);
+}
+
+.bash-approval-dock-shell .bash-approval-deny-input-wrap {
+  margin-top: 6px;
+}
+
+.bash-approval-dock-shell .bash-approval-deny-input {
+  border-color: var(--composer-primary-border);
+  border-radius: 10px;
+  background: var(--composer-surface-bg);
+  color: var(--codex-log-text);
+  font-size: 14px;
+}
+
+.bash-approval-dock-shell .bash-approval-footer {
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: none;
+}
+
+.bash-approval-dock-shell .bash-approval-dismiss {
+  padding: 8px 10px;
+  color: var(--codex-log-muted);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.bash-approval-dock-shell .bash-approval-dismiss:hover:not(:disabled) {
+  color: var(--codex-log-text);
+}
+
+.bash-approval-dock-shell .bash-approval-submit {
+  min-height: 34px;
+  padding: 7px 16px;
+  background: #0d0d0d;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.bash-approval-dock-shell .bash-approval-submit:hover:not(:disabled) {
+  background: #262626;
+}
+
+.bash-approval-dock-shell .bash-approval-submit:disabled {
+  opacity: 0.4;
+}
+
+.bash-approval-dock-shell .bash-approval-footer kbd {
+  margin-left: 4px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.bash-approval-deny-input-wrap {
+  margin-top: 8px;
+}
+
+.bash-approval-deny-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--composer-primary-border);
+  border-radius: 12px;
+  background: var(--composer-surface-bg);
+  color: var(--codex-log-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.bash-approval-deny-input:focus {
+  outline: none;
+  border-color: var(--composer-pill-hover-border, #bbb);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
+}
+
+.bash-approval-deny-input:disabled {
+  opacity: 0.6;
+}
+
 .bash-approval-running {
   display: flex;
   max-width: 100%;
@@ -3065,6 +3319,10 @@ html[data-window-focused="true"] .codex-sidebar {
   text-align: left;
   cursor: pointer;
   font: inherit;
+}
+
+.bash-approval-option-row.bash-approval-option-deny {
+  cursor: text;
 }
 
 .bash-approval-option-row.is-highlighted {
@@ -14456,6 +14714,30 @@ html[data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-action:disabled:hover {
   background: transparent;
   color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-dock-shell .bash-approval-command-fade {
+  background: linear-gradient(to bottom, rgba(26, 26, 26, 0), var(--composer-surface-bg) 78%);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-dock-shell .bash-approval-submit {
+  background: var(--composer-send-bg);
+  color: var(--composer-send-text);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-dock-shell .bash-approval-submit:hover:not(:disabled) {
+  background: var(--composer-send-hover-bg);
+  color: var(--composer-send-hover-text);
+}
+
+[data-theme="light"] .bash-approval-dock-shell .bash-approval-submit {
+  background: #0d0d0d;
+  color: #ffffff;
+}
+
+[data-theme="light"] .bash-approval-dock-shell .bash-approval-submit:hover:not(:disabled) {
+  background: #262626;
+  color: #ffffff;
 }
 
 .codex-main:not(.codex-main-landing) .clarification-answer-card,

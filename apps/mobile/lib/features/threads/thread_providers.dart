@@ -710,10 +710,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     });
   }
 
-  Future<void> resolveBash(String toolUseId, String decision) async {
-    await ref
-        .read(desktopRpcProvider)
-        ?.resolveBashApproval(toolUseId: toolUseId, decision: decision);
+  Future<void> resolveBash(
+    String toolUseId,
+    String decision, {
+    String? feedback,
+  }) async {
+    await ref.read(desktopRpcProvider)?.resolveBashApproval(
+          toolUseId: toolUseId,
+          decision: decision,
+          feedback: feedback,
+        );
     state = state.copyWith(clearBash: true);
   }
 

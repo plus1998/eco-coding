@@ -1043,11 +1043,13 @@ export interface BashApprovalRequest {
   filesystemPath?: string;
 }
 
-export type BashApprovalDecision = "approved" | "denied";
+export type BashApprovalDecision = "approved" | "approved_remember_prefix" | "denied";
 
 export interface BashApprovalResolvePayload {
   toolUseId: string;
   decision: BashApprovalDecision;
+  /** When denying, optional instructions for Eco on how to adjust. */
+  feedback?: string;
 }
 
 export interface PlanApprovalRequest {

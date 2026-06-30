@@ -181,12 +181,18 @@ class DesktopRpc {
   Future<void> resolveBashApproval({
     required String toolUseId,
     required String decision,
+    String? feedback,
   }) async {
     await _client.invoke(
       desktopDeviceId,
       'bash-approval:resolve',
       [
-        {'toolUseId': toolUseId, 'decision': decision},
+        {
+          'toolUseId': toolUseId,
+          'decision': decision,
+          if (feedback != null && feedback.trim().isNotEmpty)
+            'feedback': feedback.trim(),
+        },
       ],
     );
   }
