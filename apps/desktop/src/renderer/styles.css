@@ -5905,16 +5905,6 @@ html[data-window-focused="true"] .codex-sidebar {
   color: var(--codex-log-text, #c8c8c8);
 }
 
-.run-log-grep-target.is-running {
-  color: var(--codex-log-faint, rgba(255, 255, 255, 0.52));
-}
-
-.run-log-grep-target.is-running .run-log-grep-target-verb,
-.run-log-grep-target.is-running .run-log-grep-target-detail {
-  color: inherit;
-  font-weight: 400;
-}
-
 .run-log-read-target.is-failed .run-log-read-target-verb,
 .run-log-grep-target.is-failed .run-log-grep-target-verb {
   color: #f87171;
@@ -13878,16 +13868,6 @@ html[data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-read-target.is-running .run-log-read-target-verb,
 .codex-main:not(.codex-main-landing) .run-log-grep-target.is-running .run-log-grep-target-verb {
   color: var(--codex-log-text);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-grep-target.is-running {
-  color: var(--codex-log-faint);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-grep-target.is-running .run-log-grep-target-verb,
-.codex-main:not(.codex-main-landing) .run-log-grep-target.is-running .run-log-grep-target-detail {
-  color: inherit;
-  font-weight: 400;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {

@@ -2516,6 +2516,99 @@ test("projectionItemToDetailBlock maps Read tool.started with structured line ra
   });
 });
 
+test("buildThreadRunProjectionViewModel hides Reading progress rows when structured Read exists", () => {
+  const viewModel = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "read-progress",
+          eventType: "tool.started",
+          text: "Reading src/pages/Home/CtLossUser.vue",
+          sequence: 1,
+          metadata: {
+            tool: {
+              name: "Read",
+              detail: "Reading src/pages/Home/CtLossUser.vue",
+              toolUseId: "toolu_read_progress",
+            },
+          },
+        }),
+        item({
+          id: "read-structured",
+          eventType: "tool.completed",
+          text: "Tool: Read · CtLossUser.vue:L810-869",
+          sequence: 2,
+          metadata: {
+            tool: {
+              name: "Read",
+              detail: "CtLossUser.vue:L810-869",
+              toolUseId: "toolu_read_structured",
+              status: "completed",
+              readTarget: {
+                filePath: "/repo/src/pages/Home/CtLossUser.vue",
+                offset: 810,
+                limit: 60,
+              },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+
+  expect(viewModel.mainFeedEntries).toHaveLength(1);
+  expect(viewModel.mainFeedEntries[0]).toMatchObject({
+    kind: "timeline",
+    item: { id: "read-structured" },
+  });
+});
+
+test("buildThreadRunProjectionViewModel hides Searching progress rows when structured Grep exists", () => {
+  const viewModel = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "grep-progress",
+          eventType: "tool.started",
+          text: "Searching file read display card format UI comp",
+          sequence: 1,
+          metadata: {
+            tool: {
+              name: "Grep",
+              detail: "Searching file read display card format UI comp",
+              toolUseId: "toolu_grep_progress",
+            },
+          },
+        }),
+        item({
+          id: "grep-structured",
+          eventType: "tool.completed",
+          text: "Tool: Grep · Read.*\\.tsx · src",
+          sequence: 2,
+          metadata: {
+            tool: {
+              name: "Grep",
+              detail: "Read.*\\.tsx · src",
+              toolUseId: "toolu_grep_structured",
+              status: "completed",
+              grepTarget: {
+                pattern: String.raw`Read.*\.tsx`,
+                path: "src",
+              },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+
+  expect(viewModel.mainFeedEntries).toHaveLength(1);
+  expect(viewModel.mainFeedEntries[0]).toMatchObject({
+    kind: "timeline",
+    item: { id: "grep-structured" },
+  });
+});
+
 test("projectionItemToDetailBlock maps planner Agent tool.started with metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({
@@ -3011,6 +3104,10 @@ test("projectionItemToDetailBlock omits tool role badge and resolves icon from t
     icon: "file",
     label: "index.vue",
     lifecycle: "completed",
+    readTarget: {
+      fileName: "index.vue",
+      filePath: "index.vue",
+    },
   });
 });
 

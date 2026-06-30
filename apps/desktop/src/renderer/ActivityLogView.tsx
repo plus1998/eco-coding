@@ -266,7 +266,7 @@ function ProjectionActivityLogView({
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange || block.readTarget || block.grepTarget)) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange)) {
     return false;
   }
   return (
@@ -1801,32 +1801,20 @@ function RunLogGrepTargetLine({
   grepTarget: import("../shared/tool-target").GrepToolTargetDisplay;
   lifecycle?: ToolActionLifecycle;
 }) {
-  const isRunning = lifecycle === "running";
-  const detail = formatGrepTargetInlineDetail(grepTarget);
-  const displayDetail = isRunning ? truncateInlineToolDetail(detail) : detail;
-
   return (
     <p
       className={[
         "run-log-grep-target",
-        isRunning ? "is-running" : "",
+        lifecycle === "running" ? "is-running" : "",
         lifecycle === "failed" ? "is-failed" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <span className="run-log-grep-target-verb">{isRunning ? "Searching" : "Grepped"}</span>{" "}
-      <span className="run-log-grep-target-detail">{displayDetail}</span>
+      <span className="run-log-grep-target-verb">Grepped</span>{" "}
+      <span className="run-log-grep-target-detail">{formatGrepTargetInlineDetail(grepTarget)}</span>
     </p>
   );
-}
-
-function truncateInlineToolDetail(text: string, max = 56): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= max) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, max - 1)}…`;
 }
 
 function RunLogFileChangeCard({

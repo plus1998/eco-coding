@@ -104,6 +104,10 @@ export function shouldClearReconnectActivity(line: { message: string; role: stri
   return false;
 }
 
+export function isToolProgressStatusText(text: string): boolean {
+  return /^(Reading|Writing|Editing|Searching|Running)\s+/i.test(text.trim());
+}
+
 const PROGRESS_PATTERNS: Array<{ pattern: RegExp; verb: string }> = [
   { pattern: /^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$/i, verb: "读取" },
   { pattern: /^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$/i, verb: "写入" },

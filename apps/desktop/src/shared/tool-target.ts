@@ -7,6 +7,7 @@ import {
   type SdkGrepToolTarget,
   type SdkReadToolTarget,
 } from "@eco/runtime/tool-target";
+import { isToolProgressStatusText } from "./activity-display";
 
 export type { SdkGrepToolTarget as ThreadRunGrepToolTarget, SdkReadToolTarget as ThreadRunReadToolTarget };
 
@@ -40,6 +41,8 @@ export function formatThreadRunToolDetailLabel(tool: {
   return tool.detail?.trim() || undefined;
 }
 
+const READ_TOOL_NAMES = new Set(["Read", "NotebookRead"]);
+
 export function resolveReadToolTargetDisplay(
   target: SdkReadToolTarget | undefined,
 ): ReadToolTargetDisplay | undefined {
@@ -58,6 +61,43 @@ export function resolveReadToolTargetDisplay(
   };
 }
 
+export function resolveReadToolTargetDisplayFromDetail(
+  detail: string | undefined,
+): ReadToolTargetDisplay | undefined {
+  const trimmed = detail?.trim();
+  if (!trimmed || isToolProgressStatusText(trimmed)) {
+    return undefined;
+  }
+  const lineRangeMatch = trimmed.match(/^(.+?):L(\d+)(?:-(\d+))?$/);
+  if (lineRangeMatch) {
+    const filePath = lineRangeMatch[1]!;
+    const offset = Number(lineRangeMatch[2]);
+    const end = lineRangeMatch[3] ? Number(lineRangeMatch[3]) : undefined;
+    const limit = end !== undefined ? Math.max(1, end - offset + 1) : undefined;
+    return resolveReadToolTargetDisplay({
+      filePath,
+      offset,
+      ...(limit !== undefined && { limit }),
+    });
+  }
+  return resolveReadToolTargetDisplay({ filePath: trimmed });
+}
+
+export function resolveReadToolTargetDisplayFromToolMetadata(tool: {
+  name: string;
+  detail?: string;
+  readTarget?: SdkReadToolTarget;
+}): ReadToolTargetDisplay | undefined {
+  const fromTarget = resolveReadToolTargetDisplay(tool.readTarget);
+  if (fromTarget) {
+    return fromTarget;
+  }
+  if (!READ_TOOL_NAMES.has(tool.name)) {
+    return undefined;
+  }
+  return resolveReadToolTargetDisplayFromDetail(tool.detail);
+}
+
 export function resolveGrepToolTargetDisplay(
   target: SdkGrepToolTarget | undefined,
 ): GrepToolTargetDisplay | undefined {
@@ -74,6 +114,64 @@ export function resolveGrepToolTargetDisplay(
     ...(glob && { glob }),
     ...(scopeLabel && { scopeLabel }),
   };
+}
+
+export function resolveGrepToolTargetDisplayFromDetail(
+  detail: string | undefined,
+): GrepToolTargetDisplay | undefined {
+  const trimmed = detail?.trim();
+  if (!trimmed || isToolProgressStatusText(trimmed)) {
+    return undefined;
+  }
+  if (trimmed.includes("|")) {
+    const parts = trimmed.split("|").map((part) => part.trim()).filter(Boolean);
+    const pattern = parts[0];
+    if (!pattern) {
+      return undefined;
+    }
+    let path: string | undefined;
+    let glob: string | undefined;
+    for (const part of parts.slice(1)) {
+      if (part.startsWith("glob:")) {
+        glob = part.slice("glob:".length);
+      } else {
+        path = part;
+      }
+    }
+    return resolveGrepToolTargetDisplay({
+      pattern,
+      ...(path && { path }),
+      ...(glob && { glob }),
+    });
+  }
+  const dotScopeMatch = trimmed.match(/^(.+?)\s·\s(.+)$/);
+  if (dotScopeMatch) {
+    const pattern = dotScopeMatch[1]!.trim();
+    const scope = dotScopeMatch[2]!.trim();
+    if (!pattern) {
+      return undefined;
+    }
+    if (scope.startsWith("glob:")) {
+      return resolveGrepToolTargetDisplay({ pattern, glob: scope.slice("glob:".length) });
+    }
+    return resolveGrepToolTargetDisplay({ pattern, path: scope });
+  }
+  return resolveGrepToolTargetDisplay({ pattern: trimmed });
+}
+
+export function resolveGrepToolTargetDisplayFromToolMetadata(tool: {
+  name: string;
+  detail?: string;
+  grepTarget?: SdkGrepToolTarget;
+}): GrepToolTargetDisplay | undefined {
+  const fromTarget = resolveGrepToolTargetDisplay(tool.grepTarget);
+  if (fromTarget) {
+    return fromTarget;
+  }
+  if (tool.name !== "Grep") {
+    return undefined;
+  }
+  return resolveGrepToolTargetDisplayFromDetail(tool.detail);
 }
 
 export function formatThreadRunReadTargetLabel(target: SdkReadToolTarget): string {

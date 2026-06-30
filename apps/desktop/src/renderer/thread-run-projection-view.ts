@@ -10,6 +10,7 @@ import {
   compareToolActionLifecyclePriority,
   formatToolDisplayLabel,
   formatToolStatusPreview,
+  isToolProgressStatusText,
   resolveBashRunCardDisplay,
   resolveFileChangeCardDisplay,
   readBashApprovalMetadata,
@@ -19,7 +20,8 @@ import {
 import {
   formatThreadRunToolDetailLabel,
   resolveGrepToolTargetDisplay,
-  resolveReadToolTargetDisplay,
+  resolveGrepToolTargetDisplayFromToolMetadata,
+  resolveReadToolTargetDisplayFromToolMetadata,
 } from "../shared/tool-target";
 import {
   isReconnectActivityOrigin,
@@ -336,7 +338,8 @@ function filterProjectionTimelineForDetailFeed(
   );
 
   return filterToolFailureDuplicateTimelineItems(
-    displayTimeline.filter((item) => {
+    filterProjectionToolProgressNoiseItems(
+      displayTimeline.filter((item) => {
     if (isProjectionRequestCompletionItem(item)) {
       return false;
     }
@@ -384,7 +387,90 @@ function filterProjectionTimelineForDetailFeed(
     }
     return true;
     }),
+    ),
   );
+}
+
+function filterProjectionToolProgressNoiseItems(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  return timeline.filter((item) => !isProjectionToolProgressNoiseItem(item, timeline));
+}
+
+function isStructuredFilesystemToolItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (item.eventType !== "tool.started" && item.eventType !== "tool.completed") {
+    return false;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  if (!metadataTool) {
+    return false;
+  }
+  return Boolean(
+    resolveReadToolTargetDisplayFromToolMetadata(metadataTool) ||
+      resolveGrepToolTargetDisplayFromToolMetadata(metadataTool),
+  );
+}
+
+function isFilesystemToolEvent(item: ThreadRunProjectionTimelineItem): boolean {
+  if (item.eventType !== "tool.started" && item.eventType !== "tool.completed") {
+    return false;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  if (!metadataTool) {
+    return false;
+  }
+  return (
+    metadataTool.name === "Read" ||
+    metadataTool.name === "NotebookRead" ||
+    metadataTool.name === "Grep"
+  );
+}
+
+function isProjectionToolProgressNoiseItem(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  const metadataTool = readProjectionToolMetadata(item);
+  const text = item.text.trim();
+  const detail = metadataTool?.detail?.trim() ?? "";
+
+  if (item.eventType === "thread.status" && isToolProgressStatusText(text)) {
+    return true;
+  }
+
+  if (item.eventType === "message.delta" || item.eventType === "message.final") {
+    if (!isToolProgressStatusText(text)) {
+      return false;
+    }
+    return timeline.some(
+      (other) =>
+        other.id !== item.id &&
+        (isStructuredFilesystemToolItem(other) || isFilesystemToolEvent(other)),
+    );
+  }
+
+  if (item.eventType !== "tool.started" && item.eventType !== "tool.completed") {
+    return false;
+  }
+
+  if (isStructuredFilesystemToolItem(item)) {
+    return false;
+  }
+
+  if (!metadataTool) {
+    return isToolProgressStatusText(text);
+  }
+
+  const isFilesystemTool =
+    metadataTool.name === "Read" ||
+    metadataTool.name === "NotebookRead" ||
+    metadataTool.name === "Grep";
+
+  if (!isFilesystemTool) {
+    return false;
+  }
+
+  return isToolProgressStatusText(text) || isToolProgressStatusText(detail);
 }
 
 function buildLatestActiveRequestStartedByOwner(
@@ -1400,8 +1486,8 @@ function buildProjectionToolActionBlock(
     ...(description && { description }),
   });
   const fileChange = resolveFileChangeCardDisplay(metadataTool?.fileChange);
-  const readTarget = resolveReadToolTargetDisplay(metadataTool?.readTarget);
-  const grepTarget = resolveGrepToolTargetDisplay(metadataTool?.grepTarget);
+  const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
+  const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   return {
     kind: "action",
     icon: iconForToolName(input.toolName),
