@@ -8,6 +8,7 @@ import 'core/providers/app_session.dart';
 import 'core/providers/app_theme_provider.dart';
 import 'core/theme/eco_icons.dart';
 import 'core/theme/eco_theme.dart';
+import 'core/widgets/liquid_glass_nav_bar.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
 import 'features/settings/settings_screen.dart';
@@ -110,29 +111,24 @@ class MainShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = ecoColors(context);
     return Scaffold(
+      extendBody: true,
       body: navigationShell,
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: colors.borderSidebar)),
-        ),
-        child: NavigationBar(
-          selectedIndex: navigationShell.currentIndex,
-          onDestinationSelected: navigationShell.goBranch,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(EcoIcons.sessions),
-              selectedIcon: Icon(EcoIcons.sessionsSelected),
-              label: '会话',
-            ),
-            NavigationDestination(
-              icon: Icon(EcoIcons.settings),
-              selectedIcon: Icon(EcoIcons.settings),
-              label: '设置',
-            ),
-          ],
-        ),
+      bottomNavigationBar: LiquidGlassNavBar(
+        selectedIndex: navigationShell.currentIndex,
+        onDestinationSelected: navigationShell.goBranch,
+        destinations: const [
+          LiquidGlassNavDestination(
+            icon: EcoIcons.sessions,
+            selectedIcon: EcoIcons.sessionsSelected,
+            label: '会话',
+          ),
+          LiquidGlassNavDestination(
+            icon: EcoIcons.settings,
+            selectedIcon: EcoIcons.settings,
+            label: '设置',
+          ),
+        ],
       ),
     );
   }

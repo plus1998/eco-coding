@@ -210,133 +210,150 @@ class _ProjectHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(8),
-        splashColor: eco.navHover,
-        highlightColor: eco.navHover,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(
-                project.isHome
-                    ? EcoIcons.home
-                    : isCollapsed
-                        ? EcoIcons.folder
-                        : EcoIcons.folderOpen,
-                size: 16,
-                color: eco.textMuted.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: onLongPress,
+              borderRadius: BorderRadius.circular(8),
+              splashColor: eco.navHover,
+              highlightColor: eco.navHover,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        if (isPinned) ...[
-                          Icon(
-                            EcoIcons.pin,
-                            size: 11,
-                            color: eco.textMuted.withValues(alpha: 0.65),
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        Flexible(
-                          child: Text(
-                            project.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(
-                                  fontSize: (Theme.of(context)
-                                              .textTheme
-                                              .titleSmall
-                                              ?.fontSize ??
-                                          14) *
-                                      1.2,
-                                  fontWeight: FontWeight.w500,
-                                  letterSpacing: -0.25,
-                                  color: eco.textPrimary,
-                                ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: isCollapsed ? 0 : 0.25,
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOut,
-                          child: Icon(
-                            EcoIcons.chevronRight,
-                            size: 15,
-                            color: eco.textMuted.withValues(alpha: 0.7),
-                          ),
-                        ),
-                        if (isCollapsed && threadCount > 0) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '$threadCount',
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: eco.textMuted.withValues(alpha: 0.7),
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                          ),
-                        ],
-                      ],
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(
+                        project.isHome
+                            ? EcoIcons.home
+                            : isCollapsed
+                                ? EcoIcons.folder
+                                : EcoIcons.folderOpen,
+                        size: 16,
+                        color: eco.textMuted.withValues(alpha: 0.8),
+                      ),
                     ),
-                    const SizedBox(height: 3),
-                    if (!project.isHome)
-                      Text(
-                        project.path,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: eco.textMuted.withValues(alpha: 0.8),
-                              fontSize: 11,
-                              letterSpacing: 0.05,
-                              height: 1.3,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (isPinned) ...[
+                                Icon(
+                                  EcoIcons.pin,
+                                  size: 11,
+                                  color: eco.textMuted.withValues(alpha: 0.65),
+                                ),
+                                const SizedBox(width: 5),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  project.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        fontSize: (Theme.of(context)
+                                                    .textTheme
+                                                    .titleSmall
+                                                    ?.fontSize ??
+                                                14) *
+                                            1.2,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: -0.25,
+                                        color: eco.textPrimary,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              AnimatedRotation(
+                                turns: isCollapsed ? 0 : 0.25,
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOut,
+                                child: Icon(
+                                  EcoIcons.chevronRight,
+                                  size: 15,
+                                  color: eco.textMuted.withValues(alpha: 0.7),
+                                ),
+                              ),
+                              if (isCollapsed && threadCount > 0) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  '$threadCount',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: eco.textMuted
+                                            .withValues(alpha: 0.7),
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          if (!project.isHome)
+                            Text(
+                              project.path,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: eco.textMuted.withValues(alpha: 0.8),
+                                    fontSize: 11,
+                                    letterSpacing: 0.05,
+                                    height: 1.3,
+                                  ),
                             ),
+                          if (shouldShowProjectBranch(project.branch))
+                            Padding(
+                              padding:
+                                  EdgeInsets.only(top: project.isHome ? 0 : 3),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: _BranchLabel(label: project.branch!),
+                              ),
+                            ),
+                        ],
                       ),
-                    if (shouldShowProjectBranch(project.branch))
-                      Padding(
-                        padding: EdgeInsets.only(top: project.isHome ? 0 : 3),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _BranchLabel(label: project.branch!),
-                        ),
-                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: '新建会话',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
-                ),
-                icon: Icon(
-                  EcoIcons.newThread,
-                  size: 17,
-                  color: eco.textMuted.withValues(alpha: 0.65),
-                ),
-                onPressed: onNewThread,
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        IconButton(
+          tooltip: '新建会话',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(
+            minWidth: 32,
+            minHeight: 32,
+          ),
+          icon: Icon(
+            EcoIcons.newThread,
+            size: 17,
+            color: eco.textMuted.withValues(alpha: 0.65),
+          ),
+          onPressed: onNewThread,
+        ),
+      ],
     );
   }
 }

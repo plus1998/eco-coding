@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/project_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/liquid_glass_nav_bar.dart';
 import '../projects/project_list_widgets.dart';
 import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
@@ -57,7 +58,10 @@ class ThreadsScreen extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () => refreshProjectsAndThreads(ref),
             child: ListView.builder(
-              padding: const EdgeInsets.only(top: 8, bottom: 32),
+              padding: EdgeInsets.only(
+                top: 8,
+                bottom: liquidGlassNavOverlayInset(context),
+              ),
               itemCount: projects.length,
               itemBuilder: (context, index) {
                 final project = projects[index];

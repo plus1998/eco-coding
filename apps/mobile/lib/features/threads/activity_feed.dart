@@ -1017,6 +1017,8 @@ class _BashRunCardState extends State<_BashRunCard> {
                     Expanded(
                       child: Text(
                         display.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
                               color: ecoColors(context).textHeading,

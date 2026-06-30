@@ -9,6 +9,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
 import 'composer_toolbar_icon.dart';
+import 'voice_dictation_overlay.dart';
 
 class SessionComposer extends ConsumerStatefulWidget {
   const SessionComposer({
@@ -59,6 +60,7 @@ class SessionComposer extends ConsumerStatefulWidget {
 class _SessionComposerState extends ConsumerState<SessionComposer> {
   final _focusNode = FocusNode();
   bool _speechBusy = false;
+  OverlayEntry? _speechOverlayEntry;
 
   @override
   void initState() {
@@ -81,9 +83,26 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   @override
   void dispose() {
+    _removeSpeechOverlay();
     widget.controller.removeListener(_handleControllerChanged);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _showSpeechOverlay() {
+    if (!mounted || _speechOverlayEntry != null) return;
+    final overlay = Overlay.of(context);
+    _speechOverlayEntry = OverlayEntry(
+      builder: (context) => VoiceDictationOverlay(
+        onStop: _handleSpeechInput,
+      ),
+    );
+    overlay.insert(_speechOverlayEntry!);
+  }
+
+  void _removeSpeechOverlay() {
+    _speechOverlayEntry?.remove();
+    _speechOverlayEntry = null;
   }
 
   bool get _hasContent =>
@@ -125,6 +144,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     }
 
     setState(() => _speechBusy = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _speechBusy) {
+        _showSpeechOverlay();
+      }
+    });
     try {
       final text = await recognizer.recognize();
       if (!mounted) return;
@@ -148,6 +172,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       }
     } finally {
       if (mounted) {
+        _removeSpeechOverlay();
         setState(() => _speechBusy = false);
       }
     }
@@ -296,11 +321,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           ComposerToolbarIconButton(
                             onPressed: _handleSpeechInput,
                             tooltip: _speechBusy ? '停止语音输入' : '语音输入',
-                            color: _speechBusy ? ecoColors(context).statusDenyText : null,
+                            color: _speechBusy ? ecoColors(context).accent : null,
                             icon: ComposerToolbarIcon(
                               icon: _speechBusy ? EcoIcons.stop : EcoIcons.mic,
                               color: _speechBusy
-                                  ? ecoColors(context).statusDenyText
+                                  ? ecoColors(context).accent
                                   : ecoColors(context).textSecondary,
                             ),
                           ),

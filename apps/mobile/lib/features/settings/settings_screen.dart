@@ -10,7 +10,27 @@ import '../../core/providers/app_theme_provider.dart';
 import '../../core/theme/app_theme_preference.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/liquid_glass_nav_bar.dart';
 import '../threads/thread_providers.dart';
+
+const settingsFontScale = 1.2;
+
+TextStyle? _scaledSettingsTextStyle(TextStyle? style) {
+  if (style == null) return null;
+  final fontSize = style.fontSize;
+  if (fontSize == null) return style;
+  return style.copyWith(fontSize: fontSize * settingsFontScale);
+}
+
+ThemeData _settingsTheme(BuildContext context) {
+  final base = Theme.of(context);
+  return base.copyWith(
+    textTheme: base.textTheme.apply(fontSizeFactor: settingsFontScale),
+    appBarTheme: base.appBarTheme.copyWith(
+      titleTextStyle: _scaledSettingsTextStyle(base.appBarTheme.titleTextStyle),
+    ),
+  );
+}
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -65,7 +85,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final credentials = ref.watch(credentialsProvider);
 
-    return Scaffold(
+    return Theme(
+      data: _settingsTheme(context),
+      child: Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
@@ -74,7 +96,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 final signedIn =
                     creds.hasUserSession || creds.isProvisioned;
                 return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    8,
+                    20,
+                    liquidGlassNavOverlayInset(context),
+                  ),
                   children: [
                     _AccountHeader(
                       email: creds.userEmail ?? '未登录',
@@ -164,6 +191,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               error: (error, _) => Center(child: Text(error.toString())),
             ),
+    ),
     );
   }
 }
@@ -367,7 +395,6 @@ class _ThemePill extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontSize: 13,
                   fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
                   color: selected ? eco.textPrimary : eco.textMuted,
                   letterSpacing: -0.1,
@@ -417,22 +444,20 @@ class _SessionModeOption extends StatelessWidget {
             color: selected ? eco.navActive : Colors.transparent,
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 1),
-                child: Icon(
-                  _iconForMode(option.value),
-                  size: 17,
-                  color: selected
-                      ? eco.textSecondary
-                      : eco.textMuted.withValues(alpha: 0.75),
-                ),
+              Icon(
+                _iconForMode(option.value),
+                size: 17,
+                color: selected
+                    ? eco.textSecondary
+                    : eco.textMuted.withValues(alpha: 0.75),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       option.title,
@@ -443,12 +468,28 @@ class _SessionModeOption extends StatelessWidget {
                           ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      option.description,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textMuted.withValues(alpha: 0.85),
-                            height: 1.4,
-                          ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          option.description,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color:
+                                    eco.textMuted.withValues(alpha: 0.85),
+                                fontSize: 11,
+                                height: 1.2,
+                                letterSpacing: -0.1,
+                              ),
+                        ),
+                      ),
                     ),
                   ],
                 ),

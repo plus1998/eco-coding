@@ -128,6 +128,8 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
               children: [
                 Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.w400,
                         height: 1.5,
