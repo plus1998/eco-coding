@@ -15,6 +15,7 @@ import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
 import '../approvals/approval_sheets.dart';
 import '../approvals/bash_approval_panel.dart';
+import '../approvals/plan_approval_panel.dart';
 import '../composer/composer_dock_shell.dart';
 import '../composer/follow_up_queue_bar.dart';
 import '../composer/session_composer.dart';
@@ -46,8 +47,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   String? _shownApprovalKey;
-  bool _planApprovalSheetOpen = false;
   bool _bashApprovalBusy = false;
+  bool _planActionBusy = false;
   bool _followUpBusy = false;
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
@@ -114,10 +115,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   String? _approvalKey(ThreadSessionState session) {
     final thread = session.thread;
     if (thread == null) return null;
-    if (session.pendingPlan != null &&
-        session.pendingPlan!.threadId == thread.id) {
-      return 'plan:${session.pendingPlan!.threadId}';
-    }
     if (session.pendingClarification != null &&
         session.pendingClarification!.threadId == thread.id) {
       return 'clarification:${session.pendingClarification!.toolUseId}';
@@ -128,10 +125,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   bool _needsApprovalSheet(ThreadSessionState session) {
     final thread = session.thread;
     if (thread == null) return false;
-    if (session.pendingPlan != null &&
-        session.pendingPlan!.threadId == thread.id) {
-      return true;
-    }
     if (session.pendingClarification != null &&
         session.pendingClarification!.threadId == thread.id) {
       return true;
@@ -197,8 +190,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         : null;
     final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
     final pendingBash = session.pendingBash;
+    final pendingPlan = session.pendingPlan;
     final showBashApproval =
         pendingBash != null && pendingBash.threadId == thread?.id;
+    final showPlanApproval =
+        pendingPlan != null && pendingPlan.threadId == thread?.id;
     final queuedFollowUps = queuedThreadFollowUps(
       session.followUps,
     ).where((item) => item.id != _editingFollowUpId).toList();
@@ -322,15 +318,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   ),
                 if (_editingFollowUpId != null)
                   _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
-                if (isAwaitingPlan && session.pendingPlan != null)
-                  _PlanApprovalBanner(
-                    failureMessage: planFailureMessage,
-                    onViewPlan: () => _showApprovalSheets(
-                      ref.read(threadSessionProvider(widget.threadId)),
-                    ),
-                    onApprove: () => _handlePlanApproval(approve: true),
-                    onDismiss: () => _handlePlanApproval(approve: false),
-                  ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 280),
                   switchInCurve: Curves.easeOutCubic,
@@ -389,6 +376,33 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                             } finally {
                               if (mounted) {
                                 setState(() => _bashApprovalBusy = false);
+                              }
+                            }
+                          },
+                        )
+                      : showPlanApproval
+                      ? PlanApprovalPanel(
+                          key: ValueKey('plan-${pendingPlan.threadId}'),
+                          plan: pendingPlan,
+                          busy: _planActionBusy,
+                          failureMessage: planFailureMessage,
+                          onApprove: () async {
+                            setState(() => _planActionBusy = true);
+                            try {
+                              await _handlePlanApproval(approve: true);
+                            } finally {
+                              if (mounted) {
+                                setState(() => _planActionBusy = false);
+                              }
+                            }
+                          },
+                          onDismiss: () async {
+                            setState(() => _planActionBusy = true);
+                            try {
+                              await _handlePlanApproval(approve: false);
+                            } finally {
+                              if (mounted) {
+                                setState(() => _planActionBusy = false);
                               }
                             }
                           },
@@ -614,31 +628,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   void _showApprovalSheets(ThreadSessionState session) {
     if (!_needsApprovalSheet(session)) return;
     final thread = session.thread;
-    if (session.pendingPlan != null &&
-        session.pendingPlan!.threadId == thread?.id) {
-      if (_planApprovalSheetOpen) return;
-      _planApprovalSheetOpen = true;
-      showPlanApprovalSheet(
-        context: context,
-        plan: session.pendingPlan!,
-        onApprove: () => _handlePlanApproval(approve: true),
-        onDismiss: () => _handlePlanApproval(approve: false),
-      ).whenComplete(() {
-        _planApprovalSheetOpen = false;
-        if (!mounted) return;
-        final current = ref.read(threadSessionProvider(widget.threadId));
-        if (!_needsApprovalSheet(current)) {
-          return;
-        }
-        _shownApprovalKey = null;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _maybeShowApprovalSheet(
-            ref.read(threadSessionProvider(widget.threadId)),
-          );
-        });
-      });
-    } else if (session.pendingClarification != null &&
+    if (session.pendingClarification != null &&
         session.pendingClarification!.threadId == thread?.id) {
       showClarificationSheet(
         context: context,
@@ -779,98 +769,6 @@ class _ThreadUsageOverlay extends ConsumerWidget {
     return ThreadUsageFloatButtons(
       billing: billing,
       threadStatus: threadStatus,
-    );
-  }
-}
-
-class _PlanApprovalBanner extends StatelessWidget {
-  const _PlanApprovalBanner({
-    required this.onViewPlan,
-    required this.onApprove,
-    required this.onDismiss,
-    this.failureMessage,
-  });
-
-  final VoidCallback onViewPlan;
-  final Future<void> Function() onApprove;
-  final Future<void> Function() onDismiss;
-  final String? failureMessage;
-
-  @override
-  Widget build(BuildContext context) {
-    final failed = failureMessage != null;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ecoColors(context).accentSoft,
-        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  EcoIcons.planApproval,
-                  size: 18,
-                  color: ecoColors(context).accentText,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    failed ? '执行失败，计划待确认' : '计划已生成，等待确认',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: ecoColors(context).accentText,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: onViewPlan,
-                  style: TextButton.styleFrom(
-                    foregroundColor: ecoColors(context).accentText,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('查看计划'),
-                ),
-              ],
-            ),
-            if (failureMessage != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                failureMessage!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: ecoColors(context).accentText,
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => onDismiss(),
-                    child: const Text('驳回'),
-                  ),
-                ),
-                if (!failed) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () => onApprove(),
-                      child: const Text('批准执行'),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

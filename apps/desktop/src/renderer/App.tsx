@@ -1756,6 +1756,12 @@ function App() {
   );
   const canSend = composerFollowUpMode ? canSendFollowUp : canSendThreadMessage;
   const showPlanApproval = Boolean(activeThread && pendingPlan);
+  const showComposerDockApproval = showBashApproval || showPlanApproval;
+  const composerDockSurfaceKey = showBashApproval
+    ? `bash-${pendingBashApproval!.toolUseId}`
+    : showPlanApproval
+      ? `plan-${activeThread?.id ?? "unknown"}`
+      : "composer";
 
   const showClarification = Boolean(pendingClarification);
 
@@ -3718,10 +3724,12 @@ function App() {
     ? "补充消息会排队；回答问题请用上方卡片"
     : showBashApproval
       ? "补充消息会排队；工具授权请用下方卡片"
-      : contextCompactionInFlight
+      : showPlanApproval
+        ? "补充消息会排队；计划审批请用下方卡片"
+        : contextCompactionInFlight
         ? "上下文压缩中，请稍候…"
         : activeThread?.status === "awaiting_plan"
-        ? "请先确认或忽略上方计划"
+        ? "请先确认或忽略下方计划"
         : activeThread && isContinuableThreadStatus(activeThread.status)
           ? "继续对话；若需改计划请说明，将重新生成完整计划…"
           : composerFollowUpMode
@@ -3854,15 +3862,25 @@ function App() {
         </ul>
       )}
       <ComposerDockMorph
-        showApproval={showBashApproval}
+        showApproval={showComposerDockApproval}
+        surfaceKey={composerDockSurfaceKey}
         approval={
-          pendingBashApproval ? (
+          showBashApproval && pendingBashApproval ? (
             <BashApprovalPanel
               request={pendingBashApproval}
               busy={bashApprovalBusy}
               variant="dock"
               onResolve={(resolution) => void resolvePendingBashApproval(resolution)}
               onSkip={() => void resolvePendingBashApproval({ decision: "denied" })}
+            />
+          ) : showPlanApproval && pendingPlan ? (
+            <PlanApprovalPanel
+              plan={pendingPlan}
+              busy={planActionBusy}
+              variant="dock"
+              {...(planFailureMessage && { failureMessage: planFailureMessage })}
+              onApprove={() => void approvePendingPlan()}
+              onDismiss={() => void dismissPendingPlan()}
             />
           ) : null
         }
@@ -4109,15 +4127,6 @@ function App() {
                       onDismiss={() => void dismissPendingClarification()}
                     />
                   ) : null}
-                  {showPlanApproval && pendingPlan && (
-                    <PlanApprovalPanel
-                      plan={pendingPlan}
-                      busy={planActionBusy}
-                      {...(planFailureMessage && { failureMessage: planFailureMessage })}
-                      onApprove={approvePendingPlan}
-                      onDismiss={dismissPendingPlan}
-                    />
-                  )}
                   <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
                   </div>
                   {activityFeedScrollJump ? (

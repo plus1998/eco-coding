@@ -3089,6 +3089,44 @@ html[data-window-focused="true"] .codex-sidebar {
   font-weight: 500;
 }
 
+.plan-approval-dock-shell.codex-composer {
+  width: 100%;
+}
+
+.plan-approval-dock-shell .composer-primary.plan-approval-dock-inner {
+  margin-bottom: 0;
+  padding: 18px 18px 14px;
+}
+
+.plan-approval-dock-shell .plan-approval-header {
+  margin-bottom: 10px;
+}
+
+.plan-approval-dock-shell .plan-approval-dock-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--codex-log-text);
+}
+
+.plan-approval-dock-shell .plan-approval-error {
+  margin-bottom: 10px;
+}
+
+.plan-approval-dock-shell .plan-approval-dock-markdown {
+  max-height: 220px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.plan-approval-dock-shell .plan-approval-dock-footer {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: none;
+}
+
 .bash-approval-deny-input-wrap {
   margin-top: 8px;
 }
@@ -14744,12 +14782,32 @@ html[data-window-focused="true"] .settings-nav {
   color: var(--composer-send-hover-text);
 }
 
+.codex-main:not(.codex-main-landing) .plan-approval-dock-shell .bash-approval-submit {
+  background: var(--composer-send-bg);
+  color: var(--composer-send-text);
+}
+
+.codex-main:not(.codex-main-landing) .plan-approval-dock-shell .bash-approval-submit:hover:not(:disabled) {
+  background: var(--composer-send-hover-bg);
+  color: var(--composer-send-hover-text);
+}
+
 [data-theme="light"] .bash-approval-dock-shell .bash-approval-submit {
   background: #0d0d0d;
   color: #ffffff;
 }
 
 [data-theme="light"] .bash-approval-dock-shell .bash-approval-submit:hover:not(:disabled) {
+  background: #262626;
+  color: #ffffff;
+}
+
+[data-theme="light"] .plan-approval-dock-shell .bash-approval-submit {
+  background: #0d0d0d;
+  color: #ffffff;
+}
+
+[data-theme="light"] .plan-approval-dock-shell .bash-approval-submit:hover:not(:disabled) {
   background: #262626;
   color: #ffffff;
 }

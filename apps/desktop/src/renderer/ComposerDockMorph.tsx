@@ -2,11 +2,17 @@ import type { ReactNode } from "react";
 
 interface ComposerDockMorphProps {
   showApproval: boolean;
+  surfaceKey?: string;
   composer: ReactNode;
   approval: ReactNode;
 }
 
-export function ComposerDockMorph({ showApproval, composer, approval }: ComposerDockMorphProps) {
+export function ComposerDockMorph({
+  showApproval,
+  surfaceKey,
+  composer,
+  approval,
+}: ComposerDockMorphProps) {
   return (
     <div
       className={["composer-dock-morph", showApproval ? "is-approval" : "is-composer"]
@@ -15,7 +21,7 @@ export function ComposerDockMorph({ showApproval, composer, approval }: Composer
     >
       <div
         className="composer-dock-morph-surface"
-        key={showApproval ? "approval" : "composer"}
+        key={showApproval ? (surfaceKey ?? "approval") : "composer"}
         aria-live="polite"
       >
         {showApproval ? approval : composer}
