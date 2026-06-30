@@ -219,12 +219,12 @@ function ComposerBashReviewPopover({
 
 function BashReviewToolbarIcon({ mode }: { mode: BashReviewMode }) {
   if (mode === "always") {
-    return <Hand size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
+    return <Hand size={14} strokeWidth={1.75} />;
   }
   if (mode === "auto") {
-    return <Shield size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
+    return <Shield size={14} strokeWidth={1.75} />;
   }
-  return <ShieldAlert size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} />;
+  return <ShieldAlert size={14} strokeWidth={1.75} />;
 }
 
 function BashReviewModeIcon({ mode }: { mode: BashReviewMode }) {
