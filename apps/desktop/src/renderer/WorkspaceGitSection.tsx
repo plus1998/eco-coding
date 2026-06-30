@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CloudDownload, GitBranch, GitCommitHorizontal, Play, Plus, PlusSquare } from "lucide-react";
+import { Check, ChevronDown, CloudDownload, GitBranch, GitCommitHorizontal, Loader2, Play, Plus, PlusSquare } from "lucide-react";
 import {
   type CSSProperties,
   useCallback,
@@ -99,7 +99,12 @@ export function WorkspaceGitSection({
 
   const insertions = changesDiff?.totalAdditions ?? gitStatus?.insertions ?? 0;
   const deletions = changesDiff?.totalDeletions ?? gitStatus?.deletions ?? 0;
-  const branchLabel = gitStatus?.isGitRepository ? gitStatus.branch ?? "detached" : "非 Git 仓库";
+  const isGitStatusPending = Boolean(workspacePath && !gitStatus);
+  const branchLabel = isGitStatusPending
+    ? "获取中…"
+    : gitStatus?.isGitRepository
+      ? gitStatus.branch ?? "detached"
+      : "非 Git 仓库";
   const showBranchPicker = Boolean(
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
   );
@@ -357,7 +362,7 @@ export function WorkspaceGitSection({
             <span>变更</span>
             <span className="thread-info-workspace-git-stats" aria-label="变更行数">
               {gitBusy ? (
-                <span className="thread-info-workspace-git-stats-busy">…</span>
+                <Loader2 size={12} className="spinning thread-info-workspace-git-stats-busy" aria-hidden />
               ) : (
                 <>
                   <span className="git-commit-stat-add">+{insertions}</span>

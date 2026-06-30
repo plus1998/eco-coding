@@ -11,6 +11,7 @@ import {
   Database,
   FolderOpen,
   GitBranch,
+  Loader2,
   MessageSquarePlus,
   Monitor,
   PanelRight,
@@ -485,6 +486,8 @@ function App() {
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
   const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
+  const [gitStatusLoading, setGitStatusLoading] = useState(false);
+  const gitStatusRequestRef = useRef(0);
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
@@ -1315,18 +1318,36 @@ function App() {
     };
   }, [currentProjectPath]);
 
-  const refreshGitStatus = useCallback(async () => {
-    if (!currentProjectPath || !window.eco) {
+  const refreshGitStatus = useCallback(async (workspacePath?: string) => {
+    const path = workspacePath ?? currentProjectPath;
+    if (!path || !window.eco) {
       setGitStatus(undefined);
+      setGitStatusLoading(false);
       return;
     }
+    const requestId = gitStatusRequestRef.current + 1;
+    gitStatusRequestRef.current = requestId;
+    setGitStatusLoading(true);
     try {
-      const status = await window.eco.getGitStatus(currentProjectPath);
-      setGitStatus(status);
+      const status = await window.eco.getGitStatus(path);
+      if (requestId === gitStatusRequestRef.current) {
+        setGitStatus(status);
+      }
     } catch {
-      setGitStatus(undefined);
+      if (requestId === gitStatusRequestRef.current) {
+        setGitStatus(undefined);
+      }
+    } finally {
+      if (requestId === gitStatusRequestRef.current) {
+        setGitStatusLoading(false);
+      }
     }
   }, [currentProjectPath]);
+
+  useEffect(() => {
+    setGitStatus(undefined);
+    void refreshGitStatus();
+  }, [currentProjectPath, refreshGitStatus]);
 
   const refreshPackageScripts = useCallback(async () => {
     if (!currentProjectPath || !window.eco) {
@@ -1470,10 +1491,6 @@ function App() {
     },
     [currentProjectPath, dismissPackageScriptRunOverlays, openPackageScriptTerminalSession],
   );
-
-  useEffect(() => {
-    void refreshGitStatus();
-  }, [refreshGitStatus]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -2236,6 +2253,7 @@ function App() {
       const result = await window.eco.openWorkspace();
       if (!result.canceled && result.workspace) {
         activateWorkspace(result.workspace);
+        await refreshGitStatus(result.workspace.path);
       }
     } catch (caught) {
       setError(errorMessage(caught));
@@ -2257,6 +2275,7 @@ function App() {
     setIsOpening(true);
     try {
       await openProjectFromPath(path);
+      await refreshGitStatus(path);
     } catch (caught) {
       setError(errorMessage(caught));
       throw caught;
@@ -4054,8 +4073,8 @@ function App() {
           新对话
         </button>
         <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
-          <FolderOpen size={18} />
-          打开项目…
+          {isOpening ? <Loader2 size={18} className="spinning" aria-hidden /> : <FolderOpen size={18} />}
+          {isOpening ? "打开中…" : "打开项目…"}
         </button>
 
         <div className="sidebar-section sidebar-section-grow">
@@ -4234,7 +4253,7 @@ function App() {
           {...(currentProjectPath && { workspacePath: currentProjectPath })}
           workspaceLabel={currentProjectName}
           {...(gitStatus && { gitStatus })}
-          gitBusy={gitStatusBusy}
+          gitBusy={gitStatusBusy || gitStatusLoading}
           commitDisabled={
             activeThread
               ? activeThread.status === "running" || activeThread.status === "queued"

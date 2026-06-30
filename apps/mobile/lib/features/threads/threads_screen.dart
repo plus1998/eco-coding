@@ -127,9 +127,11 @@ class ThreadsScreen extends ConsumerWidget {
       builder: (sheetContext) {
         return _OpenProjectSheet(
           onOpen: (path) async {
-            Navigator.pop(sheetContext);
             try {
               await openProjectPath(ref, path);
+              if (sheetContext.mounted) {
+                Navigator.pop(sheetContext);
+              }
               messenger.showSnackBar(
                 const SnackBar(content: Text('项目已打开')),
               );
@@ -137,6 +139,7 @@ class ThreadsScreen extends ConsumerWidget {
               messenger.showSnackBar(
                 SnackBar(content: Text(error.toString())),
               );
+              rethrow;
             }
           },
         );
@@ -156,6 +159,7 @@ class _OpenProjectSheet extends StatefulWidget {
 
 class _OpenProjectSheetState extends State<_OpenProjectSheet> {
   final _pathController = TextEditingController();
+  bool _opening = false;
 
   @override
   void dispose() {
@@ -188,6 +192,7 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
           const SizedBox(height: 14),
           TextField(
             controller: _pathController,
+            enabled: !_opening,
             decoration: const InputDecoration(
               labelText: '项目路径',
               hintText: '/Users/you/projects/my-app',
@@ -196,12 +201,30 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: () async {
-              final path = _pathController.text.trim();
-              if (path.isEmpty) return;
-              await widget.onOpen(path);
-            },
-            child: const Text('打开'),
+            onPressed: _opening
+                ? null
+                : () async {
+                    final path = _pathController.text.trim();
+                    if (path.isEmpty) return;
+                    setState(() => _opening = true);
+                    try {
+                      await widget.onOpen(path);
+                    } catch (_) {
+                      if (mounted) {
+                        setState(() => _opening = false);
+                      }
+                    }
+                  },
+            child: _opening
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('打开'),
           ),
         ],
       ),

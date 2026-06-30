@@ -104,6 +104,7 @@ Future<WorkspaceInfo> openProjectPath(WidgetRef ref, String path) async {
   if (rpc == null) {
     throw StateError('未选择 PC');
   }
+  refreshWorkspaceChanges(ref, path);
   final workspace = await rpc.openWorkspacePath(path);
   await ref.read(hiddenProjectPathsProvider.notifier).unhide(path);
   await ref.read(selectedProjectPathProvider.notifier).select(path);
@@ -164,6 +165,8 @@ class SelectedProjectPathNotifier extends AsyncNotifier<String?> {
     if (rpc == null) return;
     try {
       await rpc.openWorkspacePath(path);
+      ref.read(workspaceGitStatusPushProvider.notifier).clearForWorkspace(path);
+      ref.invalidate(gitStatusProvider(path));
     } catch (_) {
       // Desktop sync is best-effort; local selection still applies.
     }
