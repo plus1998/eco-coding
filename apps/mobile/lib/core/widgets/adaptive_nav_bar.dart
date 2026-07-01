@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/eco_adaptive_icons.dart';
 import '../theme/eco_theme.dart';
+import 'eco_android_glass.dart';
 
 const adaptiveNavBarHeight = 56.0;
 const adaptiveNavHorizontalPadding = 8.0;
@@ -12,10 +13,18 @@ const adaptiveNavBarNativeHeight = 50.0;
 /// Lift tab bar slightly above the screen edge (above home-indicator strip).
 const adaptiveNavBottomLift = 8.0;
 
+/// Android frosted tab bar height (matches original NavigationBar sizing).
+const adaptiveNavBarAndroidHeight = 56.0;
+const adaptiveNavAndroidIconSize = 22.0;
+const adaptiveNavAndroidLabelSize = 12.0;
+
 double adaptiveNavBarTotalHeight(BuildContext context) {
   final safeBottom = MediaQuery.paddingOf(context).bottom;
   if (PlatformInfo.isIOS26OrHigher()) {
     return adaptiveNavBarNativeHeight + safeBottom + adaptiveNavBottomLift;
+  }
+  if (PlatformInfo.isAndroid) {
+    return adaptiveNavBarAndroidHeight + (safeBottom > 0 ? safeBottom : 8);
   }
   return adaptiveNavBarHeight + (safeBottom > 0 ? safeBottom : 8);
 }
@@ -105,41 +114,111 @@ class AdaptiveNavBar extends StatelessWidget {
         items: [
           for (final destination in destinations)
             BottomNavigationBarItem(
-              icon: _navigationIcon(destination.icon, eco.textHeading),
+              icon: _navigationIcon(destination.icon, color: eco.textHeading),
               label: destination.label,
             ),
         ],
       );
     }
 
-    return NavigationBar(
+    return _buildAndroidNavigationBar(
+      context: context,
+      eco: eco,
+      destinations: destinations,
+    );
+  }
+
+  Widget _buildAndroidNavigationBar({
+    required BuildContext context,
+    required EcoColors eco,
+    required List<AdaptiveNavigationDestination> destinations,
+  }) {
+    final navBar = NavigationBar(
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
       backgroundColor: Colors.transparent,
-      indicatorColor: eco.navActive,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      elevation: 0,
+      indicatorColor: Colors.transparent,
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+      labelPadding: const EdgeInsets.only(top: 2),
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-      height: adaptiveNavBarHeight,
+      height: adaptiveNavBarAndroidHeight,
       destinations: [
         for (final destination in destinations)
           NavigationDestination(
-            icon: _navigationIcon(destination.icon, eco.textHeading),
+            icon: _navigationIcon(
+              destination.icon,
+              size: adaptiveNavAndroidIconSize,
+              color: eco.textMuted,
+            ),
+            selectedIcon: _navigationIcon(
+              destination.selectedIcon ?? destination.icon,
+              size: adaptiveNavAndroidIconSize,
+              color: eco.textHeading,
+            ),
             label: destination.label,
           ),
       ],
     );
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        navigationBarTheme: NavigationBarThemeData(
+          height: adaptiveNavBarAndroidHeight,
+          backgroundColor: Colors.transparent,
+          indicatorColor: Colors.transparent,
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          elevation: 0,
+          labelPadding: const EdgeInsets.only(top: 2),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              color: selected ? eco.textHeading : eco.textMuted,
+              fontSize: adaptiveNavAndroidLabelSize,
+              height: 1.0,
+              fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+            );
+          }),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return IconThemeData(
+              color: selected ? eco.textHeading : eco.textMuted,
+              size: adaptiveNavAndroidIconSize,
+            );
+          }),
+        ),
+      ),
+      child: MediaQuery.removePadding(
+        // NavigationBar wraps content in SafeArea(top: true) by default, which
+        // injects status-bar padding and leaves a large gap above icons when the
+        // bar is floated above the home-indicator strip in our Stack layout.
+        context: context,
+        removeTop: true,
+        removeBottom: true,
+        child: EcoAndroidGlassSurface(
+          borderRadius: BorderRadius.circular(adaptiveNavBarAndroidHeight / 2),
+          child: navBar,
+        ),
+      ),
+    );
   }
 
-  Widget _navigationIcon(dynamic icon, Color color) {
-    const tabIconSize = 22.0;
+  Widget _navigationIcon(
+    dynamic icon, {
+    Color? color,
+    double size = 22,
+  }) {
     if (icon is String) {
-      return Icon(CupertinoIcons.circle, size: tabIconSize, color: color);
+      return Icon(CupertinoIcons.circle, size: size, color: color);
     }
     if (icon is IconData) {
-      return Icon(icon, size: tabIconSize, color: color);
+      return Icon(icon, size: size, color: color);
     }
     if (icon is Widget) {
       return icon;
     }
-    return Icon(Icons.circle, size: tabIconSize, color: color);
+    return Icon(Icons.circle, size: size, color: color);
   }
 }

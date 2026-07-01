@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/eco_adaptive_icons.dart';
 import '../theme/eco_theme.dart';
+import 'eco_android_glass.dart';
 
 /// Default outer touch target for toolbar glass buttons.
 const adaptiveToolbarTouchSize = 44.0;
@@ -56,21 +57,24 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         : AdaptiveButtonStyle.gray;
 
     if (visualOnly) {
+      final chip = PlatformInfo.isAndroid
+          ? _androidGlassIconChip(
+              nativeExtent: nativeExtent,
+              icon: icon,
+              iconSize: resolvedIconSize,
+              color: color,
+            )
+          : _iosToolbarIconChip(
+              context: context,
+              nativeExtent: nativeExtent,
+              icon: icon,
+              iconSize: resolvedIconSize,
+              color: color,
+            );
       final wrapped = SizedBox(
         width: size,
         height: size,
-        child: Center(
-          child: Container(
-            width: nativeExtent,
-            height: nativeExtent,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: _toolbarIconBackground(context, style),
-              borderRadius: BorderRadius.circular(nativeExtent / 2),
-            ),
-            child: Icon(icon, size: resolvedIconSize, color: color),
-          ),
-        ),
+        child: Center(child: chip),
       );
       if (tooltip == null) return wrapped;
       return Tooltip(message: tooltip!, child: wrapped);
@@ -96,17 +100,21 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         useSmoothRectangleBorder: false,
         child: Icon(icon, size: resolvedIconSize, color: color),
       );
+    } else if (PlatformInfo.isAndroid) {
+      button = _androidGlassIconChip(
+        nativeExtent: nativeExtent,
+        icon: icon,
+        iconSize: resolvedIconSize,
+        color: color,
+        onPressed: onPressed,
+      );
     } else {
-      // Material FilledButton.icon uses asymmetric default padding and a fixed
-      // 24pt glyph — both misalign icons inside our square touch target on Android.
       button = AdaptiveButton.child(
         onPressed: onPressed,
         style: style,
         size: buttonSize,
         enabled: enabled,
-        padding: EdgeInsets.zero,
-        minSize: Size(nativeExtent, nativeExtent),
-        borderRadius: BorderRadius.circular(nativeExtent / 2),
+        useSmoothRectangleBorder: false,
         child: Icon(icon, size: resolvedIconSize, color: color),
       );
     }
@@ -143,10 +151,53 @@ double _nativeExtent(AdaptiveButtonSize size) {
   };
 }
 
-Color _toolbarIconBackground(BuildContext context, AdaptiveButtonStyle style) {
+Widget _androidGlassIconChip({
+  required double nativeExtent,
+  required IconData icon,
+  required double iconSize,
+  required Color color,
+  VoidCallback? onPressed,
+}) {
+  final radius = BorderRadius.circular(nativeExtent / 2);
+  final iconWidget = Icon(icon, size: iconSize, color: color);
+
+  return EcoAndroidGlassSurface(
+    width: nativeExtent,
+    height: nativeExtent,
+    borderRadius: radius,
+    child: onPressed == null
+        ? iconWidget
+        : Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: onPressed,
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: nativeExtent,
+                height: nativeExtent,
+                child: Center(child: iconWidget),
+              ),
+            ),
+          ),
+  );
+}
+
+Widget _iosToolbarIconChip({
+  required BuildContext context,
+  required double nativeExtent,
+  required IconData icon,
+  required double iconSize,
+  required Color color,
+}) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  if (PlatformInfo.isIOS) {
-    return ecoColors(context).textHeading.withValues(alpha: isDark ? 0.14 : 0.08);
-  }
-  return isDark ? Colors.grey.shade800 : Colors.grey.shade300;
+  return Container(
+    width: nativeExtent,
+    height: nativeExtent,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: ecoColors(context).textHeading.withValues(alpha: isDark ? 0.14 : 0.08),
+      borderRadius: BorderRadius.circular(nativeExtent / 2),
+    ),
+    child: Icon(icon, size: iconSize, color: color),
+  );
 }
