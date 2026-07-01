@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/widgets/eco_markdown.dart';
 
 Future<void> showPlanApprovalSheet({
@@ -11,7 +12,7 @@ Future<void> showPlanApprovalSheet({
   required Future<void> Function() onApprove,
   required Future<void> Function() onDismiss,
 }) {
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
@@ -90,7 +91,7 @@ Future<void> showBashApprovalSheet({
   final panelLabel =
       request.filesystemTool != null ? '工具读取确认' : 'Bash 执行确认';
 
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
@@ -242,7 +243,7 @@ Future<void> showClarificationSheet({
     (_) => <String>[],
   );
 
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,

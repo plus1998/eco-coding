@@ -6,6 +6,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
@@ -16,7 +17,7 @@ Future<void> showThreadTodoSheet({
   required WidgetRef ref,
   required String threadId,
 }) {
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
@@ -42,7 +43,7 @@ Future<void> showWorkspaceDiffReviewSheet({
   required String workspacePath,
 }) {
   refreshWorkspaceChanges(ref, workspacePath);
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
@@ -67,7 +68,7 @@ Future<void> showNpmScriptsSheet({
   required WidgetRef ref,
   required String workspacePath,
 }) {
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
@@ -705,7 +706,7 @@ Future<void> showThreadActionSheet({
 }) {
   final isPinned = ref.read(pinnedThreadIdsProvider.notifier).isPinned(thread.id);
 
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(

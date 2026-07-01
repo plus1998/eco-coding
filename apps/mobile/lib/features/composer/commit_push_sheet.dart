@@ -5,6 +5,7 @@ import '../../core/models/git_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import '../threads/thread_providers.dart';
 
 Future<bool?> showCommitPushSheet({
@@ -15,7 +16,7 @@ Future<bool?> showCommitPushSheet({
   required WorkspaceDiffResult diff,
   String? branch,
 }) {
-  return showModalBottomSheet<bool>(
+  return showEcoModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
@@ -195,7 +196,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   Future<void> _pickModel() async {
     if (_modelOptions.isEmpty || _loadingModels) return;
-    final selected = await showModalBottomSheet<String>(
+    final selected = await showEcoModalBottomSheet<String>(
       context: context,
       backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(

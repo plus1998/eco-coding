@@ -13,6 +13,7 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
 import 'composer_context_ring.dart';
@@ -415,7 +416,7 @@ class ComposerProfileControl extends ConsumerWidget {
     final selectedId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
 
-    await showModalBottomSheet<void>(
+    await showEcoModalBottomSheet<void>(
       context: context,
       backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(
@@ -517,7 +518,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
     required OrchestrationProfile? profile,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
-    await showModalBottomSheet<void>(
+    await showEcoModalBottomSheet<void>(
       context: context,
       backgroundColor: ecoColors(context).bgMenu,
       isScrollControlled: true,
@@ -613,7 +614,7 @@ Future<void> showComposerSessionModeSheet(
   required String threadId,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
 }) async {
-  await showModalBottomSheet<void>(
+  await showEcoModalBottomSheet<void>(
     context: context,
     backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
@@ -725,7 +726,7 @@ Future<void> showComposerMcpSheet(
   var currentConfig = runtimeConfig;
   var currentSettings = Map<String, bool>.from(enabledSettings);
 
-  await showModalBottomSheet<void>(
+  await showEcoModalBottomSheet<void>(
     context: context,
     backgroundColor: ecoColors(context).bgMenu,
     isScrollControlled: true,
@@ -881,7 +882,7 @@ class ComposerRouteSummary extends ConsumerWidget {
     required bool canEdit,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
-    await showModalBottomSheet<void>(
+    await showEcoModalBottomSheet<void>(
       context: context,
       backgroundColor: ecoColors(context).bgMenu,
       isScrollControlled: true,
@@ -938,7 +939,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
     required String threadId,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
-    await showModalBottomSheet<void>(
+    await showEcoModalBottomSheet<void>(
       context: context,
       backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(
@@ -1024,7 +1025,7 @@ class ComposerBashReviewControl extends ConsumerWidget {
     required String threadId,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
-    await showModalBottomSheet<void>(
+    await showEcoModalBottomSheet<void>(
       context: context,
       backgroundColor: ecoColors(context).bgMenu,
       shape: const RoundedRectangleBorder(

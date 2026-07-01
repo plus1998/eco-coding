@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/session_mode.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import '../threads/thread_providers.dart';
 
 Future<void> showComposerSettingsSheet({
@@ -13,7 +14,7 @@ Future<void> showComposerSettingsSheet({
   required String threadId,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
 }) {
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,

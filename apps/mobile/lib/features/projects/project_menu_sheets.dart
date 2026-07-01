@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/project_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import 'project_providers.dart';
 
 Future<void> showProjectActionSheet({
@@ -19,7 +20,7 @@ Future<void> showProjectActionSheet({
     (path) => normalizeProjectPath(path) == normalizedPath,
   );
 
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     backgroundColor: ecoColors(context).bgMenu,
     shape: const RoundedRectangleBorder(
@@ -103,7 +104,7 @@ Future<void> showOpenProjectSheet({
 }) async {
   final messenger = ScaffoldMessenger.of(context);
 
-  await showModalBottomSheet<void>(
+  await showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (sheetContext) {

@@ -4,6 +4,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/thread_usage_display.dart';
 
 Future<void> showThreadBillingSheet({
@@ -11,7 +12,7 @@ Future<void> showThreadBillingSheet({
   required ThreadBillingSnapshot? billing,
   required String? threadStatus,
 }) {
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
@@ -38,7 +39,7 @@ Future<void> showThreadContextSheet({
   required String? threadStatus,
   OrchestrationProfile? agentProfile,
 }) {
-  return showModalBottomSheet<void>(
+  return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
