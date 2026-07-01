@@ -10,6 +10,7 @@
   --activity-stack-below: 800px;
   --content-inline-start: 24px;
   --content-inline-end: 48px;
+  --toolbar-edge-inset: 15px;
   --feed-max-width: 750px;
   --composer-max-width: 750px;
 }
@@ -925,7 +926,7 @@ html[data-window-focused="true"] .codex-sidebar {
   grid-template-rows: auto minmax(0, 1fr);
   align-items: stretch;
   column-gap: 24px;
-  padding-right: 16px;
+  padding-right: 0;
   overflow: hidden;
 }
 
@@ -14367,22 +14368,22 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .codex-main-scroll {
-  padding: 0 var(--content-inline-end) 0 var(--content-inline-start);
+  padding: 0 0 0 var(--content-inline-start);
+}
+
+.codex-main:not(.codex-main-landing) .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
+  padding-right: var(--content-inline-end);
 }
 
 .codex-main:not(.codex-main-landing) .codex-main-topbar {
-  margin-right: calc(-1 * (var(--content-inline-end) - 15px));
-  padding-right: 15px;
+  box-sizing: border-box;
+  width: 100%;
+  padding-right: var(--toolbar-edge-inset);
 }
 
 .codex-main:not(.codex-main-landing) .codex-main-scroll.is-workspace-panel-open {
-  padding-right: 16px;
+  padding-right: 0;
   background: transparent;
-}
-
-.codex-main:not(.codex-main-landing) .codex-main-scroll.is-workspace-panel-open .codex-main-topbar {
-  margin-right: -1px;
-  padding-right: 15px;
 }
 
 .codex-main:not(.codex-main-landing) .codex-main-scroll.is-workspace-panel-open .codex-main-scroll-body,
@@ -15302,12 +15303,15 @@ html[data-window-focused="true"] .settings-nav {
 
 @media (max-width: 720px) {
   .codex-main:not(.codex-main-landing) .codex-main-scroll {
-    padding: 0 22px;
+    padding: 0 0 0 22px;
+  }
+
+  .codex-main:not(.codex-main-landing) .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
+    padding-right: 22px;
   }
 
   .codex-main:not(.codex-main-landing) .codex-main-topbar {
-    margin-right: -7px;
-    padding-right: 15px;
+    padding-right: var(--toolbar-edge-inset);
   }
 
   .codex-main:not(.codex-main-landing) .activity-header-divider {
