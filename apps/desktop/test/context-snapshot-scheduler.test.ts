@@ -671,3 +671,38 @@ test("compactManual uses eco path when shouldPreferEcoCompact is true", async ()
   expect(ecoCompactCalled).toBe(true);
   expect(withSdkDriverCalled).toBe(false);
 });
+
+test("compactManual emits failed compaction status when eco compact times out", async () => {
+  const compactionStatuses: Array<{ stage: string; trigger?: string; detail?: string }> = [];
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+    isCompactInFlight: () => false,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => ({}),
+    clearCompactInFlight: () => {},
+    updateFromUsage: async () => undefined,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    shouldPreferEcoCompact: () => true,
+    withSdkDriver: async () => {},
+    emitContext: () => {},
+    emitCompactionStatus: (_threadId, status) => {
+      compactionStatuses.push(status);
+    },
+    runEcoCompact: async () => {
+      throw new Error("摘要生成超时（180 秒）");
+    },
+  });
+
+  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
+  expect(result).toEqual({ ok: false, reason: "摘要生成超时（180 秒）" });
+  expect(compactionStatuses).toEqual([
+    { stage: "failed", trigger: "manual", detail: "摘要生成超时（180 秒）" },
+  ]);
+});

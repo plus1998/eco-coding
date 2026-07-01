@@ -36,6 +36,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+type ContextCompactionMethod =
+  | "sdk"
+  | "eco"
+  | "eco-fallback:no-compact-session"
+  | "eco-fallback:unsupported-slash-command";
+
+function logContextCompaction(
+  event: "start" | "complete" | "fallback" | "fail",
+  input: {
+    threadId: string;
+    trigger: "auto" | "manual";
+    method?: ContextCompactionMethod;
+    sessionId?: string;
+    postTokens?: number;
+    detail?: string;
+  },
+): void {
+  const fields = [
+    `[eco] context compaction ${event}`,
+    `thread=${input.threadId}`,
+    `trigger=${input.trigger}`,
+  ];
+  if (input.method) {
+    fields.push(`method=${input.method}`);
+  }
+  if (input.sessionId) {
+    fields.push(`session=${input.sessionId}`);
+  }
+  if (input.postTokens !== undefined) {
+    fields.push(`postTokens=${input.postTokens}`);
+  }
+  if (input.detail) {
+    fields.push(`detail=${input.detail}`);
+  }
+  process.stderr.write(`${fields.join(" ")}\n`);
+}
+
 export interface ContextSnapshotSchedulerOptions {
   monitor: ContextWindowMonitor;
   isThreadRunning: (threadId: string) => boolean;
@@ -186,6 +223,7 @@ export class ContextSnapshotScheduler {
       const detail = error instanceof Error ? error.message : String(error);
       this.options.monitor.clearCompactInFlight(threadId);
       const failure = this.options.monitor.recordAutoCompactFailure(threadId);
+      logContextCompaction("fail", { threadId, trigger: "auto", detail });
       this.options.emitCompactionStatus(threadId, {
         stage: "failed",
         trigger: "auto",
@@ -230,6 +268,7 @@ export class ContextSnapshotScheduler {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.options.monitor.clearCompactInFlight(threadId);
+      logContextCompaction("fail", { threadId, trigger: "manual", detail });
       this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "manual", detail });
       process.stderr.write(`[eco] manual context compact failed: ${detail}\n`);
       return { ok: false, reason: detail };
@@ -244,17 +283,44 @@ export class ContextSnapshotScheduler {
     resume: EcoSdkResumeOptions,
     trigger: "auto" | "manual",
   ): Promise<void> {
+    logContextCompaction("start", {
+      threadId,
+      trigger,
+      sessionId: resume.resumeSessionId,
+    });
+
     if (this.options.shouldPreferEcoCompact?.(threadId)) {
-      await this.runEcoCompactPath(threadId, worktreePath, signal, resume, trigger);
+      await this.runEcoCompactPath(threadId, worktreePath, signal, resume, trigger, "eco");
       return;
     }
 
     await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
       const activeRoutes = driverRoutes.length > 0 ? driverRoutes : routes;
       if (!driver.compactSession) {
-        await this.runEcoCompactPath(threadId, worktreePath, runSignal ?? signal, resume, trigger);
+        logContextCompaction("fallback", {
+          threadId,
+          trigger,
+          method: "eco-fallback:no-compact-session",
+          detail: "driver has no compactSession",
+        });
+        await this.runEcoCompactPath(
+          threadId,
+          worktreePath,
+          runSignal ?? signal,
+          resume,
+          trigger,
+          "eco-fallback:no-compact-session",
+        );
         return;
       }
+
+      const sdkMethod: ContextCompactionMethod = "sdk";
+      logContextCompaction("start", {
+        threadId,
+        trigger,
+        method: sdkMethod,
+        sessionId: resume.resumeSessionId,
+      });
 
       let slashCommands: string[] = [];
       let postTokens: number | undefined;
@@ -310,12 +376,36 @@ export class ContextSnapshotScheduler {
         shouldFallbackToEco ||
         (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact"))
       ) {
-        await this.runEcoCompactPath(threadId, worktreePath, runSignal ?? signal, resume, trigger);
+        const fallbackMethod: ContextCompactionMethod = "eco-fallback:unsupported-slash-command";
+        logContextCompaction("fallback", {
+          threadId,
+          trigger,
+          method: fallbackMethod,
+          detail:
+            slashCommands.length > 0
+              ? `slashCommands=${slashCommands.join(",")}`
+              : "sdk compact session ended without compact support",
+        });
+        await this.runEcoCompactPath(
+          threadId,
+          worktreePath,
+          runSignal ?? signal,
+          resume,
+          trigger,
+          fallbackMethod,
+        );
         return;
       }
 
       this.options.monitor.markCompactCompleted(threadId, postTokens);
       this.emitLiveFromMonitor(threadId);
+      logContextCompaction("complete", {
+        threadId,
+        trigger,
+        method: sdkMethod,
+        postTokens,
+        sessionId: resume.resumeSessionId,
+      });
       if (!boundaryRecorded) {
         this.options.emitCompactionStatus(threadId, {
           stage: "completed",
@@ -332,7 +422,14 @@ export class ContextSnapshotScheduler {
     signal: AbortSignal,
     resume: EcoSdkResumeOptions,
     trigger: "auto" | "manual",
+    method: ContextCompactionMethod,
   ): Promise<void> {
+    logContextCompaction("start", {
+      threadId,
+      trigger,
+      method,
+      sessionId: resume.resumeSessionId,
+    });
     if (!this.options.runEcoCompact) {
       throw new Error("当前驱动不支持上下文压缩。");
     }
@@ -351,6 +448,13 @@ export class ContextSnapshotScheduler {
     });
     this.options.monitor.markCompactCompleted(threadId, result.postTokensEstimate);
     this.emitLiveFromMonitor(threadId);
+    logContextCompaction("complete", {
+      threadId,
+      trigger,
+      method,
+      postTokens: result.postTokensEstimate,
+      sessionId: resume.resumeSessionId,
+    });
     this.options.emitCompactionStatus(threadId, {
       stage: "completed",
       trigger,

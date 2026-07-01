@@ -4852,18 +4852,18 @@ html[data-window-focused="true"] .codex-sidebar {
   display: grid;
   grid-template-columns: minmax(32px, 1fr) minmax(0, auto) minmax(32px, 1fr);
   align-items: center;
-  gap: 14px;
-  margin: 14px 0 16px;
+  gap: 12px;
+  margin: 10px 0 12px;
   color: #8a8a8a;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
 }
 
 .run-log-context-compaction-line {
   height: 1px;
   min-width: 0;
-  background: #333333;
+  background: color-mix(in srgb, var(--text-muted, #8a8a8a) 12%, transparent);
 }
 
 .run-log-context-compaction-label {
@@ -14735,11 +14735,11 @@ html[data-window-focused="true"] .settings-nav {
   margin: 0;
   color: var(--codex-log-muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction-line {
-  background: #3a3a3a;
+  background: var(--codex-log-line-subtle, rgba(255, 255, 255, 0.06));
 }
 
 .codex-main:not(.codex-main-landing) .run-log-action-icon,

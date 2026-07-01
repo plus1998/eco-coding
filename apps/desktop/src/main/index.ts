@@ -5537,6 +5537,8 @@ async function compactThreadContextManual(threadId: string): Promise<ThreadCompa
     return { ok: false, message: "上下文正在压缩中，请稍候。" };
   }
 
+  process.stderr.write(`[eco] context compaction requested thread=${threadId} trigger=manual session=${sdkSession.sessionId}\n`);
+
   try {
     archiveThreadContextBeforeCompaction(threadId, "manual", sdkSession.sessionId);
 

@@ -986,7 +986,7 @@ export function isThreadPromptCacheInvalidated(
 }
 
 /** Orphaned compaction.started without a terminal event stops blocking the UI after this long. */
-const COMPACTION_IN_FLIGHT_STALE_MS = 2 * 60 * 1000;
+const COMPACTION_IN_FLIGHT_STALE_MS = 4 * 60 * 1000;
 
 export function isThreadContextCompactionInFlight(
   projection: ThreadRunProjectionSnapshot | undefined,

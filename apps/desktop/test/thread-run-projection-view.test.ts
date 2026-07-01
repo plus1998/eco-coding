@@ -2309,7 +2309,7 @@ test("isThreadContextCompactionInFlight ignores stale started without terminal e
             id: "compact-start",
             eventType: "context.compaction.started",
             text: "正在手动压缩上下文",
-            at: "2026-06-19T11:57:00.000Z",
+            at: "2026-06-19T11:55:00.000Z",
           }),
         ],
       }),

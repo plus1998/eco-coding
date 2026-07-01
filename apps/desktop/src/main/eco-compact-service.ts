@@ -9,7 +9,9 @@ import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import { postAuxiliaryBridgeRequest } from "./bridge-auxiliary-request";
 import type { ThreadCompactHandoffRecord } from "./conversation-store";
 
-const SUMMARY_TIMEOUT_MS = 30_000;
+const SUMMARY_TIMEOUT_MS = 180_000;
+const SUMMARY_TIMEOUT_SECONDS = SUMMARY_TIMEOUT_MS / 1_000;
+export const ECOMPACT_SUMMARY_TIMEOUT_ERROR = `摘要生成超时（${SUMMARY_TIMEOUT_SECONDS} 秒）`;
 
 const SUMMARY_ROUTE_ROLES = ["planner", "explore", "coder"] as const;
 
@@ -29,6 +31,8 @@ export interface EcoCompactServiceInput {
   clearSdkSession(threadId: string): void;
   resolveProxyRoutes(threadId: string): readonly AnthropicProxyRoute[] | undefined;
   fetcher?: Fetcher;
+  /** Test hook: override summary request timeout. */
+  summaryTimeoutMs?: number;
 }
 
 export interface EcoCompactRunInput {
@@ -48,6 +52,7 @@ export interface EcoCompactService {
 
 export function createEcoCompactService(services: EcoCompactServiceInput): EcoCompactService {
   const fetcher = services.fetcher ?? fetch;
+  const summaryTimeoutMs = services.summaryTimeoutMs ?? SUMMARY_TIMEOUT_MS;
 
   return {
     async runEcoCompact(threadId, input) {
@@ -59,7 +64,20 @@ export function createEcoCompactService(services: EcoCompactServiceInput): EcoCo
       const { older, recent } = splitUserMessagesForCompact(activityLines);
 
       const routes = services.resolveProxyRoutes(threadId);
-      const summary = await summarizeCompactionContext(threadPrompt, older, routes, fetcher, input.signal);
+      const summaryRoute = resolveSummaryRoute(routes);
+      process.stderr.write(
+        `[eco] eco-compact summary start thread=${threadId} trigger=${input.trigger} routeRole=${summaryRoute?.role ?? "none"} model=${summaryRoute?.modelId ?? "fallback"} olderMessages=${older.length} recentMessages=${recent.length}\n`,
+      );
+      const summary = await summarizeCompactionContext(
+        threadPrompt,
+        older,
+        routes,
+        fetcher,
+        summaryTimeoutMs,
+        input.signal,
+        threadId,
+        input.trigger,
+      );
       const postTokensEstimate = estimateHandoffPostTokens(threadPrompt, {
         summary,
         recentUserMessages: recent,
@@ -71,6 +89,10 @@ export function createEcoCompactService(services: EcoCompactServiceInput): EcoCo
         postTokensEstimate,
       });
       services.clearSdkSession(threadId);
+
+      process.stderr.write(
+        `[eco] eco-compact summary complete thread=${threadId} trigger=${input.trigger} postTokensEstimate=${postTokensEstimate} summaryChars=${summary.length}\n`,
+      );
 
       return {
         postTokensEstimate,
@@ -101,15 +123,25 @@ async function summarizeCompactionContext(
   olderMessages: readonly string[],
   routes: readonly AnthropicProxyRoute[] | undefined,
   fetcher: Fetcher,
-  parentSignal?: AbortSignal,
+  summaryTimeoutMs: number,
+  parentSignal: AbortSignal | undefined,
+  threadId: string,
+  trigger: "auto" | "manual",
 ): Promise<string> {
   const summaryRoute = resolveSummaryRoute(routes);
   if (!summaryRoute) {
+    process.stderr.write(
+      `[eco] eco-compact summary fallback thread=${threadId} trigger=${trigger} reason=no-summary-route\n`,
+    );
     return buildFallbackSummary(threadPrompt, olderMessages);
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, summaryTimeoutMs);
   const abortFromParent = () => controller.abort();
   parentSignal?.addEventListener("abort", abortFromParent, { once: true });
 
@@ -120,16 +152,28 @@ async function summarizeCompactionContext(
       fetcher,
       controller.signal,
     );
+    if (timedOut) {
+      throw new Error(ECOMPACT_SUMMARY_TIMEOUT_ERROR);
+    }
     if (summary) {
       return summary;
     }
-  } catch {
-    // fall through to deterministic fallback
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(ECOMPACT_SUMMARY_TIMEOUT_ERROR);
+    }
+    if (parentSignal?.aborted) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+    // fall through to deterministic fallback for transient request failures
   } finally {
     clearTimeout(timeout);
     parentSignal?.removeEventListener("abort", abortFromParent);
   }
 
+  process.stderr.write(
+    `[eco] eco-compact summary fallback thread=${threadId} trigger=${trigger} reason=request-failed routeRole=${summaryRoute.role} model=${summaryRoute.modelId}\n`,
+  );
   return buildFallbackSummary(threadPrompt, olderMessages);
 }
 
