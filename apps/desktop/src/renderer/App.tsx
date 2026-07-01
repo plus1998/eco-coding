@@ -1304,6 +1304,46 @@ function App() {
   useEffect(() => {
     saveWorkspacePanelWorkspaceState(workspacePanelByProject);
   }, [workspacePanelByProject]);
+  const workspacePanelModeRef = useRef<{
+    projectPath?: string;
+    inConversation?: boolean;
+  }>({});
+  useEffect(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    const inConversation = Boolean(
+      activeThread && activeThread.workspacePath === currentProjectPath,
+    );
+    const prev = workspacePanelModeRef.current;
+    const projectChanged = prev.projectPath !== currentProjectPath;
+    const modeChanged = !projectChanged && prev.inConversation !== inConversation;
+    workspacePanelModeRef.current = {
+      projectPath: currentProjectPath,
+      inConversation,
+    };
+    setWorkspacePanelByProject((current) => {
+      const existing = current[currentProjectPath];
+      if (projectChanged) {
+        if (existing !== undefined) {
+          return current;
+        }
+        return {
+          ...current,
+          [currentProjectPath]: createProjectWorkspacePanelState(inConversation),
+        };
+      }
+      if (!modeChanged) {
+        return current;
+      }
+      return {
+        ...current,
+        [currentProjectPath]: existing
+          ? { ...existing, open: inConversation }
+          : createProjectWorkspacePanelState(inConversation),
+      };
+    });
+  }, [activeThread?.id, activeThread?.workspacePath, currentProjectPath]);
   useEffect(() => {
     if (!currentProjectPath) {
       return undefined;
@@ -4172,7 +4212,8 @@ function App() {
       <section
         className={[
           "codex-main",
-          showLanding ? "codex-main-landing" : "codex-main-has-toolbar",
+          showLanding ? "codex-main-landing" : "",
+          currentProjectPath ? "codex-main-has-toolbar" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -4181,19 +4222,28 @@ function App() {
           <div
             className={[
               "codex-main-scroll",
+              showWorkspacePanel ? "has-workspace-panel" : "",
               showWorkspacePanel && currentWorkspacePanelState?.open ? "is-workspace-panel-open" : "",
+              currentProjectPath && showLanding && showWorkspacePanel && currentWorkspacePanelState?.open
+                ? "is-topbar-solid"
+                : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
               !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
             ]
               .filter(Boolean)
               .join(" ")}
           >
-            {!showLanding && currentProjectPath ? (
+            {currentProjectPath ? (
               <header
                 ref={topbarRef}
-                className={["codex-main-topbar", topbarSolid ? "is-solid" : "is-clear"].filter(Boolean).join(" ")}
+                className={[
+                  "codex-main-topbar",
+                  showLanding || topbarSolid ? "is-solid" : "is-clear",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
-                {activeThread ? (
+                {!showLanding && activeThread ? (
                   <div className="activity-header">
                     <h2 title={activeThread.title}>{activeThread.title}</h2>
                   </div>
@@ -4236,6 +4286,7 @@ function App() {
                 </div>
               </header>
             ) : null}
+            <div className="codex-main-left-column">
             <div ref={scrollBodyRef} className="codex-main-scroll-body">
             {showLanding ? (
               <div className="codex-landing">
@@ -4295,7 +4346,8 @@ function App() {
                 {composer}
               </div>
             )}
-            {currentProjectPath && currentTerminalState?.open ? (
+            </div>
+            {currentProjectPath && currentTerminalState ? (
               <TerminalPanel
                 workspacePath={currentProjectPath}
                 workspaceLabel={currentProjectName}
@@ -4313,8 +4365,13 @@ function App() {
             ) : null}
             </div>
 
-          {showWorkspacePanel && currentWorkspacePanelState?.open ? (
-            <aside id="workspace-panel" className="workspace-panel" aria-label="工作区面板">
+          {showWorkspacePanel ? (
+            <aside
+              id="workspace-panel"
+              className="workspace-panel"
+              aria-label="工作区面板"
+              aria-hidden={currentWorkspacePanelState?.open !== true}
+            >
               <WorkspaceFloatingCards
                 todos={activeThread ? coderTodos : []}
                 hasActiveThread={Boolean(activeThread)}

@@ -217,16 +217,19 @@ export function TerminalPanel({
     }
   };
 
-  if (!state.open || state.tabs.length === 0 || !activeTab) {
+  if (state.tabs.length === 0 || !activeTab) {
     return null;
   }
+
+  const isOpen = state.open;
 
   return (
     <section
       id="terminal-panel"
-      className="terminal-panel"
-      style={{ height: state.height }}
+      className={["terminal-panel", isOpen ? "is-open" : ""].filter(Boolean).join(" ")}
+      style={{ height: isOpen ? state.height : 0 }}
       aria-label="终端"
+      aria-hidden={!isOpen}
     >
       <div
         className="terminal-panel-resize-handle"
