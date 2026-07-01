@@ -106,7 +106,7 @@ class ThreadSessionMenuButton extends ConsumerWidget {
         icon: EcoIcons.more,
         tooltip: '更多',
         size: sessionToolbarButtonSize,
-        onPressed: () {},
+        visualOnly: true,
       ),
     );
   }

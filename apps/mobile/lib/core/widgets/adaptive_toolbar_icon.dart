@@ -18,11 +18,12 @@ class AdaptiveToolbarIcon extends StatelessWidget {
   const AdaptiveToolbarIcon({
     super.key,
     required this.icon,
-    required this.onPressed,
+    this.onPressed,
     this.tooltip,
     this.size = adaptiveToolbarTouchSize,
     this.iconSize,
-  });
+    this.visualOnly = false,
+  }) : assert(visualOnly || onPressed != null);
 
   final IconData icon;
   final VoidCallback? onPressed;
@@ -33,6 +34,12 @@ class AdaptiveToolbarIcon extends StatelessWidget {
 
   /// SF Symbol / icon point size. Defaults to [adaptiveToolbarIconScale] × native extent.
   final double? iconSize;
+
+  /// Renders the toolbar chrome without an inner button.
+  ///
+  /// Use when a parent (e.g. [AdaptivePopupMenuButton]) owns the tap target —
+  /// nested Material buttons otherwise consume touches on Android.
+  final bool visualOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +54,27 @@ class AdaptiveToolbarIcon extends StatelessWidget {
     final style = PlatformInfo.isIOS
         ? AdaptiveButtonStyle.glass
         : AdaptiveButtonStyle.gray;
+
+    if (visualOnly) {
+      final wrapped = SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          child: Container(
+            width: nativeExtent,
+            height: nativeExtent,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _toolbarIconBackground(context, style),
+              borderRadius: BorderRadius.circular(nativeExtent / 2),
+            ),
+            child: Icon(icon, size: resolvedIconSize, color: color),
+          ),
+        ),
+      );
+      if (tooltip == null) return wrapped;
+      return Tooltip(message: tooltip!, child: wrapped);
+    }
 
     final Widget button;
     final sfSymbol = ecoIconSfSymbol(icon);
@@ -69,13 +97,17 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         child: Icon(icon, size: resolvedIconSize, color: color),
       );
     } else {
-      button = AdaptiveButton.icon(
+      // Material FilledButton.icon uses asymmetric default padding and a fixed
+      // 24pt glyph — both misalign icons inside our square touch target on Android.
+      button = AdaptiveButton.child(
         onPressed: onPressed,
-        icon: icon,
-        iconColor: color,
         style: style,
         size: buttonSize,
         enabled: enabled,
+        padding: EdgeInsets.zero,
+        minSize: Size(nativeExtent, nativeExtent),
+        borderRadius: BorderRadius.circular(nativeExtent / 2),
+        child: Icon(icon, size: resolvedIconSize, color: color),
       );
     }
 
@@ -109,4 +141,12 @@ double _nativeExtent(AdaptiveButtonSize size) {
     AdaptiveButtonSize.medium => 36,
     AdaptiveButtonSize.large => 44,
   };
+}
+
+Color _toolbarIconBackground(BuildContext context, AdaptiveButtonStyle style) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  if (PlatformInfo.isIOS) {
+    return ecoColors(context).textHeading.withValues(alpha: isDark ? 0.14 : 0.08);
+  }
+  return isDark ? Colors.grey.shade800 : Colors.grey.shade300;
 }
