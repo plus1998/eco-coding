@@ -85,6 +85,9 @@ test("validates remote command args", () => {
     validateRemoteCommandArgs("thread:get", ["thr_1"]),
   ).toEqual({ ok: true });
   expect(
+    validateRemoteCommandArgs("thread:delete", ["thr_1"]),
+  ).toEqual({ ok: true });
+  expect(
     validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"]),
   ).toEqual({ ok: true });
   expect(

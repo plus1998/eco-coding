@@ -83,6 +83,32 @@ void main() {
     expect(config.mcpServersEnabled, const {'mongo': true, 'browser': true});
   });
 
+  test('WorkflowSettingsSnapshot toJson includes sessionMode and planModelEnabled', () {
+    final planSnapshot = const WorkflowSettingsSnapshot(
+      sessionMode: 'plan',
+      mcpServersEnabled: {'mongo': true},
+    );
+    final planJson = planSnapshot.toJson();
+    expect(planJson['sessionMode'], 'plan');
+    expect(planJson['planModelEnabled'], true);
+    expect(planJson['mcpServersEnabled'], {'mongo': true});
+
+    final agentSnapshot = const WorkflowSettingsSnapshot(
+      sessionMode: 'agent',
+      mcpServersEnabled: {'mongo': true},
+    );
+    final agentJson = agentSnapshot.toJson();
+    expect(agentJson['sessionMode'], 'agent');
+    expect(agentJson['planModelEnabled'], false);
+    expect(agentJson['mcpServersEnabled'], {'mongo': true});
+
+    final noMcpSnapshot = const WorkflowSettingsSnapshot(sessionMode: 'ask');
+    final noMcpJson = noMcpSnapshot.toJson();
+    expect(noMcpJson['sessionMode'], 'ask');
+    expect(noMcpJson['planModelEnabled'], false);
+    expect(noMcpJson.containsKey('mcpServersEnabled'), false);
+  });
+
   test('ModelSettingsSnapshot parses embedded mcpSettings', () {
     final settings = ModelSettingsSnapshot.fromJson({
       'orchestrationProfiles': [],

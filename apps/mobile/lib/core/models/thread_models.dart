@@ -110,6 +110,7 @@ class WorkflowSettingsSnapshot {
 
   Map<String, dynamic> toJson() => {
         'sessionMode': sessionMode,
+        'planModelEnabled': sessionMode == 'plan',
         if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
       };
 
