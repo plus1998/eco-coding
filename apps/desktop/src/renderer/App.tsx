@@ -1227,10 +1227,15 @@ function App() {
           [currentProjectPath]: { ...existing, open: false },
         };
       }
-      const next = existing ?? createProjectTerminalState(currentProjectName, true);
+      if (!existing || existing.tabs.length === 0) {
+        return {
+          ...current,
+          [currentProjectPath]: createProjectTerminalState(currentProjectName, true),
+        };
+      }
       return {
         ...current,
-        [currentProjectPath]: { ...next, open: true },
+        [currentProjectPath]: { ...existing, open: true },
       };
     });
   }, [currentProjectName, currentProjectPath]);
@@ -4360,12 +4365,6 @@ function App() {
                       injectedSessionId: injectedTerminalSessionId,
                       onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
                     })}
-                    onClose={() =>
-                      updateProjectTerminal(workspacePath, {
-                        ...terminalState,
-                        open: false,
-                      })
-                    }
                   />
                 </div>
               );

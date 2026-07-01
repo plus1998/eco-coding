@@ -9,7 +9,6 @@ import {
   type TerminalTabRecord,
 } from "./terminal-panel-storage";
 import {
-  clearTerminalSessionsForProject,
   deleteTerminalSessionId,
   getTerminalSessionId,
   listTerminalSessionsForProject,
@@ -21,7 +20,6 @@ interface TerminalPanelProps {
   workspaceLabel: string;
   state: ProjectTerminalState;
   onStateChange: (next: ProjectTerminalState) => void;
-  onClose: () => void;
   isCurrentProject?: boolean;
   injectedSessionId?: string | null;
   onInjectedSessionConsumed?: () => void;
@@ -32,7 +30,6 @@ export function TerminalPanel({
   workspaceLabel,
   state,
   onStateChange,
-  onClose,
   isCurrentProject = true,
   injectedSessionId,
   onInjectedSessionConsumed,
@@ -46,6 +43,7 @@ export function TerminalPanel({
         )
       : {},
   );
+  const [tabEpochById, setTabEpochById] = useState<Record<string, number>>({});
   const [busyTabIds, setBusyTabIds] = useState<Record<string, boolean>>({});
   const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
 
@@ -74,25 +72,12 @@ export function TerminalPanel({
     );
   }, [state.tabs, workspacePath]);
 
-  const killAllTabSessions = useCallback(() => {
-    const sessionIds = clearTerminalSessionsForProject(workspacePath);
-    if (window.eco) {
-      for (const sessionId of sessionIds) {
-        void window.eco.killTerminal(sessionId);
-      }
-    }
-    setSessionsByTabId({});
-    setBusyTabIds({});
-    setErrorsByTabId({});
-  }, [workspacePath]);
-
   useEffect(() => {
     if (!state.open) {
-      killAllTabSessions();
       return;
     }
     syncSessionsFromCache();
-  }, [killAllTabSessions, state.open, syncSessionsFromCache]);
+  }, [state.open, syncSessionsFromCache, workspacePath, state.tabs]);
 
   const ensureTabSession = useCallback(
     async (tabId: string, dimensions?: TerminalDimensions) => {
@@ -155,6 +140,10 @@ export function TerminalPanel({
     if (sessionId && window.eco) {
       void window.eco.killTerminal(sessionId);
     }
+    setTabEpochById((current) => ({
+      ...current,
+      [tabId]: (current[tabId] ?? 0) + 1,
+    }));
     setSessionsByTabId((current) => {
       const next = { ...current };
       delete next[tabId];
@@ -185,10 +174,10 @@ export function TerminalPanel({
   };
 
   const handleCloseTab = (tab: TerminalTabRecord) => {
-    killTabSession(tab.id);
     const remaining = state.tabs.filter((item) => item.id !== tab.id);
+    killTabSession(tab.id);
     if (remaining.length === 0) {
-      onClose();
+      onStateChange({ ...state, tabs: [], activeTabId: "", open: false });
       return;
     }
     const activeTabId =
@@ -315,7 +304,7 @@ export function TerminalPanel({
               ) : null}
               {!error && state.open && (isActive || sessionId) ? (
                 <GhosttyTerminal
-                  key={`${workspacePath}:${tab.id}:${sessionId ?? "pending"}`}
+                  key={`${workspacePath}:${tab.id}:${tabEpochById[tab.id] ?? 0}`}
                   sessionId={sessionId ?? null}
                   active={isActive && isCurrentProject && isOpen}
                   onDimensionsReady={

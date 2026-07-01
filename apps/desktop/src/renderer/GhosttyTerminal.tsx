@@ -354,6 +354,7 @@ export function GhosttyTerminal({
       return undefined;
     }
 
+    terminal.clear();
     initialResizeSyncedRef.current = false;
     void eco
       .resizeTerminal({ sessionId, cols: terminal.cols, rows: terminal.rows })
