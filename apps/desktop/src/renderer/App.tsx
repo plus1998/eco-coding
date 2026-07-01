@@ -2385,7 +2385,7 @@ function App() {
     }
   }
 
-  function restorePrompt(text: string, rewindTarget?: ThreadActivityRewindTarget) {
+  const restorePrompt = useCallback((text: string, rewindTarget?: ThreadActivityRewindTarget) => {
     setPrompt(text);
     if (activeThread && rewindTarget) {
       setComposerRewindTarget({ ...rewindTarget, threadId: activeThread.id });
@@ -2396,7 +2396,7 @@ function App() {
       composerRef.current?.focus();
       composerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
-  }
+  }, [activeThread?.id]);
 
   function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     setEditingFollowUpId(followUp.id);

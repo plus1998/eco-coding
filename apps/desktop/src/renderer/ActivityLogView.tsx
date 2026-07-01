@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   type ReactNode,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -165,7 +166,7 @@ function ProjectionFeedLoading() {
   );
 }
 
-export function ActivityLogView(props: ActivityLogViewProps) {
+export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogViewProps) {
   if (!props.projection?.sourceEventCount) {
     return <ProjectionFeedLoading />;
   }
@@ -179,7 +180,7 @@ export function ActivityLogView(props: ActivityLogViewProps) {
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
     />
   );
-}
+});
 
 function ProjectionActivityLogView({
   projection,
