@@ -1209,18 +1209,12 @@ function App() {
     }
     return getProjectWorkspacePanelState(workspacePanelByProject, currentProjectPath);
   }, [currentProjectPath, workspacePanelByProject]);
-  const updateCurrentProjectTerminal = useCallback(
-    (next: ProjectTerminalState) => {
-      if (!currentProjectPath) {
-        return;
-      }
-      setTerminalByProject((current) => ({
-        ...current,
-        [currentProjectPath]: next,
-      }));
-    },
-    [currentProjectPath],
-  );
+  const updateProjectTerminal = useCallback((workspacePath: string, next: ProjectTerminalState) => {
+    setTerminalByProject((current) => ({
+      ...current,
+      [workspacePath]: next,
+    }));
+  }, []);
   const toggleTerminalForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
       return;
@@ -4347,22 +4341,35 @@ function App() {
               </div>
             )}
             </div>
-            {currentProjectPath && currentTerminalState ? (
-              <TerminalPanel
-                workspacePath={currentProjectPath}
-                workspaceLabel={currentProjectName}
-                state={currentTerminalState}
-                onStateChange={updateCurrentProjectTerminal}
-                injectedSessionId={injectedTerminalSessionId}
-                onInjectedSessionConsumed={() => setInjectedTerminalSessionId(null)}
-                onClose={() =>
-                  updateCurrentProjectTerminal({
-                    ...currentTerminalState,
-                    open: false,
-                  })
-                }
-              />
-            ) : null}
+            {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {
+              if (terminalState.tabs.length === 0) {
+                return null;
+              }
+              const isCurrentProject = workspacePath === currentProjectPath;
+              const workspaceLabel =
+                projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
+              return (
+                <div key={workspacePath} className="codex-terminal-project-slot" hidden={!isCurrentProject}>
+                  <TerminalPanel
+                    workspacePath={workspacePath}
+                    workspaceLabel={workspaceLabel}
+                    state={terminalState}
+                    isCurrentProject={isCurrentProject}
+                    onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
+                    {...(isCurrentProject && {
+                      injectedSessionId: injectedTerminalSessionId,
+                      onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
+                    })}
+                    onClose={() =>
+                      updateProjectTerminal(workspacePath, {
+                        ...terminalState,
+                        open: false,
+                      })
+                    }
+                  />
+                </div>
+              );
+            })}
             </div>
 
           {showWorkspacePanel ? (

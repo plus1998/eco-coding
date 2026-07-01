@@ -8,6 +8,12 @@ import {
   type ProjectTerminalState,
   type TerminalTabRecord,
 } from "./terminal-panel-storage";
+import {
+  deleteTerminalSessionId,
+  getTerminalSessionId,
+  listTerminalSessionsForProject,
+  setTerminalSessionId,
+} from "./terminal-session-cache";
 
 interface TerminalPanelProps {
   workspacePath: string;
@@ -15,11 +21,10 @@ interface TerminalPanelProps {
   state: ProjectTerminalState;
   onStateChange: (next: ProjectTerminalState) => void;
   onClose: () => void;
+  isCurrentProject?: boolean;
   injectedSessionId?: string | null;
   onInjectedSessionConsumed?: () => void;
 }
-
-type SessionCache = Map<string, Map<string, string>>;
 
 export function TerminalPanel({
   workspacePath,
@@ -27,12 +32,17 @@ export function TerminalPanel({
   state,
   onStateChange,
   onClose,
+  isCurrentProject = true,
   injectedSessionId,
   onInjectedSessionConsumed,
 }: TerminalPanelProps) {
-  const sessionCacheRef = useRef<SessionCache>(new Map());
   const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>();
-  const [sessionsByTabId, setSessionsByTabId] = useState<Record<string, string>>({});
+  const [sessionsByTabId, setSessionsByTabId] = useState<Record<string, string>>(() =>
+    listTerminalSessionsForProject(
+      workspacePath,
+      state.tabs.map((tab) => tab.id),
+    ),
+  );
   const [busyTabIds, setBusyTabIds] = useState<Record<string, boolean>>({});
   const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
 
@@ -42,12 +52,7 @@ export function TerminalPanel({
     if (!injectedSessionId || !activeTab) {
       return;
     }
-    let projectSessions = sessionCacheRef.current.get(workspacePath);
-    if (!projectSessions) {
-      projectSessions = new Map();
-      sessionCacheRef.current.set(workspacePath, projectSessions);
-    }
-    projectSessions.set(activeTab.id, injectedSessionId);
+    setTerminalSessionId(workspacePath, activeTab.id, injectedSessionId);
     setSessionsByTabId((current) => ({ ...current, [activeTab.id]: injectedSessionId }));
     setErrorsByTabId((current) => {
       const next = { ...current };
@@ -58,19 +63,12 @@ export function TerminalPanel({
   }, [activeTab, injectedSessionId, onInjectedSessionConsumed, workspacePath]);
 
   const syncSessionsFromCache = useCallback(() => {
-    const projectSessions = sessionCacheRef.current.get(workspacePath);
-    if (!projectSessions) {
-      setSessionsByTabId({});
-      return;
-    }
-    const next: Record<string, string> = {};
-    for (const tab of state.tabs) {
-      const sessionId = projectSessions.get(tab.id);
-      if (sessionId) {
-        next[tab.id] = sessionId;
-      }
-    }
-    setSessionsByTabId(next);
+    setSessionsByTabId(
+      listTerminalSessionsForProject(
+        workspacePath,
+        state.tabs.map((tab) => tab.id),
+      ),
+    );
   }, [state.tabs, workspacePath]);
 
   const ensureTabSession = useCallback(
@@ -79,13 +77,7 @@ export function TerminalPanel({
         return undefined;
       }
 
-      let projectSessions = sessionCacheRef.current.get(workspacePath);
-      if (!projectSessions) {
-        projectSessions = new Map();
-        sessionCacheRef.current.set(workspacePath, projectSessions);
-      }
-
-      const cached = projectSessions.get(tabId);
+      const cached = getTerminalSessionId(workspacePath, tabId);
       if (cached) {
         setSessionsByTabId((current) => ({ ...current, [tabId]: cached }));
         return cached;
@@ -108,7 +100,7 @@ export function TerminalPanel({
           cols: dimensions.cols,
           rows: dimensions.rows,
         });
-        projectSessions.set(tabId, result.sessionId);
+        setTerminalSessionId(workspacePath, tabId, result.sessionId);
         setSessionsByTabId((current) => ({ ...current, [tabId]: result.sessionId }));
         return result.sessionId;
       } catch (spawnError) {
@@ -131,8 +123,7 @@ export function TerminalPanel({
   }, [syncSessionsFromCache, workspacePath]);
 
   const clearTabSession = useCallback((tabId: string) => {
-    const projectSessions = sessionCacheRef.current.get(workspacePath);
-    projectSessions?.delete(tabId);
+    deleteTerminalSessionId(workspacePath, tabId);
     setSessionsByTabId((current) => {
       const next = { ...current };
       delete next[tabId];
@@ -141,12 +132,10 @@ export function TerminalPanel({
   }, [workspacePath]);
 
   const killTabSession = useCallback((tabId: string) => {
-    const projectSessions = sessionCacheRef.current.get(workspacePath);
-    const sessionId = projectSessions?.get(tabId);
+    const sessionId = deleteTerminalSessionId(workspacePath, tabId);
     if (sessionId && window.eco) {
       void window.eco.killTerminal(sessionId);
     }
-    projectSessions?.delete(tabId);
     setSessionsByTabId((current) => {
       const next = { ...current };
       delete next[tabId];
@@ -225,7 +214,7 @@ export function TerminalPanel({
 
   return (
     <section
-      id="terminal-panel"
+      id={isCurrentProject ? "terminal-panel" : undefined}
       className={["terminal-panel", isOpen ? "is-open" : ""].filter(Boolean).join(" ")}
       style={{ height: isOpen ? state.height : 0 }}
       aria-label="终端"
@@ -309,7 +298,7 @@ export function TerminalPanel({
                 <GhosttyTerminal
                   key={`${workspacePath}:${tab.id}:${sessionId ?? "pending"}`}
                   sessionId={sessionId ?? null}
-                  active={isActive}
+                  active={isActive && isCurrentProject && isOpen}
                   onDimensionsReady={
                     sessionId
                       ? undefined
