@@ -13,6 +13,8 @@
   --toolbar-edge-inset: 15px;
   --feed-max-width: 750px;
   --composer-max-width: 750px;
+  --activity-feed-top-inset: calc(var(--workspace-toolbar-clearance) + 12px);
+  --activity-feed-top-mask-height: calc(var(--activity-feed-top-inset) + 14px);
 }
 
 * {
@@ -224,7 +226,7 @@ html[data-window-focused="true"] .codex-sidebar {
   height: var(--window-chrome-top);
   margin: 0 -10px;
   background: transparent;
-  pointer-events: none;
+  pointer-events: auto;
   -webkit-app-region: drag;
 }
 
@@ -917,7 +919,7 @@ html[data-window-focused="true"] .codex-sidebar {
   flex-direction: column;
   align-items: stretch;
   padding: 0;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .codex-main-scroll.has-workspace-panel {
@@ -938,6 +940,8 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .codex-main-topbar {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -961,17 +965,6 @@ html[data-window-focused="true"] .codex-sidebar {
 .codex-main-topbar.is-clear {
   background: transparent;
   box-shadow: none;
-  pointer-events: none;
-  -webkit-app-region: no-drag;
-}
-
-.codex-main-topbar.is-clear .activity-header,
-.codex-main-topbar.is-clear .codex-main-toolbar {
-  pointer-events: auto;
-}
-
-.codex-main-topbar.is-clear .activity-header {
-  -webkit-app-region: drag;
 }
 
 .codex-main-topbar.is-solid {
@@ -1101,9 +1094,100 @@ html[data-window-focused="true"] .codex-sidebar {
   grid-row: 2;
 }
 
-.codex-main-topbar-leading {
+/* Conversation feed: topbar on its own row — feed no-drag must not stack under title */
+.codex-main-scroll:has(.codex-feed-stack) {
+  display: flex;
+  flex-direction: column;
+}
+
+.codex-main-scroll.has-workspace-panel:has(.codex-feed-stack) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  column-gap: 0;
+}
+
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-feed-stack) {
+  grid-template-columns: minmax(0, 1fr) var(--workspace-panel-width, 300px);
+  column-gap: 24px;
+}
+
+.codex-main-scroll:has(.codex-feed-stack) .codex-main-topbar {
+  grid-area: unset;
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+  z-index: 20;
+  margin-bottom: 0;
+  pointer-events: auto;
+  -webkit-app-region: drag;
+}
+
+.codex-main-scroll.has-workspace-panel:has(.codex-feed-stack) .codex-main-topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.codex-main-scroll:has(.codex-feed-stack) .codex-main-left-column {
+  grid-area: unset;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+  pointer-events: none;
+}
+
+.codex-main-scroll.has-workspace-panel:has(.codex-feed-stack) .codex-main-left-column {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-feed-stack) .workspace-panel {
+  grid-column: 2;
+  grid-row: 2;
+  padding-top: 0;
+}
+
+/* Feed mode: never stack content under transparent topbar — no-drag feed blocks title drag */
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack) .codex-main-left-column {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+}
+
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack) .workspace-panel {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+  padding-top: 0;
+}
+
+.codex-main-scroll:has(.codex-feed-stack) .codex-main-scroll-body,
+.codex-main-scroll:has(.codex-feed-stack) .codex-feed-stack,
+.codex-main-scroll:has(.codex-feed-stack) .activity-feed,
+.codex-main-scroll:has(.codex-feed-stack) .activity-messages-shell,
+.codex-main-scroll:has(.codex-feed-stack) .activity-messages,
+.codex-main-scroll:has(.codex-feed-stack) .codex-composer-wrap,
+.codex-main-scroll:has(.codex-feed-stack) .terminal-panel,
+.codex-main-scroll:has(.codex-feed-stack) .activity-feed-scroll-jump {
+  pointer-events: auto;
+}
+
+.codex-main-topbar-leading,
+.codex-main-topbar-drag-fill {
   flex: 1 1 auto;
   min-width: 0;
+  align-self: stretch;
+  -webkit-app-region: drag;
 }
 
 .codex-main-topbar .activity-header {
@@ -1127,6 +1211,8 @@ html[data-window-focused="true"] .codex-sidebar {
   line-height: 1.35;
   white-space: nowrap;
   text-overflow: ellipsis;
+  -webkit-app-region: drag;
+  cursor: default;
 }
 
 .codex-main-left-column {
@@ -1876,6 +1962,59 @@ html[data-window-focused="true"] .codex-sidebar {
   min-height: 0;
 }
 
+.activity-feed-top-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: var(--activity-feed-top-mask-height);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.24s ease;
+}
+
+.activity-feed-top-mask::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 22%,
+    rgba(0, 0, 0, 0.65) 48%,
+    rgba(0, 0, 0, 0.2) 72%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 22%,
+    rgba(0, 0, 0, 0.65) 48%,
+    rgba(0, 0, 0, 0.2) 72%,
+    transparent 100%
+  );
+}
+
+.activity-feed-top-mask::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--codex-log-bg) 0%,
+    color-mix(in srgb, var(--codex-log-bg) 90%, transparent) 18%,
+    color-mix(in srgb, var(--codex-log-bg) 50%, transparent) 45%,
+    transparent 100%
+  );
+}
+
+.codex-main-scroll.is-topbar-clear .activity-feed-top-mask {
+  opacity: 1;
+}
+
 .activity-messages {
   flex: 1 1 0%;
   width: 100%;
@@ -1954,8 +2093,8 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .activity-header h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 14px !important;
+  font-weight: 500 !important;
 }
 
 .activity-header-actions {
@@ -14607,6 +14746,12 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .activity-messages {
   color: inherit;
+  padding-top: 12px;
+  scroll-padding-top: 12px;
+}
+
+.codex-main-scroll:has(.codex-feed-stack) .activity-feed-top-mask {
+  opacity: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log {

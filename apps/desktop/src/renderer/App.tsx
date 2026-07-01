@@ -3808,7 +3808,11 @@ function App() {
     if (!scrollBody || !topbar) {
       return;
     }
-    setTopbarSolid(measureTopbarFeedOverlap(scrollBody, topbar));
+    const hasFeedStack = Boolean(scrollBody.querySelector(".codex-feed-stack"));
+    const overlap = hasFeedStack
+      ? true
+      : measureTopbarFeedOverlap(scrollBody, topbar);
+    setTopbarSolid(overlap);
   }, []);
   useEffect(() => {
     if (showLanding || !currentProjectPath) {
@@ -3844,6 +3848,37 @@ function App() {
     currentWorkspacePanelState?.open,
     syncTopbarMode,
   ]);
+  useEffect(() => {
+    if (showLanding || !currentProjectPath) {
+      return undefined;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+      const topbar = topbarRef.current;
+      if (!topbar) {
+        return;
+      }
+      const topbarRect = topbar.getBoundingClientRect();
+      if (event.clientY > topbarRect.bottom + 1) {
+        return;
+      }
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        Boolean(
+          active.closest(
+            ".terminal-panel, .ghostty-terminal-host, .xterm, textarea, input, [contenteditable='true']",
+          ),
+        )
+      ) {
+        active.blur();
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [showLanding, currentProjectPath]);
   const shellClassName = ["shell", settingsOpen ? "shell-settings-open" : ""].filter(Boolean).join(" ");
   const composerPlaceholder = showClarification
     ? "补充消息会排队；回答问题请用上方卡片"
@@ -4249,6 +4284,7 @@ function App() {
                 ) : (
                   <div className="codex-main-topbar-leading" aria-hidden />
                 )}
+                <div className="codex-main-topbar-drag-fill" aria-hidden />
                 <div className="codex-main-toolbar">
                   {showWorkspacePanel ? (
                     <button
@@ -4302,6 +4338,7 @@ function App() {
               <div className="codex-feed-stack">
                 <div className="activity-feed">
                   <div className="activity-messages-shell">
+                    <div className="activity-feed-top-mask" aria-hidden />
                     <div ref={activityMessagesRef} className="activity-messages">
                     <ActivityLogView
                       {...(activeThread && { thread: activeThread })}

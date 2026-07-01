@@ -390,7 +390,8 @@ export function GhosttyTerminal({
 
   useEffect(() => {
     const terminal = termRef.current;
-    if (!terminal) {
+    const mount = mountRef.current;
+    if (!terminal || !mount) {
       return undefined;
     }
     if (!active) {
@@ -399,9 +400,18 @@ export function GhosttyTerminal({
     }
     const frame = window.requestAnimationFrame(() => {
       fitRef.current?.fit();
-      terminal.focus();
     });
-    return () => window.cancelAnimationFrame(frame);
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+      terminal.focus();
+    };
+    mount.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      mount.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [active]);
 
   return (
