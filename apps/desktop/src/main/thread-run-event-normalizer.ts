@@ -189,6 +189,15 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
   if (input.liveType === "request.started") {
     return "request.started";
   }
+  if (input.liveType === "request.completed") {
+    return "request.completed";
+  }
+  if (input.liveType === "request.failed") {
+    return "request.failed";
+  }
+  if (input.liveType === "request.cancelled") {
+    return "request.cancelled";
+  }
   if (input.liveType === "request.retry_scheduled") {
     return "request.retry_scheduled";
   }

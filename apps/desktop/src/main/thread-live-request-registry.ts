@@ -6,11 +6,16 @@ interface ActiveRequestEntry {
   agentId?: string;
 }
 
+export interface ThreadLiveRequestScope {
+  role: string;
+  agentId?: string;
+}
+
 /** Tracks the active provider-scoped request id per thread for live timeline attribution. */
 export class ThreadLiveRequestRegistry {
   private readonly activeByThread = new Map<string, ActiveRequestEntry[]>();
 
-  beginRequest(threadId: string, input: { role: string; agentId?: string }): string {
+  beginRequest(threadId: string, input: ThreadLiveRequestScope): string {
     const requestId = `req_${randomUUID()}`;
     const next: ActiveRequestEntry = {
       requestId,
@@ -21,9 +26,26 @@ export class ThreadLiveRequestRegistry {
     return requestId;
   }
 
+  resolveOrBeginRequest(
+    threadId: string,
+    input: ThreadLiveRequestScope,
+  ): { requestId: string; created: boolean } {
+    const scopeEntry = toScopeEntry(input);
+    const entries = this.activeByThread.get(threadId) ?? [];
+    const existing = entries.find((entry) => sameScope(entry, scopeEntry));
+    if (existing) {
+      return { requestId: existing.requestId, created: false };
+    }
+    return { requestId: this.beginRequest(threadId, input), created: true };
+  }
+
+  listActive(threadId: string): readonly ActiveRequestEntry[] {
+    return [...(this.activeByThread.get(threadId) ?? [])];
+  }
+
   adoptProviderRequestId(
     threadId: string,
-    input: { role: string; agentId?: string },
+    input: ThreadLiveRequestScope,
     providerRequestId: string,
   ): { requestId: string; replacedRequestId?: string } {
     const trimmed = providerRequestId.trim();
@@ -103,4 +125,12 @@ function sameScope(left: ActiveRequestEntry, right: ActiveRequestEntry): boolean
     return false;
   }
   return left.role === right.role;
+}
+
+function toScopeEntry(input: ThreadLiveRequestScope): ActiveRequestEntry {
+  return {
+    requestId: "",
+    role: input.role,
+    ...(input.agentId?.trim() && { agentId: input.agentId.trim() }),
+  };
 }

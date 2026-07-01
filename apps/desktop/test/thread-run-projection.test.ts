@@ -110,8 +110,9 @@ test("buildThreadRunProjection keeps unattributed subagent tools off main timeli
   });
 
   expect(projection.timeline).toHaveLength(0);
-  expect(projection.agents[0]?.timeline).toHaveLength(0);
-  expect(projection.diagnostics[0]?.code).toBe("missing_agent_id");
+  expect(projection.agents[0]?.timeline).toHaveLength(1);
+  expect(projection.agents[0]?.timeline[0]?.id).toBe("tool_read");
+  expect(projection.diagnostics).toEqual([]);
 });
 
 test("buildThreadRunProjection replays parent-linked tools after agent.started", () => {
@@ -750,6 +751,111 @@ test("buildThreadRunProjection closes open request spans for stopped agents", ()
     ownerAgentId: "coder_done",
     endedAt: "2026-01-01T00:00:05.000Z",
   });
+});
+
+test("buildThreadRunProjection closes span with explicit request.completed", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:04.000Z" }],
+    agents: [],
+    events: [
+      event({
+        id: "request-start",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "req_closed",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "message-delta",
+        sequence: 2,
+        eventType: "message.delta",
+        scope: "main",
+        role: "planner",
+        requestId: "req_closed",
+        streamState: "streaming",
+        message: "Hello",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "request-completed",
+        sequence: 3,
+        eventType: "request.completed",
+        scope: "main",
+        role: "planner",
+        requestId: "req_closed",
+        message: "模型请求完成",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.requestSpans).toHaveLength(1);
+  expect(projection.requestSpans[0]).toMatchObject({
+    requestId: "req_closed",
+    status: "completed",
+    endedAt: "2026-01-01T00:00:03.000Z",
+  });
+  expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(false);
+});
+
+test("buildThreadRunProjection ignores duplicate request.started after streaming begins", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:05.000Z" }],
+    agents: [],
+    events: [
+      event({
+        id: "request-start",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "req_dup",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "message-delta",
+        sequence: 2,
+        eventType: "message.delta",
+        scope: "main",
+        role: "planner",
+        requestId: "req_dup",
+        streamState: "streaming",
+        message: "Hello",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "request-dup",
+        sequence: 3,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "req_dup",
+        observedAt: "2026-01-01T00:00:02.500Z",
+      }),
+      event({
+        id: "request-completed",
+        sequence: 4,
+        eventType: "request.completed",
+        scope: "main",
+        role: "planner",
+        requestId: "req_dup",
+        observedAt: "2026-01-01T00:00:04.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.requestSpans[0]).toMatchObject({
+    requestId: "req_dup",
+    status: "completed",
+    endedAt: "2026-01-01T00:00:04.000Z",
+  });
+  expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(false);
 });
 
 test("buildThreadRunProjection ignores persisted metrics-only usage events", () => {

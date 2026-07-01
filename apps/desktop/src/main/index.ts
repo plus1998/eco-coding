@@ -208,6 +208,13 @@ import {
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
+import {
+  clearRequestStartedPersisted,
+  markRequestStartedPersisted,
+  requestTerminalLiveType,
+  requestTerminalMessage,
+  type RequestTerminalStage,
+} from "./thread-request-lifecycle.js";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
@@ -604,14 +611,53 @@ const deferredPlanExecutionByThread = new Map<
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
+function emitRequestTerminalEvent(
+  threadId: string,
+  input: {
+    requestId: string;
+    role: string;
+    agentId?: string;
+    stage: RequestTerminalStage;
+    detail?: string;
+  },
+): void {
+  const requestId = input.requestId.trim();
+  if (!requestId) {
+    return;
+  }
+  emitThreadEvent(
+    threadId,
+    requestTerminalLiveType(input.stage),
+    requestTerminalMessage(input.stage, input.detail),
+    input.role as AgentRole | "system" | "thinking" | "tool" | "user",
+    false,
+    {
+      requestId,
+      ...(input.agentId?.trim() && { agentId: input.agentId.trim() }),
+    },
+  );
+  threadLiveRequestRegistry.endRequest(threadId, requestId);
+  clearRequestStartedPersisted(threadId, requestId);
+}
+
 function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void {
+  clearRequestStartedPersisted(threadId);
   activeRunRuntimeState.startRun(threadId, run);
   activeRunBillingState.startRun(threadId);
 }
 
 function finishActiveRun(threadId: string): void {
+  for (const active of threadLiveRequestRegistry.listActive(threadId)) {
+    emitRequestTerminalEvent(threadId, {
+      requestId: active.requestId,
+      role: active.role,
+      ...(active.agentId && { agentId: active.agentId }),
+      stage: "cancelled",
+    });
+  }
   activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
+  clearRequestStartedPersisted(threadId);
   threadLiveRequestRegistry.clearThread(threadId);
   proxyBillingStampRegistry.clearThread(threadId);
 }
@@ -5402,7 +5448,12 @@ async function emitProxyUsage(
     contextOccupied: resolved.contextOccupied,
   });
   if (info.requestId?.trim()) {
-    threadLiveRequestRegistry.endRequest(info.threadId, info.requestId);
+    emitRequestTerminalEvent(info.threadId, {
+      requestId: info.requestId,
+      role: info.role,
+      ...(info.stampedAgentId && { agentId: info.stampedAgentId }),
+      stage: "completed",
+    });
   }
 
   noteUsageBillingObservation(info.threadId, resolved.observation);
@@ -6363,8 +6414,47 @@ function recordThreadRunEventFromLiveEvent(input: {
   if (!event) {
     return;
   }
+  if (event.eventType === "request.started" && event.requestId) {
+    if (!markRequestStartedPersisted(input.threadId, event.requestId)) {
+      return;
+    }
+  }
+  if (event.eventType === "request.retry_scheduled") {
+    const active = threadLiveRequestRegistry.resolve(input.threadId, {
+      role: input.role,
+      ...(agentId && { agentId }),
+    });
+    if (active) {
+      emitRequestTerminalEvent(input.threadId, {
+        requestId: active,
+        role: input.role,
+        ...(agentId && { agentId }),
+        stage: "cancelled",
+        detail: "模型请求已取消（准备重试）",
+      });
+    }
+  }
   try {
     conversationStore.appendThreadRunEvent(event);
+    if (
+      (event.eventType === "message.final" || event.eventType === "thinking.final") &&
+      event.requestId
+    ) {
+      emitRequestTerminalEvent(input.threadId, {
+        requestId: event.requestId,
+        role: input.role,
+        ...(agentId && { agentId }),
+        stage: "completed",
+      });
+    } else if (event.eventType === "api.error" && event.requestId) {
+      emitRequestTerminalEvent(input.threadId, {
+        requestId: event.requestId,
+        role: input.role,
+        ...(agentId && { agentId }),
+        stage: "failed",
+        detail: event.message.trim() || undefined,
+      });
+    }
     const projectionStreaming =
       input.stream ? true : input.type === "message.delta" ? false : undefined;
     scheduleThreadRunProjectionUpdated(
@@ -6437,7 +6527,7 @@ function resolveLiveRequestId(
     }
   }
   if (input.type === "request.started") {
-    return threadLiveRequestRegistry.beginRequest(threadId, scope);
+    return threadLiveRequestRegistry.resolveOrBeginRequest(threadId, scope).requestId;
   }
   return undefined;
 }
@@ -6554,7 +6644,28 @@ function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionS
 }
 
 function logThreadRunProjectionDiagnostics(projection: ThreadRunProjectionSnapshot): void {
+  const openSpanDiagnostics = projection.diagnostics.filter(
+    (diagnostic) => diagnostic.code === "request_span_left_open",
+  );
+  if (openSpanDiagnostics.length > 0) {
+    const sample = openSpanDiagnostics[0];
+    logEcoDiagThrottled(
+      `thread-run-projection:${projection.thread.threadId}:request_span_left_open`,
+      "thread_run_projection.diagnostic",
+      {
+        threadId: shortThreadId(projection.thread.threadId),
+        code: "request_span_left_open",
+        count: openSpanDiagnostics.length,
+        ...(sample?.requestId && { sampleRequestId: shortProjectionId(sample.requestId) }),
+        message: `Request spans left open after terminal thread status ${projection.thread.status}.`,
+      },
+      5_000,
+    );
+  }
   for (const diagnostic of projection.diagnostics) {
+    if (diagnostic.code === "request_span_left_open") {
+      continue;
+    }
     const identity = diagnostic.eventId ?? diagnostic.agentId ?? diagnostic.requestId ?? "thread";
     logEcoDiagThrottled(
       `thread-run-projection:${projection.thread.threadId}:${diagnostic.code}:${identity}`,
@@ -7281,7 +7392,10 @@ function startRuntimeProxy(
       ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
       ...(threadId && {
         onMessagesRequest: ({ role }) => {
-          threadLiveRequestRegistry.beginRequest(threadId, resolveProxyRequestScope(threadId, role));
+          threadLiveRequestRegistry.resolveOrBeginRequest(
+            threadId,
+            resolveProxyRequestScope(threadId, role),
+          );
           if (emitRequestActivity) {
             emitUpstreamModelRequestActivity(threadId, role);
           }

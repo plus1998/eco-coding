@@ -148,6 +148,33 @@ test("buildThreadRunEventFromLiveEvent maps SDK request status to request span",
   });
 });
 
+test("buildThreadRunEventFromLiveEvent maps request terminal live types", () => {
+  for (const [liveType, eventType] of [
+    ["request.completed", "request.completed"],
+    ["request.failed", "request.failed"],
+    ["request.cancelled", "request.cancelled"],
+  ] as const) {
+    const event = buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: `terminal_${liveType}`,
+      liveType,
+      role: "planner",
+      stream: false,
+      message: liveType,
+      requestId: "req_terminal",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(event).toMatchObject({
+      eventType,
+      scope: "main",
+      requestId: "req_terminal",
+      streamState: "none",
+      metadata: { liveType },
+    });
+  }
+});
+
 test("buildThreadRunEventFromLiveEvent maps SDK retry status to request retry", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

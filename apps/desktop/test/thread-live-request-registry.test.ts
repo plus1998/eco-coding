@@ -83,3 +83,39 @@ test("ThreadLiveRequestRegistry does not adopt provider id across mismatched att
   expect(registry.resolve("thr_1", { role: "coder", agentId: "agent_a" })).toBe(subagentRequestId);
   expect(registry.resolve("thr_1", { role: "coder" })).toBe("msgreq_unattributed");
 });
+
+test("ThreadLiveRequestRegistry resolveOrBeginRequest reuses active scope", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const first = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
+  const second = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
+
+  expect(first.created).toBe(true);
+  expect(second.created).toBe(false);
+  expect(second.requestId).toBe(first.requestId);
+  expect(registry.listActive("thr_1")).toHaveLength(1);
+});
+
+test("ThreadLiveRequestRegistry resolveOrBeginRequest begins a new request after endRequest", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const first = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
+  registry.endRequest("thr_1", first.requestId);
+  const second = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
+
+  expect(second.created).toBe(true);
+  expect(second.requestId).not.toBe(first.requestId);
+});
+
+test("ThreadLiveRequestRegistry listActive snapshots open requests", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const plannerRequest = registry.beginRequest("thr_1", { role: "planner" });
+  const coderRequest = registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
+
+  expect(registry.listActive("thr_1").map((entry) => entry.requestId)).toEqual([
+    plannerRequest,
+    coderRequest,
+  ]);
+
+  registry.endRequest("thr_1", plannerRequest);
+  expect(registry.listActive("thr_1")).toHaveLength(1);
+  expect(registry.listActive("thr_1")[0]?.requestId).toBe(coderRequest);
+});

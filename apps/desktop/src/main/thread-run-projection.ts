@@ -603,6 +603,14 @@ function applyEventToRequestSpan(
   }
 
   if (event.eventType === "request.started") {
+    if (
+      span.status === "streaming" ||
+      span.status === "completed" ||
+      span.status === "failed" ||
+      span.status === "cancelled"
+    ) {
+      return;
+    }
     span.status = "waiting_first_token";
     span.sawStreamStart = true;
   }
