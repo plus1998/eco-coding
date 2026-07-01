@@ -9,6 +9,7 @@ import {
   type TerminalTabRecord,
 } from "./terminal-panel-storage";
 import {
+  clearTerminalSessionsForProject,
   deleteTerminalSessionId,
   getTerminalSessionId,
   listTerminalSessionsForProject,
@@ -38,10 +39,12 @@ export function TerminalPanel({
 }: TerminalPanelProps) {
   const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>();
   const [sessionsByTabId, setSessionsByTabId] = useState<Record<string, string>>(() =>
-    listTerminalSessionsForProject(
-      workspacePath,
-      state.tabs.map((tab) => tab.id),
-    ),
+    state.open
+      ? listTerminalSessionsForProject(
+          workspacePath,
+          state.tabs.map((tab) => tab.id),
+        )
+      : {},
   );
   const [busyTabIds, setBusyTabIds] = useState<Record<string, boolean>>({});
   const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
@@ -70,6 +73,26 @@ export function TerminalPanel({
       ),
     );
   }, [state.tabs, workspacePath]);
+
+  const killAllTabSessions = useCallback(() => {
+    const sessionIds = clearTerminalSessionsForProject(workspacePath);
+    if (window.eco) {
+      for (const sessionId of sessionIds) {
+        void window.eco.killTerminal(sessionId);
+      }
+    }
+    setSessionsByTabId({});
+    setBusyTabIds({});
+    setErrorsByTabId({});
+  }, [workspacePath]);
+
+  useEffect(() => {
+    if (!state.open) {
+      killAllTabSessions();
+      return;
+    }
+    syncSessionsFromCache();
+  }, [killAllTabSessions, state.open, syncSessionsFromCache]);
 
   const ensureTabSession = useCallback(
     async (tabId: string, dimensions?: TerminalDimensions) => {
@@ -117,10 +140,6 @@ export function TerminalPanel({
     },
     [workspacePath],
   );
-
-  useEffect(() => {
-    syncSessionsFromCache();
-  }, [syncSessionsFromCache, workspacePath]);
 
   const clearTabSession = useCallback((tabId: string) => {
     deleteTerminalSessionId(workspacePath, tabId);
@@ -294,7 +313,7 @@ export function TerminalPanel({
                   {error}
                 </p>
               ) : null}
-              {!error && (isActive || sessionId) ? (
+              {!error && state.open && (isActive || sessionId) ? (
                 <GhosttyTerminal
                   key={`${workspacePath}:${tab.id}:${sessionId ?? "pending"}`}
                   sessionId={sessionId ?? null}
