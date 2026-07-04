@@ -746,6 +746,12 @@ html[data-window-focused="true"] .codex-sidebar {
   width: 48px;
 }
 
+/* failed / blocked: status indicator only, hover shows delete */
+.chat-item-row:hover .chat-item-trailing-actions-only .chat-item-trailing-actions:has(.chat-item-row-action),
+.chat-item-row:focus-within .chat-item-trailing-actions-only .chat-item-trailing-actions:has(.chat-item-row-action) {
+  width: 24px;
+}
+
 .project-empty {
   margin: 0;
   padding: 2px 12px 4px 36px;

@@ -178,10 +178,3 @@ function secretKey(service: string, account: string): string {
 }
 
 export * from "./session-store.js";
-export {
-  RedisSessionStore,
-  createRedisSessionStore,
-  testRedisConnection,
-  type RedisSessionStoreConnection,
-  type RedisSessionStoreOptions,
-} from "./redis-session-store.js";

@@ -38,7 +38,6 @@
   },
   "devDependencies": {
     "@eco/model-router": "workspace:*",
-    "@eco/persistence": "workspace:*",
     "@eco/runtime": "workspace:*",
     "@eco/workspace": "workspace:*",
     "@electron/rebuild": "^3.7.2",

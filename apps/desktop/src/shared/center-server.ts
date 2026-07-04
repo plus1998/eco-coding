@@ -1,5 +1,3 @@
-import { previewSecret } from "./session-sync";
-
 export type CenterServerConnectionState = "disabled" | "disconnected" | "connecting" | "connected" | "error";
 
 export interface CenterServerConnectionStatus {
@@ -211,7 +209,13 @@ export function isLocalhostCenterServerUrl(serverUrl: string): boolean {
 }
 
 export function previewCenterServerSecret(value: string): string | undefined {
-  return previewSecret(value);
+  if (!value) {
+    return undefined;
+  }
+  if (value.length <= 4) {
+    return "••••";
+  }
+  return `${value.slice(0, 2)}••••${value.slice(-2)}`;
 }
 
 export const CENTER_SERVER_REAUTH_MESSAGE = "登录已失效，请重新登录。";

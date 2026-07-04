@@ -93,9 +93,6 @@ export const IPC_CHANNELS = {
   workflowSettingsSave: "workflow-settings:save",
   proxyBridgeSettingsGet: "proxy-bridge-settings:get",
   proxyBridgeSettingsSave: "proxy-bridge-settings:save",
-  sessionSyncSettingsGet: "session-sync-settings:get",
-  sessionSyncSettingsSave: "session-sync-settings:save",
-  sessionSyncTestConnection: "session-sync:test-connection",
   centerServerSettingsGet: "center-server-settings:get",
   centerServerSettingsSave: "center-server-settings:save",
   centerServerRegisterDesktop: "center-server:register-desktop",
@@ -203,13 +200,6 @@ export type {
   TestRoleRoutesResult,
   UpstreamModelOption,
 } from "./models";
-export type {
-  SessionSyncSettingsInput,
-  SessionSyncSettingsSnapshot,
-  SessionSyncSettingsView,
-  SessionSyncTestConnectionRequest,
-  SessionSyncTestConnectionResult,
-} from "./session-sync";
 export type {
   LinkAgentsSkillsRequest,
   LinkAgentsSkillsResult,

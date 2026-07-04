@@ -57,11 +57,6 @@ import {
   type RouteProfileInput,
   type RouteProfileView,
   type RuntimeRoleRouteConfig,
-  type SessionSyncSettingsInput,
-  type SessionSyncSettingsSnapshot,
-  type SessionSyncSettingsView,
-  type SessionSyncTestConnectionRequest,
-  type SessionSyncTestConnectionResult,
   type SkillsListResult,
   type TestProviderConnectionRequest,
   type TestProviderConnectionResult,
@@ -411,17 +406,6 @@ const api = {
   },
   saveProxyBridgeSettings(settings: ProxyBridgeSettingsSnapshot): Promise<ProxyBridgeSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.proxyBridgeSettingsSave, settings);
-  },
-  getSessionSyncSettings(): Promise<SessionSyncSettingsSnapshot> {
-    return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsGet);
-  },
-  saveSessionSyncSettings(input: SessionSyncSettingsInput): Promise<SessionSyncSettingsView> {
-    return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsSave, input);
-  },
-  testSessionSyncConnection(
-    request: SessionSyncTestConnectionRequest,
-  ): Promise<SessionSyncTestConnectionResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncTestConnection, request);
   },
   getCenterServerSettings(): Promise<CenterServerSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerSettingsGet);

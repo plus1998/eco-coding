@@ -8,7 +8,6 @@ import {
   ChevronUp,
   Cloud,
   CornerDownRight,
-  Database,
   FolderOpen,
   GitBranch,
   Loader2,
@@ -76,8 +75,6 @@ import {
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
   type CenterServerSignUpRequest,
-  type SessionSyncSettingsInput,
-  type SessionSyncSettingsSnapshot,
   type SkillsListResult,
   type SubagentRole,
   type ThreadActivityRewindTarget,
@@ -167,7 +164,6 @@ import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
-import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
@@ -231,7 +227,7 @@ interface RecentProject {
   importedAt: string;
 }
 
-type SettingsSectionId = "general" | "providers" | "mcp" | "sessionSync" | "centerServer" | "models" | "skills" | "git";
+type SettingsSectionId = "general" | "providers" | "mcp" | "centerServer" | "models" | "skills" | "git";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -254,7 +250,6 @@ const settingsNavGroups: SettingsNavGroup[] = [
     sections: [
       { id: "providers", label: "模型服务商", icon: Settings2 },
       { id: "mcp", label: "MCP", icon: Plug },
-      { id: "sessionSync", label: "会话同步", icon: Database },
       { id: "centerServer", label: "连接", icon: Cloud },
     ],
   },
@@ -269,15 +264,6 @@ const settingsNavGroups: SettingsNavGroup[] = [
 ];
 
 const settingsSections = settingsNavGroups.flatMap((group) => group.sections);
-
-const emptySessionSyncSettings: SessionSyncSettingsSnapshot = {
-  settings: {
-    redisEnabled: false,
-    redisUrl: "",
-    keyPrefix: "eco-sessions",
-    hasRedisPassword: false,
-  },
-};
 
 const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
   settings: {
@@ -441,8 +427,6 @@ function App() {
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
     sessionMode: "agent",
   });
-  const [sessionSyncSettings, setSessionSyncSettings] =
-    useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
 
@@ -546,10 +530,9 @@ function App() {
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
       window.eco.getWorkflowSettings(),
-      window.eco.getSessionSyncSettings(),
       window.eco.getCenterServerSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, workflow, sessionSync, centerServer, proxyBridge]) => {
+    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, workflow, centerServer, proxyBridge]) => {
       setHomeProjectPath(resolvedHomeProjectPath);
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
@@ -566,7 +549,6 @@ function App() {
       setSettings(modelSettings);
       setMcpSettings(mcp);
       setWorkflowSettings(workflow);
-      setSessionSyncSettings(sessionSync);
       setCenterServerSettings(centerServer);
       setProxyBridgeSettings(proxyBridge);
     });
@@ -3230,24 +3212,6 @@ function App() {
     return window.eco.checkMcpServer(input);
   }
 
-  async function saveSessionSyncSettings(input: SessionSyncSettingsInput) {
-    if (!window.eco) return;
-    setIsSavingSettings(true);
-    try {
-      const settings = await window.eco.saveSessionSyncSettings(input);
-      setSessionSyncSettings({ settings });
-    } finally {
-      setIsSavingSettings(false);
-    }
-  }
-
-  async function testSessionSyncConnection(input: { redisUrl: string; redisPassword?: string }) {
-    if (!window.eco) {
-      return { ok: false, error: "Electron preload API is unavailable." };
-    }
-    return window.eco.testSessionSyncConnection(input);
-  }
-
   async function saveCenterServerSettings(input: CenterServerSettingsInput) {
     if (!window.eco) {
       return emptyCenterServerSettings;
@@ -4585,15 +4549,6 @@ function App() {
                 onSave={saveMcpServer}
                 onDelete={deleteMcpServer}
                 onCheck={checkMcpServer}
-              />
-            )}
-
-            {settingsSection === "sessionSync" && (
-              <SessionSyncSettingsPanel
-                settings={sessionSyncSettings.settings}
-                busy={isSavingSettings}
-                onSave={saveSessionSyncSettings}
-                onTestConnection={testSessionSyncConnection}
               />
             )}
 

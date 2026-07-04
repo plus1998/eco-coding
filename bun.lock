@@ -31,7 +31,6 @@
       },
       "devDependencies": {
         "@eco/model-router": "workspace:*",
-        "@eco/persistence": "workspace:*",
         "@eco/runtime": "workspace:*",
         "@eco/workspace": "workspace:*",
         "@electron/rebuild": "^3.7.2",
@@ -93,9 +92,6 @@
     "packages/persistence": {
       "name": "@eco/persistence",
       "version": "0.0.0",
-      "dependencies": {
-        "ioredis": "^5.6.1",
-      },
     },
     "packages/runtime": {
       "name": "@eco/runtime",

@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
-import { createRedisSessionStore, type SessionStore, testRedisConnection } from "@eco/persistence";
 import {
   type AgentEvent,
   defaultSubagentAvailability,
@@ -116,8 +115,6 @@ import {
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
-  type SessionSyncSettingsInput,
-  type SessionSyncTestConnectionRequest,
   type TestProviderConnectionRequest,
   type TestRoleRoutesRequest,
   type ThreadActivityLine,
@@ -360,7 +357,6 @@ import {
 import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
 import { handleSdkUsageRecordedEvent } from "./sdk-usage-recorded-event-handler";
-import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
   resolveSingleUsageBillingOrchestration,
   type SingleUsageBillingRequest,
@@ -542,7 +538,6 @@ let conversationStore: ConversationStore;
 let workflowSettingsStore: WorkflowSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
-let sessionSyncStore: SessionSyncStore;
 let centerServerClient: CenterServerDesktopClient;
 
 function emitCenterServerStatus(): void {
@@ -561,8 +556,6 @@ function scheduleWorkspaceGitStatusPublish(workspacePath: string | undefined): v
 function scheduleWorkspaceGitStatusPublishForThread(threadId: string): void {
   scheduleWorkspaceGitStatusPublish(conversationStore.getThread(threadId)?.workspacePath);
 }
-let sdkSessionStore: SessionStore | undefined;
-let closeSdkSessionStore: (() => Promise<void>) | undefined;
 
 const activeRunRuntimeState = new ActiveRunRuntimeStateStore();
 const activeRunBillingState = new ActiveRunBillingStateStore();
@@ -726,7 +719,6 @@ app.whenReady().then(async () => {
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
-  sessionSyncStore = await createSessionSyncStore(dbPath);
   const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
   centerServerClient = new CenterServerDesktopClient({
     store: await createCenterServerStore(dbPath, {
@@ -857,15 +849,6 @@ app.whenReady().then(async () => {
     nowMs: () => Date.now(),
   });
   loadThreadMetricsFromStore();
-  try {
-    await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
-  } catch (error) {
-    process.stderr.write(
-      `[eco] SessionStore init failed (${errorMessage(error)}), disabling SessionStore so file checkpointing remains available\n`,
-    );
-    sdkSessionStore = undefined;
-    closeSdkSessionStore = undefined;
-  }
   backfillThreadRuntimeConfigs();
   recoverOrphanedRunningThreads();
   currentWorkspace = await ensureHomeProject();
@@ -900,7 +883,6 @@ app.on("will-quit", () => {
   flushAllThreadMetrics();
   gitAutoFetcher?.dispose();
   centerServerClient?.dispose();
-  void closeSdkSessionStore?.();
 });
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
@@ -2323,33 +2305,6 @@ function registerIpcHandlers(): void {
     emitSettingsUpdated();
     return { ok: true };
   });
-
-  registerDesktopCommand(IPC_CHANNELS.sessionSyncSettingsGet, async () => sessionSyncStore.getSettings());
-
-  registerDesktopCommand(IPC_CHANNELS.sessionSyncSettingsSave, async (payload: SessionSyncSettingsInput) => {
-    const settings = sessionSyncStore.saveSettings(payload);
-    await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
-    emitSettingsUpdated();
-    return settings;
-  });
-
-  registerDesktopCommand(
-    IPC_CHANNELS.sessionSyncTestConnection,
-    async (payload: SessionSyncTestConnectionRequest) => {
-      if (!payload || typeof payload.redisUrl !== "string" || !payload.redisUrl.trim()) {
-        return { ok: false, error: "Redis URL is required." };
-      }
-      const stored = sessionSyncStore.getSettingsWithSecrets();
-      const password =
-        payload.redisPassword && payload.redisPassword.length > 0
-          ? payload.redisPassword
-          : stored.redisPassword;
-      return testRedisConnection({
-        url: payload.redisUrl.trim(),
-        ...(password ? { password } : {}),
-      });
-    },
-  );
 
   registerDesktopCommand(IPC_CHANNELS.centerServerSettingsGet, async () => centerServerClient.getSnapshot());
 
@@ -4689,7 +4644,6 @@ function createSdkDriver(
       : (phase, detail) => {
           logContextSnapshot(phase, { threadId, ...detail });
         },
-    ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
   });
 }
 
@@ -4702,7 +4656,6 @@ async function deleteThreadSdkSession(threadId: string): Promise<void> {
     await deleteClaudeAgentSdkSession({
       sessionId: session.sessionId,
       dir: session.cwd,
-      ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
     });
   } catch (error) {
     if (isSdkSessionAlreadyMissing(error)) {
@@ -4746,9 +4699,6 @@ async function prepareThreadRewindForContinue(input: {
   const storedTarget = conversationStore.getActivityRewindTarget(input.threadId, input.target.activityLineId);
   if (!storedTarget || storedTarget.userMessageId !== input.target.userMessageId) {
     throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
-  }
-  if (sdkSessionStore) {
-    throw new Error("当前启用了 SessionStore/Redis 会话同步，SDK 文件检查点不可用，暂不支持回到节点。");
   }
 
   const session = conversationStore.getSdkSession(input.threadId);
@@ -4811,30 +4761,6 @@ async function prepareThreadRewindForContinue(input: {
     resumeSessionAt,
     forkSession: true,
   };
-}
-
-async function rebuildSdkSessionStore(_localDbPath: string): Promise<void> {
-  if (closeSdkSessionStore) {
-    await closeSdkSessionStore();
-    closeSdkSessionStore = undefined;
-  }
-
-  const config = sessionSyncStore.getSettingsWithSecrets();
-  if (config.redisEnabled && config.redisUrl.trim()) {
-    const connection = await createRedisSessionStore({
-      url: config.redisUrl.trim(),
-      ...(config.redisPassword ? { password: config.redisPassword } : {}),
-      keyPrefix: config.keyPrefix,
-    });
-    sdkSessionStore = connection.store;
-    closeSdkSessionStore = connection.close;
-    process.stderr.write(`[eco] SessionStore: Redis (${config.redisUrl.trim()})\n`);
-    return;
-  }
-
-  sdkSessionStore = undefined;
-  closeSdkSessionStore = undefined;
-  process.stderr.write(`[eco] SessionStore: disabled (SDK file checkpointing enabled)\n`);
 }
 
 function isSessionCapturedPayload(payload: unknown): payload is SessionCapturedPayload {

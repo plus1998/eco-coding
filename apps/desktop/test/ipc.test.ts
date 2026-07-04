@@ -61,9 +61,6 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.skillsList).toBe("skills:list");
   expect(IPC_CHANNELS.skillsLinkAgents).toBe("skills:link-agents");
   expect(IPC_CHANNELS.mcpServerSave).toBe("mcp-server:save");
-  expect(IPC_CHANNELS.sessionSyncSettingsGet).toBe("session-sync-settings:get");
-  expect(IPC_CHANNELS.sessionSyncSettingsSave).toBe("session-sync-settings:save");
-  expect(IPC_CHANNELS.sessionSyncTestConnection).toBe("session-sync:test-connection");
   expect(IPC_CHANNELS.centerServerSettingsGet).toBe("center-server-settings:get");
   expect(IPC_CHANNELS.centerServerSettingsSave).toBe("center-server-settings:save");
   expect(IPC_CHANNELS.centerServerRegisterDesktop).toBe("center-server:register-desktop");
