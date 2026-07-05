@@ -6900,6 +6900,21 @@ html[data-window-focused="true"] .codex-sidebar {
   font-variant-numeric: tabular-nums;
 }
 
+.run-log-inline-loading {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 20px;
+  color: var(--codex-log-muted, #a3a3a3);
+  line-height: 1;
+}
+
+.run-log-inline-loading .run-log-streaming-dots {
+  margin-left: 0;
+  color: currentColor;
+  font-size: 13px;
+}
+
 .run-log-action-file-stats {
   flex-shrink: 0;
 }
@@ -7051,6 +7066,9 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .run-log-read-target,
 .run-log-grep-target {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   margin: 0;
   min-width: 0;
   color: var(--codex-log-muted, rgba(255, 255, 255, 0.58));

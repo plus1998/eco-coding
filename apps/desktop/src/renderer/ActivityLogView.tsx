@@ -70,6 +70,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
+import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import {
   shouldScheduleThinkingAutoCollapse,
   THINKING_AUTO_COLLAPSE_READ_MS,
@@ -210,6 +211,7 @@ function ProjectionActivityLogView({
     () => new Map(projection.requestSpans.map((span) => [span.requestId, span])),
     [projection.requestSpans],
   );
+  const threadActive = isProjectionThreadActive(projection.thread.status);
   const viewModel = useMemo(
     () =>
       buildThreadRunProjectionViewModel(
@@ -263,6 +265,7 @@ function ProjectionActivityLogView({
             key={entry.key}
             entry={entry}
             requestSpansById={requestSpansById}
+            threadActive={threadActive}
             expandedAgentKeys={expandedAgentKeys}
             onToggleAgent={(agentId) => {
               setExpandedAgentKeys((current) => ({
@@ -305,6 +308,7 @@ function wrapRunLogFeedEntry(node: ReactNode, options?: { compact?: boolean; tig
 function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
+  threadActive,
   expandedAgentKeys,
   onToggleAgent,
   onRestorePrompt,
@@ -313,6 +317,7 @@ function ProjectionMainFeedEntry({
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
   onRestorePrompt?: RestorePromptHandler;
@@ -324,13 +329,18 @@ function ProjectionMainFeedEntry({
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
+        threadActive={threadActive}
         {...(onRestorePrompt && { onRestorePrompt })}
       />
     );
   }
   if (entry.kind === "tool-group") {
     return wrapRunLogFeedEntry(
-      <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />,
+      <ProjectionToolGroupEntry
+        entry={entry}
+        requestSpansById={requestSpansById}
+        threadActive={threadActive}
+      />,
       { tight: true },
     );
   }
@@ -340,6 +350,7 @@ function ProjectionMainFeedEntry({
         agent={entry.card.agent}
         missionText={entry.card.missionText}
         requestSpansById={requestSpansById}
+        threadActive={threadActive}
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
         {...(agentDisplayNames && { agentDisplayNames })}
@@ -347,9 +358,16 @@ function ProjectionMainFeedEntry({
       />,
     );
   }
-  return wrapRunLogFeedEntry(<ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />, {
-    tight: isTightAgentEchoEntry(entry),
-  });
+  return wrapRunLogFeedEntry(
+    <ProjectionAgentEchoEntry
+      entry={entry}
+      requestSpansById={requestSpansById}
+      threadActive={threadActive}
+    />,
+    {
+      tight: isTightAgentEchoEntry(entry),
+    },
+  );
 }
 
 function isTightAgentEchoEntry(
@@ -362,9 +380,11 @@ function isTightAgentEchoEntry(
 function ProjectionToolGroupEntry({
   entry,
   requestSpansById,
+  threadActive,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const blocks = useMemo(
@@ -378,6 +398,23 @@ function ProjectionToolGroupEntry({
   );
   const summary = useMemo(() => summarizeActionBlocks(blocks), [blocks]);
   const lifecycle = useMemo(() => resolveActionBlocksLifecycle(blocks), [blocks]);
+  const showInlineLoading = useMemo(
+    () =>
+      lifecycle === "running" &&
+      entry.entries.some((child) => {
+        const block = projectionItemToDetailBlock(child.item);
+        if (block?.kind !== "action" || block.lifecycle !== "running") {
+          return false;
+        }
+        const requestSpan = child.item.requestId ? requestSpansById.get(child.item.requestId) : undefined;
+        return shouldShowActionInlineLoading({
+          itemRequestId: child.item.requestId,
+          requestSpan,
+          threadActive,
+        });
+      }),
+    [entry.entries, lifecycle, requestSpansById, threadActive],
+  );
   const Icon = actionIcons[summary.icon];
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
@@ -409,6 +446,7 @@ function ProjectionToolGroupEntry({
           ) : null}
         </span>
         <span className="run-log-tool-group-summary">{summary.label}</span>
+        {showInlineLoading ? <RunLogInlineLoading label="正在执行工具" /> : null}
         <span className="run-log-tool-group-count">{entry.entries.length}</span>
         <ChevronDown
           size={15}
@@ -423,6 +461,7 @@ function ProjectionToolGroupEntry({
               key={child.key}
               entry={child}
               requestSpansById={requestSpansById}
+              threadActive={threadActive}
             />
           ))}
         </div>
@@ -434,22 +473,30 @@ function ProjectionToolGroupEntry({
 function ProjectionToolGroupChildEntry({
   entry,
   requestSpansById,
+  threadActive,
 }: {
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
 }) {
   if (entry.kind === "timeline") {
     return (
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
+        threadActive={threadActive}
         compact
         forceActionDetailsExpanded
       />
     );
   }
   return (
-    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} forceActionDetailsExpanded />
+    <ProjectionAgentEchoEntry
+      entry={entry}
+      requestSpansById={requestSpansById}
+      threadActive={threadActive}
+      forceActionDetailsExpanded
+    />
   );
 }
 
@@ -562,13 +609,34 @@ function resolveActionBlocksLifecycle(
   return lifecycles.length > 0 ? "completed" : undefined;
 }
 
+function isProjectionThreadActive(status: string): boolean {
+  return status === "running";
+}
+
+function shouldShowActionInlineLoading({
+  itemRequestId,
+  requestSpan,
+  threadActive,
+}: {
+  itemRequestId: string | undefined;
+  requestSpan: ThreadRunProjectionRequestSpan | undefined;
+  threadActive: boolean;
+}): boolean {
+  if (requestSpan) {
+    return isProjectionRequestActive(requestSpan);
+  }
+  return !itemRequestId && threadActive;
+}
+
 function ProjectionAgentEchoEntry({
   entry,
   requestSpansById,
+  threadActive,
   forceActionDetailsExpanded = false,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
   forceActionDetailsExpanded?: boolean;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
@@ -618,6 +686,11 @@ function ProjectionAgentEchoEntry({
       <DetailBlock
         block={block}
         requestActive={requestActive}
+        actionInlineLoadingActive={shouldShowActionInlineLoading({
+          itemRequestId: entry.item.requestId,
+          requestSpan,
+          threadActive,
+        })}
         hideSubagentIdentity
         forceActionDetailsExpanded={forceActionDetailsExpanded}
         {...(requestSpan && { requestSpan })}
@@ -663,6 +736,7 @@ function ProjectionSubagentRunRow({
   agent,
   missionText: incomingMissionText,
   requestSpansById,
+  threadActive,
   expanded,
   onToggle,
   agentDisplayNames,
@@ -671,6 +745,7 @@ function ProjectionSubagentRunRow({
   agent: ThreadRunProjectionAgent;
   missionText: string;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
   expanded: boolean;
   onToggle: () => void;
   agentDisplayNames?: RuntimeAgentDisplayNames;
@@ -751,6 +826,7 @@ function ProjectionSubagentRunRow({
                   key={`${agent.agentId}-${item.id}`}
                   item={item}
                   requestSpansById={requestSpansById}
+                  threadActive={threadActive}
                   compact
                 />
               ))}
@@ -792,12 +868,14 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
 function ProjectionTimelineEntry({
   item,
   requestSpansById,
+  threadActive,
   onRestorePrompt,
   compact = false,
   forceActionDetailsExpanded = false,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
   onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
   forceActionDetailsExpanded?: boolean;
@@ -863,6 +941,11 @@ function ProjectionTimelineEntry({
     <DetailBlock
       block={block}
       requestActive={requestActive}
+      actionInlineLoadingActive={shouldShowActionInlineLoading({
+        itemRequestId: item.requestId,
+        requestSpan,
+        threadActive,
+      })}
       hideSubagentIdentity={compact}
       forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(requestSpan && { requestSpan })}
@@ -1035,6 +1118,7 @@ function DetailBlock({
   hideSubagentIdentity,
   forceActionDetailsExpanded = false,
   requestActive = false,
+  actionInlineLoadingActive = false,
   requestSpan,
   agentThemes,
 }: {
@@ -1044,6 +1128,7 @@ function DetailBlock({
   hideSubagentIdentity?: boolean;
   forceActionDetailsExpanded?: boolean;
   requestActive?: boolean;
+  actionInlineLoadingActive?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
   agentThemes?: RuntimeAgentThemes;
 }) {
@@ -1093,6 +1178,7 @@ function DetailBlock({
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         forceDetailsExpanded={forceActionDetailsExpanded}
+        showInlineLoading={block.lifecycle === "running" && actionInlineLoadingActive}
         {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
@@ -1808,10 +1894,19 @@ function ApiErrorBlock({
   );
 }
 
+function RunLogInlineLoading({ label = "正在执行" }: { label?: string }) {
+  return (
+    <span className="run-log-inline-loading" role="status" aria-label={label}>
+      <StreamingTypingIndicator />
+    </span>
+  );
+}
+
 function RunLogAction({
   icon,
   label,
   lifecycle,
+  showInlineLoading = false,
   bashRun,
   fileChange,
   readTarget,
@@ -1824,6 +1919,7 @@ function RunLogAction({
   icon: ActivityActionIcon;
   label: string;
   lifecycle?: ToolActionLifecycle;
+  showInlineLoading?: boolean;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
@@ -1902,6 +1998,7 @@ function RunLogAction({
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
+      {showInlineLoading ? <RunLogInlineLoading /> : null}
       {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
       {fileChange ? (
         <span className="run-log-file-change-card-stats run-log-action-file-stats">
@@ -1941,7 +2038,11 @@ function RunLogAction({
           )}
           {detailsExpanded ? (
             <div className="run-log-action-card-detail">
-              <RunLogBashCard display={bashRun} {...(lifecycle && { lifecycle })} />
+              <RunLogBashCard
+                display={bashRun}
+                showInlineLoading={showInlineLoading}
+                {...(lifecycle && { lifecycle })}
+              />
             </div>
           ) : null}
         </div>
@@ -1969,7 +2070,11 @@ function RunLogAction({
           )}
           {detailsExpanded ? (
             <div className="run-log-action-card-detail">
-              <RunLogFileChangeCard display={fileChange} {...(lifecycle && { lifecycle })} />
+              <RunLogFileChangeCard
+                display={fileChange}
+                showInlineLoading={showInlineLoading}
+                {...(lifecycle && { lifecycle })}
+              />
             </div>
           ) : null}
         </div>
@@ -1981,7 +2086,11 @@ function RunLogAction({
     return (
       <div className="run-log-action run-log-action--read-target">
         {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
-        <RunLogReadTargetLine readTarget={readTarget} {...(lifecycle && { lifecycle })} />
+        <RunLogReadTargetLine
+          readTarget={readTarget}
+          showInlineLoading={showInlineLoading}
+          {...(lifecycle && { lifecycle })}
+        />
       </div>
     );
   }
@@ -1990,7 +2099,11 @@ function RunLogAction({
     return (
       <div className="run-log-action run-log-action--grep-target">
         {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
-        <RunLogGrepTargetLine grepTarget={grepTarget} {...(lifecycle && { lifecycle })} />
+        <RunLogGrepTargetLine
+          grepTarget={grepTarget}
+          showInlineLoading={showInlineLoading}
+          {...(lifecycle && { lifecycle })}
+        />
       </div>
     );
   }
@@ -2029,9 +2142,11 @@ function RunLogAction({
 function RunLogReadTargetLine({
   readTarget,
   lifecycle,
+  showInlineLoading = false,
 }: {
   readTarget: import("../shared/tool-target").ReadToolTargetDisplay;
   lifecycle?: ToolActionLifecycle;
+  showInlineLoading?: boolean;
 }) {
   return (
     <p
@@ -2051,6 +2166,7 @@ function RunLogReadTargetLine({
           <span className="run-log-read-target-range">{readTarget.lineRange}</span>
         </>
       ) : null}
+      {showInlineLoading ? <RunLogInlineLoading label="正在读取" /> : null}
     </p>
   );
 }
@@ -2058,9 +2174,11 @@ function RunLogReadTargetLine({
 function RunLogGrepTargetLine({
   grepTarget,
   lifecycle,
+  showInlineLoading = false,
 }: {
   grepTarget: import("../shared/tool-target").GrepToolTargetDisplay;
   lifecycle?: ToolActionLifecycle;
+  showInlineLoading?: boolean;
 }) {
   return (
     <p
@@ -2074,6 +2192,7 @@ function RunLogGrepTargetLine({
     >
       <span className="run-log-grep-target-verb">Grepped</span>{" "}
       <span className="run-log-grep-target-detail">{formatGrepTargetInlineDetail(grepTarget)}</span>
+      {showInlineLoading ? <RunLogInlineLoading label="正在搜索" /> : null}
     </p>
   );
 }
@@ -2081,9 +2200,11 @@ function RunLogGrepTargetLine({
 function RunLogFileChangeCard({
   display,
   lifecycle,
+  showInlineLoading = false,
 }: {
   display: import("../shared/activity-display").FileChangeCardDisplay;
   lifecycle?: ToolActionLifecycle;
+  showInlineLoading?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const collapsedLineLimit = 6;
@@ -2106,6 +2227,7 @@ function RunLogFileChangeCard({
       <div className="run-log-file-change-card-header">
         <FileText size={16} className="run-log-file-change-card-icon" aria-hidden />
         <span className="run-log-file-change-card-title">{display.fileName}</span>
+        {showInlineLoading ? <RunLogInlineLoading label="正在写入文件" /> : null}
         <span className="run-log-file-change-card-stats">
           {display.additions > 0 ? <span className="stat-add">+{display.additions}</span> : null}
           {display.deletions > 0 ? <span className="stat-del">-{display.deletions}</span> : null}
@@ -2137,9 +2259,11 @@ function RunLogFileChangeCard({
 function RunLogBashCard({
   display,
   lifecycle,
+  showInlineLoading = false,
 }: {
   display: import("../shared/activity-display").BashRunCardDisplay;
   lifecycle?: ToolActionLifecycle;
+  showInlineLoading?: boolean;
 }) {
   return (
     <div
@@ -2154,6 +2278,7 @@ function RunLogBashCard({
       <div className="run-log-bash-card-header">
         <Terminal size={16} className="run-log-bash-card-icon" aria-hidden />
         <span className="run-log-bash-card-title">{display.title}</span>
+        {showInlineLoading ? <RunLogInlineLoading label="正在运行命令" /> : null}
         {display.meta ? <span className="run-log-bash-card-meta">{display.meta}</span> : null}
       </div>
       {display.body ? (
