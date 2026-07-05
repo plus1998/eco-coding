@@ -17,22 +17,14 @@ void main() {
     const profile = OrchestrationProfile(
       id: 'p1',
       name: 'Test',
-      agents: [
-        OrchestrationAgentInstance(agentKey: 'coder', enabled: true),
-      ],
+      agents: [OrchestrationAgentInstance(agentKey: 'coder', enabled: true)],
     );
 
-    expect(
-      configuredOrchestrationSubagentRoles(profile),
-      ['explore', 'coder'],
-    );
+    expect(configuredOrchestrationSubagentRoles(profile), ['explore', 'coder']);
   });
 
   test('buildActivityFeed returns empty without projection', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-    );
+    final feed = buildActivityFeed(threadPrompt: '', threadId: 't1');
     expect(feed, isEmpty);
   });
 
@@ -41,18 +33,75 @@ void main() {
       parseToolActionDisplayLabel('Tool: Read · lib/main.dart'),
       'lib/main.dart',
     );
-    expect(
-      isUsageNoiseMessage('Usage recorded'),
-      isTrue,
-    );
+    expect(isUsageNoiseMessage('Usage recorded'), isTrue);
   });
 
-  test('subagentMissionBorderColor uses unknown blue for non-standard roles', () {
-    expect(
-      resolveSubagentThemeColor('researcher'),
-      subagentUnknownThemeColor,
-    );
+  test('groupActivityFeedActionEntries summarizes consecutive actions', () {
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'edit-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/editor.dart',
+        actionIcon: ActivityActionIcon.edit,
+        lifecycle: ToolActionLifecycle.completed,
+      ),
+      ActivityFeedEntry(
+        id: 'read-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/feed.dart',
+        actionIcon: ActivityActionIcon.file,
+        lifecycle: ToolActionLifecycle.completed,
+      ),
+      ActivityFeedEntry(
+        id: 'grep-1',
+        kind: ActivityFeedKind.action,
+        text: 'search ActivityFeed',
+        actionIcon: ActivityActionIcon.search,
+        lifecycle: ToolActionLifecycle.completed,
+      ),
+    ]);
+
+    expect(grouped.length, 1);
+    expect(grouped.first.kind, ActivityFeedKind.actionGroup);
+    expect(grouped.first.text, '已编辑 1 个文件、已读取 1 个文件和已搜索代码');
+    expect(grouped.first.actionIcon, ActivityActionIcon.edit);
+    expect(grouped.first.actionChildren.map((entry) => entry.id), [
+      'edit-1',
+      'read-1',
+      'grep-1',
+    ]);
   });
+
+  test('groupActivityFeedActionEntries keeps isolated actions separate', () {
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'read-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/feed.dart',
+        actionIcon: ActivityActionIcon.file,
+      ),
+      ActivityFeedEntry(
+        id: 'assistant-1',
+        kind: ActivityFeedKind.assistant,
+        text: 'done',
+      ),
+    ]);
+
+    expect(grouped.map((entry) => entry.kind), [
+      ActivityFeedKind.action,
+      ActivityFeedKind.assistant,
+    ]);
+  });
+
+  test(
+    'subagentMissionBorderColor uses unknown blue for non-standard roles',
+    () {
+      expect(
+        resolveSubagentThemeColor('researcher'),
+        subagentUnknownThemeColor,
+      );
+    },
+  );
 
   test('parseSubagentMissionMessage extracts summary from @mission JSON', () {
     const payload =
@@ -114,161 +163,169 @@ void main() {
       ),
     );
 
-    final actions =
-        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    final actions = feed
+        .where((entry) => entry.kind == ActivityFeedKind.action)
+        .toList();
     expect(actions.length, 1);
     expect(actions.first.text, 'Run unit tests');
     expect(actions.first.toolUseId, 'toolu_bash_1');
     expect(actions.first.bashRun?.title, 'Run unit tests');
   });
 
-  test('buildActivityFeed merges bash approval lifecycle into one completed card', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed merges bash approval lifecycle into one completed card',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
         threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 3,
-        agents: const [],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'approval-wait',
-            sequence: 1,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'tool',
-            text: '等待确认 Bash：npm test',
-            at: '2026-01-01T00:00:00.000Z',
-            metadata: const {
-              'liveType': 'bash_approval.requested',
-              'bashApproval': {
-                'toolUseId': 'toolu_bash_1',
-                'toolName': 'Bash',
-                'detail': 'npm test',
-                'description': 'Run unit tests',
-                'phase': 'requested',
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 3,
+          agents: const [],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'approval-wait',
+              sequence: 1,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'tool',
+              text: '等待确认 Bash：npm test',
+              at: '2026-01-01T00:00:00.000Z',
+              metadata: const {
+                'liveType': 'bash_approval.requested',
+                'bashApproval': {
+                  'toolUseId': 'toolu_bash_1',
+                  'toolName': 'Bash',
+                  'detail': 'npm test',
+                  'description': 'Run unit tests',
+                  'phase': 'requested',
+                },
               },
-            },
-          ),
-          ThreadRunProjectionTimelineItem(
-            id: 'approval-approved',
-            sequence: 2,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'tool',
-            text: '已允许本次 Bash：npm test',
-            at: '2026-01-01T00:00:00.500Z',
-            metadata: const {
-              'liveType': 'bash_approval.approved',
-              'bashApproval': {
-                'toolUseId': 'toolu_bash_1',
-                'toolName': 'Bash',
-                'detail': 'npm test',
-                'description': 'Run unit tests',
-                'phase': 'approved',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'approval-approved',
+              sequence: 2,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'tool',
+              text: '已允许本次 Bash：npm test',
+              at: '2026-01-01T00:00:00.500Z',
+              metadata: const {
+                'liveType': 'bash_approval.approved',
+                'bashApproval': {
+                  'toolUseId': 'toolu_bash_1',
+                  'toolName': 'Bash',
+                  'detail': 'npm test',
+                  'description': 'Run unit tests',
+                  'phase': 'approved',
+                },
               },
-            },
-          ),
-          ThreadRunProjectionTimelineItem(
-            id: 'bash-completed',
-            sequence: 3,
-            eventType: 'tool.completed',
-            scope: 'main',
-            role: 'tool',
-            text: 'Tool: Bash · npm test',
-            at: '2026-01-01T00:00:01.000Z',
-            metadata: const {
-              'liveType': 'tool.completed',
-              'tool': {
-                'name': 'Bash',
-                'detail': 'npm test',
-                'toolUseId': 'toolu_bash_1',
-                'description': 'Run unit tests',
-                'status': 'completed',
-                'output': '36 pass',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'bash-completed',
+              sequence: 3,
+              eventType: 'tool.completed',
+              scope: 'main',
+              role: 'tool',
+              text: 'Tool: Bash · npm test',
+              at: '2026-01-01T00:00:01.000Z',
+              metadata: const {
+                'liveType': 'tool.completed',
+                'tool': {
+                  'name': 'Bash',
+                  'detail': 'npm test',
+                  'toolUseId': 'toolu_bash_1',
+                  'description': 'Run unit tests',
+                  'status': 'completed',
+                  'output': '36 pass',
+                },
               },
-            },
-          ),
-        ],
-      ),
-    );
+            ),
+          ],
+        ),
+      );
 
-    final actions =
-        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
-    expect(actions.length, 1);
-    expect(actions.first.toolUseId, 'toolu_bash_1');
-    expect(actions.first.text, 'Run unit tests');
-    expect(actions.first.lifecycle, ToolActionLifecycle.completed);
-    expect(actions.first.bashRun?.body, '36 pass');
-    expect(
-      feed.any(
-        (entry) =>
-            entry.kind == ActivityFeedKind.assistant &&
-            (entry.text.contains('等待确认') ||
-                entry.text.contains('已允许本次')),
-      ),
-      isFalse,
-    );
-  });
+      final actions = feed
+          .where((entry) => entry.kind == ActivityFeedKind.action)
+          .toList();
+      expect(actions.length, 1);
+      expect(actions.first.toolUseId, 'toolu_bash_1');
+      expect(actions.first.text, 'Run unit tests');
+      expect(actions.first.lifecycle, ToolActionLifecycle.completed);
+      expect(actions.first.bashRun?.body, '36 pass');
+      expect(
+        feed.any(
+          (entry) =>
+              entry.kind == ActivityFeedKind.assistant &&
+              (entry.text.contains('等待确认') || entry.text.contains('已允许本次')),
+        ),
+        isFalse,
+      );
+    },
+  );
 
-  test('buildActivityFeed keeps bash approval out of assistant body after approval', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed keeps bash approval out of assistant body after approval',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
         threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 2,
-        agents: const [],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'approval-approved',
-            sequence: 1,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'tool',
-            text: '已允许本次 Bash：npm test',
-            at: '2026-01-01T00:00:00.000Z',
-            metadata: const {
-              'liveType': 'bash_approval.approved',
-              'bashApproval': {
-                'toolUseId': 'toolu_bash_1',
-                'toolName': 'Bash',
-                'detail': 'npm test',
-                'description': 'Run unit tests',
-                'phase': 'approved',
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 2,
+          agents: const [],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'approval-approved',
+              sequence: 1,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'tool',
+              text: '已允许本次 Bash：npm test',
+              at: '2026-01-01T00:00:00.000Z',
+              metadata: const {
+                'liveType': 'bash_approval.approved',
+                'bashApproval': {
+                  'toolUseId': 'toolu_bash_1',
+                  'toolName': 'Bash',
+                  'detail': 'npm test',
+                  'description': 'Run unit tests',
+                  'phase': 'approved',
+                },
               },
-            },
-          ),
-          ThreadRunProjectionTimelineItem(
-            id: 'planner-note',
-            sequence: 2,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'planner',
-            text: '正在执行测试命令。',
-            at: '2026-01-01T00:00:00.500Z',
-          ),
-        ],
-      ),
-    );
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'planner-note',
+              sequence: 2,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              text: '正在执行测试命令。',
+              at: '2026-01-01T00:00:00.500Z',
+            ),
+          ],
+        ),
+      );
 
-    final actions =
-        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
-    expect(actions.length, 1);
-    expect(actions.first.lifecycle, ToolActionLifecycle.approvalApproved);
-    expect(
-      feed.any(
-        (entry) =>
-            entry.kind == ActivityFeedKind.assistant &&
-            entry.text.contains('已允许本次'),
-      ),
-      isFalse,
-    );
-  });
+      final actions = feed
+          .where((entry) => entry.kind == ActivityFeedKind.action)
+          .toList();
+      expect(actions.length, 1);
+      expect(actions.first.lifecycle, ToolActionLifecycle.approvalApproved);
+      expect(
+        feed.any(
+          (entry) =>
+              entry.kind == ActivityFeedKind.assistant &&
+              entry.text.contains('已允许本次'),
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('subagent mission card gets duration and timeline from projection', () {
     final feed = buildActivityFeed(
@@ -337,22 +394,22 @@ void main() {
     expect(card.running, isTrue);
     expect(card.durationMs, greaterThan(0));
     expect(card.timeline.length, 1);
-    expect(
-      feed.any((entry) => entry.kind == ActivityFeedKind.action),
-      isFalse,
-    );
+    expect(feed.any((entry) => entry.kind == ActivityFeedKind.action), isFalse);
   });
 
-  test('isSubagentMissionEnvelope matches legacy and structured mission lines', () {
-    expect(isSubagentMissionEnvelope('@mission explore: scan src'), isTrue);
-    expect(
-      isSubagentMissionEnvelope(
-        '@mission {"role":"explore","summary":"scan","prompt":"scan src"}',
-      ),
-      isTrue,
-    );
-    expect(isSubagentMissionEnvelope('Plain task prompt'), isFalse);
-  });
+  test(
+    'isSubagentMissionEnvelope matches legacy and structured mission lines',
+    () {
+      expect(isSubagentMissionEnvelope('@mission explore: scan src'), isTrue);
+      expect(
+        isSubagentMissionEnvelope(
+          '@mission {"role":"explore","summary":"scan","prompt":"scan src"}',
+        ),
+        isTrue,
+      );
+      expect(isSubagentMissionEnvelope('Plain task prompt'), isFalse);
+    },
+  );
 
   test('buildActivityFeed does not echo attributed @mission in main feed', () {
     const missionText =
@@ -403,13 +460,12 @@ void main() {
     );
 
     expect(
-      feed.where((entry) => entry.kind == ActivityFeedKind.subagentMission).length,
+      feed
+          .where((entry) => entry.kind == ActivityFeedKind.subagentMission)
+          .length,
       1,
     );
-    expect(
-      feed.any((entry) => entry.text.contains('@mission')),
-      isFalse,
-    );
+    expect(feed.any((entry) => entry.text.contains('@mission')), isFalse);
     expect(
       feed.any(
         (entry) =>
@@ -458,145 +514,152 @@ void main() {
       ),
     );
 
-    final actions =
-        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    final actions = feed
+        .where((entry) => entry.kind == ActivityFeedKind.action)
+        .toList();
     expect(actions.length, 1);
     expect(actions.first.text, 'Run unit tests');
     expect(actions.first.toolUseId, 'toolu_bash_1');
     expect(actions.first.bashRun?.title, 'Run unit tests');
   });
 
-  test('buildActivityFeed injects cards for concurrent projection subagents', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '并发子代理',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed injects cards for concurrent projection subagents',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '并发子代理',
         threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 3,
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'user-1',
-            sequence: 0,
-            eventType: 'thread.status',
-            scope: 'main',
-            role: 'user',
-            text: '并发子代理',
-            at: '2026-01-01T00:00:00.000Z',
-            metadata: const {'liveType': 'thread.user_prompt'},
-          ),
-          ThreadRunProjectionTimelineItem(
-            id: 'planner-1',
-            sequence: 1,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'planner',
-            text: '主代理先说明计划。',
-            at: '2026-01-01T00:00:02.000Z',
-          ),
-        ],
-        agents: [
-          ThreadRunProjectionAgent(
-            agentId: 'agent_explore_1',
-            role: 'explore',
-            kind: 'subagent',
-            status: 'active',
-            startedAt: '2026-01-01T00:00:00.500Z',
-            durationMs: 1000,
-            timeline: const [],
-            delegationSummary: '梳理模块 A',
-          ),
-          ThreadRunProjectionAgent(
-            agentId: 'agent_coder_1',
-            role: 'coder',
-            kind: 'subagent',
-            status: 'active',
-            startedAt: '2026-01-01T00:00:01.000Z',
-            durationMs: 2000,
-            timeline: const [],
-            delegationSummary: '实现功能 B',
-          ),
-        ],
-      ),
-    );
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 3,
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'user-1',
+              sequence: 0,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '并发子代理',
+              at: '2026-01-01T00:00:00.000Z',
+              metadata: const {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'planner-1',
+              sequence: 1,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              text: '主代理先说明计划。',
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+          ],
+          agents: [
+            ThreadRunProjectionAgent(
+              agentId: 'agent_explore_1',
+              role: 'explore',
+              kind: 'subagent',
+              status: 'active',
+              startedAt: '2026-01-01T00:00:00.500Z',
+              durationMs: 1000,
+              timeline: const [],
+              delegationSummary: '梳理模块 A',
+            ),
+            ThreadRunProjectionAgent(
+              agentId: 'agent_coder_1',
+              role: 'coder',
+              kind: 'subagent',
+              status: 'active',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              durationMs: 2000,
+              timeline: const [],
+              delegationSummary: '实现功能 B',
+            ),
+          ],
+        ),
+      );
 
-    final missions = feed
-        .where((entry) => entry.kind == ActivityFeedKind.subagentMission)
-        .toList();
-    expect(missions.length, 2);
-    expect(
-      missions.map((entry) => entry.agentId).toSet(),
-      {'agent_explore_1', 'agent_coder_1'},
-    );
-    final exploreIndex = feed.indexWhere(
-      (entry) => entry.agentId == 'agent_explore_1',
-    );
-    final plannerIndex = feed.indexWhere(
-      (entry) => entry.kind == ActivityFeedKind.assistant,
-    );
-    expect(exploreIndex, lessThan(plannerIndex));
-  });
+      final missions = feed
+          .where((entry) => entry.kind == ActivityFeedKind.subagentMission)
+          .toList();
+      expect(missions.length, 2);
+      expect(missions.map((entry) => entry.agentId).toSet(), {
+        'agent_explore_1',
+        'agent_coder_1',
+      });
+      final exploreIndex = feed.indexWhere(
+        (entry) => entry.agentId == 'agent_explore_1',
+      );
+      final plannerIndex = feed.indexWhere(
+        (entry) => entry.kind == ActivityFeedKind.assistant,
+      );
+      expect(exploreIndex, lessThan(plannerIndex));
+    },
+  );
 
-  test('buildActivityFeed keeps subagent mission before later assistant text', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '修复登录',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot.fromJson({
-        'thread': {
-          'threadId': 't1',
-          'status': 'running',
-          'generatedAt': '2026-01-01T00:00:00.000Z',
-        },
-        'sourceEventCount': 3,
-        'timeline': [
-          {
-            'id': 'user-1',
-            'sequence': 0,
-            'eventType': 'thread.status',
-            'scope': 'main',
-            'role': 'user',
-            'text': '修复登录',
-            'at': '2026-01-01T00:00:00.000Z',
-            'metadata': {'liveType': 'thread.user_prompt'},
+  test(
+    'buildActivityFeed keeps subagent mission before later assistant text',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '修复登录',
+        threadId: 't1',
+        runProjection: ThreadRunProjectionSnapshot.fromJson({
+          'thread': {
+            'threadId': 't1',
+            'status': 'running',
+            'generatedAt': '2026-01-01T00:00:00.000Z',
           },
-          {
-            'id': 'planner-1',
-            'sequence': 3,
-            'eventType': 'message.final',
-            'scope': 'main',
-            'role': 'planner',
-            'text': '子代理完成后我继续总结。',
-            'at': '2026-01-01T00:00:06.000Z',
-          },
-        ],
-        'agents': [
-          {
-            'agentId': 'agent_coder_1',
-            'role': 'coder',
-            'kind': 'subagent',
-            'status': 'stopped',
-            'startedAt': '2026-01-01T00:00:01.000Z',
-            'endedAt': '2026-01-01T00:00:05.000Z',
-            'durationMs': 4000,
-            'delegationPrompt': 'add login',
-            'delegationSummary': '实现登录',
-            'timeline': [],
-          },
-        ],
-      }),
-    );
+          'sourceEventCount': 3,
+          'timeline': [
+            {
+              'id': 'user-1',
+              'sequence': 0,
+              'eventType': 'thread.status',
+              'scope': 'main',
+              'role': 'user',
+              'text': '修复登录',
+              'at': '2026-01-01T00:00:00.000Z',
+              'metadata': {'liveType': 'thread.user_prompt'},
+            },
+            {
+              'id': 'planner-1',
+              'sequence': 3,
+              'eventType': 'message.final',
+              'scope': 'main',
+              'role': 'planner',
+              'text': '子代理完成后我继续总结。',
+              'at': '2026-01-01T00:00:06.000Z',
+            },
+          ],
+          'agents': [
+            {
+              'agentId': 'agent_coder_1',
+              'role': 'coder',
+              'kind': 'subagent',
+              'status': 'stopped',
+              'startedAt': '2026-01-01T00:00:01.000Z',
+              'endedAt': '2026-01-01T00:00:05.000Z',
+              'durationMs': 4000,
+              'delegationPrompt': 'add login',
+              'delegationSummary': '实现登录',
+              'timeline': [],
+            },
+          ],
+        }),
+      );
 
-    final missionIndex = feed.indexWhere(
-      (entry) => entry.kind == ActivityFeedKind.subagentMission,
-    );
-    final assistantIndex = feed.indexWhere(
-      (entry) => entry.kind == ActivityFeedKind.assistant,
-    );
-    expect(missionIndex, greaterThanOrEqualTo(0));
-    expect(assistantIndex, greaterThan(missionIndex));
-    expect(feed[missionIndex].agentId, 'agent_coder_1');
-  });
+      final missionIndex = feed.indexWhere(
+        (entry) => entry.kind == ActivityFeedKind.subagentMission,
+      );
+      final assistantIndex = feed.indexWhere(
+        (entry) => entry.kind == ActivityFeedKind.assistant,
+      );
+      expect(missionIndex, greaterThanOrEqualTo(0));
+      expect(assistantIndex, greaterThan(missionIndex));
+      expect(feed[missionIndex].agentId, 'agent_coder_1');
+    },
+  );
 
   test('GitWorkingTreeStatus exposes workspace changes summary', () {
     const status = GitWorkingTreeStatus(
@@ -701,30 +764,18 @@ void main() {
       text: '好的，我来处理。',
     );
 
+    expect(hasFollowingValidFeedContent([thinking], 0), isFalse);
+    expect(hasFollowingValidFeedContent([thinking, phase], 0), isFalse);
+    expect(hasFollowingValidFeedContent([thinking, assistant], 0), isTrue);
     expect(
-      hasFollowingValidFeedContent([thinking], 0),
-      isFalse,
-    );
-    expect(
-      hasFollowingValidFeedContent([thinking, phase], 0),
-      isFalse,
-    );
-    expect(
-      hasFollowingValidFeedContent([thinking, assistant], 0),
-      isTrue,
-    );
-    expect(
-      hasFollowingValidFeedContent(
-        [
-          thinking,
-          ActivityFeedEntry(
-            id: 'tool-1',
-            kind: ActivityFeedKind.action,
-            text: '读取 src/main.dart',
-          ),
-        ],
-        0,
-      ),
+      hasFollowingValidFeedContent([
+        thinking,
+        ActivityFeedEntry(
+          id: 'tool-1',
+          kind: ActivityFeedKind.action,
+          text: '读取 src/main.dart',
+        ),
+      ], 0),
       isTrue,
     );
   });
@@ -765,51 +816,55 @@ void main() {
       ),
     );
 
-    final reconnectEntries =
-        feed.where((entry) => entry.reconnecting).toList(growable: false);
+    final reconnectEntries = feed
+        .where((entry) => entry.reconnecting)
+        .toList(growable: false);
     expect(reconnectEntries, hasLength(1));
     expect(reconnectEntries.first.text, '重连 2/5');
     expect(reconnectEntries.first.detail, isNull);
   });
 
-  test('buildActivityFeed treats recorded user prompts as right-aligned user bubbles', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '请继续实现登录页',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed treats recorded user prompts as right-aligned user bubbles',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '请继续实现登录页',
         threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 1,
-        agents: const [],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'prompt',
-            sequence: 0,
-            eventType: 'thread.status',
-            scope: 'main',
-            role: 'user',
-            text: '请继续实现登录页',
-            at: '2026-01-01T00:00:00.000Z',
-            metadata: const {'liveType': 'thread.user_prompt'},
-          ),
-        ],
-      ),
-    );
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 1,
+          agents: const [],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'prompt',
+              sequence: 0,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '请继续实现登录页',
+              at: '2026-01-01T00:00:00.000Z',
+              metadata: const {'liveType': 'thread.user_prompt'},
+            ),
+          ],
+        ),
+      );
 
-    final userEntries =
-        feed.where((entry) => entry.kind == ActivityFeedKind.user).toList();
-    expect(userEntries, hasLength(1));
-    expect(userEntries.first.text, '请继续实现登录页');
-    expect(
-      feed.any(
-        (entry) =>
-            entry.kind == ActivityFeedKind.phase &&
-            entry.text == '请继续实现登录页',
-      ),
-      isFalse,
-    );
-  });
+      final userEntries = feed
+          .where((entry) => entry.kind == ActivityFeedKind.user)
+          .toList();
+      expect(userEntries, hasLength(1));
+      expect(userEntries.first.text, '请继续实现登录页');
+      expect(
+        feed.any(
+          (entry) =>
+              entry.kind == ActivityFeedKind.phase && entry.text == '请继续实现登录页',
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('parseClarificationAnswersSummary extracts question answer rows', () {
     final rows = parseClarificationAnswersSummary(
@@ -824,39 +879,42 @@ void main() {
     expect(parseClarificationAnswersSummary('普通助手回复'), isNull);
   });
 
-  test('buildActivityFeed renders clarification answers as right-aligned cards', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed renders clarification answers as right-aligned cards',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
         threadId: 't1',
-        status: 'running',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 1,
-        agents: const [],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'clarification-answer',
-            sequence: 1,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'planner',
-            text: '澄清回答：是否自动分配？ → 自动启用',
-            at: '2026-01-01T00:00:01.000Z',
-          ),
-        ],
-      ),
-    );
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 1,
+          agents: const [],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'clarification-answer',
+              sequence: 1,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              text: '澄清回答：是否自动分配？ → 自动启用',
+              at: '2026-01-01T00:00:01.000Z',
+            ),
+          ],
+        ),
+      );
 
-    final answers = feed
-        .where((entry) => entry.kind == ActivityFeedKind.clarificationAnswer)
-        .toList();
-    expect(answers, hasLength(1));
-    expect(
-      feed.any((entry) => entry.kind == ActivityFeedKind.assistant),
-      isFalse,
-    );
-  });
+      final answers = feed
+          .where((entry) => entry.kind == ActivityFeedKind.clarificationAnswer)
+          .toList();
+      expect(answers, hasLength(1));
+      expect(
+        feed.any((entry) => entry.kind == ActivityFeedKind.assistant),
+        isFalse,
+      );
+    },
+  );
 
   testWidgets('ActivityFeedList collapses long user prompts to five lines', (
     tester,
@@ -928,96 +986,32 @@ void main() {
     expect(find.text('短消息'), findsOneWidget);
   });
 
-  test('resolveSubagentCardMissionText falls back to main timeline @mission by parentToolUseId', () {
-    const missionText =
-        '@mission {"role":"coder","summary":"Implement export filters in src/api.ts","prompt":"Implement export filters in src/api.ts"}';
-    final text = resolveSubagentCardMissionText(
-      ThreadRunProjectionAgent(
-        agentId: 'agent_coder_a',
-        role: 'coder',
-        kind: 'subagent',
-        status: 'active',
-        startedAt: '2026-01-01T00:00:01.000Z',
-        durationMs: 0,
-        parentToolUseId: 'toolu_agent_1',
-        timeline: const [],
-      ),
-      mainTimeline: [
-        ThreadRunProjectionTimelineItem(
-          id: 'delegate-coder',
-          sequence: 1,
-          eventType: 'tool.started',
-          scope: 'main',
+  test(
+    'resolveSubagentCardMissionText falls back to main timeline @mission by parentToolUseId',
+    () {
+      const missionText =
+          '@mission {"role":"coder","summary":"Implement export filters in src/api.ts","prompt":"Implement export filters in src/api.ts"}';
+      final text = resolveSubagentCardMissionText(
+        ThreadRunProjectionAgent(
+          agentId: 'agent_coder_a',
           role: 'coder',
-          text: missionText,
-          at: '2026-01-01T00:00:00.000Z',
-          metadata: const {
-            'liveType': 'tool.started',
-            'tool': {
-              'name': 'Agent',
-              'detail': 'coder',
-              'toolUseId': 'toolu_agent_1',
-              'status': 'running',
-            },
-          },
+          kind: 'subagent',
+          status: 'active',
+          startedAt: '2026-01-01T00:00:01.000Z',
+          durationMs: 0,
+          parentToolUseId: 'toolu_agent_1',
+          timeline: const [],
         ),
-      ],
-    );
-    expect(text, 'Implement export filters in src/api.ts');
-  });
-
-  test('resolveSubagentCardMissionText falls back to agent.started timeline metadata', () {
-    final text = resolveSubagentCardMissionText(
-      ThreadRunProjectionAgent(
-        agentId: 'coder_a',
-        role: 'coder',
-        kind: 'subagent',
-        status: 'active',
-        startedAt: '2026-01-01T00:00:00.000Z',
-        durationMs: 0,
-        timeline: [
+        mainTimeline: [
           ThreadRunProjectionTimelineItem(
-            id: 'agent-started',
+            id: 'delegate-coder',
             sequence: 1,
-            eventType: 'agent.started',
-            scope: 'agent',
+            eventType: 'tool.started',
+            scope: 'main',
             role: 'coder',
-            agentId: 'coder_a',
-            text: 'Subagent coder started',
+            text: missionText,
             at: '2026-01-01T00:00:00.000Z',
             metadata: const {
-              'lifecycle': 'started',
-              'delegationPrompt': 'Review export filters in src/api.ts',
-              'delegationSummary': '审查：export filters',
-            },
-          ),
-        ],
-      ),
-    );
-    expect(text, 'Review export filters in src/api.ts');
-  });
-
-  test('buildActivityFeed shows subagent mission from parentToolUseId fallback', () {
-    const missionText =
-        '@mission {"role":"coder","summary":"Implement export filters in src/api.ts","prompt":"Implement export filters in src/api.ts"}';
-    final feed = buildActivityFeed(
-      runProjection: ThreadRunProjectionSnapshot.fromJson({
-        'thread': {
-          'threadId': 't1',
-          'status': 'running',
-          'generatedAt': '2026-01-01T00:00:00.000Z',
-        },
-        'sourceEventCount': 2,
-        'timeline': [
-          {
-            'id': 'delegate-coder',
-            'sequence': 1,
-            'eventType': 'tool.started',
-            'scope': 'main',
-            'role': 'coder',
-            'text': missionText,
-            'at': '2026-01-01T00:00:00.000Z',
-            'metadata': {
               'liveType': 'tool.started',
               'tool': {
                 'name': 'Agent',
@@ -1026,96 +1020,172 @@ void main() {
                 'status': 'running',
               },
             },
-          },
+          ),
         ],
-        'agents': [
-          {
-            'agentId': 'agent_coder_a',
-            'role': 'coder',
-            'kind': 'subagent',
-            'status': 'active',
-            'startedAt': '2026-01-01T00:00:01.000Z',
-            'durationMs': 0,
-            'parentToolUseId': 'toolu_agent_1',
-            'timeline': [],
+      );
+      expect(text, 'Implement export filters in src/api.ts');
+    },
+  );
+
+  test(
+    'resolveSubagentCardMissionText falls back to agent.started timeline metadata',
+    () {
+      final text = resolveSubagentCardMissionText(
+        ThreadRunProjectionAgent(
+          agentId: 'coder_a',
+          role: 'coder',
+          kind: 'subagent',
+          status: 'active',
+          startedAt: '2026-01-01T00:00:00.000Z',
+          durationMs: 0,
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'agent-started',
+              sequence: 1,
+              eventType: 'agent.started',
+              scope: 'agent',
+              role: 'coder',
+              agentId: 'coder_a',
+              text: 'Subagent coder started',
+              at: '2026-01-01T00:00:00.000Z',
+              metadata: const {
+                'lifecycle': 'started',
+                'delegationPrompt': 'Review export filters in src/api.ts',
+                'delegationSummary': '审查：export filters',
+              },
+            ),
+          ],
+        ),
+      );
+      expect(text, 'Review export filters in src/api.ts');
+    },
+  );
+
+  test(
+    'buildActivityFeed shows subagent mission from parentToolUseId fallback',
+    () {
+      const missionText =
+          '@mission {"role":"coder","summary":"Implement export filters in src/api.ts","prompt":"Implement export filters in src/api.ts"}';
+      final feed = buildActivityFeed(
+        runProjection: ThreadRunProjectionSnapshot.fromJson({
+          'thread': {
+            'threadId': 't1',
+            'status': 'running',
+            'generatedAt': '2026-01-01T00:00:00.000Z',
           },
-        ],
-      }),
-    );
+          'sourceEventCount': 2,
+          'timeline': [
+            {
+              'id': 'delegate-coder',
+              'sequence': 1,
+              'eventType': 'tool.started',
+              'scope': 'main',
+              'role': 'coder',
+              'text': missionText,
+              'at': '2026-01-01T00:00:00.000Z',
+              'metadata': {
+                'liveType': 'tool.started',
+                'tool': {
+                  'name': 'Agent',
+                  'detail': 'coder',
+                  'toolUseId': 'toolu_agent_1',
+                  'status': 'running',
+                },
+              },
+            },
+          ],
+          'agents': [
+            {
+              'agentId': 'agent_coder_a',
+              'role': 'coder',
+              'kind': 'subagent',
+              'status': 'active',
+              'startedAt': '2026-01-01T00:00:01.000Z',
+              'durationMs': 0,
+              'parentToolUseId': 'toolu_agent_1',
+              'timeline': [],
+            },
+          ],
+        }),
+      );
 
-    final card = feed.firstWhere(
-      (entry) => entry.kind == ActivityFeedKind.subagentMission,
-    );
-    expect(card.missionPrompt, 'Implement export filters in src/api.ts');
-  });
+      final card = feed.firstWhere(
+        (entry) => entry.kind == ActivityFeedKind.subagentMission,
+      );
+      expect(card.missionPrompt, 'Implement export filters in src/api.ts');
+    },
+  );
 
-  test('buildActivityFeed keeps completed planner replies from prior turns', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed keeps completed planner replies from prior turns',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
         threadId: 't1',
-        status: 'idle',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 3,
-        agents: const [],
-        requestSpans: const [
-          ThreadRunProjectionRequestSpan(
-            requestId: 'req_turn_1',
-            status: 'completed',
-            startedAt: '2026-01-01T00:00:01.000Z',
-            endedAt: '2026-01-01T00:00:03.000Z',
-          ),
-          ThreadRunProjectionRequestSpan(
-            requestId: 'req_turn_2',
-            status: 'completed',
-            startedAt: '2026-01-01T00:01:00.000Z',
-            endedAt: '2026-01-01T00:01:05.000Z',
-          ),
-        ],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'turn-1-final',
-            sequence: 1,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'planner',
-            requestId: 'req_turn_1',
-            streamKey: 'thr_view:planner',
-            text: '第一轮回复。',
-            at: '2026-01-01T00:00:03.000Z',
-          ),
-          ThreadRunProjectionTimelineItem(
-            id: 'turn-2-user',
-            sequence: 2,
-            eventType: 'thread.status',
-            scope: 'main',
-            role: 'user',
-            text: '继续帮我查一下。',
-            at: '2026-01-01T00:00:59.000Z',
-            metadata: const {'liveType': 'thread.user_prompt'},
-          ),
-          ThreadRunProjectionTimelineItem(
-            id: 'turn-2-final',
-            sequence: 3,
-            eventType: 'message.final',
-            scope: 'main',
-            role: 'planner',
-            requestId: 'req_turn_2',
-            streamKey: 'thr_view:planner',
-            text: '第二轮回复。',
-            at: '2026-01-01T00:01:05.000Z',
-          ),
-        ],
-      ),
-    );
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'idle',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 3,
+          agents: const [],
+          requestSpans: const [
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_turn_1',
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:03.000Z',
+            ),
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_turn_2',
+              status: 'completed',
+              startedAt: '2026-01-01T00:01:00.000Z',
+              endedAt: '2026-01-01T00:01:05.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'turn-1-final',
+              sequence: 1,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_turn_1',
+              streamKey: 'thr_view:planner',
+              text: '第一轮回复。',
+              at: '2026-01-01T00:00:03.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'turn-2-user',
+              sequence: 2,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '继续帮我查一下。',
+              at: '2026-01-01T00:00:59.000Z',
+              metadata: const {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'turn-2-final',
+              sequence: 3,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_turn_2',
+              streamKey: 'thr_view:planner',
+              text: '第二轮回复。',
+              at: '2026-01-01T00:01:05.000Z',
+            ),
+          ],
+        ),
+      );
 
-    final assistantTexts = feed
-        .where((entry) => entry.kind == ActivityFeedKind.assistant)
-        .map((entry) => entry.text)
-        .toList();
-    expect(assistantTexts, ['第一轮回复。', '第二轮回复。']);
-  });
+      final assistantTexts = feed
+          .where((entry) => entry.kind == ActivityFeedKind.assistant)
+          .map((entry) => entry.text)
+          .toList();
+      expect(assistantTexts, ['第一轮回复。', '第二轮回复。']);
+    },
+  );
 
   test('buildActivityFeed keeps early turns after many thinking deltas', () {
     final deltas = List<ThreadRunProjectionTimelineItem>.generate(
@@ -1190,53 +1260,426 @@ void main() {
     expect(assistantTexts, ['第一轮回复。', '第二轮回复。']);
   });
 
-  test('buildActivityFeed keeps stable ids while streaming thinking advances', () {
-    ThreadRunProjectionSnapshot projectionForDelta(String id, String text) {
-      return ThreadRunProjectionSnapshot(
+  test(
+    'buildActivityFeed keeps separate SDK text blocks in one completed request',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
         threadId: 't1',
-        status: 'running',
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'idle',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 2,
+          agents: const [],
+          requestSpans: const [
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_planner',
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:04.000Z',
+            ),
+          ],
+          timeline: const [
+            ThreadRunProjectionTimelineItem(
+              id: 'text-block-0',
+              sequence: 1,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_planner',
+              streamKey: 'thr_view:planner:block:text:0',
+              text: '第一句正文。',
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'text-block-2',
+              sequence: 2,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_planner',
+              streamKey: 'thr_view:planner:block:text:2',
+              text: '第二句正文。',
+              at: '2026-01-01T00:00:04.000Z',
+            ),
+          ],
+        ),
+      );
+
+      final assistantTexts = feed
+          .where((entry) => entry.kind == ActivityFeedKind.assistant)
+          .map((entry) => entry.text)
+          .toList();
+      expect(assistantTexts, ['第一句正文。', '第二句正文。']);
+    },
+  );
+
+  test('buildActivityFeed keeps SDK block streams from separate turns', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
         generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 1,
+        sourceEventCount: 10,
         agents: const [],
         requestSpans: const [
           ThreadRunProjectionRequestSpan(
-            requestId: 'req_stream',
-            status: 'streaming',
+            requestId: 'req_turn_1',
+            status: 'completed',
             startedAt: '2026-01-01T00:00:01.000Z',
+            endedAt: '2026-01-01T00:00:05.000Z',
+            role: 'planner',
+          ),
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_turn_2',
+            status: 'completed',
+            startedAt: '2026-01-01T00:01:01.000Z',
+            endedAt: '2026-01-01T00:01:05.000Z',
+            role: 'planner',
           ),
         ],
-        timeline: [
+        timeline: const [
           ThreadRunProjectionTimelineItem(
-            id: id,
+            id: 'turn-1-user',
             sequence: 1,
-            eventType: 'thinking.delta',
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            text: '第一轮。',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: {'liveType': 'thread.user_prompt'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-1-request',
+            sequence: 2,
+            eventType: 'request.started',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_turn_1',
+            text: '',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-1-thinking',
+            sequence: 3,
+            eventType: 'thinking.final',
             scope: 'main',
             role: 'thinking',
-            requestId: 'req_stream',
-            streamKey: 'thr_test:thinking',
-            text: text,
+            requestId: 'req_turn_1',
+            streamKey: 'thr_view:thinking:block:thinking:0',
+            text: '第一轮思考。',
             at: '2026-01-01T00:00:02.000Z',
           ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-1-message',
+            sequence: 4,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            streamKey: 'thr_view:planner:block:text:1',
+            text: '第一轮回复。',
+            at: '2026-01-01T00:00:04.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-user',
+            sequence: 5,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            text: '第二轮。',
+            at: '2026-01-01T00:01:00.000Z',
+            metadata: {'liveType': 'thread.user_prompt'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-request',
+            sequence: 6,
+            eventType: 'request.started',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_turn_2',
+            text: '',
+            at: '2026-01-01T00:01:01.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-thinking',
+            sequence: 7,
+            eventType: 'thinking.final',
+            scope: 'main',
+            role: 'thinking',
+            requestId: 'req_turn_2',
+            streamKey: 'thr_view:thinking:block:thinking:0',
+            text: '第二轮思考。',
+            at: '2026-01-01T00:01:02.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'turn-2-message',
+            sequence: 8,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            streamKey: 'thr_view:planner:block:text:1',
+            text: '第二轮回复。',
+            at: '2026-01-01T00:01:04.000Z',
+          ),
         ],
-      );
-    }
-
-    final firstFeed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: projectionForDelta('delta-1', '第一段思考'),
-    );
-    final secondFeed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: projectionForDelta('delta-2', '第一段思考扩展'),
+      ),
     );
 
-    expect(firstFeed.length, 1);
-    expect(secondFeed.length, 1);
-    expect(firstFeed.first.id, secondFeed.first.id);
-    expect(secondFeed.first.text, '第一段思考扩展');
+    expect(feed.map((entry) => entry.id).toList(), [
+      'turn-1-user',
+      'main:stream:thinking:sk:thr_view:thinking:block:thinking:0:req:req_turn_1',
+      'main:stream:message:sk:thr_view:planner:block:text:1:req:req_turn_1',
+      'turn-2-user',
+      'main:stream:thinking:sk:thr_view:thinking:block:thinking:0:req:req_turn_2',
+      'main:stream:message:sk:thr_view:planner:block:text:1:req:req_turn_2',
+    ]);
+    final assistantTexts = feed
+        .where((entry) => entry.kind == ActivityFeedKind.assistant)
+        .map((entry) => entry.text)
+        .toList();
+    expect(assistantTexts, ['第一轮回复。', '第二轮回复。']);
   });
+
+  test('buildActivityFeed hides duplicate final echoes for SDK block rows', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 4,
+        agents: const [],
+        requestSpans: const [
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_planner',
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:01.000Z',
+            endedAt: '2026-01-01T00:00:04.000Z',
+          ),
+        ],
+        timeline: const [
+          ThreadRunProjectionTimelineItem(
+            id: 'thinking-legacy-final',
+            sequence: 1,
+            eventType: 'thinking.final',
+            scope: 'main',
+            role: 'thinking',
+            requestId: 'req_planner',
+            streamKey: 'thr_view:thinking',
+            text: '旧思考。',
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'thinking-block-final',
+            sequence: 2,
+            eventType: 'thinking.final',
+            scope: 'main',
+            role: 'thinking',
+            streamKey: 'thr_view:thinking:block:thinking:0',
+            text: '旧思考。',
+            at: '2026-01-01T00:00:02.001Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'message-legacy-final',
+            sequence: 3,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_planner',
+            streamKey: 'thr_view:planner',
+            text: '最终回复。',
+            at: '2026-01-01T00:00:04.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'message-block-final',
+            sequence: 4,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            streamKey: 'thr_view:planner:block:text:1',
+            text: '最终回复。',
+            at: '2026-01-01T00:00:04.001Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.map((entry) => entry.id).toList(), [
+      'main:stream:thinking:sk:thr_view:thinking:block:thinking:0:req:req_planner',
+      'main:stream:message:sk:thr_view:planner:block:text:1:req:req_planner',
+    ]);
+    expect(feed.map((entry) => entry.text).toList(), ['旧思考。', '最终回复。']);
+  });
+
+  test(
+    'buildActivityFeed keeps settled stream delta while hiding assistant final echo',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'idle',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 2,
+          agents: const [],
+          requestSpans: const [
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_planner',
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:03.000Z',
+            ),
+          ],
+          timeline: const [
+            ThreadRunProjectionTimelineItem(
+              id: 'thinking-block-delta',
+              sequence: 1,
+              eventType: 'thinking.delta',
+              scope: 'main',
+              role: 'thinking',
+              requestId: 'req_planner',
+              streamKey: 'thr_view:thinking:block:thinking:0',
+              text: '已流式输出的思考。',
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'thinking-assistant-final',
+              sequence: 2,
+              eventType: 'thinking.final',
+              scope: 'main',
+              role: 'thinking',
+              streamKey: 'thr_view:thinking:block:thinking:0',
+              text: '已流式输出的思考。',
+              at: '2026-01-01T00:00:02.001Z',
+            ),
+          ],
+        ),
+      );
+
+      expect(feed.length, 1);
+      expect(
+        feed.first.id,
+        'main:stream:thinking:sk:thr_view:thinking:block:thinking:0:req:req_planner',
+      );
+      expect(feed.first.kind, ActivityFeedKind.thinking);
+      expect(feed.first.text, '已流式输出的思考。');
+      expect(feed.first.streaming, isFalse);
+    },
+  );
+
+  test(
+    'buildActivityFeed keeps settled message delta while hiding assistant final echo',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'idle',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 2,
+          agents: const [],
+          requestSpans: const [
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_planner',
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:03.000Z',
+              role: 'planner',
+            ),
+          ],
+          timeline: const [
+            ThreadRunProjectionTimelineItem(
+              id: 'message-block-delta',
+              sequence: 1,
+              eventType: 'message.delta',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_planner',
+              streamKey: 'thr_view:planner:block:text:1',
+              text: '已流式输出的正文。',
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'message-assistant-final',
+              sequence: 2,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              streamKey: 'thr_view:planner:block:text:1',
+              text: '已流式输出的正文。',
+              at: '2026-01-01T00:00:02.001Z',
+            ),
+          ],
+        ),
+      );
+
+      expect(feed.length, 1);
+      expect(
+        feed.first.id,
+        'main:stream:message:sk:thr_view:planner:block:text:1:req:req_planner',
+      );
+      expect(feed.first.kind, ActivityFeedKind.assistant);
+      expect(feed.first.text, '已流式输出的正文。');
+      expect(feed.first.streaming, isFalse);
+    },
+  );
+
+  test(
+    'buildActivityFeed keeps stable ids while streaming thinking advances',
+    () {
+      ThreadRunProjectionSnapshot projectionForDelta(String id, String text) {
+        return ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 1,
+          agents: const [],
+          requestSpans: const [
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_stream',
+              status: 'streaming',
+              startedAt: '2026-01-01T00:00:01.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: id,
+              sequence: 1,
+              eventType: 'thinking.delta',
+              scope: 'main',
+              role: 'thinking',
+              requestId: 'req_stream',
+              streamKey: 'thr_test:thinking',
+              text: text,
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+          ],
+        );
+      }
+
+      final firstFeed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: projectionForDelta('delta-1', '第一段思考'),
+      );
+      final secondFeed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: projectionForDelta('delta-2', '第一段思考扩展'),
+      );
+
+      expect(firstFeed.length, 1);
+      expect(secondFeed.length, 1);
+      expect(firstFeed.first.id, secondFeed.first.id);
+      expect(secondFeed.first.text, '第一段思考扩展');
+    },
+  );
 
   test('shouldAutoScrollActivityFeed ignores bash action insertions', () {
     const previous = [
@@ -1267,9 +1710,7 @@ void main() {
       isFalse,
     );
     expect(
-      listMiddleInsertedFeedEntries(previous: previous, next: next)
-          .single
-          .id,
+      listMiddleInsertedFeedEntries(previous: previous, next: next).single.id,
       'bash-1',
     );
   });
@@ -1292,9 +1733,6 @@ void main() {
       ),
     ];
 
-    expect(
-      shouldFollowStreamingTail(previous: previous, next: next),
-      isTrue,
-    );
+    expect(shouldFollowStreamingTail(previous: previous, next: next), isTrue);
   });
 }

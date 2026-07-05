@@ -45,7 +45,9 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   final sessionsByAgentId = indexSubagentSessionsByAgentId(subagentSessions);
   final slots = <_ProjectionFeedSlot>[];
 
-  final hasProjectedUserPrompt = projection.timeline.any(_isProjectionUserPromptItem);
+  final hasProjectedUserPrompt = projection.timeline.any(
+    _isProjectionUserPromptItem,
+  );
   final prompt = threadPrompt?.trim();
   if (!hasProjectedUserPrompt && prompt != null && prompt.isNotEmpty) {
     slots.add(
@@ -113,10 +115,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
 
   final rawMainTimeline = _mainProjectionTimelineItems(projection);
   final mainTimeline = _filterAbsorbedSubagentDelegations(
-    _filterMainTimelineForFeed(
-      rawMainTimeline,
-      requestSpansById,
-    ),
+    _filterMainTimelineForFeed(rawMainTimeline, requestSpansById),
     subagentCards,
     requestSpansById,
   );
@@ -214,11 +213,7 @@ ActivityFeedEntry? _buildProjectionFeedEntry(
     rawMainTimeline,
     agentId: agentId,
   );
-  return _projectionItemToFeedEntry(
-    item,
-    feedId: feedId,
-    agentRole: agentRole,
-  );
+  return _projectionItemToFeedEntry(item, feedId: feedId, agentRole: agentRole);
 }
 
 String _projectionMainFeedEntryKey(
@@ -228,8 +223,11 @@ String _projectionMainFeedEntryKey(
   String? agentId,
 }) {
   final scope = agentId != null ? 'agent:$agentId' : 'main';
-  final streamKey =
-      _projectionStreamDisplayKey(item, requestSpansById, rawMainTimeline);
+  final streamKey = _projectionStreamDisplayKey(
+    item,
+    requestSpansById,
+    rawMainTimeline,
+  );
   if (streamKey != null) {
     return '$scope:stream:$streamKey';
   }
@@ -286,8 +284,10 @@ List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(
   List<ThreadRunProjectionTimelineItem> timeline,
   Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
 ) {
-  final displayTimeline =
-      _filterProjectionTimelineForDetailFeed(timeline, requestSpansById);
+  final displayTimeline = _filterProjectionTimelineForDetailFeed(
+    timeline,
+    requestSpansById,
+  );
   return _filterCompactionTimelineForFeed(
     displayTimeline.where((item) => !_isMainTimelineNoiseItem(item)).toList(),
   );
@@ -302,7 +302,9 @@ List<ThreadRunProjectionTimelineItem> _filterAbsorbedSubagentDelegations(
     subagentCards,
     requestSpansById,
   );
-  final subagentAgentIds = subagentCards.map((card) => card.agent.agentId).toSet();
+  final subagentAgentIds = subagentCards
+      .map((card) => card.agent.agentId)
+      .toSet();
   for (final card in subagentCards) {
     final parentToolUseId = card.agent.parentToolUseId?.trim();
     if (parentToolUseId != null && parentToolUseId.isNotEmpty) {
@@ -326,8 +328,8 @@ List<ThreadRunProjectionTimelineItem> _filterAbsorbedSubagentDelegations(
           subagentAgentIds.contains(itemAgentId)) {
         return false;
       }
-      final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId
-              ?.trim() ??
+      final toolUseId =
+          readProjectionToolMetadata(item.metadata)?.toolUseId?.trim() ??
           readBashApprovalMetadata(item.metadata)?.toolUseId.trim();
       if (toolUseId != null && absorbedToolUseIds.contains(toolUseId)) {
         return false;
@@ -340,10 +342,13 @@ List<ThreadRunProjectionTimelineItem> _filterAbsorbedSubagentDelegations(
         absorbedToolUseIds.contains(approvalToolUseId)) {
       return false;
     }
-    if (item.eventType != 'tool.started' && item.eventType != 'tool.completed') {
+    if (item.eventType != 'tool.started' &&
+        item.eventType != 'tool.completed') {
       return true;
     }
-    final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId?.trim();
+    final toolUseId = readProjectionToolMetadata(
+      item.metadata,
+    )?.toolUseId?.trim();
     return toolUseId == null || !absorbedToolUseIds.contains(toolUseId);
   }).toList();
 }
@@ -359,8 +364,8 @@ Set<String> _collectAgentTimelineToolUseIds(
       requestSpansById,
     );
     for (final item in displayTimeline) {
-      final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId
-              ?.trim() ??
+      final toolUseId =
+          readProjectionToolMetadata(item.metadata)?.toolUseId?.trim() ??
           readBashApprovalMetadata(item.metadata)?.toolUseId.trim();
       if (toolUseId != null && toolUseId.isNotEmpty) {
         ids.add(toolUseId);
@@ -374,15 +379,19 @@ List<ThreadRunProjectionTimelineItem> _filterProjectionTimelineForDetailFeed(
   List<ThreadRunProjectionTimelineItem> timeline,
   Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
 ) {
-  final displayTimeline =
-      _buildProjectionDisplayTimelineItems(timeline, requestSpansById);
+  final displayTimeline = _buildProjectionDisplayTimelineItems(
+    timeline,
+    requestSpansById,
+  );
   final failedTools = displayTimeline
       .where((item) => item.eventType == 'tool.failed')
       .map((item) => _resolveProjectionToolName(item).toLowerCase())
       .toSet();
   if (failedTools.isEmpty) return displayTimeline;
   return displayTimeline
-      .where((item) => !_isProjectionToolFailureDuplicateMessage(item, failedTools))
+      .where(
+        (item) => !_isProjectionToolFailureDuplicateMessage(item, failedTools),
+      )
       .toList();
 }
 
@@ -392,8 +401,10 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
 ) {
   final latestStreamDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
   final latestToolDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
-  final latestLifecycleDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
-  final latestReconnectDisplayByKey = <String, ThreadRunProjectionTimelineItem>{};
+  final latestLifecycleDisplayByKey =
+      <String, ThreadRunProjectionTimelineItem>{};
+  final latestReconnectDisplayByKey =
+      <String, ThreadRunProjectionTimelineItem>{};
 
   for (final item in timeline) {
     final reconnectKey = _projectionReconnectDisplayKey(item);
@@ -413,19 +424,31 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
       }
     }
 
-    final streamKey = _projectionStreamDisplayKey(item, requestSpansById, timeline);
+    final streamKey = _projectionStreamDisplayKey(
+      item,
+      requestSpansById,
+      timeline,
+    );
     if (streamKey != null) {
+      if (_isDuplicateStreamBlockFinalEcho(item, timeline) ||
+          _isDuplicateLegacyStreamFinalEcho(item, timeline)) {
+        continue;
+      }
       final current = latestStreamDisplayByKey[streamKey];
       if (current == null || _compareTimelineItems(current, item) <= 0) {
-        latestStreamDisplayByKey[streamKey] =
-            _mergeStreamDisplayTimelineItem(current, item, timeline);
+        latestStreamDisplayByKey[streamKey] = _mergeStreamDisplayTimelineItem(
+          current,
+          item,
+          timeline,
+        );
       }
     }
 
     final toolKey = _projectionToolDisplayKey(item);
     if (toolKey != null) {
       final current = latestToolDisplayByKey[toolKey];
-      if (current == null || _compareProjectionToolDisplayItems(current, item) <= 0) {
+      if (current == null ||
+          _compareProjectionToolDisplayItems(current, item) <= 0) {
         latestToolDisplayByKey[toolKey] = item;
       }
     }
@@ -447,20 +470,128 @@ List<ThreadRunProjectionTimelineItem> _buildProjectionDisplayTimelineItems(
         latestLifecycleDisplayByKey[lifecycleKey]?.id != item.id) {
       continue;
     }
-    final streamKey = _projectionStreamDisplayKey(item, requestSpansById, timeline);
-    if (streamKey != null && latestStreamDisplayByKey[streamKey]?.id != item.id) {
-      continue;
+    final streamKey = _projectionStreamDisplayKey(
+      item,
+      requestSpansById,
+      timeline,
+    );
+    var displayItem = item;
+    if (streamKey != null) {
+      final latestStream = latestStreamDisplayByKey[streamKey];
+      if (latestStream == null || latestStream.id != item.id) {
+        continue;
+      }
+      displayItem = latestStream;
     }
     final toolKey = _projectionToolDisplayKey(item);
     if (toolKey != null && latestToolDisplayByKey[toolKey]?.id != item.id) {
       continue;
     }
-    final settled = _settleTerminalStreamDisplayItem(item, requestSpansById);
+    if (_isDuplicateStreamBlockFinalEcho(displayItem, timeline)) {
+      continue;
+    }
+    if (_isDuplicateLegacyStreamFinalEcho(displayItem, timeline)) {
+      continue;
+    }
+    final settled = _settleTerminalStreamDisplayItem(
+      displayItem,
+      requestSpansById,
+    );
     if (settled != null) {
       displayItems.add(settled);
     }
   }
   return displayItems;
+}
+
+bool _isDuplicateStreamBlockFinalEcho(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  if (item.eventType != 'message.final' && item.eventType != 'thinking.final') {
+    return false;
+  }
+  if (!_isExplicitStreamBlockItem(item) ||
+      (item.requestId?.trim().isNotEmpty ?? false)) {
+    return false;
+  }
+  final streamKey = item.streamKey?.trim();
+  final text = item.text.trim();
+  if (streamKey == null || streamKey.isEmpty || text.isEmpty) {
+    return false;
+  }
+  final channel = _streamDisplayChannel(item);
+  return timeline.any((other) {
+    if (other.id == item.id || other.streamKey?.trim() != streamKey) {
+      return false;
+    }
+    if ((other.requestId?.trim().isEmpty ?? true) ||
+        _streamDisplayChannel(other) != channel) {
+      return false;
+    }
+    if (!_isStreamDisplayTimelineItem(other) || other.text.trim() != text) {
+      return false;
+    }
+    return !_hasUserPromptBetweenTimelineItems(timeline, item, other);
+  });
+}
+
+bool _isDuplicateLegacyStreamFinalEcho(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  if (item.eventType != 'message.final' && item.eventType != 'thinking.final') {
+    return false;
+  }
+  if (_isExplicitStreamBlockItem(item)) {
+    return false;
+  }
+  final text = item.text.trim();
+  if (text.isEmpty) {
+    return false;
+  }
+  final channel = _streamDisplayChannel(item);
+  return timeline.any((other) {
+    if (other.id == item.id || !_isExplicitStreamBlockItem(other)) {
+      return false;
+    }
+    if (other.eventType != item.eventType ||
+        _streamDisplayChannel(other) != channel) {
+      return false;
+    }
+    if (other.text.trim() != text) {
+      return false;
+    }
+    return !_hasUserPromptBetweenTimelineItems(timeline, item, other);
+  });
+}
+
+bool _isExplicitStreamBlockItem(ThreadRunProjectionTimelineItem item) {
+  return item.streamKey?.contains(':block:') ?? false;
+}
+
+bool _isStreamDisplayTimelineItem(ThreadRunProjectionTimelineItem item) {
+  return item.eventType == 'thinking.delta' ||
+      item.eventType == 'thinking.final' ||
+      item.eventType == 'message.delta' ||
+      item.eventType == 'message.final';
+}
+
+String _streamDisplayChannel(ThreadRunProjectionTimelineItem item) {
+  return item.eventType == 'thinking.delta' ||
+          item.eventType == 'thinking.final'
+      ? 'thinking'
+      : 'message';
+}
+
+bool _hasUserPromptBetweenTimelineItems(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  ThreadRunProjectionTimelineItem left,
+  ThreadRunProjectionTimelineItem right,
+) {
+  final earlier = _compareTimelineItems(left, right) <= 0 ? left : right;
+  final later = earlier.id == left.id ? right : left;
+  return _hasUserPromptBetween(timeline, earlier, later);
 }
 
 bool _hasUserPromptBetween(
@@ -509,7 +640,8 @@ bool _hasThinkingStreamBoundaryBetween(
     if (_isProjectionUserPromptItem(entry)) {
       return true;
     }
-    if (entry.eventType == 'thinking.final' || entry.eventType == 'message.final') {
+    if (entry.eventType == 'thinking.final' ||
+        entry.eventType == 'message.final') {
       return true;
     }
     if (entry.eventType == 'tool.started' ||
@@ -533,7 +665,8 @@ bool _hasOnlyEmptyThinkingBefore(
   for (var index = itemIndex - 1; index >= 0; index -= 1) {
     final entry = timeline[index];
     final isThinking =
-        entry.eventType == 'thinking.delta' || entry.eventType == 'thinking.final';
+        entry.eventType == 'thinking.delta' ||
+        entry.eventType == 'thinking.final';
     if (!isThinking) {
       return false;
     }
@@ -659,6 +792,111 @@ int _resolveTurnSegmentEndIndex(
   return timeline.length;
 }
 
+int _resolveUserPromptBoundaryIndex(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  int itemIndex,
+) {
+  for (var index = itemIndex - 1; index >= 0; index -= 1) {
+    final entry = timeline[index];
+    if (_isProjectionUserPromptItem(entry)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+String? _resolveExpectedStreamRequestRole(
+  ThreadRunProjectionTimelineItem item,
+) {
+  if (item.role == 'thinking' ||
+      item.eventType == 'thinking.delta' ||
+      item.eventType == 'thinking.final') {
+    return 'planner';
+  }
+  final role = item.role?.trim();
+  if (role == null ||
+      role.isEmpty ||
+      role == 'tool' ||
+      role == 'system' ||
+      role == 'user') {
+    return null;
+  }
+  return role;
+}
+
+bool _streamRequestCandidateMatchesItem(
+  ThreadRunProjectionTimelineItem candidate,
+  ThreadRunProjectionTimelineItem item,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+) {
+  final requestId = candidate.requestId?.trim();
+  if (requestId == null || requestId.isEmpty) {
+    return false;
+  }
+  final span = requestSpansById[requestId];
+  final itemAgentId = item.agentId?.trim();
+  if (itemAgentId != null &&
+      itemAgentId.isNotEmpty &&
+      span?.ownerAgentId != null &&
+      span!.ownerAgentId != itemAgentId) {
+    return false;
+  }
+  final expectedRole = _resolveExpectedStreamRequestRole(item);
+  final candidateRole = span?.role ?? candidate.role;
+  if (expectedRole != null &&
+      candidateRole != null &&
+      candidateRole != expectedRole) {
+    return false;
+  }
+  return true;
+}
+
+String? _resolveNearestStreamRequestIdInUserTurn(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+) {
+  final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
+  if (itemIndex < 0) {
+    return null;
+  }
+  final userBoundaryIndex = _resolveUserPromptBoundaryIndex(
+    timeline,
+    itemIndex,
+  );
+  final searchStart = userBoundaryIndex >= 0 ? userBoundaryIndex + 1 : 0;
+  final searchEnd = _resolveTurnSegmentEndIndex(timeline, itemIndex);
+  String? fallbackRequestId;
+
+  for (var index = itemIndex; index >= searchStart; index -= 1) {
+    final entry = timeline[index];
+    if (!_streamRequestCandidateMatchesItem(entry, item, requestSpansById)) {
+      continue;
+    }
+    final requestId = entry.requestId?.trim();
+    if (entry.eventType == 'request.started') {
+      return requestId;
+    }
+    fallbackRequestId ??= requestId;
+  }
+  if (fallbackRequestId != null) {
+    return fallbackRequestId;
+  }
+
+  for (var index = itemIndex + 1; index < searchEnd; index += 1) {
+    final entry = timeline[index];
+    if (!_streamRequestCandidateMatchesItem(entry, item, requestSpansById)) {
+      continue;
+    }
+    final requestId = entry.requestId?.trim();
+    if (entry.eventType == 'request.started') {
+      return requestId;
+    }
+    fallbackRequestId ??= requestId;
+  }
+  return fallbackRequestId;
+}
+
 String? _resolveNearestPlannerRequestId(
   ThreadRunProjectionTimelineItem item,
   List<ThreadRunProjectionTimelineItem> timeline,
@@ -705,24 +943,55 @@ String? _resolveEffectiveStreamRequestId(
   List<ThreadRunProjectionTimelineItem> timeline,
   Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
 ) {
-  final isThinkingStream = item.role == 'thinking' ||
+  final isThinkingStream =
+      item.role == 'thinking' ||
       item.eventType == 'thinking.delta' ||
       item.eventType == 'thinking.final';
+  final itemRequestId = item.requestId?.trim();
+  final hasExplicitStreamBlockKey = _isExplicitStreamBlockItem(item);
+  if (!isThinkingStream) {
+    if (itemRequestId != null && itemRequestId.isNotEmpty) {
+      return itemRequestId;
+    }
+    if (hasExplicitStreamBlockKey) {
+      return _resolveNearestStreamRequestIdInUserTurn(
+        item,
+        timeline,
+        requestSpansById,
+      );
+    }
+    return null;
+  }
+  if (hasExplicitStreamBlockKey &&
+      (itemRequestId == null || itemRequestId.isEmpty)) {
+    final inferredRequestId = _resolveNearestStreamRequestIdInUserTurn(
+      item,
+      timeline,
+      requestSpansById,
+    );
+    if (inferredRequestId != null) {
+      return inferredRequestId;
+    }
+  }
   if (isThinkingStream) {
-    final plannerRequestId =
-        _resolveNearestPlannerRequestId(item, timeline, requestSpansById);
+    final plannerRequestId = _resolveNearestPlannerRequestId(
+      item,
+      timeline,
+      requestSpansById,
+    );
     if (plannerRequestId != null) {
       return plannerRequestId;
     }
     final itemIndex = timeline.indexWhere((entry) => entry.id == item.id);
-    final turnBoundaryIndex =
-        itemIndex >= 0 ? _resolveTurnBoundaryIndex(timeline, itemIndex) : -1;
-    final boundaryItem =
-        turnBoundaryIndex >= 0 ? timeline[turnBoundaryIndex] : null;
+    final turnBoundaryIndex = itemIndex >= 0
+        ? _resolveTurnBoundaryIndex(timeline, itemIndex)
+        : -1;
+    final boundaryItem = turnBoundaryIndex >= 0
+        ? timeline[turnBoundaryIndex]
+        : null;
     final hasUserPromptInTurn =
         boundaryItem != null && _isProjectionUserPromptItem(boundaryItem);
     if (!hasUserPromptInTurn) {
-      final itemRequestId = item.requestId?.trim();
       if (itemRequestId != null &&
           itemRequestId.isNotEmpty &&
           requestSpansById.containsKey(itemRequestId)) {
@@ -731,8 +1000,6 @@ String? _resolveEffectiveStreamRequestId(
     }
     return null;
   }
-  final itemRequestId = item.requestId?.trim();
-  return itemRequestId != null && itemRequestId.isNotEmpty ? itemRequestId : null;
 }
 
 String? _projectionOwnerKey(ThreadRunProjectionTimelineItem item) {
@@ -762,7 +1029,9 @@ String _appendStreamScopeSuffix(
     return key;
   }
   final requestId = effectiveRequestId?.trim() ?? item.requestId?.trim();
-  return requestId != null && requestId.isNotEmpty ? '$key:req:$requestId' : key;
+  return requestId != null && requestId.isNotEmpty
+      ? '$key:req:$requestId'
+      : key;
 }
 
 String _appendThinkingStreamScopeSuffix(
@@ -789,7 +1058,9 @@ ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
   return ThreadRunProjectionTimelineItem(
     id: item.id,
     sequence: item.sequence,
-    eventType: item.eventType == 'thinking.delta' ? 'thinking.final' : 'message.final',
+    eventType: item.eventType == 'thinking.delta'
+        ? 'thinking.final'
+        : 'message.final',
     scope: item.scope,
     text: item.text,
     at: item.at,
@@ -902,7 +1173,8 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     );
   }
 
-  if (item.eventType == 'thinking.delta' || item.eventType == 'thinking.final') {
+  if (item.eventType == 'thinking.delta' ||
+      item.eventType == 'thinking.final') {
     return ActivityFeedEntry(
       id: feedId,
       kind: ActivityFeedKind.thinking,
@@ -945,7 +1217,8 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
 }) {
   bashApproval ??= readBashApprovalMetadata(item.metadata);
   final tool = readProjectionToolMetadata(item.metadata);
-  final toolName = bashApproval?.toolName ?? tool?.name ?? _resolveProjectionToolName(item);
+  final toolName =
+      bashApproval?.toolName ?? tool?.name ?? _resolveProjectionToolName(item);
   final description = bashApproval?.description?.trim().isNotEmpty == true
       ? bashApproval!.description!.trim()
       : (tool?.name == 'Bash' ? tool?.description?.trim() : null);
@@ -1025,8 +1298,10 @@ bool _isProjectionUsageNoiseText(String text) {
 }
 
 bool _isProjectionLifecycleText(String text) {
-  return RegExp(r'^Subagent\s+\S+\s+(started|stopped|abandoned)$', caseSensitive: false)
-      .hasMatch(text);
+  return RegExp(
+    r'^Subagent\s+\S+\s+(started|stopped|abandoned)$',
+    caseSensitive: false,
+  ).hasMatch(text);
 }
 
 bool _isProjectionInternalMessageText(String text) {
@@ -1058,15 +1333,18 @@ bool _isProjectionToolFailureDuplicateMessage(
   final text = item.text.trim();
   if (text.isEmpty) return false;
   if (text == '工具调用被拒绝') return true;
-  final shortMatch = RegExp(r'^Permission denied for ([A-Za-z0-9_]+)$', caseSensitive: false)
-      .firstMatch(text);
+  final shortMatch = RegExp(
+    r'^Permission denied for ([A-Za-z0-9_]+)$',
+    caseSensitive: false,
+  ).firstMatch(text);
   if (shortMatch != null &&
       failedTools.contains(shortMatch.group(1)!.toLowerCase())) {
     return true;
   }
-  final fullMatch =
-      RegExp(r'^Permission denied for ([A-Za-z0-9_]+):', caseSensitive: false)
-          .firstMatch(text);
+  final fullMatch = RegExp(
+    r'^Permission denied for ([A-Za-z0-9_]+):',
+    caseSensitive: false,
+  ).firstMatch(text);
   if (fullMatch != null &&
       failedTools.contains(fullMatch.group(1)!.toLowerCase())) {
     return true;
@@ -1136,7 +1414,9 @@ class _ProjectionApiError {
   final String? code;
 }
 
-_ProjectionApiError? _readProjectionApiError(ThreadRunProjectionTimelineItem item) {
+_ProjectionApiError? _readProjectionApiError(
+  ThreadRunProjectionTimelineItem item,
+) {
   final raw = item.metadata?['apiError'];
   if (raw is! Map<String, dynamic>) return null;
   final message = (raw['message'] as String?)?.trim() ?? '';
@@ -1169,7 +1449,9 @@ String? _projectionToolDisplayKey(ThreadRunProjectionTimelineItem item) {
   if (item.eventType != 'tool.started' && item.eventType != 'tool.completed') {
     return null;
   }
-  final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId?.trim();
+  final toolUseId = readProjectionToolMetadata(
+    item.metadata,
+  )?.toolUseId?.trim();
   if (toolUseId == null || toolUseId.isEmpty) return null;
   return 'tool:$toolUseId';
 }
@@ -1236,21 +1518,46 @@ String? _projectionStreamDisplayKey(
   List<ThreadRunProjectionTimelineItem> timeline,
 ) {
   if (!_isStreamingRequestDisplayItem(item)) return null;
-  final channel = item.eventType.startsWith('thinking') ? 'thinking' : 'message';
-  final requestId = _resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
+  final channel = _streamDisplayChannel(item);
+  final requestId = _resolveEffectiveStreamRequestId(
+    item,
+    timeline,
+    requestSpansById,
+  );
+  final streamKey = item.streamKey?.trim();
+  final hasExplicitStreamBlockKey =
+      streamKey != null && streamKey.contains(':block:');
+  if (streamKey != null && streamKey.isNotEmpty && hasExplicitStreamBlockKey) {
+    return _appendStreamScopeSuffix(
+      '${channel}:sk:$streamKey',
+      item,
+      requestId,
+    );
+  }
   if (requestId != null) {
     final span = requestSpansById[requestId];
     if (span != null && !_isProjectionRequestActive(span)) {
       return '$channel:request:$requestId';
     }
   }
-  final streamKey = item.streamKey?.trim();
   if (streamKey != null && streamKey.isNotEmpty) {
-    return _appendStreamScopeSuffix('${channel}:sk:$streamKey', item, requestId);
+    return _appendStreamScopeSuffix(
+      '${channel}:sk:$streamKey',
+      item,
+      requestId,
+    );
   }
   final ownerKey = _projectionOwnerKey(item);
   if (ownerKey != null) {
     return _appendStreamScopeSuffix('$channel:$ownerKey', item, requestId);
+  }
+  final requestKey = item.requestId?.trim();
+  if (requestKey != null && requestKey.isNotEmpty) {
+    return _appendStreamScopeSuffix(
+      '$channel:request:$requestKey',
+      item,
+      requestId,
+    );
   }
   return '$channel:${item.id}';
 }
@@ -1296,7 +1603,8 @@ int _compareProjectionToolDisplayItems(
 ) {
   final timelineDelta = _compareTimelineItems(left, right);
   if (timelineDelta != 0) return timelineDelta;
-  return _projectionToolDisplayRichness(left) - _projectionToolDisplayRichness(right);
+  return _projectionToolDisplayRichness(left) -
+      _projectionToolDisplayRichness(right);
 }
 
 int _projectionToolDisplayRichness(ThreadRunProjectionTimelineItem item) {
@@ -1323,7 +1631,8 @@ int _compareProjectionLifecycleDisplayItems(
     return compareToolActionLifecyclePriority(leftLifecycle, rightLifecycle);
   }
   final richness =
-      _projectionToolDisplayRichness(left) - _projectionToolDisplayRichness(right);
+      _projectionToolDisplayRichness(left) -
+      _projectionToolDisplayRichness(right);
   if (richness != 0) return richness;
   return _compareTimelineItems(left, right);
 }

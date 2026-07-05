@@ -1,9 +1,8 @@
-import type {
-  ThreadRunProjectionAgent,
-  ThreadRunProjectionSnapshot,
-  ThreadRunProjectionTimelineItem,
-  ThreadRunToolMetadata,
-} from "../shared/ipc";
+import {
+  isSubagentMissionEnvelope,
+  parseSubagentMissionMessage,
+  resolveMissionDisplayText,
+} from "@eco/runtime";
 import {
   bashApprovalPhaseToLifecycle,
   clampActivityPreviewLine,
@@ -11,18 +10,24 @@ import {
   formatToolDisplayLabel,
   formatToolStatusPreview,
   isToolProgressStatusText,
+  readBashApprovalMetadata,
   resolveBashRunCardDisplay,
   resolveFileChangeCardDisplay,
-  readBashApprovalMetadata,
-  toolStatusToLifecycle,
   type ToolActionLifecycle,
+  toolStatusToLifecycle,
 } from "../shared/activity-display";
+import { parseThreadRunFileChangeMetadata } from "../shared/file-change";
+import type {
+  ThreadRunProjectionAgent,
+  ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
+  ThreadRunToolMetadata,
+} from "../shared/ipc";
 import {
-  formatThreadRunToolDetailLabel,
-  resolveGrepToolTargetDisplay,
-  resolveGrepToolTargetDisplayFromToolMetadata,
-  resolveReadToolTargetDisplayFromToolMetadata,
-} from "../shared/tool-target";
+  collapsePromptCacheTimelineItems,
+  readPromptCacheTimelineMetadata,
+} from "../shared/prompt-cache-timeline";
+import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isReconnectActivityOrigin,
   isRequestFailureFeedNoiseOrigin,
@@ -32,31 +37,19 @@ import {
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
 import {
-  isSubagentMissionEnvelope,
-  parseSubagentMissionMessage,
-  resolveMissionDisplayText,
-} from "@eco/runtime";
-import {
-  iconForToolName,
-  resolveSubagentRunDisplayTitle,
-  type ActivityDetailBlock,
-} from "./activity-log";
-import { parseThreadRunFileChangeMetadata } from "../shared/file-change";
-import {
-  parseThreadRunGrepToolTarget,
-  parseThreadRunReadToolTarget,
-} from "../shared/tool-target";
-import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
-import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
   isThreadFollowUpLiveEvent,
 } from "../shared/thread-follow-up-events";
-import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import {
-  collapsePromptCacheTimelineItems,
-  readPromptCacheTimelineMetadata,
-} from "../shared/prompt-cache-timeline";
+  formatThreadRunToolDetailLabel,
+  parseThreadRunGrepToolTarget,
+  parseThreadRunReadToolTarget,
+  resolveGrepToolTargetDisplayFromToolMetadata,
+  resolveReadToolTargetDisplayFromToolMetadata,
+} from "../shared/tool-target";
+import { type ActivityDetailBlock, iconForToolName, resolveSubagentRunDisplayTitle } from "./activity-log";
+import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
@@ -65,24 +58,37 @@ export interface ThreadRunProjectionViewModel {
   subagentCards: ThreadRunProjectionSubagentCard[];
 }
 
+export type ThreadRunProjectionTimelineFeedEntry = {
+  kind: "timeline";
+  key: string;
+  item: ThreadRunProjectionTimelineItem;
+  at: string;
+  sequence: number;
+};
+
+export type ThreadRunProjectionAgentEchoFeedEntry = {
+  kind: "agent-echo";
+  key: string;
+  item: ThreadRunProjectionTimelineItem;
+  agent: ThreadRunProjectionAgent;
+  agentLabel: string;
+  shortAgentId: string;
+  at: string;
+  sequence: number;
+};
+
+export type ThreadRunProjectionToolGroupFeedEntry = {
+  kind: "tool-group";
+  key: string;
+  entries: Array<ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry>;
+  at: string;
+  sequence: number;
+};
+
 export type ThreadRunProjectionMainFeedEntry =
-  | {
-      kind: "timeline";
-      key: string;
-      item: ThreadRunProjectionTimelineItem;
-      at: string;
-      sequence: number;
-    }
-  | {
-      kind: "agent-echo";
-      key: string;
-      item: ThreadRunProjectionTimelineItem;
-      agent: ThreadRunProjectionAgent;
-      agentLabel: string;
-      shortAgentId: string;
-      at: string;
-      sequence: number;
-    }
+  | ThreadRunProjectionTimelineFeedEntry
+  | ThreadRunProjectionAgentEchoFeedEntry
+  | ThreadRunProjectionToolGroupFeedEntry
   | {
       kind: "agent-card";
       key: string;
@@ -138,9 +144,15 @@ export function buildThreadRunProjectionViewModel(
   return {
     showThreadPrompt,
     mainFeedEntries,
-    mainItemIds: mainFeedEntries.map((entry) =>
-      entry.kind === "timeline" || entry.kind === "agent-echo" ? entry.item.id : entry.key,
-    ),
+    mainItemIds: mainFeedEntries.map((entry) => {
+      if (entry.kind === "timeline" || entry.kind === "agent-echo") {
+        return entry.item.id;
+      }
+      if (entry.kind === "tool-group") {
+        return entry.entries.map((child) => child.item.id).join(",");
+      }
+      return entry.key;
+    }),
     subagentCards,
   };
 }
@@ -160,16 +172,17 @@ function buildProjectionMainFeedEntries(
     ...mainTimeline,
     ...subagentCards.flatMap((card) => card.agent.timeline),
   ]);
-  const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => {
-    const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
-    return {
-      kind: "timeline",
-      key: projectionMainFeedEntryKey(item, { requestSpansById, timeline: mainTimeline }),
-      item,
-      at: sortAnchor.at,
-      sequence: sortAnchor.sequence,
-    };
-  });
+  const entries: Array<Exclude<ThreadRunProjectionMainFeedEntry, ThreadRunProjectionToolGroupFeedEntry>> =
+    displayMainTimeline.map((item) => {
+      const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
+      return {
+        kind: "timeline",
+        key: projectionMainFeedEntryKey(item, { requestSpansById, timeline: mainTimeline }),
+        item,
+        at: sortAnchor.at,
+        sequence: sortAnchor.sequence,
+      };
+    });
 
   for (const card of subagentCards) {
     const cardSortAnchor = { at: card.agent.startedAt, sequence: card.agent.timeline[0]?.sequence ?? 0 };
@@ -201,7 +214,57 @@ function buildProjectionMainFeedEntries(
     }
   }
 
-  return entries.sort((left, right) => compareMainFeedEntries(left, right, requestSpansById));
+  return groupProjectionToolFeedEntries(
+    entries.sort((left, right) => compareMainFeedEntries(left, right, requestSpansById)),
+  );
+}
+
+function groupProjectionToolFeedEntries(
+  entries: readonly Exclude<ThreadRunProjectionMainFeedEntry, ThreadRunProjectionToolGroupFeedEntry>[],
+): ThreadRunProjectionMainFeedEntry[] {
+  const grouped: ThreadRunProjectionMainFeedEntry[] = [];
+  let pending: Array<ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry> = [];
+
+  const flush = () => {
+    if (pending.length > 1) {
+      const first = pending[0];
+      const last = pending[pending.length - 1];
+      if (!first || !last) {
+        pending = [];
+        return;
+      }
+      grouped.push({
+        kind: "tool-group",
+        key: `tool-group:${first.key}:${last.key}:${pending.length}`,
+        entries: pending,
+        at: first.at,
+        sequence: first.sequence,
+      });
+    } else {
+      grouped.push(...pending);
+    }
+    pending = [];
+  };
+
+  for (const entry of entries) {
+    if (isGroupableToolFeedEntry(entry)) {
+      pending.push(entry);
+      continue;
+    }
+    flush();
+    grouped.push(entry);
+  }
+  flush();
+  return grouped;
+}
+
+function isGroupableToolFeedEntry(
+  entry: Exclude<ThreadRunProjectionMainFeedEntry, ThreadRunProjectionToolGroupFeedEntry>,
+): entry is ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry {
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  return projectionItemToDetailBlock(entry.item)?.kind === "action";
 }
 
 function filterMainTimelineForFeed(
@@ -340,53 +403,53 @@ function filterProjectionTimelineForDetailFeed(
   return filterToolFailureDuplicateTimelineItems(
     filterProjectionToolProgressNoiseItems(
       displayTimeline.filter((item) => {
-    if (isProjectionRequestCompletionItem(item)) {
-      return false;
-    }
-    if (item.eventType !== "request.started") {
-      return true;
-    }
-    const requestSpan = projectionRequestSpan(item, requestSpansById);
-    if (requestSpan && !isProjectionRequestActive(requestSpan)) {
-      const requestId = item.requestId?.trim();
-      if (requestId && requestsWithStreamRows.has(`request:${requestId}`)) {
-        return (
-          !requestHasThinkingStream(requestId, displayTimeline) &&
-          !requestHasMessageStream(requestId, displayTimeline)
-        );
-      }
-      return false;
-    }
-    const requestKey = projectionRequestKey(item);
-    if (requestKey && requestsWithStreamRows.has(requestKey)) {
-      return false;
-    }
-    const ownerKey = projectionOwnerKey(item);
-    if (ownerKey) {
-      const latest = latestActiveRequestStartedByOwner.get(ownerKey);
-      if (latest && latest.id !== item.id) {
-        return false;
-      }
-    }
-    if (
-      displayTimeline.some((streamItem) =>
-        isStreamRowSuppressingRequestStarted(streamItem, item, requestSpansById),
-      )
-    ) {
-      const requestId = item.requestId?.trim();
-      if (
-        requestSpan &&
-        !isProjectionRequestActive(requestSpan) &&
-        requestId &&
-        !requestHasThinkingStream(requestId, displayTimeline) &&
-        !requestHasMessageStream(requestId, displayTimeline)
-      ) {
+        if (isProjectionRequestCompletionItem(item)) {
+          return false;
+        }
+        if (item.eventType !== "request.started") {
+          return true;
+        }
+        const requestSpan = projectionRequestSpan(item, requestSpansById);
+        if (requestSpan && !isProjectionRequestActive(requestSpan)) {
+          const requestId = item.requestId?.trim();
+          if (requestId && requestsWithStreamRows.has(`request:${requestId}`)) {
+            return (
+              !requestHasThinkingStream(requestId, displayTimeline) &&
+              !requestHasMessageStream(requestId, displayTimeline)
+            );
+          }
+          return false;
+        }
+        const requestKey = projectionRequestKey(item);
+        if (requestKey && requestsWithStreamRows.has(requestKey)) {
+          return false;
+        }
+        const ownerKey = projectionOwnerKey(item);
+        if (ownerKey) {
+          const latest = latestActiveRequestStartedByOwner.get(ownerKey);
+          if (latest && latest.id !== item.id) {
+            return false;
+          }
+        }
+        if (
+          displayTimeline.some((streamItem) =>
+            isStreamRowSuppressingRequestStarted(streamItem, item, requestSpansById),
+          )
+        ) {
+          const requestId = item.requestId?.trim();
+          if (
+            requestSpan &&
+            !isProjectionRequestActive(requestSpan) &&
+            requestId &&
+            !requestHasThinkingStream(requestId, displayTimeline) &&
+            !requestHasMessageStream(requestId, displayTimeline)
+          ) {
+            return true;
+          }
+          return false;
+        }
         return true;
-      }
-      return false;
-    }
-    return true;
-    }),
+      }),
     ),
   );
 }
@@ -419,11 +482,7 @@ function isFilesystemToolEvent(item: ThreadRunProjectionTimelineItem): boolean {
   if (!metadataTool) {
     return false;
   }
-  return (
-    metadataTool.name === "Read" ||
-    metadataTool.name === "NotebookRead" ||
-    metadataTool.name === "Grep"
-  );
+  return metadataTool.name === "Read" || metadataTool.name === "NotebookRead" || metadataTool.name === "Grep";
 }
 
 function isProjectionToolProgressNoiseItem(
@@ -444,8 +503,7 @@ function isProjectionToolProgressNoiseItem(
     }
     return timeline.some(
       (other) =>
-        other.id !== item.id &&
-        (isStructuredFilesystemToolItem(other) || isFilesystemToolEvent(other)),
+        other.id !== item.id && (isStructuredFilesystemToolItem(other) || isFilesystemToolEvent(other)),
     );
   }
 
@@ -462,9 +520,7 @@ function isProjectionToolProgressNoiseItem(
   }
 
   const isFilesystemTool =
-    metadataTool.name === "Read" ||
-    metadataTool.name === "NotebookRead" ||
-    metadataTool.name === "Grep";
+    metadataTool.name === "Read" || metadataTool.name === "NotebookRead" || metadataTool.name === "Grep";
 
   if (!isFilesystemTool) {
     return false;
@@ -748,9 +804,7 @@ function isStreamDisplayTimelineItem(item: ThreadRunProjectionTimelineItem): boo
 }
 
 function streamDisplayChannel(item: ThreadRunProjectionTimelineItem): "thinking" | "message" {
-  return item.eventType === "thinking.delta" || item.eventType === "thinking.final"
-    ? "thinking"
-    : "message";
+  return item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
 }
 
 function hasUserPromptBetweenTimelineItems(
@@ -777,15 +831,6 @@ function appendStreamScopeSuffix(
   }
   const requestId = effectiveRequestId?.trim() || item.requestId?.trim();
   return requestId ? `${key}:req:${requestId}` : key;
-}
-
-/** @deprecated Use appendStreamScopeSuffix */
-function appendThinkingStreamScopeSuffix(
-  key: string,
-  item: ThreadRunProjectionTimelineItem,
-  effectiveRequestId?: string,
-): string {
-  return appendStreamScopeSuffix(key, item, effectiveRequestId);
 }
 
 function hasUserPromptBetween(
@@ -866,8 +911,7 @@ function hasOnlyEmptyThinkingBefore(
     if (!entry) {
       continue;
     }
-    const isThinking =
-      entry.eventType === "thinking.delta" || entry.eventType === "thinking.final";
+    const isThinking = entry.eventType === "thinking.delta" || entry.eventType === "thinking.final";
     if (!isThinking) {
       return false;
     }
@@ -927,8 +971,7 @@ function mergeStreamDisplayTimelineItem(
   if (!current || compareTimelineItems(current, item) > 0) {
     return item;
   }
-  const isThinkingStream =
-    item.eventType === "thinking.delta" || item.eventType === "thinking.final";
+  const isThinkingStream = item.eventType === "thinking.delta" || item.eventType === "thinking.final";
   if (!isThinkingStream) {
     return item;
   }
@@ -1049,9 +1092,7 @@ function isProjectionContextCompactionItem(item: ThreadRunProjectionTimelineItem
 }
 
 /** Auto compaction circuit breaker tripped until a successful manual/auto compact completes. */
-export function isThreadAutoCompactSuspended(
-  projection: ThreadRunProjectionSnapshot | undefined,
-): boolean {
+export function isThreadAutoCompactSuspended(projection: ThreadRunProjectionSnapshot | undefined): boolean {
   if (!projection?.timeline.length) {
     return false;
   }
@@ -1069,12 +1110,8 @@ export function isThreadAutoCompactSuspended(
 }
 
 /** Prompt cache was invalidated at least once in this thread projection. */
-export function isThreadPromptCacheInvalidated(
-  projection: ThreadRunProjectionSnapshot | undefined,
-): boolean {
-  return (
-    projection?.timeline.some((item) => item.eventType === "context.cache_invalidated") ?? false
-  );
+export function isThreadPromptCacheInvalidated(projection: ThreadRunProjectionSnapshot | undefined): boolean {
+  return projection?.timeline.some((item) => item.eventType === "context.cache_invalidated") ?? false;
 }
 
 /** Orphaned compaction.started without a terminal event stops blocking the UI after this long. */
@@ -1108,10 +1145,7 @@ export function isThreadContextCompactionInFlight(
   }
   if (lastStartedAt) {
     const startedAtMs = Date.parse(lastStartedAt);
-    if (
-      Number.isFinite(startedAtMs) &&
-      nowMs - startedAtMs > COMPACTION_IN_FLIGHT_STALE_MS
-    ) {
+    if (Number.isFinite(startedAtMs) && nowMs - startedAtMs > COMPACTION_IN_FLIGHT_STALE_MS) {
       return false;
     }
   }
@@ -1160,8 +1194,7 @@ function isStreamRowSuppressingRequestStarted(
   }
   const span = projectionRequestSpan(requestStarted, requestSpansById);
   return (
-    Boolean(span && isProjectionRequestActive(span)) &&
-    compareTimelineItems(streamItem, requestStarted) > 0
+    Boolean(span && isProjectionRequestActive(span)) && compareTimelineItems(streamItem, requestStarted) > 0
   );
 }
 
@@ -1283,9 +1316,7 @@ function resolveUserPromptBoundaryIndex(
   return -1;
 }
 
-function resolveExpectedStreamRequestRole(
-  item: ThreadRunProjectionTimelineItem,
-): string | undefined {
+function resolveExpectedStreamRequestRole(item: ThreadRunProjectionTimelineItem): string | undefined {
   if (
     item.role === "thinking" ||
     item.eventType === "thinking.delta" ||
@@ -1418,9 +1449,7 @@ function resolveEffectiveStreamRequestId(
   requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): string | undefined {
   const isThinkingStream =
-    item.role === "thinking" ||
-    item.eventType === "thinking.delta" ||
-    item.eventType === "thinking.final";
+    item.role === "thinking" || item.eventType === "thinking.delta" || item.eventType === "thinking.final";
   const itemRequestId = item.requestId?.trim();
   const hasExplicitStreamBlockKey = Boolean(item.streamKey?.includes(":block:"));
   if (!isThinkingStream) {
@@ -1433,11 +1462,7 @@ function resolveEffectiveStreamRequestId(
     return undefined;
   }
   if (hasExplicitStreamBlockKey && !itemRequestId) {
-    const inferredRequestId = resolveNearestStreamRequestIdInUserTurn(
-      item,
-      timeline,
-      requestSpansById,
-    );
+    const inferredRequestId = resolveNearestStreamRequestIdInUserTurn(item, timeline, requestSpansById);
     if (inferredRequestId) {
       return inferredRequestId;
     }
@@ -1588,7 +1613,9 @@ function projectionToolLifecycleKey(item: ThreadRunProjectionTimelineItem): stri
   return undefined;
 }
 
-function resolveProjectionToolLifecycle(item: ThreadRunProjectionTimelineItem): ToolActionLifecycle | undefined {
+function resolveProjectionToolLifecycle(
+  item: ThreadRunProjectionTimelineItem,
+): ToolActionLifecycle | undefined {
   const bashApproval = readProjectionBashApprovalMetadata(item);
   if (bashApproval) {
     return bashApprovalPhaseToLifecycle(bashApproval.phase);
@@ -2169,17 +2196,19 @@ function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
 function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineItem): string {
   const metadataTool = readProjectionToolMetadata(item);
   if (metadataTool) {
-    const base = formatToolStatusPreview(
-      metadataTool.name,
-      formatThreadRunToolDetailLabel(metadataTool),
-    );
+    const base = formatToolStatusPreview(metadataTool.name, formatThreadRunToolDetailLabel(metadataTool));
     if (metadataTool.durationMs === undefined) {
       return base;
     }
     return `${base} (${(metadataTool.durationMs / 1000).toFixed(1)}s)`;
   }
   const label = resolveProjectionToolActionLabel(item);
-  return clampActivityPreviewLine(label.replace(/^Tool:\s*/iu, "").replace(/\s+\(\d+(?:\.\d+)?s\)$/iu, "").trim());
+  return clampActivityPreviewLine(
+    label
+      .replace(/^Tool:\s*/iu, "")
+      .replace(/\s+\(\d+(?:\.\d+)?s\)$/iu, "")
+      .trim(),
+  );
 }
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
@@ -2191,8 +2220,7 @@ function readProjectionDelegationMetadata(
   item: ThreadRunProjectionTimelineItem,
 ): { subagent: string; summary: string; prompt?: string } | undefined {
   const metadata = item.metadata;
-  const summary =
-    typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
+  const summary = typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
   const prompt = typeof metadata?.delegationPrompt === "string" ? metadata.delegationPrompt.trim() : "";
   const role = normalizeAgentDisplayRole(item.role) ?? item.role?.trim();
   if (!summary && !prompt) {

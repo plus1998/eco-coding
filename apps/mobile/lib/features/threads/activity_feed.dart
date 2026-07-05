@@ -41,6 +41,7 @@ enum ActivityFeedKind {
   assistant,
   thinking,
   action,
+  actionGroup,
   phase,
   subagentMission,
   error,
@@ -67,6 +68,7 @@ class ActivityFeedEntry {
     this.fileChange,
     this.toolUseId,
     this.reconnecting = false,
+    this.actionChildren = const [],
   });
 
   final String id;
@@ -88,6 +90,7 @@ class ActivityFeedEntry {
   final FileChangeCardDisplay? fileChange;
   final String? toolUseId;
   final bool reconnecting;
+  final List<ActivityFeedEntry> actionChildren;
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -103,12 +106,165 @@ List<ActivityFeedEntry> buildActivityFeed({
   if (!isProjectionFeedReady(runProjection)) {
     return const [];
   }
-  return buildProjectionActivityFeed(
-    projection: runProjection!,
-    threadPrompt: threadPrompt,
-    threadId: threadId,
-    subagentSessions: subagentSessions,
+  return groupActivityFeedActionEntries(
+    buildProjectionActivityFeed(
+      projection: runProjection!,
+      threadPrompt: threadPrompt,
+      threadId: threadId,
+      subagentSessions: subagentSessions,
+    ),
   );
+}
+
+List<ActivityFeedEntry> groupActivityFeedActionEntries(
+  List<ActivityFeedEntry> entries,
+) {
+  final grouped = <ActivityFeedEntry>[];
+  var pending = <ActivityFeedEntry>[];
+
+  void flush() {
+    if (pending.length > 1) {
+      grouped.add(_buildActionGroupEntry(pending));
+    } else {
+      grouped.addAll(pending);
+    }
+    pending = <ActivityFeedEntry>[];
+  }
+
+  for (final entry in entries) {
+    if (entry.kind == ActivityFeedKind.action) {
+      pending.add(entry);
+      continue;
+    }
+    flush();
+    grouped.add(entry);
+  }
+  flush();
+  return grouped;
+}
+
+ActivityFeedEntry _buildActionGroupEntry(List<ActivityFeedEntry> entries) {
+  final first = entries.first;
+  final last = entries.last;
+  final summary = _summarizeActionEntries(entries);
+  return ActivityFeedEntry(
+    id: 'action-group:${first.id}:${last.id}:${entries.length}',
+    kind: ActivityFeedKind.actionGroup,
+    text: summary.label,
+    actionIcon: summary.icon,
+    lifecycle: _resolveActionGroupLifecycle(entries),
+    actionChildren: List<ActivityFeedEntry>.unmodifiable(entries),
+  );
+}
+
+({String label, ActivityActionIcon icon}) _summarizeActionEntries(
+  List<ActivityFeedEntry> entries,
+) {
+  final editedFiles = <String>{};
+  final readFiles = <String>{};
+  var searches = 0;
+  var commands = 0;
+  var agents = 0;
+  var otherTools = 0;
+
+  for (final entry in entries) {
+    if (entry.fileChange != null) {
+      editedFiles.add(entry.fileChange!.path);
+      continue;
+    }
+    switch (entry.actionIcon) {
+      case ActivityActionIcon.edit:
+        editedFiles.add(entry.text);
+        break;
+      case ActivityActionIcon.file:
+        readFiles.add(entry.text);
+        break;
+      case ActivityActionIcon.search:
+        searches += 1;
+        break;
+      case ActivityActionIcon.terminal:
+        commands += 1;
+        break;
+      case ActivityActionIcon.agent:
+        agents += 1;
+        break;
+      case null:
+        if (entry.bashRun != null) {
+          commands += 1;
+        } else {
+          otherTools += 1;
+        }
+        break;
+    }
+  }
+
+  final clauses = <String>[];
+  if (editedFiles.isNotEmpty) {
+    clauses.add('已编辑 ${editedFiles.length} 个文件');
+  }
+  if (readFiles.isNotEmpty) {
+    clauses.add('已读取 ${readFiles.length} 个文件');
+  }
+  if (searches > 0) {
+    clauses.add(searches > 1 ? '已搜索代码 $searches 次' : '已搜索代码');
+  }
+  if (commands > 0) {
+    clauses.add('已运行 $commands 条命令');
+  }
+  if (agents > 0) {
+    clauses.add('已调用 $agents 个子代理');
+  }
+  if (otherTools > 0) {
+    clauses.add('已执行 $otherTools 个工具');
+  }
+
+  return (
+    label: _joinChineseClauses(
+      clauses.isEmpty ? ['已执行 ${entries.length} 个工具'] : clauses,
+    ),
+    icon: editedFiles.isNotEmpty
+        ? ActivityActionIcon.edit
+        : readFiles.isNotEmpty
+        ? ActivityActionIcon.file
+        : searches > 0
+        ? ActivityActionIcon.search
+        : commands > 0
+        ? ActivityActionIcon.terminal
+        : agents > 0
+        ? ActivityActionIcon.agent
+        : ActivityActionIcon.file,
+  );
+}
+
+String _joinChineseClauses(List<String> clauses) {
+  if (clauses.length <= 1) return clauses.firstOrNull ?? '';
+  if (clauses.length == 2) return '${clauses[0]}和${clauses[1]}';
+  return '${clauses.sublist(0, clauses.length - 1).join('、')}和${clauses.last}';
+}
+
+ToolActionLifecycle? _resolveActionGroupLifecycle(
+  List<ActivityFeedEntry> entries,
+) {
+  final lifecycles = entries
+      .map((entry) => entry.lifecycle)
+      .whereType<ToolActionLifecycle>()
+      .toSet();
+  if (lifecycles.contains(ToolActionLifecycle.failed)) {
+    return ToolActionLifecycle.failed;
+  }
+  if (lifecycles.contains(ToolActionLifecycle.running)) {
+    return ToolActionLifecycle.running;
+  }
+  if (lifecycles.contains(ToolActionLifecycle.approvalPending)) {
+    return ToolActionLifecycle.approvalPending;
+  }
+  if (lifecycles.contains(ToolActionLifecycle.approvalRejected)) {
+    return ToolActionLifecycle.approvalRejected;
+  }
+  if (lifecycles.contains(ToolActionLifecycle.approvalApproved)) {
+    return ToolActionLifecycle.approvalApproved;
+  }
+  return lifecycles.isNotEmpty ? ToolActionLifecycle.completed : null;
 }
 
 bool shouldAutoScrollActivityFeed({
@@ -122,12 +278,15 @@ bool shouldAutoScrollActivityFeed({
   if (added.any(
     (entry) =>
         entry.kind == ActivityFeedKind.action ||
+        entry.kind == ActivityFeedKind.actionGroup ||
         entry.kind == ActivityFeedKind.subagentMission ||
         entry.kind == ActivityFeedKind.phase,
   )) {
     return false;
   }
-  final firstNewIndex = next.indexWhere((entry) => !previousIds.contains(entry.id));
+  final firstNewIndex = next.indexWhere(
+    (entry) => !previousIds.contains(entry.id),
+  );
   return firstNewIndex >= previous.length;
 }
 
@@ -156,6 +315,7 @@ bool isValidContentAfterThinking(ActivityFeedEntry entry) {
     case ActivityFeedKind.assistant:
       return entry.streaming || entry.text.trim().isNotEmpty;
     case ActivityFeedKind.action:
+    case ActivityFeedKind.actionGroup:
     case ActivityFeedKind.subagentMission:
     case ActivityFeedKind.error:
     case ActivityFeedKind.user:
@@ -179,7 +339,7 @@ bool hasFollowingValidFeedContent(
 String activityFeedLayoutSignature(List<ActivityFeedEntry> entries) {
   if (entries.isEmpty) return '';
   final last = entries.last;
-  return '${entries.length}:${last.id}:${last.text.length}:${last.streaming}';
+  return '${entries.length}:${_activityFeedEntrySignature(last)}';
 }
 
 bool activityFeedContentChanged({
@@ -191,11 +351,26 @@ bool activityFeedContentChanged({
     final before = previous[index];
     final after = next[index];
     if (before.id != after.id) return true;
-    if (before.text != after.text) return true;
-    if (before.streaming != after.streaming) return true;
-    if (before.lifecycle != after.lifecycle) return true;
+    if (_activityFeedEntrySignature(before) !=
+        _activityFeedEntrySignature(after)) {
+      return true;
+    }
   }
   return false;
+}
+
+String _activityFeedEntrySignature(ActivityFeedEntry entry) {
+  final childSignature = entry.actionChildren
+      .map((child) => '${child.id}:${child.text.length}:${child.lifecycle}')
+      .join(',');
+  return [
+    entry.id,
+    entry.text.length,
+    entry.streaming,
+    entry.lifecycle,
+    entry.actionChildren.length,
+    childSignature,
+  ].join(':');
 }
 
 List<ActivityFeedEntry> listMiddleInsertedFeedEntries({
@@ -316,19 +491,10 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
               itemCount: displayEntries.length,
               itemBuilder: (context, index) {
                 final entry = displayEntries[index];
-                final chronologicalIndex = widget.entries.length - 1 - index;
-                final thinkingCollapseAfterFollowingContent =
-                    entry.kind == ActivityFeedKind.thinking &&
-                        hasFollowingValidFeedContent(
-                          widget.entries,
-                          chronologicalIndex,
-                        );
                 return _ActivityFeedEntryTile(
                   key: ValueKey(entry.id),
                   entry: entry,
                   agentProfile: widget.agentProfile,
-                  thinkingCollapseAfterFollowingContent:
-                      thinkingCollapseAfterFollowingContent,
                 );
               },
             ),
@@ -397,12 +563,10 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     super.key,
     required this.entry,
     this.agentProfile,
-    this.thinkingCollapseAfterFollowingContent = false,
   });
 
   final ActivityFeedEntry entry;
   final OrchestrationProfile? agentProfile;
-  final bool thinkingCollapseAfterFollowingContent;
 
   @override
   Widget build(BuildContext context) {
@@ -418,11 +582,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           usageBadge: entry.usageBadge,
         );
       case ActivityFeedKind.thinking:
-        return _ThinkingTile(
-          text: entry.text,
-          streaming: entry.streaming,
-          collapseAfterFollowingContent: thinkingCollapseAfterFollowingContent,
-        );
+        return _ThinkingTile(text: entry.text, streaming: entry.streaming);
       case ActivityFeedKind.action:
         return _ActionTile(
           label: entry.text,
@@ -431,6 +591,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           bashRun: entry.bashRun,
           fileChange: entry.fileChange,
         );
+      case ActivityFeedKind.actionGroup:
+        return _ActionGroupTile(entry: entry);
       case ActivityFeedKind.phase:
         if (entry.reconnecting) {
           return _ReconnectPhaseTile(summary: entry.text, detail: entry.detail);
@@ -698,15 +860,10 @@ class _AssistantNarrativeTile extends StatelessWidget {
 }
 
 class _ThinkingTile extends StatefulWidget {
-  const _ThinkingTile({
-    required this.text,
-    this.streaming = false,
-    this.collapseAfterFollowingContent = false,
-  });
+  const _ThinkingTile({required this.text, this.streaming = false});
 
   final String text;
   final bool streaming;
-  final bool collapseAfterFollowingContent;
 
   @override
   State<_ThinkingTile> createState() => _ThinkingTileState();
@@ -722,10 +879,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
       (widget.streaming && _hasBody) || (!_collapsed && _hasBody);
 
   bool get _shouldAutoCollapse =>
-      widget.collapseAfterFollowingContent &&
-      !widget.streaming &&
-      _hasBody &&
-      !_collapseSuppressed;
+      !widget.streaming && _hasBody && !_collapseSuppressed;
 
   @override
   void initState() {
@@ -740,7 +894,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
       _collapsed = false;
       return;
     }
-    if (_shouldAutoCollapse && (!_collapsed || !oldWidget.collapseAfterFollowingContent)) {
+    if (_shouldAutoCollapse && !_collapsed) {
       _collapsed = true;
     }
   }
@@ -890,13 +1044,78 @@ class _UsageBadgeLine extends StatelessWidget {
   }
 }
 
-class _ActionTile extends StatelessWidget {
+class _ActionGroupTile extends StatefulWidget {
+  const _ActionGroupTile({required this.entry});
+
+  final ActivityFeedEntry entry;
+
+  @override
+  State<_ActionGroupTile> createState() => _ActionGroupTileState();
+}
+
+class _ActionGroupTileState extends State<_ActionGroupTile> {
+  var _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final children = widget.entry.actionChildren;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ActionSummaryLine(
+            label: widget.entry.text,
+            icon: widget.entry.actionIcon ?? ActivityActionIcon.file,
+            lifecycle: widget.entry.lifecycle,
+            expanded: _expanded,
+            count: children.length,
+            onTap: () => setState(() => _expanded = !_expanded),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 8),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: ecoColors(context).borderSubtle),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final child in children)
+                        _ActionTile(
+                          key: ValueKey(child.id),
+                          label: child.text,
+                          icon: child.actionIcon ?? ActivityActionIcon.file,
+                          lifecycle: child.lifecycle,
+                          bashRun: child.bashRun,
+                          fileChange: child.fileChange,
+                          forceDetailsExpanded: true,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatefulWidget {
   const _ActionTile({
+    super.key,
     required this.label,
     required this.icon,
     this.lifecycle,
     this.bashRun,
     this.fileChange,
+    this.forceDetailsExpanded = false,
   });
 
   final String label;
@@ -904,19 +1123,76 @@ class _ActionTile extends StatelessWidget {
   final ToolActionLifecycle? lifecycle;
   final BashRunCardDisplay? bashRun;
   final FileChangeCardDisplay? fileChange;
+  final bool forceDetailsExpanded;
+
+  @override
+  State<_ActionTile> createState() => _ActionTileState();
+}
+
+class _ActionTileState extends State<_ActionTile> {
+  var _expanded = false;
 
   @override
   Widget build(BuildContext context) {
+    final fileChange = widget.fileChange;
+    final bashRun = widget.bashRun;
+    final detailsExpanded = widget.forceDetailsExpanded || _expanded;
+
     if (fileChange != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-        child: _FileChangeCard(display: fileChange!, lifecycle: lifecycle),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ActionSummaryLine(
+              label: fileChange.fileName,
+              icon: widget.icon,
+              lifecycle: widget.lifecycle,
+              expanded: detailsExpanded,
+              additions: fileChange.additions,
+              deletions: fileChange.deletions,
+              onTap: widget.forceDetailsExpanded
+                  ? null
+                  : () => setState(() => _expanded = !_expanded),
+            ),
+            if (detailsExpanded)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _FileChangeCard(
+                  display: fileChange,
+                  lifecycle: widget.lifecycle,
+                ),
+              ),
+          ],
+        ),
       );
     }
     if (bashRun != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-        child: _BashRunCard(display: bashRun!, lifecycle: lifecycle),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ActionSummaryLine(
+              label: bashRun.title,
+              icon: widget.icon,
+              lifecycle: widget.lifecycle,
+              expanded: detailsExpanded,
+              meta: bashRun.meta,
+              onTap: widget.forceDetailsExpanded
+                  ? null
+                  : () => setState(() => _expanded = !_expanded),
+            ),
+            if (detailsExpanded)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _BashRunCard(
+                  display: bashRun,
+                  lifecycle: widget.lifecycle,
+                ),
+              ),
+          ],
+        ),
       );
     }
     return Padding(
@@ -924,14 +1200,14 @@ class _ActionTile extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            _materialIcon(icon),
+            _materialIcon(widget.icon),
             size: 15,
             color: ecoColors(context).textMuted,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              label,
+              widget.label,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -947,6 +1223,158 @@ class _ActionTile extends StatelessWidget {
 
   IconData _materialIcon(ActivityActionIcon icon) =>
       EcoIcons.activityAction(icon);
+}
+
+class _ActionSummaryLine extends StatelessWidget {
+  const _ActionSummaryLine({
+    required this.label,
+    required this.icon,
+    this.lifecycle,
+    this.expanded = false,
+    this.count,
+    this.meta,
+    this.additions = 0,
+    this.deletions = 0,
+    this.onTap,
+  });
+
+  final String label;
+  final ActivityActionIcon icon;
+  final ToolActionLifecycle? lifecycle;
+  final bool expanded;
+  final int? count;
+  final String? meta;
+  final int additions;
+  final int deletions;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final running = lifecycle == ToolActionLifecycle.running;
+    final failed = lifecycle == ToolActionLifecycle.failed;
+    final iconColor = failed
+        ? eco.statusDenyText
+        : running
+        ? eco.accentText
+        : eco.textMuted;
+
+    final content = Row(
+      children: [
+        Icon(EcoIcons.activityAction(icon), size: 15, color: iconColor),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: failed ? eco.statusDenyText : eco.textMuted,
+              fontWeight: FontWeight.w500,
+              height: 1.35,
+            ),
+          ),
+        ),
+        if (additions > 0 || deletions > 0) ...[
+          const SizedBox(width: 8),
+          _InlineDiffStats(additions: additions, deletions: deletions),
+        ] else if (meta != null && meta!.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          Text(
+            meta!,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: eco.textMuted,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+        if (count != null) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: eco.cardSurface,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: eco.borderSubtle),
+            ),
+            child: Text(
+              '$count',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: eco.textMuted,
+                fontSize: 10,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+        if (onTap != null || count != null) ...[
+          const SizedBox(width: 4),
+          AnimatedRotation(
+            turns: expanded ? 0.5 : 0,
+            duration: const Duration(milliseconds: 150),
+            child: Icon(EcoIcons.expandDown, size: 17, color: eco.textMuted),
+          ),
+        ],
+      ],
+    );
+
+    if (onTap == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: content,
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: content,
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineDiffStats extends StatelessWidget {
+  const _InlineDiffStats({required this.additions, required this.deletions});
+
+  final int additions;
+  final int deletions;
+
+  @override
+  Widget build(BuildContext context) {
+    final diffPalette = FileChangeDiffPalette.of(ecoColors(context));
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (additions > 0)
+          Text(
+            '+$additions',
+            style: TextStyle(
+              color: diffPalette.addStat,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        if (additions > 0 && deletions > 0) const SizedBox(width: 8),
+        if (deletions > 0)
+          Text(
+            '-$deletions',
+            style: TextStyle(
+              color: diffPalette.removeStat,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class _BashRunCard extends StatefulWidget {
@@ -995,7 +1423,9 @@ class _BashRunCardState extends State<_BashRunCard> {
             );
 
         return EcoSurfaceCard(
-          onTap: canExpand ? () => setState(() => _bodyExpanded = !_bodyExpanded) : null,
+          onTap: canExpand
+              ? () => setState(() => _bodyExpanded = !_bodyExpanded)
+              : null,
           borderRadius: BorderRadius.circular(10),
           borderColor: borderColor,
           backgroundColor: ecoColors(context).cardSurface,
@@ -1125,18 +1555,18 @@ class _FileChangeCardState extends State<_FileChangeCard> {
     final borderColor = failed
         ? ecoColors(context).danger.withValues(alpha: 0.45)
         : running
-            ? ecoColors(context).accent.withValues(alpha: 0.45)
-            : ecoColors(context).borderSubtle;
+        ? ecoColors(context).accent.withValues(alpha: 0.45)
+        : ecoColors(context).borderSubtle;
     final previewLines = _expanded
         ? display.previewLines
         : display.previewLines.take(_collapsedLineLimit).toList();
     final hasMore = display.previewLines.length > _collapsedLineLimit;
 
     final lineStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontFamily: 'Menlo',
-          height: 1.45,
-          color: ecoColors(context).textSecondary,
-        );
+      fontFamily: 'Menlo',
+      height: 1.45,
+      color: ecoColors(context).textSecondary,
+    );
     final diffPalette = FileChangeDiffPalette.of(ecoColors(context));
 
     return EcoSurfaceCard(
@@ -1163,9 +1593,9 @@ class _FileChangeCardState extends State<_FileChangeCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: ecoColors(context).textHeading,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: ecoColors(context).textHeading,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1478,6 +1908,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
   Widget build(BuildContext context) {
     final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
     final fullText = _resolvedMissionText();
+    final previewText = thinkingPreviewLine(fullText);
     final hasTimeline = widget.timeline.isNotEmpty || _latchedHasTimeline;
     final borderColor = subagentMissionBorderColor(
       role,
@@ -1645,7 +2076,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                         ? ecoColors(context).cardSurface
                         : resolvedBackground,
                     child: Text(
-                      fullText,
+                      previewText,
                       maxLines: 2,
                       overflow: TextOverflow.clip,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(

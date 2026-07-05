@@ -1,22 +1,22 @@
 import { expect, test } from "bun:test";
 import { formatSubagentMissionMessage } from "@eco/runtime";
-import type {
-  ThreadRunProjectionAgent,
-  ThreadRunProjectionSnapshot,
-  ThreadRunProjectionTimelineItem,
-} from "../src/shared/ipc";
 import {
   buildProjectionDisplayTimelineItems,
   buildThreadRunProjectionViewModel,
   isProjectionRequestActive,
   isProjectionUserPromptItem,
-  isThreadContextCompactionInFlight,
   isThreadAutoCompactSuspended,
+  isThreadContextCompactionInFlight,
   isThreadPromptCacheInvalidated,
   projectionItemToDetailBlock,
   projectionMainFeedEntryKey,
   resolveSubagentCardMissionText,
 } from "../src/renderer/thread-run-projection-view";
+import type {
+  ThreadRunProjectionAgent,
+  ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
+} from "../src/shared/ipc";
 
 function item(
   input: Partial<ThreadRunProjectionTimelineItem> & { id: string },
@@ -913,9 +913,7 @@ test("buildThreadRunProjectionViewModel keeps historical thinking without reques
   );
 
   expect(
-    view.mainFeedEntries
-      .filter((entry) => entry.kind === "timeline")
-      .map((entry) => entry.item.id),
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.id),
   ).toEqual(["t1-think", "t1-msg", "user", "t2-think"]);
 });
 
@@ -954,9 +952,7 @@ test("buildThreadRunProjectionViewModel keeps streaming thinking above streaming
   );
 
   expect(
-    view.mainFeedEntries
-      .filter((entry) => entry.kind === "timeline")
-      .map((entry) => entry.item.id),
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.id),
   ).toEqual(["thinking-delta", "message-delta"]);
 });
 
@@ -1206,9 +1202,7 @@ test("buildThreadRunProjectionViewModel hides request placeholder for completed 
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:stream:message:request:req_planner",
-  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:stream:message:request:req_planner"]);
 });
 
 test("buildThreadRunProjectionViewModel keeps follow-up request placeholder after prior planner output", () => {
@@ -2093,9 +2087,7 @@ test("projectionMainFeedEntryKey scopes message stream by requestId when present
     sequence: 2,
   });
   expect(projectionMainFeedEntryKey(withoutRequest)).toBe("main:stream:message:role:planner");
-  expect(projectionMainFeedEntryKey(withRequest)).toBe(
-    "main:stream:message:role:planner:req:req_planner",
-  );
+  expect(projectionMainFeedEntryKey(withRequest)).toBe("main:stream:message:role:planner:req:req_planner");
 });
 
 test("buildThreadRunProjectionViewModel keeps active thinking below bash cards", () => {
@@ -2196,8 +2188,15 @@ test("buildThreadRunProjectionViewModel keeps bash card order when tool complete
     }),
   );
 
-  const keys = view.mainFeedEntries.map((entry) => entry.key);
-  expect(keys).toEqual(["main:lifecycle:toolu_bash_a", "main:lifecycle:toolu_bash_b"]);
+  expect(view.mainFeedEntries).toHaveLength(1);
+  const group = view.mainFeedEntries[0];
+  expect(group?.kind).toBe("tool-group");
+  if (group?.kind === "tool-group") {
+    expect(group.entries.map((entry) => entry.key)).toEqual([
+      "main:lifecycle:toolu_bash_a",
+      "main:lifecycle:toolu_bash_b",
+    ]);
+  }
 });
 
 test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta per stream", () => {
@@ -3153,10 +3152,7 @@ test("resolveSubagentCardMissionText returns empty without structured attributio
             eventType: "tool.started",
             scope: "main",
             role: "coder",
-            text: formatSubagentMissionMessage(
-              "coder",
-              "Implement export filters.\nFiles: src/api.ts",
-            ),
+            text: formatSubagentMissionMessage("coder", "Implement export filters.\nFiles: src/api.ts"),
             metadata: {
               tool: { name: "Agent", toolUseId: "toolu_unlinked", status: "running" },
             },
@@ -3371,10 +3367,7 @@ test("buildThreadRunProjectionViewModel does not echo attributed @mission from a
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual([
-    "agent-card",
-    "agent-echo",
-  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card", "agent-echo"]);
   const echo = view.mainFeedEntries[1];
   expect(echo?.kind).toBe("agent-echo");
   if (echo?.kind === "agent-echo") {
@@ -3458,10 +3451,7 @@ test("buildThreadRunProjectionViewModel does not echo legacy @mission below suba
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual([
-    "agent-card",
-    "agent-echo",
-  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card", "agent-echo"]);
   const echo = view.mainFeedEntries[1];
   expect(echo?.kind).toBe("agent-echo");
   if (echo?.kind === "agent-echo") {

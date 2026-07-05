@@ -6737,6 +6737,86 @@ html[data-window-focused="true"] .codex-sidebar {
   min-width: 0;
 }
 
+.run-log-tool-group {
+  width: 100%;
+  min-width: 0;
+}
+
+.run-log-tool-group-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a3a3a3;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-log-tool-group-trigger:hover .run-log-tool-group-summary {
+  color: #c8c8c8;
+}
+
+.run-log-tool-group-trigger.is-running .run-log-action-icon {
+  opacity: 0.85;
+}
+
+.run-log-tool-group-trigger.is-pending .run-log-action-icon {
+  opacity: 0.72;
+}
+
+.run-log-tool-group-trigger.is-failed .run-log-action-icon {
+  color: #f87171;
+}
+
+.run-log-tool-group-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-tool-group-count {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--codex-log-text, #e5e5e5) 6%, transparent);
+  color: var(--codex-log-faint, #737373);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-tool-group-chevron,
+.run-log-action-chevron {
+  flex-shrink: 0;
+  color: var(--codex-log-faint, #737373);
+  transition: transform 0.16s ease;
+}
+
+.run-log-tool-group-chevron.open,
+.run-log-action-chevron.open {
+  transform: rotate(180deg);
+}
+
+.run-log-tool-group-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  margin-left: 7px;
+  padding-left: 14px;
+  border-left: 1px solid var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
+}
+
 .run-log-action-trigger {
   display: flex;
   align-items: center;
@@ -6805,6 +6885,18 @@ html[data-window-focused="true"] .codex-sidebar {
   word-break: normal;
 }
 
+.run-log-action-meta {
+  flex-shrink: 0;
+  color: var(--codex-log-faint, #737373);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-action-file-stats {
+  flex-shrink: 0;
+}
+
 .run-log-action--terminal .run-log-action-label {
   font-family: inherit;
 }
@@ -6848,7 +6940,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-action--bash-card {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -6857,8 +6951,12 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-action--bash-card-role {
-  display: inline-block;
-  margin-bottom: 6px;
+  display: inline-flex;
+  margin-bottom: 0;
+}
+
+.run-log-action-card-detail {
+  margin-top: 8px;
 }
 
 .run-log-bash-card {
@@ -6977,7 +7075,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-action--file-change-card {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   width: 100%;
 }
 
@@ -14956,6 +15056,33 @@ html[data-window-focused="true"] .settings-nav {
   gap: 8px;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-tool-group-trigger {
+  gap: 8px;
+  color: var(--codex-log-muted);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.55;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-group-trigger:hover .run-log-tool-group-summary {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-group-count {
+  background: var(--codex-log-chip);
+  color: var(--codex-log-faint);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-group-details {
+  border-left-color: var(--codex-log-line-subtle);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-group-chevron,
+.codex-main:not(.codex-main-landing) .run-log-action-chevron,
+.codex-main:not(.codex-main-landing) .run-log-action-meta {
+  color: var(--codex-log-faint);
+}
+
 .codex-main:not(.codex-main-landing) .run-log-action-trigger.is-expandable:hover .run-log-action-label {
   color: var(--codex-log-text);
 }
@@ -17889,4 +18016,3 @@ html[data-window-focused="true"] .settings-nav {
 .floating-workspace-card-body .composer-agent-row {
   border-color: transparent;
 }
-

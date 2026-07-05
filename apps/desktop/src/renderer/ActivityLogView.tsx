@@ -1,9 +1,16 @@
 import {
+  formatRoleModelLabel,
+  formatUsageBadge,
+  isSubagentMissionEnvelope,
+  resolveMissionDisplayText,
+  shortenModelId,
+} from "@eco/runtime";
+import {
   AlertCircle,
   Bot,
   ChevronDown,
-  FileText,
   FileSearch,
+  FileText,
   Pencil,
   RefreshCw,
   Reply,
@@ -15,8 +22,8 @@ import {
   Terminal,
 } from "lucide-react";
 import {
-  type ReactNode,
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -24,34 +31,50 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  ThreadBillingSnapshot,
-  ThreadActivityRewindTarget,
-  ThreadContextSnapshot,
-  ThreadRunProjectionAgent,
-  ThreadRunProjectionRequestSpan,
-  ThreadRunProjectionSnapshot,
-  ThreadRunProjectionTimelineItem,
-  ThreadSubagentSessionTiming,
-  ThreadSubagentMetricsSummary,
-  ThreadSummary,
-  ThreadUsageSnapshot,
-} from "../shared/ipc";
-import { formatRoleModelLabel, formatUsageBadge, isSubagentMissionEnvelope, resolveMissionDisplayText, shortenModelId } from "@eco/runtime";
 import {
   activityLabelIncludesAgentRole,
   isRedundantAgentModelShort,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
-import { formatDurationMs } from "./AppMessage";
+import type {
+  ThreadActivityRewindTarget,
+  ThreadBillingSnapshot,
+  ThreadContextSnapshot,
+  ThreadRunProjectionAgent,
+  ThreadRunProjectionRequestSpan,
+  ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
+  ThreadSubagentMetricsSummary,
+  ThreadSubagentSessionTiming,
+  ThreadSummary,
+  ThreadUsageSnapshot,
+} from "../shared/ipc";
 import { resolveRequestSpanDurationMs } from "../shared/request-span-timing";
+import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
+import { formatGrepTargetInlineDetail } from "../shared/tool-target";
+import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
+import { formatDurationMs } from "./AppMessage";
 import {
+  type ActivityFeedLayoutChange,
+  ActivityFeedLayoutContext,
+  useActivityFeedLayoutChange,
+} from "./activity-feed-layout-context";
+import {
+  type ActivityActionIcon,
+  type ActivityDetailBlock,
   formatDuration,
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
-  type ActivityActionIcon,
-  type ActivityDetailBlock,
 } from "./activity-log";
+import { MarkdownContent } from "./MarkdownContent";
+import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
+import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
+import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
+import {
+  shouldScheduleThinkingAutoCollapse,
+  THINKING_AUTO_COLLAPSE_READ_MS,
+  THINKING_COLLAPSE_MS,
+} from "./thinking-auto-collapse";
 import {
   buildThreadRunProjectionViewModel,
   isProjectionRequestActive,
@@ -59,26 +82,12 @@ import {
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
   resolveProjectionAgentStatusText,
+  type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
+  type ThreadRunProjectionTimelineFeedEntry,
 } from "./thread-run-projection-view";
-import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
-import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
-import { formatGrepTargetInlineDetail } from "../shared/tool-target";
-import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
-import { MarkdownContent } from "./MarkdownContent";
-import { ActivityFeedLayoutContext, useActivityFeedLayoutChange, type ActivityFeedLayoutChange } from "./activity-feed-layout-context";
+import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStreamRequestTiming";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
-import {
-  shouldScheduleThinkingAutoCollapse,
-  THINKING_AUTO_COLLAPSE_READ_MS,
-  THINKING_COLLAPSE_MS,
-} from "./thinking-auto-collapse";
-import {
-  useStreamRequestTiming,
-  type StreamRequestTimingAnchor,
-} from "./useStreamRequestTiming";
-import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
-import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 
@@ -220,6 +229,11 @@ function ProjectionActivityLogView({
           if (entry.kind === "timeline" || entry.kind === "agent-echo") {
             return `${entry.key}:${entry.item.text.length}`;
           }
+          if (entry.kind === "tool-group") {
+            return `${entry.key}:${entry.entries
+              .map((child) => `${child.key}:${child.item.text.length}`)
+              .join(",")}`;
+          }
           const lastItem = entry.card.agent.timeline.at(-1);
           return [
             entry.key,
@@ -238,30 +252,30 @@ function ProjectionActivityLogView({
 
   return (
     <ActivityFeedLayoutContext.Provider value={onPlannerLayoutChange}>
-    <div className="run-log">
-      {showThreadPrompt && thread?.prompt ? (
-        wrapRunLogFeedEntry(
-          <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />,
-        )
-      ) : null}
-      {viewModel.mainFeedEntries.map((entry) => (
-        <ProjectionMainFeedEntry
-          key={entry.key}
-          entry={entry}
-          requestSpansById={requestSpansById}
-          expandedAgentKeys={expandedAgentKeys}
-          onToggleAgent={(agentId) => {
-            setExpandedAgentKeys((current) => ({
-              ...current,
-              [agentId]: !current[agentId],
-            }));
-          }}
-          {...(agentDisplayNames && { agentDisplayNames })}
-          {...(agentThemes && { agentThemes })}
-          {...(onRestorePrompt && { onRestorePrompt })}
-        />
-      ))}
-    </div>
+      <div className="run-log">
+        {showThreadPrompt && thread?.prompt
+          ? wrapRunLogFeedEntry(
+              <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />,
+            )
+          : null}
+        {viewModel.mainFeedEntries.map((entry) => (
+          <ProjectionMainFeedEntry
+            key={entry.key}
+            entry={entry}
+            requestSpansById={requestSpansById}
+            expandedAgentKeys={expandedAgentKeys}
+            onToggleAgent={(agentId) => {
+              setExpandedAgentKeys((current) => ({
+                ...current,
+                [agentId]: !current[agentId],
+              }));
+            }}
+            {...(agentDisplayNames && { agentDisplayNames })}
+            {...(agentThemes && { agentThemes })}
+            {...(onRestorePrompt && { onRestorePrompt })}
+          />
+        ))}
+      </div>
     </ActivityFeedLayoutContext.Provider>
   );
 }
@@ -280,16 +294,11 @@ function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
   );
 }
 
-function wrapRunLogFeedEntry(
-  node: ReactNode,
-  options?: { compact?: boolean; tight?: boolean },
-): ReactNode {
+function wrapRunLogFeedEntry(node: ReactNode, options?: { compact?: boolean; tight?: boolean }): ReactNode {
   if (options?.compact) {
     return node;
   }
-  const className = options?.tight
-    ? "run-log-feed-entry run-log-feed-entry--tight"
-    : "run-log-feed-entry";
+  const className = options?.tight ? "run-log-feed-entry run-log-feed-entry--tight" : "run-log-feed-entry";
   return <div className={className}>{node}</div>;
 }
 
@@ -319,6 +328,12 @@ function ProjectionMainFeedEntry({
       />
     );
   }
+  if (entry.kind === "tool-group") {
+    return wrapRunLogFeedEntry(
+      <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />,
+      { tight: true },
+    );
+  }
   if (entry.kind === "agent-card") {
     return wrapRunLogFeedEntry(
       <ProjectionSubagentRunRow
@@ -332,10 +347,9 @@ function ProjectionMainFeedEntry({
       />,
     );
   }
-  return wrapRunLogFeedEntry(
-    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />,
-    { tight: isTightAgentEchoEntry(entry) },
-  );
+  return wrapRunLogFeedEntry(<ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />, {
+    tight: isTightAgentEchoEntry(entry),
+  });
 }
 
 function isTightAgentEchoEntry(
@@ -345,12 +359,217 @@ function isTightAgentEchoEntry(
   return block ? isTightFeedDetailBlock(block) : false;
 }
 
-function ProjectionAgentEchoEntry({
+function ProjectionToolGroupEntry({
   entry,
   requestSpansById,
 }: {
+  entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const blocks = useMemo(
+    () =>
+      entry.entries
+        .map((child) => projectionItemToDetailBlock(child.item))
+        .filter(
+          (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block?.kind === "action",
+        ),
+    [entry.entries],
+  );
+  const summary = useMemo(() => summarizeActionBlocks(blocks), [blocks]);
+  const lifecycle = useMemo(() => resolveActionBlocksLifecycle(blocks), [blocks]);
+  const Icon = actionIcons[summary.icon];
+  const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
+  const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
+  const statusLabel = approvalLifecycle ? lifecycleStatusLabels[approvalLifecycle] : undefined;
+
+  return (
+    <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
+      <button
+        type="button"
+        className={[
+          "run-log-tool-group-trigger",
+          lifecycle === "running" ? "is-running" : "",
+          lifecycle === "approval-pending" ? "is-pending" : "",
+          lifecycle === "failed" ? "is-failed" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        <span className="run-log-action-icon-wrap" aria-hidden>
+          <Icon size={14} className="run-log-action-icon" />
+          {StatusIcon ? (
+            <StatusIcon
+              size={10}
+              className="run-log-action-status-icon"
+              {...(statusLabel && { "aria-label": statusLabel })}
+            />
+          ) : null}
+        </span>
+        <span className="run-log-tool-group-summary">{summary.label}</span>
+        <span className="run-log-tool-group-count">{entry.entries.length}</span>
+        <ChevronDown
+          size={15}
+          className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
+          aria-hidden
+        />
+      </button>
+      {expanded ? (
+        <div className="run-log-tool-group-details">
+          {entry.entries.map((child) => (
+            <ProjectionToolGroupChildEntry
+              key={child.key}
+              entry={child}
+              requestSpansById={requestSpansById}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectionToolGroupChildEntry({
+  entry,
+  requestSpansById,
+}: {
+  entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+}) {
+  if (entry.kind === "timeline") {
+    return (
+      <ProjectionTimelineEntry
+        item={entry.item}
+        requestSpansById={requestSpansById}
+        compact
+        forceActionDetailsExpanded
+      />
+    );
+  }
+  return (
+    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} forceActionDetailsExpanded />
+  );
+}
+
+function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { kind: "action" }>[]): {
+  label: string;
+  icon: ActivityActionIcon;
+} {
+  const editedFiles = new Set<string>();
+  const readFiles = new Set<string>();
+  let searches = 0;
+  let commands = 0;
+  let agents = 0;
+  let otherTools = 0;
+
+  for (const block of blocks) {
+    if (block.fileChange) {
+      editedFiles.add(block.fileChange.path || block.fileChange.fileName);
+      continue;
+    }
+    if (block.icon === "edit") {
+      editedFiles.add(block.label);
+      continue;
+    }
+    if (block.readTarget) {
+      readFiles.add(block.readTarget.filePath || block.readTarget.fileName);
+      continue;
+    }
+    if (block.grepTarget || block.icon === "search") {
+      searches += 1;
+      continue;
+    }
+    if (block.bashRun || block.icon === "terminal") {
+      commands += 1;
+      continue;
+    }
+    if (block.icon === "agent") {
+      agents += 1;
+      continue;
+    }
+    otherTools += 1;
+  }
+
+  const clauses: string[] = [];
+  if (editedFiles.size > 0) {
+    clauses.push(`已编辑 ${editedFiles.size} 个文件`);
+  }
+  if (readFiles.size > 0) {
+    clauses.push(`已读取 ${readFiles.size} 个文件`);
+  }
+  if (searches > 0) {
+    clauses.push(searches > 1 ? `已搜索代码 ${searches} 次` : "已搜索代码");
+  }
+  if (commands > 0) {
+    clauses.push(`已运行 ${commands} 条命令`);
+  }
+  if (agents > 0) {
+    clauses.push(`已调用 ${agents} 个子代理`);
+  }
+  if (otherTools > 0) {
+    clauses.push(`已执行 ${otherTools} 个工具`);
+  }
+
+  const label = joinChineseClauses(clauses.length ? clauses : [`已执行 ${blocks.length} 个工具`]);
+  const icon: ActivityActionIcon =
+    editedFiles.size > 0
+      ? "edit"
+      : readFiles.size > 0
+        ? "file"
+        : searches > 0
+          ? "search"
+          : commands > 0
+            ? "terminal"
+            : agents > 0
+              ? "agent"
+              : "file";
+  return { label, icon };
+}
+
+function joinChineseClauses(clauses: readonly string[]): string {
+  if (clauses.length <= 1) {
+    return clauses[0] ?? "";
+  }
+  if (clauses.length === 2) {
+    return `${clauses[0]}和${clauses[1]}`;
+  }
+  return `${clauses.slice(0, -1).join("、")}和${clauses.at(-1)}`;
+}
+
+function resolveActionBlocksLifecycle(
+  blocks: readonly Extract<ActivityDetailBlock, { kind: "action" }>[],
+): ToolActionLifecycle | undefined {
+  const lifecycles = blocks
+    .map((block) => block.lifecycle)
+    .filter((value): value is ToolActionLifecycle => Boolean(value));
+  if (lifecycles.includes("failed")) {
+    return "failed";
+  }
+  if (lifecycles.includes("running")) {
+    return "running";
+  }
+  if (lifecycles.includes("approval-pending")) {
+    return "approval-pending";
+  }
+  if (lifecycles.includes("approval-rejected")) {
+    return "approval-rejected";
+  }
+  if (lifecycles.includes("approval-approved")) {
+    return "approval-approved";
+  }
+  return lifecycles.length > 0 ? "completed" : undefined;
+}
+
+function ProjectionAgentEchoEntry({
+  entry,
+  requestSpansById,
+  forceActionDetailsExpanded = false,
+}: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  forceActionDetailsExpanded?: boolean;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
   if (!block) {
@@ -400,6 +619,7 @@ function ProjectionAgentEchoEntry({
         block={block}
         requestActive={requestActive}
         hideSubagentIdentity
+        forceActionDetailsExpanded={forceActionDetailsExpanded}
         {...(requestSpan && { requestSpan })}
       />
     </ProjectionAgentEchoShell>
@@ -493,8 +713,7 @@ function ProjectionSubagentRunRow({
   const hasTimelineDetails = agent.timeline.some(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
   );
-  const hasDetails =
-    hasTimelineDetails || Boolean(agent.usage || agent.context);
+  const hasDetails = hasTimelineDetails || Boolean(agent.usage || agent.context);
   const statusBadge = resolveSubagentStatusBadge(running, agent.status);
 
   return (
@@ -575,11 +794,13 @@ function ProjectionTimelineEntry({
   requestSpansById,
   onRestorePrompt,
   compact = false,
+  forceActionDetailsExpanded = false,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
+  forceActionDetailsExpanded?: boolean;
 }) {
   if (isProjectionUserPromptItem(item)) {
     if (compact) {
@@ -643,12 +864,12 @@ function ProjectionTimelineEntry({
       block={block}
       requestActive={requestActive}
       hideSubagentIdentity={compact}
+      forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(requestSpan && { requestSpan })}
     />,
     { compact, tight: isTightFeedDetailBlock(block) },
   );
 }
-
 
 type SubagentStatusBadge = {
   label: string;
@@ -760,11 +981,7 @@ function SubagentRunCardButton({
                 {statusBadge.label}
               </span>
             ) : null}
-            <ChevronDown
-              size={16}
-              className={`subagent-run-chevron${expanded ? " open" : ""}`}
-              aria-hidden
-            />
+            <ChevronDown size={16} className={`subagent-run-chevron${expanded ? " open" : ""}`} aria-hidden />
           </span>
         </div>
         <p className="subagent-run-mission-tag">任务目标</p>
@@ -793,10 +1010,12 @@ function ExpandableMissionText({
   expanded: boolean;
   className?: string;
 }) {
+  const renderedText = expanded ? text : thinkingPreviewLine(text);
+
   return (
     <div className={`run-log-expandable-text-wrap${expanded ? " is-expanded" : ""}`}>
       <p className={["run-log-expandable-text", className].filter(Boolean).join(" ")} title={text}>
-        {text}
+        {renderedText}
       </p>
     </div>
   );
@@ -809,16 +1028,12 @@ function shortSubagentAgentId(agentId: string): string {
   return agentId.slice(-8);
 }
 
-
-
-
-
-
 function DetailBlock({
   block,
   modelByRole,
   usageByRole,
   hideSubagentIdentity,
+  forceActionDetailsExpanded = false,
   requestActive = false,
   requestSpan,
   agentThemes,
@@ -827,6 +1042,7 @@ function DetailBlock({
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   hideSubagentIdentity?: boolean;
+  forceActionDetailsExpanded?: boolean;
   requestActive?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
   agentThemes?: RuntimeAgentThemes;
@@ -859,20 +1075,10 @@ function DetailBlock({
     );
   }
   if (block.kind === "model-request") {
-    return (
-      <WaitingThinkingBlock
-        active={requestActive}
-        {...(requestSpan && { requestSpan })}
-      />
-    );
+    return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;
   }
   if (block.kind === "agent-request") {
-    return (
-      <WaitingThinkingBlock
-        active={requestActive}
-        {...(requestSpan && { requestSpan })}
-      />
-    );
+    return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;
   }
   if (block.kind === "action") {
     return (
@@ -886,6 +1092,7 @@ function DetailBlock({
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
+        forceDetailsExpanded={forceActionDetailsExpanded}
         {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
@@ -1088,7 +1295,6 @@ function ContextCompactionDivider({ label }: { label: string }) {
   );
 }
 
-
 function ShimmerText({ children }: { children: string }) {
   return (
     <span className="run-log-shimmer-text" aria-live="polite">
@@ -1122,10 +1328,7 @@ function WaitingThinkingBlock({
           <span className="run-log-thinking-label">
             思考
             {showDuration ? (
-              <span className="run-log-thinking-timing-inline">
-                {" "}
-                · 耗时 {formatDurationMs(durationMs)}
-              </span>
+              <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
             ) : null}
           </span>
         </button>
@@ -1142,9 +1345,7 @@ function WaitingThinkingBlock({
   );
 }
 
-function resolveRequestDurationMs(
-  requestSpan?: ThreadRunProjectionRequestSpan,
-): number | undefined {
+function resolveRequestDurationMs(requestSpan?: ThreadRunProjectionRequestSpan): number | undefined {
   if (!requestSpan) {
     return undefined;
   }
@@ -1162,14 +1363,14 @@ function ThinkingBlock({
 }) {
   const onLayoutChange = useActivityFeedLayoutChange();
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const hasBody = text.trim().length > 0;
+  const [collapsed, setCollapsed] = useState(() => !streaming && hasBody);
   const [showDuration, setShowDuration] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
   const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoCollapseEligibleRef = useRef(false);
   const autoCollapseSuppressedRef = useRef(false);
-  const hasBody = text.trim().length > 0;
   const autoCollapseReadKey = hasBody ? text : "";
   const latestRenderStateRef = useRef({ streaming: false, hasBody: false, readKey: "" });
   const expanded = Boolean(streaming && hasBody) || !collapsed;
@@ -1229,6 +1430,23 @@ function ThinkingBlock({
     setIsCollapsing(false);
     setCollapsed(false);
   }, [streaming, hasBody, clearCollapseTimers]);
+
+  useLayoutEffect(() => {
+    if (
+      streaming ||
+      !hasBody ||
+      collapsed ||
+      !autoCollapseEligibleRef.current ||
+      autoCollapseSuppressedRef.current
+    ) {
+      return;
+    }
+    autoCollapseEligibleRef.current = false;
+    clearCollapseTimers();
+    setIsCollapsing(false);
+    setCollapsed(true);
+    onLayoutChange?.({ immediate: true });
+  }, [streaming, hasBody, collapsed, clearCollapseTimers, onLayoutChange]);
 
   useEffect(() => {
     if (
@@ -1338,25 +1556,17 @@ function ThinkingBlock({
         <span className="run-log-thinking-label">
           {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : "思考"}
           {!waitingEmpty && showDuration && durationMs !== undefined ? (
-            <span className="run-log-thinking-timing-inline">
-              {" "}
-              · 耗时 {formatDurationMs(durationMs)}
-            </span>
+            <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
           ) : null}
         </span>
         {showPreview ? (
-          <span
-            className="run-log-thinking-preview is-visible"
-            title={preview}
-          >
+          <span className="run-log-thinking-preview is-visible" title={preview}>
             {preview}
           </span>
         ) : null}
       </button>
       {hasBody && (bodyOpen || isCollapsing) ? (
-        <div
-          className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}
-        >
+        <div className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}>
           <div className="run-log-thinking-body-inner" ref={thinkingBodyInnerRef}>
             <div className="run-log-thinking-body">
               {streaming ? (
@@ -1453,7 +1663,6 @@ function UserPromptBlock({
   );
 }
 
-
 const CLARIFICATION_ANSWER_PREFIX = "澄清回答：";
 
 function parseClarificationAnswersSummary(text: string): Array<{ question: string; answer: string }> | null {
@@ -1505,7 +1714,7 @@ function SubagentMissionBlock({
   subagent,
   summary,
   prompt,
-  modelByRole,
+  modelByRole: _modelByRole,
   agentThemes,
   omitRoleLabel: _omitRoleLabel,
 }: {
@@ -1534,11 +1743,7 @@ function SubagentMissionBlock({
         <span className="run-log-mission-head-main">
           <span className="run-log-mission-tag">任务目标</span>
         </span>
-        <ChevronDown
-          size={16}
-          className={`run-log-mission-chevron${expanded ? " open" : ""}`}
-          aria-hidden
-        />
+        <ChevronDown size={16} className={`run-log-mission-chevron${expanded ? " open" : ""}`} aria-hidden />
       </div>
       {fullText ? (
         <ExpandableMissionText text={fullText} expanded={expanded} className="run-log-mission-preview" />
@@ -1614,6 +1819,7 @@ function RunLogAction({
   subagent,
   modelByRole,
   omitRoleLabel,
+  forceDetailsExpanded = false,
 }: {
   icon: ActivityActionIcon;
   label: string;
@@ -1625,18 +1831,29 @@ function RunLogAction({
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
+  forceDetailsExpanded?: boolean;
 }) {
   const Icon = actionIcons[icon];
   const isTerminal = icon === "terminal";
   const [expanded, setExpanded] = useState(false);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [canExpand, setCanExpand] = useState(false);
-  const StatusIcon =
-    lifecycle && isApprovalLifecycle(lifecycle) ? approvalLifecycleStatusIcons[lifecycle] : undefined;
+  const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
+  const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
+  const statusLabel = approvalLifecycle ? lifecycleStatusLabels[approvalLifecycle] : undefined;
+  const subagentRole = subagent?.trim() ? subagent : undefined;
   const showRoleLabel =
-    Boolean(subagent) &&
+    subagentRole !== undefined &&
     !omitRoleLabel &&
-    !activityLabelIncludesAgentRole(subagent!, label, { modelId: modelByRole?.[subagent!] });
+    !activityLabelIncludesAgentRole(subagentRole, label, { modelId: modelByRole?.[subagentRole] });
+  const roleLabel =
+    showRoleLabel && subagentRole
+      ? formatRoleModelLabel(subagentRole, modelByRole?.[subagentRole])
+      : undefined;
+  const displayLabel = bashRun?.title ?? fileChange?.fileName ?? label;
+  const hasHeavyDetails = Boolean(bashRun || fileChange);
+  const detailsExpanded = forceDetailsExpanded || expanded;
+  const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
 
   useLayoutEffect(() => {
     if (bashRun || !isTerminal || expanded) {
@@ -1664,8 +1881,8 @@ function RunLogAction({
     "run-log-action-trigger",
     lifecycle === "running" ? "is-running" : "",
     lifecycle === "approval-pending" ? "is-pending" : "",
-    canExpand ? "is-expandable" : "",
-    expanded ? "is-expanded" : "",
+    canToggleDetails ? "is-expandable" : "",
+    detailsExpanded ? "is-expanded" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -1678,36 +1895,84 @@ function RunLogAction({
           <StatusIcon
             size={10}
             className="run-log-action-status-icon"
-            aria-label={lifecycleStatusLabels[lifecycle!]}
+            {...(statusLabel && { "aria-label": statusLabel })}
           />
         ) : null}
       </span>
       <span ref={labelRef} className="run-log-action-label">
-        {label}
+        {displayLabel}
       </span>
+      {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
+      {fileChange ? (
+        <span className="run-log-file-change-card-stats run-log-action-file-stats">
+          {fileChange.additions > 0 ? <span className="stat-add">+{fileChange.additions}</span> : null}
+          {fileChange.deletions > 0 ? <span className="stat-del">-{fileChange.deletions}</span> : null}
+        </span>
+      ) : null}
+      {hasHeavyDetails || (isTerminal && canExpand) ? (
+        <ChevronDown
+          size={14}
+          className={`run-log-action-chevron${detailsExpanded ? " open" : ""}`}
+          aria-hidden
+        />
+      ) : null}
     </>
   );
 
   if (bashRun) {
     return (
-      <div className="run-log-action--bash-card">
-        {showRoleLabel ? (
-          <span className="run-log-action-role run-log-action--bash-card-role">
-            {formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}
-          </span>
+      <div className="run-log-action run-log-action--with-card run-log-action--bash-card">
+        {roleLabel ? (
+          <span className="run-log-action-role run-log-action--bash-card-role">{roleLabel}</span>
         ) : null}
-        <RunLogBashCard display={bashRun} {...(lifecycle && { lifecycle })} />
+        <div className="run-log-action-main">
+          {canToggleDetails ? (
+            <button
+              type="button"
+              className={triggerClassName}
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={detailsExpanded}
+              title={detailsExpanded ? undefined : bashRun.title}
+            >
+              {row}
+            </button>
+          ) : (
+            <div className={triggerClassName}>{row}</div>
+          )}
+          {detailsExpanded ? (
+            <div className="run-log-action-card-detail">
+              <RunLogBashCard display={bashRun} {...(lifecycle && { lifecycle })} />
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }
 
   if (fileChange) {
     return (
-      <div className="run-log-action run-log-action--file-change-card">
-        {showRoleLabel ? (
-          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
-        ) : null}
-        <RunLogFileChangeCard display={fileChange} {...(lifecycle && { lifecycle })} />
+      <div className="run-log-action run-log-action--with-card run-log-action--file-change-card">
+        {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
+        <div className="run-log-action-main">
+          {canToggleDetails ? (
+            <button
+              type="button"
+              className={triggerClassName}
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={detailsExpanded}
+              title={detailsExpanded ? undefined : fileChange.fileName}
+            >
+              {row}
+            </button>
+          ) : (
+            <div className={triggerClassName}>{row}</div>
+          )}
+          {detailsExpanded ? (
+            <div className="run-log-action-card-detail">
+              <RunLogFileChangeCard display={fileChange} {...(lifecycle && { lifecycle })} />
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -1715,9 +1980,7 @@ function RunLogAction({
   if (readTarget) {
     return (
       <div className="run-log-action run-log-action--read-target">
-        {showRoleLabel ? (
-          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
-        ) : null}
+        {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
         <RunLogReadTargetLine readTarget={readTarget} {...(lifecycle && { lifecycle })} />
       </div>
     );
@@ -1726,35 +1989,33 @@ function RunLogAction({
   if (grepTarget) {
     return (
       <div className="run-log-action run-log-action--grep-target">
-        {showRoleLabel ? (
-          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
-        ) : null}
+        {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
         <RunLogGrepTargetLine grepTarget={grepTarget} {...(lifecycle && { lifecycle })} />
       </div>
     );
   }
 
   return (
-    <div className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}>
-      {showRoleLabel ? (
-        <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
-      ) : null}
+    <div
+      className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}
+    >
+      {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
       <div className="run-log-action-main">
-        {isTerminal && canExpand ? (
+        {isTerminal && canToggleDetails ? (
           <button
             type="button"
             className={triggerClassName}
             onClick={() => setExpanded((value) => !value)}
-            aria-expanded={expanded}
-            title={expanded ? undefined : label}
+            aria-expanded={detailsExpanded}
+            title={detailsExpanded ? undefined : label}
           >
             {row}
           </button>
         ) : (
           <div className={triggerClassName}>{row}</div>
         )}
-        {isTerminal && canExpand ? (
-          <div className={["run-log-action-detail-shell", expanded ? "open" : ""].filter(Boolean).join(" ")}>
+        {isTerminal && canExpand && detailsExpanded ? (
+          <div className="run-log-action-detail-shell open">
             <div className="run-log-action-detail-inner">
               <pre className="run-log-action-detail">{label}</pre>
             </div>
