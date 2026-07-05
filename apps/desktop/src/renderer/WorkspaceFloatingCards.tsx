@@ -1,5 +1,7 @@
-import { GitBranch, GitCommitHorizontal, ListTodo, Plug, Users } from "lucide-react";
+import { resolveMissionDisplayText } from "@eco/runtime";
+import { Bot, GitBranch, GitCommitHorizontal, ListTodo, Plug, Users } from "lucide-react";
 import { useState } from "react";
+import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type {
   CoderTodoItem,
   GitSettingsSnapshot,
@@ -14,14 +16,17 @@ import type {
   WorkspaceInfo,
 } from "../shared/ipc";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
-import { countEnabledMcpServers } from "../shared/composer-mcp";
+import { resolveSubagentRunDisplayTitle, thinkingPreviewLine } from "./activity-log";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
+import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { FloatingWorkspaceCard } from "./FloatingWorkspaceCard";
+import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
+import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
+import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
-import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -43,7 +48,10 @@ export interface WorkspaceFloatingCardsProps {
   onOpenGitSettings?: () => void;
   onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onOpenChangesReview?: () => void;
   onChangesDiffLoaded?: (diff: import("../shared/ipc").WorkspaceDiffResult) => void | Promise<void>;
+  onChangesDiffLoadingChange?: (loading: boolean) => void;
+  onChangesDiffError?: (error?: string) => void;
   onPullSuccess?: () => void | Promise<void>;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
@@ -60,6 +68,11 @@ export interface WorkspaceFloatingCardsProps {
   composerMcpSettings?: McpServersEnabledSettings;
   onToggleComposerSubagent?: (role: SubagentRole, enabled: boolean) => void | Promise<void>;
   onToggleComposerMcpServer?: (serverKey: string, enabled: boolean) => void | Promise<void>;
+  subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
+  selectedSubagentAgentId?: string;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
+  onOpenSubagent?: (agentId: string) => void;
 }
 
 function hasProgressInfo(todos: CoderTodoItem[]): boolean {
@@ -70,6 +83,55 @@ function hasProgressInfo(todos: CoderTodoItem[]): boolean {
 
 function countRunningTodos(todos: CoderTodoItem[]): number {
   return todos.filter((todo) => todo.status === "running").length;
+}
+
+function subagentRoleLabel(role: string, displayNames?: RuntimeAgentDisplayNames): string {
+  return resolveRuntimeAgentName(role, displayNames) ?? resolveSubagentRunDisplayTitle(role);
+}
+
+function SubagentRunsCardBody({
+  cards,
+  selectedAgentId,
+  agentDisplayNames,
+  agentThemes,
+  onOpenSubagent,
+}: {
+  cards: readonly ThreadRunProjectionSubagentCard[];
+  selectedAgentId?: string;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
+  onOpenSubagent?: (agentId: string) => void;
+}) {
+  return (
+    <div className="workspace-subagent-runs-list">
+      {cards.map((card) => {
+        const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
+        const missionText = card.missionText
+          ? thinkingPreviewLine(resolveMissionDisplayText(card.missionText), 92)
+          : (card.statusText ?? "");
+        return (
+          <button
+            key={card.key}
+            type="button"
+            className={`workspace-subagent-run-item${selectedAgentId === card.key ? " is-active" : ""}`}
+            style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
+            onClick={() => onOpenSubagent?.(card.key)}
+            aria-pressed={selectedAgentId === card.key}
+            title={missionText || roleLabel}
+          >
+            <span className="workspace-subagent-run-avatar" aria-hidden>
+              <Bot size={16} />
+            </span>
+            <span className="workspace-subagent-run-main">
+              <span className="workspace-subagent-run-name">{roleLabel}</span>
+              {missionText ? <span className="workspace-subagent-run-mission">{missionText}</span> : null}
+            </span>
+            {card.running ? <span className="workspace-subagent-run-live" aria-hidden /> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function WorkspaceFloatingCards({
@@ -86,7 +148,10 @@ export function WorkspaceFloatingCards({
   onOpenGitSettings,
   onSaveCommitModelPreference,
   onCommitSuccess,
+  onOpenChangesReview,
   onChangesDiffLoaded,
+  onChangesDiffLoadingChange,
+  onChangesDiffError,
   onPullSuccess,
   onResolveConflictsWithAgent,
   scriptsDisabled,
@@ -102,6 +167,11 @@ export function WorkspaceFloatingCards({
   composerMcpSettings,
   onToggleComposerSubagent,
   onToggleComposerMcpServer,
+  subagentRunCards = [],
+  selectedSubagentAgentId,
+  agentDisplayNames,
+  agentThemes,
+  onOpenSubagent,
 }: WorkspaceFloatingCardsProps) {
   const projectLabel =
     workspaceLabel?.trim() ||
@@ -110,9 +180,7 @@ export function WorkspaceFloatingCards({
     "未打开项目";
   const showProgress = hasProgressInfo(todos);
   const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
-  const showCommitGraph = Boolean(
-    workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits,
-  );
+  const showCommitGraph = Boolean(workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits);
   const branchLabel = gitStatus?.branch ?? "—";
   const insertions = gitStatus?.insertions ?? 0;
   const deletions = gitStatus?.deletions ?? 0;
@@ -135,7 +203,7 @@ export function WorkspaceFloatingCards({
   }
 
   return (
-    <div className="workspace-floating-cards" aria-label="工作区悬浮卡片">
+    <div className="workspace-floating-cards">
       <FloatingWorkspaceCard
         id="workspace-env"
         title="环境信息"
@@ -164,13 +232,39 @@ export function WorkspaceFloatingCards({
           {...(onOpenGitSettings && { onOpenGitSettings })}
           {...(onSaveCommitModelPreference && { onSaveCommitModelPreference })}
           onCommitSuccess={() => void handleCommitSuccess()}
+          {...(onOpenChangesReview && { onOpenChangesReview })}
           {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
+          {...(onChangesDiffLoadingChange && { onChangesDiffLoadingChange })}
+          {...(onChangesDiffError && { onChangesDiffError })}
           onPullSuccess={() => void handlePullSuccess()}
           {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
           {...(scriptsDisabled !== undefined && { scriptsDisabled })}
           {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
         />
       </FloatingWorkspaceCard>
+
+      {hasActiveThread && subagentRunCards.length > 0 ? (
+        <FloatingWorkspaceCard
+          id="workspace-subagent-runs"
+          title="子智能体"
+          defaultExpanded
+          bubble={
+            <>
+              <Bot size={14} aria-hidden />
+              <span>{subagentRunCards.length}</span>
+            </>
+          }
+          maxBodyHeight={260}
+        >
+          <SubagentRunsCardBody
+            cards={subagentRunCards}
+            {...(selectedSubagentAgentId && { selectedAgentId: selectedSubagentAgentId })}
+            agentDisplayNames={agentDisplayNames}
+            agentThemes={agentThemes}
+            onOpenSubagent={onOpenSubagent}
+          />
+        </FloatingWorkspaceCard>
+      ) : null}
 
       {showProgress ? (
         <FloatingWorkspaceCard
@@ -242,7 +336,7 @@ export function WorkspaceFloatingCards({
         </FloatingWorkspaceCard>
       ) : null}
 
-      {showCommitGraph ? (
+      {showCommitGraph && workspacePath ? (
         <FloatingWorkspaceCard
           id="workspace-git-graph"
           title="Git 图形"
@@ -257,7 +351,7 @@ export function WorkspaceFloatingCards({
           maxBodyHeight={300}
         >
           <WorkspaceGitCommitGraph
-            workspacePath={workspacePath!}
+            workspacePath={workspacePath}
             refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
             embedded
           />

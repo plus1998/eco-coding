@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 type PtyHandler = (data: string) => void;
 type ExitHandler = (event: { exitCode: number; signal?: number }) => void;
@@ -42,6 +42,14 @@ function createMockPty(): MockPty {
   return mockPty;
 }
 
+function requireSpawned(index: number): MockPty {
+  const value = spawned[index];
+  if (!value) {
+    throw new Error(`spawned pty ${index} missing`);
+  }
+  return value;
+}
+
 mock.module("node-pty", () => ({
   spawn: mock(() => createMockPty()),
 }));
@@ -74,6 +82,7 @@ describe("InteractiveTerminalManager", () => {
     expect(result.sessionId).toBeTruthy();
     expect(spawned).toHaveLength(1);
     expect(manager.get(result.sessionId)?.workspacePath).toBe(workspaceRoot);
+    expect(events).toEqual([{ type: "started", sessionId: result.sessionId, workspacePath: workspaceRoot }]);
   });
 
   test("rejects missing workspace directories", () => {
@@ -98,7 +107,7 @@ describe("InteractiveTerminalManager", () => {
   test("writes input and resizes the active session", () => {
     const manager = new InteractiveTerminalManager(() => undefined);
     const { sessionId } = manager.spawn(workspaceRoot);
-    const activePty = spawned[0]!;
+    const activePty = requireSpawned(0);
 
     manager.write(sessionId, "ls\n");
     manager.resize(sessionId, 132, 40);
@@ -112,12 +121,13 @@ describe("InteractiveTerminalManager", () => {
       events.push(event as { type: string; sessionId: string });
     });
     const { sessionId } = manager.spawn(workspaceRoot);
-    const activePty = spawned[0]!;
+    const activePty = requireSpawned(0);
 
     activePty.emitData("hello");
     activePty.emitExit(0);
 
     expect(events).toEqual([
+      { type: "started", sessionId, workspacePath: workspaceRoot },
       { type: "output", sessionId, data: "hello" },
       { type: "exit", sessionId, exitCode: 0 },
     ]);
@@ -127,7 +137,7 @@ describe("InteractiveTerminalManager", () => {
   test("kill removes the active session", () => {
     const manager = new InteractiveTerminalManager(() => undefined);
     const { sessionId } = manager.spawn(workspaceRoot);
-    const activePty = spawned[0]!;
+    const activePty = requireSpawned(0);
 
     expect(manager.kill(sessionId)).toBe(true);
     expect(activePty.kill).toHaveBeenCalled();

@@ -40,7 +40,10 @@ export interface WorkspaceGitSectionProps {
   onOpenGitSettings?: () => void;
   onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onOpenChangesReview?: () => void;
   onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
+  onChangesDiffLoadingChange?: (loading: boolean) => void;
+  onChangesDiffError?: (error?: string) => void;
   onPullSuccess?: () => void | Promise<void>;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
@@ -63,7 +66,10 @@ export function WorkspaceGitSection({
   onCreateGitBranch,
   onSaveCommitModelPreference,
   onCommitSuccess,
+  onOpenChangesReview,
   onChangesDiffLoaded,
+  onChangesDiffLoadingChange,
+  onChangesDiffError,
   onPullSuccess,
   onResolveConflictsWithAgent,
   scriptsDisabled,
@@ -215,7 +221,9 @@ export function WorkspaceGitSection({
       return;
     }
     setChangesLoading(true);
+    onChangesDiffLoadingChange?.(true);
     setChangesError(undefined);
+    onChangesDiffError?.(undefined);
     try {
       const result = await window.eco.getWorkspaceDiff(workspacePath);
       setChangesDiff(result);
@@ -226,11 +234,14 @@ export function WorkspaceGitSection({
       setSelectedChangePath(nextPath);
       await onChangesDiffLoaded?.(result);
     } catch (caught) {
-      setChangesError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setChangesError(message);
+      onChangesDiffError?.(message);
       setChangesDiff(undefined);
       setSelectedChangePath(undefined);
     } finally {
       setChangesLoading(false);
+      onChangesDiffLoadingChange?.(false);
     }
   }
 
@@ -292,6 +303,12 @@ export function WorkspaceGitSection({
 
   async function openChangesDrawer() {
     if (!workspacePath || !window.eco || changesLoading) {
+      return;
+    }
+    if (onOpenChangesReview) {
+      setChangesDrawerOpen(false);
+      onOpenChangesReview();
+      await reloadChangesDiff(selectedChangePath);
       return;
     }
     setChangesDrawerOpen(true);

@@ -7,8 +7,9 @@ import type {
   RunPackageScriptRequest,
 } from "../shared/ipc";
 import { buildRunCommand } from "../shared/package-script-run";
-import { buildShellCommandLine, resolveCommandExecutable } from "./resolve-command-executable";
+import type { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import type { InteractiveTerminalManager } from "./interactive-terminal-manager";
+import { buildShellCommandLine, resolveCommandExecutable } from "./resolve-command-executable";
 import { detectPackageManager } from "./workspace-inspect";
 
 export { buildRunCommand } from "../shared/package-script-run";
@@ -116,4 +117,28 @@ export function runPreparedPackageScriptInTerminal(
   const { sessionId } = manager.spawn(prepared.workspacePath);
   manager.write(sessionId, `${buildShellCommandLine(resolvedCommand)}\r`);
   return { sessionId, script: prepared.script, command: resolvedCommand };
+}
+
+export function runPreparedPackageScriptAsBackgroundTask(
+  registry: BackgroundTerminalTaskRegistry,
+  prepared: { workspacePath: string; script: string; command: string[] },
+  options: { threadId?: string } = {},
+): { taskId: string; sessionId: string; script: string; command: string[] } {
+  const executableName = prepared.command[0];
+  if (!executableName) {
+    throw new Error("Missing executable.");
+  }
+  const resolvedCommand = [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
+  const task = registry.start({
+    workspacePath: prepared.workspacePath,
+    command: resolvedCommand,
+    label: `脚本 ${prepared.script}`,
+    ...(options.threadId?.trim() && { threadId: options.threadId.trim() }),
+  });
+  return {
+    taskId: task.taskId,
+    sessionId: task.sessionId,
+    script: prepared.script,
+    command: resolvedCommand,
+  };
 }

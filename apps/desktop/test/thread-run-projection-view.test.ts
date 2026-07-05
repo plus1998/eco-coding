@@ -69,6 +69,13 @@ function projection(input: Partial<ThreadRunProjectionSnapshot>): ThreadRunProje
   };
 }
 
+function requireValue<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`${label} missing`);
+  }
+  return value;
+}
+
 test("buildThreadRunProjectionViewModel keys subagent cards by agentId", () => {
   const firstTimeline = [item({ id: "a-msg", scope: "agent", role: "coder", agentId: "coder_a" })];
   const secondTimeline = [item({ id: "b-msg", scope: "agent", role: "coder", agentId: "coder_b" })];
@@ -97,7 +104,7 @@ test("buildThreadRunProjectionViewModel keys subagent cards by agentId", () => {
   expect(view.subagentCards.map((card) => card.statusText)).toEqual(["Read API", "Edit UI"]);
 });
 
-test("buildThreadRunProjectionViewModel echoes agent narrative in main feed while preserving agent card details", () => {
+test("buildThreadRunProjectionViewModel keeps agent narrative in subagent card details only", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       timeline: [
@@ -132,24 +139,18 @@ test("buildThreadRunProjectionViewModel echoes agent narrative in main feed whil
     { agentDisplayNames: { coder: "Implementation Agent" } },
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "agent-card", "agent-echo"]);
-  const echo = view.mainFeedEntries[2];
-  expect(echo?.kind).toBe("agent-echo");
-  if (echo?.kind === "agent-echo") {
-    expect(echo.item.id).toBe("coder-says");
-    expect(echo.agent.agentId).toBe("coder_agent_00000001");
-    expect(echo.shortAgentId).toBe("00000001");
-    expect(echo.agentLabel).toBe("Implementation Agent #00000001");
-  }
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "agent-card"]);
+  expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
   const card = view.mainFeedEntries[1];
   expect(card?.kind).toBe("agent-card");
   if (card?.kind === "agent-card") {
     expect(card.card.statusText).toBe("我在检查渲染路径。");
+    expect(card.card.agent.timeline[0]?.id).toBe("coder-says");
   }
   expect(view.subagentCards[0]?.timelineIds).toEqual(["coder-says"]);
 });
 
-test("buildThreadRunProjectionViewModel keeps concurrent same-role agent echoes distinct", () => {
+test("buildThreadRunProjectionViewModel keeps concurrent same-role agent details distinct", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       agents: [
@@ -189,12 +190,12 @@ test("buildThreadRunProjectionViewModel keeps concurrent same-role agent echoes 
     }),
   );
 
-  const echoes = view.mainFeedEntries.filter((entry) => entry.kind === "agent-echo");
-  expect(echoes.map((entry) => entry.agent.agentId)).toEqual([
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card", "agent-card"]);
+  expect(view.subagentCards.map((card) => card.agent.agentId)).toEqual([
     "coder_agent_00000001",
     "coder_agent_00000002",
   ]);
-  expect(echoes.map((entry) => entry.shortAgentId)).toEqual(["00000001", "00000002"]);
+  expect(view.subagentCards.map((card) => card.timelineIds)).toEqual([["coder-a-msg"], ["coder-b-msg"]]);
 });
 
 test("buildThreadRunProjectionViewModel interleaves planner and agent speech by time", () => {
@@ -242,9 +243,9 @@ test("buildThreadRunProjectionViewModel interleaves planner and agent speech by 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
     "main:stream:thinking:role:thinking",
     "agent-card:coder_agent_00000001",
-    "agent:coder_agent_00000001:stream:message:agent:coder_agent_00000001",
     "main:stream:message:role:planner",
   ]);
+  expect(view.subagentCards[0]?.agent.timeline[0]?.text).toBe("我找到问题了。");
 });
 
 test("buildThreadRunProjectionViewModel does not echo request or lifecycle noise", () => {
@@ -708,7 +709,9 @@ test("buildThreadRunProjectionViewModel treats legacy todo updates as tool state
   expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
   expect(view.subagentCards[0]?.statusText).toBe("https://weather.example");
-  expect(projectionItemToDetailBlock(view.subagentCards[0]!.agent.timeline[0]!)).toMatchObject({
+  const firstCard = requireValue(view.subagentCards[0], "subagent card");
+  const firstTimelineItem = requireValue(firstCard.agent.timeline[0], "subagent timeline item");
+  expect(projectionItemToDetailBlock(firstTimelineItem)).toMatchObject({
     kind: "action",
     label: "https://weather.example",
   });
@@ -2035,14 +2038,11 @@ test("buildThreadRunProjectionViewModel collapses agent card stream rows without
   );
 
   expect(view.subagentCards[0]?.timelineIds).toEqual(["agent-final"]);
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "agent-card:coder_agent_00000001",
-    "agent:coder_agent_00000001:stream:message:agent:coder_agent_00000001",
-  ]);
-  const echo = view.mainFeedEntries[1];
-  expect(echo?.kind).toBe("agent-echo");
-  if (echo?.kind === "agent-echo") {
-    expect(projectionItemToDetailBlock(echo.item)).toMatchObject({
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["agent-card:coder_agent_00000001"]);
+  const card = view.subagentCards[0];
+  expect(card?.agent.timeline[0]).toBeTruthy();
+  if (card?.agent.timeline[0]) {
+    expect(projectionItemToDetailBlock(card.agent.timeline[0])).toMatchObject({
       kind: "narrative",
       streaming: false,
       text: "广州今天有阵雨。",
@@ -2337,7 +2337,7 @@ test("buildProjectionDisplayTimelineItems collapses SDK api_retry rows and final
   ];
   const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
   expect(rows.map((row) => row.id)).toEqual(["r3"]);
-  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+  expect(projectionItemToDetailBlock(requireValue(rows[0], "reconnect row"))).toMatchObject({
     kind: "phase",
     label: "连接失败 · HTTP 502",
     reconnecting: true,
@@ -2385,13 +2385,13 @@ test("buildProjectionDisplayTimelineItems keeps reconnect summary and one origin
   ];
   const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
   expect(rows.map((row) => row.id)).toEqual(["reconnect", "phase"]);
-  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+  expect(projectionItemToDetailBlock(requireValue(rows[0], "reconnect row"))).toMatchObject({
     kind: "phase",
     label: "连接失败 · HTTP 503",
     reconnecting: true,
     reconnectFailed: true,
   });
-  expect(projectionItemToDetailBlock(rows[1]!)).toEqual({
+  expect(projectionItemToDetailBlock(requireValue(rows[1], "phase row"))).toEqual({
     kind: "phase",
     label: rawApiError,
   });
@@ -2926,7 +2926,7 @@ test("buildProjectionDisplayTimelineItems replaces placeholder Read by toolUseId
 
   expect(rows).toHaveLength(1);
   expect(rows[0]?.id).toBe("read-structured");
-  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+  expect(projectionItemToDetailBlock(requireValue(rows[0], "read row"))).toMatchObject({
     readTarget: { fileName: "snake.html" },
   });
 });
@@ -3367,12 +3367,9 @@ test("buildThreadRunProjectionViewModel does not echo attributed @mission from a
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card", "agent-echo"]);
-  const echo = view.mainFeedEntries[1];
-  expect(echo?.kind).toBe("agent-echo");
-  if (echo?.kind === "agent-echo") {
-    expect(echo.item.text).toBe("Checking CPU topology.");
-  }
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
+  expect(view.subagentCards[0]?.timelineIds).toEqual(["agent-speech"]);
+  expect(view.subagentCards[0]?.agent.timeline[0]?.text).toBe("Checking CPU topology.");
 });
 
 test("buildThreadRunProjectionViewModel absorbs main feed @mission stamped with agentId", () => {
@@ -3451,12 +3448,9 @@ test("buildThreadRunProjectionViewModel does not echo legacy @mission below suba
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card", "agent-echo"]);
-  const echo = view.mainFeedEntries[1];
-  expect(echo?.kind).toBe("agent-echo");
-  if (echo?.kind === "agent-echo") {
-    expect(echo.item.text).toBe("Scanning repository layout.");
-  }
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
+  expect(view.subagentCards[0]?.timelineIds).toEqual(["agent-speech"]);
+  expect(view.subagentCards[0]?.agent.timeline[0]?.text).toBe("Scanning repository layout.");
 });
 
 test("projectionItemToDetailBlock omits tool role badge and resolves icon from tool name", () => {
@@ -3878,7 +3872,11 @@ test("buildThreadRunProjectionViewModel drops redundant permission denied lines 
   const timelineEntries = view.mainFeedEntries.filter((entry) => entry.kind === "timeline");
   expect(timelineEntries).toHaveLength(1);
   expect(timelineEntries[0]?.kind === "timeline" && timelineEntries[0].item.id).toBe("tool-failed");
-  expect(projectionItemToDetailBlock(timelineEntries[0]!.item)).toMatchObject({
+  const firstEntry = requireValue(timelineEntries[0], "timeline entry");
+  if (firstEntry.kind !== "timeline") {
+    throw new Error("timeline entry missing");
+  }
+  expect(projectionItemToDetailBlock(firstEntry.item)).toMatchObject({
     kind: "tool-failed",
     tool: "Write",
   });

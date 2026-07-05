@@ -91,6 +91,7 @@ import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStr
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
+type OpenSubagentHandler = (agentId: string) => void;
 
 function toStreamRequestTimingAnchor(
   requestSpan?: ThreadRunProjectionRequestSpan,
@@ -160,6 +161,8 @@ interface ActivityLogViewProps {
   agentThemes?: RuntimeAgentThemes;
   subagentTimings?: ThreadSubagentSessionTiming[];
   subagentMetrics?: ThreadSubagentMetricsSummary[];
+  selectedSubagentAgentId?: string;
+  onOpenSubagent?: OpenSubagentHandler;
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }
@@ -187,6 +190,8 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}
       {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
+      {...(props.selectedSubagentAgentId && { selectedSubagentAgentId: props.selectedSubagentAgentId })}
+      {...(props.onOpenSubagent && { onOpenSubagent: props.onOpenSubagent })}
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
     />
   );
@@ -199,11 +204,15 @@ function ProjectionActivityLogView({
   onPlannerLayoutChange,
   agentDisplayNames,
   agentThemes,
+  selectedSubagentAgentId,
+  onOpenSubagent,
 }: {
   projection: ThreadRunProjectionSnapshot;
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
+  selectedSubagentAgentId?: string;
+  onOpenSubagent?: OpenSubagentHandler;
   onRestorePrompt?: RestorePromptHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }) {
@@ -221,7 +230,6 @@ function ProjectionActivityLogView({
       ),
     [agentDisplayNames, projection, thread?.id, thread?.prompt],
   );
-  const [expandedAgentKeys, setExpandedAgentKeys] = useState<Record<string, boolean>>({});
   const showThreadPrompt = viewModel.showThreadPrompt;
   const layoutSignature = useMemo(
     () =>
@@ -266,13 +274,8 @@ function ProjectionActivityLogView({
             entry={entry}
             requestSpansById={requestSpansById}
             threadActive={threadActive}
-            expandedAgentKeys={expandedAgentKeys}
-            onToggleAgent={(agentId) => {
-              setExpandedAgentKeys((current) => ({
-                ...current,
-                [agentId]: !current[agentId],
-              }));
-            }}
+            {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+            {...(onOpenSubagent && { onOpenSubagent })}
             {...(agentDisplayNames && { agentDisplayNames })}
             {...(agentThemes && { agentThemes })}
             {...(onRestorePrompt && { onRestorePrompt })}
@@ -309,8 +312,8 @@ function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
   threadActive,
-  expandedAgentKeys,
-  onToggleAgent,
+  selectedSubagentAgentId,
+  onOpenSubagent,
   onRestorePrompt,
   agentDisplayNames,
   agentThemes,
@@ -318,8 +321,8 @@ function ProjectionMainFeedEntry({
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   threadActive: boolean;
-  expandedAgentKeys: Record<string, boolean>;
-  onToggleAgent: (agentId: string) => void;
+  selectedSubagentAgentId?: string;
+  onOpenSubagent?: OpenSubagentHandler;
   onRestorePrompt?: RestorePromptHandler;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -349,10 +352,8 @@ function ProjectionMainFeedEntry({
       <ProjectionSubagentRunRow
         agent={entry.card.agent}
         missionText={entry.card.missionText}
-        requestSpansById={requestSpansById}
-        threadActive={threadActive}
-        expanded={Boolean(expandedAgentKeys[entry.card.key])}
-        onToggle={() => onToggleAgent(entry.card.key)}
+        selected={selectedSubagentAgentId === entry.card.key}
+        onOpen={() => onOpenSubagent?.(entry.card.key)}
         {...(agentDisplayNames && { agentDisplayNames })}
         {...(agentThemes && { agentThemes })}
       />,
@@ -735,19 +736,15 @@ function useLatchedAgentText(agentId: string, text: string): string {
 function ProjectionSubagentRunRow({
   agent,
   missionText: incomingMissionText,
-  requestSpansById,
-  threadActive,
-  expanded,
-  onToggle,
+  selected,
+  onOpen,
   agentDisplayNames,
   agentThemes,
 }: {
   agent: ThreadRunProjectionAgent;
   missionText: string;
-  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
-  expanded: boolean;
-  onToggle: () => void;
+  selected: boolean;
+  onOpen: () => void;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
 }) {
@@ -773,7 +770,6 @@ function ProjectionSubagentRunRow({
   const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
   const showModelShort = modelShort && !isRedundantAgentModelShort(roleLabel, modelShort);
   const titleWithModel = formatRoleModelLabel(agent.role, modelId);
-  const delegation = readProjectionAgentDelegation(agent);
   const rawStatus = resolveProjectionAgentStatusText(agent);
   const statusText =
     rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
@@ -785,15 +781,11 @@ function ProjectionSubagentRunRow({
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
   const missionText = useLatchedAgentText(agent.agentId, incomingMissionText);
-  const hasTimelineDetails = agent.timeline.some(
-    (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
-  );
-  const hasDetails = hasTimelineDetails || Boolean(agent.usage || agent.context);
   const statusBadge = resolveSubagentStatusBadge(running, agent.status);
 
   return (
     <div
-      className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
+      className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
       data-agent-id={agent.agentId}
       data-role={normalizeAgentDisplayRole(agent.role) ?? agent.role}
       style={resolveSubagentRowThemeStyle(agent.role, agentThemes)}
@@ -809,30 +801,64 @@ function ProjectionSubagentRunRow({
         statusText={statusText}
         {...(missionText && { missionText })}
         {...(durationLabel && { durationLabel })}
-        expanded={expanded}
-        onToggle={onToggle}
+        selected={selected}
+        onOpen={onOpen}
       />
-      {expanded && hasDetails ? (
-        <div className="work-session-details-compact">
-          <div className="work-session-details-compact-inner">
-            <ProjectionSubagentRunInstanceStrip agent={agent} />
-            {agent.timeline
-              .filter(
-                (item) =>
-                  !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
-              )
-              .map((item) => (
-                <ProjectionTimelineEntry
-                  key={`${agent.agentId}-${item.id}`}
-                  item={item}
-                  requestSpansById={requestSpansById}
-                  threadActive={threadActive}
-                  compact
-                />
-              ))}
+    </div>
+  );
+}
+
+export function ProjectionSubagentDetailFeed({
+  agent,
+  missionText,
+  requestSpansById,
+  threadActive,
+}: {
+  agent: ThreadRunProjectionAgent;
+  missionText: string;
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  threadActive: boolean;
+}) {
+  const delegation = readProjectionAgentDelegation(agent);
+  const missionDisplay = resolveMissionDisplayText(
+    missionText || delegation?.prompt || delegation?.summary || "",
+  );
+  const running = agent.status === "active" || agent.status === "launching";
+  const durationLabel = agent.durationMs > 0 ? formatDuration(agent.durationMs) : undefined;
+  const filteredTimeline = agent.timeline.filter(
+    (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
+  );
+  return (
+    <div className="subagent-task-detail-feed subagent-conversation">
+      {missionDisplay ? (
+        <article className="run-log-user-prompt subagent-conversation-prompt">
+          <div className="run-log-user-prompt-content">
+            <pre className="run-log-user-prompt-body">{missionDisplay}</pre>
           </div>
-        </div>
+        </article>
       ) : null}
+      <div className="subagent-conversation-status-row">
+        <span className="subagent-conversation-status">
+          {running ? "处理中" : "已处理"}
+          {durationLabel ? ` ${durationLabel}` : ""}
+        </span>
+      </div>
+      <ProjectionSubagentRunInstanceStrip agent={agent} />
+      <div className="subagent-conversation-log">
+        {filteredTimeline.length > 0 ? (
+          filteredTimeline.map((item) => (
+            <ProjectionTimelineEntry
+              key={`${agent.agentId}-${item.id}`}
+              item={item}
+              requestSpansById={requestSpansById}
+              threadActive={threadActive}
+              compact
+            />
+          ))
+        ) : (
+          <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -847,7 +873,7 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
   }
 
   return (
-    <div className="subagent-run-instance-strip" aria-label="子代理实例">
+    <div className="subagent-run-instance-strip">
       {agent.usage ? (
         <span className="subagent-run-instance-usage">
           {formatUsageBadge({
@@ -1006,8 +1032,8 @@ function SubagentRunCardButton({
   statusText,
   missionText,
   durationLabel,
-  expanded,
-  onToggle,
+  selected,
+  onOpen,
 }: {
   role: string;
   roleLabel: string;
@@ -1019,8 +1045,8 @@ function SubagentRunCardButton({
   statusText: string;
   missionText?: string;
   durationLabel?: string;
-  expanded: boolean;
-  onToggle: () => void;
+  selected: boolean;
+  onOpen: () => void;
 }) {
   const kindBadge = resolveSubagentKindBadge(role);
   const resolvedMissionText = missionText ? resolveMissionDisplayText(missionText) : "";
@@ -1028,9 +1054,9 @@ function SubagentRunCardButton({
   return (
     <button
       type="button"
-      className={`subagent-run-row${running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
-      onClick={onToggle}
-      aria-expanded={expanded}
+      className={`subagent-run-row${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
+      onClick={onOpen}
+      aria-pressed={selected}
     >
       <span className="subagent-run-leading" aria-hidden>
         <span className="subagent-run-kind-badge">{kindBadge}</span>
@@ -1064,14 +1090,14 @@ function SubagentRunCardButton({
                 {statusBadge.label}
               </span>
             ) : null}
-            <ChevronDown size={16} className={`subagent-run-chevron${expanded ? " open" : ""}`} aria-hidden />
+            <ChevronDown size={16} className={`subagent-run-chevron${selected ? " open" : ""}`} aria-hidden />
           </span>
         </div>
         <p className="subagent-run-mission-tag">任务目标</p>
         {resolvedMissionText ? (
           <ExpandableMissionText
             text={resolvedMissionText}
-            expanded={expanded}
+            expanded={false}
             className="subagent-run-mission-preview"
           />
         ) : (

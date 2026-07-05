@@ -1,5 +1,5 @@
-import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 import type { ThreadRunToolMetadata } from "./thread-run-events";
+import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 
 export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
@@ -12,6 +12,10 @@ export const IPC_CHANNELS = {
   workspacePackageJsonChanged: "workspace:package-json-changed",
   workspaceStartPackageScript: "workspace:start-package-script",
   workspacePackageScriptTerminal: "workspace:package-script-terminal",
+  backgroundTerminalList: "background-terminal:list",
+  backgroundTerminalStart: "background-terminal:start",
+  backgroundTerminalOpen: "background-terminal:open",
+  backgroundTerminalStop: "background-terminal:stop",
   workspacePrepareGit: "workspace:prepare-git",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
@@ -270,6 +274,7 @@ export interface RunPackageScriptRequest {
   workspacePath: string;
   script: string;
   args?: string;
+  threadId?: string;
 }
 
 export type StartPackageScriptRequest = RunPackageScriptRequest;
@@ -278,6 +283,7 @@ export interface StartPackageScriptResult {
   script: string;
   command: string[];
   sessionId: string;
+  taskId: string;
 }
 
 export interface PackageScriptTerminalLaunchPayload {
@@ -285,6 +291,48 @@ export interface PackageScriptTerminalLaunchPayload {
   sessionId: string;
   script: string;
   command: string[];
+  taskId?: string;
+}
+
+export type BackgroundTerminalTaskStatus = "starting" | "running" | "exited" | "failed" | "stopped";
+
+export interface BackgroundTerminalTask {
+  taskId: string;
+  workspacePath: string;
+  command: string[];
+  label: string;
+  sessionId: string;
+  status: BackgroundTerminalTaskStatus;
+  startedAt: string;
+  threadId?: string;
+  exitCode?: number;
+  signal?: number;
+  endedAt?: string;
+}
+
+export interface BackgroundTerminalListRequest {
+  workspacePath?: string;
+  threadId?: string;
+}
+
+export interface BackgroundTerminalStartRequest {
+  workspacePath: string;
+  command: string[];
+  label?: string;
+  threadId?: string;
+}
+
+export interface BackgroundTerminalOpenRequest {
+  taskId: string;
+}
+
+export interface BackgroundTerminalStopRequest {
+  taskId: string;
+}
+
+export interface BackgroundTerminalStopResult {
+  stopped: boolean;
+  task?: BackgroundTerminalTask;
 }
 
 export interface TerminalSpawnRequest {
@@ -313,6 +361,7 @@ export interface TerminalKillRequest {
 }
 
 export type TerminalStreamEvent =
+  | { type: "started"; sessionId: string; workspacePath: string }
   | { type: "output"; sessionId: string; data: string }
   | { type: "exit"; sessionId: string; exitCode: number; signal?: number }
   | { type: "error"; sessionId: string; message: string };
@@ -658,28 +707,28 @@ export interface RouteProfileInput {
 }
 
 export {
+  countEnabledMcpServers,
+  deriveMcpServersEnabled,
+  listEnabledGlobalMcpServerKeys,
+} from "./composer-mcp";
+export {
   buildThreadRuntimeConfigFromDefaults,
   deriveSubagentEnabledFromProfile,
   getAgentProfileById,
   getDefaultAgentProfileId,
   getDefaultRouteProfileId,
   getRoutesForProfile,
+  isAskSessionMode,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   resolveSessionMode,
-  isAskSessionMode,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   withAgentSessionMode,
 } from "./thread-runtime-config";
 export type { McpServersEnabledSettings, ThreadRuntimeConfig, ThreadRuntimeConfigInput };
-export {
-  countEnabledMcpServers,
-  deriveMcpServersEnabled,
-  listEnabledGlobalMcpServerKeys,
-} from "./composer-mcp";
 
 export interface PromptImageAttachment {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
@@ -1538,7 +1587,8 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
   return (
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
-    (record.args === undefined || typeof record.args === "string")
+    (record.args === undefined || typeof record.args === "string") &&
+    (record.threadId === undefined || typeof record.threadId === "string")
   );
 }
 
@@ -1553,9 +1603,52 @@ export function isPackageScriptTerminalLaunchPayload(
     typeof record.workspacePath === "string" &&
     typeof record.sessionId === "string" &&
     typeof record.script === "string" &&
+    (record.taskId === undefined || typeof record.taskId === "string") &&
     Array.isArray(record.command) &&
     record.command.every((entry) => typeof entry === "string")
   );
+}
+
+export function isBackgroundTerminalListRequest(value: unknown): value is BackgroundTerminalListRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    (record.workspacePath === undefined || typeof record.workspacePath === "string") &&
+    (record.threadId === undefined || typeof record.threadId === "string")
+  );
+}
+
+export function isBackgroundTerminalStartRequest(value: unknown): value is BackgroundTerminalStartRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    Array.isArray(record.command) &&
+    record.command.length > 0 &&
+    record.command.every((entry) => typeof entry === "string") &&
+    (record.label === undefined || typeof record.label === "string") &&
+    (record.threadId === undefined || typeof record.threadId === "string")
+  );
+}
+
+export function isBackgroundTerminalOpenRequest(value: unknown): value is BackgroundTerminalOpenRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.taskId === "string";
+}
+
+export function isBackgroundTerminalStopRequest(value: unknown): value is BackgroundTerminalStopRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.taskId === "string";
 }
 
 export function isTerminalSpawnRequest(value: unknown): value is TerminalSpawnRequest {
@@ -1584,9 +1677,7 @@ export function isTerminalResizeRequest(value: unknown): value is TerminalResize
   }
   const record = value as Record<string, unknown>;
   return (
-    typeof record.sessionId === "string" &&
-    typeof record.cols === "number" &&
-    typeof record.rows === "number"
+    typeof record.sessionId === "string" && typeof record.cols === "number" && typeof record.rows === "number"
   );
 }
 
@@ -1603,6 +1694,9 @@ export function isTerminalStreamEvent(value: unknown): value is TerminalStreamEv
     return false;
   }
   const record = value as Record<string, unknown>;
+  if (record.type === "started") {
+    return typeof record.sessionId === "string" && typeof record.workspacePath === "string";
+  }
   if (record.type === "output") {
     return typeof record.sessionId === "string" && typeof record.data === "string";
   }

@@ -1,16 +1,16 @@
 import {
-  ecoSubagentKeyForRole,
-  SDK_GENERAL_PURPOSE_AGENT_KEY,
-  SDK_PLAN_AGENT_KEY,
-} from "./subagent-availability.js";
-import { normalizeSdkSubagentType } from "./subagent-resume.js";
-import {
   SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_FILESYSTEM_READ_TOOL_NAMES,
   SDK_FILESYSTEM_WRITE_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
   SDK_TASK_PROGRESS_TOOL_NAMES,
 } from "./sdk-tool-names.js";
+import {
+  ecoSubagentKeyForRole,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
+} from "./subagent-availability.js";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import {
   capEcoToolPolicyForPhase,
   materializeEcoToolPolicy,
@@ -188,10 +188,8 @@ export function resolveAssignedMcpServers(
   return [...new Set(servers.map((server) => sanitizeMcpServerName(server)).filter(Boolean))];
 }
 
-export function resolveEffectiveBashPolicy(
-  policy: EcoToolPolicy,
-): NonNullable<EcoToolPolicy["bash"]> {
-  const disallowed = new Set(policy.disallowed.map((entry) => entry.trim()));
+export function resolveEffectiveBashPolicy(policy: EcoToolPolicy): NonNullable<EcoToolPolicy["bash"]> {
+  const disallowed = new Set(policyDisallowedTools(policy).map((entry) => entry.trim()));
   const bashLists = {
     ...(policy.bash?.commandAllowlist && { commandAllowlist: [...policy.bash.commandAllowlist] }),
     ...(policy.bash?.commandDenylist && { commandDenylist: [...policy.bash.commandDenylist] }),
@@ -418,16 +416,12 @@ export function buildToolPermissionPolicyFromProfile(
     agents[sdkKey] = resolveAgentToolPermission(agent, template);
   }
   const phaseCapTools =
-    options.phaseAllowedTools && options.phaseAllowedTools.length > 0
-      ? options.phaseAllowedTools
-      : undefined;
+    options.phaseAllowedTools && options.phaseAllowedTools.length > 0 ? options.phaseAllowedTools : undefined;
   const mainToolPolicy = phaseCapTools
     ? capEcoToolPolicyForPhase(profile.mainAgent.tools, phaseCapTools)
     : materializeEcoToolPolicy(profile.mainAgent.tools);
   const runtimeMcp = (options.runtimeMcpServers ?? []).map((server) => sanitizeMcpServerName(server));
-  const mainAssignedMcp = [
-    ...new Set([...resolveAssignedMcpServers(mainToolPolicy), ...runtimeMcp]),
-  ];
+  const mainAssignedMcp = [...new Set([...resolveAssignedMcpServers(mainToolPolicy), ...runtimeMcp])];
   return {
     main: normalizeToolPermissionEntry(
       mainToolPolicy,
@@ -540,8 +534,7 @@ function buildSdkAgentDefinition(
     applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation),
   );
   const mcpServers = resolveAssignedMcpServers(toolPolicy, [...template.mcpServers, ...agent.mcpServers]);
-  const tools =
-    toolPolicy.allowed.length > 0 ? allowedToolPatternsFromPolicy(toolPolicy) : [];
+  const tools = toolPolicy.allowed.length > 0 ? allowedToolPatternsFromPolicy(toolPolicy) : [];
   const disallowedTools = toolPolicy.disallowed;
   const skills = sessionSkills.length > 0 ? [...sessionSkills] : [];
   return {
@@ -613,9 +606,11 @@ function normalizeToolPermissionEntry(
 }
 
 function hasConfiguredToolPolicy(policy: EcoToolPolicy): boolean {
+  const allowed = policyAllowedTools(policy);
+  const disallowed = policyDisallowedTools(policy);
   return (
-    policy.allowed.length > 0 ||
-    policy.disallowed.length > 0 ||
+    allowed.length > 0 ||
+    disallowed.length > 0 ||
     policy.bash !== undefined ||
     policy.filesystem !== undefined ||
     policy.network !== undefined ||
@@ -635,15 +630,12 @@ function applyDelegationToolPolicy(policy: EcoToolPolicy, allowDelegation: boole
   if (allowDelegation) {
     return policy;
   }
+  const allowed = policyAllowedTools(policy);
+  const disallowed = policyDisallowedTools(policy);
   return {
     ...policy,
-    allowed: policy.allowed.filter((tool) => !isDelegationToolPattern(tool)),
-    disallowed: uniqueToolPatterns([
-      ...policy.disallowed,
-      "Agent",
-      "Task",
-      ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
-    ]),
+    allowed: allowed.filter((tool) => !isDelegationToolPattern(tool)),
+    disallowed: uniqueToolPatterns([...disallowed, "Agent", "Task", ...SDK_DELEGATION_SUPPORT_TOOL_NAMES]),
   };
 }
 
@@ -651,8 +643,16 @@ function allowedToolPatternsFromPolicy(
   policy: EcoToolPolicy,
   extraAllowed: readonly string[] = [],
 ): string[] {
-  const base = uniqueToolPatterns([...policy.allowed, ...extraAllowed]);
+  const base = uniqueToolPatterns([...policyAllowedTools(policy), ...extraAllowed]);
   return uniqueToolPatterns([...base, ...relatedClaudeToolPatterns(base)]);
+}
+
+function policyAllowedTools(policy: EcoToolPolicy): readonly string[] {
+  return Array.isArray(policy.allowed) ? policy.allowed : [];
+}
+
+function policyDisallowedTools(policy: EcoToolPolicy): readonly string[] {
+  return Array.isArray(policy.disallowed) ? policy.disallowed : [];
 }
 
 function uniqueToolPatterns(patterns: readonly string[]): string[] {

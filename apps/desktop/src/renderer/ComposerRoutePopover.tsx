@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -67,17 +68,20 @@ export function ComposerRoutePopover({
   const listRef = useRef<HTMLUListElement>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
   const [listMaxHeight, setListMaxHeight] = useState<number>();
-  const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
+  const profileSummaries = useMemo(
+    () => listSelectableAgentProfileSummaries(settings, runtimeConfig),
+    [settings, runtimeConfig],
+  );
 
   const updateListMaxHeight = useCallback(() => {
     const list = listRef.current;
     if (!list) {
-      setListMaxHeight(undefined);
+      setListMaxHeight((current) => (current === undefined ? current : undefined));
       return;
     }
     const items = Array.from(list.children) as HTMLElement[];
     if (items.length === 0) {
-      setListMaxHeight(undefined);
+      setListMaxHeight((current) => (current === undefined ? current : undefined));
       return;
     }
     const visibleCount = Math.min(2, items.length);
@@ -90,7 +94,8 @@ export function ComposerRoutePopover({
       const gap = Number.parseFloat(styles.rowGap || styles.gap || "0") || 0;
       height += gap * (visibleCount - 1);
     }
-    setListMaxHeight(Math.ceil(height));
+    const nextHeight = Math.ceil(height);
+    setListMaxHeight((current) => (current === nextHeight ? current : nextHeight));
   }, []);
 
   const updatePanelPosition = useCallback(() => {
@@ -116,11 +121,17 @@ export function ComposerRoutePopover({
 
   useLayoutEffect(() => {
     if (!open) {
-      setListMaxHeight(undefined);
       return;
     }
     updateListMaxHeight();
   }, [open, profileSummaries, updateListMaxHeight]);
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    setListMaxHeight((current) => (current === undefined ? current : undefined));
+  }, [open]);
 
   useEffect(() => {
     if (!open) {

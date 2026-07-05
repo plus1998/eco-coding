@@ -29,6 +29,7 @@
     "test:agent-ui-smoke": "bun run --cwd apps/desktop build && node apps/desktop/scripts/agent-ui-smoke.mjs",
     "dev:desktop:cdp": "bun run --cwd apps/desktop dev:cdp",
     "smoke:desktop-feed-loading": "bun run --cwd apps/desktop smoke:feed-loading",
+    "smoke:desktop-subagent-drawer": "bun run --cwd apps/desktop smoke:subagent-drawer",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write ."

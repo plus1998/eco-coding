@@ -28,8 +28,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type ClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -49,6 +51,7 @@ import {
 } from "../shared/prompt-cache-config";
 import {
   buildThreadRuntimeConfigFromDefaults,
+  type BackgroundTerminalTask,
   normalizeThreadRuntimeConfig,
   type BashApprovalRequest,
   type ClarificationRequest,
@@ -166,6 +169,12 @@ import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
+import {
+  SubagentTaskDrawer,
+  TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
+  TASK_PANEL_REVIEW_TAB_ID,
+  type TaskPanelActiveTab,
+} from "./SubagentTaskDrawer";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import { TerminalPanel } from "./TerminalPanel";
 import {
@@ -191,12 +200,55 @@ import {
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
-import { isThreadAutoCompactSuspended, isThreadContextCompactionInFlight, isThreadPromptCacheInvalidated } from "./thread-run-projection-view";
+import {
+  buildThreadRunProjectionViewModel,
+  isThreadAutoCompactSuspended,
+  isThreadContextCompactionInFlight,
+  isThreadPromptCacheInvalidated,
+} from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import { subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
 import "./styles.css";
 import "./theme-overrides.css";
+
+const TASK_PANEL_WIDTH_STORAGE_KEY = "eco.task-panel.width";
+const DEFAULT_TASK_PANEL_WIDTH = 480;
+const MIN_TASK_PANEL_WIDTH = 360;
+const MAX_TASK_PANEL_WIDTH = 760;
+
+function clampTaskPanelWidth(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_TASK_PANEL_WIDTH;
+  }
+  return Math.min(MAX_TASK_PANEL_WIDTH, Math.max(MIN_TASK_PANEL_WIDTH, Math.round(value)));
+}
+
+function readTaskPanelWidth(): number {
+  try {
+    if (typeof localStorage === "undefined") {
+      return DEFAULT_TASK_PANEL_WIDTH;
+    }
+    const raw = localStorage.getItem(TASK_PANEL_WIDTH_STORAGE_KEY);
+    if (!raw) {
+      return DEFAULT_TASK_PANEL_WIDTH;
+    }
+    return clampTaskPanelWidth(Number.parseInt(raw, 10));
+  } catch {
+    return DEFAULT_TASK_PANEL_WIDTH;
+  }
+}
+
+function saveTaskPanelWidth(width: number): void {
+  try {
+    if (typeof localStorage === "undefined") {
+      return;
+    }
+    localStorage.setItem(TASK_PANEL_WIDTH_STORAGE_KEY, String(clampTaskPanelWidth(width)));
+  } catch {
+    // ignore quota and private-mode storage errors
+  }
+}
 
 const emptySettings: ModelSettingsSnapshot = {
   providers: [],
@@ -509,6 +561,17 @@ function App() {
   const [workspacePanelByProject, setWorkspacePanelByProject] = useState<WorkspacePanelWorkspaceState>(() =>
     readWorkspacePanelWorkspaceState(),
   );
+  const [backgroundTerminalTasks, setBackgroundTerminalTasks] = useState<BackgroundTerminalTask[]>([]);
+  const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
+  const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_REVIEW_TAB_ID);
+  const [openSubagentTabIds, setOpenSubagentTabIds] = useState<string[]>([]);
+  const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+  const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
+  const taskPanelResizeRef = useRef<{ startX: number; startWidth: number }>();
+  const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
+  const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
+  const [reviewDiffError, setReviewDiffError] = useState<string>();
+  const [reviewSelectedPath, setReviewSelectedPath] = useState<string>();
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
@@ -1191,6 +1254,12 @@ function App() {
     }
     return getProjectWorkspacePanelState(workspacePanelByProject, currentProjectPath);
   }, [currentProjectPath, workspacePanelByProject]);
+  useEffect(() => {
+    setReviewDiff(undefined);
+    setReviewDiffLoading(false);
+    setReviewDiffError(undefined);
+    setReviewSelectedPath(undefined);
+  }, [currentProjectPath]);
   const updateProjectTerminal = useCallback((workspacePath: string, next: ProjectTerminalState) => {
     setTerminalByProject((current) => ({
       ...current,
@@ -1227,7 +1296,7 @@ function App() {
     }
     setWorkspacePanelByProject((current) => {
       const existing = current[currentProjectPath];
-      const nextOpen = !(existing?.open === true);
+      const nextOpen = taskDrawerOpen ? true : !(existing?.open === true);
       return {
         ...current,
         [currentProjectPath]: existing
@@ -1235,7 +1304,10 @@ function App() {
           : createProjectWorkspacePanelState(nextOpen),
       };
     });
-  }, [currentProjectPath]);
+    if (taskDrawerOpen) {
+      setTaskDrawerOpen(false);
+    }
+  }, [currentProjectPath, taskDrawerOpen]);
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
@@ -1285,6 +1357,9 @@ function App() {
   useEffect(() => {
     saveWorkspacePanelWorkspaceState(workspacePanelByProject);
   }, [workspacePanelByProject]);
+  useEffect(() => {
+    saveTaskPanelWidth(taskPanelWidth);
+  }, [taskPanelWidth]);
   const workspacePanelModeRef = useRef<{
     projectPath?: string;
     inConversation?: boolean;
@@ -1465,6 +1540,34 @@ function App() {
     packageScripts?.hasPackageJson && packageScripts.scripts.length > 0,
   );
 
+  const refreshBackgroundTerminalTasks = useCallback(async () => {
+    if (!currentProjectPath || !window.eco?.listBackgroundTerminalTasks) {
+      setBackgroundTerminalTasks([]);
+      return;
+    }
+    try {
+      const tasks = await window.eco.listBackgroundTerminalTasks({ workspacePath: currentProjectPath });
+      setBackgroundTerminalTasks(tasks);
+    } catch {
+      setBackgroundTerminalTasks([]);
+    }
+  }, [currentProjectPath]);
+
+  useEffect(() => {
+    void refreshBackgroundTerminalTasks();
+  }, [refreshBackgroundTerminalTasks]);
+
+  useEffect(() => {
+    if (!window.eco?.onTerminalEvent) {
+      return undefined;
+    }
+    return window.eco.onTerminalEvent((event) => {
+      if (event.type === "started" || event.type === "exit" || event.type === "error") {
+        void refreshBackgroundTerminalTasks();
+      }
+    });
+  }, [refreshBackgroundTerminalTasks]);
+
   const dismissPackageScriptRunOverlays = useCallback(() => {
     setScriptsDialogOpen(false);
   }, []);
@@ -1487,14 +1590,45 @@ function App() {
     [projects],
   );
 
+  const openBackgroundTerminalTask = useCallback(
+    async (task: BackgroundTerminalTask) => {
+      if (!window.eco?.openBackgroundTerminalTask) {
+        openPackageScriptTerminalSession(task.workspacePath, task.sessionId);
+        return;
+      }
+      try {
+        const resolved = await window.eco.openBackgroundTerminalTask({ taskId: task.taskId });
+        openPackageScriptTerminalSession(resolved.workspacePath, resolved.sessionId);
+      } catch {
+        openPackageScriptTerminalSession(task.workspacePath, task.sessionId);
+      }
+    },
+    [openPackageScriptTerminalSession],
+  );
+
+  const stopBackgroundTerminalTask = useCallback(
+    async (task: BackgroundTerminalTask) => {
+      if (!window.eco?.stopBackgroundTerminalTask) {
+        return;
+      }
+      try {
+        await window.eco.stopBackgroundTerminalTask({ taskId: task.taskId });
+      } finally {
+        void refreshBackgroundTerminalTasks();
+      }
+    },
+    [refreshBackgroundTerminalTasks],
+  );
+
   const presentPackageScriptTerminal = useCallback(
     async (workspacePath: string, sessionId: string) => {
       const dismissStartedAt = performance.now();
       dismissPackageScriptRunOverlays();
+      void refreshBackgroundTerminalTasks();
       await waitForOverlayDismiss(dismissStartedAt);
       openPackageScriptTerminalSession(workspacePath, sessionId);
     },
-    [dismissPackageScriptRunOverlays, openPackageScriptTerminalSession],
+    [dismissPackageScriptRunOverlays, openPackageScriptTerminalSession, refreshBackgroundTerminalTasks],
   );
 
   useEffect(() => {
@@ -1523,7 +1657,9 @@ function App() {
           workspacePath: currentProjectPath,
           script: scriptName,
           ...(trimmedArgs && { args: trimmedArgs }),
+          ...(activeThread?.id && { threadId: activeThread.id }),
         });
+        void refreshBackgroundTerminalTasks();
         await waitForOverlayDismiss(dismissStartedAt);
         openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
       } catch (error) {
@@ -1532,7 +1668,13 @@ function App() {
         setScriptsBusy(false);
       }
     },
-    [currentProjectPath, dismissPackageScriptRunOverlays, openPackageScriptTerminalSession],
+    [
+      activeThread?.id,
+      currentProjectPath,
+      dismissPackageScriptRunOverlays,
+      openPackageScriptTerminalSession,
+      refreshBackgroundTerminalTasks,
+    ],
   );
 
   useEffect(() => {
@@ -1880,6 +2022,159 @@ function App() {
     () => buildRuntimeAgentThemes(settings, activeThread?.runtimeConfig),
     [settings, activeThread?.runtimeConfig],
   );
+  const activeProjectionViewModel = useMemo(
+    () =>
+      runProjection
+        ? buildThreadRunProjectionViewModel(
+            runProjection,
+            activeThread ? { id: activeThread.id, prompt: activeThread.prompt } : undefined,
+            { agentDisplayNames: activeRuntimeAgentDisplayNames },
+          )
+        : undefined,
+    [activeRuntimeAgentDisplayNames, activeThread?.id, activeThread?.prompt, runProjection],
+  );
+  const activeSubagentCards = useMemo(
+    () => activeProjectionViewModel?.subagentCards ?? [],
+    [activeProjectionViewModel?.subagentCards],
+  );
+
+  useEffect(() => {
+    setSelectedSubagentAgentId(undefined);
+    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+    setOpenSubagentTabIds([]);
+    setTaskDrawerOpen(false);
+  }, [activeThread?.id]);
+
+  useEffect(() => {
+    setOpenSubagentTabIds((current) => {
+      const next = current.filter((tabId) =>
+        activeSubagentCards.some((card) => card.key === tabId),
+      );
+      if (next.length === current.length && next.every((tabId, index) => tabId === current[index])) {
+        return current;
+      }
+      return next;
+    });
+    if (
+      taskPanelActiveTab !== TASK_PANEL_REVIEW_TAB_ID &&
+      taskPanelActiveTab !== TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID &&
+      !activeSubagentCards.some((card) => card.key === taskPanelActiveTab)
+    ) {
+      setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+      setSelectedSubagentAgentId(undefined);
+    }
+  }, [activeSubagentCards, taskPanelActiveTab]);
+
+  const closeWorkspacePanelForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    setWorkspacePanelByProject((current) => {
+      const existing = current[currentProjectPath];
+      if (!existing?.open) {
+        return current;
+      }
+      return {
+        ...current,
+        [currentProjectPath]: { ...existing, open: false },
+      };
+    });
+  }, [currentProjectPath]);
+
+  const toggleTaskPanelForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    if (taskDrawerOpen) {
+      setTaskDrawerOpen(false);
+      return;
+    }
+    closeWorkspacePanelForCurrentProject();
+    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+    setSelectedSubagentAgentId(undefined);
+    setTaskDrawerOpen(true);
+  }, [closeWorkspacePanelForCurrentProject, currentProjectPath, taskDrawerOpen]);
+
+  const openReviewTaskDrawer = useCallback(() => {
+    closeWorkspacePanelForCurrentProject();
+    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+    setOpenSubagentTabIds([]);
+    setSelectedSubagentAgentId(undefined);
+    setTaskDrawerOpen(true);
+  }, [closeWorkspacePanelForCurrentProject]);
+
+  const openSubagentTaskDrawer = useCallback(
+    (agentId: string) => {
+      closeWorkspacePanelForCurrentProject();
+      setOpenSubagentTabIds((current) =>
+        current.includes(agentId) ? current : [...current, agentId],
+      );
+      setTaskPanelActiveTab(agentId);
+      setSelectedSubagentAgentId(agentId);
+      setTaskDrawerOpen(true);
+    },
+    [closeWorkspacePanelForCurrentProject],
+  );
+
+  const closeSubagentTaskDrawer = useCallback(() => {
+    setTaskDrawerOpen(false);
+  }, []);
+
+  const handleTaskPanelResizeMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (!taskDrawerOpen || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      taskPanelResizeRef.current = {
+        startX: event.clientX,
+        startWidth: taskPanelWidth,
+      };
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const session = taskPanelResizeRef.current;
+        if (!session) {
+          return;
+        }
+        setTaskPanelWidth(clampTaskPanelWidth(session.startWidth + (session.startX - moveEvent.clientX)));
+      };
+      const handleMouseEnd = () => {
+        taskPanelResizeRef.current = undefined;
+        document.body.classList.remove("is-resizing-task-panel");
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseEnd);
+      };
+
+      document.body.classList.add("is-resizing-task-panel");
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseEnd);
+    },
+    [taskDrawerOpen, taskPanelWidth],
+  );
+
+  const handleTaskPanelResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 48 : 24;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setTaskPanelWidth((current) => clampTaskPanelWidth(current + step));
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setTaskPanelWidth((current) => clampTaskPanelWidth(current - step));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setTaskPanelWidth(MIN_TASK_PANEL_WIDTH);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setTaskPanelWidth(MAX_TASK_PANEL_WIDTH);
+    }
+  }, []);
+
   const threadUsageSummary = useMemo(() => {
     if (!activeThread) {
       return undefined;
@@ -2894,6 +3189,11 @@ function App() {
 
   const handleChangesDiffLoaded = useCallback(
     async (diff: WorkspaceDiffResult) => {
+      setReviewDiff(diff);
+      setReviewDiffError(undefined);
+      setReviewSelectedPath((current) =>
+        current && diff.files.some((file) => file.path === current) ? current : diff.files[0]?.path,
+      );
       setGitStatus((current) => {
         if (!current) {
           return current;
@@ -2914,6 +3214,18 @@ function App() {
     },
     [currentProjectPath],
   );
+
+  const handleChangesDiffLoadingChange = useCallback((loading: boolean) => {
+    setReviewDiffLoading(loading);
+  }, []);
+
+  const handleChangesDiffError = useCallback((message?: string) => {
+    setReviewDiffError(message);
+    if (message) {
+      setReviewDiff(undefined);
+      setReviewSelectedPath(undefined);
+    }
+  }, []);
 
   async function handleGitPullSuccess() {
     await handleGitCommitSuccess();
@@ -3765,6 +4077,13 @@ function App() {
   }
 
   const showWorkspacePanel = Boolean(currentProjectPath);
+  const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen);
+  const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
+  const rightPanelOpen = workspaceCardsPanelOpen || taskPanelOpen;
+  const rightPanelStyle = {
+    "--workspace-panel-width": taskPanelOpen ? `${taskPanelWidth}px` : "300px",
+    "--task-panel-width": `${taskPanelWidth}px`,
+  } as CSSProperties;
   const showLanding = !activeThread;
   const syncTopbarMode = useCallback(() => {
     const scrollBody = scrollBodyRef.current;
@@ -3810,6 +4129,7 @@ function App() {
     currentProjectPath,
     activeThread?.id,
     currentWorkspacePanelState?.open,
+    taskDrawerOpen,
     syncTopbarMode,
   ]);
   useEffect(() => {
@@ -4220,9 +4540,10 @@ function App() {
           <div
             className={[
               "codex-main-scroll",
-              showWorkspacePanel ? "has-workspace-panel" : "",
-              showWorkspacePanel && currentWorkspacePanelState?.open ? "is-workspace-panel-open" : "",
-              currentProjectPath && showLanding && showWorkspacePanel && currentWorkspacePanelState?.open
+              rightPanelOpen ? "has-workspace-panel" : "",
+              rightPanelOpen ? "is-workspace-panel-open" : "",
+              taskPanelOpen ? "is-task-panel-open" : "",
+              currentProjectPath && showLanding && rightPanelOpen
                 ? "is-topbar-solid"
                 : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
@@ -4230,6 +4551,7 @@ function App() {
             ]
               .filter(Boolean)
               .join(" ")}
+            style={rightPanelStyle}
           >
             {currentProjectPath ? (
               <header
@@ -4254,17 +4576,17 @@ function App() {
                     <button
                       type="button"
                       className={
-                        currentWorkspacePanelState?.open
+                        workspaceCardsPanelOpen
                           ? "codex-main-toolbar-button is-active"
                           : "codex-main-toolbar-button"
                       }
                       onClick={toggleWorkspacePanelForCurrentProject}
-                      title={currentWorkspacePanelState?.open ? "收起工作区" : "打开工作区"}
-                      aria-label={currentWorkspacePanelState?.open ? "收起工作区" : "打开工作区"}
-                      aria-expanded={currentWorkspacePanelState?.open === true}
+                      title={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
+                      aria-label={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
+                      aria-expanded={workspaceCardsPanelOpen}
                       aria-controls="workspace-panel"
                     >
-                      <PanelRight size={15} aria-hidden />
+                      <SlidersHorizontal size={15} aria-hidden />
                     </button>
                   ) : null}
                   <button
@@ -4282,6 +4604,23 @@ function App() {
                   >
                     <Terminal size={15} aria-hidden />
                   </button>
+                  {showWorkspacePanel ? (
+                    <button
+                      type="button"
+                      className={
+                        taskPanelOpen
+                          ? "codex-main-toolbar-button is-active"
+                          : "codex-main-toolbar-button"
+                      }
+                      onClick={toggleTaskPanelForCurrentProject}
+                      title={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
+                      aria-label={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
+                      aria-expanded={taskPanelOpen}
+                      aria-controls="task-panel"
+                    >
+                      <PanelRight size={15} aria-hidden />
+                    </button>
+                  ) : null}
                 </div>
               </header>
             ) : null}
@@ -4314,6 +4653,9 @@ function App() {
                       {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                       agentDisplayNames={activeRuntimeAgentDisplayNames}
                       agentThemes={activeRuntimeAgentThemes}
+                      {...(taskDrawerOpen &&
+                        selectedSubagentAgentId && { selectedSubagentAgentId })}
+                      onOpenSubagent={openSubagentTaskDrawer}
                       {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                       {...(subagentTimings && { subagentTimings })}
                       {...(subagentMetrics && { subagentMetrics })}
@@ -4372,17 +4714,66 @@ function App() {
             })}
             </div>
 
-          {showWorkspacePanel ? (
+          {showWorkspacePanel && rightPanelOpen ? (
             <aside
               id="workspace-panel"
-              className="workspace-panel"
-              aria-label="工作区面板"
-              aria-hidden={currentWorkspacePanelState?.open !== true}
+              className={taskPanelOpen ? "workspace-panel is-task-panel-mode" : "workspace-panel"}
+              aria-label={taskPanelOpen ? "任务面板" : "工作区面板"}
+              aria-hidden={!rightPanelOpen}
             >
-              <WorkspaceFloatingCards
+              {taskPanelOpen ? (
+                <hr
+                  className="task-panel-resize-handle"
+                  aria-label="调整任务面板宽度"
+                  aria-orientation="vertical"
+                  tabIndex={0}
+                  title="拖动调整宽度"
+                  onMouseDown={handleTaskPanelResizeMouseDown}
+                  onKeyDown={handleTaskPanelResizeKeyDown}
+                />
+              ) : null}
+              {taskPanelOpen ? (
+                <SubagentTaskDrawer
+                  open={taskPanelOpen}
+                  cards={activeSubagentCards}
+                  activeTab={taskPanelActiveTab}
+                  openSubagentTabIds={openSubagentTabIds}
+                  {...(runProjection && { projection: runProjection })}
+                  {...(activeThread && { threadStatus: activeThread.status })}
+                  agentDisplayNames={activeRuntimeAgentDisplayNames}
+                  agentThemes={activeRuntimeAgentThemes}
+                  backgroundTasks={backgroundTerminalTasks}
+                  {...(reviewDiff && { reviewDiff })}
+                  reviewLoading={reviewDiffLoading}
+                  {...(reviewDiffError && { reviewError: reviewDiffError })}
+                  {...(reviewSelectedPath && { reviewSelectedPath })}
+                  onSelectAgent={(agentId) => {
+                    setTaskPanelActiveTab(agentId);
+                    setSelectedSubagentAgentId(agentId);
+                  }}
+                  onSelectBackgroundTasks={() => {
+                    setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
+                    setSelectedSubagentAgentId(undefined);
+                  }}
+                  onSelectReview={() => {
+                    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+                    setSelectedSubagentAgentId(undefined);
+                  }}
+                  onSelectReviewPath={setReviewSelectedPath}
+                  onClose={closeSubagentTaskDrawer}
+                  onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
+                  onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
+                />
+              ) : (
+                <WorkspaceFloatingCards
                 todos={activeThread ? coderTodos : []}
                 hasActiveThread={Boolean(activeThread)}
                 agentModelLabels={agentModelLabels}
+                subagentRunCards={activeSubagentCards}
+                {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+                agentDisplayNames={activeRuntimeAgentDisplayNames}
+                agentThemes={activeRuntimeAgentThemes}
+                onOpenSubagent={openSubagentTaskDrawer}
                 {...(composerRuntimeConfig && { composerRuntimeConfig })}
                 subagentEnabled={defaultSubagentAvailability()}
                 canEditComposerConfig={canEditComposerConfig}
@@ -4408,7 +4799,10 @@ function App() {
                 gitSettings={gitSettings}
                 onSaveCommitModelPreference={saveCommitMessageModelPreference}
                 onCommitSuccess={() => void handleGitCommitSuccess()}
+                onOpenChangesReview={openReviewTaskDrawer}
                 onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
+                onChangesDiffLoadingChange={handleChangesDiffLoadingChange}
+                onChangesDiffError={handleChangesDiffError}
                 onPullSuccess={() => void handleGitPullSuccess()}
                 onResolveConflictsWithAgent={(conflictFiles) =>
                   void handleGitPullConflictsWithAgent(conflictFiles)
@@ -4422,7 +4816,8 @@ function App() {
                     setScriptsDialogOpen(true);
                   },
                 })}
-              />
+                />
+              )}
             </aside>
           ) : null}
           </div>

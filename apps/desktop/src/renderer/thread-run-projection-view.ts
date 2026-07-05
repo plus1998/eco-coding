@@ -49,7 +49,7 @@ import {
   resolveReadToolTargetDisplayFromToolMetadata,
 } from "../shared/tool-target";
 import { type ActivityDetailBlock, iconForToolName, resolveSubagentRunDisplayTitle } from "./activity-log";
-import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
+import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
@@ -114,6 +114,7 @@ export function buildThreadRunProjectionViewModel(
     agentDisplayNames?: RuntimeAgentDisplayNames | undefined;
   } = {},
 ): ThreadRunProjectionViewModel {
+  void options;
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
   const requestSpansById = new Map(projection.requestSpans.map((span) => [span.requestId, span]));
@@ -139,7 +140,6 @@ export function buildThreadRunProjectionViewModel(
     projection.timeline,
     subagentCards,
     requestSpansById,
-    options.agentDisplayNames,
   );
   return {
     showThreadPrompt,
@@ -161,7 +161,6 @@ function buildProjectionMainFeedEntries(
   mainTimeline: readonly ThreadRunProjectionTimelineItem[],
   subagentCards: readonly ThreadRunProjectionSubagentCard[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
-  agentDisplayNames?: RuntimeAgentDisplayNames | undefined,
 ): ThreadRunProjectionMainFeedEntry[] {
   const displayMainTimeline = filterAbsorbedSubagentDelegations(
     filterMainTimelineForFeed(mainTimeline, requestSpansById),
@@ -193,25 +192,6 @@ function buildProjectionMainFeedEntries(
       at: cardSortAnchor.at,
       sequence: cardSortAnchor.sequence,
     });
-
-    const echoItems = card.agent.timeline.filter(isAgentEchoTimelineItem);
-    for (const item of echoItems) {
-      const sortAnchor = resolveFeedEntrySortAnchor(item, toolSortAnchors);
-      entries.push({
-        kind: "agent-echo",
-        key: projectionMainFeedEntryKey(item, {
-          agentId: card.agent.agentId,
-          requestSpansById,
-          timeline: card.agent.timeline,
-        }),
-        item,
-        agent: card.agent,
-        agentLabel: formatProjectionAgentLabel(card.agent, agentDisplayNames),
-        shortAgentId: shortProjectionAgentId(card.agent.agentId),
-        at: sortAnchor.at,
-        sequence: sortAnchor.sequence,
-      });
-    }
   }
 
   return groupProjectionToolFeedEntries(
@@ -1718,38 +1698,6 @@ function compareMainFeedEntries(
     return sequenceDiff;
   }
   return left.key.localeCompare(right.key);
-}
-
-function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
-  if (isProjectionTodoStatusItem(item)) {
-    return false;
-  }
-  if (isSubagentMissionEnvelope(item.text)) {
-    return false;
-  }
-  if (
-    item.eventType !== "message.delta" &&
-    item.eventType !== "message.final" &&
-    item.eventType !== "thinking.delta" &&
-    item.eventType !== "thinking.final"
-  ) {
-    return false;
-  }
-  return item.text.trim().length > 0;
-}
-
-export function formatProjectionAgentLabel(
-  agent: Pick<ThreadRunProjectionAgent, "agentId" | "role">,
-  displayNames?: RuntimeAgentDisplayNames | undefined,
-): string {
-  return `${resolveRuntimeAgentName(agent.role, displayNames) ?? resolveSubagentRunDisplayTitle(agent.role)} #${shortProjectionAgentId(agent.agentId)}`;
-}
-
-export function shortProjectionAgentId(agentId: string): string {
-  if (agentId.length <= 8) {
-    return agentId;
-  }
-  return agentId.slice(-8);
 }
 
 function resolveProjectionSubagent(item: ThreadRunProjectionTimelineItem): string | undefined {

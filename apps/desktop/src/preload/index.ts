@@ -9,6 +9,12 @@ import {
   type AgentTemplateImportResult,
   type AgentTemplateVersionRestoreRequest,
   type AgentTemplateVersionView,
+  type BackgroundTerminalListRequest,
+  type BackgroundTerminalOpenRequest,
+  type BackgroundTerminalStartRequest,
+  type BackgroundTerminalStopRequest,
+  type BackgroundTerminalStopResult,
+  type BackgroundTerminalTask,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
   type CandidateModelInput,
@@ -31,14 +37,33 @@ import {
   type ClarificationSubmitPayload,
   type CoderTodoItem,
   type FileCheckpointRecord,
+  type GitCheckoutBranchRequest,
+  type GitCommitRequest,
+  type GitCommitResult,
+  type GitCreateBranchRequest,
+  type GitDiscardWorkspaceChangesRequest,
+  type GitDiscardWorkspaceChangesResult,
+  type GitGenerateCommitMessageDeltaPayload,
+  type GitGenerateCommitMessageRequest,
+  type GitGenerateCommitMessageResult,
+  type GitListCommitModelOptionsRequest,
+  type GitListCommitModelOptionsResult,
+  type GitListCommitsRequest,
+  type GitListCommitsResult,
+  type GitPullRequest,
+  type GitPullResult,
+  type GitPushRequest,
+  type GitPushResult,
+  type GitSettingsSnapshot,
+  type GitWorkingTreeStatus,
   IPC_CHANNELS,
   type IpcChannel,
   type LinkAgentsSkillsRequest,
   type LinkAgentsSkillsResult,
   type ListUpstreamModelsRequest,
   type ListUpstreamModelsResult,
-  type McpServerConfigInput,
   type McpServerCheckResult,
+  type McpServerConfigInput,
   type McpServerConfigView,
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
@@ -49,6 +74,8 @@ import {
   type OrchestrationProfileImportResult,
   type OrchestrationProfileVersionRestoreRequest,
   type OrchestrationProfileVersionView,
+  type PackageScriptsListResult,
+  type PackageScriptTerminalLaunchPayload,
   type ProviderConfigInput,
   type ProviderConfigView,
   type ProxyBridgeSettingsSnapshot,
@@ -56,8 +83,15 @@ import {
   type RoutePricingHint,
   type RouteProfileInput,
   type RouteProfileView,
+  type RunPackageScriptRequest,
   type RuntimeRoleRouteConfig,
   type SkillsListResult,
+  type StartPackageScriptResult,
+  type TerminalInputRequest,
+  type TerminalResizeRequest,
+  type TerminalSpawnRequest,
+  type TerminalSpawnResult,
+  type TerminalStreamEvent,
   type TestProviderConnectionRequest,
   type TestProviderConnectionResult,
   type TestRoleRoutesRequest,
@@ -66,62 +100,33 @@ import {
   type ThreadAppliedDiffResult,
   type ThreadApprovePlanRequest,
   type ThreadCancelRequest,
+  type ThreadCompactContextResult,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadDeleteResult,
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
-  type ThreadFollowUpUpdateRequest,
   type ThreadFollowUpListResult,
   type ThreadFollowUpMutationResult,
+  type ThreadFollowUpUpdateRequest,
   type ThreadPendingPlan,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
-  type ThreadCompactContextResult,
   type ThreadRollbackResult,
   type ThreadRunProjectionSnapshot,
+  type ThreadSessionBootstrapResult,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadSubagentMetricsSummary,
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
-  type ThreadSessionBootstrapResult,
   type ThreadUpdateRuntimeConfigRequest,
-  type ThreadUsageSnapshotResult,
   type ThreadUsageLedgerEventView,
-  type GitCheckoutBranchRequest,
-  type GitCreateBranchRequest,
-  type GitDiscardWorkspaceChangesRequest,
-  type GitDiscardWorkspaceChangesResult,
-  type GitCommitRequest,
-  type GitCommitResult,
-  type GitGenerateCommitMessageRequest,
-  type GitGenerateCommitMessageResult,
-  type GitGenerateCommitMessageDeltaPayload,
-  type GitListCommitModelOptionsRequest,
-  type GitListCommitModelOptionsResult,
-  type GitListCommitsRequest,
-  type GitListCommitsResult,
-  type GitPushRequest,
-  type GitPushResult,
-  type GitPullRequest,
-  type GitPullResult,
-  type GitSettingsSnapshot,
-  type GitWorkingTreeStatus,
-  type WorkspaceDiffResult,
-  type PackageScriptsListResult,
-  type RunPackageScriptRequest,
-  type StartPackageScriptResult,
-  type PackageScriptTerminalLaunchPayload,
-  type TerminalInputRequest,
-  type TerminalKillRequest,
-  type TerminalResizeRequest,
-  type TerminalSpawnRequest,
-  type TerminalSpawnResult,
-  type TerminalStreamEvent,
+  type ThreadUsageSnapshotResult,
   type WorkflowSettingsSnapshot,
+  type WorkspaceDiffResult,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
   type WorktreeApplyResult,
@@ -184,9 +189,7 @@ const api = {
   startPackageScript(request: RunPackageScriptRequest): Promise<StartPackageScriptResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceStartPackageScript, request);
   },
-  onPackageScriptTerminalLaunch(
-    callback: (payload: PackageScriptTerminalLaunchPayload) => void,
-  ): () => void {
+  onPackageScriptTerminalLaunch(callback: (payload: PackageScriptTerminalLaunchPayload) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       if (
         payload &&
@@ -198,6 +201,18 @@ const api = {
     };
     ipcRenderer.on(IPC_CHANNELS.workspacePackageScriptTerminal, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageScriptTerminal, listener);
+  },
+  listBackgroundTerminalTasks(request?: BackgroundTerminalListRequest): Promise<BackgroundTerminalTask[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.backgroundTerminalList, request ?? {});
+  },
+  startBackgroundTerminalTask(request: BackgroundTerminalStartRequest): Promise<BackgroundTerminalTask> {
+    return ipcRenderer.invoke(IPC_CHANNELS.backgroundTerminalStart, request);
+  },
+  openBackgroundTerminalTask(request: BackgroundTerminalOpenRequest): Promise<BackgroundTerminalTask> {
+    return ipcRenderer.invoke(IPC_CHANNELS.backgroundTerminalOpen, request);
+  },
+  stopBackgroundTerminalTask(request: BackgroundTerminalStopRequest): Promise<BackgroundTerminalStopResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.backgroundTerminalStop, request);
   },
   spawnTerminal(request: TerminalSpawnRequest): Promise<TerminalSpawnResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.terminalSpawn, request);
@@ -389,7 +404,9 @@ const api = {
         }
       });
   },
-  listGitCommitModelOptions(request: GitListCommitModelOptionsRequest): Promise<GitListCommitModelOptionsResult> {
+  listGitCommitModelOptions(
+    request: GitListCommitModelOptionsRequest,
+  ): Promise<GitListCommitModelOptionsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitListCommitModelOptions, request);
   },
   commitGitChanges(request: GitCommitRequest): Promise<GitCommitResult> {

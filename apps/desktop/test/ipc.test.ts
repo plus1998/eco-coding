@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { IPC_CHANNELS, isKnownIpcChannel } from "../src/shared/ipc";
+import { IPC_CHANNELS, isKnownIpcChannel, isTerminalStreamEvent } from "../src/shared/ipc";
 
 test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
@@ -7,6 +7,10 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspaceListPackageScripts).toBe("workspace:list-package-scripts");
   expect(IPC_CHANNELS.workspaceStartPackageScript).toBe("workspace:start-package-script");
   expect(IPC_CHANNELS.workspacePackageScriptTerminal).toBe("workspace:package-script-terminal");
+  expect(IPC_CHANNELS.backgroundTerminalList).toBe("background-terminal:list");
+  expect(IPC_CHANNELS.backgroundTerminalStart).toBe("background-terminal:start");
+  expect(IPC_CHANNELS.backgroundTerminalOpen).toBe("background-terminal:open");
+  expect(IPC_CHANNELS.backgroundTerminalStop).toBe("background-terminal:stop");
   expect(IPC_CHANNELS.terminalSpawn).toBe("terminal:spawn");
   expect(IPC_CHANNELS.terminalInput).toBe("terminal:input");
   expect(IPC_CHANNELS.terminalResize).toBe("terminal:resize");
@@ -95,4 +99,9 @@ test("guards unknown channels", () => {
   expect(isKnownIpcChannel("terminal:spawn")).toBe(true);
   expect(isKnownIpcChannel("terminal:event")).toBe(true);
   expect(isKnownIpcChannel("unknown")).toBe(false);
+});
+
+test("guards terminal stream started events", () => {
+  expect(isTerminalStreamEvent({ type: "started", sessionId: "term_1", workspacePath: "/repo" })).toBe(true);
+  expect(isTerminalStreamEvent({ type: "started", sessionId: "term_1" })).toBe(false);
 });

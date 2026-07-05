@@ -88,6 +88,10 @@ import {
   type CoderTodoItem,
   IPC_CHANNELS,
   type IpcChannel,
+  isBackgroundTerminalListRequest,
+  isBackgroundTerminalOpenRequest,
+  isBackgroundTerminalStartRequest,
+  isBackgroundTerminalStopRequest,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isGitCommitRequest,
   isGitGenerateCommitMessageRequest,
@@ -220,6 +224,7 @@ import {
   runtimeRouteToProxyRoute,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
+import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
   type BashApprovalResolution,
@@ -302,7 +307,7 @@ import { PackageJsonWatcher } from "./package-json-watcher";
 import {
   listPackageScripts,
   preparePackageScriptRun,
-  runPreparedPackageScriptInTerminal,
+  runPreparedPackageScriptAsBackgroundTask,
 } from "./package-scripts";
 import {
   cancelPlanApprovalsForThread,
@@ -500,14 +505,18 @@ function broadcastPackageScriptTerminalLaunch(payload: {
   sessionId: string;
   script: string;
   command: string[];
+  taskId?: string;
 }): void {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.workspacePackageScriptTerminal, payload);
   });
 }
+let backgroundTerminalTaskRegistry: BackgroundTerminalTaskRegistry;
 const interactiveTerminalManager = new InteractiveTerminalManager((event) => {
+  backgroundTerminalTaskRegistry?.handleTerminalEvent(event);
   desktopEventCenter.publishTerminalEvent(event);
 });
+backgroundTerminalTaskRegistry = new BackgroundTerminalTaskRegistry(interactiveTerminalManager);
 const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
   desktopEventCenter.publishPackageJsonChanged(workspacePath);
 });
@@ -1322,17 +1331,58 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid start package script request.");
     }
     const prepared = await preparePackageScriptRun(payload);
-    const launched = runPreparedPackageScriptInTerminal(interactiveTerminalManager, prepared);
+    const launched = runPreparedPackageScriptAsBackgroundTask(backgroundTerminalTaskRegistry, prepared, {
+      ...(payload.threadId?.trim() && { threadId: payload.threadId.trim() }),
+    });
     const result = {
       script: launched.script,
       command: launched.command,
       sessionId: launched.sessionId,
+      taskId: launched.taskId,
     };
     broadcastPackageScriptTerminalLaunch({
       workspacePath: prepared.workspacePath,
       ...result,
     });
     return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.backgroundTerminalList, async (payload: unknown) => {
+    if (payload !== undefined && !isBackgroundTerminalListRequest(payload)) {
+      throw new Error("Invalid background terminal list request.");
+    }
+    return backgroundTerminalTaskRegistry.list(payload ?? {});
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.backgroundTerminalStart, async (payload: unknown) => {
+    if (!isBackgroundTerminalStartRequest(payload)) {
+      throw new Error("Invalid background terminal start request.");
+    }
+    const task = backgroundTerminalTaskRegistry.start(payload);
+    desktopEventCenter.publishTerminalEvent({
+      type: "started",
+      sessionId: task.sessionId,
+      workspacePath: task.workspacePath,
+    });
+    return task;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.backgroundTerminalOpen, async (payload: unknown) => {
+    if (!isBackgroundTerminalOpenRequest(payload)) {
+      throw new Error("Invalid background terminal open request.");
+    }
+    const task = backgroundTerminalTaskRegistry.get(payload.taskId);
+    if (!task) {
+      throw new Error(`Background terminal task not found: ${payload.taskId}`);
+    }
+    return task;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.backgroundTerminalStop, async (payload: unknown) => {
+    if (!isBackgroundTerminalStopRequest(payload)) {
+      throw new Error("Invalid background terminal stop request.");
+    }
+    return backgroundTerminalTaskRegistry.stop(payload.taskId);
   });
 
   registerDesktopCommand(IPC_CHANNELS.terminalSpawn, async (payload: unknown) => {

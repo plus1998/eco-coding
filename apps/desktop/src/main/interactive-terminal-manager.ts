@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { IPty } from "node-pty";
 import * as pty from "node-pty";
 import type { TerminalStreamEvent } from "../shared/ipc";
@@ -38,10 +38,7 @@ export class InteractiveTerminalManager {
 
   constructor(private readonly emit: TerminalEventEmitter) {}
 
-  spawn(
-    workspacePath: string,
-    size?: { cols: number; rows: number },
-  ): { sessionId: string } {
+  spawn(workspacePath: string, size?: { cols: number; rows: number }): { sessionId: string } {
     const cwd = workspacePath.trim();
     if (!cwd) {
       throw new Error("Workspace path is required.");
@@ -71,6 +68,7 @@ export class InteractiveTerminalManager {
     }
 
     this.sessions.set(sessionId, { sessionId, workspacePath: cwd, pty: ptyProcess });
+    this.emit({ type: "started", sessionId, workspacePath: cwd });
 
     ptyProcess.onData((data) => {
       if (!this.sessions.has(sessionId)) {

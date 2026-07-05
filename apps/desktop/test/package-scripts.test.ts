@@ -2,19 +2,18 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  buildRunCommand,
-  formatRunCommand,
-} from "../src/shared/package-script-run";
+import type { BackgroundTerminalTaskRegistry } from "../src/main/background-terminal-tasks";
+import type { InteractiveTerminalManager } from "../src/main/interactive-terminal-manager";
 import {
   listPackageScripts,
   parsePackageManagerField,
+  preparePackageScriptRun,
   readPackageJson,
   resolvePackageManager,
-  preparePackageScriptRun,
+  runPreparedPackageScriptAsBackgroundTask,
   runPreparedPackageScriptInTerminal,
 } from "../src/main/package-scripts";
-import type { InteractiveTerminalManager } from "../src/main/interactive-terminal-manager";
+import { buildRunCommand, formatRunCommand } from "../src/shared/package-script-run";
 
 let tempDir = "";
 
@@ -126,9 +125,9 @@ test("preparePackageScriptRun rejects unknown script names", async () => {
     "utf8",
   );
 
-  await expect(
-    preparePackageScriptRun({ workspacePath: tempDir, script: "missing" }),
-  ).rejects.toThrow("Unknown script: missing");
+  await expect(preparePackageScriptRun({ workspacePath: tempDir, script: "missing" })).rejects.toThrow(
+    "Unknown script: missing",
+  );
 });
 
 test("runPreparedPackageScriptInTerminal spawns shell and writes command", () => {
@@ -153,4 +152,40 @@ test("runPreparedPackageScriptInTerminal spawns shell and writes command", () =>
   expect(writes).toHaveLength(1);
   expect(writes[0]?.sessionId).toBe("session_1");
   expect(writes[0]?.data.endsWith("run dev\r")).toBe(true);
+});
+
+test("runPreparedPackageScriptAsBackgroundTask registers task metadata", () => {
+  const calls: Array<{ workspacePath: string; command: string[]; label?: string; threadId?: string }> = [];
+  const registry = {
+    start: (request: { workspacePath: string; command: string[]; label?: string; threadId?: string }) => {
+      calls.push(request);
+      return {
+        taskId: "task_1",
+        sessionId: "session_1",
+        workspacePath: request.workspacePath,
+        command: request.command,
+        label: request.label ?? "dev",
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+  } as unknown as BackgroundTerminalTaskRegistry;
+
+  const result = runPreparedPackageScriptAsBackgroundTask(
+    registry,
+    {
+      workspacePath: tempDir,
+      script: "dev",
+      command: ["bun", "run", "dev"],
+    },
+    { threadId: "thr_1" },
+  );
+
+  expect(result.taskId).toBe("task_1");
+  expect(result.sessionId).toBe("session_1");
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.label).toBe("脚本 dev");
+  expect(calls[0]?.threadId).toBe("thr_1");
+  expect(calls[0]?.command.at(-2)).toBe("run");
+  expect(calls[0]?.command.at(-1)).toBe("dev");
 });

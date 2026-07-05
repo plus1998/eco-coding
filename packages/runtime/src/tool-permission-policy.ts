@@ -32,7 +32,9 @@ const ECO_PHASE_CAPPED_TOOL_NAMES = [
  * materialize into that list (see docs/agent-sdk-tools-and-permissions.md).
  */
 export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
-  const disallowed = new Set(policy.disallowed.map((entry) => entry.trim()).filter(Boolean));
+  const allowedTools = Array.isArray(policy.allowed) ? policy.allowed : [];
+  const disallowedTools = Array.isArray(policy.disallowed) ? policy.disallowed : [];
+  const disallowed = new Set(disallowedTools.map((entry) => entry.trim()).filter(Boolean));
 
   if (policy.bash?.enabled === false) {
     disallowed.add("Bash");
@@ -60,7 +62,7 @@ export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
 
   const materialized: EcoToolPolicy = {
     ...policy,
-    allowed: uniqueToolPatterns(policy.allowed),
+    allowed: uniqueToolPatterns(allowedTools),
     disallowed: uniqueToolPatterns([...disallowed]),
     bash: {
       enabled: bashAllowed,
@@ -103,9 +105,7 @@ export function capEcoToolPolicyForPhase(
 }
 
 /** SDK availability layer: bare names removed from model context. */
-export function mergeSdkDisallowedTools(
-  ...lists: readonly (readonly string[] | undefined)[]
-): string[] {
+export function mergeSdkDisallowedTools(...lists: readonly (readonly string[] | undefined)[]): string[] {
   const merged: string[] = [];
   for (const list of lists) {
     if (!list) {

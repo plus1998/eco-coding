@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityLogView } from "../src/renderer/ActivityLogView";
+import { ActivityLogView, ProjectionSubagentDetailFeed } from "../src/renderer/ActivityLogView";
+import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
+  ThreadRunProjectionAgent,
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
@@ -43,6 +45,7 @@ function requestSpan(
 
 function projection(input: {
   timeline: ThreadRunProjectionTimelineItem[];
+  agents?: ThreadRunProjectionAgent[];
   requestSpans?: ThreadRunProjectionRequestSpan[];
   status?: string;
 }): ThreadRunProjectionSnapshot {
@@ -53,11 +56,25 @@ function projection(input: {
       generatedAt: "2026-01-01T00:00:00.000Z",
     },
     attempts: [],
-    agents: [],
+    agents: input.agents ?? [],
     requestSpans: input.requestSpans ?? [],
     timeline: input.timeline,
     diagnostics: [],
-    sourceEventCount: input.timeline.length,
+    sourceEventCount: input.timeline.length + (input.agents?.length ?? 0),
+  };
+}
+
+function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): ThreadRunProjectionAgent {
+  return {
+    agentId: input.agentId,
+    role: input.role ?? "coder",
+    kind: "subagent",
+    status: input.status ?? "active",
+    startedAt: input.startedAt ?? "2026-01-01T00:00:00.000Z",
+    durationMs: input.durationMs ?? 0,
+    timeline: input.timeline ?? [],
+    ...(input.delegationPrompt && { delegationPrompt: input.delegationPrompt }),
+    ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
   };
 }
 
@@ -135,6 +152,104 @@ test("ActivityLogView shows inline loading on collapsed running tool groups", ()
   expect(html).toContain("run-log-tool-group-trigger is-running");
   expect(html).toContain('aria-label="正在执行工具"');
   expect(html.match(/class="run-log-streaming-dot"/g)?.length).toBe(3);
+});
+
+test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        timeline: [],
+        agents: [
+          agent({
+            agentId: "agent_coder_1",
+            delegationPrompt: "实现抽屉",
+            timeline: [
+              item({
+                id: "agent-detail",
+                eventType: "message.final",
+                scope: "agent",
+                role: "coder",
+                text: "这段正文只应该在右侧详情里出现",
+              }),
+            ],
+          }),
+        ],
+      }),
+      onOpenSubagent: () => undefined,
+    }),
+  );
+
+  expect(html).toContain("subagent-run-row");
+  expect(html).toContain("实现抽屉");
+  expect(html).not.toContain("这段正文只应该在右侧详情里出现");
+  expect(html).not.toContain("work-session-details-compact");
+});
+
+test("WorkspaceFloatingCards lists subagents without mounting unselected detail timelines", () => {
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    delegationPrompt: "实现抽屉",
+    timeline: [
+      item({
+        id: "agent-detail",
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "这段详情不应该默认挂载",
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      subagentRunCards: [
+        {
+          key: subagent.agentId,
+          agent: subagent,
+          timelineIds: subagent.timeline.map((entry) => entry.id),
+          running: false,
+          missionText: "实现抽屉",
+        },
+      ],
+      onOpenSubagent: () => undefined,
+    }),
+  );
+
+  expect(html).toContain("workspace-subagent-runs-list");
+  expect(html).toContain("子智能体");
+  expect(html).toContain("实现抽屉");
+  expect(html).not.toContain("这段详情不应该默认挂载");
+});
+
+test("ProjectionSubagentDetailFeed renders subagent details as a conversation", () => {
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    status: "completed",
+    durationMs: 128_000,
+    delegationPrompt: "只读检查路由链路",
+    timeline: [
+      item({
+        id: "agent-detail",
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "检查完成，问题在 role fallback。",
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: subagent,
+      missionText: "只读检查路由链路",
+      requestSpansById: new Map(),
+      threadActive: false,
+    }),
+  );
+
+  expect(html).toContain("subagent-conversation-prompt");
+  expect(html).toContain("只读检查路由链路");
+  expect(html).toContain("已处理 2m 8s");
+  expect(html).toContain("检查完成，问题在 role fallback。");
 });
 
 test("ActivityLogView does not show inline loading for a completed request with a stale running action", () => {

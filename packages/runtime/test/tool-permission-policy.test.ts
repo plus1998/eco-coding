@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
+import type { EcoToolPolicy } from "../src/agent-orchestration";
 import {
   capEcoToolPolicyForPhase,
   materializeEcoToolPolicy,
   mergeSdkDisallowedTools,
   resolveMainAgentHandsOnFromPolicy,
 } from "../src/tool-permission-policy";
-import type { EcoToolPolicy } from "../src/agent-orchestration";
 
 function policy(overrides: Partial<EcoToolPolicy> = {}): EcoToolPolicy {
   return {
@@ -47,6 +47,16 @@ test("materializeEcoToolPolicy keeps reviewer bash when only writes are blocked"
   });
 });
 
+test("materializeEcoToolPolicy tolerates legacy policies without explicit allow lists", () => {
+  const materialized = materializeEcoToolPolicy({
+    bash: { enabled: false },
+  } as EcoToolPolicy);
+
+  expect(materialized.allowed).toEqual([]);
+  expect(materialized.disallowed).toContain("Bash");
+  expect(materialized.bash?.enabled).toBe(false);
+});
+
 test("capEcoToolPolicyForPhase adds phase disallows without implicit bash inference", () => {
   const capped = capEcoToolPolicyForPhase(
     policy({
@@ -72,7 +82,9 @@ test("capEcoToolPolicyForPhase adds phase disallows without implicit bash infere
 });
 
 test("mergeSdkDisallowedTools deduplicates profile and phase denylists", () => {
-  expect(
-    mergeSdkDisallowedTools(["Write", "Bash"], ["Bash", "Edit"], undefined),
-  ).toEqual(["Write", "Bash", "Edit"]);
+  expect(mergeSdkDisallowedTools(["Write", "Bash"], ["Bash", "Edit"], undefined)).toEqual([
+    "Write",
+    "Bash",
+    "Edit",
+  ]);
 });

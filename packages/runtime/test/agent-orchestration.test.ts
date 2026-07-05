@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  buildMainAgentSystemPrompt,
   buildBuiltinPlanToolPermissionEntry,
+  buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   type EcoAgentTemplateConfig,
@@ -241,15 +241,7 @@ test("resolveMainAgentAllowedTools merges phase tools for universal profiles", (
     "mcp__sources__*",
   ]);
 
-  const planningPhaseTools = [
-    "Agent",
-    "Read",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "AskUserQuestion",
-  ];
+  const planningPhaseTools = ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"];
   const planningResolved = resolveMainAgentAllowedTools(profile, planningPhaseTools);
   expect(planningResolved).not.toContain("ExitPlanMode");
   expect(planningResolved).toContain("AskUserQuestion");
@@ -307,15 +299,7 @@ test("resolveMainAgentAllowedTools caps coding profile tools to planning phase",
       },
     },
   };
-  const planningPhaseTools = [
-    "Agent",
-    "Read",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "AskUserQuestion",
-  ];
+  const planningPhaseTools = ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"];
   const resolved = resolveMainAgentAllowedTools(codingProfile, planningPhaseTools);
   expect(resolved).not.toContain("ExitPlanMode");
   expect(resolved).toContain("AskUserQuestion");
@@ -364,20 +348,9 @@ test("resolveToolPermissionEntryForActor inherits planning phase cap for general
     },
   };
   const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
-    phaseAllowedTools: [
-      "Agent",
-      "Read",
-      "Glob",
-      "Grep",
-      "WebSearch",
-      "WebFetch",
-      "AskUserQuestion",
-    ],
+    phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
-  const generalPurposeEntry = resolveToolPermissionEntryForActor(
-    policy,
-    SDK_GENERAL_PURPOSE_AGENT_KEY,
-  );
+  const generalPurposeEntry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
   expect(generalPurposeEntry).toBe(policy.main);
   expect(generalPurposeEntry?.disallowed).toEqual(
     expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit"]),
@@ -386,9 +359,7 @@ test("resolveToolPermissionEntryForActor inherits planning phase cap for general
 
 test("resolveToolPermissionEntryForActor still resolves eco profile agents", () => {
   const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
-  expect(resolveToolPermissionEntryForActor(policy, "eco_researcher")).toBe(
-    policy.agents.eco_researcher,
-  );
+  expect(resolveToolPermissionEntryForActor(policy, "eco_researcher")).toBe(policy.agents.eco_researcher);
 });
 
 test("buildToolPermissionPolicyFromProfile merges runtime MCP servers into main policy", () => {
@@ -450,15 +421,7 @@ test("buildToolPermissionPolicyFromProfile disables main writes during planning 
     },
   };
   const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
-    phaseAllowedTools: [
-      "Agent",
-      "Read",
-      "Glob",
-      "Grep",
-      "WebSearch",
-      "WebFetch",
-      "AskUserQuestion",
-    ],
+    phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
   expect(policy.main.allowed).not.toContain("ExitPlanMode");
   expect(policy.main.allowed).not.toContain("Write");
@@ -471,15 +434,7 @@ test("buildToolPermissionPolicyFromProfile disables main writes during planning 
 
 test("buildToolPermissionPolicyFromProfile caps universal profile tools during planning phase", () => {
   const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
-    phaseAllowedTools: [
-      "Agent",
-      "Read",
-      "Glob",
-      "Grep",
-      "WebSearch",
-      "WebFetch",
-      "AskUserQuestion",
-    ],
+    phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
   expect(policy.main.allowed).not.toContain("ExitPlanMode");
   expect(policy.main.allowed).not.toContain("Write");
@@ -577,6 +532,28 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: true, webFetch: false },
   });
+});
+
+test("buildToolPermissionPolicyFromProfile tolerates legacy agent tools without allow lists", () => {
+  const firstAgent = requireElement(profile.agents, 0, "agent");
+  const legacyProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    agents: [
+      {
+        ...firstAgent,
+        tools: {
+          bash: { enabled: false },
+        } as EcoToolPolicy,
+      },
+    ],
+  };
+
+  const policy = buildToolPermissionPolicyFromProfile(legacyProfile, [researchTemplate]);
+  expect(policy.agents.eco_researcher?.disallowed).toEqual(expect.arrayContaining(["Bash", "Agent", "Task"]));
+
+  const definitions = createAgentDefinitionsFromProfile(legacyProfile, [researchTemplate]);
+  const definition = definitions.definitions.eco_researcher as Record<string, unknown>;
+  expect(definition.disallowedTools).toEqual(expect.arrayContaining(["Bash", "Agent", "Task"]));
 });
 
 test("subagent delegation tools require allowDelegation", () => {

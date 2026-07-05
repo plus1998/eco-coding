@@ -12,6 +12,7 @@
     "dev:electron": "node scripts/dev.mjs",
     "dev:cdp": "node scripts/dev.mjs --remote-debugging-port=9222",
     "smoke:feed-loading": "node scripts/smoke-feed-loading.mjs",
+    "smoke:subagent-drawer": "node scripts/smoke-subagent-drawer.mjs",
     "build": "vite build && bun run build:main && bun run build:preload",
     "build:main": "bun build src/main/index.ts --target=node --external electron --external @anthropic-ai/claude-agent-sdk --external node-pty --outdir dist/main",
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",
