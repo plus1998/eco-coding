@@ -1,8 +1,8 @@
 import { useLayoutEffect } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
-import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
+import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
 
 interface StreamingMarkdownContentProps {
   text: string;
@@ -42,20 +42,16 @@ export function StreamingMarkdownContent({
   const onLayoutChange = useActivityFeedLayoutChange();
   const snapshot = resolveStreamingDisplaySnapshot(text, streaming);
   const renderText = streaming ? snapshot.displayText : text;
+  const layoutSignature = streaming
+    ? `${renderText.length}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
+    : "";
 
   useLayoutEffect(() => {
-    if (!streaming) {
+    if (!streaming || !layoutSignature) {
       return;
     }
     onLayoutChange?.();
-  }, [
-    streaming,
-    renderText,
-    snapshot.pendingBlock,
-    snapshot.displayText.length,
-    text.length,
-    onLayoutChange,
-  ]);
+  }, [streaming, layoutSignature, onLayoutChange]);
 
   if (streaming) {
     const hasRenderableText = renderText.trim().length > 0;
@@ -65,15 +61,17 @@ export function StreamingMarkdownContent({
     return (
       <div
         className={
-          className
-            ? `markdown-content--streaming-wrap ${className}`
-            : "markdown-content--streaming-wrap"
+          className ? `markdown-content--streaming-wrap ${className}` : "markdown-content--streaming-wrap"
         }
       >
         {hasRenderableText ? (
           <div className="markdown-content--streaming-body">
             <MarkdownContent text={renderText} />
-            {!snapshot.pendingBlock ? <StreamingTypingIndicator /> : null}
+            {!snapshot.pendingBlock ? (
+              <div className="markdown-content--streaming-tail" role="status" aria-label="正在输出">
+                <StreamingTypingIndicator />
+              </div>
+            ) : null}
           </div>
         ) : null}
         {snapshot.pendingBlock ? (

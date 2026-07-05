@@ -6502,8 +6502,15 @@ html[data-window-focused="true"] .codex-sidebar {
   position: relative;
 }
 
-.markdown-content--streaming-body .run-log-streaming-dots {
-  margin-left: 1px;
+.markdown-content--streaming-tail {
+  display: flex;
+  align-items: center;
+  min-height: 14px;
+  margin-top: 2px;
+}
+
+.markdown-content--streaming-tail .run-log-streaming-dots {
+  margin-left: 0;
 }
 
 .run-log-streaming-dots {
