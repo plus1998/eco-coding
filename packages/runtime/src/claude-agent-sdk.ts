@@ -1,6 +1,4 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
-import { createSdkModelResolver, resolveMainSdkModelId } from "./sdk-model-alias";
-import type { SessionStore } from "../../persistence/src/session-store.js";
 import {
   type AgentEvent,
   type AgentEventType,
@@ -14,16 +12,15 @@ import {
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
+  type MainAgentHandsOnCapability,
   resolveMainAgentAllowedTools,
   resolveMainAgentHandsOnCapability,
-  type MainAgentHandsOnCapability,
   SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_FILESYSTEM_READ_TOOL_NAMES,
   SDK_FILESYSTEM_WRITE_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
   SDK_TASK_PROGRESS_TOOL_NAMES,
 } from "./agent-orchestration.js";
-import { mergeSdkDisallowedTools } from "./tool-permission-policy.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import {
   buildEcoSdkHooks,
@@ -38,6 +35,8 @@ import type {
   EcoSdkResumeOptions,
   EcoSdkSessionOptions,
 } from "./index";
+import { toWorkspaceRelativePlanFile } from "./plan-path.js";
+import { createSdkModelResolver, resolveMainSdkModelId } from "./sdk-model-alias";
 import {
   applySubagentUsageAttribution,
   createAttributedAgentEvent,
@@ -48,9 +47,9 @@ import {
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
 import { resolveSkillDisplayName } from "./skill-display";
-import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
+import { mergeSdkDisallowedTools } from "./tool-permission-policy.js";
 import {
   formatGrepTargetLabel,
   formatReadTargetLabel,
@@ -59,13 +58,12 @@ import {
 } from "./tool-target.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
-export { SubagentLaunchRegistry, type SubagentLaunchRecord } from "./eco-sdk-hooks.js";
+export { type SubagentLaunchRecord, SubagentLaunchRegistry } from "./eco-sdk-hooks.js";
 
 import {
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
 } from "./prompts/autonomous.js";
-import { buildMainAgentHandsOnBoundaryAppend } from "./prompts/subagent-pipeline.js";
 import {
   ecoBasePromptAppend,
   executionArchitectDescription,
@@ -80,6 +78,7 @@ import {
   planningArchitectPrompt,
   reviewerAgentPrompt,
 } from "./prompts/index.js";
+import { buildMainAgentHandsOnBoundaryAppend } from "./prompts/subagent-pipeline.js";
 import {
   defaultSubagentAvailability,
   ecoSubagentKeyForRole,
@@ -110,7 +109,6 @@ type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) =>
 
 interface SdkSessionMutationOptions {
   dir?: string;
-  sessionStore?: SessionStore;
 }
 
 interface SdkSessionReadOptions extends SdkSessionMutationOptions {
@@ -419,8 +417,6 @@ export interface ClaudeAgentSdkDriverOptions {
   hookContext?: EcoHookContext;
   /** SDK-native tool permission callback. Desktop uses this for blocking Bash confirmation. */
   toolPermissionHandler?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
-  /** Mirror SDK session transcripts to external storage (mutually exclusive with file checkpointing). */
-  sessionStore?: SessionStore;
   /** Optional probe logging for `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
 }
@@ -444,7 +440,6 @@ export type SdkToolPermissionDecision =
 export async function deleteClaudeAgentSdkSession(input: {
   sessionId: string;
   dir?: string;
-  sessionStore?: SessionStore;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
 }): Promise<void> {
   const sessionId = input.sessionId.trim();
@@ -463,9 +458,6 @@ export async function deleteClaudeAgentSdkSession(input: {
   if (input.dir?.trim()) {
     options.dir = input.dir.trim();
   }
-  if (input.sessionStore) {
-    options.sessionStore = input.sessionStore;
-  }
 
   await sdk.deleteSession(sessionId, Object.keys(options).length > 0 ? options : undefined);
 }
@@ -474,7 +466,6 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
   sessionId: string;
   userMessageId: string;
   dir?: string;
-  sessionStore?: SessionStore;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
 }): Promise<string | undefined> {
   const sessionId = input.sessionId.trim();
@@ -493,9 +484,6 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
   const options: SdkSessionReadOptions = { includeSystemMessages: false };
   if (input.dir?.trim()) {
     options.dir = input.dir.trim();
-  }
-  if (input.sessionStore) {
-    options.sessionStore = input.sessionStore;
   }
 
   const messages = await sdk.getSessionMessages(sessionId, options);
@@ -577,7 +565,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }),
       settings: {},
     };
-    applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
+    applyClaudeJsonlSessionPersistence(queryOptions);
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl);
     const query = sdk.query({ prompt: "", options: queryOptions });
@@ -657,9 +645,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       approveDeferredExitPlanMode: true,
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile
-          ? buildUniversalPhaseAppend("execute")
-          : buildAutonomousOrchestratorAppend(),
+        universalProfile ? buildUniversalPhaseAppend("execute") : buildAutonomousOrchestratorAppend(),
         handsOn,
         availability,
         universalProfile,
@@ -670,10 +656,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     void sessionResult;
   }
 
-  private async *runPlanningPass(
-    input: AgentRuntimeRunInput,
-    prompt: string,
-  ): AsyncIterable<AgentEvent> {
+  private async *runPlanningPass(input: AgentRuntimeRunInput, prompt: string): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
@@ -683,9 +666,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       planningPhase: true,
       allowedTools: [...planningContinuationAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile
-          ? buildUniversalPhaseAppend("plan")
-          : buildAutonomousOrchestratorAppend(),
+        universalProfile ? buildUniversalPhaseAppend("plan") : buildAutonomousOrchestratorAppend(),
         handsOn,
         availability,
         universalProfile,
@@ -713,9 +694,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile
-          ? buildUniversalPhaseAppend("autonomous")
-          : buildAutonomousOrchestratorAppend(),
+        universalProfile ? buildUniversalPhaseAppend("autonomous") : buildAutonomousOrchestratorAppend(),
         handsOn,
         availability,
         universalProfile,
@@ -780,10 +759,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
         : phase.allowedTools;
     const applyPhaseToolCap =
-      phase.planningPhase === true ||
-      phase.permissionMode === "plan" ||
-      phase.permissionMode === "dontAsk";
-    let toolPermissions = input.agentRegistry
+      phase.planningPhase === true || phase.permissionMode === "plan" || phase.permissionMode === "dontAsk";
+    const toolPermissions = input.agentRegistry
       ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
           ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
@@ -799,30 +776,25 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     };
     let finalizedPlan: FinalizePlanPayload | undefined;
     const exitPlanCaptureState = phase.planningPhase ? { capturedToolUseIds: new Set<string>() } : undefined;
-    const onExitPlanMode =
-      phase.planningPhase
-        ? (submission: { plan: string; planFilePath?: string }) => {
-            const workspaceRoot = input.workspacePath.trim() || input.worktreePath;
-            finalizedPlan = {
-              analysis: buildExitPlanModeAnalysis(submission),
-              plan: submission.plan,
-              ...(submission.planFilePath
-                ? {
-                    planFilePath: toWorkspaceRelativePlanFile(submission.planFilePath, workspaceRoot),
-                  }
-                : {}),
-            };
-          }
-        : undefined;
+    const onExitPlanMode = phase.planningPhase
+      ? (submission: { plan: string; planFilePath?: string }) => {
+          const workspaceRoot = input.workspacePath.trim() || input.worktreePath;
+          finalizedPlan = {
+            analysis: buildExitPlanModeAnalysis(submission),
+            plan: submission.plan,
+            ...(submission.planFilePath
+              ? {
+                  planFilePath: toWorkspaceRelativePlanFile(submission.planFilePath, workspaceRoot),
+                }
+              : {}),
+          };
+        }
+      : undefined;
     const allowedSdkBuiltinAgentKeys = phase.planningPhase ? [SDK_PLAN_AGENT_KEY] : undefined;
     const approveDeferredExitPlanMode = !phase.planningPhase && phase.approveDeferredExitPlanMode === true;
     const hookContext = this.options.hookContext;
     const shouldBuildHooks = Boolean(
-      hookContext ||
-        onExitPlanMode ||
-        approveDeferredExitPlanMode ||
-        dynamicAgentKeys ||
-        toolPermissions,
+      hookContext || onExitPlanMode || approveDeferredExitPlanMode || dynamicAgentKeys || toolPermissions,
     );
     const mergedAllowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
     const allowedTools = stripProtectedPlanModeAutoApprovedTools(
@@ -883,9 +855,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
                 : {}),
               ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
               ...(approveDeferredExitPlanMode ? { approveDeferredExitPlanMode: true } : {}),
-              ...(phase.planningPhase
-                ? { getPhaseTranscript: () => phaseTranscriptBox.text }
-                : {}),
+              ...(phase.planningPhase ? { getPhaseTranscript: () => phaseTranscriptBox.text } : {}),
               workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
@@ -904,7 +874,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       settings: {},
     };
 
-    applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
+    applyClaudeJsonlSessionPersistence(queryOptions);
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyThinkingToQueryOptions(queryOptions, plannerRoute.thinkingEffort);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
@@ -1010,15 +980,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       // call (`deferred_tool_use`). The PreToolUse capture covers the same tool use id, so
       // this only lands when the hook path missed it.
       if (onExitPlanMode) {
-        await captureDeferredExitPlanModeFromResult(
-          message,
-          onExitPlanMode,
-          exitPlanCaptureState,
-          {
-            searchRoots: [input.workspacePath, sessionCwd],
-            getPhaseTranscript: () => phaseTranscriptBox.text,
-          },
-        );
+        await captureDeferredExitPlanModeFromResult(message, onExitPlanMode, exitPlanCaptureState, {
+          searchRoots: [input.workspacePath, sessionCwd],
+          getPhaseTranscript: () => phaseTranscriptBox.text,
+        });
       }
 
       if (input.signal.aborted) {
@@ -1372,16 +1337,8 @@ export function applyResumeToQueryOptions(
   }
 }
 
-export function applySessionStoreToQueryOptions(
-  queryOptions: Record<string, unknown>,
-  sessionStore?: SessionStore,
-): void {
-  if (sessionStore) {
-    queryOptions.sessionStore = sessionStore;
-    delete queryOptions.enableFileCheckpointing;
-    delete queryOptions.extraArgs;
-    return;
-  }
+export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, unknown>): void {
+  delete queryOptions.sessionStore;
   queryOptions.enableFileCheckpointing = true;
   queryOptions.extraArgs = {
     ...(isRecord(queryOptions.extraArgs) ? (queryOptions.extraArgs as Record<string, unknown>) : {}),
@@ -1970,6 +1927,13 @@ function mapAssistantMessageToEvents(
       continue;
     }
     if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+      const streamBlockKey = assistantStreamBlockKey("text", index);
+      if (
+        streamCtx?.emittedStreamBlockKeys.has(streamBlockKey) ||
+        hasEmittedStreamBlockKind(streamCtx, "text")
+      ) {
+        continue;
+      }
       events.push(
         createAgentEvent({
           id: `${uuid}:text:${index}`,
@@ -1982,6 +1946,7 @@ function mapAssistantMessageToEvents(
             blockKind: "text",
             text: block.text,
             streamFinalize: true,
+            stream_block_key: streamBlockKey,
             ...(typeof message.parent_tool_use_id === "string" && {
               parent_tool_use_id: message.parent_tool_use_id,
             }),
@@ -1993,6 +1958,13 @@ function mapAssistantMessageToEvents(
       continue;
     }
     if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+      const streamBlockKey = assistantStreamBlockKey("thinking", index);
+      if (
+        streamCtx?.emittedStreamBlockKeys.has(streamBlockKey) ||
+        hasEmittedStreamBlockKind(streamCtx, "thinking")
+      ) {
+        continue;
+      }
       events.push(
         createAgentEvent({
           id: `${uuid}:thinking:${index}`,
@@ -2005,6 +1977,7 @@ function mapAssistantMessageToEvents(
             blockKind: "thinking",
             text: block.thinking,
             streamFinalize: true,
+            stream_block_key: streamBlockKey,
             ...(typeof message.parent_tool_use_id === "string" && {
               parent_tool_use_id: message.parent_tool_use_id,
             }),
@@ -2056,6 +2029,25 @@ function mapAssistantMessageToEvents(
   }
 
   return events;
+}
+
+function assistantStreamBlockKey(kind: "text" | "thinking", index: number): string {
+  return `${kind}:${index}`;
+}
+
+function hasEmittedStreamBlockKind(
+  streamCtx: SdkStreamContext | undefined,
+  kind: "text" | "thinking",
+): boolean {
+  if (!streamCtx) {
+    return false;
+  }
+  for (const key of streamCtx.emittedStreamBlockKeys) {
+    if (key.startsWith(`${kind}:`) || key.startsWith(`embedded:${kind}:`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function createCanUseTool(

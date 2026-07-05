@@ -1,10 +1,10 @@
-import type { ThreadActivityLine } from "../shared/ipc";
 import {
   buildCompactionSummaryPrompt,
   buildStructuredEcoCompactFallbackSummary,
   estimateHandoffPostTokens,
   splitUserMessagesForCompact,
 } from "../shared/eco-compact-handoff";
+import type { ThreadActivityLine } from "../shared/ipc";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import { postAuxiliaryBridgeRequest } from "./bridge-auxiliary-request";
 import type { ThreadCompactHandoffRecord } from "./conversation-store";
@@ -18,7 +18,7 @@ const SUMMARY_ROUTE_ROLES = ["planner", "explore", "coder"] as const;
 type Fetcher = typeof fetch;
 
 export interface EcoCompactServiceInput {
-  listActivityLines(threadId: string): ThreadActivityLine[];
+  listActivityLines(threadId: string): Promise<ThreadActivityLine[]>;
   getThreadPrompt(threadId: string): string | undefined;
   saveCompactHandoff(
     threadId: string,
@@ -57,7 +57,7 @@ export function createEcoCompactService(services: EcoCompactServiceInput): EcoCo
   return {
     async runEcoCompact(threadId, input) {
       const threadPrompt = services.getThreadPrompt(threadId)?.trim() ?? "";
-      const activityLines = services.listActivityLines(threadId).map((line) => ({
+      const activityLines = (await services.listActivityLines(threadId)).map((line) => ({
         role: line.role,
         message: line.message,
       }));

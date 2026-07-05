@@ -20,6 +20,8 @@ export interface SdkStreamContext {
   registeredSubagentByParentToolUseId: Map<string, string>;
   /** Latest subagent instance id per role when parent_tool_use_id is not yet known. */
   registeredSubagentByRole: Map<RuntimeAgentRole, string>;
+  activeBlockIndex?: number;
+  emittedStreamBlockKeys: Set<string>;
   emittedToolUseIds: Set<string>;
   resolveSubagentAgentId?: (input: {
     role: RuntimeAgentRole;
@@ -39,6 +41,7 @@ export function createSdkStreamContext(options?: {
     subagentRoleByParentToolUseId: new Map(),
     registeredSubagentByParentToolUseId: new Map(),
     registeredSubagentByRole: new Map(),
+    emittedStreamBlockKeys: new Set(),
     emittedToolUseIds: new Set(),
     ...(options?.resolveSubagentAgentId && { resolveSubagentAgentId: options.resolveSubagentAgentId }),
   };
@@ -206,6 +209,7 @@ export type EcoStreamPayload =
       text?: string;
       streamPlaceholder?: boolean;
       streamFinalize?: boolean;
+      stream_block_key?: string;
       parent_tool_use_id?: string | null;
       subagent_type?: string;
       agent_type?: string;
@@ -329,6 +333,12 @@ export function mapStreamEventToEvents(
   if (event.type === "content_block_start" && isRecord(event.content_block)) {
     const block = event.content_block;
     const blockType = block.type;
+    const blockIndex = readStreamEventIndex(event);
+    if (blockIndex !== undefined) {
+      ctx.activeBlockIndex = blockIndex;
+    } else {
+      delete ctx.activeBlockIndex;
+    }
     if (blockType === "tool_use" && typeof block.name === "string") {
       ctx.inToolBlock = true;
       ctx.activeBlockKind = "tool_use";
@@ -361,6 +371,7 @@ export function mapStreamEventToEvents(
           type: "eco_stream",
           blockKind: "thinking",
           streamPlaceholder: true,
+          ...streamBlockMetadata("thinking", event, ctx),
           ...streamMeta,
         }, ctx, parentToolUseId),
       );
@@ -374,6 +385,7 @@ export function mapStreamEventToEvents(
           type: "eco_stream",
           blockKind: "text",
           streamPlaceholder: true,
+          ...streamBlockMetadata("text", event, ctx),
           ...streamMeta,
         }, ctx, parentToolUseId),
       );
@@ -406,6 +418,7 @@ export function mapStreamEventToEvents(
                 blockKind: "text",
                 text: block.text,
                 streamFinalize: true,
+                stream_block_key: `embedded:text:${index}`,
                 ...streamMeta,
               }, ctx, parentToolUseId),
             );
@@ -420,6 +433,7 @@ export function mapStreamEventToEvents(
                 blockKind: "thinking",
                 text: block.thinking,
                 streamFinalize: true,
+                stream_block_key: `embedded:thinking:${index}`,
                 ...streamMeta,
               }, ctx, parentToolUseId),
             );
@@ -449,6 +463,7 @@ export function mapStreamEventToEvents(
           type: "eco_stream",
           blockKind: "text",
           text,
+          ...streamBlockMetadata("text", event, ctx),
           ...streamMeta,
         }, ctx, parentToolUseId),
       );
@@ -464,6 +479,7 @@ export function mapStreamEventToEvents(
           type: "eco_stream",
           blockKind: "thinking",
           text: thinking,
+          ...streamBlockMetadata("thinking", event, ctx),
           ...streamMeta,
         }, ctx, parentToolUseId),
       );
@@ -494,6 +510,7 @@ export function mapStreamEventToEvents(
           type: "eco_stream",
           blockKind: "thinking",
           streamFinalize: true,
+          ...streamBlockMetadata("thinking", event, ctx),
           ...streamMeta,
         }, ctx, parentToolUseId),
       );
@@ -503,12 +520,14 @@ export function mapStreamEventToEvents(
           type: "eco_stream",
           blockKind: "text",
           streamFinalize: true,
+          ...streamBlockMetadata("text", event, ctx),
           ...streamMeta,
         }, ctx, parentToolUseId),
       );
     }
     ctx.inToolBlock = false;
     ctx.activeBlockKind = null;
+    delete ctx.activeBlockIndex;
     delete ctx.currentToolName;
     delete ctx.currentToolUseId;
     ctx.currentToolInputJson = "";
@@ -544,6 +563,28 @@ export function mapStreamEventToEvents(
   }
 
   return events;
+}
+
+function readStreamEventIndex(event: Record<string, unknown>): number | undefined {
+  const index = event.index;
+  if (typeof index === "number" && Number.isInteger(index) && index >= 0) {
+    return index;
+  }
+  return undefined;
+}
+
+function streamBlockMetadata(
+  kind: "text" | "thinking",
+  event: Record<string, unknown>,
+  ctx: SdkStreamContext,
+): { stream_block_key?: string } {
+  const index = readStreamEventIndex(event) ?? ctx.activeBlockIndex;
+  if (index === undefined) {
+    return {};
+  }
+  const key = `${kind}:${index}`;
+  ctx.emittedStreamBlockKeys.add(key);
+  return { stream_block_key: key };
 }
 
 function createStreamDeltaEvent(

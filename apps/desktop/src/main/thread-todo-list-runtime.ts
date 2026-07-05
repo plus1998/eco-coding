@@ -3,21 +3,21 @@ import { extractCoderTasksFromActivity, mergeCoderTodoItems } from "./coder-task
 
 export interface ThreadTodoListRuntimeServices {
   listTodos(threadId: string): CoderTodoItem[];
-  listActivity(threadId: string): ThreadActivityLine[];
+  listActivity(threadId: string): Promise<ThreadActivityLine[]>;
   replaceTodos(threadId: string, todos: CoderTodoItem[]): void;
 }
 
-export function loadThreadTodoList(input: {
+export async function loadThreadTodoList(input: {
   threadId: string;
   services: ThreadTodoListRuntimeServices;
-}): CoderTodoItem[] {
+}): Promise<CoderTodoItem[]> {
   const { threadId, services } = input;
   const stored = services.listTodos(threadId);
   if (stored.length > 0) {
     return stored;
   }
 
-  const drafts = extractCoderTasksFromActivity(services.listActivity(threadId));
+  const drafts = extractCoderTasksFromActivity(await services.listActivity(threadId));
   if (drafts.length === 0) {
     return stored;
   }

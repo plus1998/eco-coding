@@ -1344,11 +1344,10 @@ function ThinkingBlock({
             </span>
           ) : null}
         </span>
-        {hasBody && !streaming ? (
+        {showPreview ? (
           <span
-            className={["run-log-thinking-preview", showPreview ? "is-visible" : ""].filter(Boolean).join(" ")}
+            className="run-log-thinking-preview is-visible"
             title={preview}
-            aria-hidden={!showPreview}
           >
             {preview}
           </span>

@@ -631,7 +631,7 @@ export function buildProjectionDisplayTimelineItems(
       if (latestReconnectDisplayByKey.get(reconnectKey)?.id !== item.id) {
         continue;
       }
-      if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineItems)) {
+      if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineOrder)) {
         continue;
       }
     }
@@ -640,7 +640,7 @@ export function buildProjectionDisplayTimelineItems(
       if (latestOriginalApiErrorDisplayByKey.get(upstreamErrorKey)?.id !== item.id) {
         continue;
       }
-      if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineItems)) {
+      if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineOrder)) {
         continue;
       }
     }
@@ -661,12 +661,105 @@ export function buildProjectionDisplayTimelineItems(
     if (toolKey && latestToolDisplayByKey.get(toolKey)?.id !== item.id) {
       continue;
     }
+    if (isDuplicateStreamBlockFinalEcho(displayItem, timeline)) {
+      continue;
+    }
+    if (isDuplicateLegacyStreamFinalEcho(displayItem, timeline)) {
+      continue;
+    }
     const settled = settleTerminalStreamDisplayItem(displayItem, requestSpansById);
     if (settled) {
       displayItems.push(settled);
     }
   }
   return displayItems;
+}
+
+function isDuplicateStreamBlockFinalEcho(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  if (item.eventType !== "message.final" && item.eventType !== "thinking.final") {
+    return false;
+  }
+  if (!isExplicitStreamBlockItem(item) || item.requestId?.trim()) {
+    return false;
+  }
+  const streamKey = item.streamKey?.trim();
+  const text = item.text.trim();
+  if (!streamKey || !text) {
+    return false;
+  }
+  const channel = streamDisplayChannel(item);
+  return timeline.some((other) => {
+    if (other.id === item.id || other.streamKey?.trim() !== streamKey) {
+      return false;
+    }
+    if (!other.requestId?.trim() || streamDisplayChannel(other) !== channel) {
+      return false;
+    }
+    if (!isStreamDisplayTimelineItem(other) || other.text.trim() !== text) {
+      return false;
+    }
+    return !hasUserPromptBetweenTimelineItems(timeline, item, other);
+  });
+}
+
+function isDuplicateLegacyStreamFinalEcho(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  if (item.eventType !== "message.final" && item.eventType !== "thinking.final") {
+    return false;
+  }
+  if (isExplicitStreamBlockItem(item)) {
+    return false;
+  }
+  const text = item.text.trim();
+  if (!text) {
+    return false;
+  }
+  const channel = streamDisplayChannel(item);
+  return timeline.some((other) => {
+    if (other.id === item.id || !isExplicitStreamBlockItem(other)) {
+      return false;
+    }
+    if (other.eventType !== item.eventType || streamDisplayChannel(other) !== channel) {
+      return false;
+    }
+    if (other.text.trim() !== text) {
+      return false;
+    }
+    return !hasUserPromptBetweenTimelineItems(timeline, item, other);
+  });
+}
+
+function isExplicitStreamBlockItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return Boolean(item.streamKey?.includes(":block:"));
+}
+
+function isStreamDisplayTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return (
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final" ||
+    item.eventType === "message.delta" ||
+    item.eventType === "message.final"
+  );
+}
+
+function streamDisplayChannel(item: ThreadRunProjectionTimelineItem): "thinking" | "message" {
+  return item.eventType === "thinking.delta" || item.eventType === "thinking.final"
+    ? "thinking"
+    : "message";
+}
+
+function hasUserPromptBetweenTimelineItems(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): boolean {
+  const [earlier, later] = compareTimelineItems(left, right) <= 0 ? [left, right] : [right, left];
+  return hasUserPromptBetween(timeline, earlier, later);
 }
 
 function appendStreamScopeSuffix(
@@ -878,16 +971,15 @@ function mergeFilesystemToolTimelineMetadata(
   if (!richerTool) {
     return richer;
   }
+  const detail = richerTool.detail ?? placeholderTool?.detail;
+  const readTarget = richerTool.readTarget ?? placeholderTool?.readTarget;
+  const grepTarget = richerTool.grepTarget ?? placeholderTool?.grepTarget;
   const mergedTool: ThreadRunToolMetadata = {
     ...placeholderTool,
     ...richerTool,
-    ...(richerTool.readTarget || placeholderTool?.readTarget
-      ? { readTarget: richerTool.readTarget ?? placeholderTool?.readTarget }
-      : {}),
-    ...(richerTool.grepTarget || placeholderTool?.grepTarget
-      ? { grepTarget: richerTool.grepTarget ?? placeholderTool?.grepTarget }
-      : {}),
-    detail: richerTool.detail ?? placeholderTool?.detail,
+    ...(readTarget !== undefined ? { readTarget } : {}),
+    ...(grepTarget !== undefined ? { grepTarget } : {}),
+    ...(detail !== undefined ? { detail } : {}),
   };
   return {
     ...richer,
@@ -1178,6 +1270,101 @@ function resolveTurnSegmentEndIndex(
   return timeline.length;
 }
 
+function resolveUserPromptBoundaryIndex(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  itemIndex: number,
+): number {
+  for (let index = itemIndex - 1; index >= 0; index -= 1) {
+    const entry = timeline[index];
+    if (entry && isProjectionUserPromptItem(entry)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function resolveExpectedStreamRequestRole(
+  item: ThreadRunProjectionTimelineItem,
+): string | undefined {
+  if (
+    item.role === "thinking" ||
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final"
+  ) {
+    return "planner";
+  }
+  const role = item.role?.trim();
+  if (!role || role === "tool" || role === "system" || role === "user") {
+    return undefined;
+  }
+  return role;
+}
+
+function streamRequestCandidateMatchesItem(
+  candidate: ThreadRunProjectionTimelineItem,
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): boolean {
+  const requestId = candidate.requestId?.trim();
+  if (!requestId) {
+    return false;
+  }
+  const span = requestSpansById?.get(requestId);
+  const itemAgentId = item.agentId?.trim();
+  if (itemAgentId && span?.ownerAgentId && span.ownerAgentId !== itemAgentId) {
+    return false;
+  }
+  const expectedRole = resolveExpectedStreamRequestRole(item);
+  const candidateRole = span?.role ?? candidate.role;
+  if (expectedRole && candidateRole && candidateRole !== expectedRole) {
+    return false;
+  }
+  return true;
+}
+
+function resolveNearestStreamRequestIdInUserTurn(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): string | undefined {
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  if (itemIndex < 0) {
+    return undefined;
+  }
+  const userBoundaryIndex = resolveUserPromptBoundaryIndex(timeline, itemIndex);
+  const searchStart = userBoundaryIndex >= 0 ? userBoundaryIndex + 1 : 0;
+  const searchEnd = resolveTurnSegmentEndIndex(timeline, itemIndex);
+  let fallbackRequestId: string | undefined;
+
+  for (let index = itemIndex; index >= searchStart; index -= 1) {
+    const entry = timeline[index];
+    if (!entry || !streamRequestCandidateMatchesItem(entry, item, requestSpansById)) {
+      continue;
+    }
+    const requestId = entry.requestId?.trim();
+    if (entry.eventType === "request.started") {
+      return requestId;
+    }
+    fallbackRequestId ??= requestId;
+  }
+  if (fallbackRequestId) {
+    return fallbackRequestId;
+  }
+
+  for (let index = itemIndex + 1; index < searchEnd; index += 1) {
+    const entry = timeline[index];
+    if (!entry || !streamRequestCandidateMatchesItem(entry, item, requestSpansById)) {
+      continue;
+    }
+    const requestId = entry.requestId?.trim();
+    if (entry.eventType === "request.started") {
+      return requestId;
+    }
+    fallbackRequestId ??= requestId;
+  }
+  return fallbackRequestId;
+}
+
 function resolveNearestPlannerRequestId(
   item: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
@@ -1234,24 +1421,41 @@ function resolveEffectiveStreamRequestId(
     item.role === "thinking" ||
     item.eventType === "thinking.delta" ||
     item.eventType === "thinking.final";
-  if (isThinkingStream) {
-    const plannerRequestId = resolveNearestPlannerRequestId(item, timeline, requestSpansById);
-    if (plannerRequestId) {
-      return plannerRequestId;
+  const itemRequestId = item.requestId?.trim();
+  const hasExplicitStreamBlockKey = Boolean(item.streamKey?.includes(":block:"));
+  if (!isThinkingStream) {
+    if (itemRequestId) {
+      return itemRequestId;
     }
-    const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
-    const turnBoundaryIndex = itemIndex >= 0 ? resolveTurnBoundaryIndex(timeline, itemIndex) : -1;
-    const boundaryItem = turnBoundaryIndex >= 0 ? timeline[turnBoundaryIndex] : undefined;
-    const hasUserPromptInTurn = Boolean(boundaryItem && isProjectionUserPromptItem(boundaryItem));
-    if (!hasUserPromptInTurn) {
-      const itemRequestId = item.requestId?.trim();
-      if (itemRequestId && requestSpansById?.has(itemRequestId)) {
-        return itemRequestId;
-      }
+    if (hasExplicitStreamBlockKey) {
+      return resolveNearestStreamRequestIdInUserTurn(item, timeline, requestSpansById);
     }
     return undefined;
   }
-  return item.requestId?.trim() || undefined;
+  if (hasExplicitStreamBlockKey && !itemRequestId) {
+    const inferredRequestId = resolveNearestStreamRequestIdInUserTurn(
+      item,
+      timeline,
+      requestSpansById,
+    );
+    if (inferredRequestId) {
+      return inferredRequestId;
+    }
+  }
+  const plannerRequestId = resolveNearestPlannerRequestId(item, timeline, requestSpansById);
+  if (plannerRequestId) {
+    return plannerRequestId;
+  }
+  const itemIndex = timeline.findIndex((entry) => entry.id === item.id);
+  const turnBoundaryIndex = itemIndex >= 0 ? resolveTurnBoundaryIndex(timeline, itemIndex) : -1;
+  const boundaryItem = turnBoundaryIndex >= 0 ? timeline[turnBoundaryIndex] : undefined;
+  const hasUserPromptInTurn = Boolean(boundaryItem && isProjectionUserPromptItem(boundaryItem));
+  if (!hasUserPromptInTurn) {
+    if (itemRequestId && requestSpansById?.has(itemRequestId)) {
+      return itemRequestId;
+    }
+  }
+  return undefined;
 }
 
 function projectionStreamDisplayKey(
@@ -1269,13 +1473,17 @@ function projectionStreamDisplayKey(
   const channel =
     item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
   const requestId = resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
+  const streamKey = item.streamKey?.trim();
+  const hasExplicitStreamBlockKey = Boolean(streamKey?.includes(":block:"));
+  if (streamKey && hasExplicitStreamBlockKey) {
+    return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
+  }
   if (requestId && requestSpansById) {
     const span = requestSpansById.get(requestId);
     if (span && !isProjectionRequestActive(span)) {
       return `${channel}:request:${requestId}`;
     }
   }
-  const streamKey = item.streamKey?.trim();
   if (streamKey) {
     return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
   }
@@ -1441,9 +1649,9 @@ function projectionOwnerKey(item: ThreadRunProjectionTimelineItem): string | und
   return item.scope ? `scope:${item.scope}` : undefined;
 }
 
-function compareTimelineItems(
-  left: ThreadRunProjectionTimelineItem,
-  right: ThreadRunProjectionTimelineItem,
+function compareTimelineOrder(
+  left: { at: string; sequence: number; id: string },
+  right: { at: string; sequence: number; id: string },
 ): number {
   const atDiff = left.at.localeCompare(right.at);
   if (atDiff !== 0) {
@@ -1454,6 +1662,13 @@ function compareTimelineItems(
     return sequenceDiff;
   }
   return left.id.localeCompare(right.id);
+}
+
+function compareTimelineItems(
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): number {
+  return compareTimelineOrder(left, right);
 }
 
 function compareMainFeedEntries(

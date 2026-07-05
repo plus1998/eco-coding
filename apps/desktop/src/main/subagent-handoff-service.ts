@@ -14,7 +14,7 @@ const SUMMARY_ROUTE_ROLES = ["planner", "explore", "coder"] as const;
 type Fetcher = typeof fetch;
 
 export interface SubagentHandoffServiceInput {
-  listActivityLines(threadId: string): ThreadActivityLine[];
+  listSubagentActivityLines(threadId: string, agentId: string): Promise<ThreadActivityLine[]>;
   resolveProxyRoutes(threadId: string): readonly AnthropicProxyRoute[] | undefined;
   fetcher?: Fetcher;
 }
@@ -36,10 +36,9 @@ export function createSubagentHandoffService(services: SubagentHandoffServiceInp
 
   return {
     async buildHandoffPrompt(input) {
-      const activityLines = services
-        .listActivityLines(input.threadId)
-        .filter((line) => line.agentId === input.agentId)
-        .map((line) => ({ message: line.message }));
+      const activityLines = (await services.listSubagentActivityLines(input.threadId, input.agentId)).map(
+        (line) => ({ message: line.message }),
+      );
 
       const { older, recent } = splitSubagentActivityForHandoff(activityLines);
       const routes = services.resolveProxyRoutes(input.threadId);

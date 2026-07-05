@@ -7,22 +7,22 @@ import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
+  composeCanUseToolHandlers,
+  createAskUserQuestionHandler,
   defaultSubagentAvailability,
   type EcoAgentRuntimeConfig,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
+  type EcoSubagentAttributionHooks,
   evaluateFilesystemReadConfirmation,
   isReadFilesystemTool,
   normalizeSdkSubagentType,
-  composeCanUseToolHandlers,
-  createAskUserQuestionHandler,
-  type ParsedUsage,
   type PlanReadyPayload,
   readFilesystemPath,
-  type SdkAskUserQuestionRequest,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
+  type SdkAskUserQuestionRequest,
   type SdkToolPermissionDecision,
   type SdkToolPermissionRequest,
   type SessionCapturedPayload,
@@ -60,10 +60,15 @@ ensureDesktopPath();
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { isOpenAICompat, resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
+import {
+  deriveBashApprovalRememberPrefix,
+  formatBashApprovalDenyMessage,
+  formatFilesystemApprovalDenyMessage,
+} from "../shared/bash-approval-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
+import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
-  AGENT_ROLES,
   type AgentAuditExportRequest,
   type AgentRole,
   type AgentTemplate,
@@ -81,7 +86,6 @@ import {
   type CenterServerTestConnectionRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
-  getAgentProfileById,
   IPC_CHANNELS,
   type IpcChannel,
   isBashReviewModeOnlyRuntimeConfigUpdate,
@@ -101,17 +105,17 @@ import {
   type McpServerConfigInput,
   type ModelSettingsSnapshot,
   normalizeThreadRuntimeConfig,
-  resolveSessionMode,
   type OrchestrationProfile,
   type OrchestrationProfileExportRequest,
   type OrchestrationProfileVersionRestoreRequest,
+  type PlanApprovalRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
-  type RoleRouteConfig,
   type RouteManualSpec,
   type RouteProfileInput,
   type RuntimeAgentRole,
   type RuntimeRoleRouteConfig,
+  resolveSessionMode,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
@@ -135,7 +139,6 @@ import {
   type ThreadModelUsageEntry,
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
-  type PlanApprovalRequest,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
@@ -146,10 +149,10 @@ import {
   type ThreadRunToolMetadata,
   type ThreadRuntimeConfig,
   type ThreadRuntimeConfigInput,
+  type ThreadSessionBootstrapResult,
   type ThreadStartRequest,
   type ThreadStatus,
   type ThreadSummary,
-  type ThreadSessionBootstrapResult,
   type ThreadUpdateRuntimeConfigRequest,
   type ThreadUsageLedgerEventView,
   type ThreadUsageSnapshot,
@@ -161,15 +164,12 @@ import {
   withAgentSessionMode,
 } from "../shared/ipc";
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
-import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
+import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
   diffPromptCacheRuntimeSignatures,
   resolvePromptCacheProfileLabel,
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
-import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
-import { emitToolOutputTruncated as emitToolOutputTruncatedEvent } from "./tool-output-run-events";
-import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
   buildRuntimeAgentSkillAssignments,
@@ -183,7 +183,6 @@ import {
 import {
   buildAgentPromptWithContext,
   continueStatusMessage,
-  isContinuableThreadStatus,
   resolveThreadContinueAction,
   type ThreadContinueAction,
   threadEnteredExecutionPhase,
@@ -196,22 +195,14 @@ import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
-  shouldDrainThreadFollowUps,
   shouldBlockThreadFollowUpDrain,
+  shouldDrainThreadFollowUps,
 } from "../shared/thread-follow-up-drain";
 import {
   buildWorktreeMergeSummary,
   formatWorktreeMergeThreadMessage,
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
-import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
-import {
-  clearRequestStartedPersisted,
-  markRequestStartedPersisted,
-  requestTerminalLiveType,
-  requestTerminalMessage,
-  type RequestTerminalStage,
-} from "./thread-request-lifecycle.js";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
@@ -229,21 +220,16 @@ import {
   runtimeRouteToProxyRoute,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
+import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
+  type BashApprovalResolution,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
   getPendingBashApprovalForThread,
   registerPendingBashApproval,
   resolvePendingBashApproval,
-  type BashApprovalResolution,
 } from "./bash-approval-bridge";
-import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
-import {
-  deriveBashApprovalRememberPrefix,
-  formatBashApprovalDenyMessage,
-  formatFilesystemApprovalDenyMessage,
-} from "../shared/bash-approval-ui";
-import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
+import type { UsageBillingObservation } from "./billing-orchestration";
 import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
@@ -256,7 +242,6 @@ import {
   createBillingRuntimeEnvironment,
   resolveBillingRuntimeContext,
 } from "./billing-runtime-environment";
-import { resolveBillingSnapshotSelectionOptions } from "./billing-snapshot-selection-policy";
 import {
   type FinalizeCancelledRunDeps,
   finalizeCancelledRun,
@@ -287,6 +272,7 @@ import { type ConversationStore, createConversationStore } from "./conversation-
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
+import { GitAutoFetcher } from "./git-autofetch";
 import {
   checkoutGitBranch,
   createGitBranch,
@@ -300,7 +286,6 @@ import {
   handleGitPush,
   listGitCommits,
 } from "./git-service";
-import { GitAutoFetcher } from "./git-autofetch";
 import {
   createGitSettingsStore,
   type GitSettingsStore,
@@ -308,30 +293,29 @@ import {
   normalizeGitSettingsSnapshot,
 } from "./git-settings-store";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
+import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { checkMcpServerConnection } from "./mcp-checker";
-import { createMcpStore, type McpStore } from "./mcp-store";
 import { prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
-import {
-  formatPromptCacheBreakLog,
-  formatPromptCacheBreakMessage,
-  resolveClaudeMdDigest,
-  type PromptCacheBreakReason,
-} from "./prompt-cache-fingerprint";
+import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { PackageJsonWatcher } from "./package-json-watcher";
-import { InteractiveTerminalManager } from "./interactive-terminal-manager";
-import { listPackageScripts, preparePackageScriptRun, runPreparedPackageScriptInTerminal } from "./package-scripts";
+import {
+  listPackageScripts,
+  preparePackageScriptRun,
+  runPreparedPackageScriptInTerminal,
+} from "./package-scripts";
+import {
+  cancelPlanApprovalsForThread,
+  getPendingPlanApprovalForThread,
+  getPendingPlanApprovalWaitForThread,
+  registerPendingPlanApproval,
+  resolvePendingPlanApproval,
+} from "./plan-approval-bridge";
+import { formatPromptCacheBreakLog, resolveClaudeMdDigest } from "./prompt-cache-fingerprint";
+import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
 import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
-import {
-  ThreadPromptCacheMonitor,
-  resolveThreadPromptCacheFingerprint,
-} from "./thread-prompt-cache-monitor";
-import {
-  ThreadCacheHitMonitor,
-} from "./thread-cache-hit-monitor";
-import { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-episode";
 import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
@@ -340,15 +324,13 @@ import {
   resolveUpstreamUserAgentOverride,
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
-import {
-  formatUserFacingRequestError,
-  type RequestAttemptResult,
-} from "./request-retry";
+import { formatUserFacingRequestError, type RequestAttemptResult } from "./request-retry";
 import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
+import { listSdkSessionActivityLines, listSdkSubagentActivityLines } from "./sdk-session-activity.js";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import {
   resolveSdkStreamPartialBillingOrchestration,
@@ -364,34 +346,38 @@ import {
 import { listDiscoveredSkills } from "./skills-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
-import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
-import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import {
   clearThreadSubagentLaunchRegistry,
   getThreadSubagentLaunchRegistry,
 } from "./subagent-launch-registry-store.js";
+import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
+import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
+import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
+import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   flushThreadMetrics,
   persistThreadMetrics,
   restoreThreadMetricsFromStore,
 } from "./thread-metrics-runtime";
+import { resolveOrphanedThreadRecoveryAction } from "./thread-orphan-recovery";
 import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
 import { buildThreadPendingPlanView, buildThreadPlanLivePayload } from "./thread-pending-plan-view";
-import {
-  cancelPlanApprovalsForThread,
-  getPendingPlanApprovalForThread,
-  getPendingPlanApprovalWaitForThread,
-  registerPendingPlanApproval,
-  resolvePendingPlanApproval,
-} from "./plan-approval-bridge";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
 import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
+import { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-episode";
+import { resolveThreadPromptCacheFingerprint, ThreadPromptCacheMonitor } from "./thread-prompt-cache-monitor";
+import {
+  clearRequestStartedPersisted,
+  markRequestStartedPersisted,
+  type RequestTerminalStage,
+  requestTerminalLiveType,
+  requestTerminalMessage,
+} from "./thread-request-lifecycle.js";
 import { runThreadRequestWithLifecycle } from "./thread-run-attempt";
-import { resolveOrphanedThreadRecoveryAction } from "./thread-orphan-recovery";
 import {
   type FinalizeThreadRunCleanupInput,
   finalizeThreadRunCleanup,
@@ -407,22 +393,16 @@ import {
   isMetricsOnlyThreadLiveEvent,
 } from "./thread-run-event-normalizer";
 import {
+  resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
-  resolveAskRunOutcome,
   resolvePlanningRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
 import { buildThreadRunProjection } from "./thread-run-projection";
 import { trimProjectionForFeed } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
-import { WorkspaceGitStatusPublisher } from "./workspace-git-status-publisher";
-import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
-import {
-  buildThreadUsageSnapshotResult,
-  type ThreadUsageSnapshotRuntimeServices,
-} from "./thread-usage-snapshot-runtime";
 import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
 import {
   buildDriverRoutes,
@@ -434,9 +414,15 @@ import {
   roleRoutesFromRuntime,
 } from "./thread-runtime-routes";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
+import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
 import { pendingThreadTitle, shouldReplaceAutoThreadTitle, summarizeThreadTitle } from "./thread-title";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
+import {
+  buildThreadUsageSnapshotResult,
+  type ThreadUsageSnapshotRuntimeServices,
+} from "./thread-usage-snapshot-runtime";
+import { emitToolOutputTruncated as emitToolOutputTruncatedEvent } from "./tool-output-run-events";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
@@ -456,6 +442,7 @@ import {
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
+import { WorkspaceGitStatusPublisher } from "./workspace-git-status-publisher";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
   claudePlanFileExists,
@@ -768,14 +755,14 @@ app.whenReady().then(async () => {
     }
   };
   ecoCompactService = createEcoCompactService({
-    listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
+    listActivityLines: (threadId) => listThreadActivityFromSdkSession(threadId),
     getThreadPrompt: (threadId) => conversationStore.getThread(threadId)?.prompt,
     saveCompactHandoff: (threadId, input) => conversationStore.saveCompactHandoff(threadId, input),
     clearSdkSession: (threadId) => conversationStore.clearSdkSession(threadId),
     resolveProxyRoutes: resolveProxyRoutesForThread,
   });
   subagentHandoffService = createSubagentHandoffService({
-    listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
+    listSubagentActivityLines: (threadId, agentId) => listSubagentActivityFromSdkSession(threadId, agentId),
     resolveProxyRoutes: resolveProxyRoutesForThread,
   });
   contextScheduler = new ContextSnapshotScheduler({
@@ -834,7 +821,7 @@ app.whenReady().then(async () => {
     },
   });
   compactionAuditService = createCompactionAuditService({
-    listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
+    listActivityLines: (threadId) => listThreadActivityFromSdkSession(threadId),
     getContextSnapshot: (threadId) => contextScheduler.getDisplaySnapshot(threadId),
     getSdkSession: (threadId) => conversationStore.getSdkSession(threadId),
     getPendingPlan: (threadId) => conversationStore.getPendingPlan(threadId),
@@ -1529,7 +1516,7 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
-    return conversationStore.listActivityLines(threadId);
+    return listThreadActivityFromSdkSession(threadId);
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (payload: unknown, modeArg?: unknown) => {
@@ -1591,7 +1578,7 @@ function registerIpcHandlers(): void {
       profiles: settings.orchestrationProfiles,
       getBillingSnapshot: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
     });
-    const archive = buildAgentAuditExportArchive({
+    const archive = await buildAgentAuditExportArchive({
       appVersion: app.getVersion(),
       threads,
       profiles: settings.orchestrationProfiles,
@@ -1599,7 +1586,7 @@ function registerIpcHandlers(): void {
       profilePerformance,
       getThreadBilling: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
       getThreadRunProjection: (threadId) => buildCurrentThreadRunProjection(threadId),
-      listThreadActivity: (threadId) => conversationStore.listActivityLines(threadId),
+      listThreadActivity: (threadId) => listThreadActivityFromSdkSession(threadId),
       listRunAttempts: (threadId) => conversationStore.listRunAttempts(threadId),
       listAgentInstances: (threadId) => conversationStore.listAgentInstances(threadId),
       listUsageLedgerEvents: (threadId) => conversationStore.listUsageLedgerEvents(threadId),
@@ -1621,7 +1608,7 @@ function registerIpcHandlers(): void {
       threadId,
       services: {
         listTodos: (id) => conversationStore.listCoderTodos(id),
-        listActivity: (id) => conversationStore.listActivityLines(id),
+        listActivity: (id) => listThreadActivityFromSdkSession(id),
         replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
       },
     });
@@ -2981,9 +2968,7 @@ function threadHasResumableCheckpoint(
     return activityLines.some((line) => line.role !== "tool");
   }
   return activityLines.some(
-    (line) =>
-      line.role === "system" &&
-      (line.message.includes("已停止") || line.message.includes("检查点")),
+    (line) => line.role === "system" && (line.message.includes("已停止") || line.message.includes("检查点")),
   );
 }
 
@@ -3051,14 +3036,15 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
     cancelClarifications: cancelClarificationsForThread,
     cancelBashApprovals: cancelBashApprovalsForThread,
     cancelPlanApprovals: cancelPlanApprovalsForThreadWithStoreCleanup,
-    shouldPreservePlanApprovals: (threadId) =>
-      shouldPreservePlanApprovalsOnRunCleanup({
+    shouldPreservePlanApprovals: (threadId) => {
+      const threadStatus = conversationStore.getThread(threadId)?.status;
+      return shouldPreservePlanApprovalsOnRunCleanup({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
-        threadStatus: conversationStore.getThread(threadId)?.status,
+        ...(threadStatus && { threadStatus }),
         hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
-      }),
-    shouldPreserveClarifications: (threadId) =>
-      Boolean(getPendingClarificationForThread(threadId)),
+      });
+    },
+    shouldPreserveClarifications: (threadId) => Boolean(getPendingClarificationForThread(threadId)),
     shouldDeferRunCleanupFinish: (threadId) =>
       shouldDeferRunCleanupFinish({
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
@@ -3131,7 +3117,7 @@ async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<voi
     shouldBlockThreadFollowUpDrain({
       hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
       hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
-      threadStatus: thread?.status,
+      ...(thread?.status && { threadStatus: thread.status }),
       hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
     })
   ) {
@@ -3229,68 +3215,61 @@ async function runAskThread(
   resetSubagentContextWindows(thread.id);
 
   try {
-    const outcome = await runThreadRequestOnce(
-      thread.id,
-      "ask",
-      controller.signal,
-      async () => {
-        return runThreadRequestWithRuntimeProxy({
-          threadId: thread.id,
-          attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
-          recordRouteFingerprint: recordThreadRouteFingerprint,
-          startRuntimeProxy,
-          onProxyReady: ({ proxy }) => {
-            process.stderr.write(
-              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-            );
-            updateThread(thread.id, {
-              status: "running",
-              message: `Local model router ready: ${proxy.baseUrl}`,
-            });
-          },
-          run: async ({ proxy: attemptProxy, routes }) => {
-            const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
-            if (effectiveResume) {
-              await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+    const outcome = await runThreadRequestOnce(thread.id, "ask", controller.signal, async () => {
+      return runThreadRequestWithRuntimeProxy({
+        threadId: thread.id,
+        attachments,
+        resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
+        recordRouteFingerprint: recordThreadRouteFingerprint,
+        startRuntimeProxy,
+        onProxyReady: ({ proxy }) => {
+          process.stderr.write(`[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`);
+          updateThread(thread.id, {
+            status: "running",
+            message: `Local model router ready: ${proxy.baseUrl}`,
+          });
+        },
+        run: async ({ proxy: attemptProxy, routes }) => {
+          const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
+          if (effectiveResume) {
+            await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+          }
+          try {
+            const driver = createSdkDriver(thread.id, attemptProxy, undefined, "ask");
+            if (!driver.runAsk) {
+              throw new Error("Runtime driver does not support ask mode.");
             }
-            try {
-              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "ask");
-              if (!driver.runAsk) {
-                throw new Error("Runtime driver does not support ask mode.");
-              }
 
-              return await consumeSdkRunEvents({
-                events: driver.runAsk(
-                  buildSdkRunInput({
-                    threadId: thread.id,
-                    prompt,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routes,
-                    signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                    ...(effectiveResume ? { resume: effectiveResume } : {}),
-                  }),
-                ),
-                threadId: thread.id,
-                worktreePath: cwd,
-                signal: controller.signal,
-                onUsageRecorded: onSdkUsageRecordedEvent,
-                captureSession: captureSdkSessionFromEvent,
-                emitActivity: emitSdkStreamActivity,
-              });
-            } catch (error) {
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              return { ok: false, reason: errorMessage(error) };
+            return await consumeSdkRunEvents({
+              events: driver.runAsk(
+                buildSdkRunInput({
+                  threadId: thread.id,
+                  prompt,
+                  workspacePath: workspace.path,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                  agentRegistry: resolveAgentRuntimeConfigForThread(thread),
+                  ...(effectiveResume ? { resume: effectiveResume } : {}),
+                }),
+              ),
+              threadId: thread.id,
+              worktreePath: cwd,
+              signal: controller.signal,
+              onUsageRecorded: onSdkUsageRecordedEvent,
+              captureSession: captureSdkSessionFromEvent,
+              emitActivity: emitSdkStreamActivity,
+            });
+          } catch (error) {
+            if (controller.signal.aborted) {
+              return { ok: false, reason: "cancelled by user", aborted: true };
             }
-          },
-        });
-      },
-    );
+            return { ok: false, reason: errorMessage(error) };
+          }
+        },
+      });
+    });
 
     const decision = resolveAskRunOutcome(outcome);
     await applyMainThreadRunDecisionEffects({
@@ -3341,100 +3320,93 @@ async function runPlanThread(
   let planningPlanCaptured = false;
 
   try {
-    const {
-      worktreePlan: resolvedPlan,
-      cwd: resolvedCwd,
-    } = await resolveThreadWorktree(workspace, thread.id, worktreePlan);
+    const { worktreePlan: resolvedPlan, cwd: resolvedCwd } = await resolveThreadWorktree(
+      workspace,
+      thread.id,
+      worktreePlan,
+    );
     worktreePlan = resolvedPlan;
     const effectiveCwd = worktreePath?.trim() || resolvedCwd;
     activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
 
-    const outcome = await runThreadRequestOnce(
-      thread.id,
-      "planning",
-      controller.signal,
-      async () => {
-        return runThreadRequestWithRuntimeProxy({
-          threadId: thread.id,
-          attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
-          recordRouteFingerprint: recordThreadRouteFingerprint,
-          startRuntimeProxy,
-          onProxyReady: ({ proxy }) => {
-            process.stderr.write(
-              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-            );
-            updateThread(thread.id, {
-              status: "running",
-              message: `Local model router ready: ${proxy.baseUrl}`,
+    const outcome = await runThreadRequestOnce(thread.id, "planning", controller.signal, async () => {
+      return runThreadRequestWithRuntimeProxy({
+        threadId: thread.id,
+        attachments,
+        resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
+        recordRouteFingerprint: recordThreadRouteFingerprint,
+        startRuntimeProxy,
+        onProxyReady: ({ proxy }) => {
+          process.stderr.write(`[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`);
+          updateThread(thread.id, {
+            status: "running",
+            message: `Local model router ready: ${proxy.baseUrl}`,
+          });
+        },
+        run: async ({ proxy: attemptProxy, routes }) => {
+          const effectiveResume = resume ?? resolveResumeOptions(thread.id, effectiveCwd);
+          if (effectiveResume) {
+            await ensureContextHeadroom(thread.id, effectiveCwd, controller.signal, {
+              ignoreRunningGuard: true,
             });
-          },
-          run: async ({ proxy: attemptProxy, routes }) => {
-            const effectiveResume = resume ?? resolveResumeOptions(thread.id, effectiveCwd);
-            if (effectiveResume) {
-              await ensureContextHeadroom(thread.id, effectiveCwd, controller.signal, {
-                ignoreRunningGuard: true,
-              });
+          }
+          try {
+            const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
+            if (!driver.runPlan) {
+              throw new Error("Runtime driver does not support plan mode.");
             }
-            try {
-              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
-              if (!driver.runPlan) {
-                throw new Error("Runtime driver does not support plan mode.");
-              }
 
-              const result = await consumeSdkRunEvents({
-                events: driver.runPlan(
-                  buildSdkRunInput({
+            const result = await consumeSdkRunEvents({
+              events: driver.runPlan(
+                buildSdkRunInput({
+                  threadId: thread.id,
+                  prompt,
+                  workspacePath: workspace.path,
+                  worktreePath: effectiveCwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, prompt, { skillsScope: "planning" }),
+                  agentRegistry: resolveAgentRuntimeConfigForThread(thread),
+                  ...(effectiveResume ? { resume: effectiveResume } : {}),
+                }),
+              ),
+              threadId: thread.id,
+              worktreePath: effectiveCwd,
+              signal: controller.signal,
+              onUsageRecorded: onSdkUsageRecordedEvent,
+              captureSession: captureSdkSessionFromEvent,
+              emitActivity: emitSdkStreamActivity,
+              onEvent: (event) => {
+                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                  planningPlanCaptured = captureThreadPlanReady({
                     threadId: thread.id,
-                    prompt,
                     workspacePath: workspace.path,
                     worktreePath: effectiveCwd,
-                    routes,
-                    signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(thread.id, prompt, { skillsScope: "planning" }),
-                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                    ...(effectiveResume ? { resume: effectiveResume } : {}),
-                  }),
-                ),
-                threadId: thread.id,
-                worktreePath: effectiveCwd,
-                signal: controller.signal,
-                onUsageRecorded: onSdkUsageRecordedEvent,
-                captureSession: captureSdkSessionFromEvent,
-                emitActivity: emitSdkStreamActivity,
-                onEvent: (event) => {
-                  if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    planningPlanCaptured = captureThreadPlanReady({
-                      threadId: thread.id,
-                      workspacePath: workspace.path,
-                      worktreePath: effectiveCwd,
-                      routesJson: JSON.stringify(routes),
-                      payload: event.payload,
-                      awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
-                    });
-                    if (endPlanningPassAfterPlanReady.delete(thread.id)) {
-                      controller.abort();
-                    }
+                    routesJson: JSON.stringify(routes),
+                    payload: event.payload,
+                    awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
+                  });
+                  if (endPlanningPassAfterPlanReady.delete(thread.id)) {
+                    controller.abort();
                   }
-                },
-              });
-              if (!result.ok) {
-                return result;
-              }
-              return { ok: true, planningPlanCaptured };
-            } catch (error) {
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              return { ok: false, reason: errorMessage(error) };
+                }
+              },
+            });
+            if (!result.ok) {
+              return result;
             }
-          },
-        });
-      },
-    );
+            return { ok: true, planningPlanCaptured };
+          } catch (error) {
+            if (controller.signal.aborted) {
+              return { ok: false, reason: "cancelled by user", aborted: true };
+            }
+            return { ok: false, reason: errorMessage(error) };
+          }
+        },
+      });
+    });
 
-    const hasPendingPlan =
-      planningPlanCaptured || Boolean(conversationStore.getPendingPlan(thread.id));
+    const hasPendingPlan = planningPlanCaptured || Boolean(conversationStore.getPendingPlan(thread.id));
     const decision = resolvePlanningRunOutcome(outcome, { hasPendingPlan });
     await applyMainThreadRunDecisionEffects({
       threadId: thread.id,
@@ -3537,80 +3509,73 @@ async function runCodingThreadAutonomous(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const runOutcome = await runThreadRequestOnce(
-      thread.id,
-      "execution",
-      controller.signal,
-      async () => {
-        return runThreadRequestWithRuntimeProxy({
-          threadId: thread.id,
-          attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
-          recordRouteFingerprint: recordThreadRouteFingerprint,
-          startRuntimeProxy,
-          onProxyReady: ({ proxy, plannerRoute }) => {
-            process.stderr.write(
-              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-            );
-            updateThread(thread.id, {
-              message: `Local model router ready: ${proxy.baseUrl}`,
-              status: "running",
-            });
-            process.stderr.write(
-              `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (direct / claude_code preset)\n`,
-            );
-          },
-          run: async ({ proxy: attemptProxy, routes }) => {
-            const effectiveResume = resumeOptsForRun;
-            if (effectiveResume) {
-              await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
-            }
+    const runOutcome = await runThreadRequestOnce(thread.id, "execution", controller.signal, async () => {
+      return runThreadRequestWithRuntimeProxy({
+        threadId: thread.id,
+        attachments,
+        resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
+        recordRouteFingerprint: recordThreadRouteFingerprint,
+        startRuntimeProxy,
+        onProxyReady: ({ proxy, plannerRoute }) => {
+          process.stderr.write(`[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`);
+          updateThread(thread.id, {
+            message: `Local model router ready: ${proxy.baseUrl}`,
+            status: "running",
+          });
+          process.stderr.write(
+            `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (direct / claude_code preset)\n`,
+          );
+        },
+        run: async ({ proxy: attemptProxy, routes }) => {
+          const effectiveResume = resumeOptsForRun;
+          if (effectiveResume) {
+            await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+          }
 
-            try {
-              const driver = createSdkDriver(
-                thread.id,
-                attemptProxy,
-                taskRunHooks.hookContextExtras,
-                "execution",
-              );
-              const result = await consumeSdkRunEvents({
-                events: driver.run(
-                  buildSdkRunInput({
-                    threadId: thread.id,
-                    prompt,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routes,
-                    signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                    ...(effectiveResume ? { resume: effectiveResume } : {}),
-                  }),
-                ),
-                threadId: thread.id,
-                worktreePath: cwd,
-                signal: controller.signal,
-                onUsageRecorded: onSdkUsageRecordedEvent,
-                captureSession: captureSdkSessionFromEvent,
-                emitActivity: emitSdkStreamActivity,
-                onEvent: (event) => {
-                  taskRuntime.handleEvent(event);
-                },
-              });
-              if (!result.ok) {
-                return result;
-              }
-              return { ok: true };
-            } catch (error) {
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              return { ok: false, reason: errorMessage(error) };
+          try {
+            const driver = createSdkDriver(
+              thread.id,
+              attemptProxy,
+              taskRunHooks.hookContextExtras,
+              "execution",
+            );
+            const result = await consumeSdkRunEvents({
+              events: driver.run(
+                buildSdkRunInput({
+                  threadId: thread.id,
+                  prompt,
+                  workspacePath: workspace.path,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                  agentRegistry: resolveAgentRuntimeConfigForThread(thread),
+                  ...(effectiveResume ? { resume: effectiveResume } : {}),
+                }),
+              ),
+              threadId: thread.id,
+              worktreePath: cwd,
+              signal: controller.signal,
+              onUsageRecorded: onSdkUsageRecordedEvent,
+              captureSession: captureSdkSessionFromEvent,
+              emitActivity: emitSdkStreamActivity,
+              onEvent: (event) => {
+                taskRuntime.handleEvent(event);
+              },
+            });
+            if (!result.ok) {
+              return result;
             }
-          },
-        });
-      },
-    );
+            return { ok: true };
+          } catch (error) {
+            if (controller.signal.aborted) {
+              return { ok: false, reason: "cancelled by user", aborted: true };
+            }
+            return { ok: false, reason: errorMessage(error) };
+          }
+        },
+      });
+    });
 
     const runDecision = resolveAutonomousRunOutcome(runOutcome, {
       hasPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
@@ -3880,7 +3845,12 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     conversationStore.getThread(input.threadId) ?? activeThread,
   );
   const sessionMode = threadSessionMode(input.threadId);
-  const activityLines = conversationStore.listActivityLines(input.threadId);
+  const activityLines = input.rewindTarget
+    ? activityLinesBeforeRewindTarget(
+        await listThreadActivityFromSdkSession(input.threadId),
+        input.rewindTarget,
+      )
+    : await listThreadActivityFromSdkSession(input.threadId);
   const compactHandoff = conversationStore.getCompactHandoff(input.threadId);
   const sdkSession = conversationStore.getSdkSession(input.threadId);
   const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
@@ -3919,7 +3889,6 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     sessionMode,
     followUp: prompt,
     canResume,
-    sessionMode: threadSessionMode(input.threadId),
     hasPendingPlan,
     hasApprovedPlanOnDisk,
     enteredExecutionPhase,
@@ -3965,6 +3934,18 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   return {
     thread: ensureThreadRuntimeConfig(conversationStore.getThread(input.threadId) ?? updated),
   } satisfies ThreadContinueResult;
+}
+
+function activityLinesBeforeRewindTarget(
+  activityLines: readonly ThreadActivityLine[],
+  rewindTarget: ThreadActivityRewindTarget,
+): ThreadActivityLine[] {
+  const index = activityLines.findIndex(
+    (line) =>
+      line.id === rewindTarget.activityLineId ||
+      line.rewindTarget?.userMessageId === rewindTarget.userMessageId,
+  );
+  return index >= 0 ? activityLines.slice(0, index) : [...activityLines];
 }
 
 function parseThreadFollowUpEnqueueRequest(payload: unknown): ThreadFollowUpEnqueueRequest {
@@ -4075,7 +4056,11 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
   if (status === "running" || status === "queued" || status === "awaiting_plan") {
     return true;
   }
-  return Boolean(getPendingClarificationForThread(threadId) || getPendingBashApprovalForThread(threadId) || getPendingPlanApprovalForThread(threadId));
+  return Boolean(
+    getPendingClarificationForThread(threadId) ||
+      getPendingBashApprovalForThread(threadId) ||
+      getPendingPlanApprovalForThread(threadId),
+  );
 }
 
 function buildThreadFollowUpMutationResult(followUp: ThreadPendingFollowUp): ThreadFollowUpMutationResult {
@@ -4507,6 +4492,23 @@ function createFinalizeCancelledRunDeps(): FinalizeCancelledRunDeps {
   };
 }
 
+async function listThreadActivityFromSdkSession(threadId: string): Promise<ThreadActivityLine[]> {
+  return listSdkSessionActivityLines(threadId, {
+    getSdkSession: (id) => conversationStore.getSdkSession(id),
+    writeError: (message) => process.stderr.write(message),
+  });
+}
+
+async function listSubagentActivityFromSdkSession(
+  threadId: string,
+  agentId: string,
+): Promise<ThreadActivityLine[]> {
+  return listSdkSubagentActivityLines(threadId, agentId, {
+    getSdkSession: (id) => conversationStore.getSdkSession(id),
+    writeError: (message) => process.stderr.write(message),
+  });
+}
+
 async function handleRunCancelled(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
   await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps());
@@ -4536,7 +4538,7 @@ function buildSdkHookContextExtras(
   extras?: SdkRunHookContextExtras,
 ): Partial<EcoHookContext> {
   const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
-  const subagentAttribution = {
+  const subagentAttribution: EcoSubagentAttributionHooks = {
     resolveAgentId: (input: { role: RuntimeAgentRole; parentToolUseId?: string; sessionId: string }) =>
       subagentMetricsRegistry.resolveAgentId(threadId, {
         role: input.role,
@@ -4576,7 +4578,10 @@ function buildSdkHookContextExtras(
     handoffService: subagentHandoffService,
   });
   if (subagentSessions.onDelegationLinked) {
-    subagentDelegationLinkersByThread.set(threadId, subagentSessions.onDelegationLinked.bind(subagentSessions));
+    subagentDelegationLinkersByThread.set(
+      threadId,
+      subagentSessions.onDelegationLinked.bind(subagentSessions),
+    );
   }
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
   return { ...rest, subagentSessions, subagentAttribution, subagentLaunchRegistry };
@@ -4741,8 +4746,7 @@ async function prepareThreadRewindForContinue(input: {
     storedTarget.activityLineId,
   );
   conversationStore.clearThreadClaudePlanFilePath(input.threadId);
-  const remainingActivity = conversationStore.listActivityLines(input.threadId);
-  if (!remainingActivity.some((line) => line.role === "user")) {
+  if (!resumeSessionAt) {
     conversationStore.updateThreadPrompt(input.threadId, input.prompt);
   }
   if (!resumeSessionAt) {
@@ -4784,10 +4788,13 @@ function captureSdkSessionFromEvent(
       typeof payload === "object" &&
       typeof (payload as { userMessageId?: string }).userMessageId === "string"
     ) {
-      conversationStore.bindLatestUserActivityToSdkMessage(
+      const bound = conversationStore.bindLatestUserRunEventToSdkMessage(
         threadId,
         (payload as { userMessageId: string }).userMessageId,
       );
+      if (bound) {
+        scheduleThreadRunProjectionUpdated(threadId);
+      }
     }
     return;
   }
@@ -5199,9 +5206,7 @@ async function runThreadContinuation(
 
 /** SDK drives narrative, tool, todo, and billing activity. */
 function tryResolveStreamSubagentDelegation(threadId: string, parentToolUseId: string): void {
-  const linked = getThreadSubagentLaunchRegistry(threadId).resolveFromStreamParentToolUseId(
-    parentToolUseId,
-  );
+  const linked = getThreadSubagentLaunchRegistry(threadId).resolveFromStreamParentToolUseId(parentToolUseId);
   if (!linked) {
     return;
   }
@@ -5226,10 +5231,9 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
           : typeof event.payload.agent_type === "string"
             ? event.payload.agent_type
             : "";
-      const role = normalizeSdkSubagentType(rawRole) ??
-        (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
-          ? rawRole
-          : undefined);
+      const role =
+        normalizeSdkSubagentType(rawRole) ??
+        (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY ? rawRole : undefined);
       subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
     }
@@ -5303,7 +5307,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
             toolName: extras.tool.name,
             originalChars: extras.tool.outputOriginalChars,
             keptChars: extras.tool.outputKeptChars,
-            toolUseId: extras.tool.toolUseId,
+            ...(extras.tool.toolUseId && { toolUseId: extras.tool.toolUseId }),
           },
         );
       }
@@ -5336,9 +5340,7 @@ function resolveProxyUsageApiCompat(
     if (!route) {
       return "anthropic";
     }
-    const provider = providerStore
-      .listProvidersWithSecrets()
-      .find((entry) => entry.id === route.providerId);
+    const provider = providerStore.listProvidersWithSecrets().find((entry) => entry.id === route.providerId);
     return resolveUpstreamApiCompat(route.apiCompat, provider?.apiCompat);
   } catch {
     return "anthropic";
@@ -5514,10 +5516,12 @@ async function compactThreadContextManual(threadId: string): Promise<ThreadCompa
     return { ok: false, message: "上下文正在压缩中，请稍候。" };
   }
 
-  process.stderr.write(`[eco] context compaction requested thread=${threadId} trigger=manual session=${sdkSession.sessionId}\n`);
+  process.stderr.write(
+    `[eco] context compaction requested thread=${threadId} trigger=manual session=${sdkSession.sessionId}\n`,
+  );
 
   try {
-    archiveThreadContextBeforeCompaction(threadId, "manual", sdkSession.sessionId);
+    await archiveThreadContextBeforeCompaction(threadId, "manual", sdkSession.sessionId);
 
     const roleRoutes = resolveRoleRoutesForThread(threadId);
     const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
@@ -5913,29 +5917,29 @@ async function runGitCommand(
   activeGitOperations += 1;
   try {
     return await new Promise((resolve) => {
-    const child = execFile(
-      command[0] === "git" ? resolveGitExecutable() : (command[0] ?? resolveGitExecutable()),
-      command.slice(1),
-      { cwd, maxBuffer: 10 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) {
-          const failed = error as NodeJS.ErrnoException & { code?: number };
-          resolve({
-            exitCode: typeof failed.code === "number" ? failed.code : 1,
-            stdout: String(stdout ?? ""),
-            stderr: String(stderr ?? errorMessage(error)),
-          });
-          return;
-        }
-        resolve({ exitCode: 0, stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
-    if (options?.stdin !== undefined) {
-      child.stdin?.end(options.stdin);
-    } else {
-      child.stdin?.end();
-    }
-  });
+      const child = execFile(
+        command[0] === "git" ? resolveGitExecutable() : (command[0] ?? resolveGitExecutable()),
+        command.slice(1),
+        { cwd, maxBuffer: 10 * 1024 * 1024 },
+        (error, stdout, stderr) => {
+          if (error) {
+            const failed = error as NodeJS.ErrnoException & { code?: number };
+            resolve({
+              exitCode: typeof failed.code === "number" ? failed.code : 1,
+              stdout: String(stdout ?? ""),
+              stderr: String(stderr ?? errorMessage(error)),
+            });
+            return;
+          }
+          resolve({ exitCode: 0, stdout: String(stdout), stderr: String(stderr) });
+        },
+      );
+      if (options?.stdin !== undefined) {
+        child.stdin?.end(options.stdin);
+      } else {
+        child.stdin?.end();
+      }
+    });
   } finally {
     activeGitOperations -= 1;
   }
@@ -5959,7 +5963,8 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
-  const pendingPlan = patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
+  const pendingPlan =
+    patch.status === "awaiting_plan" ? conversationStore.getPendingPlan(threadId) : undefined;
   emitThreadEvent(
     threadId,
     `thread.${patch.status}`,
@@ -6048,7 +6053,8 @@ function emitThreadEvent(
   const isSilentFollowUpEvent = type.startsWith("thread.follow_up.");
   const displayMessage = isSilentFollowUpEvent ? "" : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
-  const persistActivityLine = type === "thread.user_prompt" || type === "thread.api_error";
+  const persistActivityLine = shouldPersistThreadActivityLine(type);
+  const activityAgentId = extras?.agentId?.trim() || extras?.bashApproval?.agentId?.trim();
 
   let persistedActivityLine: ThreadActivityLine | undefined;
   if (
@@ -6062,9 +6068,7 @@ function emitThreadEvent(
       role: String(role),
       message: displayMessage,
       stream,
-      ...((extras?.agentId?.trim() || extras?.bashApproval?.agentId?.trim()) && {
-        agentId: (extras?.agentId ?? extras?.bashApproval?.agentId)!.trim(),
-      }),
+      ...(activityAgentId && { agentId: activityAgentId }),
       ...(extras?.apiError && { apiError: extras.apiError }),
     });
   }
@@ -6159,11 +6163,7 @@ function emitThreadEvent(
     payload.tool = extras.tool;
   }
 
-  if (
-    type === "workspace.changes" ||
-    type === "thread.completed" ||
-    type === "thread.idle"
-  ) {
+  if (type === "workspace.changes" || type === "thread.completed" || type === "thread.idle") {
     scheduleWorkspaceGitStatusPublishForThread(threadId);
   }
 
@@ -6174,15 +6174,15 @@ function emitThreadEvent(
 function emitContextCompactionStatus(
   threadId: string,
   input: {
-  stage: "started" | "completed" | "failed" | "suspended";
-  trigger?: "auto" | "manual";
-  sessionId?: string;
-  archiveId?: string;
-  preTokens?: number;
-  postTokens?: number;
-  detail?: string;
-  consecutiveFailures?: number;
-},
+    stage: "started" | "completed" | "failed" | "suspended";
+    trigger?: "auto" | "manual";
+    sessionId?: string;
+    archiveId?: string;
+    preTokens?: number;
+    postTokens?: number;
+    detail?: string;
+    consecutiveFailures?: number;
+  },
 ): void {
   if (!conversationStore.getThread(threadId)) {
     return;
@@ -6316,6 +6316,7 @@ function recordThreadRunEventFromLiveEvent(input: {
     role: input.role,
     stream: input.stream,
     ...(agentId && { agentId }),
+    ...(parentToolUseId && { parentToolUseId }),
     ...(input.persistedActivityLine && { persistedActivityLine: input.persistedActivityLine }),
     ...(input.extras && { extras: input.extras }),
   });
@@ -6362,10 +6363,7 @@ function recordThreadRunEventFromLiveEvent(input: {
   }
   try {
     conversationStore.appendThreadRunEvent(event);
-    if (
-      (event.eventType === "message.final" || event.eventType === "thinking.final") &&
-      event.requestId
-    ) {
+    if ((event.eventType === "message.final" || event.eventType === "thinking.final") && event.requestId) {
       emitRequestTerminalEvent(input.threadId, {
         requestId: event.requestId,
         role: input.role,
@@ -6373,16 +6371,16 @@ function recordThreadRunEventFromLiveEvent(input: {
         stage: "completed",
       });
     } else if (event.eventType === "api.error" && event.requestId) {
+      const detail = event.message.trim();
       emitRequestTerminalEvent(input.threadId, {
         requestId: event.requestId,
         role: input.role,
         ...(agentId && { agentId }),
         stage: "failed",
-        detail: event.message.trim() || undefined,
+        ...(detail && { detail }),
       });
     }
-    const projectionStreaming =
-      input.stream ? true : input.type === "message.delta" ? false : undefined;
+    const projectionStreaming = input.stream ? true : input.type === "message.delta" ? false : undefined;
     scheduleThreadRunProjectionUpdated(
       input.threadId,
       ...(projectionStreaming !== undefined ? [{ streaming: projectionStreaming }] : []),
@@ -6401,6 +6399,7 @@ function resolveLiveEventStreamKey(input: {
   role: string;
   stream: boolean;
   agentId?: string;
+  parentToolUseId?: string;
   persistedActivityLine?: ThreadActivityLine;
   extras?: EmitThreadEventExtras;
 }): string | undefined {
@@ -6411,14 +6410,20 @@ function resolveLiveEventStreamKey(input: {
   if (toolUseId) {
     return `tool:${toolUseId}`;
   }
-  if (
-    input.stream ||
-    input.type === "message.delta" ||
-    input.type === "thinking.delta"
-  ) {
-    return activityStreamKey(input.threadId, input.agentId, input.role);
+  if (input.stream || input.type === "message.delta" || input.type === "thinking.delta") {
+    return activityStreamKey(
+      input.threadId,
+      input.agentId,
+      input.role,
+      input.parentToolUseId,
+      readLiveEventSdkStreamBlockKey(input.extras),
+    );
   }
   return undefined;
+}
+
+function shouldPersistThreadActivityLine(_type: string): boolean {
+  return false;
 }
 
 function resolveLiveRequestId(
@@ -6466,6 +6471,14 @@ function readLiveEventParentToolUseId(extras?: EmitThreadEventExtras): string | 
   return undefined;
 }
 
+function readLiveEventSdkStreamBlockKey(extras?: EmitThreadEventExtras): string | undefined {
+  const fromMetadata = extras?.metadata?.sdkStreamBlockKey ?? extras?.metadata?.stream_block_key;
+  if (typeof fromMetadata === "string" && fromMetadata.trim()) {
+    return fromMetadata.trim();
+  }
+  return undefined;
+}
+
 function resolveAgentIdByParentToolUseId(threadId: string, parentToolUseId: string): string | undefined {
   const linked = subagentMetricsRegistry.resolveAgentIdByParentToolUse(threadId, parentToolUseId);
   if (linked) {
@@ -6483,9 +6496,7 @@ function readSdkEventParentToolUseId(event: AgentEventLike): string | undefined 
     return undefined;
   }
   const parentToolUseId = (payload as { parent_tool_use_id?: unknown }).parent_tool_use_id;
-  return typeof parentToolUseId === "string" && parentToolUseId.trim()
-    ? parentToolUseId.trim()
-    : undefined;
+  return typeof parentToolUseId === "string" && parentToolUseId.trim() ? parentToolUseId.trim() : undefined;
 }
 
 function readStreamAttributedAgentId(
@@ -6613,10 +6624,7 @@ function shortProjectionId(id: string): string {
   return id.length > 24 ? id.slice(-24) : id;
 }
 
-function scheduleThreadRunProjectionUpdated(
-  threadId: string,
-  options?: { streaming?: boolean },
-): void {
+function scheduleThreadRunProjectionUpdated(threadId: string, options?: { streaming?: boolean }): void {
   const existing = runProjectionEmitTimers.get(threadId);
   if (options?.streaming) {
     if (existing) {
@@ -6669,8 +6677,8 @@ function archiveThreadContextBeforeCompaction(
   threadId: string,
   trigger: "auto" | "manual",
   sessionId?: string,
-): void {
-  compactionAuditService.archiveBeforeCompaction(threadId, {
+): Promise<void> {
+  return compactionAuditService.archiveBeforeCompaction(threadId, {
     trigger,
     ...(sessionId && { sessionId }),
   });
@@ -6803,7 +6811,7 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       }
     },
     onPreCompact: async (input) => {
-      archiveThreadContextBeforeCompaction(threadId, input.trigger, input.sessionId);
+      await archiveThreadContextBeforeCompaction(threadId, input.trigger, input.sessionId);
     },
   };
 }
@@ -6861,10 +6869,7 @@ function toolMetadataFromBashApprovalRequest(
   };
 }
 
-function bashApprovalEventExtras(
-  request: BashApprovalRequest,
-  liveType: string,
-): EmitThreadEventExtras {
+function bashApprovalEventExtras(request: BashApprovalRequest, liveType: string): EmitThreadEventExtras {
   return {
     bashApproval: request,
     tool: toolMetadataFromBashApprovalRequest(request, liveType),
@@ -7050,9 +7055,16 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         agentId: approvalAgentId,
         ...(request.agentType ? { agentType: request.agentType } : {}),
       };
-      emitThreadEvent(threadId, "bash_approval.denied", `已拒绝：${confirmation.userMessage}`, "tool", false, {
-        ...bashApprovalEventExtras(deniedApproval, "bash_approval.denied"),
-      });
+      emitThreadEvent(
+        threadId,
+        "bash_approval.denied",
+        `已拒绝：${confirmation.userMessage}`,
+        "tool",
+        false,
+        {
+          ...bashApprovalEventExtras(deniedApproval, "bash_approval.denied"),
+        },
+      );
       return {
         behavior: "deny",
         message: confirmation.reason,
@@ -7133,7 +7145,7 @@ function resolveFilesystemReadApprovalRequest(input: {
       reason: string;
       userMessage: string;
       riskScore?: number;
-      riskLevel?: import("../shared/ipc").ApprovalRiskLevel;
+      riskLevel?: import("@eco/shared").ApprovalRiskLevel;
     }
   | { action: "deny"; reason: string; userMessage: string }
   | undefined {
@@ -7215,10 +7227,10 @@ function isBashApprovalGranted(
   command?: string,
   resolution?: BashApprovalResolution,
 ): boolean {
-  const resolved =
-    typeof threadIdOrResolution === "string"
-      ? resolution!
-      : threadIdOrResolution;
+  const resolved = typeof threadIdOrResolution === "string" ? resolution : threadIdOrResolution;
+  if (!resolved) {
+    return false;
+  }
   if (resolved.decision === "approved") {
     return true;
   }
@@ -7318,10 +7330,7 @@ function startRuntimeProxy(
       ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
       ...(threadId && {
         onMessagesRequest: ({ role }) => {
-          threadLiveRequestRegistry.resolveOrBeginRequest(
-            threadId,
-            resolveProxyRequestScope(threadId, role),
-          );
+          threadLiveRequestRegistry.resolveOrBeginRequest(threadId, resolveProxyRequestScope(threadId, role));
           if (emitRequestActivity) {
             emitUpstreamModelRequestActivity(threadId, role);
           }

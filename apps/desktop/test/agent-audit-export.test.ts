@@ -55,8 +55,8 @@ const billing: ThreadBillingSnapshot = {
   pricingResolved: true,
 };
 
-test("buildAgentAuditExportArchive writes structured audit data", () => {
-  const archive = buildAgentAuditExportArchive({
+test("buildAgentAuditExportArchive writes structured audit data", async () => {
+  const archive = await buildAgentAuditExportArchive({
     exportedAt: "2026-01-01T00:00:03.000Z",
     appVersion: "0.0.0-test",
     threads: [thread],
@@ -91,7 +91,7 @@ test("buildAgentAuditExportArchive writes structured audit data", () => {
     ],
     getThreadBilling: () => billing,
     getThreadRunProjection: () => undefined,
-    listThreadActivity: () => [{ id: "activity_1", role: "planner", message: "Started." }],
+    listThreadActivity: async () => [{ id: "activity_1", role: "planner", message: "Started." }],
     listRunAttempts: () => [
       {
         threadId: "thr_audit",

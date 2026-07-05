@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  createEcoCompactService,
-  ECOMPACT_SUMMARY_TIMEOUT_ERROR,
-} from "../src/main/eco-compact-service";
+import { createEcoCompactService, ECOMPACT_SUMMARY_TIMEOUT_ERROR } from "../src/main/eco-compact-service";
 
 test("runEcoCompact saves handoff, clears sdk session, and returns token estimate", async () => {
   let cleared = false;
@@ -15,7 +12,7 @@ test("runEcoCompact saves handoff, clears sdk session, and returns token estimat
     | undefined;
 
   const service = createEcoCompactService({
-    listActivityLines: () => [
+    listActivityLines: async () => [
       { id: "1", role: "user", message: "older ".repeat(25_000) },
       { id: "2", role: "user", message: "recent follow-up" },
     ],
@@ -68,7 +65,7 @@ test("runEcoCompact rejects summary timeout instead of using fallback", async ()
   let cleared = false;
 
   const service = createEcoCompactService({
-    listActivityLines: () => [{ id: "1", role: "user", message: "older message" }],
+    listActivityLines: async () => [{ id: "1", role: "user", message: "older message" }],
     getThreadPrompt: () => "实现功能",
     saveCompactHandoff: () => {
       saved = true;

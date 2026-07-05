@@ -1714,6 +1714,286 @@ test("buildThreadRunProjectionViewModel keeps final main agent text after empty 
   }
 });
 
+test("buildThreadRunProjectionViewModel keeps separate SDK text blocks in one completed request", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_planner",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:04.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "text-block-0",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_planner",
+          streamKey: "thr_view:planner:block:text:0",
+          text: "第一句正文。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "text-block-2",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_planner",
+          streamKey: "thr_view:planner:block:text:2",
+          text: "第二句正文。",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  const narratives = view.mainFeedEntries
+    .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
+    .map((entry) => projectionItemToDetailBlock(entry.item))
+    .filter((block) => block?.kind === "narrative");
+  expect(narratives.map((block) => block?.text)).toEqual(["第一句正文。", "第二句正文。"]);
+});
+
+test("buildThreadRunProjectionViewModel keeps SDK block streams from separate turns", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_turn_1",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:05.000Z",
+          role: "planner",
+        },
+        {
+          requestId: "req_turn_2",
+          status: "completed",
+          startedAt: "2026-01-01T00:01:01.000Z",
+          endedAt: "2026-01-01T00:01:05.000Z",
+          role: "planner",
+        },
+      ],
+      timeline: [
+        item({
+          id: "turn-1-user",
+          eventType: "thread.status",
+          role: "user",
+          text: "第一轮。",
+          metadata: { liveType: "thread.user_prompt" },
+          at: "2026-01-01T00:00:00.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "turn-1-request",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_turn_1",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "turn-1-thinking",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req_turn_1",
+          streamKey: "thr_view:thinking:block:thinking:0",
+          text: "第一轮思考。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 3,
+        }),
+        item({
+          id: "turn-1-request-completed",
+          eventType: "request.completed",
+          role: "thinking",
+          requestId: "req_turn_1",
+          text: "模型请求完成",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 4,
+        }),
+        item({
+          id: "turn-1-message",
+          eventType: "message.final",
+          role: "planner",
+          streamKey: "thr_view:planner:block:text:1",
+          text: "第一轮回复。",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 5,
+        }),
+        item({
+          id: "turn-2-user",
+          eventType: "thread.status",
+          role: "user",
+          text: "第二轮。",
+          metadata: { liveType: "thread.user_prompt" },
+          at: "2026-01-01T00:01:00.000Z",
+          sequence: 6,
+        }),
+        item({
+          id: "turn-2-request",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_turn_2",
+          at: "2026-01-01T00:01:01.000Z",
+          sequence: 7,
+        }),
+        item({
+          id: "turn-2-thinking",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req_turn_2",
+          streamKey: "thr_view:thinking:block:thinking:0",
+          text: "第二轮思考。",
+          at: "2026-01-01T00:01:02.000Z",
+          sequence: 8,
+        }),
+        item({
+          id: "turn-2-request-completed",
+          eventType: "request.completed",
+          role: "thinking",
+          requestId: "req_turn_2",
+          text: "模型请求完成",
+          at: "2026-01-01T00:01:03.000Z",
+          sequence: 9,
+        }),
+        item({
+          id: "turn-2-message",
+          eventType: "message.final",
+          role: "planner",
+          streamKey: "thr_view:planner:block:text:1",
+          text: "第二轮回复。",
+          at: "2026-01-01T00:01:04.000Z",
+          sequence: 10,
+        }),
+      ],
+    }),
+  );
+
+  const timelineEntries = view.mainFeedEntries.filter(
+    (entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline",
+  );
+  expect(timelineEntries.map((entry) => entry.item.id)).toEqual([
+    "turn-1-user",
+    "turn-1-thinking",
+    "turn-1-message",
+    "turn-2-user",
+    "turn-2-thinking",
+    "turn-2-message",
+  ]);
+  const narratives = timelineEntries
+    .map((entry) => projectionItemToDetailBlock(entry.item))
+    .filter((block) => block?.kind === "narrative");
+  expect(narratives.map((block) => block?.text)).toEqual(["第一轮回复。", "第二轮回复。"]);
+});
+
+test("buildThreadRunProjectionViewModel hides legacy duplicate final echoes when block final exists", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_planner",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:04.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-legacy-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req_planner",
+          streamKey: "thr_view:thinking",
+          text: "旧思考。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "thinking-block-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          streamKey: "thr_view:thinking:block:thinking:0",
+          text: "旧思考。",
+          at: "2026-01-01T00:00:02.001Z",
+          sequence: 2,
+        }),
+        item({
+          id: "message-legacy-final",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "req_planner",
+          streamKey: "thr_view:planner",
+          text: "最终回复。",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 3,
+        }),
+        item({
+          id: "message-block-final",
+          eventType: "message.final",
+          role: "planner",
+          streamKey: "thr_view:planner:block:text:1",
+          text: "最终回复。",
+          at: "2026-01-01T00:00:04.001Z",
+          sequence: 4,
+        }),
+      ],
+    }),
+  );
+
+  const timelineEntries = view.mainFeedEntries.filter(
+    (entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline",
+  );
+  expect(timelineEntries.map((entry) => entry.item.id)).toEqual([
+    "thinking-block-final",
+    "message-block-final",
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel hides assistant block final echo after settled stream delta", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_planner",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-block-delta",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_planner",
+          streamKey: "thr_view:thinking:block:thinking:0",
+          text: "已流式输出的思考。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "thinking-assistant-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          streamKey: "thr_view:thinking:block:thinking:0",
+          text: "已流式输出的思考。",
+          at: "2026-01-01T00:00:02.001Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  const thinkingEntries = view.mainFeedEntries.filter(
+    (entry): entry is Extract<typeof entry, { kind: "timeline" }> =>
+      entry.kind === "timeline" && entry.item.eventType.includes("thinking"),
+  );
+  expect(thinkingEntries.map((entry) => entry.item.id)).toEqual(["thinking-block-delta"]);
+  expect(thinkingEntries.map((entry) => entry.item.eventType)).toEqual(["thinking.final"]);
+});
+
 test("buildThreadRunProjectionViewModel collapses agent card stream rows without losing final echo", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

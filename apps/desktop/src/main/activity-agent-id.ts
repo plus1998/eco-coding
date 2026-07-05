@@ -107,12 +107,15 @@ export function activityStreamKey(
   agentId?: string,
   role?: string,
   parentToolUseId?: string,
+  streamBlockKey?: string,
 ): string {
+  let key: string;
   if (agentId?.trim()) {
-    return `${threadId}:${agentId.trim()}`;
+    key = `${threadId}:${agentId.trim()}`;
+  } else if (parentToolUseId?.trim()) {
+    key = `${threadId}:parent:${parentToolUseId.trim()}`;
+  } else {
+    key = `${threadId}:${role ?? "planner"}`;
   }
-  if (parentToolUseId?.trim()) {
-    return `${threadId}:parent:${parentToolUseId.trim()}`;
-  }
-  return `${threadId}:${role ?? "planner"}`;
+  return streamBlockKey?.trim() ? `${key}:block:${streamBlockKey.trim()}` : key;
 }

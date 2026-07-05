@@ -2,24 +2,22 @@ import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
 import { parseSubagentMissionMessage } from "../src/agent-mission";
 import type { EcoAgentRuntimeConfig, EcoToolPolicy } from "../src/agent-orchestration";
-import { defaultSubagentAvailability } from "../src/subagent-availability";
 import {
   appendToPhaseTranscript,
+  applyClaudeJsonlSessionPersistence,
   applyEcoSdkSettings,
   applyResumeToQueryOptions,
-  applySessionStoreToQueryOptions,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
   buildSdkProcessEnv,
   ClaudeAgentSdkDriver,
   createAgentDefinitions,
+  createAskAgentDefinitions,
   createAutonomousAgentDefinitions,
   createCanUseTool,
-  createAutonomousAgentDefinitions,
   createPhaseBoundaryEvent,
   createPlanningAgentDefinitions,
   createPlanReadyEvent,
-  createAskAgentDefinitions,
   createSessionCapturedEvent,
   createToolPermissionDeniedEvent,
   deleteClaudeAgentSdkSession,
@@ -241,17 +239,11 @@ const guidedResearchAgentRegistry: EcoAgentRuntimeConfig = {
 };
 
 test("deleteClaudeAgentSdkSession delegates to SDK deleteSession", async () => {
-  const sessionStore = {
-    append: async () => undefined,
-    load: async () => null,
-    delete: async () => undefined,
-  };
   const calls: Array<{ sessionId: string; options: unknown }> = [];
 
   await deleteClaudeAgentSdkSession({
     sessionId: " session_123 ",
     dir: " /tmp/project ",
-    sessionStore,
     loadSdk: async () => ({
       query: () => emptySdkQuery(),
       deleteSession: async (sessionId, options) => {
@@ -263,7 +255,7 @@ test("deleteClaudeAgentSdkSession delegates to SDK deleteSession", async () => {
   expect(calls).toEqual([
     {
       sessionId: "session_123",
-      options: { dir: "/tmp/project", sessionStore },
+      options: { dir: "/tmp/project" },
     },
   ]);
 });
@@ -870,6 +862,111 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
   ).toBe("thinking");
 });
 
+test("skips assistant text and thinking blocks already emitted by stream events", () => {
+  const ctx = createSdkStreamContext();
+  const streamInputs = [
+    {
+      type: "stream_event",
+      uuid: "stream_thinking_start",
+      session_id: "session_1",
+      event: { type: "content_block_start", index: 0, content_block: { type: "thinking" } },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_thinking_delta",
+      session_id: "session_1",
+      event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_thinking_stop",
+      session_id: "session_1",
+      event: { type: "content_block_stop", index: 0 },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_text_start",
+      session_id: "session_1",
+      event: { type: "content_block_start", index: 1, content_block: { type: "text" } },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_text_delta",
+      session_id: "session_1",
+      event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Final answer." } },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_text_stop",
+      session_id: "session_1",
+      event: { type: "content_block_stop", index: 1 },
+    },
+  ];
+  for (const input of streamInputs) {
+    mapSdkMessageToEvents(input, "thr_1", ctx);
+  }
+
+  const assistantEvents = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_final",
+      session_id: "session_1",
+      message: {
+        content: [
+          { type: "thinking", thinking: "hmm" },
+          { type: "text", text: "Final answer." },
+        ],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(assistantEvents.filter((event) => event.type === "message.delta")).toEqual([]);
+});
+
+test("skips assistant text replay even when stream and final block indexes differ", () => {
+  const ctx = createSdkStreamContext();
+  const streamInputs = [
+    {
+      type: "stream_event",
+      uuid: "stream_text_start",
+      session_id: "session_1",
+      event: { type: "content_block_start", index: 1, content_block: { type: "text" } },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_text_delta",
+      session_id: "session_1",
+      event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "收到2" } },
+    },
+    {
+      type: "stream_event",
+      uuid: "stream_text_stop",
+      session_id: "session_1",
+      event: { type: "content_block_stop", index: 1 },
+    },
+  ];
+  for (const input of streamInputs) {
+    mapSdkMessageToEvents(input, "thr_1", ctx);
+  }
+
+  const assistantEvents = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_final",
+      session_id: "session_1",
+      message: {
+        content: [{ type: "text", text: "收到2" }],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(assistantEvents.filter((event) => event.type === "message.delta")).toEqual([]);
+});
+
 test("ignores SDK messages without displayable text", () => {
   expect(
     mapSdkMessageToEvents(
@@ -1323,17 +1420,15 @@ test("resolveResumeSessionAtBeforeUserMessage returns undefined for first user m
   expect(resumeAt).toBeUndefined();
 });
 
-test("applySessionStoreToQueryOptions disables file checkpointing", () => {
-  const withStore: Record<string, unknown> = { enableFileCheckpointing: true };
-  applySessionStoreToQueryOptions(withStore, { append: async () => {}, load: async () => null });
-  expect(withStore.sessionStore).toBeDefined();
-  expect(withStore.enableFileCheckpointing).toBeUndefined();
-  expect(withStore.extraArgs).toBeUndefined();
-
-  const withoutStore: Record<string, unknown> = {};
-  applySessionStoreToQueryOptions(withoutStore);
-  expect(withoutStore.enableFileCheckpointing).toBe(true);
-  expect(withoutStore.extraArgs).toEqual({ "replay-user-messages": null });
+test("applyClaudeJsonlSessionPersistence enables local JSONL checkpoints", () => {
+  const options: Record<string, unknown> = {
+    sessionStore: { append: async () => {}, load: async () => null },
+    extraArgs: { existing: "value" },
+  };
+  applyClaudeJsonlSessionPersistence(options);
+  expect(options.sessionStore).toBeUndefined();
+  expect(options.enableFileCheckpointing).toBe(true);
+  expect(options.extraArgs).toEqual({ existing: "value", "replay-user-messages": null });
 });
 
 test("readSdkUserMessageCheckpointId reads user message uuid", () => {
@@ -1856,10 +1951,7 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
   });
 });
 
-async function invokeExitPlanPermissionHook(
-  options: Record<string, unknown>,
-  plan: string,
-): Promise<void> {
+async function invokeExitPlanPermissionHook(options: Record<string, unknown>, plan: string): Promise<void> {
   const hooks = options.hooks as
     | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
     | undefined;
@@ -2163,15 +2255,11 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
   expect(capturedOptions[0]?.permissionMode).toBe("acceptEdits");
   expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain("Bash");
   expect(capturedOptions[0]?.agents).toBeDefined();
-  const hooks = capturedOptions[0]?.hooks as
-    | Partial<Record<string, Array<{ matcher?: string }>>>
-    | undefined;
-  expect(hooks?.PermissionRequest?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? []).toHaveLength(
-    0,
-  );
+  const hooks = capturedOptions[0]?.hooks as Partial<Record<string, Array<{ matcher?: string }>>> | undefined;
   expect(
-    hooks?.PreToolUse?.some((matcher) => matcher.matcher === "ExitPlanMode") ?? false,
-  ).toBe(true);
+    hooks?.PermissionRequest?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? [],
+  ).toHaveLength(0);
+  expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher === "ExitPlanMode") ?? false).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", async () => {

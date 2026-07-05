@@ -1,6 +1,6 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
-import type { EventStore, ThreadRecord } from "../../persistence/src";
-import { type AgentEvent, type RuntimeAgentRole, createAgentEvent } from "../../shared/src";
+import type { EventStore, ThreadRecord } from "../../shared/src";
+import { type AgentEvent, createAgentEvent, type RuntimeAgentRole } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
 import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
 import type { SubagentRole } from "./subagent-availability.js";
@@ -233,12 +233,148 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
   );
 }
 
-export type { AgentRole, RuntimeAgentRole, PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
+export type {
+  AgentEvent,
+  AgentRole,
+  PlanReadyPayload,
+  RuntimeAgentRole,
+  SessionCapturedPayload,
+} from "../../shared/src";
+export {
+  formatSubagentMissionMessage,
+  isGenericMissionSummary,
+  isSubagentMissionEnvelope,
+  isToolElapsedDuration,
+  isWeakAgentToolDetail,
+  missionFromAgentToolDetail,
+  parseSubagentMissionMessage,
+  resolveMissionDisplayText,
+  type SubagentMissionPayload,
+  summarizeAgentObjective,
+} from "./agent-mission";
+export * from "./agent-orchestration";
+export {
+  apiErrorDedupeKey,
+  formatApiErrorActivitySummary,
+  formatApiErrorUserMessage,
+  parseLegacyApiErrorActivityMessage,
+  parseSdkApiErrorAttribute,
+  type ThreadApiErrorInfo,
+} from "./api-error";
+export * from "./ask-user-question";
+export {
+  computeRequestBilling,
+  computeSavings,
+  computeThreadBillingTotals,
+  emptyCostBreakdown,
+  estimateCostBreakdown,
+  estimateCostFromTokens,
+  formatSavingsLine,
+  formatSavingsPct,
+  type ModelCostRates,
+  mergeCostBreakdowns,
+  type RequestBillingDelta,
+  type ThreadBillingTotals,
+  type TokenCostBreakdown,
+  type TokenTotals,
+  tokenTotalsFromUsage,
+} from "./billing";
 export type {
   SdkToolPermissionDecision,
   SdkToolPermissionRequest,
 } from "./claude-agent-sdk";
+export {
+  alignBreakdownSegmentsToOccupied,
+  CONTEXT_SEGMENT_COLORS,
+  CONTEXT_SEGMENT_LABELS,
+  type ContextBreakdownSegment,
+  type ContextCommandHeader,
+  type ContextSegmentKey,
+  contextSegmentDisplayLabel,
+  mergeBreakdownWithOccupancy,
+  normalizeContextSegments,
+  parseContextCommandHeader,
+  parseContextCommandResult,
+  parseSdkGetContextUsageBreakdown,
+  type SdkContextUsageBreakdown,
+} from "./context-breakdown";
 export * from "./eco-sdk-hooks";
+export * from "./filesystem-scope-policy.js";
+export {
+  extractCapabilitiesFromModelEntry,
+  lookupModelCapabilitiesInCatalog,
+  type ModelCapabilities,
+  type ModelCapabilitiesLookup,
+  unresolvedModelCapabilities,
+} from "./models-dev-capabilities";
+export {
+  computeOccupancyRatio,
+  computeWindowOccupancy,
+  DEFAULT_AUTOCOMPACT_BUFFER,
+  DEFAULT_CONTEXT_LIMIT,
+  effectiveContextLimit,
+  extractLimitsFromModelEntry,
+  formatContextLimit,
+  lookupModelLimitsInCatalog,
+  type ModelContextLimits,
+  type ModelLimitsLookup,
+  occupancyPercent,
+} from "./models-dev-limits";
+export {
+  buildModelPricingSummary,
+  expandModelLookupCandidates,
+  fetchModelsDevCatalog,
+  filterOfficialModelsDevProviders,
+  findModelEntryByKey,
+  formatModelPricingLabel,
+  formatRatePerMillion,
+  isOfficialModelsDevProvider,
+  listModelsDevCatalogOptions,
+  lookupModelCostByKey,
+  lookupModelCostInCatalog,
+  type ModelPricingLookup,
+  type ModelPricingSummary,
+  type ModelsDevCatalog,
+  type ModelsDevCatalogModelOption,
+  type ModelsDevModelEntry,
+  type ModelsDevProviderEntry,
+  parseModelsDevCatalog,
+  resolveProviderKeyFromBaseUrl,
+} from "./models-dev-pricing";
+export {
+  extractPhaseDeliverable,
+  extractPlanningDeliverables,
+  findPlanSectionStart,
+  stripPlanningTranscriptNoise,
+} from "./phase-deliverable";
+export * from "./reviewer-scope";
+export {
+  formatSkillActivityLabel,
+  isSkillActivityLabel,
+  resolveSkillDisplayName,
+  skillNameFromPath,
+} from "./skill-display";
+export { mergeStreamText } from "./stream-text";
+export {
+  buildStructuredCompactFallback,
+  formatStructuredCompactSections,
+  parseStructuredCompactSections,
+  STRUCTURED_COMPACT_HEADINGS,
+  type StructuredCompactHeading,
+  type StructuredCompactSections,
+  structuredCompactInstructionSuffix,
+} from "./structured-compact-summary.js";
+export * from "./subagent-availability";
+export {
+  buildFallbackSubagentHandoffSummary,
+  buildSubagentCompactionSummaryPrompt,
+  buildSubagentHandoffPrompt,
+  DEFAULT_SUBAGENT_HANDOFF_THRESHOLD,
+  estimateHandoffTokens,
+  type SubagentHandoffActivityLine,
+  shouldHandoffSubagentResume,
+  splitSubagentActivityForHandoff,
+} from "./subagent-handoff.js";
 export {
   buildResumeAgentPrompt,
   createSubagentMissionCapturePreToolHook,
@@ -251,118 +387,6 @@ export {
   type SubagentResumeResolveInput,
 } from "./subagent-resume.js";
 export {
-  buildFallbackSubagentHandoffSummary,
-  buildSubagentCompactionSummaryPrompt,
-  buildSubagentHandoffPrompt,
-  DEFAULT_SUBAGENT_HANDOFF_THRESHOLD,
-  estimateHandoffTokens,
-  shouldHandoffSubagentResume,
-  splitSubagentActivityForHandoff,
-  type SubagentHandoffActivityLine,
-} from "./subagent-handoff.js";
-export {
-  buildStructuredCompactFallback,
-  formatStructuredCompactSections,
-  parseStructuredCompactSections,
-  structuredCompactInstructionSuffix,
-  STRUCTURED_COMPACT_HEADINGS,
-  type StructuredCompactHeading,
-  type StructuredCompactSections,
-} from "./structured-compact-summary.js";
-export * from "./subagent-availability";
-export * from "./agent-orchestration";
-export * from "./tool-permission-policy.js";
-export * from "./filesystem-scope-policy.js";
-export * from "./tool-confirmation.js";
-export * from "./ask-user-question";
-export * from "./reviewer-scope";
-export { mergeStreamText } from "./stream-text";
-export {
-  apiErrorDedupeKey,
-  formatApiErrorActivitySummary,
-  formatApiErrorUserMessage,
-  parseLegacyApiErrorActivityMessage,
-  parseSdkApiErrorAttribute,
-  type ThreadApiErrorInfo,
-} from "./api-error";
-export {
-  formatSubagentMissionMessage,
-  isGenericMissionSummary,
-  isSubagentMissionEnvelope,
-  isToolElapsedDuration,
-  isWeakAgentToolDetail,
-  missionFromAgentToolDetail,
-  parseSubagentMissionMessage,
-  resolveMissionDisplayText,
-  summarizeAgentObjective,
-  type SubagentMissionPayload,
-} from "./agent-mission";
-export {
-  accumulateThreadCost,
-  estimateContextTokens,
-  formatCostUsd,
-  formatRoleModelLabel,
-  formatTokenCount,
-  formatUsageBadge,
-  mergeModelUsages,
-  mergeUsageTotals,
-  normalizeOverlappingCacheContextUsage,
-  parseModelUsage,
-  parseSdkContextUsage,
-  parseSdkModelUsageBilling,
-  parseSdkUsageBilling,
-  parseUsagePayload,
-  type SdkModelUsageBilling,
-  shortenModelId,
-  type ModelUsageEntry,
-  type ParsedUsage,
-} from "./usage";
-export {
-  computeRequestBilling,
-  computeSavings,
-  computeThreadBillingTotals,
-  emptyCostBreakdown,
-  estimateCostBreakdown,
-  estimateCostFromTokens,
-  formatSavingsLine,
-  formatSavingsPct,
-  mergeCostBreakdowns,
-  tokenTotalsFromUsage,
-  type ModelCostRates,
-  type RequestBillingDelta,
-  type ThreadBillingTotals,
-  type TokenCostBreakdown,
-  type TokenTotals,
-} from "./billing";
-export {
-  buildModelPricingSummary,
-  expandModelLookupCandidates,
-  fetchModelsDevCatalog,
-  filterOfficialModelsDevProviders,
-  findModelEntryByKey,
-  formatModelPricingLabel,
-  formatRatePerMillion,
-  isOfficialModelsDevProvider,
-  lookupModelCostInCatalog,
-  lookupModelCostByKey,
-  listModelsDevCatalogOptions,
-  parseModelsDevCatalog,
-  resolveProviderKeyFromBaseUrl,
-  type ModelPricingLookup,
-  type ModelPricingSummary,
-  type ModelsDevCatalog,
-  type ModelsDevCatalogModelOption,
-  type ModelsDevModelEntry,
-  type ModelsDevProviderEntry,
-} from "./models-dev-pricing";
-export {
-  extractCapabilitiesFromModelEntry,
-  lookupModelCapabilitiesInCatalog,
-  unresolvedModelCapabilities,
-  type ModelCapabilities,
-  type ModelCapabilitiesLookup,
-} from "./models-dev-capabilities";
-export {
   applyThinkingToMessagesBody,
   applyThinkingToProcessEnv,
   applyThinkingToQueryOptions,
@@ -371,43 +395,25 @@ export {
   type ThinkingEffort,
   type ThinkingQueryPatch,
 } from "./thinking-options";
+export * from "./tool-confirmation.js";
+export * from "./tool-permission-policy.js";
 export {
-  computeOccupancyRatio,
-  computeWindowOccupancy,
-  DEFAULT_AUTOCOMPACT_BUFFER,
-  DEFAULT_CONTEXT_LIMIT,
-  effectiveContextLimit,
-  extractLimitsFromModelEntry,
-  formatContextLimit,
-  lookupModelLimitsInCatalog,
-  occupancyPercent,
-  type ModelContextLimits,
-  type ModelLimitsLookup,
-} from "./models-dev-limits";
-export {
-  CONTEXT_SEGMENT_COLORS,
-  CONTEXT_SEGMENT_LABELS,
-  contextSegmentDisplayLabel,
-  alignBreakdownSegmentsToOccupied,
-  mergeBreakdownWithOccupancy,
-  normalizeContextSegments,
-  parseContextCommandHeader,
-  parseContextCommandResult,
-  parseSdkGetContextUsageBreakdown,
-  type ContextBreakdownSegment,
-  type ContextCommandHeader,
-  type ContextSegmentKey,
-  type SdkContextUsageBreakdown,
-} from "./context-breakdown";
-export {
-  extractPhaseDeliverable,
-  extractPlanningDeliverables,
-  findPlanSectionStart,
-  stripPlanningTranscriptNoise,
-} from "./phase-deliverable";
-export {
-  formatSkillActivityLabel,
-  isSkillActivityLabel,
-  resolveSkillDisplayName,
-  skillNameFromPath,
-} from "./skill-display";
+  accumulateThreadCost,
+  estimateContextTokens,
+  formatCostUsd,
+  formatRoleModelLabel,
+  formatTokenCount,
+  formatUsageBadge,
+  type ModelUsageEntry,
+  mergeModelUsages,
+  mergeUsageTotals,
+  normalizeOverlappingCacheContextUsage,
+  type ParsedUsage,
+  parseModelUsage,
+  parseSdkContextUsage,
+  parseSdkModelUsageBilling,
+  parseSdkUsageBilling,
+  parseUsagePayload,
+  type SdkModelUsageBilling,
+  shortenModelId,
+} from "./usage";

@@ -29,7 +29,7 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
     "resume?: string;",
     "resumeSessionAt?: string;",
     "forkSession?: boolean;",
-    "sessionStore?: SessionStore;",
+    "enableFileCheckpointing?: boolean;",
     "hooks?: Partial<Record<HookEvent, HookCallbackMatcher[]>>;",
     "mcpServers?: Record<string, McpServerConfig>;",
     "systemPrompt?: string | string[] | {",

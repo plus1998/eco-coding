@@ -1,18 +1,11 @@
 import { expect, test } from "bun:test";
-import type {
-  ThreadActivityLine,
-  ThreadContextSnapshot,
-  ThreadPendingPlan,
-} from "../src/shared/ipc";
-import type {
-  ThreadCompactionArchiveRecord,
-  ThreadSdkSession,
-} from "../src/main/conversation-store";
 import {
-  createCompactionAuditService,
   type CompactionAuditServiceInput,
+  createCompactionAuditService,
 } from "../src/main/compaction-audit-service";
+import type { ThreadCompactionArchiveRecord, ThreadSdkSession } from "../src/main/conversation-store";
 import type { UsageLedgerEvent } from "../src/main/usage-ledger";
+import type { ThreadActivityLine, ThreadContextSnapshot, ThreadPendingPlan } from "../src/shared/ipc";
 
 const activityLine: ThreadActivityLine = {
   id: "line_1",
@@ -69,7 +62,7 @@ function createService(overrides: Partial<CompactionAuditServiceInput> = {}) {
   const inFlight: string[] = [];
   const errors: string[] = [];
   const services: CompactionAuditServiceInput = {
-    listActivityLines: () => [activityLine],
+    listActivityLines: async () => [activityLine],
     getContextSnapshot: () => context,
     getSdkSession: () => sdkSession,
     getPendingPlan: () => pendingPlan,
@@ -98,10 +91,10 @@ function createService(overrides: Partial<CompactionAuditServiceInput> = {}) {
   };
 }
 
-test("archiveBeforeCompaction saves archive records pending audit and started ledger", () => {
+test("archiveBeforeCompaction saves archive records pending audit and started ledger", async () => {
   const { service, savedArchives, ledgerEvents, compactionStatuses, inFlight } = createService();
 
-  service.archiveBeforeCompaction("thr_compact", {
+  await service.archiveBeforeCompaction("thr_compact", {
     trigger: "manual",
     sessionId: "sdk_session_1",
   });
@@ -149,10 +142,10 @@ test("archiveBeforeCompaction saves archive records pending audit and started le
   expect(inFlight).toEqual(["thr_compact"]);
 });
 
-test("recordBoundary links completed ledger to pending archive", () => {
+test("recordBoundary links completed ledger to pending archive", async () => {
   const { service, ledgerEvents, compactionStatuses } = createService();
 
-  service.archiveBeforeCompaction("thr_compact", {
+  await service.archiveBeforeCompaction("thr_compact", {
     trigger: "auto",
     sessionId: "sdk_session_1",
   });

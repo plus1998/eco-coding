@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import { InMemoryEventStore } from "../../persistence/src";
-import { type AgentEvent, createAgentEvent } from "../../shared/src";
+import { type AgentEvent, createAgentEvent, InMemoryEventStore } from "../../shared/src";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput, ThreadStartRequest } from "../src";
 import { buildRoleModelMap, ThreadSupervisor } from "../src";
 

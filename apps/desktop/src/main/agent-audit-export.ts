@@ -55,41 +55,43 @@ export interface BuildAgentAuditExportArchiveInput {
   profilePerformance: readonly AgentProfilePerformanceSnapshot[];
   getThreadBilling: (threadId: string) => ThreadBillingSnapshot | undefined;
   getThreadRunProjection: (threadId: string) => ThreadRunProjectionSnapshot | undefined;
-  listThreadActivity: (threadId: string) => ThreadActivityLine[];
+  listThreadActivity: (threadId: string) => Promise<ThreadActivityLine[]>;
   listRunAttempts: (threadId: string) => RunAttemptRecord[];
   listAgentInstances: (threadId: string) => AgentInstanceRecord[];
   listUsageLedgerEvents: (threadId: string) => UsageLedgerEvent[];
 }
 
-export function buildAgentAuditExportArchive(
+export async function buildAgentAuditExportArchive(
   input: BuildAgentAuditExportArchiveInput,
-): AgentAuditExportArchive {
+): Promise<AgentAuditExportArchive> {
   const profileBySelectionId = new Map<string, OrchestrationProfile>(
     input.profiles.map((profile) => [profile.id, profile]),
   );
 
-  const threads = input.threads.map((thread) => {
-    const billing = input.getThreadBilling(thread.id);
-    const runProjection = input.getThreadRunProjection(thread.id);
-    const profile = resolveThreadProfile(thread, profileBySelectionId);
-    const record: AgentAuditExportThreadRecord = {
-      thread,
-      activity: input.listThreadActivity(thread.id),
-      runAttempts: input.listRunAttempts(thread.id),
-      agentInstances: input.listAgentInstances(thread.id),
-      usageLedgerEvents: input.listUsageLedgerEvents(thread.id),
-    };
-    if (profile) {
-      record.profile = summarizeProfile(profile, thread.runtimeConfig?.routeProfileId);
-    }
-    if (billing) {
-      record.billing = billing;
-    }
-    if (runProjection) {
-      record.runProjection = runProjection;
-    }
-    return record;
-  });
+  const threads = await Promise.all(
+    input.threads.map(async (thread) => {
+      const billing = input.getThreadBilling(thread.id);
+      const runProjection = input.getThreadRunProjection(thread.id);
+      const profile = resolveThreadProfile(thread, profileBySelectionId);
+      const record: AgentAuditExportThreadRecord = {
+        thread,
+        activity: await input.listThreadActivity(thread.id),
+        runAttempts: input.listRunAttempts(thread.id),
+        agentInstances: input.listAgentInstances(thread.id),
+        usageLedgerEvents: input.listUsageLedgerEvents(thread.id),
+      };
+      if (profile) {
+        record.profile = summarizeProfile(profile, thread.runtimeConfig?.routeProfileId);
+      }
+      if (billing) {
+        record.billing = billing;
+      }
+      if (runProjection) {
+        record.runProjection = runProjection;
+      }
+      return record;
+    }),
+  );
 
   return {
     schema: AGENT_AUDIT_EXPORT_SCHEMA,

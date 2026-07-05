@@ -582,3 +582,81 @@ test("emits finalize text when only an empty placeholder preceded it", () => {
     { type: "message.delta", message: "广州今天中雨，25-31C。", role: "planner", stream: false },
   ]);
 });
+
+test("carries SDK stream block key through activity metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    stream: boolean;
+    sdkStreamBlockKey?: string;
+  }> = [];
+
+  const emit = (
+    _threadId: string,
+    type: string,
+    message: string,
+    _role: string,
+    stream: boolean,
+    _agentId?: string,
+    extras?: { metadata?: Record<string, unknown> },
+  ) => {
+    const sdkStreamBlockKey = extras?.metadata?.sdkStreamBlockKey;
+    emitted.push({
+      type,
+      message,
+      stream,
+      ...(typeof sdkStreamBlockKey === "string" && { sdkStreamBlockKey }),
+    });
+  };
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        streamPlaceholder: true,
+        stream_block_key: "text:0",
+      },
+    },
+    emit,
+  );
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        text: "第一句正文。",
+        streamFinalize: true,
+        stream_block_key: "text:0",
+      },
+    },
+    emit,
+  );
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        streamPlaceholder: true,
+        stream_block_key: "text:2",
+      },
+    },
+    emit,
+  );
+
+  expect(emitted).toEqual([
+    { type: "message.delta", message: "", stream: true, sdkStreamBlockKey: "text:0" },
+    { type: "message.delta", message: "第一句正文。", stream: false, sdkStreamBlockKey: "text:0" },
+    { type: "message.delta", message: "", stream: true, sdkStreamBlockKey: "text:2" },
+  ]);
+});

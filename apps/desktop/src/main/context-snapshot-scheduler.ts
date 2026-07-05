@@ -100,7 +100,11 @@ export interface ContextSnapshotSchedulerOptions {
   ) => void;
   shouldPreferEcoCompact?: (threadId: string) => boolean;
   runEcoCompact?: (threadId: string, input: EcoCompactRunRequest) => Promise<EcoCompactRunResult>;
-  archiveBeforeCompaction?: (threadId: string, trigger: "auto" | "manual", sessionId?: string) => void;
+  archiveBeforeCompaction?: (
+    threadId: string,
+    trigger: "auto" | "manual",
+    sessionId?: string,
+  ) => void | Promise<void>;
   recordEcoCompactionBoundary?: (
     threadId: string,
     input: { trigger: "auto" | "manual"; postTokens: number },
@@ -286,7 +290,7 @@ export class ContextSnapshotScheduler {
     logContextCompaction("start", {
       threadId,
       trigger,
-      sessionId: resume.resumeSessionId,
+      ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
     });
 
     if (this.options.shouldPreferEcoCompact?.(threadId)) {
@@ -319,7 +323,7 @@ export class ContextSnapshotScheduler {
         threadId,
         trigger,
         method: sdkMethod,
-        sessionId: resume.resumeSessionId,
+        ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
       });
 
       let slashCommands: string[] = [];
@@ -403,8 +407,8 @@ export class ContextSnapshotScheduler {
         threadId,
         trigger,
         method: sdkMethod,
-        postTokens,
-        sessionId: resume.resumeSessionId,
+        ...(postTokens !== undefined && { postTokens }),
+        ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
       });
       if (!boundaryRecorded) {
         this.options.emitCompactionStatus(threadId, {
@@ -428,13 +432,13 @@ export class ContextSnapshotScheduler {
       threadId,
       trigger,
       method,
-      sessionId: resume.resumeSessionId,
+      ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
     });
     if (!this.options.runEcoCompact) {
       throw new Error("当前驱动不支持上下文压缩。");
     }
     if (trigger === "auto") {
-      this.options.archiveBeforeCompaction?.(threadId, trigger, resume.resumeSessionId);
+      await this.options.archiveBeforeCompaction?.(threadId, trigger, resume.resumeSessionId);
     }
     const result = await this.options.runEcoCompact(threadId, {
       trigger,
@@ -453,7 +457,7 @@ export class ContextSnapshotScheduler {
       trigger,
       method,
       postTokens: result.postTokensEstimate,
-      sessionId: resume.resumeSessionId,
+      ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
     });
     this.options.emitCompactionStatus(threadId, {
       stage: "completed",

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { CoderTodoItem, ThreadActivityLine } from "../src/shared/ipc";
 import { loadThreadTodoList, type ThreadTodoListRuntimeServices } from "../src/main/thread-todo-list-runtime";
+import type { CoderTodoItem, ThreadActivityLine } from "../src/shared/ipc";
 
 function todo(input: Partial<CoderTodoItem> = {}): CoderTodoItem {
   return {
@@ -32,7 +32,7 @@ function services(input: {
 }): ThreadTodoListRuntimeServices {
   return {
     listTodos: () => input.todos ?? [],
-    listActivity: () => {
+    listActivity: async () => {
       input.onListActivity?.();
       return input.activity ?? [];
     },
@@ -42,11 +42,11 @@ function services(input: {
   };
 }
 
-test("loadThreadTodoList returns stored todos without reading activity", () => {
+test("loadThreadTodoList returns stored todos without reading activity", async () => {
   let activityReads = 0;
   const stored = [todo()];
 
-  const result = loadThreadTodoList({
+  const result = await loadThreadTodoList({
     threadId: "thr_todo",
     services: services({
       todos: stored,
@@ -63,10 +63,10 @@ test("loadThreadTodoList returns stored todos without reading activity", () => {
   expect(activityReads).toBe(0);
 });
 
-test("loadThreadTodoList returns empty list when no activity tasks are present", () => {
+test("loadThreadTodoList returns empty list when no activity tasks are present", async () => {
   let replaced = false;
 
-  const result = loadThreadTodoList({
+  const result = await loadThreadTodoList({
     threadId: "thr_empty",
     services: services({
       activity: [activity({ role: "tool", message: "Tool: Read" })],
@@ -80,10 +80,10 @@ test("loadThreadTodoList returns empty list when no activity tasks are present",
   expect(replaced).toBe(false);
 });
 
-test("loadThreadTodoList rehydrates todos from planner activity and persists them", () => {
+test("loadThreadTodoList rehydrates todos from planner activity and persists them", async () => {
   let persisted: CoderTodoItem[] | undefined;
 
-  const result = loadThreadTodoList({
+  const result = await loadThreadTodoList({
     threadId: "thr_rehydrate",
     services: services({
       activity: [activity()],

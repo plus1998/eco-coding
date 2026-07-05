@@ -402,6 +402,61 @@ test("emits thinking placeholder and finalize stream events", () => {
   expect(finalize.streamFinalize).toBe(true);
 });
 
+test("attaches stable stream block keys from content block index", () => {
+  const ctx = createSdkStreamContext();
+  const start = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u1",
+      session_id: "sess",
+      event: {
+        type: "content_block_start",
+        index: 2,
+        content_block: { type: "text" },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u1",
+    ctx,
+  );
+  const delta = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u2",
+      session_id: "sess",
+      event: {
+        type: "content_block_delta",
+        index: 2,
+        delta: { type: "text_delta", text: "正文一" },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u2",
+    ctx,
+  );
+  const stop = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u3",
+      session_id: "sess",
+      event: { type: "content_block_stop", index: 2 },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u3",
+    ctx,
+  );
+
+  expect((start[0]?.payload as Record<string, unknown>).stream_block_key).toBe("text:2");
+  expect((delta[0]?.payload as Record<string, unknown>).stream_block_key).toBe("text:2");
+  expect((stop[0]?.payload as Record<string, unknown>).stream_block_key).toBe("text:2");
+});
+
 test("expands serialized content array delivered as one text_delta", () => {
   const ctx = createSdkStreamContext();
   const payload =

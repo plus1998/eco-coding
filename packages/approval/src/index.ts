@@ -1,5 +1,4 @@
-import type { EventStore } from "../../persistence/src";
-import type { ApprovalDecision, ApprovalRequest } from "../../shared/src";
+import type { ApprovalDecision, ApprovalRequest, EventStore } from "../../shared/src";
 import {
   type CommandRequest,
   evaluateCommand,

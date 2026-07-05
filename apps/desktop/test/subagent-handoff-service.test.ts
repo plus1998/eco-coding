@@ -3,10 +3,9 @@ import { createSubagentHandoffService } from "../src/main/subagent-handoff-servi
 
 test("buildHandoffPrompt uses activity for agent and falls back without routes", async () => {
   const service = createSubagentHandoffService({
-    listActivityLines: () => [
+    listSubagentActivityLines: async () => [
       { id: "1", role: "explore", message: "Older finding about auth middleware", agentId: "agent-1" },
       { id: "2", role: "explore", message: "Recent tail output", agentId: "agent-1" },
-      { id: "3", role: "explore", message: "Other agent", agentId: "agent-2" },
     ],
     resolveProxyRoutes: () => undefined,
   });

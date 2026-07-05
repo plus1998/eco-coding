@@ -1,8 +1,7 @@
-import {
-  PROMPT_CACHE_EPISODE_METADATA_KEY,
-} from "../shared/prompt-cache-timeline";
+import type { ThreadRunEventInput } from "../shared/ipc";
 import type { PromptCacheConfigDriftKind, PromptCacheProfileLabel } from "../shared/prompt-cache-config";
 import { formatPromptCacheConfigDriftMessage } from "../shared/prompt-cache-config";
+import { PROMPT_CACHE_EPISODE_METADATA_KEY } from "../shared/prompt-cache-timeline";
 import type { PromptCacheBreakReason } from "./prompt-cache-fingerprint";
 import { formatPromptCacheBreakMessage } from "./prompt-cache-fingerprint";
 import type { CacheHitDropDetection } from "./thread-cache-hit-monitor";
@@ -11,17 +10,7 @@ import type { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-epis
 
 export interface PromptCacheRunEventWriter {
   getThread(threadId: string): unknown;
-  appendThreadRunEvent(event: {
-    id: string;
-    threadId: string;
-    eventType: string;
-    scope: "main";
-    streamState: "none";
-    message: string;
-    observedAt: string;
-    runAttemptId?: string;
-    metadata: Record<string, unknown>;
-  }): void;
+  appendThreadRunEvent(event: ThreadRunEventInput): void;
   scheduleProjectionUpdated(threadId: string): void;
   emitThreadEvent(threadId: string, type: string, message: string): void;
   resolveCurrentRunAttemptId(threadId: string): string | undefined;

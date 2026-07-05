@@ -395,49 +395,124 @@ test.skipIf(!sqliteAvailable)("rewindThreadToActivityLine prunes target and late
   expect(store.listSubagentMetrics(thread.id)).toEqual([]);
 });
 
-test.skipIf(!sqliteAvailable)("rekeys thread run events when provider request id replaces local placeholder", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-run-event-rekey-"));
-  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
-  const thread: ThreadSummary = {
-    id: "thr_rekey",
-    title: "Rekey",
-    prompt: "hello",
-    workspacePath: "/tmp/project",
-    status: "running",
-    message: "ok",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  store.saveThread(thread);
+test.skipIf(!sqliteAvailable)(
+  "rewindThreadToActivityLine supports SDK-derived virtual activity ids",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-rewind-sdk-thread-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_rewind_sdk",
+      title: "Rewind SDK",
+      prompt: "first prompt",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "ok",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    };
+    store.saveThread(thread);
 
-  store.appendThreadRunEvent({
-    id: "evt_start",
-    threadId: thread.id,
-    eventType: "request.started",
-    scope: "main",
-    streamState: "final",
-    message: "Requesting model…",
-    observedAt: "2026-01-01T00:00:01.000Z",
-    role: "planner",
-    requestId: "req_local_placeholder",
-  });
-  store.appendThreadRunEvent({
-    id: "evt_delta",
-    threadId: thread.id,
-    eventType: "message.delta",
-    scope: "main",
-    streamState: "partial",
-    message: "Hello",
-    observedAt: "2026-01-01T00:00:02.000Z",
-    role: "planner",
-    requestId: "req_local_placeholder",
-  });
+    store.appendThreadRunEvent({
+      id: "evt_first",
+      threadId: thread.id,
+      sequence: 1,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "first",
+      observedAt: "2024-01-01T00:00:01.000Z",
+    });
+    expect(store.bindLatestUserRunEventToSdkMessage(thread.id, "user-first")?.rewindTarget).toEqual({
+      activityLineId: "sdk:user-first",
+      userMessageId: "user-first",
+    });
 
-  expect(
-    store.rekeyThreadRunRequestId(thread.id, "req_local_placeholder", "msgreq_provider_123"),
-  ).toBe(2);
-  expect(store.listThreadRunEvents(thread.id).map((event) => event.requestId)).toEqual([
-    "msgreq_provider_123",
-    "msgreq_provider_123",
-  ]);
-});
+    store.appendThreadRunEvent({
+      id: "evt_target",
+      threadId: thread.id,
+      sequence: 2,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "target",
+      observedAt: "2999-01-01T00:00:02.000Z",
+    });
+    store.bindLatestUserRunEventToSdkMessage(thread.id, "user-target");
+    store.appendThreadRunEvent({
+      id: "evt_future",
+      threadId: thread.id,
+      sequence: 3,
+      eventType: "thread.status",
+      scope: "main",
+      streamState: "none",
+      message: "future",
+      observedAt: "3000-01-01T00:00:03.000Z",
+    });
+
+    const summary = store.rewindThreadToActivityLine(thread.id, "sdk:user-target");
+
+    expect(summary).toMatchObject({
+      activityLineId: "sdk:user-target",
+      userMessageId: "user-target",
+      cutoffRunSequence: 2,
+      removedActivityCount: 0,
+      removedRunEventCount: 2,
+    });
+    expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual(["evt_first"]);
+    expect(store.listThreadRunEvents(thread.id)[0]?.streamKey).toBe("sdk:user-first");
+    expect(store.listFileCheckpoints(thread.id).map((checkpoint) => checkpoint.userMessageId)).toEqual([
+      "user-first",
+    ]);
+    expect(store.listActivityLines(thread.id)).toEqual([]);
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "rekeys thread run events when provider request id replaces local placeholder",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-run-event-rekey-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_rekey",
+      title: "Rekey",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "running",
+      message: "ok",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.saveThread(thread);
+
+    store.appendThreadRunEvent({
+      id: "evt_start",
+      threadId: thread.id,
+      eventType: "request.started",
+      scope: "main",
+      streamState: "final",
+      message: "Requesting model…",
+      observedAt: "2026-01-01T00:00:01.000Z",
+      role: "planner",
+      requestId: "req_local_placeholder",
+    });
+    store.appendThreadRunEvent({
+      id: "evt_delta",
+      threadId: thread.id,
+      eventType: "message.delta",
+      scope: "main",
+      streamState: "partial",
+      message: "Hello",
+      observedAt: "2026-01-01T00:00:02.000Z",
+      role: "planner",
+      requestId: "req_local_placeholder",
+    });
+
+    expect(store.rekeyThreadRunRequestId(thread.id, "req_local_placeholder", "msgreq_provider_123")).toBe(2);
+    expect(store.listThreadRunEvents(thread.id).map((event) => event.requestId)).toEqual([
+      "msgreq_provider_123",
+      "msgreq_provider_123",
+    ]);
+  },
+);

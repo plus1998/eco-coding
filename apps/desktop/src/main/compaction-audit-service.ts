@@ -1,16 +1,6 @@
-import type {
-  ThreadActivityLine,
-  ThreadContextSnapshot,
-  ThreadPendingPlan,
-} from "../shared/ipc";
-import type {
-  ThreadCompactionArchiveRecord,
-  ThreadSdkSession,
-} from "./conversation-store";
-import {
-  buildCompactionLedgerEvent,
-  readCompactionBoundaryMetadata,
-} from "./compaction-ledger-events";
+import type { ThreadActivityLine, ThreadContextSnapshot, ThreadPendingPlan } from "../shared/ipc";
+import { buildCompactionLedgerEvent, readCompactionBoundaryMetadata } from "./compaction-ledger-events";
+import type { ThreadCompactionArchiveRecord, ThreadSdkSession } from "./conversation-store";
 import type { UsageLedgerEvent } from "./usage-ledger";
 
 interface PendingCompactionAudit {
@@ -21,7 +11,7 @@ interface PendingCompactionAudit {
 }
 
 export interface CompactionAuditServiceInput {
-  listActivityLines(threadId: string): ThreadActivityLine[];
+  listActivityLines(threadId: string): Promise<ThreadActivityLine[]>;
   getContextSnapshot(threadId: string): ThreadContextSnapshot | undefined;
   getSdkSession(threadId: string): ThreadSdkSession | undefined;
   getPendingPlan(threadId: string): ThreadPendingPlan | undefined;
@@ -57,17 +47,11 @@ export interface CompactionAuditService {
   archiveBeforeCompaction(
     threadId: string,
     input: { trigger: "auto" | "manual"; sessionId?: string },
-  ): void;
-  recordBoundary(
-    threadId: string,
-    payload: Record<string, unknown>,
-    sourceEventId?: string,
-  ): void;
+  ): Promise<void>;
+  recordBoundary(threadId: string, payload: Record<string, unknown>, sourceEventId?: string): void;
 }
 
-export function createCompactionAuditService(
-  services: CompactionAuditServiceInput,
-): CompactionAuditService {
+export function createCompactionAuditService(services: CompactionAuditServiceInput): CompactionAuditService {
   const pendingAudits = new Map<string, PendingCompactionAudit>();
 
   function appendCompactionLedgerEvent(input: {
@@ -105,9 +89,9 @@ export function createCompactionAuditService(
   }
 
   return {
-    archiveBeforeCompaction(threadId, input) {
+    async archiveBeforeCompaction(threadId, input) {
       try {
-        const activityLines = services.listActivityLines(threadId);
+        const activityLines = await services.listActivityLines(threadId);
         const context = services.getContextSnapshot(threadId);
         const sdkSession = services.getSdkSession(threadId);
         const pendingPlan = services.getPendingPlan(threadId);
@@ -157,9 +141,7 @@ export function createCompactionAuditService(
         });
         services.markCompactInFlight(threadId);
       } catch (error) {
-        services.writeError(
-          `[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`,
-        );
+        services.writeError(`[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`);
       }
     },
     recordBoundary(threadId, payload, sourceEventId) {

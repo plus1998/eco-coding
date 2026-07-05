@@ -26,6 +26,7 @@ interface PendingStreamDelta {
   message: string;
   stream: boolean;
   agentId?: string;
+  extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -122,7 +123,14 @@ export class SdkStreamActivityBridge {
     const role = String(display?.role ?? event.role);
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
-    const streamKey = activityStreamKey(threadId, activityAgentId, role, options?.parentToolUseId);
+    const sdkStreamBlockKey = readSdkStreamBlockKey(event.payload);
+    const streamKey = activityStreamKey(
+      threadId,
+      activityAgentId,
+      role,
+      options?.parentToolUseId,
+      sdkStreamBlockKey,
+    );
 
     if (event.payload && isEcoStreamFinalize(event.payload)) {
       this.flushPending(threadId, emit);
@@ -135,7 +143,7 @@ export class SdkStreamActivityBridge {
         last?.role ?? role,
         false,
         last?.agentId ?? activityAgentId,
-        mergeSdkActivityEmitExtras(finalizedMessage),
+        mergeSdkActivityEmitExtras(finalizedMessage, undefined, event.payload),
       );
       this.lastStreamLine.delete(streamKey);
       return;
@@ -148,13 +156,22 @@ export class SdkStreamActivityBridge {
         message: "",
         ...(activityAgentId && { agentId: activityAgentId }),
       });
-      emit(threadId, event.type, message, role, true, activityAgentId);
+      emit(
+        threadId,
+        event.type,
+        message,
+        role,
+        true,
+        activityAgentId,
+        mergeSdkActivityEmitExtras(message, undefined, event.payload),
+      );
       return;
     }
 
     if (event.type === "message.delta" && stream) {
       const previous = this.lastStreamLine.get(streamKey)?.message ?? "";
       const accumulated = mergeStreamText(previous, message);
+      const emitExtras = mergeSdkActivityEmitExtras(accumulated, undefined, event.payload);
       this.lastStreamLine.set(streamKey, {
         role,
         message: accumulated,
@@ -168,12 +185,17 @@ export class SdkStreamActivityBridge {
         role,
         stream,
         activityAgentId,
+        emitExtras,
         emit,
       );
       return;
     }
 
-    const emitExtras = mergeSdkActivityEmitExtras(message, resolveSdkActivityToolMetadata(event));
+    const emitExtras = mergeSdkActivityEmitExtras(
+      message,
+      resolveSdkActivityToolMetadata(event),
+      event.payload,
+    );
 
     this.flushPending(threadId, emit);
     if (stream) {
@@ -204,6 +226,7 @@ export class SdkStreamActivityBridge {
     role: string,
     stream: boolean,
     agentId: string | undefined,
+    extras: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined,
     emit: SdkActivityEmit,
   ): void {
     const pendingExisting = this.pendingDeltas.get(streamKey);
@@ -215,9 +238,10 @@ export class SdkStreamActivityBridge {
       message,
       stream,
       ...(agentId && { agentId }),
+      ...(extras && { extras }),
       timer: setTimeout(() => {
         this.pendingDeltas.delete(streamKey);
-        emit(threadId, type, message, role, stream, agentId, mergeSdkActivityEmitExtras(message));
+        emit(threadId, type, message, role, stream, agentId, extras);
       }, STREAM_THROTTLE_MS),
     };
     this.pendingDeltas.set(streamKey, pending);
@@ -244,10 +268,18 @@ export class SdkStreamActivityBridge {
         pending.role,
         pending.stream,
         pending.agentId,
-        mergeSdkActivityEmitExtras(pending.message),
+        pending.extras,
       );
     }
   }
+}
+
+function readSdkStreamBlockKey(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const value = (payload as { stream_block_key?: unknown }).stream_block_key;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMetadata | undefined {
@@ -557,9 +589,17 @@ function readString(value: unknown): string | undefined {
 function mergeSdkActivityEmitExtras(
   message: string,
   tool?: ThreadRunToolMetadata,
+  payload?: unknown,
 ): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
   const activityOrigin = classifySdkStreamMessageOrigin(message);
-  const metadata = activityOrigin ? { activityOrigin } : undefined;
+  const sdkStreamBlockKey = readSdkStreamBlockKey(payload);
+  const metadata =
+    activityOrigin || sdkStreamBlockKey
+      ? {
+          ...(activityOrigin && { activityOrigin }),
+          ...(sdkStreamBlockKey && { sdkStreamBlockKey }),
+        }
+      : undefined;
   if (!tool && !metadata) {
     return undefined;
   }

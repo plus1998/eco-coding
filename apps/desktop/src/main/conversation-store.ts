@@ -2,12 +2,13 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { mergeStreamText } from "@eco/runtime";
+import { isFreshSubagentRequest, mergeStreamText } from "@eco/runtime";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
+import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
 import type {
-  AgentRole,
   CoderTodoItem,
   CoderTodoStatus,
+  PromptImageAttachment,
   RuntimeAgentRole,
   ThreadActivityLine,
   ThreadApiErrorInfo,
@@ -19,7 +20,6 @@ import type {
   ThreadFollowUpStatus,
   ThreadPendingFollowUp,
   ThreadPendingPlan,
-  PromptImageAttachment,
   ThreadRunEvent,
   ThreadRunEventInput,
   ThreadRunToolMetadata,
@@ -28,34 +28,21 @@ import type {
   ThreadSummary,
   TokenCostBreakdown,
 } from "../shared/ipc";
-import {
-  parseThreadRuntimeConfigJson,
-  serializeThreadRuntimeConfig,
-} from "../shared/thread-runtime-config";
-import {
-  parseThreadRunFileChangeMetadata,
-} from "../shared/file-change.js";
-import {
-  parseThreadRunGrepToolTarget,
-  parseThreadRunReadToolTarget,
-} from "../shared/tool-target.js";
-import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
-import {
-  normalizeSubagentMissionKey,
-  resolveResumeAgentIdFromRecords,
-} from "./subagent-session-resolve.js";
+import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
+import { parseThreadRunGrepToolTarget, parseThreadRunReadToolTarget } from "../shared/tool-target.js";
+import { sdkActivityLineId, sdkMessageUuidFromActivityLineId } from "./sdk-session-activity.js";
+import { resolveResumeAgentIdFromRecords } from "./subagent-session-resolve.js";
 import type {
   SubagentRunPhase,
   SubagentSessionStatus,
   ThreadSubagentSessionRecord,
 } from "./subagent-session-types.js";
-import { isFreshSubagentRequest } from "@eco/runtime";
+import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 import {
-  normalizeRunAttemptPhase,
+  type AgentInstanceKind,
   type AgentInstanceRecord,
   type AgentInstanceStatus,
-  type AgentInstanceKind,
-  type RunAttemptPhase,
+  normalizeRunAttemptPhase,
   type RunAttemptRecord,
   type RunAttemptStatus,
   type UsageAttribution,
@@ -546,7 +533,9 @@ export class ConversationStore {
       this.db.exec(`ALTER TABLE threads ADD COLUMN runtime_config_json TEXT`);
     }
 
-    const activityColumns = this.db.prepare(`PRAGMA table_info(thread_activity)`).all() as Array<{ name: string }>;
+    const activityColumns = this.db.prepare(`PRAGMA table_info(thread_activity)`).all() as Array<{
+      name: string;
+    }>;
     const activityNames = new Set(activityColumns.map((column) => column.name));
     if (!activityNames.has("agent_id")) {
       this.db.exec(`ALTER TABLE thread_activity ADD COLUMN agent_id TEXT`);
@@ -584,9 +573,9 @@ export class ConversationStore {
       );
     `);
 
-    const sessionColumns = this.db
-      .prepare(`PRAGMA table_info(thread_subagent_sessions)`)
-      .all() as Array<{ name: string }>;
+    const sessionColumns = this.db.prepare(`PRAGMA table_info(thread_subagent_sessions)`).all() as Array<{
+      name: string;
+    }>;
     const sessionNames = new Set(sessionColumns.map((column) => column.name));
     if (!sessionNames.has("started_at")) {
       this.db.exec(`ALTER TABLE thread_subagent_sessions ADD COLUMN started_at TEXT`);
@@ -625,9 +614,9 @@ export class ConversationStore {
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
     `);
-    const checkpointColumns = this.db
-      .prepare(`PRAGMA table_info(thread_file_checkpoints)`)
-      .all() as Array<{ name: string }>;
+    const checkpointColumns = this.db.prepare(`PRAGMA table_info(thread_file_checkpoints)`).all() as Array<{
+      name: string;
+    }>;
     const checkpointNames = new Set(checkpointColumns.map((column) => column.name));
     if (!checkpointNames.has("activity_line_id")) {
       this.db.exec(`ALTER TABLE thread_file_checkpoints ADD COLUMN activity_line_id TEXT`);
@@ -758,9 +747,9 @@ export class ConversationStore {
       CREATE INDEX IF NOT EXISTS idx_thread_pending_followups_thread_status
         ON thread_pending_followups(thread_id, status, priority, created_at);
     `);
-    const followUpColumns = this.db
-      .prepare(`PRAGMA table_info(thread_pending_followups)`)
-      .all() as Array<{ name: string }>;
+    const followUpColumns = this.db.prepare(`PRAGMA table_info(thread_pending_followups)`).all() as Array<{
+      name: string;
+    }>;
     const followUpNames = new Set(followUpColumns.map((column) => column.name));
     if (!followUpNames.has("queued_during_phase")) {
       this.db.exec(`ALTER TABLE thread_pending_followups ADD COLUMN queued_during_phase TEXT`);
@@ -773,9 +762,9 @@ export class ConversationStore {
       this.db.exec(`ALTER TABLE threads ADD COLUMN claude_plan_file_path TEXT`);
     }
 
-    const pendingPlanColumns = this.db
-      .prepare(`PRAGMA table_info(thread_pending_plans)`)
-      .all() as Array<{ name: string }>;
+    const pendingPlanColumns = this.db.prepare(`PRAGMA table_info(thread_pending_plans)`).all() as Array<{
+      name: string;
+    }>;
     const pendingPlanNames = new Set(pendingPlanColumns.map((column) => column.name));
     if (!pendingPlanNames.has("plan_file_path")) {
       this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN plan_file_path TEXT`);
@@ -793,9 +782,9 @@ export class ConversationStore {
   }
 
   getThreadRuntimeConfig(threadId: string): ThreadRuntimeConfig | undefined {
-    const row = this.db
-      .prepare(`SELECT runtime_config_json FROM threads WHERE id = ?`)
-      .get(threadId) as { runtime_config_json: string | null } | undefined;
+    const row = this.db.prepare(`SELECT runtime_config_json FROM threads WHERE id = ?`).get(threadId) as
+      | { runtime_config_json: string | null }
+      | undefined;
     return parseThreadRuntimeConfigJson(row?.runtime_config_json);
   }
 
@@ -815,10 +804,14 @@ export class ConversationStore {
     const existing = this.getThreadMetrics(threadId);
     const accumulatorJson = hasAccumulator
       ? JSON.stringify(input.accumulator)
-      : (existing?.accumulator ? JSON.stringify(existing.accumulator) : null);
+      : existing?.accumulator
+        ? JSON.stringify(existing.accumulator)
+        : null;
     const contextJson = hasContext
       ? JSON.stringify(input.context)
-      : (existing?.context ? JSON.stringify(existing.context) : null);
+      : existing?.context
+        ? JSON.stringify(existing.context)
+        : null;
 
     if (!accumulatorJson && !contextJson) {
       return;
@@ -874,14 +867,7 @@ export class ConversationStore {
         `INSERT INTO thread_compaction_archives (id, thread_id, trigger, session_id, payload_json, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(
-        id,
-        threadId,
-        input.trigger,
-        input.sessionId ?? null,
-        JSON.stringify(input.payload),
-        createdAt,
-      );
+      .run(id, threadId, input.trigger, input.sessionId ?? null, JSON.stringify(input.payload), createdAt);
     return {
       id,
       threadId,
@@ -1024,7 +1010,9 @@ export class ConversationStore {
       updated_at: string;
     }>;
 
-    return rows.map((row) => rowToThreadMetrics(row)).filter((entry): entry is ThreadMetricsRecord => entry !== undefined);
+    return rows
+      .map((row) => rowToThreadMetrics(row))
+      .filter((entry): entry is ThreadMetricsRecord => entry !== undefined);
   }
 
   saveThread(thread: ThreadSummary): void {
@@ -1122,9 +1110,7 @@ export class ConversationStore {
         record.createdAt,
         record.updatedAt,
       );
-    this.db
-      .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
-      .run(now, input.threadId);
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, input.threadId);
     return record;
   }
 
@@ -1230,8 +1216,7 @@ export class ConversationStore {
       return undefined;
     }
     const attachments = input.attachments?.length ? [...input.attachments] : undefined;
-    const prompt =
-      input.prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
+    const prompt = input.prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
     if (!prompt && !attachments?.length) {
       return undefined;
     }
@@ -1368,9 +1353,9 @@ export class ConversationStore {
   }
 
   getSdkSession(threadId: string): ThreadSdkSession | undefined {
-    const row = this.db
-      .prepare(`SELECT sdk_session_id, sdk_cwd FROM threads WHERE id = ?`)
-      .get(threadId) as { sdk_session_id: string | null; sdk_cwd: string | null } | undefined;
+    const row = this.db.prepare(`SELECT sdk_session_id, sdk_cwd FROM threads WHERE id = ?`).get(threadId) as
+      | { sdk_session_id: string | null; sdk_cwd: string | null }
+      | undefined;
     if (!row?.sdk_session_id || !row.sdk_cwd) {
       return undefined;
     }
@@ -1412,7 +1397,11 @@ export class ConversationStore {
          WHERE thread_id = ?
          ORDER BY created_at ASC`,
       )
-      .all(threadId) as Array<{ user_message_id: string; activity_line_id: string | null; created_at: string }>;
+      .all(threadId) as Array<{
+      user_message_id: string;
+      activity_line_id: string | null;
+      created_at: string;
+    }>;
     return rows.map((row) => ({
       userMessageId: row.user_message_id,
       ...(row.activity_line_id && { activityLineId: row.activity_line_id }),
@@ -1420,7 +1409,10 @@ export class ConversationStore {
     }));
   }
 
-  bindLatestUserActivityToSdkMessage(threadId: string, userMessageId: string): ThreadActivityLine | undefined {
+  bindLatestUserActivityToSdkMessage(
+    threadId: string,
+    userMessageId: string,
+  ): ThreadActivityLine | undefined {
     const id = userMessageId.trim();
     if (!threadId.trim() || !id) {
       return undefined;
@@ -1463,10 +1455,85 @@ export class ConversationStore {
     return activityRowToThreadActivityLine({ ...row, sdk_user_message_id: id });
   }
 
+  bindLatestUserRunEventToSdkMessage(
+    threadId: string,
+    userMessageId: string,
+  ): ThreadActivityLine | undefined {
+    const id = userMessageId.trim();
+    if (!threadId.trim() || !id) {
+      return undefined;
+    }
+
+    const activityLineId = sdkActivityLineId(id);
+    const rewindTarget = { activityLineId, userMessageId: id };
+    const existing = this.db
+      .prepare(
+        `SELECT message
+         FROM thread_run_events
+         WHERE thread_id = ? AND stream_key = ?
+         ORDER BY sequence DESC
+         LIMIT 1`,
+      )
+      .get(threadId, activityLineId) as { message: string } | undefined;
+    if (existing) {
+      this.saveFileCheckpoint(threadId, id, activityLineId);
+      return {
+        id: activityLineId,
+        role: "user",
+        message: existing.message,
+        rewindTarget,
+      };
+    }
+
+    const row = this.db
+      .prepare(
+        `SELECT id, message, metadata_json
+         FROM thread_run_events
+         WHERE thread_id = ?
+           AND role = 'user'
+           AND event_type = 'thread.status'
+           AND (stream_key IS NULL OR stream_key = '')
+         ORDER BY sequence DESC
+         LIMIT 1`,
+      )
+      .get(threadId) as { id: string; message: string; metadata_json: string | null } | undefined;
+
+    this.saveFileCheckpoint(threadId, id, activityLineId);
+    if (!row) {
+      return undefined;
+    }
+
+    this.db
+      .prepare(
+        `UPDATE thread_run_events
+         SET stream_key = ?, metadata_json = ?
+         WHERE thread_id = ? AND id = ?`,
+      )
+      .run(
+        activityLineId,
+        JSON.stringify({
+          ...(parseJsonRecord(row.metadata_json) ?? {}),
+          rewindTarget,
+        }),
+        threadId,
+        row.id,
+      );
+    return {
+      id: activityLineId,
+      role: "user",
+      message: row.message,
+      rewindTarget,
+    };
+  }
+
   getActivityRewindTarget(
     threadId: string,
     activityLineId: string,
   ): ThreadActivityLine["rewindTarget"] | undefined {
+    const sdkUserMessageId = sdkMessageUuidFromActivityLineId(activityLineId);
+    if (sdkUserMessageId) {
+      return { activityLineId: sdkActivityLineId(sdkUserMessageId), userMessageId: sdkUserMessageId };
+    }
     const row = this.db
       .prepare(
         `SELECT id, role, sdk_user_message_id
@@ -1485,6 +1552,11 @@ export class ConversationStore {
   }
 
   rewindThreadToActivityLine(threadId: string, activityLineId: string): ThreadActivityRewindSummary {
+    const sdkUserMessageId = sdkMessageUuidFromActivityLineId(activityLineId);
+    if (sdkUserMessageId) {
+      return this.rewindThreadToSdkActivityLine(threadId, activityLineId, sdkUserMessageId);
+    }
+
     const target = this.db
       .prepare(
         `SELECT rowid AS row_id, id, thread_id, role, message, stream, agent_id, api_error_json,
@@ -1515,7 +1587,7 @@ export class ConversationStore {
     const cutoffCreatedAt = target.created_at;
     const cutoffRunSequence = runBoundary.sequence;
     const deleteChanges = (sql: string, ...args: (string | number | null)[]): number =>
-      ((this.db.prepare(sql).run(...args) as { changes?: number }).changes ?? 0);
+      (this.db.prepare(sql).run(...args) as { changes?: number }).changes ?? 0;
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -1609,6 +1681,117 @@ export class ConversationStore {
         cutoffCreatedAt,
         cutoffRunSequence,
         removedActivityCount,
+        removedRunEventCount,
+      };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private rewindThreadToSdkActivityLine(
+    threadId: string,
+    activityLineId: string,
+    userMessageId: string,
+  ): ThreadActivityRewindSummary {
+    const runBoundary = this.db
+      .prepare(
+        `SELECT sequence, observed_at
+         FROM thread_run_events
+         WHERE thread_id = ? AND stream_key = ?
+         ORDER BY sequence ASC
+         LIMIT 1`,
+      )
+      .get(threadId, activityLineId) as { sequence: number; observed_at: string } | undefined;
+    if (!runBoundary) {
+      throw new Error("该节点缺少运行事件索引，无法安全回滚。");
+    }
+
+    const cutoffCreatedAt = runBoundary.observed_at;
+    const cutoffRunSequence = runBoundary.sequence;
+    const deleteChanges = (sql: string, ...args: (string | number | null)[]): number =>
+      (this.db.prepare(sql).run(...args) as { changes?: number }).changes ?? 0;
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      deleteChanges(
+        `DELETE FROM thread_file_checkpoints
+         WHERE thread_id = ?
+           AND (user_message_id = ? OR activity_line_id = ? OR created_at >= ?)`,
+        threadId,
+        userMessageId,
+        activityLineId,
+        cutoffCreatedAt,
+      );
+      const removedRunEventCount = deleteChanges(
+        `DELETE FROM thread_run_events WHERE thread_id = ? AND sequence >= ?`,
+        threadId,
+        cutoffRunSequence,
+      );
+      deleteChanges(
+        `DELETE FROM thread_usage_ledger_events WHERE thread_id = ? AND observed_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_run_attempts
+         WHERE thread_id = ? AND (started_at >= ? OR COALESCE(ended_at, started_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_agent_instances
+         WHERE thread_id = ?
+           AND (started_at >= ? OR updated_at >= ? OR COALESCE(ended_at, updated_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_subagent_sessions
+         WHERE thread_id = ?
+           AND (started_at >= ? OR last_active_at >= ? OR updated_at >= ? OR COALESCE(ended_at, updated_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_subagent_metrics WHERE thread_id = ? AND updated_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(`DELETE FROM thread_pending_plans WHERE thread_id = ?`, threadId);
+      deleteChanges(
+        `DELETE FROM thread_pending_followups WHERE thread_id = ? AND created_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(`DELETE FROM thread_coder_todos WHERE thread_id = ?`, threadId);
+      deleteChanges(`DELETE FROM thread_metrics_snapshots WHERE thread_id = ?`, threadId);
+      deleteChanges(
+        `DELETE FROM thread_compaction_archives WHERE thread_id = ? AND created_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_applied_diffs WHERE thread_id = ? AND applied_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      this.db
+        .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
+        .run(new Date().toISOString(), threadId);
+      this.db.exec("COMMIT");
+      return {
+        activityLineId,
+        userMessageId,
+        cutoffCreatedAt,
+        cutoffRunSequence,
+        removedActivityCount: 0,
         removedRunEventCount,
       };
     } catch (error) {
@@ -1966,14 +2149,10 @@ export class ConversationStore {
          FROM thread_subagent_sessions
          WHERE thread_id = ? AND agent_id = ?`,
       )
-      .get(threadId, agentId) as
-      | { last_active_at: string | null; accumulated_ms: number | null }
-      | undefined;
+      .get(threadId, agentId) as { last_active_at: string | null; accumulated_ms: number | null } | undefined;
     const lastActiveMs = row?.last_active_at ? Date.parse(row.last_active_at) : nowMs;
     const segmentMs =
-      Number.isFinite(lastActiveMs) && lastActiveMs > 0
-        ? Math.max(0, nowMs - lastActiveMs)
-        : 0;
+      Number.isFinite(lastActiveMs) && lastActiveMs > 0 ? Math.max(0, nowMs - lastActiveMs) : 0;
     const accumulatedMs = (row?.accumulated_ms ?? 0) + segmentMs;
     this.db
       .prepare(
@@ -2158,10 +2337,7 @@ export class ConversationStore {
     });
   }
 
-  listResumableSubagentSessions(
-    threadId: string,
-    phase?: SubagentRunPhase,
-  ): ThreadSubagentSessionRecord[] {
+  listResumableSubagentSessions(threadId: string, phase?: SubagentRunPhase): ThreadSubagentSessionRecord[] {
     return this.listSubagentSessions(threadId).filter(
       (row) => row.status === "stopped" && (!phase || row.phase === phase),
     );
@@ -2209,9 +2385,9 @@ export class ConversationStore {
   }
 
   getRouteFingerprint(threadId: string): string | undefined {
-    const row = this.db
-      .prepare(`SELECT routes_fingerprint FROM threads WHERE id = ?`)
-      .get(threadId) as { routes_fingerprint: string | null } | undefined;
+    const row = this.db.prepare(`SELECT routes_fingerprint FROM threads WHERE id = ?`).get(threadId) as
+      | { routes_fingerprint: string | null }
+      | undefined;
     const value = row?.routes_fingerprint?.trim();
     return value || undefined;
   }
@@ -2256,23 +2432,17 @@ export class ConversationStore {
     threadId: string,
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
-    let last = this.getLastActivityLine(threadId);
+    const last = this.getLastActivityLine(threadId);
     if (!line.stream && last?.stream && this.activityLineMatchesForMerge(last, line)) {
-      const merged = line.message.trim()
-        ? mergeStreamText(last.message, line.message)
-        : last.message;
-      this.db
-        .prepare(`UPDATE thread_activity SET message = ?, stream = 0 WHERE id = ?`)
-        .run(merged, last.id);
+      const merged = line.message.trim() ? mergeStreamText(last.message, line.message) : last.message;
+      this.db.prepare(`UPDATE thread_activity SET message = ?, stream = 0 WHERE id = ?`).run(merged, last.id);
       const finalized = { ...last, message: merged, stream: false };
       logSuspiciousActivityLine(threadId, finalized);
       return finalized;
     }
     if (line.stream && last?.stream && this.activityLineMatchesForMerge(last, line)) {
       const merged = mergeStreamText(last.message, line.message);
-      this.db
-        .prepare(`UPDATE thread_activity SET message = ? WHERE id = ?`)
-        .run(merged, last.id);
+      this.db.prepare(`UPDATE thread_activity SET message = ? WHERE id = ?`).run(merged, last.id);
       return { ...last, message: merged };
     }
 
@@ -2306,9 +2476,7 @@ export class ConversationStore {
         new Date().toISOString(),
       );
 
-    this.db
-      .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
-      .run(new Date().toISOString(), threadId);
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(new Date().toISOString(), threadId);
 
     logSuspiciousActivityLine(threadId, record);
     return record;
@@ -2410,9 +2578,9 @@ export class ConversationStore {
   }
 
   getThreadClaudePlanFilePath(threadId: string): string | undefined {
-    const row = this.db
-      .prepare(`SELECT claude_plan_file_path FROM threads WHERE id = ?`)
-      .get(threadId) as { claude_plan_file_path: string | null } | undefined;
+    const row = this.db.prepare(`SELECT claude_plan_file_path FROM threads WHERE id = ?`).get(threadId) as
+      | { claude_plan_file_path: string | null }
+      | undefined;
     const path = row?.claude_plan_file_path?.trim();
     return path || undefined;
   }
@@ -2444,15 +2612,7 @@ export class ConversationStore {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const todo of todos) {
-        insert.run(
-          todo.id,
-          threadId,
-          todo.title,
-          todo.detail,
-          todo.status,
-          todo.position,
-          todo.updatedAt,
-        );
+        insert.run(todo.id, threadId, todo.title, todo.detail, todo.status, todo.position, todo.updatedAt);
       }
       this.db.exec("COMMIT");
     } catch (error) {
@@ -2834,10 +2994,7 @@ function mergeRicherThreadRunEvent(
   return updated;
 }
 
-function shouldUpgradeThreadRunEvent(
-  existing: ThreadRunEvent,
-  incoming: ThreadRunEventInput,
-): boolean {
+function shouldUpgradeThreadRunEvent(existing: ThreadRunEvent, incoming: ThreadRunEventInput): boolean {
   if (existing.eventType !== incoming.eventType) {
     return false;
   }
@@ -2887,8 +3044,16 @@ function mergeThreadRunToolMetadata(
     ...existing,
     ...incoming,
     ...(description !== undefined ? { description } : {}),
-    ...(incoming.readTarget ? { readTarget: incoming.readTarget } : existing.readTarget ? { readTarget: existing.readTarget } : {}),
-    ...(incoming.grepTarget ? { grepTarget: incoming.grepTarget } : existing.grepTarget ? { grepTarget: existing.grepTarget } : {}),
+    ...(incoming.readTarget
+      ? { readTarget: incoming.readTarget }
+      : existing.readTarget
+        ? { readTarget: existing.readTarget }
+        : {}),
+    ...(incoming.grepTarget
+      ? { grepTarget: incoming.grepTarget }
+      : existing.grepTarget
+        ? { grepTarget: existing.grepTarget }
+        : {}),
   };
 }
 
@@ -2944,7 +3109,8 @@ function readThreadRunToolMetadata(
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
     ...(typeof raw.output === "string" && raw.output.trim() && { output: raw.output.trim() }),
     ...(typeof raw.toolUseId === "string" && raw.toolUseId.trim() && { toolUseId: raw.toolUseId.trim() }),
-    ...(typeof raw.durationMs === "number" && Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
+    ...(typeof raw.durationMs === "number" &&
+      Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
     ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),
     ...(typeof raw.description === "string" &&
       raw.description.trim() && { description: raw.description.trim() }),
@@ -2972,7 +3138,6 @@ function streamStateRank(state: ThreadRunEvent["streamState"]): number {
       return 2;
     case "finalized":
       return 3;
-    case "none":
     default:
       return 0;
   }
@@ -3050,6 +3215,7 @@ function parseEcoCostBreakdownJson(raw: string | null): TokenCostBreakdown {
 
 function rowToThreadPendingFollowUp(row: ThreadPendingFollowUpRow): ThreadPendingFollowUp {
   const attachments = parsePromptImageAttachmentsJson(row.attachments_json);
+  const queuedDuringPhase = normalizeThreadFollowUpRunPhase(row.queued_during_phase);
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -3064,9 +3230,7 @@ function rowToThreadPendingFollowUp(row: ThreadPendingFollowUpRow): ThreadPendin
     ...(row.applied_at ? { appliedAt: row.applied_at } : {}),
     ...(row.source_run_attempt_id ? { sourceRunAttemptId: row.source_run_attempt_id } : {}),
     ...(row.target_run_attempt_id ? { targetRunAttemptId: row.target_run_attempt_id } : {}),
-    ...(normalizeThreadFollowUpRunPhase(row.queued_during_phase)
-      ? { queuedDuringPhase: normalizeThreadFollowUpRunPhase(row.queued_during_phase) }
-      : {}),
+    ...(queuedDuringPhase ? { queuedDuringPhase } : {}),
     ...(isThreadFollowUpBoundary(row.delivery_boundary) ? { deliveryBoundary: row.delivery_boundary } : {}),
     ...(row.error ? { error: row.error } : {}),
   };
@@ -3092,19 +3256,12 @@ function isPromptImageAttachment(value: unknown): value is PromptImageAttachment
     return false;
   }
   return (
-    isPromptImageMediaType(value.mediaType) &&
-    typeof value.data === "string" &&
-    value.data.trim().length > 0
+    isPromptImageMediaType(value.mediaType) && typeof value.data === "string" && value.data.trim().length > 0
   );
 }
 
 function isPromptImageMediaType(value: unknown): value is PromptImageAttachment["mediaType"] {
-  return (
-    value === "image/jpeg" ||
-    value === "image/png" ||
-    value === "image/gif" ||
-    value === "image/webp"
-  );
+  return value === "image/jpeg" || value === "image/png" || value === "image/gif" || value === "image/webp";
 }
 
 function isThreadFollowUpStatus(value: unknown): value is ThreadFollowUpStatus {
@@ -3124,10 +3281,7 @@ function isThreadFollowUpPriority(value: unknown): value is ThreadFollowUpPriori
 
 function isThreadFollowUpDeliveryMode(value: unknown): value is ThreadFollowUpDeliveryMode {
   return (
-    value === "queued" ||
-    value === "resume" ||
-    value === "interrupt_resume" ||
-    value === "streaming_push"
+    value === "queued" || value === "resume" || value === "interrupt_resume" || value === "streaming_push"
   );
 }
 
@@ -3160,9 +3314,7 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     message: row.message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    ...(row.sdk_session_id && row.sdk_cwd
-      ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd }
-      : {}),
+    ...(row.sdk_session_id && row.sdk_cwd ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),
   };
 }

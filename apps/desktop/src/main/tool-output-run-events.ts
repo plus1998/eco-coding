@@ -1,18 +1,9 @@
+import type { ThreadRunEventInput } from "../shared/ipc";
 import { formatToolOutputTruncationMessage } from "../shared/tool-output-limit";
 
 export interface ToolOutputRunEventWriter {
   getThread(threadId: string): unknown;
-  appendThreadRunEvent(event: {
-    id: string;
-    threadId: string;
-    eventType: string;
-    scope: "main";
-    streamState: "none";
-    message: string;
-    observedAt: string;
-    runAttemptId?: string;
-    metadata: Record<string, unknown>;
-  }): void;
+  appendThreadRunEvent(event: ThreadRunEventInput): void;
   scheduleProjectionUpdated(threadId: string): void;
   emitThreadEvent(threadId: string, type: string, message: string): void;
   resolveCurrentRunAttemptId(threadId: string): string | undefined;

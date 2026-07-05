@@ -44,6 +44,8 @@ export {
   REMOTE_COMMAND_DEFINITIONS,
   validateRemoteCommandArgs,
 } from "./remote-command-registry";
+export type { EventStore, SecretStore, ThreadRecord } from "./store";
+export { InMemoryEventStore, InMemorySecretStore, redactSecrets } from "./store";
 
 export type ModelCapability =
   | "messages_api"

@@ -89,10 +89,6 @@
       "name": "@eco/openai-anthropic-bridge",
       "version": "0.0.0",
     },
-    "packages/persistence": {
-      "name": "@eco/persistence",
-      "version": "0.0.0",
-    },
     "packages/runtime": {
       "name": "@eco/runtime",
       "version": "0.0.0",
@@ -210,8 +206,6 @@
     "@eco/model-router": ["@eco/model-router@workspace:packages/model-router"],
 
     "@eco/openai-anthropic-bridge": ["@eco/openai-anthropic-bridge@workspace:packages/openai-anthropic-bridge"],
-
-    "@eco/persistence": ["@eco/persistence@workspace:packages/persistence"],
 
     "@eco/runtime": ["@eco/runtime@workspace:packages/runtime"],
 
