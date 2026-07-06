@@ -1102,6 +1102,7 @@ bool _isProjectionBashApprovalItem(ThreadRunProjectionTimelineItem item) {
 
 bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
   if (_isProjectionUserPromptItem(item)) return true;
+  if (item.eventType == 'request.completed') return true;
   if (_isProjectionBashApprovalItem(item)) return false;
   if (isLegacyBashApprovalActivityText(item.text) ||
       _isProjectionInternalMessageText(item.text) ||

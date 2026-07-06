@@ -708,6 +708,41 @@ void main() {
     expect(feed.first.text, 'preview only');
   });
 
+  test('buildActivityFeed hides completed request phase from mobile feed', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'request-done',
+            sequence: 1,
+            eventType: 'request.completed',
+            scope: 'main',
+            text: '模型请求完成',
+            at: '2026-01-01T00:00:00.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'request-failed',
+            sequence: 2,
+            eventType: 'request.failed',
+            scope: 'main',
+            text: '模型请求失败',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.any((entry) => entry.text == '模型请求完成'), isFalse);
+    expect(feed.any((entry) => entry.text == '模型请求失败'), isTrue);
+  });
+
   test('buildActivityFeed drops reconnect after agent recovers', () {
     final feed = buildActivityFeed(
       threadPrompt: '',

@@ -252,8 +252,13 @@ function usePlannerLayoutChangeEffect(
   }, [layoutSignature]);
 }
 
+function isThreadStoppedForFinalSummary(status: string): boolean {
+  return status === "completed" || status === "failed" || status === "blocked" || status === "cancelled" || status === "idle";
+}
+
 function resolveTurnFinalSummaryItemIds(
   entries: readonly ThreadRunProjectionMainFeedEntry[],
+  threadStatus: string,
 ): ReadonlySet<string> {
   const ids = new Set<string>();
   let latestSummaryId: string | undefined;
@@ -282,7 +287,9 @@ function resolveTurnFinalSummaryItemIds(
     }
   }
 
-  commitTurn();
+  if (isThreadStoppedForFinalSummary(threadStatus)) {
+    commitTurn();
+  }
   return ids;
 }
 
@@ -368,8 +375,8 @@ function ProjectionActivityLogView({
   );
   const showThreadPrompt = viewModel.showThreadPrompt;
   const finalSummaryItemIds = useMemo(
-    () => resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries),
-    [viewModel.mainFeedEntries],
+    () => resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status),
+    [projection.thread.status, viewModel.mainFeedEntries],
   );
   const layoutSignature = useMemo(
     () =>

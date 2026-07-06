@@ -45,13 +45,14 @@ class AdaptiveToolbarIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final enabled = onPressed != null;
+    final enabled = visualOnly || onPressed != null;
     final color = enabled
         ? eco.textHeading
         : eco.textHeading.withValues(alpha: 0.38);
     final buttonSize = _resolveButtonSize(size);
     final nativeExtent = _nativeExtent(buttonSize);
-    final resolvedIconSize = iconSize ?? nativeExtent * adaptiveToolbarIconScale;
+    final resolvedIconSize =
+        iconSize ?? nativeExtent * adaptiveToolbarIconScale;
     final style = PlatformInfo.isIOS
         ? AdaptiveButtonStyle.glass
         : AdaptiveButtonStyle.gray;
@@ -64,12 +65,13 @@ class AdaptiveToolbarIcon extends StatelessWidget {
               iconSize: resolvedIconSize,
               color: color,
             )
-          : _iosToolbarIconChip(
-              context: context,
-              nativeExtent: nativeExtent,
-              icon: icon,
-              iconSize: resolvedIconSize,
-              color: color,
+          : AdaptiveButton.child(
+              onPressed: null,
+              style: AdaptiveButtonStyle.glass,
+              size: buttonSize,
+              enabled: enabled,
+              useSmoothRectangleBorder: false,
+              child: Icon(icon, size: resolvedIconSize, color: color),
             );
       final wrapped = SizedBox(
         width: size,
@@ -179,25 +181,5 @@ Widget _androidGlassIconChip({
               ),
             ),
           ),
-  );
-}
-
-Widget _iosToolbarIconChip({
-  required BuildContext context,
-  required double nativeExtent,
-  required IconData icon,
-  required double iconSize,
-  required Color color,
-}) {
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return Container(
-    width: nativeExtent,
-    height: nativeExtent,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: ecoColors(context).textHeading.withValues(alpha: isDark ? 0.14 : 0.08),
-      borderRadius: BorderRadius.circular(nativeExtent / 2),
-    ),
-    child: Icon(icon, size: iconSize, color: color),
   );
 }

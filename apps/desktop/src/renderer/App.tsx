@@ -5570,13 +5570,14 @@ function FollowUpQueuePanel({
 }) {
   return (
     <div className="follow-up-queue" aria-label="已排队的引导消息">
-      {followUps.map((followUp) => {
-        const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
-        const isEscalating = escalateBusyId === followUp.id;
-        const canEscalate = followUp.priority !== "escalated";
+      <div className="follow-up-queue-rows">
+        {followUps.map((followUp) => {
+          const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
+          const isEscalating = escalateBusyId === followUp.id;
+          const canEscalate = followUp.priority !== "escalated";
 
-        return (
-          <article key={followUp.id} className="follow-up-card">
+          return (
+            <div key={followUp.id} className="follow-up-row">
             <div
               className="follow-up-card-main follow-up-card-main-editable"
               role="button"
@@ -5596,7 +5597,6 @@ function FollowUpQueuePanel({
                 onEdit(followUp);
               }}
             >
-              <CornerDownRight className="follow-up-card-icon" size={14} aria-hidden />
               <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
             </div>
             <div className="follow-up-card-actions">
@@ -5641,9 +5641,10 @@ function FollowUpQueuePanel({
                 {cancelBusyId === followUp.id ? <Activity size={14} /> : <Trash2 size={14} />}
               </button>
             </div>
-          </article>
+          </div>
         );
-      })}
+        })}
+      </div>
     </div>
   );
 }

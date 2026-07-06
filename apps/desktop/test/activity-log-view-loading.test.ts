@@ -79,6 +79,45 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
   };
 }
 
+test("ActivityLogView waits for thread stop before exposing final output copy", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "assistant-last",
+            eventType: "message.final",
+            text: "当前最后一轮，但会话还没停止。",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).not.toContain('aria-label="复制消息"');
+});
+
+test("ActivityLogView exposes final output copy after thread stops", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "assistant-final",
+            eventType: "message.final",
+            text: "会话停止后的最终输出。",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain('aria-label="复制消息"');
+  expect(html).toContain("会话停止后的最终输出。");
+});
+
 test("ActivityLogView shows inline loading for a running file write action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
