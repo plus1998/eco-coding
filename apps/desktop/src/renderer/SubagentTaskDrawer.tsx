@@ -1,5 +1,5 @@
 import { shortenModelId } from "@eco/runtime";
-import { Bot, Circle, ExternalLink, ListChecks, PanelRightClose, Plus, Square, Terminal } from "lucide-react";
+import { Bot, Circle, ExternalLink, ListChecks, Plus, Square, Terminal } from "lucide-react";
 import { useMemo } from "react";
 import type {
   BackgroundTerminalTask,
@@ -138,7 +138,6 @@ export function SubagentTaskDrawer({
   onSelectBackgroundTasks,
   onSelectReview,
   onSelectReviewPath,
-  onClose,
   onOpenTerminalTask,
   onStopTerminalTask,
 }: {
@@ -159,7 +158,6 @@ export function SubagentTaskDrawer({
   onSelectBackgroundTasks: () => void;
   onSelectReview: () => void;
   onSelectReviewPath: (path: string) => void;
-  onClose: () => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
 }) {
@@ -251,15 +249,6 @@ export function SubagentTaskDrawer({
             <Plus size={17} aria-hidden />
           </button>
         </div>
-        <button
-          type="button"
-          className="subagent-task-side-panel-close"
-          onClick={onClose}
-          aria-label="关闭任务面板"
-          title="关闭"
-        >
-          <PanelRightClose size={16} aria-hidden />
-        </button>
       </header>
 
       <div className="subagent-task-panel-body">
@@ -269,16 +258,13 @@ export function SubagentTaskDrawer({
             className="subagent-task-panel-tab-pane subagent-task-panel-tab-pane--review"
             role="tabpanel"
           >
-            <div className="subagent-task-review-diff">
-              <WorkspaceDiffPanel
-                loading={reviewLoading ?? false}
-                {...(reviewError && { error: reviewError })}
-                {...(reviewDiff && { diff: reviewDiff })}
-                {...(reviewSelectedPath && { selectedPath: reviewSelectedPath })}
-                showHeader
-                onSelectPath={onSelectReviewPath}
-              />
-            </div>
+            <WorkspaceDiffPanel
+              loading={reviewLoading ?? false}
+              {...(reviewError && { error: reviewError })}
+              {...(reviewDiff && { diff: reviewDiff })}
+              {...(reviewSelectedPath && { selectedPath: reviewSelectedPath })}
+              onSelectPath={onSelectReviewPath}
+            />
           </div>
         ) : null}
         {activeSubagentCard ? (

@@ -1,6 +1,6 @@
 import { resolveMissionDisplayText } from "@eco/runtime";
-import { Bot, GitBranch, GitCommitHorizontal, ListTodo, Plug, Users } from "lucide-react";
-import { useState } from "react";
+import { Bot, ChevronDown, GitBranch, GitCommitHorizontal, ListTodo, Plug, Users } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type {
   CoderTodoItem,
@@ -21,10 +21,10 @@ import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
-import { FloatingWorkspaceCard } from "./FloatingWorkspaceCard";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
+import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 
@@ -87,6 +87,58 @@ function countRunningTodos(todos: CoderTodoItem[]): number {
 
 function subagentRoleLabel(role: string, displayNames?: RuntimeAgentDisplayNames): string {
   return resolveRuntimeAgentName(role, displayNames) ?? resolveSubagentRunDisplayTitle(role);
+}
+
+function WorkspacePanelSection({
+  id,
+  title,
+  summary,
+  children,
+  defaultExpanded = true,
+  maxBodyHeight = 360,
+}: {
+  id: string;
+  title: string;
+  summary: ReactNode;
+  children: ReactNode;
+  defaultExpanded?: boolean;
+  maxBodyHeight?: number;
+}) {
+  const [expanded, setExpanded] = useState(() => readCardExpanded(id, defaultExpanded));
+  const bodyId = `${id}-body`;
+
+  function toggleExpanded() {
+    setExpanded((current) => {
+      const next = !current;
+      persistCardExpanded(id, next);
+      return next;
+    });
+  }
+
+  return (
+    <section className={`workspace-panel-section${expanded ? " is-expanded" : " is-collapsed"}`}>
+      <button
+        type="button"
+        className="workspace-panel-section-header"
+        onClick={toggleExpanded}
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+      >
+        <span className="workspace-panel-section-title">{title}</span>
+        <span className="workspace-panel-section-summary">{summary}</span>
+        <ChevronDown size={14} className="workspace-panel-section-chevron" aria-hidden />
+      </button>
+      {expanded ? (
+        <div
+          id={bodyId}
+          className="workspace-panel-section-body floating-workspace-card-body"
+          style={maxBodyHeight > 0 ? { maxHeight: maxBodyHeight } : undefined}
+        >
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function SubagentRunsCardBody({
@@ -203,160 +255,162 @@ export function WorkspaceFloatingCards({
   }
 
   return (
-    <div className="workspace-floating-cards">
-      <FloatingWorkspaceCard
-        id="workspace-env"
-        title="环境信息"
-        defaultExpanded
-        bubble={
-          <>
-            <GitBranch size={14} aria-hidden />
-            <span>{branchLabel}</span>
-            <span className="floating-workspace-card-bubble-stats">
-              <span className="git-commit-stat-add">+{insertions}</span>
-              <span className="git-commit-stat-del">-{deletions}</span>
-            </span>
-          </>
-        }
-      >
-        <WorkspaceGitSection
-          {...(workspacePath && { workspacePath })}
-          workspaceLabel={projectLabel}
-          {...(gitStatus && { gitStatus })}
-          gitBusy={gitBusy ?? false}
-          commitDisabled={commitDisabled ?? false}
-          {...(profileId && { profileId })}
-          {...(gitSettings && { gitSettings })}
-          {...(onCheckoutGitBranch && { onCheckoutGitBranch })}
-          {...(onCreateGitBranch && { onCreateGitBranch })}
-          {...(onOpenGitSettings && { onOpenGitSettings })}
-          {...(onSaveCommitModelPreference && { onSaveCommitModelPreference })}
-          onCommitSuccess={() => void handleCommitSuccess()}
-          {...(onOpenChangesReview && { onOpenChangesReview })}
-          {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
-          {...(onChangesDiffLoadingChange && { onChangesDiffLoadingChange })}
-          {...(onChangesDiffError && { onChangesDiffError })}
-          onPullSuccess={() => void handlePullSuccess()}
-          {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
-          {...(scriptsDisabled !== undefined && { scriptsDisabled })}
-          {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
-        />
-      </FloatingWorkspaceCard>
-
-      {hasActiveThread && subagentRunCards.length > 0 ? (
-        <FloatingWorkspaceCard
-          id="workspace-subagent-runs"
-          title="子智能体"
+    <section className="workspace-floating-cards" aria-label={`${projectLabel} 工作区面板`}>
+      <div className="workspace-floating-cards-sections">
+        <WorkspacePanelSection
+          id="workspace-env"
+          title="环境信息"
           defaultExpanded
-          bubble={
+          summary={
             <>
-              <Bot size={14} aria-hidden />
-              <span>{subagentRunCards.length}</span>
-            </>
-          }
-          maxBodyHeight={260}
-        >
-          <SubagentRunsCardBody
-            cards={subagentRunCards}
-            {...(selectedSubagentAgentId && { selectedAgentId: selectedSubagentAgentId })}
-            agentDisplayNames={agentDisplayNames}
-            agentThemes={agentThemes}
-            onOpenSubagent={onOpenSubagent}
-          />
-        </FloatingWorkspaceCard>
-      ) : null}
-
-      {showProgress ? (
-        <FloatingWorkspaceCard
-          id="workspace-progress"
-          title="任务进度"
-          defaultExpanded
-          bubble={
-            <>
-              <ListTodo size={14} aria-hidden />
-              <span>{countRunningTodos(todos)} 项进行中</span>
-            </>
-          }
-          maxBodyHeight={280}
-        >
-          <CoderTodoPanel todos={todos} embedded compact />
-        </FloatingWorkspaceCard>
-      ) : null}
-
-      {hasActiveThread && agentModelLabels.length > 0 ? (
-        <FloatingWorkspaceCard
-          id="workspace-agents"
-          title="子代理"
-          defaultExpanded
-          bubble={
-            <>
-              <Users size={14} aria-hidden />
-              <span>
-                {subagentLabels.length > 0
-                  ? `${enabledSubagents}/${subagentLabels.length}`
-                  : String(agentModelLabels.length)}
+              <GitBranch size={14} aria-hidden />
+              <span>{branchLabel}</span>
+              <span className="floating-workspace-card-bubble-stats">
+                <span className="git-commit-stat-add">+{insertions}</span>
+                <span className="git-commit-stat-del">-{deletions}</span>
               </span>
             </>
           }
-          maxBodyHeight={320}
         >
-          <ComposerAgentModelsCardBody
-            embedded
-            labels={agentModelLabels}
-            subagentSettings={subagentSettings ?? null}
-            canEditSubagents={Boolean(canEditComposerConfig)}
-            {...(isSavingSettings !== undefined && { subagentSaving: isSavingSettings })}
-            {...(onToggleComposerSubagent && { onToggleSubagent: onToggleComposerSubagent })}
+          <WorkspaceGitSection
+            {...(workspacePath && { workspacePath })}
+            workspaceLabel={projectLabel}
+            {...(gitStatus && { gitStatus })}
+            gitBusy={gitBusy ?? false}
+            commitDisabled={commitDisabled ?? false}
+            {...(profileId && { profileId })}
+            {...(gitSettings && { gitSettings })}
+            {...(onCheckoutGitBranch && { onCheckoutGitBranch })}
+            {...(onCreateGitBranch && { onCreateGitBranch })}
+            {...(onOpenGitSettings && { onOpenGitSettings })}
+            {...(onSaveCommitModelPreference && { onSaveCommitModelPreference })}
+            onCommitSuccess={() => void handleCommitSuccess()}
+            {...(onOpenChangesReview && { onOpenChangesReview })}
+            {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
+            {...(onChangesDiffLoadingChange && { onChangesDiffLoadingChange })}
+            {...(onChangesDiffError && { onChangesDiffError })}
+            onPullSuccess={() => void handlePullSuccess()}
+            {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
+            {...(scriptsDisabled !== undefined && { scriptsDisabled })}
+            {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
           />
-        </FloatingWorkspaceCard>
-      ) : null}
+        </WorkspacePanelSection>
 
-      {hasActiveThread && enabledMcpServers.length > 0 && composerMcpSettings ? (
-        <FloatingWorkspaceCard
-          id="workspace-mcp"
-          title="MCP"
-          defaultExpanded={false}
-          bubble={
-            <>
-              <Plug size={14} aria-hidden />
-              <span>
-                {enabledMcpCount}/{enabledMcpServers.length}
-              </span>
-            </>
-          }
-          maxBodyHeight={280}
-        >
-          <ComposerMcpCardBody
-            servers={mcpServers}
-            enabledSettings={composerMcpSettings}
-            canEdit={Boolean(canEditComposerConfig)}
-            {...(isSavingSettings !== undefined && { saving: isSavingSettings })}
-            {...(onToggleComposerMcpServer && { onToggleServer: onToggleComposerMcpServer })}
-          />
-        </FloatingWorkspaceCard>
-      ) : null}
+        {hasActiveThread && subagentRunCards.length > 0 ? (
+          <WorkspacePanelSection
+            id="workspace-subagent-runs"
+            title="子智能体"
+            defaultExpanded
+            summary={
+              <>
+                <Bot size={14} aria-hidden />
+                <span>{subagentRunCards.length}</span>
+              </>
+            }
+            maxBodyHeight={260}
+          >
+            <SubagentRunsCardBody
+              cards={subagentRunCards}
+              {...(selectedSubagentAgentId && { selectedAgentId: selectedSubagentAgentId })}
+              agentDisplayNames={agentDisplayNames}
+              agentThemes={agentThemes}
+              onOpenSubagent={onOpenSubagent}
+            />
+          </WorkspacePanelSection>
+        ) : null}
 
-      {showCommitGraph && workspacePath ? (
-        <FloatingWorkspaceCard
-          id="workspace-git-graph"
-          title="Git 图形"
-          defaultExpanded={false}
-          bubble={
-            <>
-              <GitCommitHorizontal size={14} aria-hidden />
-              <span>Git 图形</span>
-              <span className="floating-workspace-card-bubble-detail">{branchLabel}</span>
-            </>
-          }
-          maxBodyHeight={300}
-        >
-          <WorkspaceGitCommitGraph
-            workspacePath={workspacePath}
-            refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
-            embedded
-          />
-        </FloatingWorkspaceCard>
-      ) : null}
-    </div>
+        {showProgress ? (
+          <WorkspacePanelSection
+            id="workspace-progress"
+            title="任务进度"
+            defaultExpanded
+            summary={
+              <>
+                <ListTodo size={14} aria-hidden />
+                <span>{countRunningTodos(todos)} 项进行中</span>
+              </>
+            }
+            maxBodyHeight={280}
+          >
+            <CoderTodoPanel todos={todos} embedded compact />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {hasActiveThread && agentModelLabels.length > 0 ? (
+          <WorkspacePanelSection
+            id="workspace-agents"
+            title="子代理"
+            defaultExpanded
+            summary={
+              <>
+                <Users size={14} aria-hidden />
+                <span>
+                  {subagentLabels.length > 0
+                    ? `${enabledSubagents}/${subagentLabels.length}`
+                    : String(agentModelLabels.length)}
+                </span>
+              </>
+            }
+            maxBodyHeight={320}
+          >
+            <ComposerAgentModelsCardBody
+              embedded
+              labels={agentModelLabels}
+              subagentSettings={subagentSettings ?? null}
+              canEditSubagents={Boolean(canEditComposerConfig)}
+              {...(isSavingSettings !== undefined && { subagentSaving: isSavingSettings })}
+              {...(onToggleComposerSubagent && { onToggleSubagent: onToggleComposerSubagent })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {hasActiveThread && enabledMcpServers.length > 0 && composerMcpSettings ? (
+          <WorkspacePanelSection
+            id="workspace-mcp"
+            title="MCP"
+            defaultExpanded={false}
+            summary={
+              <>
+                <Plug size={14} aria-hidden />
+                <span>
+                  {enabledMcpCount}/{enabledMcpServers.length}
+                </span>
+              </>
+            }
+            maxBodyHeight={280}
+          >
+            <ComposerMcpCardBody
+              servers={mcpServers}
+              enabledSettings={composerMcpSettings}
+              canEdit={Boolean(canEditComposerConfig)}
+              {...(isSavingSettings !== undefined && { saving: isSavingSettings })}
+              {...(onToggleComposerMcpServer && { onToggleServer: onToggleComposerMcpServer })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {showCommitGraph && workspacePath ? (
+          <WorkspacePanelSection
+            id="workspace-git-graph"
+            title="Git 图形"
+            defaultExpanded={false}
+            summary={
+              <>
+                <GitCommitHorizontal size={14} aria-hidden />
+                <span>Git 图形</span>
+                <span className="floating-workspace-card-bubble-detail">{branchLabel}</span>
+              </>
+            }
+            maxBodyHeight={300}
+          >
+            <WorkspaceGitCommitGraph
+              workspacePath={workspacePath}
+              refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
+              embedded
+            />
+          </WorkspacePanelSection>
+        ) : null}
+      </div>
+    </section>
   );
 }

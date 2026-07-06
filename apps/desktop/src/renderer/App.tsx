@@ -13,6 +13,7 @@ import {
   Loader2,
   MessageSquarePlus,
   Monitor,
+  PanelBottom,
   PanelRight,
   Pencil,
   Plug,
@@ -22,7 +23,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
-  Terminal,
   Trash2,
   type LucideIcon,
   X,
@@ -527,8 +527,11 @@ function App() {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
-  const { showError: showAppMessageError, dismiss: dismissAppMessage, state: appMessageState } =
-    useAppMessage();
+  const {
+    showError: showAppMessageError,
+    dismiss: dismissAppMessage,
+    state: appMessageState,
+  } = useAppMessage();
   const showAppMessageErrorRef = useRef(showAppMessageError);
   showAppMessageErrorRef.current = showAppMessageError;
   const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
@@ -595,26 +598,37 @@ function App() {
       window.eco.getWorkflowSettings(),
       window.eco.getCenterServerSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, workflow, centerServer, proxyBridge]) => {
-      setHomeProjectPath(resolvedHomeProjectPath);
-      setWorkspace(currentWorkspace);
-      if (currentWorkspace) {
-        setSelectedProjectPath(currentWorkspace.path);
-        registerImportedProject(
-          currentWorkspace.path,
-          isHomeProjectPath(currentWorkspace.path, resolvedHomeProjectPath)
-            ? HOME_PROJECT_DISPLAY_NAME
-            : currentWorkspace.name,
-          resolvedHomeProjectPath,
-        );
-      }
-      setThreads(currentThreads);
-      setSettings(modelSettings);
-      setMcpSettings(mcp);
-      setWorkflowSettings(workflow);
-      setCenterServerSettings(centerServer);
-      setProxyBridgeSettings(proxyBridge);
-    });
+    ]).then(
+      ([
+        currentWorkspace,
+        resolvedHomeProjectPath,
+        currentThreads,
+        modelSettings,
+        mcp,
+        workflow,
+        centerServer,
+        proxyBridge,
+      ]) => {
+        setHomeProjectPath(resolvedHomeProjectPath);
+        setWorkspace(currentWorkspace);
+        if (currentWorkspace) {
+          setSelectedProjectPath(currentWorkspace.path);
+          registerImportedProject(
+            currentWorkspace.path,
+            isHomeProjectPath(currentWorkspace.path, resolvedHomeProjectPath)
+              ? HOME_PROJECT_DISPLAY_NAME
+              : currentWorkspace.name,
+            resolvedHomeProjectPath,
+          );
+        }
+        setThreads(currentThreads);
+        setSettings(modelSettings);
+        setMcpSettings(mcp);
+        setWorkflowSettings(workflow);
+        setCenterServerSettings(centerServer);
+        setProxyBridgeSettings(proxyBridge);
+      },
+    );
 
     let threadListRefreshTimer: number | undefined;
     let runProjectionFullRefreshTimer: number | undefined;
@@ -698,10 +712,7 @@ function App() {
         }
       }
 
-      if (
-        event.type === "thread.title_failed" &&
-        event.threadId === selectedThreadIdRef.current
-      ) {
+      if (event.type === "thread.title_failed" && event.threadId === selectedThreadIdRef.current) {
         showAppMessageErrorRef.current("会话标题生成失败");
         return;
       }
@@ -749,9 +760,7 @@ function App() {
       if (event.runtimeConfig) {
         const runtimeConfig = event.runtimeConfig;
         setThreads((current) =>
-          current.map((thread) =>
-            thread.id === event.threadId ? { ...thread, runtimeConfig } : thread,
-          ),
+          current.map((thread) => (thread.id === event.threadId ? { ...thread, runtimeConfig } : thread)),
         );
       }
 
@@ -990,11 +999,11 @@ function App() {
           if (cancelled) {
             return;
           }
-        if (approval) {
-          upsertPendingBashApprovalForThread(selectedThreadId, approval);
-        } else {
-          clearPendingBashApprovalForThread(selectedThreadId);
-        }
+          if (approval) {
+            upsertPendingBashApprovalForThread(selectedThreadId, approval);
+          } else {
+            clearPendingBashApprovalForThread(selectedThreadId);
+          }
         });
       }
       if (typeof window.eco.listThreadFollowUps === "function") {
@@ -1223,7 +1232,14 @@ function App() {
           hasMore: !threadsExpanded && projectThreads.length > visibleCount,
         };
       }),
-    [collapsedProjectPaths, expandedProjectThreadPaths, homeProjectPath, pinnedProjectPaths, projects, threadsByProject],
+    [
+      collapsedProjectPaths,
+      expandedProjectThreadPaths,
+      homeProjectPath,
+      pinnedProjectPaths,
+      projects,
+      threadsByProject,
+    ],
   );
 
   const currentProjectPath = useMemo(() => {
@@ -1368,9 +1384,7 @@ function App() {
     if (!currentProjectPath) {
       return;
     }
-    const inConversation = Boolean(
-      activeThread && activeThread.workspacePath === currentProjectPath,
-    );
+    const inConversation = Boolean(activeThread && activeThread.workspacePath === currentProjectPath);
     const prev = workspacePanelModeRef.current;
     const projectChanged = prev.projectPath !== currentProjectPath;
     const modeChanged = !projectChanged && prev.inConversation !== inConversation;
@@ -1437,31 +1451,34 @@ function App() {
     };
   }, [currentProjectPath]);
 
-  const refreshGitStatus = useCallback(async (workspacePath?: string) => {
-    const path = workspacePath ?? currentProjectPath;
-    if (!path || !window.eco) {
-      setGitStatus(undefined);
-      setGitStatusLoading(false);
-      return;
-    }
-    const requestId = gitStatusRequestRef.current + 1;
-    gitStatusRequestRef.current = requestId;
-    setGitStatusLoading(true);
-    try {
-      const status = await window.eco.getGitStatus(path);
-      if (requestId === gitStatusRequestRef.current) {
-        setGitStatus(status);
-      }
-    } catch {
-      if (requestId === gitStatusRequestRef.current) {
+  const refreshGitStatus = useCallback(
+    async (workspacePath?: string) => {
+      const path = workspacePath ?? currentProjectPath;
+      if (!path || !window.eco) {
         setGitStatus(undefined);
-      }
-    } finally {
-      if (requestId === gitStatusRequestRef.current) {
         setGitStatusLoading(false);
+        return;
       }
-    }
-  }, [currentProjectPath]);
+      const requestId = gitStatusRequestRef.current + 1;
+      gitStatusRequestRef.current = requestId;
+      setGitStatusLoading(true);
+      try {
+        const status = await window.eco.getGitStatus(path);
+        if (requestId === gitStatusRequestRef.current) {
+          setGitStatus(status);
+        }
+      } catch {
+        if (requestId === gitStatusRequestRef.current) {
+          setGitStatus(undefined);
+        }
+      } finally {
+        if (requestId === gitStatusRequestRef.current) {
+          setGitStatusLoading(false);
+        }
+      }
+    },
+    [currentProjectPath],
+  );
 
   useEffect(() => {
     setGitStatus(undefined);
@@ -1579,8 +1596,7 @@ function App() {
         const nextState = existing
           ? { ...existing, open: true }
           : createProjectTerminalState(
-              projects.find((item) => item.path === workspacePath)?.name ??
-                pathToName(workspacePath),
+              projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath),
               true,
             );
         return { ...current, [workspacePath]: nextState };
@@ -1976,9 +1992,7 @@ function App() {
       persistComposerDraftSnapshot(composerDraftsByKeyRef.current, prevKey, {
         prompt: composerPromptRef.current,
         attachments: composerAttachmentsRef.current,
-        ...(composerRewindTargetRef.current
-          ? { rewindTarget: composerRewindTargetRef.current }
-          : {}),
+        ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
       });
     }
 
@@ -2047,9 +2061,7 @@ function App() {
 
   useEffect(() => {
     setOpenSubagentTabIds((current) => {
-      const next = current.filter((tabId) =>
-        activeSubagentCards.some((card) => card.key === tabId),
-      );
+      const next = current.filter((tabId) => activeSubagentCards.some((card) => card.key === tabId));
       if (next.length === current.length && next.every((tabId, index) => tabId === current[index])) {
         return current;
       }
@@ -2106,19 +2118,13 @@ function App() {
   const openSubagentTaskDrawer = useCallback(
     (agentId: string) => {
       closeWorkspacePanelForCurrentProject();
-      setOpenSubagentTabIds((current) =>
-        current.includes(agentId) ? current : [...current, agentId],
-      );
+      setOpenSubagentTabIds((current) => (current.includes(agentId) ? current : [...current, agentId]));
       setTaskPanelActiveTab(agentId);
       setSelectedSubagentAgentId(agentId);
       setTaskDrawerOpen(true);
     },
     [closeWorkspacePanelForCurrentProject],
   );
-
-  const closeSubagentTaskDrawer = useCallback(() => {
-    setTaskDrawerOpen(false);
-  }, []);
 
   const handleTaskPanelResizeMouseDown = useCallback(
     (event: ReactMouseEvent<HTMLElement>) => {
@@ -2281,22 +2287,19 @@ function App() {
     return container.scrollHeight - container.scrollTop - container.clientHeight;
   }, []);
 
-  const clampActivityFeedOverscroll = useCallback(
-    (container: HTMLElement): boolean => {
-      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
-      if (container.scrollTop <= maxScrollTop) {
-        return false;
-      }
-      programmaticActivityFeedScrollRef.current = true;
-      container.scrollTop = maxScrollTop;
-      activityFeedScrollTopRef.current = container.scrollTop;
-      requestAnimationFrame(() => {
-        programmaticActivityFeedScrollRef.current = false;
-      });
-      return true;
-    },
-    [],
-  );
+  const clampActivityFeedOverscroll = useCallback((container: HTMLElement): boolean => {
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (container.scrollTop <= maxScrollTop) {
+      return false;
+    }
+    programmaticActivityFeedScrollRef.current = true;
+    container.scrollTop = maxScrollTop;
+    activityFeedScrollTopRef.current = container.scrollTop;
+    requestAnimationFrame(() => {
+      programmaticActivityFeedScrollRef.current = false;
+    });
+    return true;
+  }, []);
 
   const syncActivityFeedScrollJump = useCallback(
     (container: HTMLElement) => {
@@ -2313,35 +2316,38 @@ function App() {
     [distanceFromActivityFeedBottom],
   );
 
-  const scrollActivityFeedToEnd = useCallback((force = false) => {
-    const container = activityMessagesRef.current;
-    if (!container) {
-      return;
-    }
-    const effectiveForce = force || Date.now() < forceActivityFeedScrollUntilRef.current;
-    if (!effectiveForce && userDetachedFromBottomRef.current) {
-      return;
-    }
-    programmaticActivityFeedScrollRef.current = true;
-    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
-    container.scrollTop = maxScrollTop;
-    activityFeedScrollTopRef.current = container.scrollTop;
-    requestAnimationFrame(() => {
+  const scrollActivityFeedToEnd = useCallback(
+    (force = false) => {
+      const container = activityMessagesRef.current;
+      if (!container) {
+        return;
+      }
+      const effectiveForce = force || Date.now() < forceActivityFeedScrollUntilRef.current;
+      if (!effectiveForce && userDetachedFromBottomRef.current) {
+        return;
+      }
+      programmaticActivityFeedScrollRef.current = true;
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      container.scrollTop = maxScrollTop;
+      activityFeedScrollTopRef.current = container.scrollTop;
       requestAnimationFrame(() => {
-        programmaticActivityFeedScrollRef.current = false;
-        const el = activityMessagesRef.current;
-        if (!el) {
-          return;
-        }
-        activityFeedScrollTopRef.current = el.scrollTop;
-        if (distanceFromActivityFeedBottom(el) <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
-          userDetachedFromBottomRef.current = false;
-          activityFeedUserScrollDirectionRef.current = null;
-        }
-        syncActivityFeedScrollJump(el);
+        requestAnimationFrame(() => {
+          programmaticActivityFeedScrollRef.current = false;
+          const el = activityMessagesRef.current;
+          if (!el) {
+            return;
+          }
+          activityFeedScrollTopRef.current = el.scrollTop;
+          if (distanceFromActivityFeedBottom(el) <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+            userDetachedFromBottomRef.current = false;
+            activityFeedUserScrollDirectionRef.current = null;
+          }
+          syncActivityFeedScrollJump(el);
+        });
       });
-    });
-  }, [distanceFromActivityFeedBottom, syncActivityFeedScrollJump]);
+    },
+    [distanceFromActivityFeedBottom, syncActivityFeedScrollJump],
+  );
 
   const scheduleActivityFeedLayoutScroll = useCallback(() => {
     const now = Date.now();
@@ -2494,8 +2500,7 @@ function App() {
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
       clampActivityFeedOverscroll(container);
       const stuckAboveBottom =
-        !userDetachedFromBottomRef.current &&
-        distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
+        !userDetachedFromBottomRef.current && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
       if (userDetachedFromBottomRef.current) {
         return;
       }
@@ -2701,18 +2706,21 @@ function App() {
     }
   }
 
-  const restorePrompt = useCallback((text: string, rewindTarget?: ThreadActivityRewindTarget) => {
-    setPrompt(text);
-    if (activeThread && rewindTarget) {
-      setComposerRewindTarget({ ...rewindTarget, threadId: activeThread.id });
-    } else {
-      setComposerRewindTarget(undefined);
-    }
-    window.requestAnimationFrame(() => {
-      composerRef.current?.focus();
-      composerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-  }, [activeThread?.id]);
+  const restorePrompt = useCallback(
+    (text: string, rewindTarget?: ThreadActivityRewindTarget) => {
+      setPrompt(text);
+      if (activeThread && rewindTarget) {
+        setComposerRewindTarget({ ...rewindTarget, threadId: activeThread.id });
+      } else {
+        setComposerRewindTarget(undefined);
+      }
+      window.requestAnimationFrame(() => {
+        composerRef.current?.focus();
+        composerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    },
+    [activeThread?.id],
+  );
 
   function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     setEditingFollowUpId(followUp.id);
@@ -2817,13 +2825,12 @@ function App() {
     }
     try {
       if (activeThread && isContinuableThreadStatus(activeThread.status)) {
-        const rewindTarget =
-          activeComposerRewindTarget
-            ? {
-                activityLineId: activeComposerRewindTarget.activityLineId,
-                userMessageId: activeComposerRewindTarget.userMessageId,
-              }
-            : undefined;
+        const rewindTarget = activeComposerRewindTarget
+          ? {
+              activityLineId: activeComposerRewindTarget.activityLineId,
+              userMessageId: activeComposerRewindTarget.userMessageId,
+            }
+          : undefined;
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt: messagePrompt,
@@ -3294,10 +3301,7 @@ function App() {
         prompt,
         runtimeConfig: composerRuntimeConfig,
       });
-      setThreads((current) => [
-        result.thread,
-        ...current.filter((thread) => thread.id !== result.thread.id),
-      ]);
+      setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
       setSelectedThreadId(result.thread.id);
       clearPendingPlanForThread(result.thread.id);
       await refreshThreadState(result.thread.id);
@@ -3317,8 +3321,7 @@ function App() {
       return;
     }
     const isRunning = activeThread.status === "running" || activeThread.status === "queued";
-    const canPersist =
-      canEditComposerConfig || (options?.persistWhileRunning === true && isRunning);
+    const canPersist = canEditComposerConfig || (options?.persistWhileRunning === true && isRunning);
     if (!canPersist) {
       return;
     }
@@ -3352,10 +3355,7 @@ function App() {
       agentProfileId,
       ...(profile
         ? {
-            subagentEnabled: deriveSubagentEnabledFromProfile(
-              profile,
-              composerRuntimeConfig.subagentEnabled,
-            ),
+            subagentEnabled: deriveSubagentEnabledFromProfile(profile, composerRuntimeConfig.subagentEnabled),
           }
         : {}),
       ...(availableMcpServerKeys.length > 0
@@ -4077,14 +4077,61 @@ function App() {
   }
 
   const showWorkspacePanel = Boolean(currentProjectPath);
-  const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen);
+  const workspaceCardsPanelOpen = Boolean(
+    showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen,
+  );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
-  const rightPanelOpen = workspaceCardsPanelOpen || taskPanelOpen;
+  const rightPanelOpen = taskPanelOpen;
   const rightPanelStyle = {
     "--workspace-panel-width": taskPanelOpen ? `${taskPanelWidth}px` : "300px",
     "--task-panel-width": `${taskPanelWidth}px`,
   } as CSSProperties;
   const showLanding = !activeThread;
+  const workspacePanelToolbar = showWorkspacePanel ? (
+    <div className="codex-main-toolbar codex-main-toolbar--workspace" aria-label="工作区控制">
+      <button
+        type="button"
+        className={
+          workspaceCardsPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+        }
+        onClick={toggleWorkspacePanelForCurrentProject}
+        title={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
+        aria-label={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
+        aria-expanded={workspaceCardsPanelOpen}
+        aria-controls="workspace-panel"
+      >
+        <SlidersHorizontal size={15} aria-hidden />
+      </button>
+    </div>
+  ) : null;
+  const fixedSidebarToolbar = showWorkspacePanel ? (
+    <div className="codex-fixed-sidebar-toolbar" aria-label="侧边栏控制">
+      <button
+        type="button"
+        className={
+          currentTerminalState?.open ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+        }
+        onClick={toggleTerminalForCurrentProject}
+        title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
+        aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
+        aria-expanded={currentTerminalState?.open === true}
+        aria-controls="terminal-panel"
+      >
+        <PanelBottom size={15} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className={taskPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
+        onClick={toggleTaskPanelForCurrentProject}
+        title={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
+        aria-label={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
+        aria-expanded={taskPanelOpen}
+        aria-controls="task-panel"
+      >
+        <PanelRight size={15} aria-hidden />
+      </button>
+    </div>
+  ) : null;
   const syncTopbarMode = useCallback(() => {
     const scrollBody = scrollBodyRef.current;
     const topbar = topbarRef.current;
@@ -4092,9 +4139,7 @@ function App() {
       return;
     }
     const hasFeedStack = Boolean(scrollBody.querySelector(".codex-feed-stack"));
-    const overlap = hasFeedStack
-      ? true
-      : measureTopbarFeedOverlap(scrollBody, topbar);
+    const overlap = hasFeedStack ? true : measureTopbarFeedOverlap(scrollBody, topbar);
     setTopbarSolid(overlap);
   }, []);
   useEffect(() => {
@@ -4171,18 +4216,18 @@ function App() {
       : showPlanApproval
         ? "补充消息会排队；计划审批请用下方卡片"
         : contextCompactionInFlight
-        ? "上下文压缩中，请稍候…"
-        : activeThread?.status === "awaiting_plan"
-        ? "请先确认或忽略下方计划"
-        : activeThread && isContinuableThreadStatus(activeThread.status)
-          ? "继续对话；若需改计划请说明，将重新生成完整计划…"
-          : composerFollowUpMode
-            ? editingFollowUpId
-              ? "编辑引导消息…"
-              : "要求后续变更"
-            : activeThread
-              ? "当前对话不可发送"
-              : "尽管问";
+          ? "上下文压缩中，请稍候…"
+          : activeThread?.status === "awaiting_plan"
+            ? "请先确认或忽略下方计划"
+            : activeThread && isContinuableThreadStatus(activeThread.status)
+              ? "继续对话；若需改计划请说明，将重新生成完整计划…"
+              : composerFollowUpMode
+                ? editingFollowUpId
+                  ? "编辑引导消息…"
+                  : "要求后续变更"
+                : activeThread
+                  ? "当前对话不可发送"
+                  : "尽管问";
   const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
   const composerCompact = !showLanding;
 
@@ -4428,7 +4473,11 @@ function App() {
                     title="停止当前运行"
                     aria-label="停止"
                   >
-                    {cancelBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <Square size={COMPOSER_SEND_ICON_PX - 2} />}
+                    {cancelBusy ? (
+                      <Activity size={COMPOSER_SEND_ICON_PX} />
+                    ) : (
+                      <Square size={COMPOSER_SEND_ICON_PX - 2} />
+                    )}
                   </button>
                 ) : null}
                 <button
@@ -4436,10 +4485,18 @@ function App() {
                   className="send-button"
                   onClick={sendComposerMessage}
                   disabled={!canSend}
-                  title={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
-                  aria-label={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
+                  title={
+                    composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"
+                  }
+                  aria-label={
+                    composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"
+                  }
                 >
-                  {isStarting || followUpBusy ? <Activity size={COMPOSER_SEND_ICON_PX} /> : <ArrowUp size={COMPOSER_SEND_ICON_PX} />}
+                  {isStarting || followUpBusy ? (
+                    <Activity size={COMPOSER_SEND_ICON_PX} />
+                  ) : (
+                    <ArrowUp size={COMPOSER_SEND_ICON_PX} />
+                  )}
                 </button>
               </div>
               {error && (
@@ -4482,6 +4539,7 @@ function App() {
 
   return (
     <main className={shellClassName}>
+      {fixedSidebarToolbar}
       {appMessageState ? (
         <AppMessage
           kind={appMessageState.kind}
@@ -4540,12 +4598,10 @@ function App() {
           <div
             className={[
               "codex-main-scroll",
-              rightPanelOpen ? "has-workspace-panel" : "",
+              showWorkspacePanel ? "has-workspace-panel" : "",
               rightPanelOpen ? "is-workspace-panel-open" : "",
               taskPanelOpen ? "is-task-panel-open" : "",
-              currentProjectPath && showLanding && rightPanelOpen
-                ? "is-topbar-solid"
-                : "",
+              currentProjectPath && showLanding && rightPanelOpen ? "is-topbar-solid" : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
               !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
             ]
@@ -4556,10 +4612,7 @@ function App() {
             {currentProjectPath ? (
               <header
                 ref={topbarRef}
-                className={[
-                  "codex-main-topbar",
-                  showLanding || topbarSolid ? "is-solid" : "is-clear",
-                ]
+                className={["codex-main-topbar", showLanding || topbarSolid ? "is-solid" : "is-clear"]
                   .filter(Boolean)
                   .join(" ")}
               >
@@ -4571,157 +4624,115 @@ function App() {
                   <div className="codex-main-topbar-leading" aria-hidden />
                 )}
                 <div className="codex-main-topbar-drag-fill" aria-hidden />
-                <div className="codex-main-toolbar">
-                  {showWorkspacePanel ? (
-                    <button
-                      type="button"
-                      className={
-                        workspaceCardsPanelOpen
-                          ? "codex-main-toolbar-button is-active"
-                          : "codex-main-toolbar-button"
-                      }
-                      onClick={toggleWorkspacePanelForCurrentProject}
-                      title={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
-                      aria-label={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
-                      aria-expanded={workspaceCardsPanelOpen}
-                      aria-controls="workspace-panel"
-                    >
-                      <SlidersHorizontal size={15} aria-hidden />
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className={
-                      currentTerminalState?.open
-                        ? "codex-main-toolbar-button is-active"
-                        : "codex-main-toolbar-button"
-                    }
-                    onClick={toggleTerminalForCurrentProject}
-                    title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
-                    aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
-                    aria-expanded={currentTerminalState?.open === true}
-                    aria-controls="terminal-panel"
-                  >
-                    <Terminal size={15} aria-hidden />
-                  </button>
-                  {showWorkspacePanel ? (
-                    <button
-                      type="button"
-                      className={
-                        taskPanelOpen
-                          ? "codex-main-toolbar-button is-active"
-                          : "codex-main-toolbar-button"
-                      }
-                      onClick={toggleTaskPanelForCurrentProject}
-                      title={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
-                      aria-label={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
-                      aria-expanded={taskPanelOpen}
-                      aria-controls="task-panel"
-                    >
-                      <PanelRight size={15} aria-hidden />
-                    </button>
-                  ) : null}
-                </div>
+                {workspacePanelToolbar}
               </header>
             ) : null}
             <div className="codex-main-left-column">
-            <div ref={scrollBodyRef} className="codex-main-scroll-body">
-            {showLanding ? (
-              <div className="codex-landing">
-                <h1 className="codex-hero">
-                  {currentProjectPath
-                    ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
-                      ? "你在忙什么？"
-                      : `我们应该在 ${currentProjectName} 中构建什么？`
-                    : "打开一个项目开始编码"}
-                </h1>
-                {composer}
-              </div>
-            ) : (
-              <div className="codex-feed-stack">
-                <div className="activity-feed">
-                  <div className="activity-messages-shell">
-                    <div className="activity-feed-top-mask" aria-hidden />
-                    <div ref={activityMessagesRef} className="activity-messages">
-                    <ActivityLogView
-                      {...(activeThread && { thread: activeThread })}
-                      {...(runProjection && { projection: runProjection })}
-                      {...(activeThread &&
-                        billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
-                      onRestorePrompt={restorePrompt}
-                      onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                      {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
-                      agentDisplayNames={activeRuntimeAgentDisplayNames}
-                      agentThemes={activeRuntimeAgentThemes}
-                      {...(taskDrawerOpen &&
-                        selectedSubagentAgentId && { selectedSubagentAgentId })}
-                      onOpenSubagent={openSubagentTaskDrawer}
-                      {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                      {...(subagentTimings && { subagentTimings })}
-                      {...(subagentMetrics && { subagentMetrics })}
-                      {...(activeThread &&
-                        contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
-                    />
-                    {showClarification && pendingClarification ? (
-                      <ClarificationPanel
-                        request={pendingClarification}
-                        busy={clarificationBusy}
-                        onSubmit={submitClarificationAnswers}
-                        onDismiss={() => void dismissPendingClarification()}
-                      />
-                    ) : null}
-                    <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
-                    </div>
-                    {activityFeedScrollJump ? (
-                      <button
-                        type="button"
-                        className="activity-feed-scroll-jump is-visible"
-                        onClick={handleActivityFeedScrollJump}
-                        aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                        title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                      >
-                        {activityFeedScrollJump === "top" ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                      </button>
-                    ) : null}
+              <div ref={scrollBodyRef} className="codex-main-scroll-body">
+                {showLanding ? (
+                  <div className="codex-landing">
+                    <h1 className="codex-hero">
+                      {currentProjectPath
+                        ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
+                          ? "你在忙什么？"
+                          : `我们应该在 ${currentProjectName} 中构建什么？`
+                        : "打开一个项目开始编码"}
+                    </h1>
+                    {composer}
                   </div>
-                </div>
-                {composer}
+                ) : (
+                  <div className="codex-feed-stack">
+                    <div className="activity-feed">
+                      <div className="activity-messages-shell">
+                        <div className="activity-feed-top-mask" aria-hidden />
+                        <div ref={activityMessagesRef} className="activity-messages">
+                          <ActivityLogView
+                            {...(activeThread && { thread: activeThread })}
+                            {...(runProjection && { projection: runProjection })}
+                            {...(activeThread &&
+                              billingByThread[activeThread.id] && {
+                                billing: billingByThread[activeThread.id],
+                              })}
+                            onRestorePrompt={restorePrompt}
+                            onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                            {...(Object.keys(activityModelByRole).length > 0 && {
+                              modelByRole: activityModelByRole,
+                            })}
+                            agentDisplayNames={activeRuntimeAgentDisplayNames}
+                            agentThemes={activeRuntimeAgentThemes}
+                            {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
+                            onOpenSubagent={openSubagentTaskDrawer}
+                            {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                            {...(subagentTimings && { subagentTimings })}
+                            {...(subagentMetrics && { subagentMetrics })}
+                            {...(activeThread &&
+                              contextByThread[activeThread.id] && {
+                                context: contextByThread[activeThread.id],
+                              })}
+                          />
+                          {showClarification && pendingClarification ? (
+                            <ClarificationPanel
+                              request={pendingClarification}
+                              busy={clarificationBusy}
+                              onSubmit={submitClarificationAnswers}
+                              onDismiss={() => void dismissPendingClarification()}
+                            />
+                          ) : null}
+                          <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                        </div>
+                        {activityFeedScrollJump ? (
+                          <button
+                            type="button"
+                            className="activity-feed-scroll-jump is-visible"
+                            onClick={handleActivityFeedScrollJump}
+                            aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                            title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                          >
+                            {activityFeedScrollJump === "top" ? (
+                              <ChevronUp size={18} />
+                            ) : (
+                              <ChevronDown size={18} />
+                            )}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {composer}
+                  </div>
+                )}
               </div>
-            )}
-            </div>
-            {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {
-              if (terminalState.tabs.length === 0) {
-                return null;
-              }
-              const isCurrentProject = workspacePath === currentProjectPath;
-              const workspaceLabel =
-                projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
-              return (
-                <div key={workspacePath} className="codex-terminal-project-slot" hidden={!isCurrentProject}>
-                  <TerminalPanel
-                    workspacePath={workspacePath}
-                    workspaceLabel={workspaceLabel}
-                    state={terminalState}
-                    isCurrentProject={isCurrentProject}
-                    onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
-                    {...(isCurrentProject && {
-                      injectedSessionId: injectedTerminalSessionId,
-                      onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
-                    })}
-                  />
-                </div>
-              );
-            })}
+              {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {
+                if (terminalState.tabs.length === 0) {
+                  return null;
+                }
+                const isCurrentProject = workspacePath === currentProjectPath;
+                const workspaceLabel =
+                  projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
+                return (
+                  <div key={workspacePath} className="codex-terminal-project-slot" hidden={!isCurrentProject}>
+                    <TerminalPanel
+                      workspacePath={workspacePath}
+                      workspaceLabel={workspaceLabel}
+                      state={terminalState}
+                      isCurrentProject={isCurrentProject}
+                      onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
+                      {...(isCurrentProject && {
+                        injectedSessionId: injectedTerminalSessionId,
+                        onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
+                      })}
+                    />
+                  </div>
+                );
+              })}
             </div>
 
-          {showWorkspacePanel && rightPanelOpen ? (
-            <aside
-              id="workspace-panel"
-              className={taskPanelOpen ? "workspace-panel is-task-panel-mode" : "workspace-panel"}
-              aria-label={taskPanelOpen ? "任务面板" : "工作区面板"}
-              aria-hidden={!rightPanelOpen}
-            >
-              {taskPanelOpen ? (
+            {showWorkspacePanel && taskPanelOpen ? (
+              <aside
+                id="workspace-panel"
+                className="workspace-panel is-task-panel-mode"
+                aria-label="任务面板"
+                aria-hidden={!taskPanelOpen}
+              >
                 <hr
                   className="task-panel-resize-handle"
                   aria-label="调整任务面板宽度"
@@ -4731,8 +4742,6 @@ function App() {
                   onMouseDown={handleTaskPanelResizeMouseDown}
                   onKeyDown={handleTaskPanelResizeKeyDown}
                 />
-              ) : null}
-              {taskPanelOpen ? (
                 <SubagentTaskDrawer
                   open={taskPanelOpen}
                   cards={activeSubagentCards}
@@ -4760,12 +4769,26 @@ function App() {
                     setSelectedSubagentAgentId(undefined);
                   }}
                   onSelectReviewPath={setReviewSelectedPath}
-                  onClose={closeSubagentTaskDrawer}
                   onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
                   onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
                 />
-              ) : (
-                <WorkspaceFloatingCards
+              </aside>
+            ) : null}
+          </div>
+          {showWorkspacePanel && !taskPanelOpen ? (
+            <aside
+              id="workspace-panel"
+              className={[
+                "workspace-panel",
+                "workspace-panel--floating-cards",
+                workspaceCardsPanelOpen ? "is-open" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-label="工作区面板"
+              aria-hidden={!workspaceCardsPanelOpen}
+            >
+              <WorkspaceFloatingCards
                 todos={activeThread ? coderTodos : []}
                 hasActiveThread={Boolean(activeThread)}
                 agentModelLabels={agentModelLabels}
@@ -4781,16 +4804,16 @@ function App() {
                 mcpServers={mcpSettings.servers}
                 composerMcpSettings={composerMcpSettings}
                 onToggleComposerSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-                onToggleComposerMcpServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
+                onToggleComposerMcpServer={(serverKey, enabled) =>
+                  void toggleComposerMcpServer(serverKey, enabled)
+                }
                 {...(projectWorkspace && { workspace: projectWorkspace })}
                 {...(currentProjectPath && { workspacePath: currentProjectPath })}
                 workspaceLabel={currentProjectName}
                 {...(gitStatus && { gitStatus })}
                 gitBusy={gitStatusBusy || gitStatusLoading}
                 commitDisabled={
-                  activeThread
-                    ? activeThread.status === "running" || activeThread.status === "queued"
-                    : false
+                  activeThread ? activeThread.status === "running" || activeThread.status === "queued" : false
                 }
                 onCheckoutGitBranch={handleGitCheckoutBranch}
                 onCreateGitBranch={handleGitCreateBranch}
@@ -4816,11 +4839,9 @@ function App() {
                     setScriptsDialogOpen(true);
                   },
                 })}
-                />
-              )}
+              />
             </aside>
           ) : null}
-          </div>
         </div>
       </section>
 
@@ -4888,8 +4909,7 @@ function App() {
                       return true;
                     }
                     return (
-                      section.label.toLowerCase().includes(query) ||
-                      group.label.toLowerCase().includes(query)
+                      section.label.toLowerCase().includes(query) || group.label.toLowerCase().includes(query)
                     );
                   }),
                 }))
@@ -4904,9 +4924,7 @@ function App() {
                           key={section.id}
                           type="button"
                           className={
-                            settingsSection === section.id
-                              ? "settings-nav-item active"
-                              : "settings-nav-item"
+                            settingsSection === section.id ? "settings-nav-item active" : "settings-nav-item"
                           }
                           onClick={() => setSettingsSection(section.id)}
                         >
@@ -4922,90 +4940,84 @@ function App() {
 
           <div className="settings-main">
             <div className="settings-content">
-            {settingsSection === "general" && (
-              <GeneralSettingsPanel
-                theme={appTheme}
-                onThemeChange={setAppTheme}
-              />
-            )}
+              {settingsSection === "general" && (
+                <GeneralSettingsPanel theme={appTheme} onThemeChange={setAppTheme} />
+              )}
 
-            {settingsSection === "skills" && (
-              <SkillsSettingsPanel
-                {...(skillsSnapshot && { snapshot: skillsSnapshot })}
-                loading={isLoadingSkills}
-                onRefresh={() => void refreshSkillsList()}
-              />
-            )}
-
-            {settingsSection === "mcp" && (
-              <McpSettingsPanel
-                servers={mcpSettings.servers}
-                busy={isSavingSettings}
-                onSave={saveMcpServer}
-                onDelete={deleteMcpServer}
-                onCheck={checkMcpServer}
-              />
-            )}
-
-            {settingsSection === "centerServer" && (
-              <CenterServerSettingsPanel
-                snapshot={centerServerSettings}
-                busy={isSavingSettings}
-                onSave={saveCenterServerSettings}
-                onTestConnection={testCenterServerConnection}
-                onSignUp={signUpCenterServer}
-                onSignIn={signInCenterServer}
-                onCreatePairing={createCenterServerPairing}
-                onListBindings={listCenterServerBindings}
-                onListPresence={listCenterServerPresence}
-                onRevokeBinding={revokeCenterServerBinding}
-                onConnect={connectCenterServer}
-                onDisconnect={disconnectCenterServer}
-                onRemoveConnection={removeCenterServerConnection}
-              />
-            )}
-
-            {settingsSection === "providers" &&
-              (proxyBridgeSettings ? (
-                <ModelsSettingsPanel
-                  settings={settings}
-                  proxyBridgeSettings={proxyBridgeSettings}
-                  proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                  mode="providerSettings"
-                  busy={isSavingSettings}
-                  onSettingsChange={setSettings}
-                  onSavingChange={setIsSavingSettings}
-                  onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+              {settingsSection === "skills" && (
+                <SkillsSettingsPanel
+                  {...(skillsSnapshot && { snapshot: skillsSnapshot })}
+                  loading={isLoadingSkills}
+                  onRefresh={() => void refreshSkillsList()}
                 />
-              ) : (
-                <p className="settings-empty-hint">正在加载模型服务商配置…</p>
-              ))}
+              )}
 
-            {settingsSection === "models" &&
-              (proxyBridgeSettings ? (
-                <ModelsSettingsPanel
-                  settings={settings}
-                  proxyBridgeSettings={proxyBridgeSettings}
-                  mcpServers={mcpSettings.servers}
-                  skillsSnapshot={skillsSnapshot}
-                  proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                  initialTab={modelsSettingsTab}
-                  mode="agentBuilder"
+              {settingsSection === "mcp" && (
+                <McpSettingsPanel
+                  servers={mcpSettings.servers}
                   busy={isSavingSettings}
-                  onSettingsChange={setSettings}
-                  onSavingChange={setIsSavingSettings}
-                  onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                  onSave={saveMcpServer}
+                  onDelete={deleteMcpServer}
+                  onCheck={checkMcpServer}
                 />
-              ) : (
-                <p className="settings-empty-hint">正在加载模型与工作流配置…</p>
-              ))}
+              )}
 
-            {settingsSection === "git" && (
-              <GitSettingsPanel
-                settings={gitSettings}
-                onSave={saveGitSettingsSnapshot}
-              />
-            )}
+              {settingsSection === "centerServer" && (
+                <CenterServerSettingsPanel
+                  snapshot={centerServerSettings}
+                  busy={isSavingSettings}
+                  onSave={saveCenterServerSettings}
+                  onTestConnection={testCenterServerConnection}
+                  onSignUp={signUpCenterServer}
+                  onSignIn={signInCenterServer}
+                  onCreatePairing={createCenterServerPairing}
+                  onListBindings={listCenterServerBindings}
+                  onListPresence={listCenterServerPresence}
+                  onRevokeBinding={revokeCenterServerBinding}
+                  onConnect={connectCenterServer}
+                  onDisconnect={disconnectCenterServer}
+                  onRemoveConnection={removeCenterServerConnection}
+                />
+              )}
+
+              {settingsSection === "providers" &&
+                (proxyBridgeSettings ? (
+                  <ModelsSettingsPanel
+                    settings={settings}
+                    proxyBridgeSettings={proxyBridgeSettings}
+                    proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
+                    mode="providerSettings"
+                    busy={isSavingSettings}
+                    onSettingsChange={setSettings}
+                    onSavingChange={setIsSavingSettings}
+                    onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                  />
+                ) : (
+                  <p className="settings-empty-hint">正在加载模型服务商配置…</p>
+                ))}
+
+              {settingsSection === "models" &&
+                (proxyBridgeSettings ? (
+                  <ModelsSettingsPanel
+                    settings={settings}
+                    proxyBridgeSettings={proxyBridgeSettings}
+                    mcpServers={mcpSettings.servers}
+                    skillsSnapshot={skillsSnapshot}
+                    proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
+                    initialTab={modelsSettingsTab}
+                    mode="agentBuilder"
+                    busy={isSavingSettings}
+                    onSettingsChange={setSettings}
+                    onSavingChange={setIsSavingSettings}
+                    onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                  />
+                ) : (
+                  <p className="settings-empty-hint">正在加载模型与工作流配置…</p>
+                ))}
+
+              {settingsSection === "git" && (
+                <GitSettingsPanel settings={gitSettings} onSave={saveGitSettingsSnapshot} />
+              )}
             </div>
           </div>
         </div>
