@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Bot,
   ChevronDown,
+  Copy,
   FileSearch,
   FileText,
   Pencil,
@@ -86,6 +87,7 @@ import {
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
+  type ThreadRunProjectionToolGroupFeedEntry,
   type ThreadRunProjectionTimelineFeedEntry,
 } from "./thread-run-projection-view";
 import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStreamRequestTiming";
@@ -129,6 +131,99 @@ function readProjectionRewindTarget(
   return readRewindTarget(item.metadata?.rewindTarget);
 }
 
+function formatRunLogMessageTime(value?: string): { label: string; title: string; dateTime: string } | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return {
+    label: date.toLocaleString(undefined, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    title: date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    dateTime: value,
+  };
+}
+
+function copyRunLogMessageText(text: string): void {
+  if (!navigator.clipboard) {
+    return;
+  }
+  void navigator.clipboard.writeText(text).catch(() => undefined);
+}
+
+function RunLogMessageMeta({
+  createdAt,
+  copyText,
+  restorePrompt,
+  align = "start",
+}: {
+  createdAt?: string;
+  copyText?: string;
+  restorePrompt?: {
+    text: string;
+    rewindTarget: ThreadActivityRewindTarget;
+    onRestorePrompt: RestorePromptHandler;
+  };
+  align?: "start" | "end";
+}) {
+  const time = formatRunLogMessageTime(createdAt);
+  const canCopy = Boolean(copyText?.trim());
+  if (!time && !canCopy && !restorePrompt) {
+    return null;
+  }
+
+  return (
+    <div
+      className={[
+        "run-log-message-meta",
+        align === "end" ? "run-log-message-meta--end" : "run-log-message-meta--start",
+      ].join(" ")}
+    >
+      {restorePrompt ? (
+        <button
+          type="button"
+          className="run-log-message-meta-button"
+          onClick={() => restorePrompt.onRestorePrompt(restorePrompt.text, restorePrompt.rewindTarget)}
+          aria-label="回到此节点"
+          title="回到此节点并重写"
+        >
+          <Reply size={13} />
+        </button>
+      ) : null}
+      {canCopy ? (
+        <button
+          type="button"
+          className="run-log-message-meta-button"
+          onClick={() => copyRunLogMessageText(copyText ?? "")}
+          aria-label="复制消息"
+          title="复制消息"
+        >
+          <Copy size={13} />
+        </button>
+      ) : null}
+      {time ? (
+        <time className="run-log-message-meta-time" dateTime={time.dateTime} title={time.title}>
+          {time.label}
+        </time>
+      ) : null}
+    </div>
+  );
+}
+
 function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIdentity?: boolean): boolean {
   if (!hideSubagentIdentity) {
     return false;
@@ -155,6 +250,40 @@ function usePlannerLayoutChangeEffect(
   useLayoutEffect(() => {
     onPlannerLayoutChangeRef.current?.();
   }, [layoutSignature]);
+}
+
+function resolveTurnFinalSummaryItemIds(
+  entries: readonly ThreadRunProjectionMainFeedEntry[],
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  let latestSummaryId: string | undefined;
+
+  const commitTurn = () => {
+    if (latestSummaryId) {
+      ids.add(latestSummaryId);
+      latestSummaryId = undefined;
+    }
+  };
+
+  for (const entry of entries) {
+    if (entry.kind !== "timeline") {
+      continue;
+    }
+    if (isProjectionUserPromptItem(entry.item)) {
+      commitTurn();
+      continue;
+    }
+    if (entry.item.eventType !== "message.final") {
+      continue;
+    }
+    const block = projectionItemToDetailBlock(entry.item);
+    if (block?.kind === "narrative" && !block.streaming && block.text.trim()) {
+      latestSummaryId = entry.item.id;
+    }
+  }
+
+  commitTurn();
+  return ids;
 }
 
 interface ActivityLogViewProps {
@@ -238,6 +367,10 @@ function ProjectionActivityLogView({
     [agentDisplayNames, projection, thread?.id, thread?.prompt],
   );
   const showThreadPrompt = viewModel.showThreadPrompt;
+  const finalSummaryItemIds = useMemo(
+    () => resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries),
+    [viewModel.mainFeedEntries],
+  );
   const layoutSignature = useMemo(
     () =>
       [
@@ -275,6 +408,7 @@ function ProjectionActivityLogView({
               <UserPromptBlock
                 text={thread.prompt}
                 anchorId={`thread:${thread.id}`}
+                createdAt={thread.createdAt}
                 {...(onRestorePrompt && { onRestorePrompt })}
               />,
             )
@@ -284,6 +418,7 @@ function ProjectionActivityLogView({
             key={entry.key}
             entry={entry}
             requestSpansById={requestSpansById}
+            finalSummaryItemIds={finalSummaryItemIds}
             {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
             {...(onOpenSubagent && { onOpenSubagent })}
             {...(agentDisplayNames && { agentDisplayNames })}
@@ -321,6 +456,7 @@ function wrapRunLogFeedEntry(node: ReactNode, options?: { compact?: boolean; tig
 function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
+  finalSummaryItemIds,
   selectedSubagentAgentId,
   onOpenSubagent,
   onRestorePrompt,
@@ -329,6 +465,7 @@ function ProjectionMainFeedEntry({
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  finalSummaryItemIds: ReadonlySet<string>;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onRestorePrompt?: RestorePromptHandler;
@@ -340,6 +477,7 @@ function ProjectionMainFeedEntry({
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
+        showMessageMeta={finalSummaryItemIds.has(entry.item.id)}
         {...(onRestorePrompt && { onRestorePrompt })}
       />
     );
@@ -449,13 +587,12 @@ function ProjectionToolGroupEntry({
           ) : null}
         </span>
         <span className="run-log-tool-group-summary">{summary.label}</span>
-        {showInlineLoading ? <RunLogInlineLoading label="正在执行工具" /> : null}
-        <span className="run-log-tool-group-count">{entry.entries.length}</span>
         <ChevronDown
           size={15}
           className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
           aria-hidden
         />
+        {showInlineLoading ? <RunLogInlineLoading label="正在执行工具" /> : null}
       </button>
       {expanded ? (
         <div className="run-log-tool-group-details">
@@ -571,7 +708,7 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
     clauses.push(`已编辑 ${editedFiles.size} 个文件`);
   }
   if (searches > 0) {
-    clauses.push(searches > 1 ? `已搜索代码 ${searches} 次` : "已搜索代码");
+    clauses.push("已搜索代码");
   }
   if (commands > 0) {
     clauses.push(`已运行 ${commands} 条命令`);
@@ -664,6 +801,53 @@ function shouldShowActionInlineLoading({
   return isProjectionRequestActive(requestSpan);
 }
 
+type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionToolGroupFeedEntry;
+
+function buildSubagentDetailFeedEntries(
+  agentId: string,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): SubagentDetailFeedEntry[] {
+  const grouped: SubagentDetailFeedEntry[] = [];
+  let pending: ThreadRunProjectionTimelineFeedEntry[] = [];
+
+  const flush = () => {
+    if (pending.length > 1) {
+      const first = pending[0];
+      if (first) {
+        grouped.push({
+          kind: "tool-group",
+          key: `subagent-tool-group:${agentId}:${first.key}`,
+          entries: pending,
+          at: first.at,
+          sequence: first.sequence,
+        });
+      }
+    } else {
+      grouped.push(...pending);
+    }
+    pending = [];
+  };
+
+  for (const item of timeline) {
+    const entry: ThreadRunProjectionTimelineFeedEntry = {
+      kind: "timeline",
+      key: `subagent-timeline:${agentId}:${item.id}`,
+      item,
+      at: item.at,
+      sequence: item.sequence,
+    };
+    const block = projectionItemToDetailBlock(item);
+    if (block?.kind === "action") {
+      pending.push(entry);
+      continue;
+    }
+    flush();
+    grouped.push(entry);
+  }
+  flush();
+  return grouped;
+}
+
 function ProjectionAgentEchoEntry({
   entry,
   requestSpansById,
@@ -689,6 +873,7 @@ function ProjectionAgentEchoEntry({
       >
         <RunLogNarrative
           text={block.text}
+          createdAt={entry.item.at}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
           omitSubagentBadge
           {...(requestSpan && { requestSpan })}
@@ -857,20 +1042,29 @@ export function ProjectionSubagentDetailFeed({
   const scrollTopRef = useRef(0);
   const programmaticScrollRef = useRef(false);
   const delegation = readProjectionAgentDelegation(agent);
+  const hasDelegation = Boolean(delegation);
   const missionDisplay = resolveMissionDisplayText(
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
   const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
-  const filteredTimeline = agent.timeline.filter(
-    (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
+  const filteredTimeline = useMemo(
+    () =>
+      agent.timeline.filter(
+        (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), hasDelegation),
+      ),
+    [agent.timeline, hasDelegation, missionText],
+  );
+  const detailFeedEntries = useMemo(
+    () => buildSubagentDetailFeedEntries(agent.agentId, filteredTimeline),
+    [agent.agentId, filteredTimeline],
   );
   const latestTimelineItem = filteredTimeline.at(-1);
   const layoutSignature = [
     agent.agentId,
     agent.status,
     missionDisplay.length,
-    filteredTimeline.length,
+    detailFeedEntries.length,
     latestTimelineItem?.id ?? "",
     latestTimelineItem?.text.length ?? 0,
   ].join(":");
@@ -982,15 +1176,23 @@ export function ProjectionSubagentDetailFeed({
       </div>
       <ProjectionSubagentRunInstanceStrip agent={agent} />
       <div className="subagent-conversation-log">
-        {filteredTimeline.length > 0 ? (
-          filteredTimeline.map((item) => (
-            <ProjectionTimelineEntry
-              key={`${agent.agentId}-${item.id}`}
-              item={item}
-              requestSpansById={requestSpansById}
-              compact
-            />
-          ))
+        {detailFeedEntries.length > 0 ? (
+          detailFeedEntries.map((entry) =>
+            entry.kind === "tool-group" ? (
+              <ProjectionToolGroupEntry
+                key={entry.key}
+                entry={entry}
+                requestSpansById={requestSpansById}
+              />
+            ) : (
+              <ProjectionTimelineEntry
+                key={entry.key}
+                item={entry.item}
+                requestSpansById={requestSpansById}
+                compact
+              />
+            ),
+          )
         ) : (
           <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
         )}
@@ -1033,12 +1235,14 @@ function ProjectionTimelineEntry({
   onRestorePrompt,
   compact = false,
   forceActionDetailsExpanded = false,
+  showMessageMeta = false,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
   forceActionDetailsExpanded?: boolean;
+  showMessageMeta?: boolean;
 }) {
   if (isProjectionUserPromptItem(item)) {
     if (compact) {
@@ -1049,6 +1253,7 @@ function ProjectionTimelineEntry({
       <UserPromptBlock
         text={item.text}
         anchorId={item.id}
+        createdAt={item.at}
         {...(rewindTarget && { rewindTarget })}
         {...(onRestorePrompt && { onRestorePrompt })}
       />,
@@ -1067,6 +1272,8 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <RunLogNarrative
         text={block.text}
+        createdAt={item.at}
+        showMessageMeta={showMessageMeta}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(block.subagent && { subagent: block.subagent })}
         omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
@@ -1102,6 +1309,7 @@ function ProjectionTimelineEntry({
     <DetailBlock
       block={block}
       requestActive={requestActive}
+      createdAt={item.at}
       actionInlineLoadingActive={shouldShowActionInlineLoading({
         itemRequestId: item.requestId,
         requestSpan,
@@ -1281,6 +1489,7 @@ function DetailBlock({
   actionInlineLoadingActive = false,
   requestSpan,
   agentThemes,
+  createdAt,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
@@ -1291,6 +1500,7 @@ function DetailBlock({
   actionInlineLoadingActive?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
   agentThemes?: RuntimeAgentThemes;
+  createdAt?: string;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
@@ -1383,6 +1593,7 @@ function DetailBlock({
   return (
     <RunLogNarrative
       text={block.text}
+      {...(createdAt && { createdAt })}
       {...(block.streaming !== undefined && { streaming: block.streaming })}
       {...(block.subagent && { subagent: block.subagent })}
       omitSubagentBadge={omitSubagent}
@@ -1832,12 +2043,14 @@ function UserPromptBlock({
   text,
   className,
   anchorId,
+  createdAt,
   rewindTarget,
   onRestorePrompt,
 }: {
   text: string;
   className?: string;
   anchorId?: string;
+  createdAt?: string;
   rewindTarget?: ThreadActivityRewindTarget;
   onRestorePrompt?: RestorePromptHandler;
 }) {
@@ -1917,24 +2130,17 @@ function UserPromptBlock({
           ) : null}
         </div>
       </div>
-      {onRestorePrompt ? (
-        <div className="run-log-user-prompt-actions">
-          <button
-            type="button"
-            className="run-log-user-prompt-action"
-            onClick={() => {
-              if (rewindTarget) {
-                onRestorePrompt(text, rewindTarget);
-              }
-            }}
-            disabled={!rewindTarget}
-            aria-label="回到此节点"
-            title={rewindTarget ? "回到此节点并重写" : "该节点缺少 SDK 检查点"}
-          >
-            <Reply size={14} />
-          </button>
-        </div>
-      ) : null}
+      <RunLogMessageMeta
+        align="end"
+        {...(createdAt && { createdAt })}
+        {...(onRestorePrompt && rewindTarget && {
+          restorePrompt: {
+            text,
+            rewindTarget,
+            onRestorePrompt,
+          },
+        })}
+      />
     </article>
   );
 }
@@ -2190,7 +2396,7 @@ function RunLogAction({
       </span>
       {showInlineLoading ? <RunLogInlineLoading /> : null}
       {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
-      {fileChange ? (
+      {fileChange && !detailsExpanded && (fileChange.additions > 0 || fileChange.deletions > 0) ? (
         <span className="run-log-file-change-card-stats run-log-action-file-stats">
           {fileChange.additions > 0 ? <span className="stat-add">+{fileChange.additions}</span> : null}
           {fileChange.deletions > 0 ? <span className="stat-del">-{fileChange.deletions}</span> : null}
@@ -2418,10 +2624,12 @@ function RunLogFileChangeCard({
         <FileText size={16} className="run-log-file-change-card-icon" aria-hidden />
         <span className="run-log-file-change-card-title">{display.fileName}</span>
         {showInlineLoading ? <RunLogInlineLoading label="正在写入文件" /> : null}
-        <span className="run-log-file-change-card-stats">
-          {display.additions > 0 ? <span className="stat-add">+{display.additions}</span> : null}
-          {display.deletions > 0 ? <span className="stat-del">-{display.deletions}</span> : null}
-        </span>
+        {!expanded && (display.additions > 0 || display.deletions > 0) ? (
+          <span className="run-log-file-change-card-stats">
+            {display.additions > 0 ? <span className="stat-add">+{display.additions}</span> : null}
+            {display.deletions > 0 ? <span className="stat-del">-{display.deletions}</span> : null}
+          </span>
+        ) : null}
       </div>
       <div className="run-log-file-change-card-divider" aria-hidden />
       <div className="run-log-file-change-card-preview-shell">
@@ -2512,6 +2720,8 @@ const actionIcons = {
 
 function RunLogNarrative({
   text,
+  createdAt,
+  showMessageMeta = false,
   streaming,
   subagent,
   compact,
@@ -2521,6 +2731,8 @@ function RunLogNarrative({
   requestSpan,
 }: {
   text: string;
+  createdAt?: string;
+  showMessageMeta?: boolean;
   streaming?: boolean;
   subagent?: string;
   compact?: boolean;
@@ -2533,6 +2745,7 @@ function RunLogNarrative({
   const hasBody = text.trim().length > 0;
   const showSubagentBadge = subagent && !omitSubagentBadge;
   const showBody = hasBody || !streaming;
+  const showFinalMessageMeta = showMessageMeta && hasBody && !streaming;
   const waitingEmpty = Boolean(streaming) && !hasBody;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
   const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
@@ -2567,6 +2780,13 @@ function RunLogNarrative({
         <div className="run-log-narrative-body">
           <StreamingMarkdownContent text={text} {...(streaming !== undefined && { streaming })} />
         </div>
+      ) : null}
+      {showFinalMessageMeta ? (
+        <RunLogMessageMeta
+          align="start"
+          copyText={text}
+          {...(createdAt && { createdAt })}
+        />
       ) : null}
     </div>
   );

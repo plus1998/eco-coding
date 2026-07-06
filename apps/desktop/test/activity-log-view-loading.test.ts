@@ -293,7 +293,7 @@ test("SubagentTaskDrawer shows live running status text in subagent tabs", () =>
   expect(html).toContain("正在读取 src/config.ts");
 });
 
-test("ProjectionSubagentDetailFeed appends subagent tool rows without grouping", () => {
+test("ProjectionSubagentDetailFeed groups adjacent subagent tool rows in the app drawer", () => {
   const subagent = agent({
     agentId: "agent_coder_1",
     status: "completed",
@@ -361,11 +361,90 @@ test("ProjectionSubagentDetailFeed appends subagent tool rows without grouping",
     }),
   );
 
-  expect(html).not.toContain("run-log-tool-group-trigger");
-  expect(html).toContain("input.ts");
-  expect(html).toContain("src/output.ts");
-  expect(html).toContain("src/existing.ts");
-  expect(html.match(/class="run-log-action(?:\s|")/g)?.length).toBe(3);
+  expect(html).toContain("run-log-tool-group-trigger");
+  expect(html).toContain("已读取 1 个文件");
+  expect(html).toContain("已写入 1 个文件");
+  expect(html).toContain("已编辑 1 个文件");
+  expect(html.match(/class="run-log-action(?:\s|")/g)?.length ?? 0).toBe(0);
+});
+
+test("SubagentTaskDrawer renders grouped subagent tool calls in its standalone panel", () => {
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    status: "completed",
+    delegationPrompt: "整理文件操作",
+    timeline: [
+      item({
+        id: "read-done",
+        sequence: 1,
+        eventType: "tool.completed",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "Tool: Read · src/input.ts",
+        metadata: {
+          tool: {
+            name: "Read",
+            detail: "src/input.ts",
+            toolUseId: "toolu_read",
+            status: "completed",
+          },
+        },
+      }),
+      item({
+        id: "edit-done",
+        sequence: 2,
+        eventType: "tool.completed",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "Tool: Edit · src/existing.ts",
+        metadata: {
+          tool: {
+            name: "Edit",
+            detail: "src/existing.ts",
+            toolUseId: "toolu_edit",
+            status: "completed",
+          },
+        },
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(SubagentTaskDrawer, {
+      open: true,
+      fullscreen: false,
+      cards: [
+        {
+          key: subagent.agentId,
+          agent: subagent,
+          timelineIds: subagent.timeline.map((entry) => entry.id),
+          running: false,
+          missionText: "整理文件操作",
+        },
+      ],
+      projection: projection({
+        status: "completed",
+        timeline: [],
+        agents: [subagent],
+      }),
+      activeTab: subagent.agentId,
+      openSubagentTabIds: [subagent.agentId],
+      backgroundTasks: [],
+      onSelectAgent: () => undefined,
+      onCloseAgent: () => undefined,
+      onSelectBackgroundTasks: () => undefined,
+      onSelectReview: () => undefined,
+      onToggleFullscreen: () => undefined,
+      onSelectReviewPath: () => undefined,
+      onOpenTerminalTask: () => undefined,
+      onStopTerminalTask: () => undefined,
+    }),
+  );
+
+  expect(html).toContain("subagent-task-side-panel");
+  expect(html).toContain("run-log-tool-group-trigger");
+  expect(html).toContain("已读取 1 个文件和已编辑 1 个文件");
 });
 
 test("ActivityLogView summarizes task progress tools without calling them subagents", () => {
