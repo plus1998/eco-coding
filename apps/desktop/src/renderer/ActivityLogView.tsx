@@ -94,6 +94,13 @@ import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 type OpenSubagentHandler = (agentId: string) => void;
 
+const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
+const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
+
+function distanceFromBottom(element: HTMLElement): number {
+  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
+}
+
 function toStreamRequestTimingAnchor(
   requestSpan?: ThreadRunProjectionRequestSpan,
 ): StreamRequestTimingAnchor | undefined {
@@ -841,6 +848,10 @@ export function ProjectionSubagentDetailFeed({
   threadActive: boolean;
 }) {
   void threadActive;
+  const feedRef = useRef<HTMLDivElement>(null);
+  const userDetachedFromBottomRef = useRef(false);
+  const scrollTopRef = useRef(0);
+  const programmaticScrollRef = useRef(false);
   const delegation = readProjectionAgentDelegation(agent);
   const missionDisplay = resolveMissionDisplayText(
     missionText || delegation?.prompt || delegation?.summary || "",
@@ -850,8 +861,99 @@ export function ProjectionSubagentDetailFeed({
   const filteredTimeline = agent.timeline.filter(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
   );
+  const latestTimelineItem = filteredTimeline.at(-1);
+  const layoutSignature = [
+    agent.agentId,
+    agent.status,
+    missionDisplay.length,
+    filteredTimeline.length,
+    latestTimelineItem?.id ?? "",
+    latestTimelineItem?.text.length ?? 0,
+  ].join(":");
+  const scrollToBottom = useCallback((force = false) => {
+    const feed = feedRef.current;
+    if (!feed) {
+      return;
+    }
+    if (!force && userDetachedFromBottomRef.current) {
+      return;
+    }
+    programmaticScrollRef.current = true;
+    const maxScrollTop = Math.max(0, feed.scrollHeight - feed.clientHeight);
+    feed.scrollTop = maxScrollTop;
+    scrollTopRef.current = feed.scrollTop;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        programmaticScrollRef.current = false;
+        const current = feedRef.current;
+        if (!current) {
+          return;
+        }
+        scrollTopRef.current = current.scrollTop;
+        if (distanceFromBottom(current) <= SUBAGENT_DETAIL_STICK_THRESHOLD_PX) {
+          userDetachedFromBottomRef.current = false;
+        }
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    const feed = feedRef.current;
+    if (!feed) {
+      return;
+    }
+    scrollTopRef.current = feed.scrollTop;
+    const onScroll = () => {
+      if (programmaticScrollRef.current) {
+        return;
+      }
+      const nextScrollTop = feed.scrollTop;
+      const distance = distanceFromBottom(feed);
+      if (nextScrollTop < scrollTopRef.current - SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX) {
+        userDetachedFromBottomRef.current = true;
+      } else if (
+        nextScrollTop > scrollTopRef.current + SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX &&
+        distance <= SUBAGENT_DETAIL_STICK_THRESHOLD_PX
+      ) {
+        userDetachedFromBottomRef.current = false;
+      } else if (distance <= SUBAGENT_DETAIL_STICK_THRESHOLD_PX) {
+        userDetachedFromBottomRef.current = false;
+      }
+      scrollTopRef.current = nextScrollTop;
+    };
+    feed.addEventListener("scroll", onScroll, { passive: true });
+    return () => feed.removeEventListener("scroll", onScroll);
+  }, [agent.agentId]);
+
+  useLayoutEffect(() => {
+    userDetachedFromBottomRef.current = false;
+    scrollToBottom(true);
+    const frame = requestAnimationFrame(() => scrollToBottom(true));
+    return () => cancelAnimationFrame(frame);
+  }, [agent.agentId, scrollToBottom]);
+
+  useLayoutEffect(() => {
+    scrollToBottom();
+    const frame = requestAnimationFrame(() => scrollToBottom());
+    return () => cancelAnimationFrame(frame);
+  }, [layoutSignature, scrollToBottom]);
+
+  useEffect(() => {
+    const feed = feedRef.current;
+    const content = feed?.querySelector(".subagent-conversation-log");
+    if (!feed || !(content instanceof HTMLElement)) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      scrollToBottom();
+      requestAnimationFrame(() => scrollToBottom());
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [agent.agentId, scrollToBottom]);
+
   return (
-    <div className="subagent-task-detail-feed subagent-conversation">
+    <div ref={feedRef} className="subagent-task-detail-feed subagent-conversation">
       {missionDisplay ? (
         <article className="run-log-user-prompt subagent-conversation-prompt">
           <div className="run-log-user-prompt-content">
@@ -1722,20 +1824,31 @@ function UserPromptBlock({
   onRestorePrompt?: RestorePromptHandler;
 }) {
   const bodyRef = useRef<HTMLPreElement>(null);
+  const previousTextRef = useRef(text);
   const [expanded, setExpanded] = useState(false);
   const [canToggle, setCanToggle] = useState(false);
 
   useLayoutEffect(() => {
+    if (previousTextRef.current === text) {
+      return;
+    }
+    previousTextRef.current = text;
+    setExpanded(false);
     setCanToggle(false);
+  }, [text]);
+
+  useLayoutEffect(() => {
     const body = bodyRef.current;
-    if (!body || expanded) {
+    if (!body) {
+      setCanToggle(false);
+      return;
+    }
+    if (expanded) {
       return;
     }
 
     const measure = () => {
-      if (body.scrollHeight > body.clientHeight + 1) {
-        setCanToggle(true);
-      }
+      setCanToggle(body.scrollHeight > body.clientHeight + 1);
     };
 
     measure();
@@ -1744,32 +1857,44 @@ function UserPromptBlock({
     return () => observer.disconnect();
   }, [text, expanded]);
 
+  const contentClassName = [
+    "run-log-user-prompt-content",
+    canToggle ? "has-toggle" : "",
+    expanded ? "is-expanded" : "is-collapsed",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <article className="run-log-user-prompt">
-      <div className="run-log-user-prompt-content">
-        <div
-          className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          <pre
-            ref={bodyRef}
-            className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""].filter(Boolean).join(" ")}
+      <div className={contentClassName}>
+        <div className="run-log-user-prompt-bubble">
+          <div
+            className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
+              .filter(Boolean)
+              .join(" ")}
           >
-            {text}
-          </pre>
-          {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
+            <pre
+              ref={bodyRef}
+              className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {text}
+            </pre>
+            {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
+          </div>
+          {canToggle ? (
+            <button
+              type="button"
+              className="run-log-user-prompt-expand"
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+            >
+              {expanded ? "收起" : "展开全文"}
+            </button>
+          ) : null}
         </div>
-        {canToggle ? (
-          <button
-            type="button"
-            className="run-log-user-prompt-expand"
-            onClick={() => setExpanded((value) => !value)}
-            aria-expanded={expanded}
-          >
-            {expanded ? "收起" : "展开全文"}
-          </button>
-        ) : null}
       </div>
       {onRestorePrompt ? (
         <div className="run-log-user-prompt-actions">

@@ -5622,16 +5622,28 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-user-prompt-content {
+  --run-log-user-prompt-bg: #2a2a2a;
+  --run-log-user-prompt-fg: #f5f5f5;
+  --run-log-user-prompt-muted: #a3a3a3;
   width: fit-content;
   max-width: 85%;
   min-width: 0;
+}
+
+.run-log-user-prompt-bubble {
+  overflow: hidden;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--run-log-user-prompt-bg);
+  color: var(--run-log-user-prompt-fg);
 }
 
 .run-log-user-prompt-body-wrap {
   position: relative;
 }
 
-.run-log-user-prompt-body-wrap.collapsed .run-log-user-prompt-body {
+.run-log-user-prompt-content:not(:has(.run-log-user-prompt-bubble))
+  .run-log-user-prompt-body-wrap.collapsed
+  .run-log-user-prompt-body {
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
 }
@@ -5640,14 +5652,24 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 0;
   padding: 12px 16px;
   border-radius: 16px 16px 4px 16px;
-  background: #2a2a2a;
-  color: #f5f5f5;
+  background: var(--run-log-user-prompt-bg);
+  color: var(--run-log-user-prompt-fg);
   font-family: inherit;
   font-size: 15px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.run-log-user-prompt-bubble .run-log-user-prompt-body {
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.run-log-user-prompt-content.has-toggle.is-collapsed .run-log-user-prompt-body {
+  padding-bottom: 18px;
 }
 
 .run-log-user-prompt-body.collapsed {
@@ -5661,21 +5683,26 @@ html[data-window-focused="true"] .codex-sidebar {
   bottom: 0;
   left: 0;
   height: 56px;
-  border-bottom-left-radius: 8px;
-  border-bottom-right-radius: 8px;
-  background: linear-gradient(to bottom, rgba(42, 42, 42, 0), #2a2a2a 72%);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--run-log-user-prompt-bg) 0%, transparent),
+    var(--run-log-user-prompt-bg) 72%
+  );
   pointer-events: none;
 }
 
 .run-log-user-prompt-expand {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  min-height: 32px;
   margin: 0;
-  padding: 6px 16px 2px;
+  padding: 6px 16px 8px;
   border: 0;
-  border-radius: 0 0 4px 16px;
-  background: #2a2a2a;
-  color: #a3a3a3;
+  border-radius: 0;
+  background: transparent;
+  color: var(--run-log-user-prompt-muted);
   font: inherit;
   font-size: 13px;
   line-height: 1.4;
@@ -5684,7 +5711,8 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-user-prompt-expand:hover {
-  color: #e5e5e5;
+  background: color-mix(in srgb, var(--run-log-user-prompt-fg) 6%, transparent);
+  color: var(--run-log-user-prompt-fg);
 }
 
 .run-log-user-prompt-actions {
@@ -15824,6 +15852,12 @@ html[data-window-focused="true"] .settings-nav {
   color: var(--codex-log-text);
 }
 
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-content {
+  --run-log-user-prompt-bg: var(--codex-log-chip);
+  --run-log-user-prompt-fg: var(--codex-log-chip-text);
+  --run-log-user-prompt-muted: color-mix(in srgb, var(--codex-log-chip-text) 62%, transparent);
+}
+
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-body,
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-expand {
   background: var(--codex-log-chip);
@@ -15832,11 +15866,20 @@ html[data-window-focused="true"] .settings-nav {
   line-height: 1.55;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-bubble {
+  background: var(--run-log-user-prompt-bg);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-bubble .run-log-user-prompt-body,
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-bubble .run-log-user-prompt-expand {
+  background: transparent;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-fade {
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--codex-log-chip) 0%, transparent),
-    var(--codex-log-chip) 72%
+    color-mix(in srgb, var(--run-log-user-prompt-bg) 0%, transparent),
+    var(--run-log-user-prompt-bg) 72%
   );
 }
 
@@ -18263,6 +18306,55 @@ html[data-window-focused="true"] .settings-nav {
   padding: 0;
 }
 
+.codex-main-scroll.has-workspace-panel.is-task-panel-open.is-workspace-panel-open.is-task-panel-fullscreen,
+.codex-main-scroll.has-workspace-panel.is-task-panel-open.is-workspace-panel-open.is-task-panel-fullscreen:has(
+    .codex-feed-stack
+  ) {
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 0;
+}
+
+.codex-main-scroll.is-task-panel-fullscreen .workspace-panel.is-task-panel-mode {
+  position: absolute;
+  z-index: 90;
+  inset: 0;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding-top: 0 !important;
+  background: transparent;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-task-panel-fullscreen
+  .workspace-panel.is-task-panel-mode {
+  position: absolute;
+  inset: 0;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  place-self: stretch;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.workspace-panel.is-task-panel-mode.is-fullscreen .task-panel-resize-handle {
+  display: none;
+}
+
+.workspace-panel.is-task-panel-mode.is-fullscreen .subagent-task-side-panel {
+  border-left: 0;
+  border-radius: 0;
+}
+
 .task-panel-resize-handle {
   position: absolute;
   top: 0;
@@ -18475,7 +18567,7 @@ body.is-resizing-task-panel {
 }
 
 .subagent-task-panel-tab-close,
-.subagent-task-panel-close {
+.subagent-task-panel-fullscreen {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -18502,7 +18594,9 @@ body.is-resizing-task-panel {
 }
 
 .subagent-task-panel-tab-close:hover,
-.subagent-task-panel-close:hover {
+.subagent-task-panel-fullscreen:hover,
+.subagent-task-panel-fullscreen.is-active,
+.subagent-task-panel-fullscreen[aria-pressed="true"] {
   background: color-mix(in srgb, var(--terminal-fg) 8%, transparent);
   color: var(--terminal-fg);
 }
@@ -18954,4 +19048,22 @@ body.is-resizing-task-panel {
 
 .floating-workspace-card-body .composer-agent-row {
   border-color: transparent;
+}
+
+/* Final global scrollbar override: scrolling remains enabled, chrome stays hidden. */
+html,
+body,
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+*::-webkit-scrollbar,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }

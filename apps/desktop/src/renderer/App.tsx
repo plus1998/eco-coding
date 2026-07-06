@@ -647,6 +647,7 @@ function App() {
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_REVIEW_TAB_ID);
   const [openSubagentTabIds, setOpenSubagentTabIds] = useState<string[]>([]);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+  const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
@@ -1407,6 +1408,7 @@ function App() {
     });
     if (taskDrawerOpen) {
       setTaskDrawerOpen(false);
+      setTaskPanelFullscreen(false);
     }
   }, [currentProjectPath, taskDrawerOpen]);
   const activeThread = useMemo(
@@ -2212,6 +2214,7 @@ function App() {
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setOpenSubagentTabIds([]);
     setTaskDrawerOpen(false);
+    setTaskPanelFullscreen(false);
   }, [activeThread?.id]);
 
   useEffect(() => {
@@ -2254,11 +2257,13 @@ function App() {
     }
     if (taskDrawerOpen) {
       setTaskDrawerOpen(false);
+      setTaskPanelFullscreen(false);
       return;
     }
     closeWorkspacePanelForCurrentProject();
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
   }, [closeWorkspacePanelForCurrentProject, currentProjectPath, taskDrawerOpen]);
 
@@ -2267,6 +2272,7 @@ function App() {
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setOpenSubagentTabIds([]);
     setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
   }, [closeWorkspacePanelForCurrentProject]);
 
@@ -2276,6 +2282,7 @@ function App() {
       setOpenSubagentTabIds((current) => (current.includes(agentId) ? current : [...current, agentId]));
       setTaskPanelActiveTab(agentId);
       setSelectedSubagentAgentId(agentId);
+      setTaskPanelFullscreen(false);
       setTaskDrawerOpen(true);
     },
     [closeWorkspacePanelForCurrentProject],
@@ -4251,6 +4258,7 @@ function App() {
     showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen,
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
+  const taskPanelFullscreenOpen = Boolean(taskPanelOpen && taskPanelFullscreen);
   const rightPanelOpen = taskPanelOpen;
   const rightPanelStyle = {
     "--workspace-panel-width": taskPanelOpen ? `${taskPanelWidth}px` : "300px",
@@ -4770,6 +4778,7 @@ function App() {
               showWorkspacePanel ? "has-workspace-panel" : "",
               rightPanelOpen ? "is-workspace-panel-open" : "",
               taskPanelOpen ? "is-task-panel-open" : "",
+              taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
               currentProjectPath && showLanding && rightPanelOpen ? "is-topbar-solid" : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
               !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
@@ -4898,8 +4907,14 @@ function App() {
             {showWorkspacePanel && taskPanelOpen ? (
               <aside
                 id="workspace-panel"
-                className="workspace-panel is-task-panel-mode"
-                aria-label="任务面板"
+                className={[
+                  "workspace-panel",
+                  "is-task-panel-mode",
+                  taskPanelFullscreenOpen ? "is-fullscreen" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label={taskPanelFullscreenOpen ? "全屏任务面板" : "任务面板"}
                 aria-hidden={!taskPanelOpen}
               >
                 <hr
@@ -4913,6 +4928,7 @@ function App() {
                 />
                 <SubagentTaskDrawer
                   open={taskPanelOpen}
+                  fullscreen={taskPanelFullscreenOpen}
                   cards={activeSubagentCards}
                   activeTab={taskPanelActiveTab}
                   openSubagentTabIds={openSubagentTabIds}
@@ -4938,7 +4954,7 @@ function App() {
                     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
                     setSelectedSubagentAgentId(undefined);
                   }}
-                  onClosePanel={() => setTaskDrawerOpen(false)}
+                  onToggleFullscreen={() => setTaskPanelFullscreen((current) => !current)}
                   onSelectReviewPath={setReviewSelectedPath}
                   onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
                   onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}

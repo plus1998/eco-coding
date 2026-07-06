@@ -1,5 +1,16 @@
 import { shortenModelId } from "@eco/runtime";
-import { Bot, Circle, ExternalLink, ListChecks, Plus, Square, Terminal, X } from "lucide-react";
+import {
+  Bot,
+  Circle,
+  ExternalLink,
+  ListChecks,
+  Maximize2,
+  Minimize2,
+  Plus,
+  Square,
+  Terminal,
+  X,
+} from "lucide-react";
 import { useMemo } from "react";
 import type {
   BackgroundTerminalTask,
@@ -122,6 +133,7 @@ export function BackgroundTerminalTasksPanel({
 
 export function SubagentTaskDrawer({
   open,
+  fullscreen,
   cards,
   projection,
   activeTab,
@@ -138,12 +150,13 @@ export function SubagentTaskDrawer({
   onCloseAgent,
   onSelectBackgroundTasks,
   onSelectReview,
-  onClosePanel,
+  onToggleFullscreen,
   onSelectReviewPath,
   onOpenTerminalTask,
   onStopTerminalTask,
 }: {
   open: boolean;
+  fullscreen: boolean;
   cards: readonly ThreadRunProjectionSubagentCard[];
   projection?: ThreadRunProjectionSnapshot;
   activeTab: TaskPanelActiveTab;
@@ -160,7 +173,7 @@ export function SubagentTaskDrawer({
   onCloseAgent: (agentId: string) => void;
   onSelectBackgroundTasks: () => void;
   onSelectReview: () => void;
-  onClosePanel: () => void;
+  onToggleFullscreen: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
@@ -186,7 +199,13 @@ export function SubagentTaskDrawer({
   }
 
   return (
-    <section id="task-panel" className="subagent-task-side-panel is-open" aria-label="任务面板">
+    <section
+      id="task-panel"
+      className={["subagent-task-side-panel", "is-open", fullscreen ? "is-fullscreen" : ""]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label={fullscreen ? "全屏任务面板" : "任务面板"}
+    >
       <header className="subagent-task-panel-topbar">
         <div className="subagent-task-panel-tabs" role="tablist" aria-label="任务标签">
           <button
@@ -269,12 +288,15 @@ export function SubagentTaskDrawer({
         </div>
         <button
           type="button"
-          className="subagent-task-panel-close"
-          aria-label="关闭任务面板"
-          title="关闭任务面板"
-          onClick={onClosePanel}
+          className={["subagent-task-panel-fullscreen", fullscreen ? "is-active" : ""]
+            .filter(Boolean)
+            .join(" ")}
+          aria-label={fullscreen ? "退出全屏任务面板" : "全屏显示任务面板"}
+          title={fullscreen ? "退出全屏" : "全屏显示任务面板"}
+          aria-pressed={fullscreen}
+          onClick={onToggleFullscreen}
         >
-          <X size={16} aria-hidden />
+          {fullscreen ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
         </button>
       </header>
 
