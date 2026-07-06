@@ -117,7 +117,7 @@ export function buildThreadRunProjectionViewModel(
   void options;
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
-  const requestSpansById = new Map(projection.requestSpans.map((span) => [span.requestId, span]));
+  const requestSpansById = buildDisplayRequestSpansById(projection);
   const subagentCards = projection.agents
     .filter((agent) => agent.kind === "subagent")
     .map((agent) => {
@@ -155,6 +155,46 @@ export function buildThreadRunProjectionViewModel(
     }),
     subagentCards,
   };
+}
+
+function buildDisplayRequestSpansById(
+  projection: ThreadRunProjectionSnapshot,
+): Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]> {
+  const terminalStatus = resolveTerminalDisplayRequestStatus(projection.thread.status);
+  const endedAt = projection.thread.generatedAt;
+  return new Map(
+    projection.requestSpans.map((span) => {
+      if (!terminalStatus || !isProjectionRequestActive(span)) {
+        return [span.requestId, span];
+      }
+      return [
+        span.requestId,
+        {
+          ...span,
+          status: terminalStatus,
+          endedAt: span.endedAt ?? endedAt,
+        },
+      ];
+    }),
+  );
+}
+
+function resolveTerminalDisplayRequestStatus(
+  threadStatus: string,
+): ThreadRunProjectionSnapshot["requestSpans"][number]["status"] | undefined {
+  switch (threadStatus) {
+    case "completed":
+      return "completed";
+    case "failed":
+    case "blocked":
+      return "failed";
+    case "idle":
+    case "awaiting_plan":
+    case "cancelled":
+      return "cancelled";
+    default:
+      return undefined;
+  }
 }
 
 function buildProjectionMainFeedEntries(

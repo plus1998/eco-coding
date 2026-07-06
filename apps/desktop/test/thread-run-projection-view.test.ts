@@ -1055,6 +1055,59 @@ test("buildThreadRunProjectionViewModel settles terminal deltas when final event
   }
 });
 
+test("buildThreadRunProjectionViewModel settles stale active stream when thread is interrupted", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_view",
+        status: "idle",
+        generatedAt: "2026-01-01T00:00:04.000Z",
+      },
+      requestSpans: [
+        {
+          requestId: "req_interrupted",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "request-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_interrupted",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "planner-delta",
+          eventType: "message.delta",
+          role: "planner",
+          requestId: "req_interrupted",
+          text: "我先停在这里。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:stream:message:request:req_interrupted",
+  ]);
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(entry.item.eventType).toBe("message.final");
+    expect(projectionItemToDetailBlock(entry.item)).toMatchObject({
+      kind: "narrative",
+      streaming: false,
+      text: "我先停在这里。",
+    });
+  }
+});
+
 test("buildThreadRunProjectionViewModel hides completed request lifecycle placeholders", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

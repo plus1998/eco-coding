@@ -4406,6 +4406,25 @@ function App() {
                   ? "当前对话不可发送"
                   : "尽管问";
   const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
+  const composerActionMode =
+    canStopThread
+      ? composerHasContent
+        ? editingFollowUpId
+          ? "save-follow-up"
+          : "queue"
+        : "stop"
+      : "send";
+  const composerActionBusy = composerActionMode === "stop" ? cancelBusy : isStarting || followUpBusy;
+  const composerActionDisabled = composerActionMode === "stop" ? cancelBusy : !canSend;
+  const composerActionLabel =
+    composerActionMode === "stop"
+      ? "停止"
+      : composerActionMode === "queue"
+        ? "排队后续消息"
+        : composerActionMode === "save-follow-up"
+          ? "保存引导消息"
+          : "发送";
+  const composerActionClassName = ["send-button", composerActionMode].filter(Boolean).join(" ");
   const composerCompact = !showLanding;
 
   const composerRouteControl = (
@@ -4641,36 +4660,26 @@ function App() {
                     agentThemes={activeRuntimeAgentThemes}
                   />
                 ) : null}
-                {canStopThread ? (
-                  <button
-                    type="button"
-                    className="send-button stop"
-                    onClick={() => void requestStopThread()}
-                    disabled={cancelBusy}
-                    title="停止当前运行"
-                    aria-label="停止"
-                  >
-                    {cancelBusy ? (
-                      <Activity size={COMPOSER_SEND_ICON_PX} />
-                    ) : (
-                      <Square size={COMPOSER_SEND_ICON_PX - 2} />
-                    )}
-                  </button>
-                ) : null}
                 <button
                   type="button"
-                  className="send-button"
-                  onClick={sendComposerMessage}
-                  disabled={!canSend}
-                  title={
-                    composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"
-                  }
-                  aria-label={
-                    composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"
-                  }
+                  className={composerActionClassName}
+                  onClick={() => {
+                    if (composerActionMode === "stop") {
+                      void requestStopThread();
+                      return;
+                    }
+                    void sendComposerMessage();
+                  }}
+                  disabled={composerActionDisabled}
+                  title={composerActionLabel}
+                  aria-label={composerActionLabel}
                 >
-                  {isStarting || followUpBusy ? (
+                  {composerActionBusy ? (
                     <Activity size={COMPOSER_SEND_ICON_PX} />
+                  ) : composerActionMode === "stop" ? (
+                    <Square size={COMPOSER_SEND_ICON_PX - 2} />
+                  ) : composerActionMode === "queue" ? (
+                    <CornerDownRight size={COMPOSER_SEND_ICON_PX} />
                   ) : (
                     <ArrowUp size={COMPOSER_SEND_ICON_PX} />
                   )}

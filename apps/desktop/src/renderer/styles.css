@@ -11258,23 +11258,6 @@ html[data-window-focused="true"] .codex-sidebar {
   cursor: not-allowed;
 }
 
-.send-button.stop {
-  background: #3a2626;
-  color: #fecaca;
-  border: 1px solid #7f1d1d;
-}
-
-.send-button.stop:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.22);
-  color: #fff;
-}
-
-.send-button.stop:disabled {
-  background: #333;
-  border-color: #444;
-  color: #888;
-}
-
 .composer-context {
   display: flex;
   flex-wrap: wrap;
@@ -16049,11 +16032,11 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .codex-feed-stack .codex-composer-wrap {
   padding: 8px 0 12px;
-  background: var(--composer-wrap-fade);
+  background: transparent;
 }
 
 .codex-main:not(.codex-main-landing) .codex-composer {
-  background: var(--composer-context-bg);
+  background: transparent;
   box-shadow: var(--shadow-composer);
 }
 
