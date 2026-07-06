@@ -102,9 +102,11 @@ import {
   isRunPackageScriptRequest,
   isTerminalInputRequest,
   isTerminalKillRequest,
+  isTerminalListRequest,
   isTerminalResizeRequest,
   isTerminalSpawnRequest,
   isThreadRuntimeConfig,
+  type TerminalListRequest,
   type ListUpstreamModelsRequest,
   type McpServerConfigInput,
   type ModelSettingsSnapshot,
@@ -1383,6 +1385,14 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid background terminal stop request.");
     }
     return backgroundTerminalTaskRegistry.stop(payload.taskId);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.terminalList, async (payload: unknown) => {
+    if (payload !== undefined && !isTerminalListRequest(payload)) {
+      throw new Error("Invalid terminal list request.");
+    }
+    const request = (payload ?? {}) as TerminalListRequest;
+    return interactiveTerminalManager.list(request.workspacePath);
   });
 
   registerDesktopCommand(IPC_CHANNELS.terminalSpawn, async (payload: unknown) => {

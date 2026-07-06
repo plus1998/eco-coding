@@ -34,7 +34,7 @@ export function TerminalPanel({
   injectedSessionId,
   onInjectedSessionConsumed,
 }: TerminalPanelProps) {
-  const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>();
+  const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>(undefined);
   const [sessionsByTabId, setSessionsByTabId] = useState<Record<string, string>>(() =>
     state.open
       ? listTerminalSessionsForProject(
@@ -126,14 +126,17 @@ export function TerminalPanel({
     [workspacePath],
   );
 
-  const clearTabSession = useCallback((tabId: string) => {
-    deleteTerminalSessionId(workspacePath, tabId);
-    setSessionsByTabId((current) => {
-      const next = { ...current };
-      delete next[tabId];
-      return next;
-    });
-  }, [workspacePath]);
+  const clearTabSession = useCallback(
+    (tabId: string) => {
+      deleteTerminalSessionId(workspacePath, tabId);
+      setSessionsByTabId((current) => {
+        const next = { ...current };
+        delete next[tabId];
+        return next;
+      });
+    },
+    [workspacePath],
+  );
 
   const killTabSession = useCallback((tabId: string) => {
     const sessionId = deleteTerminalSessionId(workspacePath, tabId);
@@ -180,8 +183,24 @@ export function TerminalPanel({
       onStateChange({ ...state, tabs: [], activeTabId: "", open: false });
       return;
     }
-    const activeTabId =
-      state.activeTabId === tab.id ? remaining[remaining.length - 1]!.id : state.activeTabId;
+    const fallbackTab = remaining[remaining.length - 1];
+    const activeTabId = state.activeTabId === tab.id && fallbackTab ? fallbackTab.id : state.activeTabId;
+    onStateChange({
+      ...state,
+      tabs: remaining,
+      activeTabId,
+    });
+  };
+
+  const handleExitedTab = (tab: TerminalTabRecord) => {
+    clearTabSession(tab.id);
+    const remaining = state.tabs.filter((item) => item.id !== tab.id);
+    if (remaining.length === 0) {
+      onStateChange({ ...state, tabs: [], activeTabId: "", open: false });
+      return;
+    }
+    const fallbackTab = remaining[remaining.length - 1];
+    const activeTabId = state.activeTabId === tab.id && fallbackTab ? fallbackTab.id : state.activeTabId;
     onStateChange({
       ...state,
       tabs: remaining,
@@ -283,6 +302,7 @@ export function TerminalPanel({
           const busy = busyTabIds[tab.id] === true;
           const error = errorsByTabId[tab.id];
           const isActive = tab.id === state.activeTabId;
+          const shouldKeepTerminalMounted = Boolean(sessionId);
           return (
             <div
               key={tab.id}
@@ -302,20 +322,18 @@ export function TerminalPanel({
                   {error}
                 </p>
               ) : null}
-              {!error && state.open && (isActive || sessionId) ? (
+              {!error && (state.open || shouldKeepTerminalMounted) && (isActive || shouldKeepTerminalMounted) ? (
                 <GhosttyTerminal
                   key={`${workspacePath}:${tab.id}:${tabEpochById[tab.id] ?? 0}`}
                   sessionId={sessionId ?? null}
                   active={isActive && isCurrentProject && isOpen}
-                  onDimensionsReady={
-                    sessionId
-                      ? undefined
-                      : (dimensions) => {
-                          void ensureTabSession(tab.id, dimensions);
-                        }
-                  }
+                  {...(!sessionId && {
+                    onDimensionsReady: (dimensions: TerminalDimensions) => {
+                      void ensureTabSession(tab.id, dimensions);
+                    },
+                  })}
                   onExit={() => {
-                    clearTabSession(tab.id);
+                    handleExitedTab(tab);
                   }}
                 />
               ) : null}

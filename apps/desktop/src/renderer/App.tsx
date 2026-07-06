@@ -80,6 +80,7 @@ import {
   type CenterServerSignUpRequest,
   type SkillsListResult,
   type SubagentRole,
+  type TerminalSessionView,
   type ThreadActivityRewindTarget,
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
@@ -179,12 +180,19 @@ import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import { TerminalPanel } from "./TerminalPanel";
 import {
   createProjectTerminalState,
+  DEFAULT_TERMINAL_HEIGHT,
   getProjectTerminalState,
   readTerminalWorkspaceState,
   saveTerminalWorkspaceState,
   type ProjectTerminalState,
+  type TerminalTabRecord,
   type TerminalWorkspaceState,
 } from "./terminal-panel-storage";
+import {
+  hasTerminalSessionsForProject,
+  listTerminalSessionEntriesForProject,
+  replaceTerminalSessionsForProject,
+} from "./terminal-session-cache";
 import {
   createProjectWorkspacePanelState,
   getProjectWorkspacePanelState,
@@ -343,6 +351,77 @@ interface ComposerDraft {
   prompt: string;
   attachments: ComposerImageAttachment[];
   rewindTarget?: ComposerRewindTarget;
+}
+
+interface TerminalProjectSyncResult {
+  state?: ProjectTerminalState;
+  cacheEntries: Array<{ tabId: string; sessionId: string }>;
+}
+
+const RESTORED_TERMINAL_TAB_PREFIX = "session:";
+
+function terminalTabIdForSession(sessionId: string): string {
+  return `${RESTORED_TERMINAL_TAB_PREFIX}${sessionId}`;
+}
+
+function buildTerminalStateForLiveSessions(
+  existing: ProjectTerminalState | undefined,
+  workspacePath: string,
+  workspaceLabel: string,
+  sessions: readonly TerminalSessionView[],
+): TerminalProjectSyncResult {
+  if (sessions.length === 0) {
+    return { cacheEntries: [] };
+  }
+
+  const cachedEntries = listTerminalSessionEntriesForProject(workspacePath);
+  const tabsById = new Map((existing?.tabs ?? []).map((tab) => [tab.id, tab]));
+  const tabIdBySessionId = new Map(cachedEntries.map((entry) => [entry.sessionId, entry.tabId]));
+  const usedLabels = new Set<string>();
+  const cacheEntries: Array<{ tabId: string; sessionId: string }> = [];
+
+  const tabs = sessions.map((session, index): TerminalTabRecord => {
+    const cachedTabId = tabIdBySessionId.get(session.sessionId);
+    const restoredTabId = terminalTabIdForSession(session.sessionId);
+    const existingTab = cachedTabId ? tabsById.get(cachedTabId) : tabsById.get(restoredTabId);
+    if (existingTab) {
+      usedLabels.add(existingTab.label);
+      cacheEntries.push({ tabId: existingTab.id, sessionId: session.sessionId });
+      return existingTab;
+    }
+
+    const labelBase = workspaceLabel.trim() || "终端";
+    const baseLabel = index === 0 ? labelBase : `${labelBase} ${index + 1}`;
+    let label = baseLabel;
+    let suffix = 2;
+    while (usedLabels.has(label)) {
+      label = `${baseLabel} ${suffix}`;
+      suffix += 1;
+    }
+    usedLabels.add(label);
+    const tab = { id: terminalTabIdForSession(session.sessionId), label };
+    cacheEntries.push({ tabId: tab.id, sessionId: session.sessionId });
+    return tab;
+  });
+
+  const firstTab = tabs[0];
+  if (!firstTab) {
+    return { cacheEntries: [] };
+  }
+  const activeTabId =
+    existing?.activeTabId && tabs.some((tab) => tab.id === existing.activeTabId)
+      ? existing.activeTabId
+      : firstTab.id;
+
+  return {
+    state: {
+      open: true,
+      height: existing?.height ?? DEFAULT_TERMINAL_HEIGHT,
+      tabs,
+      activeTabId,
+    },
+    cacheEntries,
+  };
 }
 
 function composerContextKeyFromParts(threadId?: string, projectPath?: string): string | undefined {
@@ -558,9 +637,8 @@ function App() {
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
-  const [terminalByProject, setTerminalByProject] = useState<TerminalWorkspaceState>(() =>
-    readTerminalWorkspaceState(),
-  );
+  const [storedTerminalByProject] = useState<TerminalWorkspaceState>(() => readTerminalWorkspaceState());
+  const [terminalByProject, setTerminalByProject] = useState<TerminalWorkspaceState>({});
   const [workspacePanelByProject, setWorkspacePanelByProject] = useState<WorkspacePanelWorkspaceState>(() =>
     readWorkspacePanelWorkspaceState(),
   );
@@ -570,13 +648,14 @@ function App() {
   const [openSubagentTabIds, setOpenSubagentTabIds] = useState<string[]>([]);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
-  const taskPanelResizeRef = useRef<{ startX: number; startWidth: number }>();
+  const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
   const [reviewSelectedPath, setReviewSelectedPath] = useState<string>();
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
+  const [terminalLifecycleEpoch, setTerminalLifecycleEpoch] = useState(0);
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
   useEffect(() => {
@@ -1288,16 +1367,22 @@ function App() {
     }
     setTerminalByProject((current) => {
       const existing = current[currentProjectPath];
-      if (existing?.open) {
+      const stored = storedTerminalByProject[currentProjectPath];
+      const hasLiveSessions = hasTerminalSessionsForProject(currentProjectPath);
+      if (existing?.open && hasLiveSessions) {
         return {
           ...current,
           [currentProjectPath]: { ...existing, open: false },
         };
       }
-      if (!existing || existing.tabs.length === 0) {
+      if (!hasLiveSessions || !existing || existing.tabs.length === 0) {
+        const nextState = createProjectTerminalState(currentProjectName, true);
         return {
           ...current,
-          [currentProjectPath]: createProjectTerminalState(currentProjectName, true),
+          [currentProjectPath]: {
+            ...nextState,
+            height: existing?.height ?? stored?.height ?? nextState.height,
+          },
         };
       }
       return {
@@ -1305,7 +1390,7 @@ function App() {
         [currentProjectPath]: { ...existing, open: true },
       };
     });
-  }, [currentProjectName, currentProjectPath]);
+  }, [currentProjectName, currentProjectPath, storedTerminalByProject]);
   const toggleWorkspacePanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
       return;
@@ -1376,6 +1461,65 @@ function App() {
   useEffect(() => {
     saveTaskPanelWidth(taskPanelWidth);
   }, [taskPanelWidth]);
+  useEffect(() => {
+    if (!currentProjectPath) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const workspacePath = currentProjectPath;
+    const workspaceLabel = currentProjectName;
+    const loadLiveSessions = async (): Promise<TerminalSessionView[]> => {
+      if (!window.eco?.listTerminalSessions) {
+        return listTerminalSessionEntriesForProject(workspacePath).map((entry) => ({
+          sessionId: entry.sessionId,
+          workspacePath,
+        }));
+      }
+      try {
+        return await window.eco.listTerminalSessions({ workspacePath });
+      } catch {
+        return [];
+      }
+    };
+
+    void loadLiveSessions().then((sessions) => {
+      if (cancelled) {
+        return;
+      }
+      setTerminalByProject((current) => {
+        const existing = current[workspacePath] ?? storedTerminalByProject[workspacePath];
+        const syncResult = buildTerminalStateForLiveSessions(existing, workspacePath, workspaceLabel, sessions);
+        replaceTerminalSessionsForProject(workspacePath, syncResult.cacheEntries);
+        if (!syncResult.state) {
+          const currentState = current[workspacePath];
+          if (currentState?.open && currentState.tabs.length > 0) {
+            return current;
+          }
+          if (currentState === undefined) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[workspacePath];
+          return next;
+        }
+        return {
+          ...current,
+          [workspacePath]: syncResult.state,
+        };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeThread?.id,
+    currentProjectName,
+    currentProjectPath,
+    storedTerminalByProject,
+    terminalLifecycleEpoch,
+  ]);
   const workspacePanelModeRef = useRef<{
     projectPath?: string;
     inConversation?: boolean;
@@ -1582,6 +1726,9 @@ function App() {
       if (event.type === "started" || event.type === "exit" || event.type === "error") {
         void refreshBackgroundTerminalTasks();
       }
+      if (event.type === "exit" || event.type === "error") {
+        setTerminalLifecycleEpoch((epoch) => epoch + 1);
+      }
     });
   }, [refreshBackgroundTerminalTasks]);
 
@@ -1593,17 +1740,25 @@ function App() {
     (workspacePath: string, sessionId: string) => {
       setTerminalByProject((current) => {
         const existing = getProjectTerminalState(current, workspacePath);
-        const nextState = existing
-          ? { ...existing, open: true }
-          : createProjectTerminalState(
-              projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath),
-              true,
-            );
-        return { ...current, [workspacePath]: nextState };
+        const stored = storedTerminalByProject[workspacePath];
+        const nextState =
+          existing && existing.tabs.length > 0
+            ? { ...existing, open: true }
+            : createProjectTerminalState(
+                projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath),
+                true,
+              );
+        return {
+          ...current,
+          [workspacePath]: {
+            ...nextState,
+            height: existing?.height ?? stored?.height ?? nextState.height,
+          },
+        };
       });
       setInjectedTerminalSessionId(sessionId);
     },
-    [projects],
+    [projects, storedTerminalByProject],
   );
 
   const openBackgroundTerminalTask = useCallback(

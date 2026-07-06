@@ -88,7 +88,9 @@ import {
   type SkillsListResult,
   type StartPackageScriptResult,
   type TerminalInputRequest,
+  type TerminalListRequest,
   type TerminalResizeRequest,
+  type TerminalSessionView,
   type TerminalSpawnRequest,
   type TerminalSpawnResult,
   type TerminalStreamEvent,
@@ -213,6 +215,9 @@ const api = {
   },
   stopBackgroundTerminalTask(request: BackgroundTerminalStopRequest): Promise<BackgroundTerminalStopResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.backgroundTerminalStop, request);
+  },
+  listTerminalSessions(request?: TerminalListRequest): Promise<TerminalSessionView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.terminalList, request ?? {});
   },
   spawnTerminal(request: TerminalSpawnRequest): Promise<TerminalSpawnResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.terminalSpawn, request);

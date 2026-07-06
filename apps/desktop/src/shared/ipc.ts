@@ -82,6 +82,7 @@ export const IPC_CHANNELS = {
   conformanceRun: "conformance:run",
   worktreeApply: "worktree:apply",
   worktreeGetStatus: "worktree:get-status",
+  terminalList: "terminal:list",
   terminalSpawn: "terminal:spawn",
   terminalInput: "terminal:input",
   terminalResize: "terminal:resize",
@@ -339,6 +340,15 @@ export interface TerminalSpawnRequest {
   workspacePath: string;
   cols?: number;
   rows?: number;
+}
+
+export interface TerminalListRequest {
+  workspacePath?: string;
+}
+
+export interface TerminalSessionView {
+  sessionId: string;
+  workspacePath: string;
 }
 
 export interface TerminalSpawnResult {
@@ -1661,6 +1671,14 @@ export function isTerminalSpawnRequest(value: unknown): value is TerminalSpawnRe
     (record.cols === undefined || typeof record.cols === "number") &&
     (record.rows === undefined || typeof record.rows === "number")
   );
+}
+
+export function isTerminalListRequest(value: unknown): value is TerminalListRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return record.workspacePath === undefined || typeof record.workspacePath === "string";
 }
 
 export function isTerminalInputRequest(value: unknown): value is TerminalInputRequest {

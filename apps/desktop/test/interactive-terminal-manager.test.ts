@@ -102,6 +102,10 @@ describe("InteractiveTerminalManager", () => {
     expect(spawned).toHaveLength(2);
     expect(manager.get(first.sessionId)?.sessionId).toBe(first.sessionId);
     expect(manager.get(second.sessionId)?.sessionId).toBe(second.sessionId);
+    expect(manager.list(workspaceRoot)).toEqual([
+      { sessionId: first.sessionId, workspacePath: workspaceRoot },
+      { sessionId: second.sessionId, workspacePath: workspaceRoot },
+    ]);
   });
 
   test("writes input and resizes the active session", () => {

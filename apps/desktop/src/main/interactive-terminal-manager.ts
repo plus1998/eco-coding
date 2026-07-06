@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { IPty } from "node-pty";
 import * as pty from "node-pty";
-import type { TerminalStreamEvent } from "../shared/ipc";
+import type { TerminalSessionView, TerminalStreamEvent } from "../shared/ipc";
 import { toSpawnEnv } from "./resolve-command-executable";
 
 export type TerminalEventEmitter = (event: TerminalStreamEvent) => void;
@@ -124,6 +124,16 @@ export class InteractiveTerminalManager {
 
   get(sessionId: string): ActiveTerminalSession | undefined {
     return this.getSession(sessionId);
+  }
+
+  list(workspacePath?: string): TerminalSessionView[] {
+    const normalizedWorkspacePath = workspacePath?.trim();
+    return [...this.sessions.values()]
+      .filter((session) => !normalizedWorkspacePath || session.workspacePath === normalizedWorkspacePath)
+      .map((session) => ({
+        sessionId: session.sessionId,
+        workspacePath: session.workspacePath,
+      }));
   }
 
   private getSession(sessionId: string): ActiveTerminalSession | undefined {
