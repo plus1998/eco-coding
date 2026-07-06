@@ -15,8 +15,8 @@
   --workspace-toolbar-fixed-reserve: calc(var(--fixed-sidebar-toolbar-width) + 8px);
   --feed-max-width: 750px;
   --composer-max-width: 750px;
-  --activity-feed-top-inset: calc(var(--workspace-toolbar-clearance) + 12px);
-  --activity-feed-top-mask-height: calc(var(--activity-feed-top-inset) + 14px);
+  --activity-feed-top-inset: calc(var(--workspace-toolbar-clearance) + 2px);
+  --activity-feed-top-mask-height: calc(var(--activity-feed-top-inset) + 4px);
 }
 
 * {
@@ -1146,25 +1146,29 @@ html[data-window-focused="true"] .codex-sidebar {
   grid-row: 1 / span 2;
 }
 
-/* Conversation feed: topbar on its own row — feed no-drag must not stack under title */
-.codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-feed-stack) {
+/* Conversation feed: clear topbar overlays only when title/feed/toolbar have horizontal room. */
+.codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open).is-topbar-solid:has(
+    .codex-feed-stack
+  ) {
   display: flex;
   flex-direction: column;
   grid-template-areas: unset;
   grid-template-rows: unset;
 }
 
-.codex-main-scroll:has(.codex-feed-stack) {
-  display: flex;
-  flex-direction: column;
-}
-
 .codex-main-scroll.has-workspace-panel:has(.codex-feed-stack) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;
-  grid-template-rows: auto minmax(0, 1fr);
   align-items: stretch;
   column-gap: 0;
+}
+
+.codex-main-scroll.has-workspace-panel.is-topbar-clear:has(.codex-feed-stack) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.codex-main-scroll.has-workspace-panel.is-topbar-solid:has(.codex-feed-stack) {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-feed-stack) {
@@ -1178,7 +1182,6 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .codex-main-scroll:has(.codex-feed-stack) .codex-main-topbar {
-  grid-area: unset;
   flex: 0 0 auto;
   align-self: start;
   width: 100%;
@@ -1200,46 +1203,35 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .codex-main-scroll:has(.codex-feed-stack) .codex-main-left-column {
-  grid-area: unset;
   flex: 1 1 auto;
   align-self: stretch;
   min-height: 0;
-  height: auto;
   pointer-events: none;
 }
 
-.codex-main-scroll.has-workspace-panel:has(.codex-feed-stack) .codex-main-left-column {
+.codex-main-scroll.has-workspace-panel.is-topbar-clear:has(.codex-feed-stack) .codex-main-left-column {
+  grid-column: 1;
+  grid-row: 1;
+  height: 100%;
+}
+
+.codex-main-scroll.has-workspace-panel.is-topbar-solid:has(.codex-feed-stack) .codex-main-left-column {
   grid-column: 1;
   grid-row: 2;
-}
-
-.codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-feed-stack) .workspace-panel {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  padding-top: 0;
-}
-
-/* Feed mode: never stack content under transparent topbar — no-drag feed blocks title drag */
-.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack) {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack)
-  .codex-main-left-column {
-  grid-column: 1;
-  grid-row: 2;
-  align-self: stretch;
-  min-height: 0;
   height: auto;
 }
 
 .codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack)
   .workspace-panel {
   grid-column: 2;
+  grid-row: 1;
+  padding-top: 0;
+}
+
+.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-solid:has(.codex-feed-stack)
+  .workspace-panel {
+  grid-column: 2;
   grid-row: 1 / span 2;
-  align-self: stretch;
-  min-height: 0;
-  height: auto;
   padding-top: 0;
 }
 
@@ -2050,17 +2042,17 @@ html[data-window-focused="true"] .codex-sidebar {
   -webkit-mask-image: linear-gradient(
     to bottom,
     #000 0%,
-    #000 22%,
-    rgba(0, 0, 0, 0.65) 48%,
-    rgba(0, 0, 0, 0.2) 72%,
+    rgba(0, 0, 0, 0.78) 16%,
+    rgba(0, 0, 0, 0.32) 42%,
+    rgba(0, 0, 0, 0.08) 68%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     #000 0%,
-    #000 22%,
-    rgba(0, 0, 0, 0.65) 48%,
-    rgba(0, 0, 0, 0.2) 72%,
+    rgba(0, 0, 0, 0.78) 16%,
+    rgba(0, 0, 0, 0.32) 42%,
+    rgba(0, 0, 0, 0.08) 68%,
     transparent 100%
   );
 }
@@ -2072,8 +2064,8 @@ html[data-window-focused="true"] .codex-sidebar {
   background: linear-gradient(
     to bottom,
     var(--codex-log-bg) 0%,
-    color-mix(in srgb, var(--codex-log-bg) 90%, transparent) 18%,
-    color-mix(in srgb, var(--codex-log-bg) 50%, transparent) 45%,
+    color-mix(in srgb, var(--codex-log-bg) 76%, transparent) 14%,
+    color-mix(in srgb, var(--codex-log-bg) 28%, transparent) 42%,
     transparent 100%
   );
 }
@@ -15152,10 +15144,6 @@ html[data-window-focused="true"] .settings-nav {
   scroll-padding-top: 12px;
 }
 
-.codex-main-scroll:has(.codex-feed-stack) .activity-feed-top-mask {
-  opacity: 0;
-}
-
 .codex-main:not(.codex-main-landing) .run-log {
   gap: 0;
   color: var(--codex-log-text);
@@ -18433,6 +18421,21 @@ body.is-resizing-task-panel {
     color 0.15s ease;
 }
 
+.subagent-task-panel-tab-shell {
+  --subagent-row-accent: var(--subagent-accent, var(--accent));
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 206px;
+}
+
+.subagent-task-panel-tab-shell .subagent-task-panel-tab {
+  width: 100%;
+  max-width: 100%;
+  padding-right: 30px;
+}
+
 .subagent-task-panel-tab.is-active {
   background: color-mix(in srgb, var(--terminal-fg) 9%, transparent);
   color: var(--terminal-fg);
@@ -18471,13 +18474,37 @@ body.is-resizing-task-panel {
   cursor: default;
 }
 
-.subagent-task-panel-tab.is-running::after {
-  content: "";
+.subagent-task-panel-tab-close,
+.subagent-task-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #34d399;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--terminal-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.subagent-task-panel-tab-close {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+}
+
+.subagent-task-panel-tab-close:hover,
+.subagent-task-panel-close:hover {
+  background: color-mix(in srgb, var(--terminal-fg) 8%, transparent);
+  color: var(--terminal-fg);
 }
 
 .subagent-task-panel-tab-label,

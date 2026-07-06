@@ -2281,6 +2281,21 @@ function App() {
     [closeWorkspacePanelForCurrentProject],
   );
 
+  const closeSubagentTaskTab = useCallback(
+    (agentId: string) => {
+      setOpenSubagentTabIds((current) => {
+        const next = current.filter((tabId) => tabId !== agentId);
+        if (taskPanelActiveTab === agentId) {
+          const fallback = next.at(-1);
+          setTaskPanelActiveTab(fallback ?? TASK_PANEL_REVIEW_TAB_ID);
+          setSelectedSubagentAgentId(fallback);
+        }
+        return next;
+      });
+    },
+    [taskPanelActiveTab],
+  );
+
   const handleTaskPanelResizeMouseDown = useCallback(
     (event: ReactMouseEvent<HTMLElement>) => {
       if (!taskDrawerOpen || event.button !== 0) {
@@ -4293,8 +4308,7 @@ function App() {
     if (!scrollBody || !topbar) {
       return;
     }
-    const hasFeedStack = Boolean(scrollBody.querySelector(".codex-feed-stack"));
-    const overlap = hasFeedStack ? true : measureTopbarFeedOverlap(scrollBody, topbar);
+    const overlap = measureTopbarFeedOverlap(scrollBody, topbar);
     setTopbarSolid(overlap);
   }, []);
   useEffect(() => {
@@ -4915,6 +4929,7 @@ function App() {
                     setTaskPanelActiveTab(agentId);
                     setSelectedSubagentAgentId(agentId);
                   }}
+                  onCloseAgent={closeSubagentTaskTab}
                   onSelectBackgroundTasks={() => {
                     setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
                     setSelectedSubagentAgentId(undefined);
@@ -4923,6 +4938,7 @@ function App() {
                     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
                     setSelectedSubagentAgentId(undefined);
                   }}
+                  onClosePanel={() => setTaskDrawerOpen(false)}
                   onSelectReviewPath={setReviewSelectedPath}
                   onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
                   onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}

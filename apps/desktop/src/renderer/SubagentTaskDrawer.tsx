@@ -1,5 +1,5 @@
 import { shortenModelId } from "@eco/runtime";
-import { Bot, Circle, ExternalLink, ListChecks, Plus, Square, Terminal } from "lucide-react";
+import { Bot, Circle, ExternalLink, ListChecks, Plus, Square, Terminal, X } from "lucide-react";
 import { useMemo } from "react";
 import type {
   BackgroundTerminalTask,
@@ -135,8 +135,10 @@ export function SubagentTaskDrawer({
   reviewError,
   reviewSelectedPath,
   onSelectAgent,
+  onCloseAgent,
   onSelectBackgroundTasks,
   onSelectReview,
+  onClosePanel,
   onSelectReviewPath,
   onOpenTerminalTask,
   onStopTerminalTask,
@@ -155,8 +157,10 @@ export function SubagentTaskDrawer({
   reviewError?: string;
   reviewSelectedPath?: string;
   onSelectAgent: (agentId: string) => void;
+  onCloseAgent: (agentId: string) => void;
   onSelectBackgroundTasks: () => void;
   onSelectReview: () => void;
+  onClosePanel: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
@@ -175,9 +179,7 @@ export function SubagentTaskDrawer({
     [cards, openSubagentTabIds],
   );
   const activeSubagentCard =
-    !reviewSelected && !terminalTasksSelected
-      ? cards.find((card) => card.key === activeTab)
-      : undefined;
+    !reviewSelected && !terminalTasksSelected ? cards.find((card) => card.key === activeTab) : undefined;
 
   if (!open) {
     return null;
@@ -204,26 +206,42 @@ export function SubagentTaskDrawer({
             const modelShort = modelId ? shortenModelId(modelId) : undefined;
             const isActive = activeTab === card.key;
             return (
-              <button
+              <span
                 key={card.key}
-                type="button"
-                className={`subagent-task-panel-tab subagent-task-panel-tab--subagent${
-                  isActive ? " is-active" : ""
-                }${card.running ? " is-running" : ""}`}
+                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
                 style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`subagent-task-tab-${card.key}`}
-                onClick={() => onSelectAgent(card.key)}
               >
-                <Bot size={15} aria-hidden />
-                <span className="subagent-task-panel-tab-label">
-                  {roleLabel}
-                  {modelShort ? (
-                    <span className="subagent-task-panel-tab-model"> · {modelShort}</span>
-                  ) : null}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className={`subagent-task-panel-tab subagent-task-panel-tab--subagent${
+                    isActive ? " is-active" : ""
+                  }${card.running ? " is-running" : ""}`}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`subagent-task-tab-${card.key}`}
+                  onClick={() => onSelectAgent(card.key)}
+                >
+                  <Bot size={15} aria-hidden />
+                  <span className="subagent-task-panel-tab-label">
+                    {roleLabel}
+                    {modelShort ? (
+                      <span className="subagent-task-panel-tab-model"> · {modelShort}</span>
+                    ) : null}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="subagent-task-panel-tab-close"
+                  aria-label={`关闭 ${roleLabel} 标签`}
+                  title="关闭标签"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCloseAgent(card.key);
+                  }}
+                >
+                  <X size={13} aria-hidden />
+                </button>
+              </span>
             );
           })}
           {terminalTasksSelected ? (
@@ -249,6 +267,15 @@ export function SubagentTaskDrawer({
             <Plus size={17} aria-hidden />
           </button>
         </div>
+        <button
+          type="button"
+          className="subagent-task-panel-close"
+          aria-label="关闭任务面板"
+          title="关闭任务面板"
+          onClick={onClosePanel}
+        >
+          <X size={16} aria-hidden />
+        </button>
       </header>
 
       <div className="subagent-task-panel-body">

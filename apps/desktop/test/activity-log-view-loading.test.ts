@@ -252,6 +252,123 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("检查完成，问题在 role fallback。");
 });
 
+test("ProjectionSubagentDetailFeed appends subagent tool rows without grouping", () => {
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    status: "completed",
+    delegationPrompt: "整理文件操作",
+    timeline: [
+      item({
+        id: "read-done",
+        sequence: 1,
+        eventType: "tool.completed",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "Tool: Read · src/input.ts",
+        metadata: {
+          tool: {
+            name: "Read",
+            detail: "src/input.ts",
+            toolUseId: "toolu_read",
+            status: "completed",
+          },
+        },
+      }),
+      item({
+        id: "write-done",
+        sequence: 2,
+        eventType: "tool.completed",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "Tool: Write · src/output.ts",
+        metadata: {
+          tool: {
+            name: "Write",
+            detail: "src/output.ts",
+            toolUseId: "toolu_write",
+            status: "completed",
+          },
+        },
+      }),
+      item({
+        id: "edit-done",
+        sequence: 3,
+        eventType: "tool.completed",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "Tool: Edit · src/existing.ts",
+        metadata: {
+          tool: {
+            name: "Edit",
+            detail: "src/existing.ts",
+            toolUseId: "toolu_edit",
+            status: "completed",
+          },
+        },
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: subagent,
+      missionText: "整理文件操作",
+      requestSpansById: new Map(),
+      threadActive: false,
+    }),
+  );
+
+  expect(html).not.toContain("run-log-tool-group-trigger");
+  expect(html).toContain("input.ts");
+  expect(html).toContain("src/output.ts");
+  expect(html).toContain("src/existing.ts");
+  expect(html.match(/class="run-log-action(?:\s|")/g)?.length).toBe(3);
+});
+
+test("ActivityLogView summarizes task progress tools without calling them subagents", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "task-create",
+            sequence: 1,
+            text: "Tool: TaskCreate · implement drawer",
+            metadata: {
+              tool: {
+                name: "TaskCreate",
+                detail: "implement drawer",
+                toolUseId: "toolu_task_create",
+                status: "completed",
+              },
+            },
+          }),
+          item({
+            id: "task-update",
+            sequence: 2,
+            text: "Tool: TaskUpdate · implement drawer",
+            metadata: {
+              tool: {
+                name: "TaskUpdate",
+                detail: "implement drawer",
+                toolUseId: "toolu_task_update",
+                status: "completed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已创建 1 个任务");
+  expect(html).toContain("已更新任务 1 次");
+  expect(html).not.toContain("已调用 2 个子代理");
+});
+
 test("ActivityLogView does not show inline loading for a completed request with a stale running action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -274,6 +391,34 @@ test("ActivityLogView does not show inline loading for a completed request with 
                 name: "Write",
                 detail: "src/big-file.ts",
                 toolUseId: "toolu_write_big",
+                status: "started",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-action-trigger is-running");
+  expect(html).not.toContain("run-log-inline-loading");
+});
+
+test("ActivityLogView does not show inline loading for orphan running actions while thread continues", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "bash-started",
+            text: "Tool: Bash · sleep 8",
+            metadata: {
+              liveType: "tool.started",
+              tool: {
+                name: "Bash",
+                detail: "sleep 8",
+                toolUseId: "toolu_sleep",
                 status: "started",
               },
             },

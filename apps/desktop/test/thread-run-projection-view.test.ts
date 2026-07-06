@@ -2287,6 +2287,34 @@ test("buildProjectionDisplayTimelineItems keeps only the latest reconnect status
   expect(rows.map((row) => row.id)).toEqual(["r3"]);
 });
 
+test("buildProjectionDisplayTimelineItems annotates repeated connection failures with a count", () => {
+  const timeline = [
+    item({
+      id: "r1",
+      sequence: 1,
+      eventType: "api.error",
+      text: "【连接失败】HTTP 500：first",
+      metadata: { activityOrigin: "proxy.connection_error", apiError: { statusCode: 500, message: "first" } },
+    }),
+    item({
+      id: "r2",
+      sequence: 2,
+      eventType: "api.error",
+      text: "【连接失败】HTTP 500：second",
+      metadata: {
+        activityOrigin: "proxy.connection_error",
+        apiError: { statusCode: 500, message: "second" },
+      },
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["r2"]);
+  expect(projectionItemToDetailBlock(requireValue(rows[0], "reconnect row"))).toMatchObject({
+    kind: "phase",
+    label: "连接失败 · HTTP 500 ×2",
+  });
+});
+
 test("buildProjectionDisplayTimelineItems drops reconnect after agent recovers", () => {
   const timeline = [
     item({
@@ -3475,6 +3503,7 @@ test("projectionItemToDetailBlock omits tool role badge and resolves icon from t
     kind: "action",
     icon: "file",
     label: "index.vue",
+    toolName: "Read",
     lifecycle: "completed",
     readTarget: {
       fileName: "index.vue",
@@ -3506,6 +3535,7 @@ test("projectionItemToDetailBlock maps bash approval to action with lifecycle", 
     kind: "action",
     icon: "search",
     label: "/path/to/file.txt",
+    toolName: "Grep",
     lifecycle: "approval-pending",
   });
 });
@@ -3662,6 +3692,7 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
     kind: "action",
     icon: "file",
     label: "https://weather.example/guangzhou (8.3s)",
+    toolName: "WebFetch",
     lifecycle: "completed",
     subagent: "explore",
     agentId: "agent_weather",
@@ -3804,6 +3835,7 @@ test("projectionItemToDetailBlock treats structured todo metadata as tool action
     kind: "action",
     icon: "file",
     label: "https://weather.example/guangzhou",
+    toolName: "WebFetch",
     subagent: "explore",
     agentId: "agent_weather",
   });

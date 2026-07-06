@@ -53,6 +53,7 @@ export type ActivityDetailBlock =
       icon: ActivityActionIcon;
       label: string;
       lifecycle?: ToolActionLifecycle;
+      toolName?: string;
       subagent?: string;
       agentId?: string;
       bashRun?: BashRunCardDisplay;
@@ -105,13 +106,20 @@ export function formatDuration(ms: number): string {
 type ToolCategory = "read" | "search" | "edit" | "run" | "agent";
 
 function categorizeTool(tool: string): ToolCategory {
-  if (tool === "Agent" || tool.startsWith("Task") || tool === "TodoWrite") {
+  if (tool === "Agent" || tool === "Task" || tool === "TaskList" || tool === "TaskOutput") {
     return "agent";
   }
   if (tool === "Bash") {
     return "run";
   }
-  if (tool === "Write" || tool === "Edit") {
+  if (
+    tool === "Write" ||
+    tool === "Edit" ||
+    tool === "MultiEdit" ||
+    tool === "TaskCreate" ||
+    tool === "TaskUpdate" ||
+    tool === "TodoWrite"
+  ) {
     return "edit";
   }
   if (tool === "Glob" || tool === "Grep") {

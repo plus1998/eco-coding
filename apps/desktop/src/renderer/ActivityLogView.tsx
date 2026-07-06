@@ -7,6 +7,7 @@ import {
 } from "@eco/runtime";
 import {
   AlertCircle,
+  ArrowRight,
   Bot,
   ChevronDown,
   FileSearch,
@@ -220,7 +221,6 @@ function ProjectionActivityLogView({
     () => new Map(projection.requestSpans.map((span) => [span.requestId, span])),
     [projection.requestSpans],
   );
-  const threadActive = isProjectionThreadActive(projection.thread.status);
   const viewModel = useMemo(
     () =>
       buildThreadRunProjectionViewModel(
@@ -273,7 +273,6 @@ function ProjectionActivityLogView({
             key={entry.key}
             entry={entry}
             requestSpansById={requestSpansById}
-            threadActive={threadActive}
             {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
             {...(onOpenSubagent && { onOpenSubagent })}
             {...(agentDisplayNames && { agentDisplayNames })}
@@ -311,7 +310,6 @@ function wrapRunLogFeedEntry(node: ReactNode, options?: { compact?: boolean; tig
 function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
-  threadActive,
   selectedSubagentAgentId,
   onOpenSubagent,
   onRestorePrompt,
@@ -320,7 +318,6 @@ function ProjectionMainFeedEntry({
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onRestorePrompt?: RestorePromptHandler;
@@ -332,7 +329,6 @@ function ProjectionMainFeedEntry({
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
-        threadActive={threadActive}
         {...(onRestorePrompt && { onRestorePrompt })}
       />
     );
@@ -342,7 +338,6 @@ function ProjectionMainFeedEntry({
       <ProjectionToolGroupEntry
         entry={entry}
         requestSpansById={requestSpansById}
-        threadActive={threadActive}
       />,
       { tight: true },
     );
@@ -363,7 +358,6 @@ function ProjectionMainFeedEntry({
     <ProjectionAgentEchoEntry
       entry={entry}
       requestSpansById={requestSpansById}
-      threadActive={threadActive}
     />,
     {
       tight: isTightAgentEchoEntry(entry),
@@ -381,11 +375,9 @@ function isTightAgentEchoEntry(
 function ProjectionToolGroupEntry({
   entry,
   requestSpansById,
-  threadActive,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const blocks = useMemo(
@@ -411,10 +403,9 @@ function ProjectionToolGroupEntry({
         return shouldShowActionInlineLoading({
           itemRequestId: child.item.requestId,
           requestSpan,
-          threadActive,
         });
       }),
-    [entry.entries, lifecycle, requestSpansById, threadActive],
+    [entry.entries, lifecycle, requestSpansById],
   );
   const Icon = actionIcons[summary.icon];
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
@@ -462,7 +453,6 @@ function ProjectionToolGroupEntry({
               key={child.key}
               entry={child}
               requestSpansById={requestSpansById}
-              threadActive={threadActive}
             />
           ))}
         </div>
@@ -474,18 +464,15 @@ function ProjectionToolGroupEntry({
 function ProjectionToolGroupChildEntry({
   entry,
   requestSpansById,
-  threadActive,
 }: {
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
 }) {
   if (entry.kind === "timeline") {
     return (
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
-        threadActive={threadActive}
         compact
         forceActionDetailsExpanded
       />
@@ -495,7 +482,6 @@ function ProjectionToolGroupChildEntry({
     <ProjectionAgentEchoEntry
       entry={entry}
       requestSpansById={requestSpansById}
-      threadActive={threadActive}
       forceActionDetailsExpanded
     />
   );
@@ -507,12 +493,35 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
 } {
   const editedFiles = new Set<string>();
   const readFiles = new Set<string>();
+  const writtenFiles = new Set<string>();
   let searches = 0;
   let commands = 0;
   let agents = 0;
+  let taskCreates = 0;
+  let taskUpdates = 0;
   let otherTools = 0;
 
   for (const block of blocks) {
+    if (block.toolName === "TaskCreate") {
+      taskCreates += 1;
+      continue;
+    }
+    if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+      taskUpdates += 1;
+      continue;
+    }
+    if (block.toolName === "Write") {
+      writtenFiles.add(actionBlockTargetKey(block));
+      continue;
+    }
+    if (block.toolName === "Edit" || block.toolName === "MultiEdit") {
+      editedFiles.add(actionBlockTargetKey(block));
+      continue;
+    }
+    if (block.toolName === "Read" || block.toolName === "NotebookRead") {
+      readFiles.add(actionBlockTargetKey(block));
+      continue;
+    }
     if (block.fileChange) {
       editedFiles.add(block.fileChange.path || block.fileChange.fileName);
       continue;
@@ -533,7 +542,7 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
       commands += 1;
       continue;
     }
-    if (block.icon === "agent") {
+    if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
       agents += 1;
       continue;
     }
@@ -541,17 +550,26 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
   }
 
   const clauses: string[] = [];
-  if (editedFiles.size > 0) {
-    clauses.push(`已编辑 ${editedFiles.size} 个文件`);
-  }
   if (readFiles.size > 0) {
     clauses.push(`已读取 ${readFiles.size} 个文件`);
+  }
+  if (writtenFiles.size > 0) {
+    clauses.push(`已写入 ${writtenFiles.size} 个文件`);
+  }
+  if (editedFiles.size > 0) {
+    clauses.push(`已编辑 ${editedFiles.size} 个文件`);
   }
   if (searches > 0) {
     clauses.push(searches > 1 ? `已搜索代码 ${searches} 次` : "已搜索代码");
   }
   if (commands > 0) {
     clauses.push(`已运行 ${commands} 条命令`);
+  }
+  if (taskCreates > 0) {
+    clauses.push(`已创建 ${taskCreates} 个任务`);
+  }
+  if (taskUpdates > 0) {
+    clauses.push(`已更新任务 ${taskUpdates} 次`);
   }
   if (agents > 0) {
     clauses.push(`已调用 ${agents} 个子代理`);
@@ -562,7 +580,7 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
 
   const label = joinChineseClauses(clauses.length ? clauses : [`已执行 ${blocks.length} 个工具`]);
   const icon: ActivityActionIcon =
-    editedFiles.size > 0
+    writtenFiles.size > 0 || editedFiles.size > 0 || taskCreates > 0 || taskUpdates > 0
       ? "edit"
       : readFiles.size > 0
         ? "file"
@@ -574,6 +592,20 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
               ? "agent"
               : "file";
   return { label, icon };
+}
+
+function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
+  const fallbackLabel = block.label.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/u, "").trim();
+  return (
+    block.fileChange?.path ||
+    block.fileChange?.fileName ||
+    block.readTarget?.filePath ||
+    block.readTarget?.fileName ||
+    block.grepTarget?.path ||
+    fallbackLabel ||
+    block.toolName ||
+    block.label
+  );
 }
 
 function joinChineseClauses(clauses: readonly string[]): string {
@@ -610,34 +642,24 @@ function resolveActionBlocksLifecycle(
   return lifecycles.length > 0 ? "completed" : undefined;
 }
 
-function isProjectionThreadActive(status: string): boolean {
-  return status === "running";
-}
-
 function shouldShowActionInlineLoading({
   itemRequestId,
   requestSpan,
-  threadActive,
 }: {
   itemRequestId: string | undefined;
   requestSpan: ThreadRunProjectionRequestSpan | undefined;
-  threadActive: boolean;
 }): boolean {
-  if (requestSpan) {
-    return isProjectionRequestActive(requestSpan);
-  }
-  return !itemRequestId && threadActive;
+  void itemRequestId;
+  return isProjectionRequestActive(requestSpan);
 }
 
 function ProjectionAgentEchoEntry({
   entry,
   requestSpansById,
-  threadActive,
   forceActionDetailsExpanded = false,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
   forceActionDetailsExpanded?: boolean;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
@@ -690,7 +712,6 @@ function ProjectionAgentEchoEntry({
         actionInlineLoadingActive={shouldShowActionInlineLoading({
           itemRequestId: entry.item.requestId,
           requestSpan,
-          threadActive,
         })}
         hideSubagentIdentity
         forceActionDetailsExpanded={forceActionDetailsExpanded}
@@ -819,6 +840,7 @@ export function ProjectionSubagentDetailFeed({
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   threadActive: boolean;
 }) {
+  void threadActive;
   const delegation = readProjectionAgentDelegation(agent);
   const missionDisplay = resolveMissionDisplayText(
     missionText || delegation?.prompt || delegation?.summary || "",
@@ -851,7 +873,6 @@ export function ProjectionSubagentDetailFeed({
               key={`${agent.agentId}-${item.id}`}
               item={item}
               requestSpansById={requestSpansById}
-              threadActive={threadActive}
               compact
             />
           ))
@@ -894,14 +915,12 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
 function ProjectionTimelineEntry({
   item,
   requestSpansById,
-  threadActive,
   onRestorePrompt,
   compact = false,
   forceActionDetailsExpanded = false,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
   onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
   forceActionDetailsExpanded?: boolean;
@@ -970,7 +989,6 @@ function ProjectionTimelineEntry({
       actionInlineLoadingActive={shouldShowActionInlineLoading({
         itemRequestId: item.requestId,
         requestSpan,
-        threadActive,
       })}
       hideSubagentIdentity={compact}
       forceActionDetailsExpanded={forceActionDetailsExpanded}
@@ -1090,7 +1108,7 @@ function SubagentRunCardButton({
                 {statusBadge.label}
               </span>
             ) : null}
-            <ChevronDown size={16} className={`subagent-run-chevron${selected ? " open" : ""}`} aria-hidden />
+            <ArrowRight size={16} className="subagent-run-chevron" aria-hidden />
           </span>
         </div>
         <p className="subagent-run-mission-tag">任务目标</p>

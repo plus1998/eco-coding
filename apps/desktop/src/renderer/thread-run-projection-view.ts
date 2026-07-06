@@ -614,10 +614,21 @@ export function buildProjectionDisplayTimelineItems(
   const latestToolDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestLifecycleDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestReconnectDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  const reconnectCollapseByKey = new Map<string, ReconnectCollapseMetadata>();
   const latestOriginalApiErrorDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   for (const item of timeline) {
     const reconnectKey = projectionReconnectDisplayKey(item);
     if (reconnectKey) {
+      const reconnect = resolveReconnectPhaseDisplay({
+        text: item.text.trim(),
+        metadata: item.metadata,
+        apiError: readProjectionApiError(item),
+      });
+      const currentStats = reconnectCollapseByKey.get(reconnectKey) ?? { count: 0, failedCount: 0 };
+      reconnectCollapseByKey.set(reconnectKey, {
+        count: currentStats.count + 1,
+        failedCount: currentStats.failedCount + (reconnect?.failed ? 1 : 0),
+      });
       const current = latestReconnectDisplayByKey.get(reconnectKey);
       if (!current || compareTimelineItems(current, item) <= 0) {
         latestReconnectDisplayByKey.set(reconnectKey, item);
@@ -662,6 +673,7 @@ export function buildProjectionDisplayTimelineItems(
     if (isRequestFailureFeedNoiseItem(item)) {
       continue;
     }
+    let displayItem = item;
     const reconnectKey = projectionReconnectDisplayKey(item);
     if (reconnectKey) {
       if (latestReconnectDisplayByKey.get(reconnectKey)?.id !== item.id) {
@@ -670,6 +682,7 @@ export function buildProjectionDisplayTimelineItems(
       if (isTimelineItemSupersededByRecovery(timeline, item, compareTimelineOrder)) {
         continue;
       }
+      displayItem = withReconnectCollapseMetadata(displayItem, reconnectCollapseByKey.get(reconnectKey));
     }
     const upstreamErrorKey = projectionUpstreamErrorDisplayKey(item);
     if (upstreamErrorKey) {
@@ -685,7 +698,6 @@ export function buildProjectionDisplayTimelineItems(
       continue;
     }
     const streamKey = projectionStreamDisplayKey(item, requestSpansById, timeline);
-    let displayItem = item;
     if (streamKey) {
       const latestStream = latestStreamDisplayByKey.get(streamKey);
       if (!latestStream || latestStream.id !== item.id) {
@@ -709,6 +721,44 @@ export function buildProjectionDisplayTimelineItems(
     }
   }
   return displayItems;
+}
+
+interface ReconnectCollapseMetadata {
+  count: number;
+  failedCount: number;
+}
+
+function withReconnectCollapseMetadata(
+  item: ThreadRunProjectionTimelineItem,
+  collapse: ReconnectCollapseMetadata | undefined,
+): ThreadRunProjectionTimelineItem {
+  if (!collapse || collapse.count <= 1) {
+    return item;
+  }
+  return {
+    ...item,
+    metadata: {
+      ...(item.metadata ?? {}),
+      reconnectCollapse: collapse,
+    },
+  };
+}
+
+function readReconnectCollapseMetadata(
+  metadata: Record<string, unknown> | undefined,
+): ReconnectCollapseMetadata | undefined {
+  const raw = metadata?.reconnectCollapse;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const count = typeof record.count === "number" && Number.isFinite(record.count) ? record.count : 0;
+  const failedCount =
+    typeof record.failedCount === "number" && Number.isFinite(record.failedCount) ? record.failedCount : 0;
+  if (count <= 1 && failedCount <= 1) {
+    return undefined;
+  }
+  return { count, failedCount };
 }
 
 function isDuplicateStreamBlockFinalEcho(
@@ -1743,6 +1793,7 @@ function buildProjectionToolActionBlock(
     kind: "action",
     icon: iconForToolName(input.toolName),
     label: input.label,
+    toolName: input.toolName,
     ...(input.lifecycle && { lifecycle: input.lifecycle }),
     ...(bashRun && { bashRun }),
     ...(fileChange && { fileChange }),
@@ -1765,7 +1816,7 @@ export function projectionItemToDetailBlock(
   if (reconnect) {
     return {
       kind: "phase",
-      label: reconnect.summary,
+      label: formatReconnectPhaseSummary(reconnect.summary, reconnect, item.metadata),
       reconnecting: true,
       ...(reconnect.failed && { reconnectFailed: true }),
       ...(reconnect.detail && { reconnectDetail: reconnect.detail }),
@@ -1900,6 +1951,25 @@ export function projectionItemToDetailBlock(
     return { kind: "phase", label: phaseLabel };
   }
   return undefined;
+}
+
+function formatReconnectPhaseSummary(
+  summary: string,
+  reconnect: NonNullable<ReturnType<typeof resolveReconnectPhaseDisplay>>,
+  metadata: Record<string, unknown> | undefined,
+): string {
+  const collapse = readReconnectCollapseMetadata(metadata);
+  if (!collapse) {
+    return summary;
+  }
+  if (reconnect.failed) {
+    const failedCount = collapse.failedCount || collapse.count;
+    return failedCount > 1 ? `${summary} ×${failedCount}` : summary;
+  }
+  if (collapse.failedCount > 1) {
+    return `${summary} · 连接失败 ${collapse.failedCount} 次`;
+  }
+  return summary;
 }
 
 export function isProjectionRequestActive(
