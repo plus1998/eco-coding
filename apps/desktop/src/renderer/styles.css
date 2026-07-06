@@ -18621,6 +18621,19 @@ body.is-resizing-task-panel {
   font-size: 11px;
 }
 
+.subagent-task-panel-tab-meta {
+  flex: 0 1 auto;
+  min-width: 24px;
+  max-width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-task-panel-tab.is-running .subagent-task-panel-tab-meta {
+  color: color-mix(in srgb, var(--subagent-row-accent) 66%, var(--terminal-muted));
+}
+
 .subagent-task-panel-body {
   position: relative;
   flex: 1 1 auto;

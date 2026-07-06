@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivityLogView, ProjectionSubagentDetailFeed } from "../src/renderer/ActivityLogView";
+import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
   ThreadRunProjectionAgent,
@@ -247,9 +248,49 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   );
 
   expect(html).toContain("subagent-conversation-prompt");
+  expect(html).toContain("run-log-user-prompt-bubble");
+  expect(html).toContain("run-log-user-prompt-body-wrap");
   expect(html).toContain("只读检查路由链路");
   expect(html).toContain("已处理 2m 8s");
   expect(html).toContain("检查完成，问题在 role fallback。");
+});
+
+test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    status: "active",
+    timeline: [],
+  });
+  const html = renderToStaticMarkup(
+    createElement(SubagentTaskDrawer, {
+      open: true,
+      fullscreen: false,
+      cards: [
+        {
+          key: subagent.agentId,
+          agent: subagent,
+          timelineIds: [],
+          running: true,
+          statusText: "正在读取 src/config.ts",
+          missionText: "检查配置",
+        },
+      ],
+      activeTab: subagent.agentId,
+      openSubagentTabIds: [subagent.agentId],
+      backgroundTasks: [],
+      onSelectAgent: () => undefined,
+      onCloseAgent: () => undefined,
+      onSelectBackgroundTasks: () => undefined,
+      onSelectReview: () => undefined,
+      onToggleFullscreen: () => undefined,
+      onSelectReviewPath: () => undefined,
+      onOpenTerminalTask: () => undefined,
+      onStopTerminalTask: () => undefined,
+    }),
+  );
+
+  expect(html).toContain("subagent-task-panel-tab-meta");
+  expect(html).toContain("正在读取 src/config.ts");
 });
 
 test("ProjectionSubagentDetailFeed appends subagent tool rows without grouping", () => {

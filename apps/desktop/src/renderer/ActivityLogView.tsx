@@ -857,7 +857,7 @@ export function ProjectionSubagentDetailFeed({
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
-  const durationLabel = agent.durationMs > 0 ? formatDuration(agent.durationMs) : undefined;
+  const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
   const filteredTimeline = agent.timeline.filter(
     (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
   );
@@ -896,6 +896,19 @@ export function ProjectionSubagentDetailFeed({
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (!running) {
+      setLiveDurationMs(agent.durationMs);
+      return;
+    }
+    const baselineMs = agent.durationMs;
+    const anchorAt = Date.now();
+    const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [agent.agentId, agent.durationMs, running]);
 
   useEffect(() => {
     const feed = feedRef.current;
@@ -952,15 +965,11 @@ export function ProjectionSubagentDetailFeed({
     return () => observer.disconnect();
   }, [agent.agentId, scrollToBottom]);
 
+  const durationLabel = liveDurationMs > 0 ? formatDuration(liveDurationMs) : undefined;
+
   return (
     <div ref={feedRef} className="subagent-task-detail-feed subagent-conversation">
-      {missionDisplay ? (
-        <article className="run-log-user-prompt subagent-conversation-prompt">
-          <div className="run-log-user-prompt-content">
-            <pre className="run-log-user-prompt-body">{missionDisplay}</pre>
-          </div>
-        </article>
-      ) : null}
+      {missionDisplay ? <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" /> : null}
       <div className="subagent-conversation-status-row">
         <span className="subagent-conversation-status">
           {running ? "处理中" : "已处理"}
@@ -1816,10 +1825,12 @@ function ThinkingBlock({
 
 function UserPromptBlock({
   text,
+  className,
   rewindTarget,
   onRestorePrompt,
 }: {
   text: string;
+  className?: string;
   rewindTarget?: ThreadActivityRewindTarget;
   onRestorePrompt?: RestorePromptHandler;
 }) {
@@ -1866,7 +1877,7 @@ function UserPromptBlock({
     .join(" ");
 
   return (
-    <article className="run-log-user-prompt">
+    <article className={["run-log-user-prompt", className].filter(Boolean).join(" ")}>
       <div className={contentClassName}>
         <div className="run-log-user-prompt-bubble">
           <div

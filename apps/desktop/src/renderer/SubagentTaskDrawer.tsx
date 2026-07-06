@@ -223,6 +223,8 @@ export function SubagentTaskDrawer({
             const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
             const modelId = card.agent.usage?.modelId ?? card.agent.context?.modelId;
             const modelShort = modelId ? shortenModelId(modelId) : undefined;
+            const runningStatusText = card.running ? card.statusText?.trim() || "处理中" : undefined;
+            const tabTitle = [roleLabel, modelShort, runningStatusText].filter(Boolean).join(" · ");
             const isActive = activeTab === card.key;
             return (
               <span
@@ -238,6 +240,7 @@ export function SubagentTaskDrawer({
                   role="tab"
                   aria-selected={isActive}
                   aria-controls={`subagent-task-tab-${card.key}`}
+                  title={tabTitle}
                   onClick={() => onSelectAgent(card.key)}
                 >
                   <Bot size={15} aria-hidden />
@@ -247,6 +250,9 @@ export function SubagentTaskDrawer({
                       <span className="subagent-task-panel-tab-model"> · {modelShort}</span>
                     ) : null}
                   </span>
+                  {runningStatusText ? (
+                    <span className="subagent-task-panel-tab-meta">{runningStatusText}</span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
