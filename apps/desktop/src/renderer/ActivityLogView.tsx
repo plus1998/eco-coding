@@ -272,7 +272,11 @@ function ProjectionActivityLogView({
       <div className="run-log">
         {showThreadPrompt && thread?.prompt
           ? wrapRunLogFeedEntry(
-              <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />,
+              <UserPromptBlock
+                text={thread.prompt}
+                anchorId={`thread:${thread.id}`}
+                {...(onRestorePrompt && { onRestorePrompt })}
+              />,
             )
           : null}
         {viewModel.mainFeedEntries.map((entry) => (
@@ -1044,6 +1048,7 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <UserPromptBlock
         text={item.text}
+        anchorId={item.id}
         {...(rewindTarget && { rewindTarget })}
         {...(onRestorePrompt && { onRestorePrompt })}
       />,
@@ -1826,11 +1831,13 @@ function ThinkingBlock({
 function UserPromptBlock({
   text,
   className,
+  anchorId,
   rewindTarget,
   onRestorePrompt,
 }: {
   text: string;
   className?: string;
+  anchorId?: string;
   rewindTarget?: ThreadActivityRewindTarget;
   onRestorePrompt?: RestorePromptHandler;
 }) {
@@ -1877,7 +1884,10 @@ function UserPromptBlock({
     .join(" ");
 
   return (
-    <article className={["run-log-user-prompt", className].filter(Boolean).join(" ")}>
+    <article
+      className={["run-log-user-prompt", className].filter(Boolean).join(" ")}
+      {...(anchorId && { "data-user-message-anchor-id": anchorId })}
+    >
       <div className={contentClassName}>
         <div className="run-log-user-prompt-bubble">
           <div

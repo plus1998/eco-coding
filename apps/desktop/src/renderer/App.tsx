@@ -210,9 +210,12 @@ import {
 import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import {
   buildThreadRunProjectionViewModel,
+  isProjectionUserPromptItem,
   isThreadAutoCompactSuspended,
   isThreadContextCompactionInFlight,
   isThreadPromptCacheInvalidated,
+  projectionItemToDetailBlock,
+  type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import { subscribeToWindowFocus } from "./window-focus";
@@ -500,6 +503,22 @@ const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
 type ActivityFeedScrollJump = "bottom" | "top";
 type ActivityFeedUserScrollDirection = "up" | "down";
 
+interface ActivityUserMessageNavItem {
+  id: string;
+  userMessage: string;
+  fileNames: string[];
+  index: number;
+  agentReply?: string;
+}
+
+interface ActivityUserMessageNavItemDraft {
+  id: string;
+  userMessage: string;
+  index: number;
+  fileNames: Set<string>;
+  agentReply?: string;
+}
+
 function resolveActivityFeedScrollJump(
   scrollTop: number,
   distanceFromBottom: number,
@@ -515,6 +534,180 @@ function resolveActivityFeedScrollJump(
     return null;
   }
   return userScrollDirection === "up" ? "top" : "bottom";
+}
+
+function normalizeActivityUserMessageText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function clipActivityUserMessageText(text: string, max: number): string {
+  if (text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function buildActivityUserMessageNavItem(
+  id: string,
+  text: string,
+  index: number,
+): ActivityUserMessageNavItemDraft {
+  return {
+    id,
+    userMessage: normalizeActivityUserMessageText(text) || `用户消息 ${index + 1}`,
+    index,
+    fileNames: new Set(),
+  };
+}
+
+function finishActivityUserMessageNavItem(
+  draft: ActivityUserMessageNavItemDraft,
+): ActivityUserMessageNavItem {
+  const agentReply = draft.agentReply ? normalizeActivityUserMessageText(draft.agentReply) : "";
+  return {
+    id: draft.id,
+    userMessage: draft.userMessage,
+    fileNames: [...draft.fileNames],
+    index: draft.index,
+    ...(agentReply && { agentReply }),
+  };
+}
+
+function activityUserMessageAriaLabel(item: ActivityUserMessageNavItem): string {
+  return `跳到${clipActivityUserMessageText(item.userMessage, 34)}`;
+}
+
+function formatActivityUserMessageFileList(fileNames: readonly string[]): string {
+  return fileNames.join(" · ");
+}
+
+function collectActivityUserMessageRoundItem(
+  draft: ActivityUserMessageNavItemDraft,
+  item: Parameters<typeof projectionItemToDetailBlock>[0],
+  options?: { collectReply?: boolean },
+) {
+  const block = projectionItemToDetailBlock(item);
+  if (!block) {
+    return;
+  }
+  if (options?.collectReply && block.kind === "narrative" && !block.streaming && block.text.trim()) {
+    draft.agentReply = block.text;
+    return;
+  }
+  if (block.kind !== "action") {
+    return;
+  }
+  if (block.fileChange) {
+    draft.fileNames.add(block.fileChange.fileName || block.fileChange.path);
+  }
+}
+
+function collectActivityUserMessageRoundEntry(
+  draft: ActivityUserMessageNavItemDraft,
+  entry: ThreadRunProjectionMainFeedEntry,
+) {
+  if (entry.kind === "timeline") {
+    collectActivityUserMessageRoundItem(draft, entry.item, { collectReply: true });
+    return;
+  }
+  if (entry.kind === "tool-group") {
+    for (const child of entry.entries) {
+      collectActivityUserMessageRoundItem(draft, child.item);
+    }
+    return;
+  }
+  if (entry.kind === "agent-echo") {
+    collectActivityUserMessageRoundItem(draft, entry.item);
+    return;
+  }
+  for (const item of entry.card.agent.timeline) {
+    collectActivityUserMessageRoundItem(draft, item);
+  }
+}
+
+function ActivityUserMessageNavigator({
+  items,
+  activeId,
+  onJump,
+}: {
+  items: ActivityUserMessageNavItem[];
+  activeId?: string;
+  onJump: (id: string) => void;
+}) {
+  const [hoveredId, setHoveredId] = useState<string>();
+  if (items.length === 0) {
+    return null;
+  }
+  const resolvedActiveId =
+    activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
+  const hoveredIndex = hoveredId ? items.findIndex((item) => item.id === hoveredId) : -1;
+  const hoveredItem = hoveredIndex >= 0 ? items[hoveredIndex] : undefined;
+  const clearHoverIfLeaving = (nextTarget: EventTarget | null, currentTarget: EventTarget) => {
+    if (nextTarget instanceof Node && currentTarget instanceof Node && currentTarget.contains(nextTarget)) {
+      return;
+    }
+    setHoveredId(undefined);
+  };
+
+  return (
+    <nav
+      className="activity-user-message-nav"
+      aria-label="用户消息列表"
+      onPointerLeave={() => setHoveredId(undefined)}
+      onBlur={(event) => clearHoverIfLeaving(event.relatedTarget, event.currentTarget)}
+    >
+      <ol className="activity-user-message-nav-list">
+        {items.map((item, index) => {
+          const active = item.id === resolvedActiveId;
+          const hoverDistance = hoveredIndex >= 0 ? Math.abs(index - hoveredIndex) : -1;
+          const buttonClassName = [
+            "activity-user-message-nav-button",
+            active ? "is-active" : "",
+            hoverDistance === 0 ? "is-hovered" : "",
+            hoverDistance === 1 ? "is-neighbor-1" : "",
+            hoverDistance === 2 ? "is-neighbor-2" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <li key={item.id} className="activity-user-message-nav-item">
+              <button
+                type="button"
+                className={buttonClassName}
+                onClick={() => onJump(item.id)}
+                onFocus={() => setHoveredId(item.id)}
+                onPointerEnter={() => setHoveredId(item.id)}
+                aria-label={activityUserMessageAriaLabel(item)}
+                aria-current={active ? "location" : undefined}
+              >
+                <span className="activity-user-message-nav-line" aria-hidden />
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      {hoveredItem ? (
+        <span className="activity-user-message-nav-card" role="tooltip">
+          <span className="activity-user-message-nav-card-user">
+            {clipActivityUserMessageText(hoveredItem.userMessage, 132)}
+          </span>
+          {hoveredItem.agentReply ? (
+            <span className="activity-user-message-nav-card-agent">
+              {clipActivityUserMessageText(hoveredItem.agentReply, 150)}
+            </span>
+          ) : null}
+          {hoveredItem.fileNames.length > 0 ? (
+            <span
+              className="activity-user-message-nav-card-files"
+              title={formatActivityUserMessageFileList(hoveredItem.fileNames)}
+            >
+              {formatActivityUserMessageFileList(hoveredItem.fileNames)}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+    </nav>
+  );
 }
 
 function App() {
@@ -2208,6 +2401,32 @@ function App() {
     () => activeProjectionViewModel?.subagentCards ?? [],
     [activeProjectionViewModel?.subagentCards],
   );
+  const activityUserMessageNavItems = useMemo(() => {
+    if (!activeThread || !activeProjectionViewModel) {
+      return [];
+    }
+    const drafts: ActivityUserMessageNavItemDraft[] = [];
+    let currentDraft: ActivityUserMessageNavItemDraft | undefined;
+    if (activeProjectionViewModel.showThreadPrompt && activeThread.prompt.trim()) {
+      currentDraft = buildActivityUserMessageNavItem(
+        `thread:${activeThread.id}`,
+        activeThread.prompt,
+        drafts.length,
+      );
+      drafts.push(currentDraft);
+    }
+    for (const entry of activeProjectionViewModel.mainFeedEntries) {
+      if (entry.kind === "timeline" && isProjectionUserPromptItem(entry.item)) {
+        currentDraft = buildActivityUserMessageNavItem(entry.item.id, entry.item.text, drafts.length);
+        drafts.push(currentDraft);
+        continue;
+      }
+      if (currentDraft) {
+        collectActivityUserMessageRoundEntry(currentDraft, entry);
+      }
+    }
+    return drafts.map(finishActivityUserMessageNavItem);
+  }, [activeProjectionViewModel, activeThread?.id, activeThread?.prompt]);
 
   useEffect(() => {
     setSelectedSubagentAgentId(undefined);
@@ -2432,8 +2651,11 @@ function App() {
   const activityFeedUserScrollDirectionRef = useRef<ActivityFeedUserScrollDirection | null>(null);
   const activityFeedScrollJumpRef = useRef<ActivityFeedScrollJump | null>(null);
   const [activityFeedScrollJump, setActivityFeedScrollJump] = useState<ActivityFeedScrollJump | null>(null);
+  const activeActivityUserMessageNavIdRef = useRef<string | undefined>(undefined);
+  const [activeActivityUserMessageNavId, setActiveActivityUserMessageNavId] = useState<string>();
   const activityFeedLayoutScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityFeedLayoutScrollAtRef = useRef(0);
+  const activityUserMessageJumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
   const runProjectionLayoutSignature = useMemo(() => {
@@ -2491,6 +2713,77 @@ function App() {
       }
     },
     [distanceFromActivityFeedBottom],
+  );
+
+  const updateActiveActivityUserMessageNavId = useCallback((next: string | undefined) => {
+    if (activeActivityUserMessageNavIdRef.current === next) {
+      return;
+    }
+    activeActivityUserMessageNavIdRef.current = next;
+    setActiveActivityUserMessageNavId(next);
+  }, []);
+
+  const syncActivityUserMessageNavigator = useCallback(
+    (container: HTMLElement) => {
+      const anchors = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"),
+      );
+      if (anchors.length === 0) {
+        updateActiveActivityUserMessageNavId(undefined);
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const markerY = containerRect.top + containerRect.height * 0.46;
+      let activeAnchor = anchors[0];
+      for (const anchor of anchors) {
+        const rect = anchor.getBoundingClientRect();
+        if (rect.top <= markerY || rect.bottom <= containerRect.top + 16) {
+          activeAnchor = anchor;
+          continue;
+        }
+        break;
+      }
+      updateActiveActivityUserMessageNavId(activeAnchor?.dataset.userMessageAnchorId);
+    },
+    [updateActiveActivityUserMessageNavId],
+  );
+
+  const jumpToActivityUserMessage = useCallback(
+    (anchorId: string) => {
+      const container = activityMessagesRef.current;
+      if (!container) {
+        return;
+      }
+      const anchors = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"),
+      );
+      const target = anchors.find((anchor) => anchor.dataset.userMessageAnchorId === anchorId);
+      if (!target) {
+        return;
+      }
+      if (activityUserMessageJumpTimerRef.current) {
+        clearTimeout(activityUserMessageJumpTimerRef.current);
+      }
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const targetTop = Math.max(0, container.scrollTop + targetRect.top - containerRect.top - 18);
+      userDetachedFromBottomRef.current = true;
+      activityFeedUserScrollDirectionRef.current = targetTop < container.scrollTop ? "up" : "down";
+      programmaticActivityFeedScrollRef.current = true;
+      updateActiveActivityUserMessageNavId(anchorId);
+      container.scrollTo({ top: targetTop, behavior: "smooth" });
+      activityUserMessageJumpTimerRef.current = setTimeout(() => {
+        activityUserMessageJumpTimerRef.current = null;
+        programmaticActivityFeedScrollRef.current = false;
+        if (activityMessagesRef.current !== container) {
+          return;
+        }
+        activityFeedScrollTopRef.current = container.scrollTop;
+        syncActivityFeedScrollJump(container);
+        syncActivityUserMessageNavigator(container);
+      }, 360);
+    },
+    [syncActivityFeedScrollJump, syncActivityUserMessageNavigator, updateActiveActivityUserMessageNavId],
   );
 
   const scrollActivityFeedToEnd = useCallback(
@@ -2560,6 +2853,9 @@ function App() {
     () => () => {
       if (activityFeedLayoutScrollTimerRef.current) {
         clearTimeout(activityFeedLayoutScrollTimerRef.current);
+      }
+      if (activityUserMessageJumpTimerRef.current) {
+        clearTimeout(activityUserMessageJumpTimerRef.current);
       }
     },
     [],
@@ -2654,11 +2950,18 @@ function App() {
         activityFeedUserScrollDirectionRef.current = null;
       }
       syncActivityFeedScrollJump(container);
+      syncActivityUserMessageNavigator(container);
     };
     container.addEventListener("scroll", onScroll, { passive: true });
     syncActivityFeedScrollJump(container);
+    syncActivityUserMessageNavigator(container);
     return () => container.removeEventListener("scroll", onScroll);
-  }, [activeThread?.id, distanceFromActivityFeedBottom, syncActivityFeedScrollJump]);
+  }, [
+    activeThread?.id,
+    distanceFromActivityFeedBottom,
+    syncActivityFeedScrollJump,
+    syncActivityUserMessageNavigator,
+  ]);
 
   useEffect(() => {
     const container = activityMessagesRef.current;
@@ -2679,16 +2982,20 @@ function App() {
       const stuckAboveBottom =
         !userDetachedFromBottomRef.current && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
       if (userDetachedFromBottomRef.current) {
+        syncActivityUserMessageNavigator(container);
         return;
       }
       if (stuckAboveBottom || shrank) {
         scrollActivityFeedToEnd();
         requestAnimationFrame(() => scrollActivityFeedToEnd());
+        requestAnimationFrame(() => syncActivityUserMessageNavigator(container));
         return;
       }
       scheduleActivityFeedLayoutScroll();
+      syncActivityUserMessageNavigator(container);
     });
     observer.observe(content);
+    syncActivityUserMessageNavigator(container);
     return () => observer.disconnect();
   }, [
     activeThread?.id,
@@ -2696,11 +3003,14 @@ function App() {
     distanceFromActivityFeedBottom,
     scheduleActivityFeedLayoutScroll,
     scrollActivityFeedToEnd,
+    syncActivityUserMessageNavigator,
   ]);
 
   useLayoutEffect(() => {
     activityFeedUserScrollDirectionRef.current = null;
     activityFeedScrollJumpRef.current = null;
+    activeActivityUserMessageNavIdRef.current = undefined;
+    setActiveActivityUserMessageNavId(undefined);
     setActivityFeedScrollJump(null);
   }, [activeThread?.id]);
 
@@ -2714,8 +3024,14 @@ function App() {
         activityFeedUserScrollDirectionRef.current = null;
       }
       syncActivityFeedScrollJump(container);
+      syncActivityUserMessageNavigator(container);
     }
-  }, [distanceFromActivityFeedBottom, runProjectionLayoutSignature, syncActivityFeedScrollJump]);
+  }, [
+    distanceFromActivityFeedBottom,
+    runProjectionLayoutSignature,
+    syncActivityFeedScrollJump,
+    syncActivityUserMessageNavigator,
+  ]);
 
   useLayoutEffect(() => {
     requestActivityFeedForceScroll();
@@ -4832,6 +5148,13 @@ function App() {
                     <div className="activity-feed">
                       <div className="activity-messages-shell">
                         <div className="activity-feed-top-mask" aria-hidden />
+                        <ActivityUserMessageNavigator
+                          items={activityUserMessageNavItems}
+                          {...(activeActivityUserMessageNavId && {
+                            activeId: activeActivityUserMessageNavId,
+                          })}
+                          onJump={jumpToActivityUserMessage}
+                        />
                         <div ref={activityMessagesRef} className="activity-messages">
                           <ActivityLogView
                             {...(activeThread && { thread: activeThread })}
