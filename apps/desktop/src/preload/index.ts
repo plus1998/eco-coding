@@ -136,6 +136,11 @@ const api = {
   invoke(channel: IpcChannel, payload?: InvokePayload): Promise<unknown> {
     return ipcRenderer.invoke(channel, payload);
   },
+  setAppThemeSource(
+    themeSource: "dark" | "light" | "system",
+  ): Promise<{ themeSource: "dark" | "light" | "system" }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appSetThemeSource, themeSource);
+  },
   openWorkspace(): Promise<WorkspaceOpenResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpen);
   },

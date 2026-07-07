@@ -2,6 +2,7 @@ import type { ThreadRunToolMetadata } from "./thread-run-events";
 import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 
 export const IPC_CHANNELS = {
+  appSetThemeSource: "app:set-theme-source",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",

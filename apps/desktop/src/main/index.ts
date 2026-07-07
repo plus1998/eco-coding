@@ -49,6 +49,7 @@ import {
   ipcMain,
   type NativeImage,
   nativeImage,
+  nativeTheme,
   safeStorage,
   shell,
 } from "electron";
@@ -1313,7 +1314,19 @@ function registerDesktopCommand<Args extends unknown[], Result>(
   ipcMain.handle(channel, async (_event, ...args: unknown[]) => handler(...(args as Args)));
 }
 
+type AppThemeSource = "dark" | "light" | "system";
+
+function normalizeAppThemeSource(value: unknown): AppThemeSource {
+  return value === "dark" || value === "light" || value === "system" ? value : "system";
+}
+
 function registerIpcHandlers(): void {
+  registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
+    const themeSource = normalizeAppThemeSource(payload);
+    nativeTheme.themeSource = themeSource;
+    return { themeSource };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.workspaceOpen, async () => {
     const result = await dialog.showOpenDialog({
       title: "Open project folder",

@@ -34,6 +34,9 @@ export function readStoredAppTheme(): AppTheme {
 export function applyAppThemePreference(preference: AppTheme): ResolvedAppTheme {
   const resolved = resolveAppTheme(preference);
   document.documentElement.dataset.theme = resolved;
+  void window.eco?.setAppThemeSource?.(preference).catch(() => {
+    // Native theme sync is best-effort; CSS theme still applies in the renderer.
+  });
   return resolved;
 }
 
