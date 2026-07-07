@@ -339,7 +339,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 }
 
 .sidebar-action.muted {
-  color: var(--text-muted);
+  color: var(--sidebar-muted-strong);
   font-weight: 400;
 }
 
@@ -416,7 +416,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   padding: 16px 12px;
   border: 1px dashed #3a3a3a;
   border-radius: 10px;
-  color: #6b6b6b;
+  color: var(--sidebar-empty-text);
   font-size: 13px;
   line-height: 1.5;
   text-align: center;
@@ -835,7 +835,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 .project-empty {
   margin: 0;
   padding: 2px 12px 4px 36px;
-  color: #6b6b6b;
+  color: var(--sidebar-empty-text);
   font-size: 12px;
 }
 
@@ -928,14 +928,14 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   width: 100%;
   padding: 4px 12px 4px 36px;
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--sidebar-muted-strong);
   font-size: 12px;
   text-align: left;
 }
 
 .project-expand:hover {
   background: var(--sidebar-control-hover-bg);
-  color: var(--text-secondary);
+  color: var(--sidebar-item-active-text);
 }
 
 .status-dot {
@@ -961,7 +961,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .sidebar-empty {
   margin: 8px 12px;
-  color: #6b6b6b;
+  color: var(--sidebar-empty-text);
   font-size: 13px;
 }
 
@@ -11672,6 +11672,13 @@ html[data-window-focused="true"] .settings-nav {
   background: var(--bg-sidebar-focused);
 }
 
+html[data-platform="darwin"] .settings-nav,
+html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .settings-nav::before {
   content: "";
   display: block;
@@ -11700,7 +11707,7 @@ html[data-window-focused="true"] .settings-nav {
   width: 100%;
   padding: 6px 10px;
   border-radius: 8px;
-  color: var(--text-secondary);
+  color: var(--sidebar-muted-strong, var(--text-secondary));
   font-size: 13px;
   text-align: left;
 }
@@ -11781,7 +11788,7 @@ html[data-window-focused="true"] .settings-nav {
 
 .settings-nav-group-label {
   padding: 0 10px 4px;
-  color: var(--text-muted);
+  color: var(--sidebar-empty-text, var(--text-muted));
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;

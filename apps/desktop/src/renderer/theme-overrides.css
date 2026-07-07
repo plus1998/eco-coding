@@ -835,6 +835,10 @@
   color: var(--sidebar-label);
 }
 
+[data-theme="light"] .sidebar-action.muted {
+  color: var(--sidebar-muted-strong);
+}
+
 [data-theme="light"] .project-group-main:hover {
   background: var(--sidebar-control-hover-bg);
 }
