@@ -198,14 +198,6 @@ export interface BuiltInPresetExampleTask {
   expectedOutcome: string;
 }
 
-export interface BuiltInPresetEvalCase {
-  id: string;
-  title: string;
-  prompt: string;
-  successCriteria: string[];
-  expectedAgentKeys: string[];
-}
-
 export interface BuiltInPresetDefinition {
   id: AgentDomain;
   name: string;
@@ -216,7 +208,6 @@ export interface BuiltInPresetDefinition {
   modelSuggestion: BuiltInPresetModelSuggestion;
   strategies: BuiltInPresetStrategyRecommendation;
   examples: BuiltInPresetExampleTask[];
-  evals: BuiltInPresetEvalCase[];
 }
 
 export function createBuiltInAgentTemplates(): AgentTemplate[] {
@@ -338,37 +329,6 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
           "coding-refactor",
           "Refactor the billing projector to expose a smaller public API without changing behavior.",
           "Implementation notes, changed files, and focused verification output.",
-        ),
-      ],
-      evals: [
-        evalCase(
-          "coding-regression",
-          "Regression fix",
-          "Fix a real failing unit test without broad rewrites.",
-          [
-            "Identifies the failing behavior before editing.",
-            "Changes only the relevant implementation and test files.",
-            "Reports exact verification commands and results.",
-          ],
-          ["coder", "tester"],
-        ),
-        evalCase(
-          "coding-review-quality",
-          "Review quality",
-          "Review a branch containing one security bug and one test gap.",
-          [
-            "Finds the security bug.",
-            "Separates blocking issues from polish.",
-            "Does not invent unrelated changes.",
-          ],
-          ["reviewer"],
-        ),
-        evalCase(
-          "coding-cross-module-plan",
-          "Cross-module plan",
-          "Plan a cross-module API migration.",
-          ["Maps affected modules.", "Names sequencing and rollback risks.", "Produces implementable tasks."],
-          ["architect"],
         ),
       ],
     },
@@ -599,22 +559,6 @@ function exampleTask(id: string, prompt: string, expectedOutcome: string): Built
     title: prompt,
     prompt,
     expectedOutcome,
-  };
-}
-
-function evalCase(
-  id: string,
-  title: string,
-  prompt: string,
-  successCriteria: string[],
-  expectedAgentKeys: string[],
-): BuiltInPresetEvalCase {
-  return {
-    id,
-    title,
-    prompt,
-    successCriteria: [...successCriteria],
-    expectedAgentKeys: [...expectedAgentKeys],
   };
 }
 

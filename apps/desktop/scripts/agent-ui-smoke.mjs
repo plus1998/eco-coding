@@ -14,12 +14,10 @@ const jsChecks = [
   { label: "Provider tab", value: "Provider" },
   { label: "Proxy bridge tab", value: "代理桥" },
   { label: "Presets tab", value: "场景预设" },
-  { label: "Evaluation tab", value: "效果评测" },
   { label: "Workflow run monitor", value: "子代理编排" },
 ];
 
 const cssChecks = [
-  { label: "Evaluation panel styles", value: ".models-evaluation-layout" },
   { label: "Workflow monitor styles", value: ".run-log-workflow" },
   { label: "Billing diagnostics styles", value: ".thread-info-billing-diagnostics" },
 ];

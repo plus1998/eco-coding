@@ -62,14 +62,9 @@ test("built-in preset catalog defines only coding preset", () => {
     expect(preset.mainAgentTools.filesystem?.write).toBe("workspace");
     expect(preset.defaultAgents.length).toBeGreaterThanOrEqual(3);
     expect(preset.examples).toHaveLength(3);
-    expect(preset.evals).toHaveLength(3);
     expect(preset.strategies.autonomous.kind).toBe("autonomous");
     for (const agent of preset.defaultAgents) {
       expect(templatesById.has(agent.templateId)).toBe(true);
-    }
-    for (const evalCase of preset.evals) {
-      expect(evalCase.successCriteria.length).toBeGreaterThanOrEqual(3);
-      expect(evalCase.expectedAgentKeys.length).toBeGreaterThan(0);
     }
   }
 });
