@@ -394,9 +394,7 @@ export function ProjectSidebarTree({
                   <div key={thread.id} className={rowClassName}>
                     <button
                       type="button"
-                      className={
-                        activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"
-                      }
+                      className="chat-item nested"
                       onClick={() => onSelectThread(thread)}
                     >
                       <span className="chat-item-title">{thread.title}</span>

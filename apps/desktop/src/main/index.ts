@@ -657,6 +657,12 @@ async function createMainWindow(): Promise<void> {
     titleBarStyle: "hiddenInset",
     transparent: true,
     backgroundColor: "#00000000",
+    ...(process.platform === "darwin"
+      ? {
+          vibrancy: "under-window" as const,
+          visualEffectState: "followWindow" as const,
+        }
+      : {}),
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),

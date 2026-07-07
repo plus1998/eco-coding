@@ -826,7 +826,7 @@
 }
 
 [data-theme="light"] .sidebar-action:hover {
-  background: var(--nav-hover-solid);
+  background: var(--sidebar-control-hover-bg);
 }
 
 [data-theme="light"] .sidebar-action.muted,
@@ -835,15 +835,21 @@
   color: var(--sidebar-label);
 }
 
-[data-theme="light"] .project-group-main:hover,
+[data-theme="light"] .project-group-main:hover {
+  background: var(--sidebar-control-hover-bg);
+}
+
 [data-theme="light"] .chat-item-row:hover {
-  background: var(--nav-hover-solid);
+  background: var(--sidebar-session-hover-bg);
 }
 
 [data-theme="light"] .project-group-main.active,
-[data-theme="light"] .project-group-main.menu-open,
+[data-theme="light"] .project-group-main.menu-open {
+  background: var(--sidebar-control-active-bg);
+}
+
 [data-theme="light"] .chat-item-row.active {
-  background: var(--nav-active-solid);
+  background: var(--sidebar-session-active-bg);
 }
 
 [data-theme="light"] .chat-item {
@@ -871,7 +877,7 @@
 
 [data-theme="light"] .chat-item-row-action:hover,
 [data-theme="light"] .chat-item-row-action:focus-visible {
-  background: var(--nav-hover-solid);
+  background: var(--sidebar-session-action-hover-bg);
   color: var(--text-primary);
 }
 
@@ -892,7 +898,7 @@
 
 [data-theme="light"] .project-menu-item:hover,
 [data-theme="light"] .project-menu-item:focus-visible {
-  background: var(--nav-hover);
+  background: var(--sidebar-control-icon-hover-bg);
 }
 
 [data-theme="light"] .composer-context-bar {

@@ -3,6 +3,9 @@ export function syncWindowFocusState(): void {
     return;
   }
   document.documentElement.dataset.windowFocused = document.hasFocus() ? "true" : "false";
+  if (typeof window !== "undefined" && window.eco?.platform) {
+    document.documentElement.dataset.platform = window.eco.platform;
+  }
 }
 
 export function subscribeToWindowFocus(): () => void {
