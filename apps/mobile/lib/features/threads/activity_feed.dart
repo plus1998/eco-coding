@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
@@ -558,6 +559,38 @@ class _ScrollToBottomButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = ecoColors(context);
+    final buttonChild = Semantics(
+      button: true,
+      label: '回到底部',
+      child: SizedBox(
+        width: _scrollToBottomButtonSize,
+        height: _scrollToBottomButtonSize,
+        child: Icon(
+          Icons.arrow_downward_rounded,
+          size: 18,
+          color: colors.textPrimary,
+        ),
+      ),
+    );
+
+    if (PlatformInfo.isIOS) {
+      return Tooltip(
+        message: '回到底部',
+        child: AdaptiveButton.child(
+          onPressed: onPressed,
+          style: AdaptiveButtonStyle.glass,
+          size: AdaptiveButtonSize.medium,
+          minSize: const Size(
+            _scrollToBottomButtonSize,
+            _scrollToBottomButtonSize,
+          ),
+          enabled: true,
+          useSmoothRectangleBorder: false,
+          child: buttonChild,
+        ),
+      );
+    }
+
     return Material(
       color: colors.cardSurface.withValues(alpha: 0.92),
       elevation: 2,
@@ -566,22 +599,7 @@ class _ScrollToBottomButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(20),
-        child: Tooltip(
-          message: '回到底部',
-          child: Semantics(
-            button: true,
-            label: '回到底部',
-            child: SizedBox(
-              width: _scrollToBottomButtonSize,
-              height: _scrollToBottomButtonSize,
-              child: Icon(
-                Icons.arrow_downward_rounded,
-                size: 18,
-                color: colors.textPrimary,
-              ),
-            ),
-          ),
-        ),
+        child: Tooltip(message: '回到底部', child: buttonChild),
       ),
     );
   }

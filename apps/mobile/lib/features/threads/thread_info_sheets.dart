@@ -1,3 +1,4 @@
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/thread_models.dart';
@@ -82,6 +83,38 @@ class ThreadUsageFloatButtons extends StatelessWidget {
     final costColor = (billing?.ecoCostUsd ?? 0) > 0
         ? eco.success
         : eco.textSecondary;
+    final costStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: costColor,
+      fontSize: 10,
+      height: 1.1,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      fontWeight: FontWeight.w600,
+    );
+    void openBillingSheet() {
+      showThreadBillingSheet(
+        context: context,
+        billing: billing,
+        threadStatus: threadStatus,
+      );
+    }
+
+    if (PlatformInfo.isIOS) {
+      return Tooltip(
+        message: '计费',
+        child: AdaptiveButton.child(
+          onPressed: openBillingSheet,
+          style: AdaptiveButtonStyle.glass,
+          size: AdaptiveButtonSize.small,
+          minSize: Size(_billingPillWidth(context, costLabel, costStyle), 28),
+          enabled: true,
+          useSmoothRectangleBorder: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            child: Text(costLabel, style: costStyle),
+          ),
+        ),
+      );
+    }
 
     return Material(
       color: eco.bgElevated.withValues(alpha: 0.5),
@@ -95,25 +128,22 @@ class ThreadUsageFloatButtons extends StatelessWidget {
         ),
         child: _FloatMetricSegment(
           tooltip: '计费',
-          onTap: () => showThreadBillingSheet(
-            context: context,
-            billing: billing,
-            threadStatus: threadStatus,
-          ),
-          child: Text(
-            costLabel,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: costColor,
-                  fontSize: 10,
-                  height: 1.1,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
+          onTap: openBillingSheet,
+          child: Text(costLabel, style: costStyle),
         ),
       ),
     );
   }
+}
+
+double _billingPillWidth(BuildContext context, String label, TextStyle? style) {
+  final painter = TextPainter(
+    text: TextSpan(text: label, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  return painter.width + 14.0 + 16.0;
 }
 
 class _FloatMetricSegment extends StatelessWidget {
@@ -206,9 +236,7 @@ class _BillingSheet extends StatelessWidget {
             _MetricRow(
               label: '节省',
               value: formatSavingsLine(billing!.savedUsd, billing!.savedPct),
-              valueColor: billing!.savedUsd >= 0
-                  ? eco.success
-                  : eco.danger,
+              valueColor: billing!.savedUsd >= 0 ? eco.success : eco.danger,
             ),
             const SizedBox(height: 20),
             Text('Token 用量', style: Theme.of(context).textTheme.labelLarge),
@@ -342,10 +370,11 @@ class _ContextRoleSection extends StatelessWidget {
     final pctColor = role.occupancyPct >= 95
         ? eco.danger
         : (role.occupancyPct >= 85
-            ? eco.warnAccent
-            : (accent ?? eco.accentText));
-    final visibleSegments =
-        role.segments.where((segment) => segment.tokens > 0).toList();
+              ? eco.warnAccent
+              : (accent ?? eco.accentText));
+    final visibleSegments = role.segments
+        .where((segment) => segment.tokens > 0)
+        .toList();
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -379,18 +408,18 @@ class _ContextRoleSection extends StatelessWidget {
                 ),
                 Text(
                   formatOccupancyLabel(role.occupancyPct),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: pctColor,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: pctColor),
                 ),
               ],
             ),
             const SizedBox(height: 4),
             Text(
               '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)} tokens',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
             ),
             const SizedBox(height: 10),
             ClipRRect(
@@ -420,11 +449,9 @@ class _ContextRoleSection extends StatelessWidget {
                       Text(
                         formatContextK(segment.tokens),
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: eco.textMuted,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
+                          color: eco.textMuted,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ],
                   ),
@@ -468,16 +495,16 @@ class _MetricRow extends StatelessWidget {
                 Text(
                   label,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: emphasized ? FontWeight.w600 : null,
-                      ),
+                    fontWeight: emphasized ? FontWeight.w600 : null,
+                  ),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
               ],
@@ -486,11 +513,10 @@ class _MetricRow extends StatelessWidget {
           Text(
             value,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: valueColor ??
-                      (emphasized ? eco.success : eco.textHeading),
-                  fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+              color: valueColor ?? (emphasized ? eco.success : eco.textHeading),
+              fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ],
       ),
