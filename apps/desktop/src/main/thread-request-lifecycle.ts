@@ -28,7 +28,7 @@ export function clearRequestStartedPersisted(threadId: string, requestId?: strin
 
 export type RequestTerminalStage = "completed" | "failed" | "cancelled";
 
-export function requestTerminalLiveType(stage: RequestTerminalStage): string {
+export function requestTerminalLiveType(stage: RequestTerminalStage): `request.${RequestTerminalStage}` {
   return `request.${stage}`;
 }
 
@@ -36,12 +36,6 @@ export function requestTerminalMessage(stage: RequestTerminalStage, detail?: str
   if (detail?.trim()) {
     return detail.trim();
   }
-  switch (stage) {
-    case "completed":
-      return "模型请求完成";
-    case "failed":
-      return "模型请求失败";
-    case "cancelled":
-      return "模型请求已取消";
-  }
+  void stage;
+  return "";
 }

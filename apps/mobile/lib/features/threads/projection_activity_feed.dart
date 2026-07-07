@@ -1307,7 +1307,8 @@ bool _isProjectionLifecycleText(String text) {
 
 bool _isProjectionInternalMessageText(String text) {
   final trimmed = text.trim();
-  return trimmed.startsWith('__eco_worktree_merge__') ||
+  return isInternalActivityMessage(trimmed) ||
+      trimmed.startsWith('__eco_worktree_merge__') ||
       trimmed == '执行完成。' ||
       trimmed == '执行完成，变更已写入项目目录。' ||
       trimmed == '执行完成，工作树内无相对基线的文件变更。' ||
@@ -1368,10 +1369,10 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
     return text.isEmpty ? '自动上下文压缩已暂停' : text;
   }
   if (item.eventType == 'context.cache_config_drift') {
-    return text.isEmpty ? 'Composer 配置已变更' : text;
+    return null;
   }
   if (item.eventType == 'context.cache_invalidated') {
-    return text.isEmpty ? '本会话 prompt cache 已失效' : text;
+    return null;
   }
   if (item.eventType == 'billing.cache_hit_dropped') {
     return text.isEmpty ? 'Prompt cache 命中率大幅下降' : text;
@@ -1383,13 +1384,13 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
     return text.isEmpty ? '准备重试' : text;
   }
   if (item.eventType == 'request.completed') {
-    return text.isEmpty ? '模型请求完成' : text;
+    return null;
   }
   if (item.eventType == 'request.failed') {
-    return text.isEmpty ? '模型请求失败' : text;
+    return null;
   }
   if (item.eventType == 'request.cancelled') {
-    return text.isEmpty ? '模型请求已取消' : text;
+    return null;
   }
   if (item.eventType == 'diagnostic') {
     return text.isEmpty ? '运行诊断' : text;

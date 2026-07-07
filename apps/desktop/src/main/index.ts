@@ -148,6 +148,7 @@ import {
   type ThreadRollbackResult,
   type ThreadRunBashApprovalMetadata,
   type ThreadRunBashApprovalPhase,
+  type ThreadRunEventScope,
   type ThreadRunProjectionSnapshot,
   type ThreadRunToolMetadata,
   type ThreadRuntimeConfig,
@@ -164,6 +165,7 @@ import {
   type WorktreeApplyResult,
   type WorktreeCancelDisposition,
   type WorktreeStatusResult,
+  SUBAGENT_ROLES,
   withAgentSessionMode,
 } from "../shared/ipc";
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
@@ -608,6 +610,16 @@ const deferredPlanExecutionByThread = new Map<
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
+function resolveRequestTerminalEventScope(input: {
+  role: string;
+  agentId?: string;
+}): ThreadRunEventScope {
+  if (input.agentId?.trim()) {
+    return "agent";
+  }
+  return (SUBAGENT_ROLES as readonly string[]).includes(input.role) ? "agent" : "main";
+}
+
 function emitRequestTerminalEvent(
   threadId: string,
   input: {
@@ -622,17 +634,37 @@ function emitRequestTerminalEvent(
   if (!requestId) {
     return;
   }
-  emitThreadEvent(
-    threadId,
-    requestTerminalLiveType(input.stage),
-    requestTerminalMessage(input.stage, input.detail),
-    input.role as AgentRole | "system" | "thinking" | "tool" | "user",
-    false,
-    {
-      requestId,
-      ...(input.agentId?.trim() && { agentId: input.agentId.trim() }),
-    },
-  );
+  if (conversationStore.getThread(threadId)) {
+    const eventType = requestTerminalLiveType(input.stage);
+    const runAttemptId = resolveCurrentRunAttemptId(threadId);
+    const observedAt = new Date().toISOString();
+    const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const agentId = input.agentId?.trim();
+    try {
+      conversationStore.appendThreadRunEvent({
+        id: `tre:${threadId}:${eventType}:${requestId}:${unique}`,
+        threadId,
+        eventType,
+        scope: resolveRequestTerminalEventScope({
+          role: input.role,
+          ...(agentId && { agentId }),
+        }),
+        role: input.role,
+        ...(agentId && { agentId }),
+        requestId,
+        streamState: "none",
+        message: requestTerminalMessage(input.stage, input.detail),
+        observedAt,
+        ...(runAttemptId && { runAttemptId }),
+        metadata: {
+          liveType: eventType,
+        },
+      });
+      scheduleThreadRunProjectionUpdated(threadId);
+    } catch (error) {
+      process.stderr.write(`[eco] request terminal event write failed: ${errorMessage(error)}\n`);
+    }
+  }
   threadLiveRequestRegistry.endRequest(threadId, requestId);
   clearRequestStartedPersisted(threadId, requestId);
 }
@@ -4069,11 +4101,14 @@ function formatFollowUpQueuedMessage(followUp: ThreadPendingFollowUp): string {
 function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RuntimeRoleRouteConfig[]): void {
   const stored = conversationStore.getRouteFingerprint(threadId);
   if (stored && !routesMatchFingerprint(roleRoutes, stored)) {
-    emitThreadEvent(
-      threadId,
-      "thread.route_changed",
-      "模型路由已变更，将尝试接续原 session；若失败会自动改用对话摘要。",
-      "system",
+    logEcoDiagThrottled(
+      `sdk-session-route-change:${threadId}`,
+      "sdk_session.route_changed",
+      {
+        threadId: shortThreadId(threadId),
+        message: "SDK session route fingerprint changed; resume fallback remains internal.",
+      },
+      30_000,
     );
   }
 }
@@ -6344,7 +6379,6 @@ function recordThreadRunEventFromLiveEvent(input: {
         role: input.role,
         ...(agentId && { agentId }),
         stage: "cancelled",
-        detail: "模型请求已取消（准备重试）",
       });
     }
   }

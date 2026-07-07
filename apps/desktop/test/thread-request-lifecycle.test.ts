@@ -27,6 +27,8 @@ test("requestTerminalLiveType and requestTerminalMessage map stages", () => {
   expect(requestTerminalLiveType("completed")).toBe("request.completed");
   expect(requestTerminalLiveType("failed")).toBe("request.failed");
   expect(requestTerminalLiveType("cancelled")).toBe("request.cancelled");
-  expect(requestTerminalMessage("completed")).toBe("模型请求完成");
+  expect(requestTerminalMessage("completed")).toBe("");
+  expect(requestTerminalMessage("failed")).toBe("");
+  expect(requestTerminalMessage("cancelled")).toBe("");
   expect(requestTerminalMessage("failed", "HTTP 502")).toBe("HTTP 502");
 });

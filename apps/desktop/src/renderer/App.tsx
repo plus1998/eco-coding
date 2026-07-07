@@ -642,8 +642,7 @@ function ActivityUserMessageNavigator({
   if (items.length === 0) {
     return null;
   }
-  const resolvedActiveId =
-    activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
+  const resolvedActiveId = activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
   const hoveredIndex = hoveredId ? items.findIndex((item) => item.id === hoveredId) : -1;
   const hoveredItem = hoveredIndex >= 0 ? items[hoveredIndex] : undefined;
   const clearHoverIfLeaving = (nextTarget: EventTarget | null, currentTarget: EventTarget) => {
@@ -1712,7 +1711,12 @@ function App() {
       }
       setTerminalByProject((current) => {
         const existing = current[workspacePath] ?? storedTerminalByProject[workspacePath];
-        const syncResult = buildTerminalStateForLiveSessions(existing, workspacePath, workspaceLabel, sessions);
+        const syncResult = buildTerminalStateForLiveSessions(
+          existing,
+          workspacePath,
+          workspaceLabel,
+          sessions,
+        );
         replaceTerminalSessionsForProject(workspacePath, syncResult.cacheEntries);
         if (!syncResult.state) {
           const currentState = current[workspacePath];
@@ -2755,9 +2759,7 @@ function App() {
 
   const syncActivityUserMessageNavigator = useCallback(
     (container: HTMLElement) => {
-      const anchors = Array.from(
-        container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"),
-      );
+      const anchors = Array.from(container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"));
       if (anchors.length === 0) {
         updateActiveActivityUserMessageNavId(undefined);
         return;
@@ -2784,9 +2786,7 @@ function App() {
       if (!container) {
         return;
       }
-      const anchors = Array.from(
-        container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"),
-      );
+      const anchors = Array.from(container.querySelectorAll<HTMLElement>("[data-user-message-anchor-id]"));
       const target = anchors.find((anchor) => anchor.dataset.userMessageAnchorId === anchorId);
       if (!target) {
         return;
@@ -2920,8 +2920,7 @@ function App() {
       const paneRect = mainPane.getBoundingClientRect();
       const feedRect = feed.getBoundingClientRect();
       const panelStyle = window.getComputedStyle(workspacePanel);
-      const panelWidth =
-        workspacePanel.offsetWidth || readCssPixelValue(panelStyle.width) || 300;
+      const panelWidth = workspacePanel.offsetWidth || readCssPixelValue(panelStyle.width) || 300;
       const panelRight = readCssPixelValue(panelStyle.right);
       const panelLeft = paneRect.right - panelRight - panelWidth;
       const clearance = panelLeft - feedRect.right;
@@ -4696,8 +4695,7 @@ function App() {
     currentProjectPath && workspaceCardsManualRevealProjectPath === currentProjectPath,
   );
   const workspaceCardsPanelOpen = Boolean(
-    workspaceCardsPanelDesiredOpen &&
-      (!workspaceCardsAutoHidden || workspaceCardsPanelManuallyRevealed),
+    workspaceCardsPanelDesiredOpen && (!workspaceCardsAutoHidden || workspaceCardsPanelManuallyRevealed),
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
   const taskPanelFullscreenOpen = Boolean(taskPanelOpen && taskPanelFullscreen);
@@ -4848,14 +4846,13 @@ function App() {
                   ? "当前对话不可发送"
                   : "尽管问";
   const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
-  const composerActionMode =
-    canStopThread
-      ? composerHasContent
-        ? editingFollowUpId
-          ? "save-follow-up"
-          : "queue"
-        : "stop"
-      : "send";
+  const composerActionMode = canStopThread
+    ? composerHasContent
+      ? editingFollowUpId
+        ? "save-follow-up"
+        : "queue"
+      : "stop"
+    : "send";
   const composerActionBusy = composerActionMode === "stop" ? cancelBusy : isStarting || followUpBusy;
   const composerActionDisabled = composerActionMode === "stop" ? cancelBusy : !canSend;
   const composerActionLabel =
@@ -5705,71 +5702,72 @@ function FollowUpQueuePanel({
 
           return (
             <div key={followUp.id} className="follow-up-row">
-            <div
-              className="follow-up-card-main follow-up-card-main-editable"
-              role="button"
-              tabIndex={actionBusy ? -1 : 0}
-              aria-label="重新编辑引导消息"
-              title="重新编辑"
-              onClick={() => {
-                if (!actionBusy) {
+              <div
+                className="follow-up-card-main follow-up-card-main-editable"
+                role="button"
+                tabIndex={actionBusy ? -1 : 0}
+                aria-label="重新编辑引导消息"
+                title="重新编辑"
+                onClick={() => {
+                  if (!actionBusy) {
+                    onEdit(followUp);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
+                    return;
+                  }
+                  event.preventDefault();
                   onEdit(followUp);
-                }
-              }}
-              onKeyDown={(event) => {
-                if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
-                  return;
-                }
-                event.preventDefault();
-                onEdit(followUp);
-              }}
-            >
-              <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
-            </div>
-            <div className="follow-up-card-actions">
-              {canEscalate ? (
-                <span
-                  className="follow-up-card-type follow-up-card-type-action"
-                  role="button"
-                  tabIndex={actionBusy ? -1 : 0}
-                  aria-disabled={actionBusy}
-                  aria-label="立即处理引导消息"
-                  title="立即处理"
-                  onClick={() => {
-                    if (!actionBusy) {
-                      onEscalate(followUp);
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
-                      return;
-                    }
-                    event.preventDefault();
-                    onEscalate(followUp);
-                  }}
-                >
-                  <CornerDownRight size={12} aria-hidden />
-                  {isEscalating ? "正在处理…" : "引导"}
-                </span>
-              ) : (
-                <span className="follow-up-card-type">
-                  <CornerDownRight size={12} aria-hidden />
-                  引导
-                </span>
-              )}
-              <button
-                type="button"
-                className="follow-up-card-action"
-                onClick={() => onCancel(followUp)}
-                disabled={actionBusy}
-                title="删除"
-                aria-label="删除引导消息"
+                }}
               >
-                {cancelBusyId === followUp.id ? <Activity size={14} /> : <Trash2 size={14} />}
-              </button>
+                <CornerDownRight size={16} aria-hidden className="follow-up-card-leading-icon" />
+                <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
+              </div>
+              <div className="follow-up-card-actions">
+                {canEscalate ? (
+                  <span
+                    className="follow-up-card-type follow-up-card-type-action"
+                    role="button"
+                    tabIndex={actionBusy ? -1 : 0}
+                    aria-disabled={actionBusy}
+                    aria-label="立即处理引导消息"
+                    title="立即处理"
+                    onClick={() => {
+                      if (!actionBusy) {
+                        onEscalate(followUp);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
+                        return;
+                      }
+                      event.preventDefault();
+                      onEscalate(followUp);
+                    }}
+                  >
+                    <CornerDownRight size={12} aria-hidden />
+                    {isEscalating ? "正在处理…" : "引导"}
+                  </span>
+                ) : (
+                  <span className="follow-up-card-type">
+                    <CornerDownRight size={12} aria-hidden />
+                    引导
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="follow-up-card-action"
+                  onClick={() => onCancel(followUp)}
+                  disabled={actionBusy}
+                  title="删除"
+                  aria-label="删除引导消息"
+                >
+                  {cancelBusyId === followUp.id ? <Activity size={14} /> : <Trash2 size={14} />}
+                </button>
+              </div>
             </div>
-          </div>
-        );
+          );
         })}
       </div>
     </div>

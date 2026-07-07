@@ -327,6 +327,52 @@ void main() {
     },
   );
 
+  testWidgets(
+    'ActivityFeedList shows Bash output inline instead of opening tool details',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      var detailOpenCount = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'bash-1',
+                  kind: ActivityFeedKind.action,
+                  text: 'Run unit tests',
+                  actionIcon: ActivityActionIcon.terminal,
+                  lifecycle: ToolActionLifecycle.completed,
+                  toolUseId: 'toolu_bash_1',
+                  bashRun: BashRunCardDisplay(
+                    title: 'Run unit tests',
+                    meta: 'npm, 1.2s',
+                    body: '36 pass',
+                  ),
+                ),
+              ],
+              scrollController: scrollController,
+              onOpenToolDetail: (_) {
+                detailOpenCount += 1;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('36 pass'), findsOneWidget);
+
+      await tester.tap(find.text('Run unit tests').first);
+      await tester.pumpAndSettle();
+
+      expect(detailOpenCount, 0);
+    },
+  );
+
   test('subagent mission card gets duration and timeline from projection', () {
     final feed = buildActivityFeed(
       threadPrompt: '实现登录',
@@ -708,7 +754,7 @@ void main() {
     expect(feed.first.text, 'preview only');
   });
 
-  test('buildActivityFeed hides completed request phase from mobile feed', () {
+  test('buildActivityFeed hides model request lifecycle from mobile feed', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
       threadId: 't1',
@@ -716,7 +762,7 @@ void main() {
         threadId: 't1',
         status: 'running',
         generatedAt: '2026-01-01T00:00:00.000Z',
-        sourceEventCount: 2,
+        sourceEventCount: 5,
         agents: const [],
         timeline: [
           ThreadRunProjectionTimelineItem(
@@ -735,12 +781,38 @@ void main() {
             text: '模型请求失败',
             at: '2026-01-01T00:00:01.000Z',
           ),
+          ThreadRunProjectionTimelineItem(
+            id: 'request-cancelled',
+            sequence: 3,
+            eventType: 'request.cancelled',
+            scope: 'main',
+            text: '模型请求已取消',
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'route-changed',
+            sequence: 4,
+            eventType: 'thread.status',
+            scope: 'main',
+            text: '模型路由已变更，将尝试接续原 session；若失败会自动改用对话摘要。',
+            at: '2026-01-01T00:00:03.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'cache-drift',
+            sequence: 5,
+            eventType: 'context.cache_config_drift',
+            scope: 'main',
+            text: '模型路由已变更：主模型',
+            at: '2026-01-01T00:00:04.000Z',
+          ),
         ],
       ),
     );
 
     expect(feed.any((entry) => entry.text == '模型请求完成'), isFalse);
-    expect(feed.any((entry) => entry.text == '模型请求失败'), isTrue);
+    expect(feed.any((entry) => entry.text == '模型请求失败'), isFalse);
+    expect(feed.any((entry) => entry.text == '模型请求已取消'), isFalse);
+    expect(feed.any((entry) => entry.text.contains('模型路由已变更')), isFalse);
   });
 
   test('buildActivityFeed drops reconnect after agent recovers', () {
@@ -1019,6 +1091,60 @@ void main() {
 
     expect(find.text('展开全文'), findsNothing);
     expect(find.text('短消息'), findsOneWidget);
+  });
+
+  testWidgets('ActivityFeedList shrinkWrap grows until constrained', (
+    tester,
+  ) async {
+    const maxHeight = 220.0;
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    final listKey = GlobalKey();
+
+    Future<void> pumpList(List<ActivityFeedEntry> entries) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: maxHeight),
+                child: ActivityFeedList(
+                  key: listKey,
+                  entries: entries,
+                  scrollController: scrollController,
+                  shrinkWrap: true,
+                  showScrollJumpButton: false,
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpList(const [
+      ActivityFeedEntry(
+        id: 'phase-short',
+        kind: ActivityFeedKind.phase,
+        text: '短状态',
+      ),
+    ]);
+    expect(tester.getSize(find.byKey(listKey)).height, lessThan(maxHeight));
+
+    await pumpList(
+      List.generate(
+        16,
+        (index) => ActivityFeedEntry(
+          id: 'assistant-$index',
+          kind: ActivityFeedKind.assistant,
+          text: '这是一段用于撑高详情弹窗的内容 $index',
+        ),
+      ),
+    );
+    expect(tester.getSize(find.byKey(listKey)).height, maxHeight);
   });
 
   test(

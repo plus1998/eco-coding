@@ -2302,7 +2302,7 @@ function ApiErrorBlock({
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
-  const title = statusCode !== undefined ? `模型请求失败 · HTTP ${statusCode}` : "模型请求失败";
+  const title = statusCode !== undefined ? `连接失败 · HTTP ${statusCode}` : "连接失败";
 
   return (
     <div className="run-log-api-error" role="alert">

@@ -110,8 +110,8 @@
   --composer-send-hover-text: #1a1a1a;
   --composer-send-disabled-bg: #3a3a3a;
   --composer-send-disabled-text: #737373;
-  --follow-up-card-bg: #2a2a2a;
-  --follow-up-card-border: rgba(255, 255, 255, 0.08);
+  --follow-up-card-bg: rgba(42, 42, 42, 0.95);
+  --follow-up-card-border: rgba(255, 255, 255, 0.1);
   --follow-up-card-text: #a3a3a3;
   --follow-up-card-label: #737373;
   --follow-up-card-action: #737373;
@@ -274,8 +274,8 @@
   --composer-send-hover-text: #ffffff;
   --composer-send-disabled-bg: #e5e5ea;
   --composer-send-disabled-text: #aeaeb2;
-  --follow-up-card-bg: #f9f9f9;
-  --follow-up-card-border: #e5e5e5;
+  --follow-up-card-bg: rgba(249, 249, 249, 0.95);
+  --follow-up-card-border: rgba(0, 0, 0, 0.1);
   --follow-up-card-text: #666666;
   --follow-up-card-label: #999999;
   --follow-up-card-action: #999999;

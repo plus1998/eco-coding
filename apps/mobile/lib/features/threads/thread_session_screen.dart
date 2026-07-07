@@ -1129,6 +1129,14 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
                       entries: entries,
                       scrollController: _scrollController,
                       expandUserPrompts: true,
+                      shrinkWrap: true,
+                      showScrollJumpButton: false,
+                      padding: const EdgeInsets.fromLTRB(
+                        threadSessionFeedHorizontalPadding,
+                        12,
+                        threadSessionFeedHorizontalPadding,
+                        8,
+                      ),
                     ),
                     if (loading)
                       Positioned(
@@ -1145,11 +1153,9 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
                 ),
               );
             }
-            return SizedBox(
-              height: _projectionDetailBodyHeight(
-                context,
-                entries: entries,
-                loading: loading,
+            return ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: _projectionDetailMaxBodyHeight(context),
               ),
               child: body,
             );
@@ -1160,42 +1166,8 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
   }
 }
 
-double _projectionDetailBodyHeight(
-  BuildContext context, {
-  required List<ActivityFeedEntry> entries,
-  required bool loading,
-}) {
-  final maxBodyHeight = MediaQuery.sizeOf(context).height * 0.66;
-  if (entries.isEmpty) {
-    return loading ? 150 : 132;
-  }
-  final estimated = entries.fold<double>(
-    28,
-    (height, entry) => height + _estimateProjectionDetailEntryHeight(entry),
-  );
-  return estimated.clamp(132, maxBodyHeight).toDouble();
-}
-
-double _estimateProjectionDetailEntryHeight(ActivityFeedEntry entry) {
-  final textLength = entry.text.trim().length;
-  final textLines = (textLength / 28).ceil().clamp(1, 28);
-  switch (entry.kind) {
-    case ActivityFeedKind.user:
-    case ActivityFeedKind.assistant:
-    case ActivityFeedKind.thinking:
-    case ActivityFeedKind.clarificationAnswer:
-      return 44 + textLines * 22;
-    case ActivityFeedKind.action:
-      return entry.fileChange != null || entry.bashRun != null ? 150 : 72;
-    case ActivityFeedKind.actionGroup:
-      return 76 + entry.actionChildren.length.clamp(0, 4) * 38;
-    case ActivityFeedKind.subagentMission:
-      return 120;
-    case ActivityFeedKind.phase:
-    case ActivityFeedKind.error:
-      return 64 + textLines * 18;
-  }
-}
+double _projectionDetailMaxBodyHeight(BuildContext context) =>
+    MediaQuery.sizeOf(context).height * 0.66;
 
 class _ProjectionDetailStatusList extends StatelessWidget {
   const _ProjectionDetailStatusList({
@@ -1215,6 +1187,8 @@ class _ProjectionDetailStatusList extends StatelessWidget {
     final eco = ecoColors(context);
     return ListView(
       controller: scrollController,
+      shrinkWrap: true,
+      primary: false,
       padding: const EdgeInsets.all(24),
       children: [
         const SizedBox(height: 32),

@@ -412,6 +412,9 @@ class ActivityFeedList extends StatefulWidget {
     this.onOpenAgentDetail,
     this.onOpenToolDetail,
     this.expandUserPrompts = false,
+    this.shrinkWrap = false,
+    this.showScrollJumpButton = true,
+    this.padding,
   });
 
   final List<ActivityFeedEntry> entries;
@@ -421,6 +424,9 @@ class ActivityFeedList extends StatefulWidget {
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedEntryCallback? onOpenToolDetail;
   final bool expandUserPrompts;
+  final bool shrinkWrap;
+  final bool showScrollJumpButton;
+  final EdgeInsetsGeometry? padding;
 
   @override
   State<ActivityFeedList> createState() => _ActivityFeedListState();
@@ -450,6 +456,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   }
 
   void _scheduleLayoutScroll() {
+    if (widget.shrinkWrap) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _coordinator.scrollToEnd();
@@ -488,13 +495,17 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
             child: ListView.builder(
               controller: widget.scrollController,
               reverse: true,
+              shrinkWrap: widget.shrinkWrap,
+              primary: widget.shrinkWrap ? false : null,
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: const EdgeInsets.fromLTRB(
-                threadSessionFeedHorizontalPadding,
-                threadSessionComposerGap,
-                threadSessionFeedHorizontalPadding,
-                0,
-              ),
+              padding:
+                  widget.padding ??
+                  const EdgeInsets.fromLTRB(
+                    threadSessionFeedHorizontalPadding,
+                    threadSessionComposerGap,
+                    threadSessionFeedHorizontalPadding,
+                    0,
+                  ),
               cacheExtent: 600,
               itemCount: displayEntries.length,
               itemBuilder: (context, index) {
@@ -511,7 +522,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
             ),
           ),
         ),
-        if (_showScrollJump)
+        if (widget.showScrollJumpButton && _showScrollJump)
           Positioned(
             left: 12,
             bottom: 12,
@@ -1182,11 +1193,28 @@ class _ActionTileState extends State<_ActionTile> {
   var _expanded = false;
 
   @override
+  void initState() {
+    super.initState();
+    _expanded = widget.bashRun != null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActionTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.bashRun == null && widget.bashRun != null) {
+      _expanded = true;
+    } else if (oldWidget.bashRun != null && widget.bashRun == null) {
+      _expanded = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final fileChange = widget.fileChange;
     final bashRun = widget.bashRun;
     final detailsExpanded = widget.forceDetailsExpanded || _expanded;
     final canOpenRemoteDetail =
+        bashRun == null &&
         widget.toolUseId?.trim().isNotEmpty == true &&
         widget.onOpenToolDetail != null &&
         !widget.forceDetailsExpanded;

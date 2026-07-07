@@ -76,7 +76,12 @@ class AdaptiveToolbarIcon extends StatelessWidget {
       final wrapped = SizedBox(
         width: size,
         height: size,
-        child: Center(child: chip),
+        child: Center(
+          child: SizedBox.square(
+            dimension: nativeExtent,
+            child: Center(child: chip),
+          ),
+        ),
       );
       if (tooltip == null) return wrapped;
       return Tooltip(message: tooltip!, child: wrapped);

@@ -61,7 +61,7 @@ final _activityNoisePattern = RegExp(
 );
 
 final _internalActivityMessagePattern = RegExp(
-  r'^(?:标题已更新|标题更新|运行投影已更新|运行投影更新|执行完成。|执行完成，变更已写入项目目录。|执行完成，工作树内无相对基线的文件变更。|正在启动 Claude Agent SDK|等待工具读取确认|等待 Bash 执行确认|读取已确认，继续执行|读取已拒绝，等待 Agent 调整|Bash 已确认，继续执行|Bash 已拒绝，等待 Agent 调整)',
+  r'^(?:标题已更新|标题更新|运行投影已更新|运行投影更新|执行完成。|执行完成，变更已写入项目目录。|执行完成，工作树内无相对基线的文件变更。|正在启动 Claude Agent SDK|等待工具读取确认|等待 Bash 执行确认|读取已确认，继续执行|读取已拒绝，等待 Agent 调整|Bash 已确认，继续执行|Bash 已拒绝，等待 Agent 调整|模型路由已变更|模型请求(?:完成|失败|已取消))',
 );
 
 final _usageBadgePattern = RegExp(r'^[↑↓⊙][↑↓⊙\d\s.,kKmM\$%·+()-]*$');
@@ -92,11 +92,41 @@ final _toolLinePattern = RegExp(
 );
 
 final _progressPatterns = <({RegExp pattern, String verb})>[
-  (pattern: RegExp(r'^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$', caseSensitive: false), verb: '读取'),
-  (pattern: RegExp(r'^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$', caseSensitive: false), verb: '写入'),
-  (pattern: RegExp(r'^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$', caseSensitive: false), verb: '编辑'),
-  (pattern: RegExp(r'^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$', caseSensitive: false), verb: '搜索'),
-  (pattern: RegExp(r'^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$', caseSensitive: false), verb: '运行命令'),
+  (
+    pattern: RegExp(
+      r'^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$',
+      caseSensitive: false,
+    ),
+    verb: '读取',
+  ),
+  (
+    pattern: RegExp(
+      r'^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$',
+      caseSensitive: false,
+    ),
+    verb: '写入',
+  ),
+  (
+    pattern: RegExp(
+      r'^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$',
+      caseSensitive: false,
+    ),
+    verb: '编辑',
+  ),
+  (
+    pattern: RegExp(
+      r'^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$',
+      caseSensitive: false,
+    ),
+    verb: '搜索',
+  ),
+  (
+    pattern: RegExp(
+      r'^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$',
+      caseSensitive: false,
+    ),
+    verb: '运行命令',
+  ),
 ];
 
 final _connectionFailedPattern = RegExp(r'^【连接失败】\s*([\s\S]*)$');
@@ -245,7 +275,9 @@ String normalizeBashCommandKey(String command) {
   return command.trim().replaceAll(RegExp(r'\s+'), ' ');
 }
 
-ThreadRunToolMetadata? threadRunToolMetadataFromJson(Map<String, dynamic>? json) {
+ThreadRunToolMetadata? threadRunToolMetadataFromJson(
+  Map<String, dynamic>? json,
+) {
   if (json == null) return null;
   final name = (json['name'] as String?)?.trim() ?? '';
   if (name.isEmpty) return null;
@@ -371,7 +403,9 @@ class ThreadRunToolMetadata {
   final ThreadRunFileChangeMetadata? fileChange;
 }
 
-ThreadRunToolMetadata? readProjectionToolMetadata(Map<String, dynamic>? metadata) {
+ThreadRunToolMetadata? readProjectionToolMetadata(
+  Map<String, dynamic>? metadata,
+) {
   final raw = metadata?['tool'];
   if (raw is! Map<String, dynamic>) return null;
   return threadRunToolMetadataFromJson(raw);
@@ -413,7 +447,8 @@ bool isGenericToolActionLabel(String label) {
 }
 
 String resolveMergedToolActionLabel(String existing, String incoming) {
-  if (!isGenericToolActionLabel(existing) && isGenericToolActionLabel(incoming)) {
+  if (!isGenericToolActionLabel(existing) &&
+      isGenericToolActionLabel(incoming)) {
     return existing;
   }
   return incoming;
@@ -484,7 +519,9 @@ bool isInternalAgentActivityRole(String? role) {
 bool isThreadFollowUpActivityMessage(String message) {
   final trimmed = message.trim();
   if (trimmed.isEmpty) return false;
-  return _threadOperationalStatusPatterns.any((pattern) => pattern.hasMatch(trimmed));
+  return _threadOperationalStatusPatterns.any(
+    (pattern) => pattern.hasMatch(trimmed),
+  );
 }
 
 /// Legacy activity-line bash/filesystem approval transitions; projection owns display.
@@ -504,10 +541,7 @@ bool isRecordedUserPromptLiveEvent(String? liveType) {
 const clarificationAnswerPrefix = '澄清回答：';
 
 class ClarificationAnswerRow {
-  const ClarificationAnswerRow({
-    required this.question,
-    required this.answer,
-  });
+  const ClarificationAnswerRow({required this.question, required this.answer});
 
   final String question;
   final String answer;
@@ -552,8 +586,9 @@ String? normalizeAgentDisplayRole(String? role) {
   if (fromChinese != null) return fromChinese;
   if (subagentDisplayRoles.contains(trimmed)) return trimmed;
 
-  final withoutEco =
-      trimmed.startsWith('eco_') ? trimmed.substring(4) : trimmed;
+  final withoutEco = trimmed.startsWith('eco_')
+      ? trimmed.substring(4)
+      : trimmed;
   if (withoutEco.isEmpty || _nonAgentActivityRoles.contains(withoutEco)) {
     return null;
   }
@@ -583,7 +618,9 @@ String pathBasename(String filePath) {
 }
 
 bool _isPath(String token) {
-  return token.startsWith('/') || token.startsWith('./') || token.startsWith('~/');
+  return token.startsWith('/') ||
+      token.startsWith('./') ||
+      token.startsWith('~/');
 }
 
 String clampActivityPreviewLine(String text, [int max = 56]) {
@@ -611,11 +648,7 @@ class ParsedActivityToolInvocation {
 }
 
 class BashRunCardDisplay {
-  const BashRunCardDisplay({
-    required this.title,
-    this.meta,
-    this.body,
-  });
+  const BashRunCardDisplay({required this.title, this.meta, this.body});
 
   final String title;
   final String? meta;
@@ -655,7 +688,9 @@ ParsedActivityToolInvocation? parseActivityToolInvocation(String raw) {
     if (detail != null && RegExp(r'^\(\d+(?:\.\d+)?s\)$').hasMatch(detail)) {
       detail = null;
     } else if (detail != null) {
-      detail = detail.replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '').trim();
+      detail = detail
+          .replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
+          .trim();
       if (detail.isEmpty) detail = null;
     }
     return ParsedActivityToolInvocation(
@@ -666,10 +701,13 @@ ParsedActivityToolInvocation? parseActivityToolInvocation(String raw) {
     );
   }
 
-  final bareMatch = RegExp(r'^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$').firstMatch(text);
+  final bareMatch = RegExp(
+    r'^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$',
+  ).firstMatch(text);
   if (bareMatch != null) {
     final toolName = bareMatch.group(1)!;
-    final detail = bareMatch.group(2)!
+    final detail = bareMatch
+        .group(2)!
         .replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
         .trim();
     return ParsedActivityToolInvocation(
@@ -721,7 +759,9 @@ String formatMeaningfulBashTitle({
   final normalizedCommand = command?.trim();
   if (normalizedCommand != null && normalizedCommand.isNotEmpty) {
     final title = _deriveBashTitleFromCommand(normalizedCommand);
-    return title != null ? title : clampActivityPreviewLine(normalizedCommand, 48);
+    return title != null
+        ? title
+        : clampActivityPreviewLine(normalizedCommand, 48);
   }
   return '运行命令';
 }
@@ -735,11 +775,16 @@ String? _deriveBashTitleFromCommand(String command) {
   if (lastSegment == null) return null;
 
   final normalized = lastSegment.replaceAll(RegExp(r'\s+'), ' ');
-  final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+  final tokens = normalized
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
   if (tokens.isEmpty) return null;
 
   final first = tokens[0];
-  if (first.startsWith('/') || first.startsWith('./') || first.startsWith('~/')) {
+  if (first.startsWith('/') ||
+      first.startsWith('./') ||
+      first.startsWith('~/')) {
     return clampActivityPreviewLine(pathBasename(first), 48);
   }
   return null;
@@ -809,16 +854,21 @@ String parseToolActionDisplayLabel(String raw) {
     if (detail != null && RegExp(r'^\(\d+(?:\.\d+)?s\)$').hasMatch(detail)) {
       detail = null;
     } else if (detail != null) {
-      detail = detail.replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '').trim();
+      detail = detail
+          .replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
+          .trim();
       if (detail.isEmpty) detail = null;
     }
     return formatToolDisplayLabel(tool, detail);
   }
 
-  final bareMatch = RegExp(r'^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$').firstMatch(text);
+  final bareMatch = RegExp(
+    r'^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$',
+  ).firstMatch(text);
   if (bareMatch != null) {
     final tool = bareMatch.group(1)!;
-    final detail = bareMatch.group(2)!
+    final detail = bareMatch
+        .group(2)!
         .replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
         .trim();
     return formatToolDisplayLabel(tool, detail);
@@ -885,8 +935,9 @@ ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
   final connectionFailed = _connectionFailedPattern.firstMatch(trimmed);
   if (connectionFailed != null) {
     final body = connectionFailed.group(1)?.trim() ?? '';
-    final httpMatch =
-        RegExp(r'^HTTP\s*(\d{3})\s*(?:[：:]\s*([\s\S]*))?$').firstMatch(body);
+    final httpMatch = RegExp(
+      r'^HTTP\s*(\d{3})\s*(?:[：:]\s*([\s\S]*))?$',
+    ).firstMatch(body);
     if (httpMatch != null) {
       final detail = httpMatch.group(2)?.trim();
       return ParsedReconnectActivity(
@@ -922,9 +973,7 @@ ParsedReconnectActivity? resolveReconnectPhaseDisplay({
     }
   }
   if (origin == 'proxy.connection_error' && apiErrorStatusCode != null) {
-    return ParsedReconnectActivity(
-      summary: '连接失败 · HTTP $apiErrorStatusCode',
-    );
+    return ParsedReconnectActivity(summary: '连接失败 · HTTP $apiErrorStatusCode');
   }
   return parseReconnectActivityMessage(text);
 }
@@ -954,10 +1003,7 @@ final _reconnectInProgressPatterns = <RegExp>[
   RegExp(r'^API error', caseSensitive: false),
 ];
 
-bool shouldClearReconnectActivity({
-  required String message,
-  String role = '',
-}) {
+bool shouldClearReconnectActivity({required String message, String role = ''}) {
   if (isReconnectActivityMessage(message)) {
     return false;
   }
@@ -971,7 +1017,9 @@ bool shouldClearReconnectActivity({
   if (_reconnectClearSystemNoise.any((pattern) => pattern.hasMatch(trimmed))) {
     return false;
   }
-  if (_reconnectInProgressPatterns.any((pattern) => pattern.hasMatch(trimmed))) {
+  if (_reconnectInProgressPatterns.any(
+    (pattern) => pattern.hasMatch(trimmed),
+  )) {
     return false;
   }
 
@@ -988,8 +1036,10 @@ bool shouldClearReconnectActivity({
   if (RegExp(r'^【\d+/\d+】').hasMatch(trimmed)) {
     return true;
   }
-  if (RegExp(r'^(Reading|Writing|Editing|Searching|Running)\s+', caseSensitive: false)
-      .hasMatch(trimmed)) {
+  if (RegExp(
+    r'^(Reading|Writing|Editing|Searching|Running)\s+',
+    caseSensitive: false,
+  ).hasMatch(trimmed)) {
     return true;
   }
   if (role == 'thinking' && trimmed.isNotEmpty) {
@@ -1018,9 +1068,6 @@ String resolveSubagentRunDisplayTitle(String role) {
   return labels[normalized] ?? normalized;
 }
 
-Color subagentMissionBorderColor(
-  String role, {
-  OrchestrationProfile? profile,
-}) {
+Color subagentMissionBorderColor(String role, {OrchestrationProfile? profile}) {
   return subagent_theme.subagentMissionBorderColor(role, profile: profile);
 }

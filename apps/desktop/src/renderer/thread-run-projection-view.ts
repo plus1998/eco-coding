@@ -423,7 +423,7 @@ function filterProjectionTimelineForDetailFeed(
   return filterToolFailureDuplicateTimelineItems(
     filterProjectionToolProgressNoiseItems(
       displayTimeline.filter((item) => {
-        if (isProjectionRequestCompletionItem(item)) {
+        if (isProjectionRequestTerminalItem(item)) {
           return false;
         }
         if (item.eventType !== "request.started") {
@@ -1280,8 +1280,12 @@ function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): b
   );
 }
 
-function isProjectionRequestCompletionItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return item.eventType === "request.completed" || item.eventType === "request.cancelled";
+function isProjectionRequestTerminalItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return (
+    item.eventType === "request.completed" ||
+    item.eventType === "request.failed" ||
+    item.eventType === "request.cancelled"
+  );
 }
 
 function projectionRequestKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -2206,14 +2210,12 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
   if (item.eventType === "request.retry_scheduled") {
     return text || "准备重试";
   }
-  if (item.eventType === "request.completed") {
-    return text || "模型请求完成";
-  }
-  if (item.eventType === "request.failed") {
-    return text || "模型请求失败";
-  }
-  if (item.eventType === "request.cancelled") {
-    return text || "模型请求已取消";
+  if (
+    item.eventType === "request.completed" ||
+    item.eventType === "request.failed" ||
+    item.eventType === "request.cancelled"
+  ) {
+    return undefined;
   }
   if (item.eventType === "diagnostic") {
     return text || "运行诊断";

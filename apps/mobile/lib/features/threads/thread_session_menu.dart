@@ -37,41 +37,42 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       (gitStatus?.hasUpstream ?? false);
 
   List<_ThreadSessionMenuEntry> _entries() => [
-        _ThreadSessionMenuEntry(
-          value: 'todos',
-          icon: EcoIcons.todos,
-          label: '任务进度',
-          enabled: _hasThread,
-        ),
-        _ThreadSessionMenuEntry(
-          value: 'review',
-          icon: EcoIcons.codeReview,
-          label: '代码审查',
-          enabled: workspacePath.isNotEmpty,
-        ),
-        _ThreadSessionMenuEntry(
-          value: 'commit',
-          icon: EcoIcons.commitPush,
-          label: '提交与推送',
-          enabled: !isRunning &&
-              workspacePath.isNotEmpty &&
-              (gitStatus?.isGitRepository ?? false),
-        ),
-        _ThreadSessionMenuEntry(
-          value: 'pull',
-          icon: EcoIcons.pull,
-          label: _canPull && (gitStatus?.behindCount ?? 0) > 0
-              ? '拉取（落后 ${gitStatus!.behindCount}）'
-              : '拉取',
-          enabled: !isRunning && _canPull,
-        ),
-        _ThreadSessionMenuEntry(
-          value: 'scripts',
-          icon: EcoIcons.npmScripts,
-          label: 'npm scripts',
-          enabled: !isRunning && workspacePath.isNotEmpty,
-        ),
-      ];
+    _ThreadSessionMenuEntry(
+      value: 'todos',
+      icon: EcoIcons.todos,
+      label: '任务进度',
+      enabled: _hasThread,
+    ),
+    _ThreadSessionMenuEntry(
+      value: 'review',
+      icon: EcoIcons.codeReview,
+      label: '代码审查',
+      enabled: workspacePath.isNotEmpty,
+    ),
+    _ThreadSessionMenuEntry(
+      value: 'commit',
+      icon: EcoIcons.commitPush,
+      label: '提交与推送',
+      enabled:
+          !isRunning &&
+          workspacePath.isNotEmpty &&
+          (gitStatus?.isGitRepository ?? false),
+    ),
+    _ThreadSessionMenuEntry(
+      value: 'pull',
+      icon: EcoIcons.pull,
+      label: _canPull && (gitStatus?.behindCount ?? 0) > 0
+          ? '拉取（落后 ${gitStatus!.behindCount}）'
+          : '拉取',
+      enabled: !isRunning && _canPull,
+    ),
+    _ThreadSessionMenuEntry(
+      value: 'scripts',
+      icon: EcoIcons.npmScripts,
+      label: 'npm scripts',
+      enabled: !isRunning && workspacePath.isNotEmpty,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,27 +87,32 @@ class ThreadSessionMenuButton extends ConsumerWidget {
         ),
     ];
 
-    return AdaptivePopupMenuButton.widget<String>(
-      items: menuItems,
-      onSelected: (index, item) {
-        if (!item.enabled) return;
-        final value = item.value;
-        if (value == null) return;
-        handleThreadSessionMenuAction(
-          context: context,
-          ref: ref,
-          value: value,
-          threadId: threadId,
-          workspacePath: workspacePath,
-          runtimeConfig: runtimeConfig,
-          gitStatus: gitStatus,
-        );
-      },
-      child: AdaptiveToolbarIcon(
-        icon: EcoIcons.more,
-        tooltip: '更多',
-        size: sessionToolbarButtonSize,
-        visualOnly: true,
+    return SizedBox.square(
+      dimension: sessionToolbarButtonSize,
+      child: Center(
+        child: AdaptivePopupMenuButton.widget<String>(
+          items: menuItems,
+          onSelected: (index, item) {
+            if (!item.enabled) return;
+            final value = item.value;
+            if (value == null) return;
+            handleThreadSessionMenuAction(
+              context: context,
+              ref: ref,
+              value: value,
+              threadId: threadId,
+              workspacePath: workspacePath,
+              runtimeConfig: runtimeConfig,
+              gitStatus: gitStatus,
+            );
+          },
+          child: AdaptiveToolbarIcon(
+            icon: EcoIcons.more,
+            tooltip: '更多',
+            size: sessionToolbarButtonSize,
+            visualOnly: true,
+          ),
+        ),
       ),
     );
   }
@@ -143,9 +149,9 @@ Future<void> handleThreadSessionMenuAction({
       case 'todos':
         if (threadId == null || threadId.isEmpty) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('请先开始会话后再查看任务进度')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('请先开始会话后再查看任务进度')));
           }
           return;
         }
@@ -187,9 +193,9 @@ Future<void> handleThreadSessionMenuAction({
     }
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 }
@@ -206,9 +212,9 @@ Future<void> openCommitPushFromMenu({
       runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
   if (profileId.isEmpty) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先在 Composer 设置中选择智能体配置')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先在 Composer 设置中选择智能体配置')));
     }
     return;
   }
@@ -230,9 +236,9 @@ Future<void> openCommitPushFromMenu({
 
   if (committed == true && context.mounted) {
     refreshWorkspaceChanges(ref, workspacePath);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已提交并推送到远程')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已提交并推送到远程')));
   }
 }
 
@@ -278,18 +284,14 @@ Future<void> pullChangesFromMenu({
       final files = result.conflictFiles.join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            files.isEmpty ? '拉取产生冲突，请在 Desktop 处理' : '拉取冲突：$files',
-          ),
+          content: Text(files.isEmpty ? '拉取产生冲突，请在 Desktop 处理' : '拉取冲突：$files'),
         ),
       );
       return;
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步'),
-      ),
+      SnackBar(content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步')),
     );
   } finally {
     if (context.mounted) {

@@ -1108,7 +1108,7 @@ test("buildThreadRunProjectionViewModel settles stale active stream when thread 
   }
 });
 
-test("buildThreadRunProjectionViewModel hides completed request lifecycle placeholders", () => {
+test("buildThreadRunProjectionViewModel hides request lifecycle terminal events", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       requestSpans: [
@@ -1117,6 +1117,18 @@ test("buildThreadRunProjectionViewModel hides completed request lifecycle placeh
           status: "completed",
           startedAt: "2026-01-01T00:00:01.000Z",
           endedAt: "2026-01-01T00:00:02.000Z",
+        },
+        {
+          requestId: "req_failed",
+          status: "failed",
+          startedAt: "2026-01-01T00:00:03.000Z",
+          endedAt: "2026-01-01T00:00:04.000Z",
+        },
+        {
+          requestId: "req_cancelled",
+          status: "cancelled",
+          startedAt: "2026-01-01T00:00:05.000Z",
+          endedAt: "2026-01-01T00:00:06.000Z",
         },
       ],
       timeline: [
@@ -1135,6 +1147,40 @@ test("buildThreadRunProjectionViewModel hides completed request lifecycle placeh
           requestId: "req_done",
           at: "2026-01-01T00:00:02.000Z",
           sequence: 2,
+        }),
+        item({
+          id: "request-failed-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_failed",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+        }),
+        item({
+          id: "request-failed",
+          eventType: "request.failed",
+          role: "planner",
+          requestId: "req_failed",
+          text: "HTTP 502",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 4,
+        }),
+        item({
+          id: "request-cancelled-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_cancelled",
+          at: "2026-01-01T00:00:05.000Z",
+          sequence: 5,
+        }),
+        item({
+          id: "request-cancelled",
+          eventType: "request.cancelled",
+          role: "planner",
+          requestId: "req_cancelled",
+          text: "模型请求已取消",
+          at: "2026-01-01T00:00:06.000Z",
+          sequence: 6,
         }),
       ],
     }),
