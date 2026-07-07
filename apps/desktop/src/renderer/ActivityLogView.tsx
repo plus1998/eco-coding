@@ -170,6 +170,7 @@ function RunLogMessageMeta({
   copyText,
   restorePrompt,
   align = "start",
+  sticky = false,
 }: {
   createdAt?: string;
   copyText?: string;
@@ -179,6 +180,7 @@ function RunLogMessageMeta({
     onRestorePrompt: RestorePromptHandler;
   };
   align?: "start" | "end";
+  sticky?: boolean;
 }) {
   const time = formatRunLogMessageTime(createdAt);
   const canCopy = Boolean(copyText?.trim());
@@ -191,7 +193,8 @@ function RunLogMessageMeta({
       className={[
         "run-log-message-meta",
         align === "end" ? "run-log-message-meta--end" : "run-log-message-meta--start",
-      ].join(" ")}
+        sticky ? "run-log-message-meta--sticky" : "",
+      ].filter(Boolean).join(" ")}
     >
       {restorePrompt ? (
         <button
@@ -378,6 +381,15 @@ function ProjectionActivityLogView({
     () => resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status),
     [projection.thread.status, viewModel.mainFeedEntries],
   );
+  const stickyFinalSummaryItemId = useMemo(() => {
+    let itemId: string | undefined;
+    for (const entry of viewModel.mainFeedEntries) {
+      if (entry.kind === "timeline" && finalSummaryItemIds.has(entry.item.id)) {
+        itemId = entry.item.id;
+      }
+    }
+    return itemId;
+  }, [finalSummaryItemIds, viewModel.mainFeedEntries]);
   const layoutSignature = useMemo(
     () =>
       [
@@ -426,6 +438,7 @@ function ProjectionActivityLogView({
             entry={entry}
             requestSpansById={requestSpansById}
             finalSummaryItemIds={finalSummaryItemIds}
+            {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
             {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
             {...(onOpenSubagent && { onOpenSubagent })}
             {...(agentDisplayNames && { agentDisplayNames })}
@@ -464,6 +477,7 @@ function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
   finalSummaryItemIds,
+  stickyFinalSummaryItemId,
   selectedSubagentAgentId,
   onOpenSubagent,
   onRestorePrompt,
@@ -473,6 +487,7 @@ function ProjectionMainFeedEntry({
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   finalSummaryItemIds: ReadonlySet<string>;
+  stickyFinalSummaryItemId?: string;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onRestorePrompt?: RestorePromptHandler;
@@ -480,11 +495,13 @@ function ProjectionMainFeedEntry({
   agentThemes?: RuntimeAgentThemes;
 }) {
   if (entry.kind === "timeline") {
+    const showMessageMeta = finalSummaryItemIds.has(entry.item.id);
     return (
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
-        showMessageMeta={finalSummaryItemIds.has(entry.item.id)}
+        showMessageMeta={showMessageMeta}
+        stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
         {...(onRestorePrompt && { onRestorePrompt })}
       />
     );
@@ -1243,6 +1260,7 @@ function ProjectionTimelineEntry({
   compact = false,
   forceActionDetailsExpanded = false,
   showMessageMeta = false,
+  stickyMessageMeta = false,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
@@ -1250,6 +1268,7 @@ function ProjectionTimelineEntry({
   compact?: boolean;
   forceActionDetailsExpanded?: boolean;
   showMessageMeta?: boolean;
+  stickyMessageMeta?: boolean;
 }) {
   if (isProjectionUserPromptItem(item)) {
     if (compact) {
@@ -1281,6 +1300,7 @@ function ProjectionTimelineEntry({
         text={block.text}
         createdAt={item.at}
         showMessageMeta={showMessageMeta}
+        stickyMessageMeta={stickyMessageMeta}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(block.subagent && { subagent: block.subagent })}
         omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
@@ -2729,6 +2749,7 @@ function RunLogNarrative({
   text,
   createdAt,
   showMessageMeta = false,
+  stickyMessageMeta = false,
   streaming,
   subagent,
   compact,
@@ -2740,6 +2761,7 @@ function RunLogNarrative({
   text: string;
   createdAt?: string;
   showMessageMeta?: boolean;
+  stickyMessageMeta?: boolean;
   streaming?: boolean;
   subagent?: string;
   compact?: boolean;
@@ -2753,6 +2775,7 @@ function RunLogNarrative({
   const showSubagentBadge = subagent && !omitSubagentBadge;
   const showBody = hasBody || !streaming;
   const showFinalMessageMeta = showMessageMeta && hasBody && !streaming;
+  const showStickyMessageMeta = showFinalMessageMeta && stickyMessageMeta;
   const waitingEmpty = Boolean(streaming) && !hasBody;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
   const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
@@ -2765,7 +2788,15 @@ function RunLogNarrative({
   }
 
   return (
-    <div className={compact ? "run-log-narrative compact" : "run-log-narrative"}>
+    <div
+      className={[
+        "run-log-narrative",
+        compact ? "compact" : "",
+        showStickyMessageMeta ? "run-log-narrative--sticky-final" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {showSubagentBadge ? (
         <span className="run-log-subagent-badge">
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
@@ -2792,6 +2823,7 @@ function RunLogNarrative({
         <RunLogMessageMeta
           align="start"
           copyText={text}
+          sticky={showStickyMessageMeta}
           {...(createdAt && { createdAt })}
         />
       ) : null}

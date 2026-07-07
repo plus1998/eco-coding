@@ -499,6 +499,10 @@ const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
+const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
+const WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX = 48;
+const WORKSPACE_CARDS_FALLBACK_HIDE_WIDTH_PX = 1360;
+const WORKSPACE_CARDS_FALLBACK_SHOW_WIDTH_PX = 1420;
 
 type ActivityFeedScrollJump = "bottom" | "top";
 type ActivityFeedUserScrollDirection = "up" | "down";
@@ -842,6 +846,9 @@ function App() {
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
+  const [workspaceCardsAutoHidden, setWorkspaceCardsAutoHidden] = useState(false);
+  const [workspaceCardsManualRevealProjectPath, setWorkspaceCardsManualRevealProjectPath] =
+    useState<string>();
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
@@ -1589,9 +1596,18 @@ function App() {
     if (!currentProjectPath) {
       return;
     }
+    const desiredOpen = currentWorkspacePanelState?.open === true;
+    if (
+      desiredOpen &&
+      workspaceCardsAutoHidden &&
+      workspaceCardsManualRevealProjectPath !== currentProjectPath
+    ) {
+      setWorkspaceCardsManualRevealProjectPath(currentProjectPath);
+      return;
+    }
+    const nextOpen = taskDrawerOpen ? true : !desiredOpen;
     setWorkspacePanelByProject((current) => {
       const existing = current[currentProjectPath];
-      const nextOpen = taskDrawerOpen ? true : !(existing?.open === true);
       return {
         ...current,
         [currentProjectPath]: existing
@@ -1599,11 +1615,23 @@ function App() {
           : createProjectWorkspacePanelState(nextOpen),
       };
     });
+    setWorkspaceCardsManualRevealProjectPath((current) => {
+      if (nextOpen) {
+        return taskDrawerOpen || workspaceCardsAutoHidden ? currentProjectPath : undefined;
+      }
+      return current === currentProjectPath ? undefined : current;
+    });
     if (taskDrawerOpen) {
       setTaskDrawerOpen(false);
       setTaskPanelFullscreen(false);
     }
-  }, [currentProjectPath, taskDrawerOpen]);
+  }, [
+    currentProjectPath,
+    currentWorkspacePanelState?.open,
+    taskDrawerOpen,
+    workspaceCardsAutoHidden,
+    workspaceCardsManualRevealProjectPath,
+  ]);
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
@@ -2641,8 +2669,10 @@ function App() {
   }, [activeRoutes, threadModelByRole]);
   const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
+  const mainPaneRef = useRef<HTMLDivElement>(null);
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLElement>(null);
+  const workspaceCardsPanelRef = useRef<HTMLElement>(null);
   const [topbarSolid, setTopbarSolid] = useState(true);
   const userDetachedFromBottomRef = useRef(false);
   const activityFeedScrollTopRef = useRef(0);
@@ -2860,6 +2890,95 @@ function App() {
     },
     [],
   );
+
+  useLayoutEffect(() => {
+    if (!currentProjectPath || taskDrawerOpen) {
+      setWorkspaceCardsAutoHidden(false);
+      return undefined;
+    }
+
+    const mainPane = mainPaneRef.current;
+    if (!mainPane) {
+      return undefined;
+    }
+
+    const readCssPixelValue = (value: string): number => {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const measureShouldHide = (currentlyHidden: boolean): boolean => {
+      const scrollBody = scrollBodyRef.current;
+      const workspacePanel = workspaceCardsPanelRef.current;
+      const feed = scrollBody?.querySelector<HTMLElement>(".codex-feed-stack");
+      if (!workspacePanel || !feed) {
+        const paneWidth = mainPane.getBoundingClientRect().width;
+        return currentlyHidden
+          ? paneWidth < WORKSPACE_CARDS_FALLBACK_SHOW_WIDTH_PX
+          : paneWidth < WORKSPACE_CARDS_FALLBACK_HIDE_WIDTH_PX;
+      }
+
+      const paneRect = mainPane.getBoundingClientRect();
+      const feedRect = feed.getBoundingClientRect();
+      const panelStyle = window.getComputedStyle(workspacePanel);
+      const panelWidth =
+        workspacePanel.offsetWidth || readCssPixelValue(panelStyle.width) || 300;
+      const panelRight = readCssPixelValue(panelStyle.right);
+      const panelLeft = paneRect.right - panelRight - panelWidth;
+      const clearance = panelLeft - feedRect.right;
+      const requiredClearance = currentlyHidden
+        ? WORKSPACE_CARDS_RESPONSIVE_GAP_PX + WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX
+        : WORKSPACE_CARDS_RESPONSIVE_GAP_PX;
+      return clearance < requiredClearance;
+    };
+
+    let frame = 0;
+    const update = () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setWorkspaceCardsAutoHidden((current) => measureShouldHide(current));
+      });
+    };
+
+    const observer = new ResizeObserver(update);
+    observer.observe(mainPane);
+    const scrollBody = scrollBodyRef.current;
+    if (scrollBody) {
+      observer.observe(scrollBody);
+      const feed = scrollBody.querySelector<HTMLElement>(".codex-feed-stack");
+      if (feed) {
+        observer.observe(feed);
+      }
+    }
+    const workspacePanel = workspaceCardsPanelRef.current;
+    if (workspacePanel) {
+      observer.observe(workspacePanel);
+    }
+    window.addEventListener("resize", update);
+    update();
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [activeThread?.id, currentProjectPath, taskDrawerOpen]);
+
+  useEffect(() => {
+    setWorkspaceCardsManualRevealProjectPath((current) => {
+      if (!current) {
+        return current;
+      }
+      if (current !== currentProjectPath || !workspaceCardsAutoHidden) {
+        return undefined;
+      }
+      return current;
+    });
+  }, [currentProjectPath, workspaceCardsAutoHidden]);
 
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
@@ -4570,8 +4689,15 @@ function App() {
   }
 
   const showWorkspacePanel = Boolean(currentProjectPath);
-  const workspaceCardsPanelOpen = Boolean(
+  const workspaceCardsPanelDesiredOpen = Boolean(
     showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen,
+  );
+  const workspaceCardsPanelManuallyRevealed = Boolean(
+    currentProjectPath && workspaceCardsManualRevealProjectPath === currentProjectPath,
+  );
+  const workspaceCardsPanelOpen = Boolean(
+    workspaceCardsPanelDesiredOpen &&
+      (!workspaceCardsAutoHidden || workspaceCardsPanelManuallyRevealed),
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
   const taskPanelFullscreenOpen = Boolean(taskPanelOpen && taskPanelFullscreen);
@@ -4713,7 +4839,7 @@ function App() {
           : activeThread?.status === "awaiting_plan"
             ? "请先确认或忽略下方计划"
             : activeThread && isContinuableThreadStatus(activeThread.status)
-              ? "继续对话；若需改计划请说明，将重新生成完整计划…"
+              ? "继续对话…"
               : composerFollowUpMode
                 ? editingFollowUpId
                   ? "编辑引导消息…"
@@ -5096,7 +5222,7 @@ function App() {
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="codex-main-pane">
+        <div ref={mainPaneRef} className="codex-main-pane">
           <div
             className={[
               "codex-main-scroll",
@@ -5296,6 +5422,7 @@ function App() {
           </div>
           {showWorkspacePanel && !taskPanelOpen ? (
             <aside
+              ref={workspaceCardsPanelRef}
               id="workspace-panel"
               className={[
                 "workspace-panel",
