@@ -499,6 +499,12 @@ const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
+const ACTIVITY_FEED_TARGET_WIDTH_PX = 750;
+const ACTIVITY_FEED_WITH_PANEL_MIN_WIDTH_PX = 500;
+const ACTIVITY_FEED_WITH_NAV_MIN_WIDTH_PX = 640;
+const ACTIVITY_USER_MESSAGE_NAV_RESERVE_PX = 340;
+const ACTIVITY_TASK_PANEL_COLUMN_GAP_PX = 18;
+const ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX = 48;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
 const WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX = 48;
 const WORKSPACE_CARDS_FALLBACK_HIDE_WIDTH_PX = 1360;
@@ -506,6 +512,7 @@ const WORKSPACE_CARDS_FALLBACK_SHOW_WIDTH_PX = 1420;
 
 type ActivityFeedScrollJump = "bottom" | "top";
 type ActivityFeedUserScrollDirection = "up" | "down";
+type ActivityWorkspaceLayoutMode = "full" | "feed-panel" | "feed-nav" | "feed-only";
 
 interface ActivityUserMessageNavItem {
   id: string;
@@ -632,14 +639,16 @@ function collectActivityUserMessageRoundEntry(
 function ActivityUserMessageNavigator({
   items,
   activeId,
+  hidden = false,
   onJump,
 }: {
   items: ActivityUserMessageNavItem[];
   activeId?: string;
+  hidden?: boolean;
   onJump: (id: string) => void;
 }) {
   const [hoveredId, setHoveredId] = useState<string>();
-  if (items.length === 0) {
+  if (hidden || items.length === 0) {
     return null;
   }
   const resolvedActiveId = activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
@@ -845,6 +854,8 @@ function App() {
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
+  const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
+    useState<ActivityWorkspaceLayoutMode>("full");
   const [workspaceCardsAutoHidden, setWorkspaceCardsAutoHidden] = useState(false);
   const [workspaceCardsManualRevealProjectPath, setWorkspaceCardsManualRevealProjectPath] =
     useState<string>();
@@ -2967,6 +2978,71 @@ function App() {
     };
   }, [activeThread?.id, currentProjectPath, taskDrawerOpen]);
 
+  useLayoutEffect(() => {
+    if (!currentProjectPath || !activeThread || !taskDrawerOpen || taskPanelFullscreen) {
+      setActivityWorkspaceLayoutMode("full");
+      return undefined;
+    }
+
+    const mainPane = mainPaneRef.current;
+    if (!mainPane) {
+      return undefined;
+    }
+
+    const measureLayoutMode = (current: ActivityWorkspaceLayoutMode): ActivityWorkspaceLayoutMode => {
+      const paneWidth = mainPane.getBoundingClientRect().width;
+      const panelWidth = clampTaskPanelWidth(taskPanelWidth);
+      const fullThreshold =
+        ACTIVITY_FEED_TARGET_WIDTH_PX +
+        panelWidth +
+        ACTIVITY_USER_MESSAGE_NAV_RESERVE_PX +
+        ACTIVITY_TASK_PANEL_COLUMN_GAP_PX;
+      const fullRequired =
+        current === "full"
+          ? fullThreshold - ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX
+          : fullThreshold + ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX;
+      const panelThreshold =
+        ACTIVITY_FEED_WITH_PANEL_MIN_WIDTH_PX + MIN_TASK_PANEL_WIDTH + ACTIVITY_TASK_PANEL_COLUMN_GAP_PX;
+      const panelRequired =
+        current === "feed-panel" ? panelThreshold - ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX : panelThreshold;
+
+      if (paneWidth >= fullRequired) {
+        return "full";
+      }
+      if (paneWidth >= panelRequired) {
+        return "feed-panel";
+      }
+      if (paneWidth >= ACTIVITY_FEED_WITH_NAV_MIN_WIDTH_PX) {
+        return "feed-nav";
+      }
+      return "feed-only";
+    };
+
+    let frame = 0;
+    const update = () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setActivityWorkspaceLayoutMode((current) => measureLayoutMode(current));
+      });
+    };
+
+    const observer = new ResizeObserver(update);
+    observer.observe(mainPane);
+    window.addEventListener("resize", update);
+    update();
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [activeThread?.id, currentProjectPath, taskDrawerOpen, taskPanelFullscreen, taskPanelWidth]);
+
   useEffect(() => {
     setWorkspaceCardsManualRevealProjectPath((current) => {
       if (!current) {
@@ -4698,8 +4774,25 @@ function App() {
     workspaceCardsPanelDesiredOpen && (!workspaceCardsAutoHidden || workspaceCardsPanelManuallyRevealed),
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
-  const taskPanelFullscreenOpen = Boolean(taskPanelOpen && taskPanelFullscreen);
-  const rightPanelOpen = taskPanelOpen;
+  const taskPanelAutoHidden = Boolean(
+    taskPanelOpen &&
+      !taskPanelFullscreen &&
+      (activityWorkspaceLayoutMode === "feed-nav" || activityWorkspaceLayoutMode === "feed-only"),
+  );
+  const taskPanelLayoutOpen = Boolean(taskPanelOpen && !taskPanelAutoHidden);
+  const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
+  const activityUserMessageNavHidden = Boolean(
+    taskPanelOpen &&
+      !taskPanelFullscreen &&
+      (activityWorkspaceLayoutMode === "feed-panel" || activityWorkspaceLayoutMode === "feed-only"),
+  );
+  const activityFeedPanelLayout = Boolean(
+    taskPanelLayoutOpen && activityWorkspaceLayoutMode === "feed-panel" && !taskPanelFullscreen,
+  );
+  const activityFeedNavLayout = Boolean(
+    taskPanelOpen && activityWorkspaceLayoutMode === "feed-nav" && !taskPanelFullscreen,
+  );
+  const rightPanelOpen = taskPanelLayoutOpen;
   const rightPanelStyle = {
     "--workspace-panel-width": taskPanelOpen ? `${taskPanelWidth}px` : "300px",
     "--task-panel-width": `${taskPanelWidth}px`,
@@ -5225,7 +5318,9 @@ function App() {
               "codex-main-scroll",
               showWorkspacePanel ? "has-workspace-panel" : "",
               rightPanelOpen ? "is-workspace-panel-open" : "",
-              taskPanelOpen ? "is-task-panel-open" : "",
+              taskPanelLayoutOpen ? "is-task-panel-open" : "",
+              activityFeedPanelLayout ? "is-feed-panel-layout" : "",
+              activityFeedNavLayout ? "is-feed-nav-layout" : "",
               taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
               currentProjectPath && showLanding && rightPanelOpen ? "is-topbar-solid" : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
@@ -5273,6 +5368,7 @@ function App() {
                         <div className="activity-feed-top-mask" aria-hidden />
                         <ActivityUserMessageNavigator
                           items={activityUserMessageNavItems}
+                          hidden={activityUserMessageNavHidden}
                           {...(activeActivityUserMessageNavId && {
                             activeId: activeActivityUserMessageNavId,
                           })}
@@ -5359,7 +5455,7 @@ function App() {
               })}
             </div>
 
-            {showWorkspacePanel && taskPanelOpen ? (
+            {showWorkspacePanel && taskPanelLayoutOpen ? (
               <aside
                 id="workspace-panel"
                 className={[
@@ -5721,7 +5817,7 @@ function FollowUpQueuePanel({
                   onEdit(followUp);
                 }}
               >
-                <CornerDownRight size={16} aria-hidden className="follow-up-card-leading-icon" />
+                <CornerDownRight size={14} aria-hidden className="follow-up-card-leading-icon" />
                 <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
               </div>
               <div className="follow-up-card-actions">
@@ -5746,12 +5842,12 @@ function FollowUpQueuePanel({
                       onEscalate(followUp);
                     }}
                   >
-                    <CornerDownRight size={12} aria-hidden />
+                    <CornerDownRight size={11} aria-hidden />
                     {isEscalating ? "正在处理…" : "引导"}
                   </span>
                 ) : (
                   <span className="follow-up-card-type">
-                    <CornerDownRight size={12} aria-hidden />
+                    <CornerDownRight size={11} aria-hidden />
                     引导
                   </span>
                 )}
@@ -5763,7 +5859,7 @@ function FollowUpQueuePanel({
                   title="删除"
                   aria-label="删除引导消息"
                 >
-                  {cancelBusyId === followUp.id ? <Activity size={14} /> : <Trash2 size={14} />}
+                  {cancelBusyId === followUp.id ? <Activity size={12} /> : <Trash2 size={12} />}
                 </button>
               </div>
             </div>
