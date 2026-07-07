@@ -1,14 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
-  type AgentAuditExportRequest,
-  type AgentAuditExportResult,
-  type AgentProfilePerformanceSnapshot,
   type AgentTemplate,
   type AgentTemplateExportRequest,
   type AgentTemplateExportResult,
   type AgentTemplateImportResult,
-  type AgentTemplateVersionRestoreRequest,
-  type AgentTemplateVersionView,
   type BackgroundTerminalListRequest,
   type BackgroundTerminalOpenRequest,
   type BackgroundTerminalStartRequest,
@@ -72,8 +67,6 @@ import {
   type OrchestrationProfileExportRequest,
   type OrchestrationProfileExportResult,
   type OrchestrationProfileImportResult,
-  type OrchestrationProfileVersionRestoreRequest,
-  type OrchestrationProfileVersionView,
   type PackageScriptsListResult,
   type PackageScriptTerminalLaunchPayload,
   type ProviderConfigInput,
@@ -292,12 +285,6 @@ const api = {
   importAgentTemplates(): Promise<AgentTemplateImportResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateImport);
   },
-  listAgentTemplateVersions(templateId: string): Promise<AgentTemplateVersionView[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateVersionsList, templateId);
-  },
-  restoreAgentTemplateVersion(request: AgentTemplateVersionRestoreRequest): Promise<AgentTemplate> {
-    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateVersionRestore, request);
-  },
   listOrchestrationProfiles(): Promise<OrchestrationProfile[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileList);
   },
@@ -314,14 +301,6 @@ const api = {
   },
   importOrchestrationProfiles(): Promise<OrchestrationProfileImportResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileImport);
-  },
-  listOrchestrationProfileVersions(profileId: string): Promise<OrchestrationProfileVersionView[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileVersionsList, profileId);
-  },
-  restoreOrchestrationProfileVersion(
-    request: OrchestrationProfileVersionRestoreRequest,
-  ): Promise<OrchestrationProfile> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileVersionRestore, request);
   },
   updateThreadRuntimeConfig(request: ThreadUpdateRuntimeConfigRequest): Promise<{ thread: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);
@@ -586,12 +565,6 @@ const api = {
   },
   listSubagentMetrics(threadId: string): Promise<ThreadSubagentMetricsSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentMetricsList, threadId);
-  },
-  listAgentProfilePerformance(): Promise<AgentProfilePerformanceSnapshot[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.agentProfilePerformanceList);
-  },
-  exportAgentAudit(request?: AgentAuditExportRequest): Promise<AgentAuditExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.agentAuditExport, request);
   },
   onThreadEvent(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

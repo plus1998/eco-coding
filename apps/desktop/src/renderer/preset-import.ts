@@ -47,7 +47,6 @@ export function buildPresetTemplateImportPlan(
       skills: [...template.skills],
       builtIn: false,
       source: "user",
-      version: 1,
       updatedAt: nowIso,
     });
   }

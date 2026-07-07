@@ -24,15 +24,11 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.agentTemplateDelete).toBe("agent-template:delete");
   expect(IPC_CHANNELS.agentTemplateExport).toBe("agent-template:export");
   expect(IPC_CHANNELS.agentTemplateImport).toBe("agent-template:import");
-  expect(IPC_CHANNELS.agentTemplateVersionsList).toBe("agent-template-versions:list");
-  expect(IPC_CHANNELS.agentTemplateVersionRestore).toBe("agent-template-version:restore");
   expect(IPC_CHANNELS.orchestrationProfileList).toBe("orchestration-profile:list");
   expect(IPC_CHANNELS.orchestrationProfileSave).toBe("orchestration-profile:save");
   expect(IPC_CHANNELS.orchestrationProfileDelete).toBe("orchestration-profile:delete");
   expect(IPC_CHANNELS.orchestrationProfileExport).toBe("orchestration-profile:export");
   expect(IPC_CHANNELS.orchestrationProfileImport).toBe("orchestration-profile:import");
-  expect(IPC_CHANNELS.orchestrationProfileVersionsList).toBe("orchestration-profile-versions:list");
-  expect(IPC_CHANNELS.orchestrationProfileVersionRestore).toBe("orchestration-profile-version:restore");
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
   expect(IPC_CHANNELS.threadUpdateRuntimeConfig).toBe("thread:update-runtime-config");
   expect(IPC_CHANNELS.threadGet).toBe("thread:get");
@@ -43,8 +39,6 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadGetUsageSnapshot).toBe("thread:get-usage-snapshot");
   expect(IPC_CHANNELS.threadUsageLedgerEventsList).toBe("thread:usage-ledger-events-list");
   expect(IPC_CHANNELS.threadRunProjectionGet).toBe("thread:run-projection-get");
-  expect(IPC_CHANNELS.agentProfilePerformanceList).toBe("agent-profile:performance-list");
-  expect(IPC_CHANNELS.agentAuditExport).toBe("agent-audit:export");
   expect(IPC_CHANNELS.threadDismissPlan).toBe("thread:dismiss-plan");
   expect(IPC_CHANNELS.threadContinue).toBe("thread:continue");
   expect(IPC_CHANNELS.threadFollowUpEnqueue).toBe("thread:follow-up-enqueue");

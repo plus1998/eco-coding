@@ -390,7 +390,6 @@ export function buildOrchestrationProfileFromForm(
     },
     agents,
     strategy: buildStrategyFromForm(form),
-    version: Math.max(1, options.existing?.version ?? 1),
     updatedAt: options.nowIso ?? new Date().toISOString(),
     source: form.source,
     ...(options.existing?.sourceRouteProfileId && {

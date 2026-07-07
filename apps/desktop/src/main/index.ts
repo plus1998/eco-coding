@@ -69,11 +69,9 @@ import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
-  type AgentAuditExportRequest,
   type AgentRole,
   type AgentTemplate,
   type AgentTemplateExportRequest,
-  type AgentTemplateVersionRestoreRequest,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
   buildThreadRuntimeConfigFromDefaults,
@@ -113,7 +111,6 @@ import {
   normalizeThreadRuntimeConfig,
   type OrchestrationProfile,
   type OrchestrationProfileExportRequest,
-  type OrchestrationProfileVersionRestoreRequest,
   type PlanApprovalRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
@@ -212,10 +209,8 @@ import {
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
-import { buildAgentAuditExportArchive } from "./agent-audit-export";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
-import { buildAgentProfilePerformanceSnapshots } from "./agent-profile-performance";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
 import {
   type AnthropicProxyRoute,
@@ -922,7 +917,6 @@ function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<
       name,
       builtIn: false,
       source: "user",
-      version: 1,
       updatedAt: now,
       domain,
     };
@@ -963,7 +957,6 @@ function prepareImportedOrchestrationProfile(
     id,
     name,
     source: profile.source === "project" && !protectedId ? "project" : "user",
-    version: Math.max(1, typeof profile.version === "number" ? profile.version : 1),
     updatedAt: now,
   };
 }
@@ -1605,61 +1598,6 @@ function registerIpcHandlers(): void {
     return buildSubagentMetricsSummaries(usageLedgerCoordinator.listSubagentBillingEntries(threadId));
   });
 
-  registerDesktopCommand(IPC_CHANNELS.agentProfilePerformanceList, async () =>
-    buildAgentProfilePerformanceSnapshots({
-      threads: hydrateThreads(conversationStore.listThreads()),
-      profiles: getModelSettingsSnapshot().orchestrationProfiles,
-      getBillingSnapshot: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
-    }),
-  );
-
-  registerDesktopCommand(IPC_CHANNELS.agentAuditExport, async (payload?: unknown) => {
-    const request = payload && typeof payload === "object" ? (payload as AgentAuditExportRequest) : {};
-    const requestedThreadIds = Array.isArray(request.threadIds)
-      ? new Set(request.threadIds.map((id) => id.trim()).filter(Boolean))
-      : undefined;
-    const threads = hydrateThreads(conversationStore.listThreads()).filter((thread) =>
-      requestedThreadIds ? requestedThreadIds.has(thread.id) : true,
-    );
-    if (threads.length === 0) {
-      throw new Error("没有可导出的审计线程。");
-    }
-    const result = await dialog.showSaveDialog({
-      title: "导出 Agent 审计日志",
-      defaultPath: `eco-agent-audit-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    if (result.canceled || !result.filePath) {
-      return { ok: true as const, canceled: true, exportedThreads: 0 };
-    }
-    const settings = getModelSettingsSnapshot();
-    const profilePerformance = buildAgentProfilePerformanceSnapshots({
-      threads,
-      profiles: settings.orchestrationProfiles,
-      getBillingSnapshot: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
-    });
-    const archive = await buildAgentAuditExportArchive({
-      appVersion: app.getVersion(),
-      threads,
-      profiles: settings.orchestrationProfiles,
-      agentTemplates: settings.agentTemplates,
-      profilePerformance,
-      getThreadBilling: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
-      getThreadRunProjection: (threadId) => buildCurrentThreadRunProjection(threadId),
-      listThreadActivity: (threadId) => listThreadActivityFromSdkSession(threadId),
-      listRunAttempts: (threadId) => conversationStore.listRunAttempts(threadId),
-      listAgentInstances: (threadId) => conversationStore.listAgentInstances(threadId),
-      listUsageLedgerEvents: (threadId) => conversationStore.listUsageLedgerEvents(threadId),
-    });
-    await fs.writeFile(result.filePath, JSON.stringify(archive, null, 2), "utf8");
-    return {
-      ok: true as const,
-      canceled: false,
-      exportedThreads: threads.length,
-      path: result.filePath,
-    };
-  });
-
   registerDesktopCommand(IPC_CHANNELS.threadTodoList, async (threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
@@ -1901,29 +1839,6 @@ function registerIpcHandlers(): void {
     };
   });
 
-  registerDesktopCommand(IPC_CHANNELS.agentTemplateVersionsList, async (templateId: unknown) => {
-    if (typeof templateId !== "string" || !templateId.trim()) {
-      throw new Error("子代理模板 id 不能为空。");
-    }
-    return agentOrchestrationStore.listAgentTemplateVersions(templateId);
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.agentTemplateVersionRestore, async (payload: unknown) => {
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      typeof (payload as AgentTemplateVersionRestoreRequest).templateId !== "string" ||
-      typeof (payload as AgentTemplateVersionRestoreRequest).version !== "number"
-    ) {
-      throw new Error("子代理模板版本恢复请求无效。");
-    }
-    const request = payload as AgentTemplateVersionRestoreRequest;
-    assertCanWriteAgentTemplateId(request.templateId);
-    const restored = agentOrchestrationStore.restoreAgentTemplateVersion(request.templateId, request.version);
-    emitSettingsUpdated();
-    return restored;
-  });
-
   registerDesktopCommand(
     IPC_CHANNELS.orchestrationProfileList,
     async () => getModelSettingsSnapshot().orchestrationProfiles,
@@ -2037,31 +1952,6 @@ function registerIpcHandlers(): void {
       profiles: imported,
       errors,
     };
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileVersionsList, async (profileId: unknown) => {
-    if (typeof profileId !== "string" || !profileId.trim()) {
-      throw new Error("Agent Profile id 不能为空。");
-    }
-    return agentOrchestrationStore.listOrchestrationProfileVersions(profileId);
-  });
-
-  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileVersionRestore, async (payload: unknown) => {
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      typeof (payload as OrchestrationProfileVersionRestoreRequest).profileId !== "string" ||
-      typeof (payload as OrchestrationProfileVersionRestoreRequest).version !== "number"
-    ) {
-      throw new Error("Agent Profile 版本恢复请求无效。");
-    }
-    const request = payload as OrchestrationProfileVersionRestoreRequest;
-    const restored = agentOrchestrationStore.restoreOrchestrationProfileVersion(
-      request.profileId,
-      request.version,
-    );
-    emitSettingsUpdated();
-    return restored;
   });
 
   registerDesktopCommand(IPC_CHANNELS.billingModelsDevList, async () => {

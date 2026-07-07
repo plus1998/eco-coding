@@ -36,7 +36,6 @@ function profile(): OrchestrationProfile {
       },
     ],
     strategy: { kind: "autonomous", guidancePrompt: "Delegate only when useful." },
-    version: 7,
     updatedAt: "2026-06-08T00:00:00.000Z",
     source: "derived",
   };
@@ -69,7 +68,6 @@ test("buildComposerSavedProfile copies current composer state into a user profil
   expect(saved.id).toBe("user.composer.coding_current_2");
   expect(saved.name).toBe("Coding Current");
   expect(saved.source).toBe("user");
-  expect(saved.version).toBe(1);
   expect(saved.sourceRouteProfileId).toBeUndefined();
   expect(saved.builtinAgents.explore.modelRef).toEqual({ providerId: "p1", modelId: "m2" });
   expect(saved.agents.map((agent) => [agent.agentKey, agent.enabled])).toEqual([["reviewer", false]]);

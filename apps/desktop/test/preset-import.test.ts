@@ -62,7 +62,6 @@ test("preset import reuses existing user template copies", () => {
     name: "Custom Researcher",
     builtIn: false,
     source: "user" as const,
-    version: 3,
     updatedAt: "2026-06-01T00:00:00.000Z",
   };
 
@@ -100,7 +99,6 @@ test("preset import reuses numbered user copies after base id conflicts", () => 
     name: "Custom Researcher",
     builtIn: false,
     source: "user" as const,
-    version: 4,
     updatedAt: "2026-06-01T00:00:00.000Z",
   };
 

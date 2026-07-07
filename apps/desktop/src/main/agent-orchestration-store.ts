@@ -2,25 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { AgentTemplate, OrchestrationProfile } from "../shared/agent-orchestration";
-import type { AgentTemplateVersionView, OrchestrationProfileVersionView } from "../shared/ipc";
 
 interface StoredConfigRow {
   id: string;
   value_json: string;
-}
-
-interface StoredTemplateVersionRow {
-  template_id: string;
-  version: number;
-  value_json: string;
-  saved_at: string;
-}
-
-interface StoredProfileVersionRow {
-  profile_id: string;
-  version: number;
-  value_json: string;
-  saved_at: string;
 }
 
 export async function createAgentOrchestrationStore(dbPath: string): Promise<AgentOrchestrationStore> {
@@ -48,21 +33,8 @@ export class AgentOrchestrationStore {
         updated_at TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS agent_template_versions (
-        template_id TEXT NOT NULL,
-        version INTEGER NOT NULL,
-        value_json TEXT NOT NULL,
-        saved_at TEXT NOT NULL,
-        PRIMARY KEY (template_id, version)
-      );
-
-      CREATE TABLE IF NOT EXISTS orchestration_profile_versions (
-        profile_id TEXT NOT NULL,
-        version INTEGER NOT NULL,
-        value_json TEXT NOT NULL,
-        saved_at TEXT NOT NULL,
-        PRIMARY KEY (profile_id, version)
-      );
+      DROP TABLE IF EXISTS agent_template_versions;
+      DROP TABLE IF EXISTS orchestration_profile_versions;
     `);
   }
 
@@ -81,7 +53,7 @@ export class AgentOrchestrationStore {
   }
 
   saveAgentTemplate(template: AgentTemplate): AgentTemplate {
-    const normalized = this.normalizeTemplateForSave(template);
+    const normalized = normalizeStoredAgentTemplate(template);
     this.db
       .prepare(`
         INSERT INTO agent_templates (id, value_json, updated_at)
@@ -89,45 +61,11 @@ export class AgentOrchestrationStore {
         ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
       `)
       .run(normalized.id, JSON.stringify(normalized), normalized.updatedAt);
-    this.recordAgentTemplateVersion(normalized);
     return normalized;
   }
 
   deleteAgentTemplate(id: string): void {
     this.db.prepare(`DELETE FROM agent_templates WHERE id = ?`).run(id.trim());
-    this.db.prepare(`DELETE FROM agent_template_versions WHERE template_id = ?`).run(id.trim());
-  }
-
-  listAgentTemplateVersions(templateId: string): AgentTemplateVersionView[] {
-    return this.db
-      .prepare(`
-        SELECT template_id, version, value_json, saved_at
-        FROM agent_template_versions
-        WHERE template_id = ?
-        ORDER BY version DESC
-      `)
-      .all(templateId.trim())
-      .map((row) => parseAgentTemplateVersionRow(row as unknown as StoredTemplateVersionRow));
-  }
-
-  restoreAgentTemplateVersion(templateId: string, version: number): AgentTemplate {
-    const row = this.db
-      .prepare(`
-        SELECT template_id, version, value_json, saved_at
-        FROM agent_template_versions
-        WHERE template_id = ? AND version = ?
-      `)
-      .get(templateId.trim(), version) as unknown as StoredTemplateVersionRow | undefined;
-    if (!row) {
-      throw new Error("找不到指定的子代理模板版本。");
-    }
-    const restored = parseAgentTemplateVersionRow(row).template;
-    const current = this.getAgentTemplate(templateId);
-    return this.saveAgentTemplate({
-      ...restored,
-      version: (current?.version ?? restored.version) + 1,
-      updatedAt: new Date().toISOString(),
-    });
   }
 
   listOrchestrationProfiles(): OrchestrationProfile[] {
@@ -148,7 +86,7 @@ export class AgentOrchestrationStore {
   }
 
   saveOrchestrationProfile(profile: OrchestrationProfile): OrchestrationProfile {
-    const normalized = this.normalizeProfileForSave(profile);
+    const normalized = normalizeStoredOrchestrationProfile(profile);
     this.db
       .prepare(`
         INSERT INTO orchestration_profiles (id, value_json, updated_at)
@@ -156,93 +94,11 @@ export class AgentOrchestrationStore {
         ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
       `)
       .run(normalized.id, JSON.stringify(normalized), normalized.updatedAt);
-    this.recordOrchestrationProfileVersion(normalized);
     return normalized;
   }
 
   deleteOrchestrationProfile(id: string): void {
     this.db.prepare(`DELETE FROM orchestration_profiles WHERE id = ?`).run(id.trim());
-    this.db.prepare(`DELETE FROM orchestration_profile_versions WHERE profile_id = ?`).run(id.trim());
-  }
-
-  listOrchestrationProfileVersions(profileId: string): OrchestrationProfileVersionView[] {
-    return this.db
-      .prepare(`
-        SELECT profile_id, version, value_json, saved_at
-        FROM orchestration_profile_versions
-        WHERE profile_id = ?
-        ORDER BY version DESC
-      `)
-      .all(profileId.trim())
-      .map((row) => parseOrchestrationProfileVersionRow(row as unknown as StoredProfileVersionRow));
-  }
-
-  restoreOrchestrationProfileVersion(profileId: string, version: number): OrchestrationProfile {
-    const row = this.db
-      .prepare(`
-        SELECT profile_id, version, value_json, saved_at
-        FROM orchestration_profile_versions
-        WHERE profile_id = ? AND version = ?
-      `)
-      .get(profileId.trim(), version) as unknown as StoredProfileVersionRow | undefined;
-    if (!row) {
-      throw new Error("找不到指定的 Agent Profile 版本。");
-    }
-    const restored = parseOrchestrationProfileVersionRow(row).profile;
-    const current = this.listOrchestrationProfiles().find((profile) => profile.id === profileId.trim());
-    return this.saveOrchestrationProfile({
-      ...restored,
-      version: (current?.version ?? restored.version) + 1,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  private normalizeTemplateForSave(template: AgentTemplate): AgentTemplate {
-    const normalized = normalizeStoredAgentTemplate(template);
-    const existing = this.getAgentTemplate(normalized.id);
-    if (!existing) {
-      return normalized;
-    }
-    return {
-      ...normalized,
-      version: Math.max(normalized.version, existing.version + 1),
-    };
-  }
-
-  private recordAgentTemplateVersion(template: AgentTemplate): void {
-    this.db
-      .prepare(`
-        INSERT INTO agent_template_versions (template_id, version, value_json, saved_at)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(template_id, version) DO UPDATE SET
-          value_json = excluded.value_json,
-          saved_at = excluded.saved_at
-      `)
-      .run(template.id, template.version, JSON.stringify(template), template.updatedAt);
-  }
-
-  private normalizeProfileForSave(profile: OrchestrationProfile): OrchestrationProfile {
-    const normalized = normalizeStoredOrchestrationProfile(profile);
-    const existing = this.listOrchestrationProfiles().find((entry) => entry.id === normalized.id);
-    if (!existing) {
-      return normalized;
-    }
-    return {
-      ...normalized,
-      version: Math.max(normalized.version, existing.version + 1),
-    };
-  }
-
-  private recordOrchestrationProfileVersion(profile: OrchestrationProfile): void {
-    this.db
-      .prepare(`
-        INSERT INTO orchestration_profile_versions (profile_id, version, value_json, saved_at)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(profile_id, version) DO UPDATE SET
-          value_json = excluded.value_json,
-          saved_at = excluded.saved_at
-      `)
-      .run(profile.id, profile.version, JSON.stringify(profile), profile.updatedAt);
   }
 }
 
@@ -265,8 +121,9 @@ export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemp
   const now = new Date().toISOString();
   const templateWithoutLegacyModel = { ...(template as AgentTemplate & { defaultModelRef?: unknown }) };
   delete templateWithoutLegacyModel.defaultModelRef;
+  const { version: _version, ...rest } = templateWithoutLegacyModel as AgentTemplate & { version?: number };
   return {
-    ...templateWithoutLegacyModel,
+    ...rest,
     id: template.id.trim(),
     name: template.name.trim(),
     description: template.description.trim(),
@@ -298,8 +155,9 @@ export function normalizeStoredOrchestrationProfile(profile: OrchestrationProfil
     throw new Error("Agent Profile 必须配置 Explore 的 provider 和模型。");
   }
   const now = new Date().toISOString();
+  const { version: _version, ...rest } = profile as OrchestrationProfile & { version?: number };
   return {
-    ...profile,
+    ...rest,
     id: profile.id.trim(),
     name: profile.name.trim(),
     source: profile.source === "project" ? "project" : "user",
@@ -328,28 +186,6 @@ function parseOrchestrationProfileRow(
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
-}
-
-function parseAgentTemplateVersionRow(row: StoredTemplateVersionRow): AgentTemplateVersionView {
-  const template = normalizeStoredAgentTemplate(parseJsonObject(row.value_json) as unknown as AgentTemplate);
-  return {
-    templateId: row.template_id,
-    version: row.version,
-    savedAt: row.saved_at,
-    template,
-  };
-}
-
-function parseOrchestrationProfileVersionRow(row: StoredProfileVersionRow): OrchestrationProfileVersionView {
-  const profile = normalizeStoredOrchestrationProfile(
-    parseJsonObject(row.value_json) as unknown as OrchestrationProfile,
-  );
-  return {
-    profileId: row.profile_id,
-    version: row.version,
-    savedAt: row.saved_at,
-    profile,
-  };
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {

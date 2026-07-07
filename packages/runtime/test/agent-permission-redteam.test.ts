@@ -27,7 +27,6 @@ const registry: EcoAgentRuntimeConfig = {
       allowDelegation: false,
       builtIn: false,
       source: "user",
-      version: 1,
       updatedAt: "2026-06-08T00:00:00.000Z",
     },
     {
@@ -43,7 +42,6 @@ const registry: EcoAgentRuntimeConfig = {
       allowDelegation: false,
       builtIn: false,
       source: "user",
-      version: 1,
       updatedAt: "2026-06-08T00:00:00.000Z",
     },
   ],
@@ -106,7 +104,6 @@ const registry: EcoAgentRuntimeConfig = {
       kind: "autonomous",
       guidancePrompt: "Use researcher for source gathering and synthesizer for final synthesis when useful.",
     },
-    version: 1,
     updatedAt: "2026-06-08T00:00:00.000Z",
     source: "user",
   },

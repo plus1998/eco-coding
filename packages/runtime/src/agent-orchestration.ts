@@ -80,7 +80,6 @@ export interface EcoAgentTemplateConfig {
   allowDelegation: boolean;
   builtIn: boolean;
   source: EcoAgentConfigSource;
-  version: number;
   updatedAt: string;
 }
 
@@ -126,7 +125,6 @@ export interface EcoOrchestrationProfileConfig {
   builtinAgents: EcoBuiltinAgentsConfig;
   agents: EcoAgentInstanceConfig[];
   strategy: EcoOrchestrationStrategy;
-  version: number;
   updatedAt: string;
   source: EcoAgentConfigSource;
   sourceRouteProfileId?: string;

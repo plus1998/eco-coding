@@ -67,7 +67,6 @@ export interface AgentTemplate {
   allowDelegation: boolean;
   builtIn: boolean;
   source: AgentConfigSource;
-  version: number;
   updatedAt: string;
 }
 
@@ -113,7 +112,6 @@ export interface OrchestrationProfile {
   builtinAgents: BuiltinAgentsConfig;
   agents: AgentInstanceConfig[];
   strategy: OrchestrationStrategy;
-  version: number;
   updatedAt: string;
   source: AgentConfigSource;
   sourceRouteProfileId?: string;
@@ -237,7 +235,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       allowDelegation: false,
       builtIn: true,
       source: "built_in",
-      version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
     {
@@ -256,7 +253,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       allowDelegation: false,
       builtIn: true,
       source: "built_in",
-      version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
     {
@@ -275,7 +271,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       allowDelegation: false,
       builtIn: true,
       source: "built_in",
-      version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
     {
@@ -294,7 +289,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       allowDelegation: false,
       builtIn: true,
       source: "built_in",
-      version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
   ];
@@ -448,7 +442,6 @@ export function buildOrchestrationProfileFromPreset(
       };
     }),
     strategy: cloneOrchestrationStrategy(preset.strategies.autonomous),
-    version: 1,
     updatedAt: now,
     source: options.source ?? "user",
   };
@@ -506,7 +499,6 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
       ),
     ],
     strategy: codingDefaultStrategy(),
-    version: 1,
     updatedAt,
     source: "derived",
     sourceRouteProfileId: routeProfile.id,

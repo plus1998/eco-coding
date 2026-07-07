@@ -1,15 +1,12 @@
-import { formatCostUsd } from "@eco/runtime";
 import {
   ArrowUp,
   Copy,
   Download,
-  History,
   ChevronRight,
   LinkIcon,
   Pencil,
   Plus,
   RefreshCw,
-  RotateCcw,
   Settings2,
   Trash2,
   X,
@@ -39,7 +36,6 @@ import {
 } from "../shared/agent-preset-evals";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type {
-  AgentProfilePerformanceSnapshot,
   AgentTemplate,
   CandidateModelView,
   McpServerConfigView,
@@ -47,7 +43,6 @@ import type {
   ModelSettingsSnapshot,
   ModelsDevModelOption,
   OrchestrationProfile,
-  OrchestrationProfileVersionView,
   ProviderConfigInput,
   ProviderConfigView,
   ProxyBridgeSettingsSnapshot,
@@ -161,11 +156,6 @@ export function ModelsSettingsPanel({
   const [agentProfileForm, setAgentProfileForm] = useState<AgentProfileFormState>(() =>
     createBlankAgentProfileForm(),
   );
-  const [agentProfileVersionModal, setAgentProfileVersionModal] = useState<{
-    profile: OrchestrationProfile;
-    versions: OrchestrationProfileVersionView[];
-    error?: string | undefined;
-  }>();
   const [editingAgentProfileId, setEditingAgentProfileId] = useState<string>();
   const [agentProfileEditorMode, setAgentProfileEditorMode] = useState<AgentProfileEditorMode>("create");
   const [agentProfileModalError, setAgentProfileModalError] = useState<string>();
@@ -187,22 +177,13 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
-  const [auditExportMessage, setAuditExportMessage] = useState<{
-    kind: AppMessageKind;
-    message: string;
-  }>();
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
   const [profileArchiveMessage, setProfileArchiveMessage] = useState<{
     kind: AppMessageKind;
     message: string;
   }>();
-  const [profilePerformance, setProfilePerformance] = useState<AgentProfilePerformanceSnapshot[]>([]);
-  const [profilePerformanceLoading, setProfilePerformanceLoading] = useState(false);
-  const [profilePerformanceError, setProfilePerformanceError] = useState<string>();
-  const [auditExportBusy, setAuditExportBusy] = useState(false);
   const [profileArchiveBusy, setProfileArchiveBusy] = useState(false);
-  const [agentProfileVersionBusy, setAgentProfileVersionBusy] = useState(false);
   const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -219,48 +200,6 @@ export function ModelsSettingsPanel({
     const snapshot = await window.eco.getModelSettings();
     onSettingsChange(snapshot);
   }, [onSettingsChange]);
-
-  const refreshProfilePerformance = useCallback(async () => {
-    if (!window.eco?.listAgentProfilePerformance) {
-      return;
-    }
-    setProfilePerformanceLoading(true);
-    setProfilePerformanceError(undefined);
-    try {
-      const snapshot = await window.eco.listAgentProfilePerformance();
-      setProfilePerformance(snapshot);
-    } catch (caught) {
-      setProfilePerformanceError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setProfilePerformanceLoading(false);
-    }
-  }, []);
-
-  const exportAgentAudit = useCallback(async () => {
-    if (!window.eco?.exportAgentAudit) {
-      setAuditExportMessage({ kind: "error", message: "审计导出接口不可用。" });
-      return;
-    }
-    setAuditExportBusy(true);
-    setAuditExportMessage(undefined);
-    try {
-      const result = await window.eco.exportAgentAudit();
-      if (result.canceled) {
-        return;
-      }
-      setAuditExportMessage({
-        kind: "success",
-        message: `已导出 ${result.exportedThreads} 个线程的 Agent 审计日志${result.path ? `：${result.path}` : ""}`,
-      });
-    } catch (caught) {
-      setAuditExportMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setAuditExportBusy(false);
-    }
-  }, []);
 
   const exportAgentProfiles = useCallback(async (profileIds?: string[]) => {
     if (!window.eco?.exportOrchestrationProfiles) {
@@ -387,13 +326,6 @@ export function ModelsSettingsPanel({
     },
     [settings, refreshSettings, onSavingChange],
   );
-
-  useEffect(() => {
-    if (activeTab !== "routes") {
-      return;
-    }
-    void refreshProfilePerformance();
-  }, [activeTab, refreshProfilePerformance]);
 
   useEffect(() => {
     if (!window.eco?.listModelsDevModels) {
@@ -555,56 +487,6 @@ export function ModelsSettingsPanel({
     setEditingAgentProfileId(undefined);
     setAgentProfileEditorMode("create");
     setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
-  }
-
-  async function openAgentProfileVersions(profile: OrchestrationProfile) {
-    if (!window.eco?.listOrchestrationProfileVersions) {
-      setProfileArchiveMessage({ kind: "error", message: "智能体配置版本接口不可用。" });
-      return;
-    }
-    setAgentProfileVersionBusy(true);
-    setProfileArchiveMessage(undefined);
-    try {
-      const versions = await window.eco.listOrchestrationProfileVersions(profile.id);
-      setAgentProfileVersionModal({ profile, versions });
-    } catch (caught) {
-      setProfileArchiveMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setAgentProfileVersionBusy(false);
-    }
-  }
-
-  async function restoreAgentProfileVersion(profileId: string, version: number) {
-    if (
-      !window.eco?.restoreOrchestrationProfileVersion ||
-      !window.eco?.listOrchestrationProfileVersions ||
-      !agentProfileVersionModal
-    ) {
-      return;
-    }
-    setAgentProfileVersionBusy(true);
-    onSavingChange?.(true);
-    try {
-      const restored = await window.eco.restoreOrchestrationProfileVersion({ profileId, version });
-      await refreshSettings();
-      const versions = await window.eco.listOrchestrationProfileVersions(profileId);
-      setAgentProfileVersionModal({ profile: restored, versions });
-      setProfileArchiveMessage({
-        kind: "success",
-        message: `已恢复智能体配置「${restored.name}」到 v${version}`,
-      });
-    } catch (caught) {
-      setAgentProfileVersionModal({
-        ...agentProfileVersionModal,
-        error: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setAgentProfileVersionBusy(false);
-      onSavingChange?.(false);
-    }
   }
 
   async function saveAgentProfile() {
@@ -841,14 +723,6 @@ export function ModelsSettingsPanel({
     () => validateBuiltInPresetEvalSuite(presetEvalScenarios),
     [presetEvalScenarios],
   );
-  const performanceByProfileKey = useMemo(() => {
-    const map = new Map<string, AgentProfilePerformanceSnapshot>();
-    for (const performance of profilePerformance) {
-      map.set(performance.profileId, performance);
-      map.set(performance.selectionId, performance);
-    }
-    return map;
-  }, [profilePerformance]);
 
   return (
     <>
@@ -871,13 +745,6 @@ export function ModelsSettingsPanel({
           kind={presetProfileMessage.kind}
           message={presetProfileMessage.message}
           onDismiss={() => setPresetProfileMessage(undefined)}
-        />
-      )}
-      {auditExportMessage && (
-        <AppMessage
-          kind={auditExportMessage.kind}
-          message={auditExportMessage.message}
-          onDismiss={() => setAuditExportMessage(undefined)}
         />
       )}
       {profileArchiveMessage && (
@@ -988,27 +855,6 @@ export function ModelsSettingsPanel({
               <button
                 type="button"
                 className="models-section-button"
-                disabled={busy || profilePerformanceLoading}
-                onClick={() => void refreshProfilePerformance()}
-              >
-                <RefreshCw
-                  size={14}
-                  className={profilePerformanceLoading ? "model-refresh-spin" : undefined}
-                />
-                刷新表现
-              </button>
-              <button
-                type="button"
-                className="models-section-button"
-                disabled={busy || auditExportBusy}
-                onClick={() => void exportAgentAudit()}
-              >
-                <Download size={14} />
-                导出审计 JSON
-              </button>
-              <button
-                type="button"
-                className="models-section-button"
                 disabled={busy || profileArchiveBusy}
                 onClick={() => void importAgentProfiles()}
               >
@@ -1035,9 +881,6 @@ export function ModelsSettingsPanel({
               </button>
             </div>
           </div>
-          {profilePerformanceError ? (
-            <p className="settings-form-error mcp-list-error">{profilePerformanceError}</p>
-          ) : null}
 
           {selectableProfileSummaries.length === 0 ? (
             <p className="mcp-list-empty">尚未添加可运行的智能体配置</p>
@@ -1045,19 +888,10 @@ export function ModelsSettingsPanel({
             <ul className="mcp-server-list">
               {selectableProfileSummaries.map((summary) => {
                 const editableProfile = canEditStoredAgentProfile(summary.profile);
-                const performance =
-                  performanceByProfileKey.get(summary.profile.id) ??
-                  (summary.selectionId ? performanceByProfileKey.get(summary.selectionId) : undefined);
                 const testingProfile = testingAgentProfileId === summary.profile.id;
                 return (
                   <li key={summary.profile.id} className="mcp-server-row models-agent-profile-row">
-                    <div className="models-agent-profile-stack">
-                      <AgentProfileSummaryBlock summary={summary} />
-                      <AgentProfilePerformanceStrip
-                        performance={performance}
-                        loading={profilePerformanceLoading}
-                      />
-                    </div>
+                    <AgentProfileSummaryBlock summary={summary} />
                     <div className="mcp-server-actions">
                       <button
                         type="button"
@@ -1103,18 +937,6 @@ export function ModelsSettingsPanel({
                       >
                         <Pencil size={18} />
                       </button>
-                      {editableProfile ? (
-                        <button
-                          type="button"
-                          className="mcp-icon-button"
-                          onClick={() => void openAgentProfileVersions(summary.profile)}
-                          aria-label={`查看 ${summary.name} 版本历史`}
-                          title={`查看 ${summary.name} 版本历史`}
-                          disabled={busy || agentProfileVersionBusy}
-                        >
-                          <History size={18} />
-                        </button>
-                      ) : null}
                       {editableProfile ? (
                         <button
                           type="button"
@@ -1190,101 +1012,7 @@ export function ModelsSettingsPanel({
           onSave={() => void saveAgentProfile()}
         />
       )}
-
-      {agentProfileVersionModal && (
-        <AgentProfileVersionModal
-          profile={agentProfileVersionModal.profile}
-          versions={agentProfileVersionModal.versions}
-          error={agentProfileVersionModal.error}
-          busy={busy || agentProfileVersionBusy}
-          onClose={() => setAgentProfileVersionModal(undefined)}
-          onRestore={(version) =>
-            void restoreAgentProfileVersion(agentProfileVersionModal.profile.id, version)
-          }
-        />
-      )}
     </>
-  );
-}
-
-function AgentProfileVersionModal({
-  profile,
-  versions,
-  error,
-  busy,
-  onClose,
-  onRestore,
-}: {
-  profile: OrchestrationProfile;
-  versions: OrchestrationProfileVersionView[];
-  error?: string | undefined;
-  busy?: boolean | undefined;
-  onClose: () => void;
-  onRestore: (version: number) => void;
-}) {
-  return (
-    <div className="settings-modal-backdrop">
-      <button
-        type="button"
-        className="settings-modal-backdrop-close"
-        onClick={onClose}
-        aria-label="关闭"
-        title="关闭"
-        disabled={busy}
-      />
-      <div
-        className="settings-modal settings-modal-agent-version"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-profile-version-title"
-      >
-        <header className="settings-modal-header">
-          <h2 id="agent-profile-version-title" className="settings-modal-title">
-            {profile.name} 版本历史
-          </h2>
-          <button
-            type="button"
-            className="mcp-icon-button"
-            onClick={onClose}
-            aria-label="关闭"
-            title="关闭"
-            disabled={busy}
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <div className="settings-modal-body">
-          {versions.length === 0 ? (
-            <p className="mcp-list-empty">暂无版本记录</p>
-          ) : (
-            <ul className="models-agent-version-list">
-              {versions.map((entry, index) => (
-                <li key={`${entry.profileId}-${entry.version}`} className="models-agent-version-row">
-                  <div className="models-agent-version-main">
-                    <span className="models-route-role">v{entry.version}</span>
-                    {index === 0 ? <span className="models-agent-source-badge">当前</span> : null}
-                    <span className="models-route-role-id">{formatVersionTime(entry.savedAt)}</span>
-                    <p className="models-subagent-card-desc">
-                      {formatAgentProfileVersionSummary(entry.profile)}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="models-section-button"
-                    disabled={busy || index === 0}
-                    onClick={() => onRestore(entry.version)}
-                  >
-                    <RotateCcw size={14} />
-                    恢复
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {error && <p className="settings-form-error">{error}</p>}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -2572,72 +2300,6 @@ function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary })
   );
 }
 
-function AgentProfilePerformanceStrip({
-  performance,
-  loading,
-}: {
-  performance?: AgentProfilePerformanceSnapshot | undefined;
-  loading: boolean;
-}) {
-  if (!performance || performance.runCount === 0) {
-    return (
-      <div className="models-agent-profile-performance muted">
-        <span>{loading ? "刷新中" : "暂无历史表现"}</span>
-      </div>
-    );
-  }
-  return (
-    <div className="models-agent-profile-performance">
-      <span className="models-agent-profile-performance-pill">运行 {performance.runCount}</span>
-      <span className="models-agent-profile-performance-pill">
-        成功率 {formatPerformanceSuccessRate(performance)}
-      </span>
-      <span className="models-agent-profile-performance-pill">
-        平均 {formatPerformanceDuration(performance.avgDurationMs)}
-      </span>
-      <span className="models-agent-profile-performance-pill">
-        Token {formatPerformanceTokens(performance.totalTokens)}
-      </span>
-      <span className="models-agent-profile-performance-pill">
-        成本 {formatCostUsd(performance.ecoCostUsd)}
-      </span>
-      {performance.latestRunAt ? (
-        <span className="models-agent-profile-performance-pill">
-          最近 {formatPerformanceDate(performance.latestRunAt)}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function formatPerformanceSuccessRate(performance: AgentProfilePerformanceSnapshot): string {
-  return performance.successRatePct === undefined ? "—" : `${performance.successRatePct.toFixed(1)}%`;
-}
-
-function formatPerformanceDuration(durationMs: number | undefined): string {
-  return durationMs === undefined ? "—" : formatDurationMs(durationMs);
-}
-
-function formatPerformanceTokens(tokens: number): string {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(tokens);
-}
-
-function formatPerformanceDate(value: string): string {
-  const time = Date.parse(value);
-  if (!Number.isFinite(time)) {
-    return "—";
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(time);
-}
-
 function PresetOverview({
   presets,
   templates,
@@ -2821,19 +2483,6 @@ function formatModelPreview(modelId: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 10)}…${normalized.slice(-10)}`;
-}
-
-function formatVersionTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
-}
-
-function formatAgentProfileVersionSummary(profile: OrchestrationProfile): string {
-  const enabledAgents = profile.agents.filter((agent) => agent.enabled);
-  return `${formatAgentDomainLabel(profile.preset)} · 主模型 ${profile.mainAgent.modelRef.modelId} · ${enabledAgents.length} 个子 Agent`;
 }
 
 function selectPresetDefaultProvider(

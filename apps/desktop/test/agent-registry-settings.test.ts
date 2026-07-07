@@ -17,7 +17,6 @@ function customTemplate(id: string): AgentTemplate {
     allowDelegation: false,
     builtIn: false,
     source: "user",
-    version: 1,
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
@@ -39,7 +38,6 @@ function customProfile(id: string): OrchestrationProfile {
     },
     agents: [],
     strategy: { kind: "autonomous" },
-    version: 1,
     updatedAt: "2026-01-01T00:00:00.000Z",
     source: "user",
   };

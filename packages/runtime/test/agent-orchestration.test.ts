@@ -42,7 +42,6 @@ const researchTemplate: EcoAgentTemplateConfig = {
   allowDelegation: false,
   builtIn: false,
   source: "user",
-  version: 1,
   updatedAt,
 };
 
@@ -85,7 +84,6 @@ const profile: EcoOrchestrationProfileConfig = {
     },
   ],
   strategy: { kind: "autonomous", guidancePrompt: "Delegate only when evidence quality improves." },
-  version: 1,
   updatedAt,
   source: "user",
 };

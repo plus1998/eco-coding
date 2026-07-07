@@ -20,7 +20,6 @@ function template(): AgentTemplate {
     allowDelegation: false,
     builtIn: false,
     source: "user",
-    version: 1,
     updatedAt: "2026-06-07T00:00:00.000Z",
   };
 }

@@ -654,14 +654,6 @@
   font-size: 13px;
 }
 
-.settings-page .models-agent-version-row {
-  border-color: var(--border-subtle);
-}
-
-.settings-page .models-agent-version-main .models-route-role {
-  color: var(--text-primary);
-}
-
 .settings-page .models-agent-source-badge {
   background: var(--accent-soft);
   color: var(--accent-text);

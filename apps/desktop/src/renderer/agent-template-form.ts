@@ -148,7 +148,6 @@ export function buildAgentTemplateFromForm(
     allowDelegation: form.allowDelegation,
     builtIn: false,
     source: "user",
-    version: (options.existing?.version ?? 0) + 1,
     updatedAt: options.nowIso ?? new Date().toISOString(),
   };
 }

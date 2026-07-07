@@ -12265,11 +12265,6 @@ html[data-window-focused="true"] .settings-nav {
   background: rgba(0, 0, 0, 0.42);
 }
 
-.settings-modal-agent-version {
-  width: min(680px, calc(100vw - 48px));
-  max-height: min(88vh, 760px);
-}
-
 .settings-modal-route-profile .settings-modal-header {
   padding-bottom: 16px;
   border-bottom: 1px solid #333;
@@ -13264,36 +13259,6 @@ html[data-window-focused="true"] .settings-nav {
   line-height: 1.35;
 }
 
-.models-agent-profile-performance {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.models-agent-profile-performance.muted {
-  color: var(--text-secondary);
-}
-
-.models-agent-profile-performance-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 2px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  line-height: 1.4;
-}
-
-.models-agent-profile-performance-pill.emphasis {
-  border-color: rgba(59, 130, 246, 0.26);
-  background: rgba(59, 130, 246, 0.1);
-  color: #bfdbfe;
-}
-
 .models-permission-profile-list,
 .models-permission-agent-list {
   display: flex;
@@ -13559,43 +13524,6 @@ html[data-window-focused="true"] .settings-nav {
   flex-direction: column;
   gap: 4px;
   color: var(--status-deny-text);
-}
-
-.models-agent-version-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.models-agent-version-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--card-surface-border);
-  border-radius: 8px;
-  background: var(--card-surface-bg);
-}
-
-.models-agent-version-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.models-agent-version-main > span {
-  margin-right: 8px;
-}
-
-.models-agent-version-main .models-subagent-card-desc {
-  margin-top: 8px;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 
 .models-subagent-list {

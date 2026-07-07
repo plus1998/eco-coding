@@ -30,15 +30,11 @@ export const IPC_CHANNELS = {
   agentTemplateDelete: "agent-template:delete",
   agentTemplateExport: "agent-template:export",
   agentTemplateImport: "agent-template:import",
-  agentTemplateVersionsList: "agent-template-versions:list",
-  agentTemplateVersionRestore: "agent-template-version:restore",
   orchestrationProfileList: "orchestration-profile:list",
   orchestrationProfileSave: "orchestration-profile:save",
   orchestrationProfileDelete: "orchestration-profile:delete",
   orchestrationProfileExport: "orchestration-profile:export",
   orchestrationProfileImport: "orchestration-profile:import",
-  orchestrationProfileVersionsList: "orchestration-profile-versions:list",
-  orchestrationProfileVersionRestore: "orchestration-profile-version:restore",
   threadStart: "thread:start",
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
@@ -48,8 +44,6 @@ export const IPC_CHANNELS = {
   threadRunProjectionGet: "thread:run-projection-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
-  agentProfilePerformanceList: "agent-profile:performance-list",
-  agentAuditExport: "agent-audit:export",
   threadDelete: "thread:delete",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
@@ -792,30 +786,6 @@ export interface OrchestrationProfileImportResult {
   errors: string[];
 }
 
-export interface OrchestrationProfileVersionView {
-  profileId: string;
-  version: number;
-  savedAt: string;
-  profile: OrchestrationProfile;
-}
-
-export interface OrchestrationProfileVersionRestoreRequest {
-  profileId: string;
-  version: number;
-}
-
-export interface AgentTemplateVersionView {
-  templateId: string;
-  version: number;
-  savedAt: string;
-  template: AgentTemplate;
-}
-
-export interface AgentTemplateVersionRestoreRequest {
-  templateId: string;
-  version: number;
-}
-
 export type ThreadStatus =
   | "queued"
   | "running"
@@ -1326,53 +1296,6 @@ export interface ThreadSessionBootstrapResult {
   pendingClarification?: ClarificationRequest;
   subagentSessions: ThreadSubagentSessionTiming[];
   usage: ThreadUsageSnapshotResult;
-}
-
-export interface AgentProfilePerformanceRunSnapshot {
-  threadId: string;
-  title: string;
-  status: ThreadStatus;
-  updatedAt: string;
-  durationMs?: number;
-  totalTokens: number;
-  ecoCostUsd: number;
-}
-
-export interface AgentProfilePerformanceSnapshot {
-  profileId: string;
-  selectionId: string;
-  profileName: string;
-  preset: string;
-  source: "configured" | "historical";
-  runCount: number;
-  completedCount: number;
-  failedCount: number;
-  blockedCount: number;
-  idleCount: number;
-  activeCount: number;
-  successRatePct?: number;
-  avgDurationMs?: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  totalTokens: number;
-  ecoCostUsd: number;
-  avgCostUsd?: number;
-  latestRunAt?: string;
-  modelIds: string[];
-  recentRuns: AgentProfilePerformanceRunSnapshot[];
-}
-
-export interface AgentAuditExportRequest {
-  threadIds?: string[];
-}
-
-export interface AgentAuditExportResult {
-  ok: true;
-  canceled: boolean;
-  exportedThreads: number;
-  path?: string;
 }
 
 export interface RoutePricingRates {

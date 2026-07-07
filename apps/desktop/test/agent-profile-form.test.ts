@@ -41,7 +41,6 @@ const researcherTemplate: AgentTemplate = {
   allowDelegation: false,
   builtIn: true,
   source: "built_in",
-  version: 1,
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
@@ -93,7 +92,6 @@ function profile(): OrchestrationProfile {
       kind: "autonomous",
       guidancePrompt: "Use the researcher when evidence quality matters.",
     },
-    version: 1,
     updatedAt: "2026-01-01T00:00:00.000Z",
     source: "derived",
   };

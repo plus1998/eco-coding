@@ -23,7 +23,6 @@ export function buildComposerSavedProfile(input: {
     id: createUniqueComposerProfileId(name, input.existingIds),
     name,
     source: "user",
-    version: 1,
     updatedAt: new Date().toISOString(),
     agents,
     strategy: structuredClone(copy.strategy) as OrchestrationProfile["strategy"],
