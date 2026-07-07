@@ -44,6 +44,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     stringArg(),
     optionalStringArg(),
   ]),
+  command("thread:run-projection-detail-get", "Get thread run projection detail", "read", RPC_INVOKE, [
+    objectArg(["threadId", "kind", "key"]),
+  ]),
   command("thread:subagent-sessions-list", "List thread subagent sessions", "read", RPC_INVOKE, [
     stringArg(),
   ]),

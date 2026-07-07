@@ -221,3 +221,350 @@ class ThreadRunProjectionSnapshot {
 
   bool get hasData => sourceEventCount > 0;
 }
+
+ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(
+  ThreadRunProjectionSnapshot? current,
+  ThreadRunProjectionSnapshot incoming,
+) {
+  if (current == null) return incoming;
+  final useIncomingHeader =
+      incoming.generatedAt.compareTo(current.generatedAt) >= 0;
+  return ThreadRunProjectionSnapshot(
+    threadId: useIncomingHeader ? incoming.threadId : current.threadId,
+    status: useIncomingHeader ? incoming.status : current.status,
+    generatedAt: useIncomingHeader ? incoming.generatedAt : current.generatedAt,
+    sourceEventCount: incoming.sourceEventCount > current.sourceEventCount
+        ? incoming.sourceEventCount
+        : current.sourceEventCount,
+    timeline: _mergeProjectionTimeline(current.timeline, incoming.timeline),
+    agents: _mergeProjectionAgents(current.agents, incoming.agents),
+    requestSpans: _mergeProjectionRequestSpans(
+      current.requestSpans,
+      incoming.requestSpans,
+    ),
+  );
+}
+
+ThreadRunProjectionSnapshot mergeThreadRunProjectionDetailResult(
+  ThreadRunProjectionSnapshot? current,
+  ThreadRunProjectionDetailResult detail,
+) {
+  final agents = <ThreadRunProjectionAgent>[];
+  final mainTimeline = <ThreadRunProjectionTimelineItem>[];
+
+  if (detail.kind == 'agent') {
+    final baseAgent =
+        detail.agent ?? _findProjectionAgent(current?.agents, detail.key);
+    if (baseAgent != null || detail.timeline.isNotEmpty) {
+      agents.add(
+        _copyProjectionAgentWithTimeline(
+          baseAgent ??
+              _projectionAgentFromTimeline(detail.key, detail.timeline),
+          detail.timeline,
+        ),
+      );
+    }
+  } else if (detail.kind == 'tool') {
+    final byAgentId = <String, List<ThreadRunProjectionTimelineItem>>{};
+    for (final item in detail.timeline) {
+      final agentId = item.agentId?.trim();
+      if (item.scope == 'agent' && agentId != null && agentId.isNotEmpty) {
+        byAgentId.putIfAbsent(agentId, () => []).add(item);
+      } else {
+        mainTimeline.add(item);
+      }
+    }
+    for (final entry in byAgentId.entries) {
+      final baseAgent = _findProjectionAgent(current?.agents, entry.key);
+      agents.add(
+        _copyProjectionAgentWithTimeline(
+          baseAgent ?? _projectionAgentFromTimeline(entry.key, entry.value),
+          entry.value,
+        ),
+      );
+    }
+  }
+
+  final incoming = ThreadRunProjectionSnapshot(
+    threadId: detail.threadId,
+    status: current?.status ?? '',
+    generatedAt: detail.generatedAt,
+    sourceEventCount: detail.sourceEventCount,
+    timeline: mainTimeline,
+    agents: agents,
+    requestSpans: current?.requestSpans ?? const [],
+  );
+  return mergeThreadRunProjectionSnapshots(current, incoming);
+}
+
+List<ThreadRunProjectionTimelineItem> _mergeProjectionTimeline(
+  List<ThreadRunProjectionTimelineItem> current,
+  List<ThreadRunProjectionTimelineItem> incoming,
+) {
+  final byId = <String, ThreadRunProjectionTimelineItem>{
+    for (final item in current) item.id: item,
+  };
+  for (final item in incoming) {
+    final existing = byId[item.id];
+    byId[item.id] = existing == null
+        ? item
+        : _mergeProjectionTimelineItem(existing, item);
+  }
+  final merged = byId.values.toList();
+  merged.sort(_compareProjectionTimelineItems);
+  return merged;
+}
+
+ThreadRunProjectionTimelineItem _mergeProjectionTimelineItem(
+  ThreadRunProjectionTimelineItem current,
+  ThreadRunProjectionTimelineItem incoming,
+) {
+  final metadata = _mergeProjectionTimelineMetadata(
+    current.metadata,
+    incoming.metadata,
+  );
+  final text = _shouldKeepCurrentProjectionText(current, incoming)
+      ? current.text
+      : incoming.text;
+  if (!_isStreamProjectionItem(current) || !_isStreamProjectionItem(incoming)) {
+    if (identical(metadata, incoming.metadata) && text == incoming.text) {
+      return incoming;
+    }
+    return ThreadRunProjectionTimelineItem(
+      id: incoming.id,
+      sequence: incoming.sequence,
+      eventType: incoming.eventType,
+      scope: incoming.scope,
+      text: text,
+      at: incoming.at,
+      role: incoming.role,
+      agentId: incoming.agentId,
+      requestId: incoming.requestId,
+      streamKey: incoming.streamKey,
+      metadata: metadata,
+    );
+  }
+  if (text == incoming.text && identical(metadata, incoming.metadata)) {
+    return incoming;
+  }
+  return ThreadRunProjectionTimelineItem(
+    id: incoming.id,
+    sequence: incoming.sequence,
+    eventType: incoming.eventType,
+    scope: incoming.scope,
+    text: text,
+    at: incoming.at,
+    role: incoming.role,
+    agentId: incoming.agentId,
+    requestId: incoming.requestId,
+    streamKey: incoming.streamKey,
+    metadata: metadata,
+  );
+}
+
+bool _shouldKeepCurrentProjectionText(
+  ThreadRunProjectionTimelineItem current,
+  ThreadRunProjectionTimelineItem incoming,
+) {
+  if (incoming.text.length >= current.text.length) {
+    return false;
+  }
+  if (_isStreamProjectionItem(current) && _isStreamProjectionItem(incoming)) {
+    return true;
+  }
+  return incoming.metadata?['textTruncated'] == true;
+}
+
+Map<String, dynamic>? _mergeProjectionTimelineMetadata(
+  Map<String, dynamic>? current,
+  Map<String, dynamic>? incoming,
+) {
+  if (current == null || current.isEmpty) return incoming;
+  if (incoming == null || incoming.isEmpty) return current;
+  final merged = <String, dynamic>{...current, ...incoming};
+  final currentTool = current['tool'];
+  final incomingTool = incoming['tool'];
+  if (currentTool is Map<String, dynamic> &&
+      incomingTool is Map<String, dynamic>) {
+    merged['tool'] = <String, dynamic>{...currentTool, ...incomingTool};
+  }
+  return merged;
+}
+
+bool _isStreamProjectionItem(ThreadRunProjectionTimelineItem item) {
+  return item.eventType == 'thinking.delta' ||
+      item.eventType == 'thinking.final' ||
+      item.eventType == 'message.delta' ||
+      item.eventType == 'message.final';
+}
+
+List<ThreadRunProjectionAgent> _mergeProjectionAgents(
+  List<ThreadRunProjectionAgent> current,
+  List<ThreadRunProjectionAgent> incoming,
+) {
+  final byId = <String, ThreadRunProjectionAgent>{
+    for (final agent in current) agent.agentId: agent,
+  };
+  for (final agent in incoming) {
+    final existing = byId[agent.agentId];
+    byId[agent.agentId] = existing == null
+        ? agent
+        : _mergeProjectionAgent(existing, agent);
+  }
+  final merged = byId.values.toList();
+  merged.sort(
+    (left, right) => left.startedAt.compareTo(right.startedAt) == 0
+        ? left.agentId.compareTo(right.agentId)
+        : left.startedAt.compareTo(right.startedAt),
+  );
+  return merged;
+}
+
+ThreadRunProjectionAgent _mergeProjectionAgent(
+  ThreadRunProjectionAgent current,
+  ThreadRunProjectionAgent incoming,
+) {
+  return ThreadRunProjectionAgent(
+    agentId: incoming.agentId,
+    role: incoming.role.isNotEmpty ? incoming.role : current.role,
+    kind: incoming.kind.isNotEmpty ? incoming.kind : current.kind,
+    status: incoming.status.isNotEmpty ? incoming.status : current.status,
+    startedAt: incoming.startedAt.isNotEmpty
+        ? incoming.startedAt
+        : current.startedAt,
+    durationMs: incoming.durationMs,
+    delegationSummary: incoming.delegationSummary ?? current.delegationSummary,
+    delegationPrompt: incoming.delegationPrompt ?? current.delegationPrompt,
+    parentToolUseId: incoming.parentToolUseId ?? current.parentToolUseId,
+    latestActivity: incoming.latestActivity ?? current.latestActivity,
+    endedAt: incoming.endedAt ?? current.endedAt,
+    timeline: incoming.timeline.isEmpty
+        ? current.timeline
+        : _mergeProjectionTimeline(current.timeline, incoming.timeline),
+  );
+}
+
+ThreadRunProjectionAgent? _findProjectionAgent(
+  List<ThreadRunProjectionAgent>? agents,
+  String agentId,
+) {
+  if (agents == null) return null;
+  for (final agent in agents) {
+    if (agent.agentId == agentId) return agent;
+  }
+  return null;
+}
+
+ThreadRunProjectionAgent _copyProjectionAgentWithTimeline(
+  ThreadRunProjectionAgent agent,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  return ThreadRunProjectionAgent(
+    agentId: agent.agentId,
+    role: agent.role,
+    kind: agent.kind,
+    status: agent.status,
+    startedAt: agent.startedAt,
+    durationMs: agent.durationMs,
+    delegationSummary: agent.delegationSummary,
+    delegationPrompt: agent.delegationPrompt,
+    parentToolUseId: agent.parentToolUseId,
+    latestActivity: agent.latestActivity,
+    endedAt: agent.endedAt,
+    timeline: timeline,
+  );
+}
+
+ThreadRunProjectionAgent _projectionAgentFromTimeline(
+  String agentId,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  final first = timeline.isNotEmpty ? timeline.first : null;
+  return ThreadRunProjectionAgent(
+    agentId: agentId,
+    role: first?.role ?? '',
+    kind: 'subagent',
+    status: 'stopped',
+    startedAt: first?.at ?? '',
+    durationMs: 0,
+    timeline: timeline,
+  );
+}
+
+List<ThreadRunProjectionRequestSpan> _mergeProjectionRequestSpans(
+  List<ThreadRunProjectionRequestSpan> current,
+  List<ThreadRunProjectionRequestSpan> incoming,
+) {
+  final byId = <String, ThreadRunProjectionRequestSpan>{
+    for (final span in current) span.requestId: span,
+  };
+  for (final span in incoming) {
+    byId[span.requestId] = span;
+  }
+  final merged = byId.values.toList();
+  merged.sort(
+    (left, right) => left.startedAt.compareTo(right.startedAt) == 0
+        ? left.requestId.compareTo(right.requestId)
+        : left.startedAt.compareTo(right.startedAt),
+  );
+  return merged;
+}
+
+int _compareProjectionTimelineItems(
+  ThreadRunProjectionTimelineItem left,
+  ThreadRunProjectionTimelineItem right,
+) {
+  final sequenceDelta = left.sequence.compareTo(right.sequence);
+  if (sequenceDelta != 0) return sequenceDelta;
+  final atDelta = left.at.compareTo(right.at);
+  if (atDelta != 0) return atDelta;
+  return left.id.compareTo(right.id);
+}
+
+class ThreadRunProjectionDetailResult {
+  const ThreadRunProjectionDetailResult({
+    required this.threadId,
+    required this.kind,
+    required this.key,
+    required this.generatedAt,
+    required this.timeline,
+    required this.sourceEventCount,
+    required this.hasMore,
+    this.nextAfterSequence,
+    this.agent,
+  });
+
+  factory ThreadRunProjectionDetailResult.fromJson(Map<String, dynamic> json) {
+    final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
+    final agentRaw = json['agent'];
+    return ThreadRunProjectionDetailResult(
+      threadId: json['threadId'] as String? ?? '',
+      kind: json['kind'] as String? ?? '',
+      key: json['key'] as String? ?? '',
+      generatedAt: json['generatedAt'] as String? ?? '',
+      sourceEventCount: (json['sourceEventCount'] as num?)?.toInt() ?? 0,
+      hasMore: json['hasMore'] == true,
+      nextAfterSequence: (json['nextAfterSequence'] as num?)?.toInt(),
+      agent: agentRaw is Map<String, dynamic>
+          ? ThreadRunProjectionAgent.fromJson(agentRaw)
+          : null,
+      timeline: timelineRaw
+          .map(
+            (entry) => ThreadRunProjectionTimelineItem.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  final String threadId;
+  final String kind;
+  final String key;
+  final String generatedAt;
+  final int sourceEventCount;
+  final bool hasMore;
+  final int? nextAfterSequence;
+  final ThreadRunProjectionAgent? agent;
+  final List<ThreadRunProjectionTimelineItem> timeline;
+}

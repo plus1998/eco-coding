@@ -22,6 +22,8 @@ import 'thread_session_layout.dart';
 /// Feed body text is 20% larger than the default body style.
 const activityFeedBodyFontScale = 1.2;
 
+typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
+
 TextStyle? activityFeedBodyStyle(
   BuildContext context, {
   Color? color,
@@ -407,12 +409,18 @@ class ActivityFeedList extends StatefulWidget {
     required this.scrollController,
     this.scrollCoordinator,
     this.agentProfile,
+    this.onOpenAgentDetail,
+    this.onOpenToolDetail,
+    this.expandUserPrompts = false,
   });
 
   final List<ActivityFeedEntry> entries;
   final ScrollController scrollController;
   final ActivityFeedScrollCoordinator? scrollCoordinator;
   final OrchestrationProfile? agentProfile;
+  final ActivityFeedEntryCallback? onOpenAgentDetail;
+  final ActivityFeedEntryCallback? onOpenToolDetail;
+  final bool expandUserPrompts;
 
   @override
   State<ActivityFeedList> createState() => _ActivityFeedListState();
@@ -495,6 +503,9 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                   key: ValueKey(entry.id),
                   entry: entry,
                   agentProfile: widget.agentProfile,
+                  onOpenAgentDetail: widget.onOpenAgentDetail,
+                  onOpenToolDetail: widget.onOpenToolDetail,
+                  expandUserPrompts: widget.expandUserPrompts,
                 );
               },
             ),
@@ -563,16 +574,25 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     super.key,
     required this.entry,
     this.agentProfile,
+    this.onOpenAgentDetail,
+    this.onOpenToolDetail,
+    this.expandUserPrompts = false,
   });
 
   final ActivityFeedEntry entry;
   final OrchestrationProfile? agentProfile;
+  final ActivityFeedEntryCallback? onOpenAgentDetail;
+  final ActivityFeedEntryCallback? onOpenToolDetail;
+  final bool expandUserPrompts;
 
   @override
   Widget build(BuildContext context) {
     switch (entry.kind) {
       case ActivityFeedKind.user:
-        return _UserPromptTile(text: entry.text);
+        return _UserPromptTile(
+          text: entry.text,
+          initiallyExpanded: expandUserPrompts,
+        );
       case ActivityFeedKind.clarificationAnswer:
         return _ClarificationAnswerTile(text: entry.text);
       case ActivityFeedKind.assistant:
@@ -590,9 +610,16 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           lifecycle: entry.lifecycle,
           bashRun: entry.bashRun,
           fileChange: entry.fileChange,
+          toolUseId: entry.toolUseId,
+          onOpenToolDetail: onOpenToolDetail != null
+              ? () => onOpenToolDetail!(entry)
+              : null,
         );
       case ActivityFeedKind.actionGroup:
-        return _ActionGroupTile(entry: entry);
+        return _ActionGroupTile(
+          entry: entry,
+          onOpenToolDetail: onOpenToolDetail,
+        );
       case ActivityFeedKind.phase:
         if (entry.reconnecting) {
           return _ReconnectPhaseTile(summary: entry.text, detail: entry.detail);
@@ -609,6 +636,9 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           durationMs: entry.durationMs,
           statusText: entry.statusText,
           timeline: entry.timeline,
+          onOpenDetail: onOpenAgentDetail != null
+              ? () => onOpenAgentDetail!(entry)
+              : null,
         );
       case ActivityFeedKind.error:
         return _ErrorTile(text: entry.text);
@@ -617,9 +647,10 @@ class _ActivityFeedEntryTile extends StatelessWidget {
 }
 
 class _UserPromptTile extends StatefulWidget {
-  const _UserPromptTile({required this.text});
+  const _UserPromptTile({required this.text, this.initiallyExpanded = false});
 
   final String text;
+  final bool initiallyExpanded;
 
   @override
   State<_UserPromptTile> createState() => _UserPromptTileState();
@@ -628,7 +659,16 @@ class _UserPromptTile extends StatefulWidget {
 class _UserPromptTileState extends State<_UserPromptTile> {
   static const _collapsedMaxLines = 5;
 
-  var _expanded = false;
+  late var _expanded = widget.initiallyExpanded;
+
+  @override
+  void didUpdateWidget(covariant _UserPromptTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text ||
+        oldWidget.initiallyExpanded != widget.initiallyExpanded) {
+      _expanded = widget.initiallyExpanded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1045,9 +1085,10 @@ class _UsageBadgeLine extends StatelessWidget {
 }
 
 class _ActionGroupTile extends StatefulWidget {
-  const _ActionGroupTile({required this.entry});
+  const _ActionGroupTile({required this.entry, this.onOpenToolDetail});
 
   final ActivityFeedEntry entry;
+  final ActivityFeedEntryCallback? onOpenToolDetail;
 
   @override
   State<_ActionGroupTile> createState() => _ActionGroupTileState();
@@ -1094,7 +1135,11 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                           lifecycle: child.lifecycle,
                           bashRun: child.bashRun,
                           fileChange: child.fileChange,
-                          forceDetailsExpanded: true,
+                          toolUseId: child.toolUseId,
+                          forceDetailsExpanded: widget.onOpenToolDetail == null,
+                          onOpenToolDetail: widget.onOpenToolDetail != null
+                              ? () => widget.onOpenToolDetail!(child)
+                              : null,
                         ),
                     ],
                   ),
@@ -1115,7 +1160,9 @@ class _ActionTile extends StatefulWidget {
     this.lifecycle,
     this.bashRun,
     this.fileChange,
+    this.toolUseId,
     this.forceDetailsExpanded = false,
+    this.onOpenToolDetail,
   });
 
   final String label;
@@ -1123,7 +1170,9 @@ class _ActionTile extends StatefulWidget {
   final ToolActionLifecycle? lifecycle;
   final BashRunCardDisplay? bashRun;
   final FileChangeCardDisplay? fileChange;
+  final String? toolUseId;
   final bool forceDetailsExpanded;
+  final VoidCallback? onOpenToolDetail;
 
   @override
   State<_ActionTile> createState() => _ActionTileState();
@@ -1137,6 +1186,15 @@ class _ActionTileState extends State<_ActionTile> {
     final fileChange = widget.fileChange;
     final bashRun = widget.bashRun;
     final detailsExpanded = widget.forceDetailsExpanded || _expanded;
+    final canOpenRemoteDetail =
+        widget.toolUseId?.trim().isNotEmpty == true &&
+        widget.onOpenToolDetail != null &&
+        !widget.forceDetailsExpanded;
+    final summaryTap = canOpenRemoteDetail
+        ? widget.onOpenToolDetail
+        : widget.forceDetailsExpanded
+        ? null
+        : () => setState(() => _expanded = !_expanded);
 
     if (fileChange != null) {
       return Padding(
@@ -1151,9 +1209,7 @@ class _ActionTileState extends State<_ActionTile> {
               expanded: detailsExpanded,
               additions: fileChange.additions,
               deletions: fileChange.deletions,
-              onTap: widget.forceDetailsExpanded
-                  ? null
-                  : () => setState(() => _expanded = !_expanded),
+              onTap: summaryTap,
             ),
             if (detailsExpanded)
               Padding(
@@ -1179,9 +1235,7 @@ class _ActionTileState extends State<_ActionTile> {
               lifecycle: widget.lifecycle,
               expanded: detailsExpanded,
               meta: bashRun.meta,
-              onTap: widget.forceDetailsExpanded
-                  ? null
-                  : () => setState(() => _expanded = !_expanded),
+              onTap: summaryTap,
             ),
             if (detailsExpanded)
               Padding(
@@ -1195,28 +1249,45 @@ class _ActionTileState extends State<_ActionTile> {
         ),
       );
     }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
-      child: Row(
-        children: [
-          Icon(
-            _materialIcon(widget.icon),
-            size: 15,
-            color: ecoColors(context).textMuted,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              widget.label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: ecoColors(context).textMuted,
-                height: 1.35,
-              ),
+    final content = Row(
+      children: [
+        Icon(
+          _materialIcon(widget.icon),
+          size: 15,
+          color: ecoColors(context).textMuted,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            widget.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: ecoColors(context).textMuted,
+              height: 1.35,
             ),
           ),
-        ],
+        ),
+      ],
+    );
+    if (!canOpenRemoteDetail) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+        child: content,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onOpenToolDetail,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: content,
+          ),
+        ),
       ),
     );
   }
@@ -1827,6 +1898,7 @@ class _SubagentMissionTile extends StatefulWidget {
     this.durationMs = 0,
     this.statusText,
     this.timeline = const [],
+    this.onOpenDetail,
   });
 
   final String role;
@@ -1838,6 +1910,7 @@ class _SubagentMissionTile extends StatefulWidget {
   final int durationMs;
   final String? statusText;
   final List<SubagentTimelineEntry> timeline;
+  final VoidCallback? onOpenDetail;
 
   @override
   State<_SubagentMissionTile> createState() => _SubagentMissionTileState();
@@ -1933,14 +2006,18 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
           )
         : Colors.transparent;
 
+    final onTap =
+        widget.onOpenDetail ?? () => setState(() => _expanded = !_expanded);
+    final expanded = widget.onOpenDetail == null && _expanded;
+
     return Semantics(
       button: true,
-      expanded: _expanded,
+      expanded: expanded,
       label: '${resolveSubagentRunDisplayTitle(role)} 子代理任务',
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: EcoSurfaceCard(
-          onTap: () => setState(() => _expanded = !_expanded),
+          onTap: onTap,
           borderRadius: BorderRadius.circular(10),
           borderColor: resolvedBorderColor,
           backgroundColor: resolvedBackground,
@@ -2018,7 +2095,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     ),
                     const SizedBox(width: 4),
                     AnimatedRotation(
-                      turns: _expanded ? 0.5 : 0,
+                      turns: expanded ? 0.5 : 0,
                       duration: const Duration(milliseconds: 150),
                       child: Icon(
                         EcoIcons.expandDown,
@@ -2032,8 +2109,8 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                   const SizedBox(height: 6),
                   Text(
                     statusText,
-                    maxLines: _expanded ? null : 1,
-                    overflow: _expanded ? null : TextOverflow.ellipsis,
+                    maxLines: expanded ? null : 1,
+                    overflow: expanded ? null : TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: ecoColors(context).textSecondary,
                       height: 1.35,
@@ -2059,7 +2136,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       height: 1.4,
                     ),
                   )
-                else if (_expanded)
+                else if (expanded)
                   Text(
                     fullText,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -2085,14 +2162,14 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       ),
                     ),
                   ),
-                if (_expanded && hasTimeline) ...[
+                if (expanded && hasTimeline) ...[
                   const SizedBox(height: 10),
                   Divider(height: 1, color: ecoColors(context).borderSubtle),
                   const SizedBox(height: 8),
                   ...widget.timeline.map(
                     (item) => _SubagentTimelineRow(entry: item),
                   ),
-                ] else if (_expanded && widget.running) ...[
+                ] else if (expanded && widget.running) ...[
                   const SizedBox(height: 10),
                   Text(
                     '等待执行事件…',

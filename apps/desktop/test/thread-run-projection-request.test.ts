@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { parseThreadRunProjectionGetRequest } from "../src/main/thread-run-projection-request";
+import {
+  encodeThreadRunProjectionGetArg,
+  parseThreadRunProjectionGetRequest,
+} from "../src/main/thread-run-projection-request";
 
 test("parseThreadRunProjectionGetRequest accepts legacy string thread id", () => {
   expect(parseThreadRunProjectionGetRequest(" thr_1 ")).toEqual({
@@ -22,14 +25,29 @@ test("parseThreadRunProjectionGetRequest accepts feed mode encoded in single str
   });
 });
 
+test("parseThreadRunProjectionGetRequest accepts feed mode afterSequence encoding", () => {
+  const arg = encodeThreadRunProjectionGetArg("thr:1", "feed", {
+    afterSequence: 42,
+  });
+
+  expect(arg).toBe("feed:thr%3A1?afterSequence=42");
+  expect(parseThreadRunProjectionGetRequest(arg)).toEqual({
+    threadId: "thr:1",
+    mode: "feed",
+    afterSequence: 42,
+  });
+});
+
 test("parseThreadRunProjectionGetRequest accepts feed mode object", () => {
   expect(
     parseThreadRunProjectionGetRequest({
       threadId: "thr_1",
       mode: "feed",
+      afterSequence: 7,
     }),
   ).toEqual({
     threadId: "thr_1",
     mode: "feed",
+    afterSequence: 7,
   });
 });

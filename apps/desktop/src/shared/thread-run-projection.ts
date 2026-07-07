@@ -123,3 +123,25 @@ export interface ThreadRunProjectionSnapshot {
   diagnostics: ThreadRunProjectionDiagnostic[];
   sourceEventCount: number;
 }
+
+export type ThreadRunProjectionDetailKind = "agent" | "tool";
+
+export interface ThreadRunProjectionDetailRequest {
+  threadId: string;
+  kind: ThreadRunProjectionDetailKind;
+  key: string;
+  afterSequence?: number;
+  limit?: number;
+}
+
+export interface ThreadRunProjectionDetailResult {
+  threadId: string;
+  kind: ThreadRunProjectionDetailKind;
+  key: string;
+  generatedAt: string;
+  timeline: ThreadRunProjectionTimelineItem[];
+  sourceEventCount: number;
+  agent?: ThreadRunProjectionAgent;
+  hasMore: boolean;
+  nextAfterSequence?: number;
+}

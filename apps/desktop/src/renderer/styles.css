@@ -249,7 +249,7 @@ button:not(:disabled) {
     -webkit-backdrop-filter 0.2s ease;
 }
 
-html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar {
+html[data-platform="darwin"] .codex-sidebar {
   --sidebar-control-hover-bg: color-mix(in srgb, var(--text-primary) 3%, transparent);
   --sidebar-control-active-bg: color-mix(in srgb, var(--text-primary) 5%, transparent);
   --sidebar-control-icon-hover-bg: color-mix(in srgb, var(--text-primary) 4.5%, transparent);
@@ -262,7 +262,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar {
   background: #1a1a1a;
 }
 
-html[data-platform="darwin"][data-theme="dark"][data-window-focused="true"] .codex-sidebar {
+html[data-platform="darwin"][data-theme="dark"] .codex-sidebar {
   background: transparent;
 }
 
@@ -270,7 +270,7 @@ html[data-platform="darwin"][data-theme="dark"][data-window-focused="true"] .cod
   background: #fcfbfb;
 }
 
-html[data-platform="darwin"][data-theme="light"][data-window-focused="true"] .codex-sidebar {
+html[data-platform="darwin"][data-theme="light"] .codex-sidebar {
   background: transparent;
 }
 

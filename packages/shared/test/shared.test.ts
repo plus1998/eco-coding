@@ -53,6 +53,7 @@ test("registers explicit remote command definitions", () => {
       "thread:get",
       "thread:session-bootstrap",
       "thread:run-projection-get",
+      "thread:run-projection-detail-get",
       "thread:subagent-sessions-list",
     ]),
   );
@@ -102,6 +103,16 @@ test("validates remote command args", () => {
   expect(
     validateRemoteCommandArgs("thread:run-projection-get", [
       { threadId: "thr_1", mode: "feed" },
+    ]),
+  ).toMatchObject({ ok: false });
+  expect(
+    validateRemoteCommandArgs("thread:run-projection-detail-get", [
+      { threadId: "thr_1", kind: "agent", key: "agent_1" },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:run-projection-detail-get", [
+      { threadId: "thr_1", kind: "agent" },
     ]),
   ).toMatchObject({ ok: false });
   expect(

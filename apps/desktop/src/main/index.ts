@@ -395,6 +395,10 @@ import {
   isMetricsOnlyThreadLiveEvent,
 } from "./thread-run-event-normalizer";
 import {
+  buildThreadRunProjectionDetail,
+  parseThreadRunProjectionDetailRequest,
+} from "./thread-run-projection-detail";
+import {
   resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
@@ -403,7 +407,12 @@ import {
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
 import { buildThreadRunProjection } from "./thread-run-projection";
-import { trimProjectionForFeed } from "./thread-run-projection-feed";
+import {
+  buildFeedProjectionSignature,
+  filterFeedProjectionAfterSequence,
+  maxFeedProjectionTimelineSequence,
+  trimProjectionForFeed,
+} from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
 import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
 import {
@@ -562,8 +571,10 @@ let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 250;
-const RUN_PROJECTION_STREAMING_EMIT_MS = 50;
+const lastFeedProjectionSignatures = new Map<string, string>();
+const lastFeedProjectionTimelineSequences = new Map<string, number>();
+const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 500;
+const RUN_PROJECTION_STREAMING_EMIT_MS = 250;
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -1587,7 +1598,25 @@ function registerIpcHandlers(): void {
     if (!projection) {
       return undefined;
     }
-    return request.mode === "feed" ? trimProjectionForFeed(projection) : projection;
+    if (request.mode !== "feed") {
+      return projection;
+    }
+    return filterFeedProjectionAfterSequence(
+      trimProjectionForFeed(projection),
+      request.afterSequence,
+    );
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadRunProjectionDetailGet, async (payload: unknown) => {
+    const request = parseThreadRunProjectionDetailRequest(payload);
+    if (!request) {
+      return undefined;
+    }
+    const projection = buildCurrentThreadRunProjection(request.threadId);
+    if (!projection) {
+      return undefined;
+    }
+    return buildThreadRunProjectionDetail(projection, request);
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadSubagentSessionsList, async (threadId: string) => {
@@ -4649,6 +4678,8 @@ function clearThreadRuntimeMemory(threadId: string): void {
     clearTimeout(timer);
     runProjectionEmitTimers.delete(threadId);
   }
+  lastFeedProjectionSignatures.delete(threadId);
+  lastFeedProjectionTimelineSequences.delete(threadId);
 }
 
 async function prepareThreadRewindForContinue(input: {
@@ -6614,13 +6645,28 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   if (!projection) {
     return;
   }
+  const feedProjection = trimProjectionForFeed(projection);
+  const signature = buildFeedProjectionSignature(feedProjection);
+  if (lastFeedProjectionSignatures.get(threadId) === signature) {
+    return;
+  }
+  lastFeedProjectionSignatures.set(threadId, signature);
+  const previousMaxSequence = lastFeedProjectionTimelineSequences.get(threadId);
+  const currentMaxSequence = maxFeedProjectionTimelineSequence(feedProjection);
+  const payloadProjection = filterFeedProjectionAfterSequence(
+    feedProjection,
+    previousMaxSequence,
+  );
+  if (currentMaxSequence !== undefined) {
+    lastFeedProjectionTimelineSequences.set(threadId, currentMaxSequence);
+  }
   const payload: ThreadLiveEvent = {
     threadId,
     type: "thread.run_projection_updated",
     message: "运行投影已更新",
     role: "system",
     stream: false,
-    projection: trimProjectionForFeed(projection),
+    projection: payloadProjection,
   };
   desktopEventCenter.publishThreadLiveEvent(payload);
 }

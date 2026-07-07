@@ -107,9 +107,14 @@ class DesktopRpc {
   Future<ThreadRunProjectionSnapshot?> getRunProjection(
     String threadId, {
     String mode = 'full',
+    int? afterSequence,
   }) async {
     // Remote registry accepts a single string arg; encode feed mode in the string.
-    final arg = mode == 'feed' ? 'feed:$threadId' : threadId;
+    final arg = _encodeRunProjectionArg(
+      threadId,
+      mode: mode,
+      afterSequence: afterSequence,
+    );
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
       'thread:run-projection-get',
@@ -117,6 +122,33 @@ class DesktopRpc {
     );
     if (result is! Map<String, dynamic>) return null;
     return ThreadRunProjectionSnapshot.fromJson(result);
+  }
+
+  Future<ThreadRunProjectionDetailResult?> getRunProjectionDetail({
+    required String threadId,
+    required String kind,
+    required String key,
+    int? afterSequence,
+    int? limit,
+  }) async {
+    final request = <String, dynamic>{
+      'threadId': threadId,
+      'kind': kind,
+      'key': key,
+    };
+    if (afterSequence != null) {
+      request['afterSequence'] = afterSequence;
+    }
+    if (limit != null) {
+      request['limit'] = limit;
+    }
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:run-projection-detail-get',
+      [request],
+    );
+    if (result is! Map<String, dynamic>) return null;
+    return ThreadRunProjectionDetailResult.fromJson(result);
   }
 
   Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(String threadId) async {
@@ -548,4 +580,19 @@ class DesktopRpc {
     );
     return StartPackageScriptResult.fromJson(result);
   }
+}
+
+String _encodeRunProjectionArg(
+  String threadId, {
+  required String mode,
+  int? afterSequence,
+}) {
+  if (mode != 'feed') {
+    return threadId;
+  }
+  if (afterSequence == null) {
+    return 'feed:$threadId';
+  }
+  final encodedThreadId = Uri.encodeComponent(threadId);
+  return 'feed:$encodedThreadId?afterSequence=$afterSequence';
 }

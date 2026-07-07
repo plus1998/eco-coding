@@ -15,12 +15,21 @@
           if (stored === "dark") return "dark";
           return systemTheme();
         }
+        function resolvePlatform() {
+          var platform = navigator.platform || "";
+          var userAgent = navigator.userAgent || "";
+          if (/Mac|iPhone|iPad|iPod/.test(platform) || /Macintosh|Mac OS X/.test(userAgent)) return "darwin";
+          if (/Win/.test(platform) || /Windows/.test(userAgent)) return "win32";
+          if (/Linux/.test(platform) || /Linux/.test(userAgent)) return "linux";
+          return platform.trim().toLowerCase() || "unknown";
+        }
         try {
           var stored = localStorage.getItem("eco.app-theme");
           document.documentElement.dataset.theme = resolveTheme(stored);
         } catch (error) {
           document.documentElement.dataset.theme = systemTheme();
         }
+        document.documentElement.dataset.platform = resolvePlatform();
       })();
     </script>
   </head>

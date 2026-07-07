@@ -115,17 +115,21 @@ String normalizeWorkspacePathKey(String workspacePath) {
 
 void refreshWorkspaceChanges(WidgetRef ref, String workspacePath) {
   if (workspacePath.isEmpty) return;
-  ref.read(workspaceGitStatusPushProvider.notifier).clearForWorkspace(workspacePath);
+  ref
+      .read(workspaceGitStatusPushProvider.notifier)
+      .clearForWorkspace(workspacePath);
   ref.invalidate(gitStatusProvider(workspacePath));
   ref.invalidate(workspaceDiffProvider(workspacePath));
 }
 
 final workspaceGitStatusPushProvider =
-    NotifierProvider<WorkspaceGitStatusPushNotifier, Map<String, WorkspaceChangesSummary>>(
-  WorkspaceGitStatusPushNotifier.new,
-);
+    NotifierProvider<
+      WorkspaceGitStatusPushNotifier,
+      Map<String, WorkspaceChangesSummary>
+    >(WorkspaceGitStatusPushNotifier.new);
 
-class WorkspaceGitStatusPushNotifier extends Notifier<Map<String, WorkspaceChangesSummary>> {
+class WorkspaceGitStatusPushNotifier
+    extends Notifier<Map<String, WorkspaceChangesSummary>> {
   @override
   Map<String, WorkspaceChangesSummary> build() {
     ref.listen(ecoEventsProvider, (previous, next) {
@@ -177,18 +181,24 @@ class WorkspaceGitStatusPushNotifier extends Notifier<Map<String, WorkspaceChang
 
 final workspacePillSummaryProvider =
     Provider.family<WorkspaceChangesSummary?, String>((ref, workspacePath) {
-  if (workspacePath.isEmpty) {
-    return null;
-  }
-  final key = normalizeWorkspacePathKey(workspacePath);
-  final pushed = ref.watch(workspaceGitStatusPushProvider)[key];
-  if (pushed != null) {
-    return pushed;
-  }
-  return ref.watch(gitStatusProvider(workspacePath)).valueOrNull?.toChangesSummary();
-});
+      if (workspacePath.isEmpty) {
+        return null;
+      }
+      final key = normalizeWorkspacePathKey(workspacePath);
+      final pushed = ref.watch(workspaceGitStatusPushProvider)[key];
+      if (pushed != null) {
+        return pushed;
+      }
+      return ref
+          .watch(gitStatusProvider(workspacePath))
+          .valueOrNull
+          ?.toChangesSummary();
+    });
 
-final workspacePillLoadingProvider = Provider.family<bool, String>((ref, workspacePath) {
+final workspacePillLoadingProvider = Provider.family<bool, String>((
+  ref,
+  workspacePath,
+) {
   if (workspacePath.isEmpty) {
     return false;
   }
@@ -336,6 +346,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   final String threadId;
   final Ref ref;
   Timer? _projectionRefreshTimer;
+  final _loadedProjectionDetailKeys = <String>{};
 
   void _scheduleProjectionRefresh() {
     _projectionRefreshTimer?.cancel();
@@ -353,7 +364,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       return;
     }
     try {
-      final projection = await rpc.getRunProjection(threadId, mode: 'full');
+      final projection = await rpc.getRunProjection(
+        threadId,
+        mode: 'feed',
+        afterSequence: _projectionMainTimelineCachedAfterSequence(
+          state.runProjection,
+        ),
+      );
       if (!mounted || projection == null) {
         return;
       }
@@ -361,6 +378,57 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         runProjection: _pickNewerProjection(state.runProjection, projection),
       );
     } catch (_) {}
+  }
+
+  Future<ThreadRunProjectionDetailResult?> loadProjectionDetail({
+    required String kind,
+    required String key,
+  }) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      throw StateError('未选择 PC，无法请求投影详情');
+    }
+    final detailKey = '$kind:$key';
+    var afterSequence = _loadedProjectionDetailKeys.contains(detailKey)
+        ? _projectionDetailCachedAfterSequence(state.runProjection, kind, key)
+        : null;
+    ThreadRunProjectionDetailResult? latest;
+    try {
+      while (true) {
+        final detail = await rpc.getRunProjectionDetail(
+          threadId: threadId,
+          kind: kind,
+          key: key,
+          afterSequence: afterSequence,
+          limit: 500,
+        );
+        if (!mounted || detail == null) {
+          return latest;
+        }
+        latest = _appendProjectionDetailPage(latest, detail);
+        state = state.copyWith(
+          runProjection: mergeThreadRunProjectionDetailResult(
+            state.runProjection,
+            detail,
+          ),
+        );
+        final nextAfterSequence = detail.nextAfterSequence;
+        if (!detail.hasMore || nextAfterSequence == null) {
+          _loadedProjectionDetailKeys.add(detailKey);
+          return latest;
+        }
+        if (nextAfterSequence == afterSequence) {
+          _loadedProjectionDetailKeys.add(detailKey);
+          return latest;
+        }
+        afterSequence = nextAfterSequence;
+      }
+    } catch (error, stackTrace) {
+      if (latest != null) {
+        return latest;
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   @override
@@ -402,7 +470,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     try {
       final results = await Future.wait([
         rpc.sessionBootstrap(threadId),
-        rpc.getRunProjection(threadId, mode: 'full'),
+        rpc.getRunProjection(threadId, mode: 'feed'),
       ]);
       final bootstrap = results[0] as ThreadSessionBootstrapResult;
       final projection = results[1] as ThreadRunProjectionSnapshot?;
@@ -715,7 +783,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     String decision, {
     String? feedback,
   }) async {
-    await ref.read(desktopRpcProvider)?.resolveBashApproval(
+    await ref
+        .read(desktopRpcProvider)
+        ?.resolveBashApproval(
           toolUseId: toolUseId,
           decision: decision,
           feedback: feedback,
@@ -750,10 +820,60 @@ ThreadRunProjectionSnapshot? _pickNewerProjection(
 ) {
   if (current == null) return incoming;
   if (incoming == null) return current;
-  if (incoming.generatedAt.compareTo(current.generatedAt) >= 0) {
-    return incoming;
+  final incomingIsNewer =
+      incoming.generatedAt.compareTo(current.generatedAt) >= 0 ||
+      incoming.sourceEventCount >= current.sourceEventCount;
+  if (incomingIsNewer) {
+    return mergeThreadRunProjectionSnapshots(current, incoming);
   }
   return current;
+}
+
+int? _projectionDetailCachedAfterSequence(
+  ThreadRunProjectionSnapshot? projection,
+  String kind,
+  String key,
+) {
+  if (projection == null) return null;
+  Iterable<ThreadRunProjectionTimelineItem> timeline;
+  if (kind == 'agent') {
+    final agent = projection.agents
+        .where((candidate) => candidate.agentId == key)
+        .firstOrNull;
+    timeline = agent?.timeline ?? const [];
+  } else if (kind == 'tool') {
+    timeline = [
+      ...projection.timeline,
+      for (final agent in projection.agents) ...agent.timeline,
+    ].where((item) => _projectionTimelineToolUseId(item) == key);
+  } else {
+    return null;
+  }
+  int? maxSequence;
+  for (final item in timeline) {
+    if (maxSequence == null || item.sequence > maxSequence) {
+      maxSequence = item.sequence;
+    }
+  }
+  return maxSequence;
+}
+
+String? _projectionTimelineToolUseId(ThreadRunProjectionTimelineItem item) {
+  final tool = item.metadata?['tool'];
+  if (tool is Map<String, dynamic>) {
+    final toolUseId = (tool['toolUseId'] as String?)?.trim();
+    if (toolUseId != null && toolUseId.isNotEmpty) {
+      return toolUseId;
+    }
+  }
+  final bashApproval = item.metadata?['bashApproval'];
+  if (bashApproval is Map<String, dynamic>) {
+    final toolUseId = (bashApproval['toolUseId'] as String?)?.trim();
+    if (toolUseId != null && toolUseId.isNotEmpty) {
+      return toolUseId;
+    }
+  }
+  return null;
 }
 
 List<ThreadPendingFollowUp> _mergeThreadFollowUps(
@@ -765,6 +885,39 @@ List<ThreadPendingFollowUp> _mergeThreadFollowUps(
     merged = mergeThreadFollowUp(merged, followUp);
   }
   return merged;
+}
+
+ThreadRunProjectionDetailResult _appendProjectionDetailPage(
+  ThreadRunProjectionDetailResult? current,
+  ThreadRunProjectionDetailResult page,
+) {
+  if (current == null) {
+    return page;
+  }
+  return ThreadRunProjectionDetailResult(
+    threadId: page.threadId,
+    kind: page.kind,
+    key: page.key,
+    generatedAt: page.generatedAt,
+    sourceEventCount: page.sourceEventCount,
+    hasMore: page.hasMore,
+    nextAfterSequence: page.nextAfterSequence,
+    agent: page.agent ?? current.agent,
+    timeline: [...current.timeline, ...page.timeline],
+  );
+}
+
+int? _projectionMainTimelineCachedAfterSequence(
+  ThreadRunProjectionSnapshot? projection,
+) {
+  if (projection == null) return null;
+  int? maxSequence;
+  for (final item in projection.timeline) {
+    if (maxSequence == null || item.sequence > maxSequence) {
+      maxSequence = item.sequence;
+    }
+  }
+  return maxSequence;
 }
 
 bool _isMetricsOnlyThreadLiveEvent(String liveType) {
