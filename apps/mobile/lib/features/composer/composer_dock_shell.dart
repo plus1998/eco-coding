@@ -6,6 +6,7 @@ import '../../core/theme/eco_theme.dart';
 
 const composerBottomFrostBlurSigma = 20.0;
 const composerBottomFrostTintOpacity = 0.52;
+const composerBottomFrostHeightFactor = 2 / 3;
 const composerDockTopSpacing = 8.0;
 
 double _composerBottomFrostTintAlpha(BuildContext context) {
@@ -15,7 +16,7 @@ double _composerBottomFrostTintAlpha(BuildContext context) {
       : composerBottomFrostTintOpacity + 0.04;
 }
 
-/// Frosted backdrop for the composer dock. Covers the bottom half of the dock,
+/// Frosted backdrop for the composer dock. Covers the lower two-thirds,
 /// fading to transparent toward the top (mirror of [SessionTopFrostGradient]).
 class ComposerDockShell extends StatelessWidget {
   const ComposerDockShell({super.key, required this.child});
@@ -30,7 +31,8 @@ class ComposerDockShell extends StatelessWidget {
         Positioned.fill(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final frostHeight = constraints.maxHeight * 0.5;
+              final frostHeight =
+                  constraints.maxHeight * composerBottomFrostHeightFactor;
               if (frostHeight <= 0) {
                 return const SizedBox.shrink();
               }

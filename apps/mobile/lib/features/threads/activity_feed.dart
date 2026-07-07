@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
@@ -21,6 +22,8 @@ import 'thread_session_layout.dart';
 
 /// Feed body text is 20% larger than the default body style.
 const activityFeedBodyFontScale = 1.2;
+const _scrollToBottomButtonSize = 36.0;
+const _scrollToBottomButtonAlignedBottomGap = 6.0;
 
 typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
 
@@ -135,6 +138,11 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
 
   for (final entry in entries) {
     if (entry.kind == ActivityFeedKind.action) {
+      if (entry.bashRun != null) {
+        flush();
+        grouped.add(entry);
+        continue;
+      }
       pending.add(entry);
       continue;
     }
@@ -414,6 +422,7 @@ class ActivityFeedList extends StatefulWidget {
     this.expandUserPrompts = false,
     this.shrinkWrap = false,
     this.showScrollJumpButton = true,
+    this.scrollJumpBottomInset = 0,
     this.padding,
   });
 
@@ -426,6 +435,7 @@ class ActivityFeedList extends StatefulWidget {
   final bool expandUserPrompts;
   final bool shrinkWrap;
   final bool showScrollJumpButton;
+  final double scrollJumpBottomInset;
   final EdgeInsetsGeometry? padding;
 
   @override
@@ -506,7 +516,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     threadSessionFeedHorizontalPadding,
                     0,
                   ),
-              cacheExtent: 600,
+              scrollCacheExtent: const ScrollCacheExtent.pixels(600),
               itemCount: displayEntries.length,
               itemBuilder: (context, index) {
                 final entry = displayEntries[index];
@@ -525,7 +535,9 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
         if (widget.showScrollJumpButton && _showScrollJump)
           Positioned(
             left: 12,
-            bottom: 12,
+            bottom:
+                _scrollToBottomButtonAlignedBottomGap +
+                widget.scrollJumpBottomInset,
             child: _ScrollToBottomButton(
               onPressed: () {
                 _coordinator.forceScrollToEnd();
@@ -554,25 +566,20 @@ class _ScrollToBottomButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
+        child: Tooltip(
+          message: '回到底部',
+          child: Semantics(
+            button: true,
+            label: '回到底部',
+            child: SizedBox(
+              width: _scrollToBottomButtonSize,
+              height: _scrollToBottomButtonSize,
+              child: Icon(
                 Icons.arrow_downward_rounded,
-                size: 16,
+                size: 18,
                 color: colors.textPrimary,
               ),
-              const SizedBox(width: 6),
-              Text(
-                '回到底部',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: colors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1254,27 +1261,7 @@ class _ActionTileState extends State<_ActionTile> {
     if (bashRun != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _ActionSummaryLine(
-              label: bashRun.title,
-              icon: widget.icon,
-              lifecycle: widget.lifecycle,
-              expanded: detailsExpanded,
-              meta: bashRun.meta,
-              onTap: summaryTap,
-            ),
-            if (detailsExpanded)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: _BashRunCard(
-                  display: bashRun,
-                  lifecycle: widget.lifecycle,
-                ),
-              ),
-          ],
-        ),
+        child: _BashRunCard(display: bashRun, lifecycle: widget.lifecycle),
       );
     }
     final content = Row(
@@ -1331,7 +1318,6 @@ class _ActionSummaryLine extends StatelessWidget {
     this.lifecycle,
     this.expanded = false,
     this.count,
-    this.meta,
     this.additions = 0,
     this.deletions = 0,
     this.onTap,
@@ -1342,7 +1328,6 @@ class _ActionSummaryLine extends StatelessWidget {
   final ToolActionLifecycle? lifecycle;
   final bool expanded;
   final int? count;
-  final String? meta;
   final int additions;
   final int deletions;
   final VoidCallback? onTap;
@@ -1377,15 +1362,6 @@ class _ActionSummaryLine extends StatelessWidget {
         if (additions > 0 || deletions > 0) ...[
           const SizedBox(width: 8),
           _InlineDiffStats(additions: additions, deletions: deletions),
-        ] else if (meta != null && meta!.isNotEmpty) ...[
-          const SizedBox(width: 8),
-          Text(
-            meta!,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: eco.textMuted,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
         ],
         if (count != null) ...[
           const SizedBox(width: 8),

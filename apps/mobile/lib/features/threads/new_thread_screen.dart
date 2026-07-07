@@ -73,11 +73,13 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       }
     });
 
-    final workspacePath = ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
+    final workspacePath =
+        ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
     final modelSettings = ref.watch(modelSettingsProvider);
     final workflow = ref.watch(workflowSettingsProvider);
     final mcpSettings = ref.watch(mcpSettingsProvider);
-    final runtimeConfig = ref.watch(runtimeConfigProvider) ??
+    final runtimeConfig =
+        ref.watch(runtimeConfigProvider) ??
         buildDefaultRuntimeConfig(
           modelSettings: modelSettings.valueOrNull,
           workflow: workflow.valueOrNull,
@@ -87,8 +89,12 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
         ? ref.watch(gitStatusProvider(workspacePath))
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
-    final workspaceChanges = ref.watch(workspacePillSummaryProvider(workspacePath));
-    final changesLoading = ref.watch(workspacePillLoadingProvider(workspacePath));
+    final workspaceChanges = ref.watch(
+      workspacePillSummaryProvider(workspacePath),
+    );
+    final changesLoading = ref.watch(
+      workspacePillLoadingProvider(workspacePath),
+    );
     final projectsAsync = ref.watch(projectListProvider);
     EcoProject? project;
     for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {
@@ -132,10 +138,8 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                         projectName: project?.name,
                       ),
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            height: 1.35,
-                          ),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w600, height: 1.35),
                     ),
                   ),
                 ),
@@ -149,9 +153,9 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.viewInsetsOf(context).bottom,
                     ),
-                    child: ComposerDockShell(
-                      child: Column(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         WorkspaceChangesPill(
                           summary: workspaceChanges,
@@ -167,32 +171,33 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                                 }
                               : null,
                         ),
-                        SessionComposer(
-                          controller: _promptController,
-                          attachments: _attachments,
-                          runtimeConfig: runtimeConfig,
-                          threadId: '',
-                          isRunning: false,
-                          sendBusy: _starting,
-                          hasActivity: false,
-                          inputHint: composerLandingPlaceholder,
-                          onPickImage: _pickImage,
-                          onRemoveAttachment: (index) =>
-                              setState(() => _attachments.removeAt(index)),
-                          onSend: _startThread,
-                          onStop: () {},
-                          onRuntimeConfigChanged: (config) {
-                            ref.read(runtimeConfigProvider.notifier).state =
-                                config;
-                          },
+                        ComposerDockShell(
+                          child: SessionComposer(
+                            controller: _promptController,
+                            attachments: _attachments,
+                            runtimeConfig: runtimeConfig,
+                            threadId: '',
+                            isRunning: false,
+                            sendBusy: _starting,
+                            hasActivity: false,
+                            inputHint: composerLandingPlaceholder,
+                            onPickImage: _pickImage,
+                            onRemoveAttachment: (index) =>
+                                setState(() => _attachments.removeAt(index)),
+                            onSend: _startThread,
+                            onStop: () {},
+                            onRuntimeConfigChanged: (config) {
+                              ref.read(runtimeConfigProvider.notifier).state =
+                                  config;
+                            },
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
     );
   }
 
@@ -236,9 +241,9 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) setState(() => _starting = false);

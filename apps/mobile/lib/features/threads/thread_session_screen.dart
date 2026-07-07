@@ -22,6 +22,7 @@ import '../approvals/approval_sheets.dart';
 import '../approvals/bash_approval_panel.dart';
 import '../approvals/plan_approval_panel.dart';
 import '../composer/composer_dock_shell.dart';
+import '../composer/composer_stack_card.dart';
 import '../composer/follow_up_queue_bar.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
@@ -257,6 +258,46 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       }
     });
 
+    final hasWorkspaceChanges = workspaceChanges?.hasChanges ?? false;
+    final hasFloatingComposerContent =
+        hasWorkspaceChanges ||
+        queuedFollowUps.isNotEmpty ||
+        _editingFollowUpId != null;
+
+    final floatingComposer = hasFloatingComposerContent
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasWorkspaceChanges)
+                WorkspaceChangesPill(
+                  summary: workspaceChanges,
+                  busy: changesLoading,
+                  onTap: workspacePath.isNotEmpty
+                      ? () {
+                          refreshWorkspaceChanges(ref, workspacePath);
+                          showWorkspaceDiffReviewSheet(
+                            context: context,
+                            ref: ref,
+                            workspacePath: workspacePath,
+                          );
+                        }
+                      : null,
+                ),
+              if (queuedFollowUps.isNotEmpty)
+                FollowUpQueueBar(
+                  followUps: queuedFollowUps,
+                  cancelBusyId: _followUpCancelBusyId,
+                  escalateBusyId: _followUpEscalateBusyId,
+                  onEscalate: (followUp) => _escalateFollowUp(followUp),
+                  onEdit: _startEditingFollowUp,
+                  onDelete: (followUp) => _deleteFollowUp(followUp),
+                ),
+              if (_editingFollowUpId != null)
+                _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
+            ],
+          )
+        : null;
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       extendBodyBehindAppBar: true,
@@ -272,13 +313,15 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         gitStatus: gitStatus,
       ),
       body: ThreadSessionConversationLayout(
-        feed: session.loading
+        floatingComposer: floatingComposer,
+        feedBuilder: (context, feedBottomInset, controlsBottomInset) =>
+            session.loading
             ? const Center(child: CircularProgressIndicator())
             : session.error != null
             ? Center(child: Text(session.error!))
             : showLanding
             ? Padding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+                padding: EdgeInsets.fromLTRB(32, 0, 32, 32 + feedBottomInset),
                 child: Align(
                   alignment: Alignment.center,
                   child: Text(
@@ -296,6 +339,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 scrollController: _scrollController,
                 scrollCoordinator: _scrollCoordinator,
                 isRunning: isRunning,
+                feedBottomInset: feedBottomInset,
+                controlsBottomInset: controlsBottomInset,
               ),
         composer: AnimatedPadding(
           duration: const Duration(milliseconds: 100),
@@ -304,153 +349,116 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             bottom: MediaQuery.viewInsetsOf(context).bottom,
           ),
           child: ComposerDockShell(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                WorkspaceChangesPill(
-                  summary: workspaceChanges,
-                  busy: changesLoading,
-                  onTap: workspacePath.isNotEmpty
-                      ? () {
-                          refreshWorkspaceChanges(ref, workspacePath);
-                          showWorkspaceDiffReviewSheet(
-                            context: context,
-                            ref: ref,
-                            workspacePath: workspacePath,
-                          );
-                        }
-                      : null,
-                ),
-                if (queuedFollowUps.isNotEmpty)
-                  FollowUpQueueBar(
-                    followUps: queuedFollowUps,
-                    cancelBusyId: _followUpCancelBusyId,
-                    escalateBusyId: _followUpEscalateBusyId,
-                    onEscalate: (followUp) => _escalateFollowUp(followUp),
-                    onEdit: _startEditingFollowUp,
-                    onDelete: (followUp) => _deleteFollowUp(followUp),
-                  ),
-                if (_editingFollowUpId != null)
-                  _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 280),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: ScaleTransition(
-                        scale: Tween<double>(begin: 0.96, end: 1).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        ),
-                        alignment: Alignment.bottomCenter,
-                        child: child,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
                       ),
-                    );
-                  },
-                  child: showBashApproval
-                      ? BashApprovalPanel(
-                          key: ValueKey('bash-${pendingBash.toolUseId}'),
-                          request: pendingBash,
-                          busy: _bashApprovalBusy,
-                          onResolve: ({required decision, feedback}) async {
-                            setState(() => _bashApprovalBusy = true);
-                            try {
-                              await ref
-                                  .read(
-                                    threadSessionProvider(
-                                      widget.threadId,
-                                    ).notifier,
-                                  )
-                                  .resolveBash(
-                                    pendingBash.toolUseId,
-                                    decision,
-                                    feedback: feedback,
-                                  );
-                            } finally {
-                              if (mounted) {
-                                setState(() => _bashApprovalBusy = false);
-                              }
-                            }
-                          },
-                          onSkip: () async {
-                            setState(() => _bashApprovalBusy = true);
-                            try {
-                              await ref
-                                  .read(
-                                    threadSessionProvider(
-                                      widget.threadId,
-                                    ).notifier,
-                                  )
-                                  .resolveBash(pendingBash.toolUseId, 'denied');
-                            } finally {
-                              if (mounted) {
-                                setState(() => _bashApprovalBusy = false);
-                              }
-                            }
-                          },
-                        )
-                      : showPlanApproval
-                      ? PlanApprovalPanel(
-                          key: ValueKey('plan-${pendingPlan.threadId}'),
-                          plan: pendingPlan,
-                          busy: _planActionBusy,
-                          failureMessage: planFailureMessage,
-                          onApprove: () async {
-                            setState(() => _planActionBusy = true);
-                            try {
-                              await _handlePlanApproval(approve: true);
-                            } finally {
-                              if (mounted) {
-                                setState(() => _planActionBusy = false);
-                              }
-                            }
-                          },
-                          onDismiss: () async {
-                            setState(() => _planActionBusy = true);
-                            try {
-                              await _handlePlanApproval(approve: false);
-                            } finally {
-                              if (mounted) {
-                                setState(() => _planActionBusy = false);
-                              }
-                            }
-                          },
-                        )
-                      : SessionComposer(
-                          key: const ValueKey('session-composer'),
-                          controller: _promptController,
-                          attachments: _attachments,
-                          runtimeConfig: runtimeConfig,
-                          threadId: widget.threadId,
-                          isRunning: isRunning,
-                          canStopThread: canStopThread,
-                          followUpMode: followUpMode,
-                          sendBusy: _followUpBusy || _sendBusy,
-                          stopBusy: _stopBusy,
-                          hasActivity: session.projectionReady,
-                          inputHint: _editingFollowUpId != null
-                              ? '编辑引导消息…'
-                              : (showLanding
-                                    ? composerLandingPlaceholder
-                                    : null),
-                          contextSnapshot: session.contextSnapshot,
-                          threadStatus: thread?.status,
-                          onPickImage: _pickImage,
-                          onRemoveAttachment: (index) =>
-                              setState(() => _attachments.removeAt(index)),
-                          onSend: () => _sendMessage(runtimeConfig),
-                          onStop: () => _stopThread(),
-                          onRuntimeConfigChanged: (config) {
-                            ref.read(runtimeConfigProvider.notifier).state =
-                                config;
-                          },
-                        ),
-                ),
-              ],
+                    ),
+                    alignment: Alignment.bottomCenter,
+                    child: child,
+                  ),
+                );
+              },
+              child: showBashApproval
+                  ? BashApprovalPanel(
+                      key: ValueKey('bash-${pendingBash.toolUseId}'),
+                      request: pendingBash,
+                      busy: _bashApprovalBusy,
+                      onResolve: ({required decision, feedback}) async {
+                        setState(() => _bashApprovalBusy = true);
+                        try {
+                          await ref
+                              .read(
+                                threadSessionProvider(widget.threadId).notifier,
+                              )
+                              .resolveBash(
+                                pendingBash.toolUseId,
+                                decision,
+                                feedback: feedback,
+                              );
+                        } finally {
+                          if (mounted) {
+                            setState(() => _bashApprovalBusy = false);
+                          }
+                        }
+                      },
+                      onSkip: () async {
+                        setState(() => _bashApprovalBusy = true);
+                        try {
+                          await ref
+                              .read(
+                                threadSessionProvider(widget.threadId).notifier,
+                              )
+                              .resolveBash(pendingBash.toolUseId, 'denied');
+                        } finally {
+                          if (mounted) {
+                            setState(() => _bashApprovalBusy = false);
+                          }
+                        }
+                      },
+                    )
+                  : showPlanApproval
+                  ? PlanApprovalPanel(
+                      key: ValueKey('plan-${pendingPlan.threadId}'),
+                      plan: pendingPlan,
+                      busy: _planActionBusy,
+                      failureMessage: planFailureMessage,
+                      onApprove: () async {
+                        setState(() => _planActionBusy = true);
+                        try {
+                          await _handlePlanApproval(approve: true);
+                        } finally {
+                          if (mounted) {
+                            setState(() => _planActionBusy = false);
+                          }
+                        }
+                      },
+                      onDismiss: () async {
+                        setState(() => _planActionBusy = true);
+                        try {
+                          await _handlePlanApproval(approve: false);
+                        } finally {
+                          if (mounted) {
+                            setState(() => _planActionBusy = false);
+                          }
+                        }
+                      },
+                    )
+                  : SessionComposer(
+                      key: const ValueKey('session-composer'),
+                      controller: _promptController,
+                      attachments: _attachments,
+                      runtimeConfig: runtimeConfig,
+                      threadId: widget.threadId,
+                      isRunning: isRunning,
+                      canStopThread: canStopThread,
+                      followUpMode: followUpMode,
+                      sendBusy: _followUpBusy || _sendBusy,
+                      stopBusy: _stopBusy,
+                      hasActivity: session.projectionReady,
+                      inputHint: _editingFollowUpId != null
+                          ? '编辑引导消息…'
+                          : (showLanding ? composerLandingPlaceholder : null),
+                      contextSnapshot: session.contextSnapshot,
+                      threadStatus: thread?.status,
+                      onPickImage: _pickImage,
+                      onRemoveAttachment: (index) =>
+                          setState(() => _attachments.removeAt(index)),
+                      onSend: () => _sendMessage(runtimeConfig),
+                      onStop: () => _stopThread(),
+                      onRuntimeConfigChanged: (config) {
+                        ref.read(runtimeConfigProvider.notifier).state = config;
+                      },
+                    ),
             ),
           ),
         ),
@@ -677,12 +685,16 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
     required this.scrollController,
     required this.scrollCoordinator,
     required this.isRunning,
+    required this.feedBottomInset,
+    required this.controlsBottomInset,
   });
 
   final String threadId;
   final ScrollController scrollController;
   final ActivityFeedScrollCoordinator scrollCoordinator;
   final bool isRunning;
+  final double feedBottomInset;
+  final double controlsBottomInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -694,9 +706,11 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           scrollController: scrollController,
           scrollCoordinator: scrollCoordinator,
           isRunning: isRunning,
+          feedBottomInset: feedBottomInset,
+          controlsBottomInset: controlsBottomInset,
         ),
         Positioned(
-          bottom: 8,
+          bottom: 8 + controlsBottomInset,
           right: 8,
           child: _ThreadUsageOverlay(threadId: threadId),
         ),
@@ -711,12 +725,16 @@ class _ActivityFeedView extends ConsumerWidget {
     required this.scrollController,
     required this.scrollCoordinator,
     required this.isRunning,
+    required this.feedBottomInset,
+    required this.controlsBottomInset,
   });
 
   final String threadId;
   final ScrollController scrollController;
   final ActivityFeedScrollCoordinator scrollCoordinator;
   final bool isRunning;
+  final double feedBottomInset;
+  final double controlsBottomInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -776,6 +794,13 @@ class _ActivityFeedView extends ConsumerWidget {
       scrollController: scrollController,
       scrollCoordinator: scrollCoordinator,
       agentProfile: agentProfile,
+      scrollJumpBottomInset: controlsBottomInset,
+      padding: EdgeInsets.fromLTRB(
+        threadSessionFeedHorizontalPadding,
+        12,
+        threadSessionFeedHorizontalPadding,
+        feedBottomInset,
+      ),
       onOpenAgentDetail: (entry) =>
           unawaited(_openAgentProjectionDetail(context, ref, threadId, entry)),
       onOpenToolDetail: (entry) =>
@@ -1299,36 +1324,32 @@ class _EditingFollowUpBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ecoColors(context).accentSoft,
-        border: Border(top: BorderSide(color: ecoColors(context).borderSubtle)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    final eco = ecoColors(context);
+    return Padding(
+      padding: composerStackOuterPadding,
+      child: ComposerStackCard(
+        padding: composerStackRowPadding,
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              EcoIcons.followUp,
-              size: 16,
-              color: ecoColors(context).accentText,
-            ),
+            Icon(EcoIcons.followUp, size: 16, color: eco.accentText),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '正在编辑引导消息',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: ecoColors(context).accentText,
-                ),
-              ),
+            Text(
+              '正在编辑引导消息',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: eco.composerPillText),
             ),
-            TextButton.icon(
+            const SizedBox(width: 4),
+            IconButton(
               onPressed: onCancel,
               icon: const Icon(EcoIcons.close, size: 16),
-              label: const Text('取消'),
+              tooltip: '取消',
               style: TextButton.styleFrom(
-                foregroundColor: ecoColors(context).accentText,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                foregroundColor: eco.composerPillText,
+                padding: EdgeInsets.zero,
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),

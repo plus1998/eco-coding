@@ -94,6 +94,56 @@ void main() {
   });
 
   test(
+    'groupActivityFeedActionEntries keeps Bash cards out of action groups',
+    () {
+      final grouped = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'read-1',
+          kind: ActivityFeedKind.action,
+          text: 'lib/feed.dart',
+          actionIcon: ActivityActionIcon.file,
+        ),
+        ActivityFeedEntry(
+          id: 'edit-1',
+          kind: ActivityFeedKind.action,
+          text: 'lib/editor.dart',
+          actionIcon: ActivityActionIcon.edit,
+        ),
+        ActivityFeedEntry(
+          id: 'bash-1',
+          kind: ActivityFeedKind.action,
+          text: 'Run unit tests',
+          actionIcon: ActivityActionIcon.terminal,
+          bashRun: BashRunCardDisplay(
+            title: 'Run unit tests',
+            meta: 'npm, 1.2s',
+            body: '36 pass',
+          ),
+        ),
+        ActivityFeedEntry(
+          id: 'search-1',
+          kind: ActivityFeedKind.action,
+          text: 'search ActivityFeed',
+          actionIcon: ActivityActionIcon.search,
+        ),
+        ActivityFeedEntry(
+          id: 'read-2',
+          kind: ActivityFeedKind.action,
+          text: 'lib/theme.dart',
+          actionIcon: ActivityActionIcon.file,
+        ),
+      ]);
+
+      expect(grouped.map((entry) => entry.id), [
+        'action-group:read-1:edit-1:2',
+        'bash-1',
+        'action-group:search-1:read-2:2',
+      ]);
+      expect(grouped[1].bashRun?.body, '36 pass');
+    },
+  );
+
+  test(
     'subagentMissionBorderColor uses unknown blue for non-standard roles',
     () {
       expect(
@@ -365,6 +415,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('36 pass'), findsOneWidget);
+      expect(find.text('Run unit tests'), findsOneWidget);
 
       await tester.tap(find.text('Run unit tests').first);
       await tester.pumpAndSettle();
