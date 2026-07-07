@@ -807,30 +807,22 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   color: #fca5a5;
 }
 
-.chat-item-row:hover .chat-item-trailing-label,
-.chat-item-row:focus-within .chat-item-trailing-label {
+.chat-item-row:hover .chat-item-trailing-label {
   max-width: 0;
   opacity: 0;
 }
 
-.chat-item-row:hover .chat-item-trailing-actions,
-.chat-item-row:focus-within .chat-item-trailing-actions {
+.chat-item-row:hover .chat-item-trailing-actions {
   opacity: 1;
   pointer-events: auto;
 }
 
-.chat-item-row:hover .chat-item-trailing:not(.chat-item-trailing-actions-only) .chat-item-trailing-actions,
-.chat-item-row:focus-within
-  .chat-item-trailing:not(.chat-item-trailing-actions-only)
-  .chat-item-trailing-actions {
+.chat-item-row:hover .chat-item-trailing:not(.chat-item-trailing-actions-only) .chat-item-trailing-actions {
   width: 48px;
 }
 
 /* failed / blocked: status indicator only, hover shows delete */
-.chat-item-row:hover .chat-item-trailing-actions-only .chat-item-trailing-actions:has(.chat-item-row-action),
-.chat-item-row:focus-within
-  .chat-item-trailing-actions-only
-  .chat-item-trailing-actions:has(.chat-item-row-action) {
+.chat-item-row:hover .chat-item-trailing-actions-only .chat-item-trailing-actions:has(.chat-item-row-action) {
   width: 24px;
 }
 
@@ -1086,7 +1078,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .codex-main-topbar.is-solid {
   background: var(--codex-log-bg);
-  box-shadow: 0 1px 0 var(--codex-log-line-subtle, rgba(255, 255, 255, 0.06));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--codex-log-line-subtle, rgba(255, 255, 255, 0.06)) 42%, transparent);
 }
 
 .codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-main-topbar) {
@@ -10064,6 +10056,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 }
 
 .codex-composer-wrap {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -10090,7 +10083,10 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 .composer-primary {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
   margin: 0 calc(var(--composer-shell-padding-x) * -1) var(--composer-shell-gap);
+  min-height: 100px;
   padding: 18px 18px 14px;
   border: none;
   border-radius: var(--composer-outer-radius) var(--composer-outer-radius) var(--composer-inner-bottom-radius)
@@ -10114,6 +10110,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .codex-composer.is-compact .composer-primary {
   margin-bottom: 0;
+  min-height: 100px;
   padding: 10px 12px 8px;
   border-radius: var(--composer-outer-radius);
 }
@@ -10195,6 +10192,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .composer-skill-input {
   position: relative;
+  flex: 1 1 auto;
   width: 100%;
   min-width: 0;
 }
@@ -10266,6 +10264,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .composer-footer {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 10px;
   margin-top: 12px;
@@ -15328,7 +15327,9 @@ html[data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .activity-messages {
   color: inherit;
   padding-top: 12px;
+  padding-bottom: calc(var(--activity-feed-composer-mask-height) + 12px);
   scroll-padding-top: 12px;
+  scroll-padding-bottom: calc(var(--activity-feed-composer-mask-height) + 12px);
 }
 
 .codex-main:not(.codex-main-landing) .run-log {
@@ -15444,7 +15445,7 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative--sticky-final {
-  padding-bottom: calc(var(--activity-feed-composer-mask-height) + 24px);
+  padding-bottom: var(--activity-feed-composer-mask-height);
 }
 
 .codex-main:not(.codex-main-landing) .markdown-content strong,
@@ -16209,27 +16210,6 @@ html[data-window-focused="true"] .settings-nav {
   background: transparent;
 }
 
-.codex-main:not(.codex-main-landing) .codex-feed-stack .codex-composer-wrap::before {
-  content: "";
-  position: absolute;
-  top: calc(var(--activity-feed-composer-mask-height) * -1);
-  right: 0;
-  left: 0;
-  z-index: 0;
-  height: calc(var(--activity-feed-composer-mask-height) + 6px);
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    color-mix(in srgb, var(--composer-surface-bg) 22%, transparent) 58%,
-    color-mix(in srgb, var(--composer-surface-bg) 54%, transparent) 100%
-  );
-  backdrop-filter: blur(8px) saturate(130%);
-  -webkit-backdrop-filter: blur(8px) saturate(130%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.58) 54%, #000 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.58) 54%, #000 100%);
-  pointer-events: none;
-}
-
 .codex-main:not(.codex-main-landing) .codex-feed-stack .composer-dock-morph {
   width: 100%;
   max-width: 100%;
@@ -16251,7 +16231,8 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .codex-composer.is-compact {
   padding: 0;
-  box-shadow: none;
+  background: var(--composer-context-bg);
+  box-shadow: var(--shadow-composer);
 }
 
 .codex-main:not(.codex-main-landing) .composer-primary {
@@ -16259,11 +16240,50 @@ html[data-window-focused="true"] .settings-nav {
   max-width: 100%;
   border: 1px solid var(--composer-primary-border);
   background: var(--composer-surface-bg);
+  background-clip: padding-box;
   box-shadow: var(--composer-primary-shadow);
 }
 
 .codex-main:not(.codex-main-landing) .codex-composer.is-compact .composer-primary {
   margin: 0;
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--composer-surface-bg) 100%, transparent) 0%,
+      color-mix(in srgb, var(--composer-surface-bg) 72%, transparent) 40%,
+      transparent calc(var(--activity-feed-composer-mask-height) + 2px)
+    ),
+    var(--composer-surface-bg);
+  background-clip: padding-box;
+}
+
+.codex-main:not(.codex-main-landing) .codex-composer.is-compact .composer-primary::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  left: 10px;
+  z-index: 0;
+  height: calc(var(--activity-feed-composer-mask-height) + 16px);
+  border-radius: calc(var(--composer-outer-radius) - 10px) calc(var(--composer-outer-radius) - 10px) 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--composer-surface-bg) 96%, transparent) 0%,
+    color-mix(in srgb, var(--composer-surface-bg) 68%, transparent) 45%,
+    color-mix(in srgb, var(--composer-surface-bg) 26%, transparent) 76%,
+    transparent 100%
+  );
+  box-shadow: 0 -10px 20px -16px color-mix(in srgb, var(--composer-surface-bg) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(155%);
+  -webkit-backdrop-filter: blur(18px) saturate(155%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.76) 48%, rgba(0, 0, 0, 0.3) 76%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.76) 48%, rgba(0, 0, 0, 0.3) 76%, transparent 100%);
+  pointer-events: none;
+}
+
+.codex-main:not(.codex-main-landing) .codex-composer.is-compact .composer-primary > * {
+  position: relative;
+  z-index: 1;
 }
 
 .codex-main:not(.codex-main-landing) .composer-context-bar {
