@@ -3,6 +3,7 @@ import {
   Bot,
   Circle,
   ExternalLink,
+  FileText,
   ListChecks,
   Maximize2,
   Minimize2,
@@ -14,12 +15,14 @@ import {
 import { useMemo, useRef } from "react";
 import type {
   BackgroundTerminalTask,
+  ThreadPendingPlan,
   ThreadRunProjectionSnapshot,
   ThreadStatus,
   WorkspaceDiffResult,
 } from "../shared/ipc";
 import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
+import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
@@ -27,6 +30,7 @@ import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
+export const TASK_PANEL_PLAN_TAB_ID = "__plan__";
 
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
 
@@ -46,6 +50,7 @@ type StableSubagentRequestSpansSnapshot = {
 
 export type TaskPanelActiveTab =
   | typeof TASK_PANEL_REVIEW_TAB_ID
+  | typeof TASK_PANEL_PLAN_TAB_ID
   | typeof TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID
   | string;
 
@@ -289,11 +294,50 @@ export function BackgroundTerminalTasksPanel({
   );
 }
 
+function PlanDetailPanel({ plan }: { plan: ThreadPendingPlan }) {
+  const planPath = plan.planFilePath?.trim();
+  const userPrompt = plan.userPrompt.trim();
+  const analysis = plan.analysis.trim();
+
+  return (
+    <section className="task-plan-detail" aria-label="完整实施计划">
+      <header className="task-plan-detail-header">
+        <span className="task-plan-detail-kicker">
+          <FileText size={14} aria-hidden />
+          实施计划
+        </span>
+        {planPath ? <span className="task-plan-detail-path">{planPath}</span> : null}
+      </header>
+      <div className="task-plan-detail-body">
+        {userPrompt ? (
+          <section className="task-plan-detail-section">
+            <h3>用户目标</h3>
+            <p>{userPrompt}</p>
+          </section>
+        ) : null}
+        <section className="task-plan-detail-section">
+          <h3>计划</h3>
+          <div className="task-plan-detail-markdown">
+            <MarkdownContent text={plan.plan} />
+          </div>
+        </section>
+        {analysis ? (
+          <section className="task-plan-detail-section task-plan-detail-section--analysis">
+            <h3>分析</h3>
+            <pre>{analysis}</pre>
+          </section>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export function SubagentTaskDrawer({
   open,
   fullscreen,
   cards,
   projection,
+  plan,
   activeTab,
   openSubagentTabIds,
   threadStatus,
@@ -305,6 +349,7 @@ export function SubagentTaskDrawer({
   reviewError,
   reviewSelectedPath,
   onSelectAgent,
+  onSelectPlan,
   onCloseAgent,
   onSelectBackgroundTasks,
   onSelectReview,
@@ -317,6 +362,7 @@ export function SubagentTaskDrawer({
   fullscreen: boolean;
   cards: readonly ThreadRunProjectionSubagentCard[];
   projection?: ThreadRunProjectionSnapshot;
+  plan?: ThreadPendingPlan;
   activeTab: TaskPanelActiveTab;
   openSubagentTabIds: readonly string[];
   threadStatus?: ThreadStatus;
@@ -328,6 +374,7 @@ export function SubagentTaskDrawer({
   reviewError?: string;
   reviewSelectedPath?: string;
   onSelectAgent: (agentId: string) => void;
+  onSelectPlan: () => void;
   onCloseAgent: (agentId: string) => void;
   onSelectBackgroundTasks: () => void;
   onSelectReview: () => void;
@@ -337,6 +384,7 @@ export function SubagentTaskDrawer({
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
 }) {
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
+  const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
   const openSubagentCards = useMemo(
     () =>
@@ -346,7 +394,9 @@ export function SubagentTaskDrawer({
     [cards, openSubagentTabIds],
   );
   const liveActiveSubagentCard =
-    !reviewSelected && !terminalTasksSelected ? cards.find((card) => card.key === activeTab) : undefined;
+    !reviewSelected && !planSelected && !terminalTasksSelected
+      ? cards.find((card) => card.key === activeTab)
+      : undefined;
   const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
   const requestSpansById = useStableSubagentRequestSpansById(
     activeSubagentCard,
@@ -378,6 +428,19 @@ export function SubagentTaskDrawer({
             <ListChecks size={15} aria-hidden />
             <span>审查</span>
           </button>
+          {plan ? (
+            <button
+              type="button"
+              className={`subagent-task-panel-tab subagent-task-panel-tab--plan${planSelected ? " is-active" : ""}`}
+              role="tab"
+              aria-selected={planSelected}
+              aria-controls="subagent-task-tab-plan"
+              onClick={onSelectPlan}
+            >
+              <FileText size={15} aria-hidden />
+              <span>计划</span>
+            </button>
+          ) : null}
           {openSubagentCards.map((card) => {
             const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
             const modelId = card.agent.usage?.modelId ?? card.agent.context?.modelId;
@@ -479,6 +542,11 @@ export function SubagentTaskDrawer({
               {...(reviewSelectedPath && { selectedPath: reviewSelectedPath })}
               onSelectPath={onSelectReviewPath}
             />
+          </div>
+        ) : null}
+        {planSelected && plan ? (
+          <div id="subagent-task-tab-plan" className="subagent-task-panel-tab-pane" role="tabpanel">
+            <PlanDetailPanel plan={plan} />
           </div>
         ) : null}
         {activeSubagentCard ? (

@@ -173,6 +173,7 @@ import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   SubagentTaskDrawer,
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
+  TASK_PANEL_PLAN_TAB_ID,
   TASK_PANEL_REVIEW_TAB_ID,
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
@@ -796,6 +797,8 @@ function App() {
   const [planActionBusy, setPlanActionBusy] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [pendingPlansByThread, setPendingPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
+  const pendingPlansByThreadRef = useRef<Record<string, ThreadPendingPlan>>({});
+  const [approvedPlansByThread, setApprovedPlansByThread] = useState<Record<string, ThreadPendingPlan>>({});
   const [pendingClarificationsByThread, setPendingClarificationsByThread] = useState<
     Record<string, ClarificationRequest>
   >({});
@@ -1031,7 +1034,13 @@ function App() {
         );
       }
 
-      if (event.type === "thread.plan_cleared" || event.type === "thread.completed") {
+      if (event.type === "thread.plan_cleared") {
+        const promoted = promotePendingPlanForThread(event.threadId);
+        clearPendingPlanForThread(event.threadId);
+        if (!promoted) {
+          void fetchApprovedPlanForThread(event.threadId);
+        }
+      } else if (event.type === "thread.completed") {
         clearPendingPlanForThread(event.threadId);
       }
 
@@ -1043,6 +1052,7 @@ function App() {
           plan: event.plan.plan,
           workspacePath: "",
           worktreePath: "",
+          ...(event.plan.planFilePath ? { planFilePath: event.plan.planFilePath } : {}),
         });
       }
 
@@ -1145,6 +1155,9 @@ function App() {
       }
       if (event.type === "plan_approval.denied") {
         clearPendingPlanForThread(event.threadId);
+      }
+      if (event.type === "plan_approval.approved" && event.planApproval) {
+        rememberPlanApprovalForThread(event.threadId, event.planApproval);
       }
 
       if (event.type === "thread.usage_updated" && event.usage) {
@@ -1263,7 +1276,12 @@ function App() {
     }
 
     if (window.eco) {
-      void window.eco.getPendingPlan(selectedThreadId).then((plan) => {
+      void Promise.all([
+        window.eco.getPendingPlan(selectedThreadId),
+        typeof window.eco.getApprovedPlan === "function"
+          ? window.eco.getApprovedPlan(selectedThreadId)
+          : Promise.resolve(undefined),
+      ]).then(([plan, approvedPlan]) => {
         if (cancelled) {
           return;
         }
@@ -1271,6 +1289,11 @@ function App() {
           upsertPendingPlanForThread(selectedThreadId, plan);
         } else {
           clearPendingPlanForThread(selectedThreadId);
+          if (approvedPlan) {
+            rememberApprovedPlanForThread(selectedThreadId, approvedPlan);
+          } else {
+            clearApprovedPlanForThread(selectedThreadId);
+          }
         }
       });
       void window.eco.getPendingClarification(selectedThreadId).then((clarification) => {
@@ -1626,11 +1649,60 @@ function App() {
     [selectedThreadId, threads],
   );
   const pendingPlan = activeThread ? pendingPlansByThread[activeThread.id] : undefined;
+  const approvedPlan = activeThread ? approvedPlansByThread[activeThread.id] : undefined;
+  const taskPanelPlan = pendingPlan ?? approvedPlan;
   const pendingClarification = activeThread ? pendingClarificationsByThread[activeThread.id] : undefined;
   const pendingBashApproval = activeThread ? pendingBashApprovalsByThread[activeThread.id] : undefined;
 
+  useEffect(() => {
+    pendingPlansByThreadRef.current = pendingPlansByThread;
+  }, [pendingPlansByThread]);
+
   function upsertPendingPlanForThread(threadId: string, plan: ThreadPendingPlan) {
     setPendingPlansByThread((current) => ({ ...current, [threadId]: plan }));
+    clearApprovedPlanForThread(threadId);
+  }
+
+  function rememberApprovedPlanForThread(threadId: string, plan: ThreadPendingPlan) {
+    setApprovedPlansByThread((current) => ({ ...current, [threadId]: plan }));
+  }
+
+  function clearApprovedPlanForThread(threadId: string) {
+    setApprovedPlansByThread((current) => removeRecordKey(current, threadId));
+  }
+
+  async function fetchApprovedPlanForThread(threadId: string) {
+    if (typeof window.eco?.getApprovedPlan !== "function") {
+      return;
+    }
+    const plan = await window.eco.getApprovedPlan(threadId);
+    if (plan) {
+      rememberApprovedPlanForThread(threadId, plan);
+    }
+  }
+
+  function rememberPlanApprovalForThread(
+    threadId: string,
+    plan: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt" | "planFilePath">,
+  ) {
+    rememberApprovedPlanForThread(threadId, {
+      threadId,
+      userPrompt: plan.userPrompt,
+      analysis: plan.analysis,
+      plan: plan.plan,
+      workspacePath: "",
+      worktreePath: "",
+      ...(plan.planFilePath ? { planFilePath: plan.planFilePath } : {}),
+    });
+  }
+
+  function promotePendingPlanForThread(threadId: string): boolean {
+    const plan = pendingPlansByThreadRef.current[threadId];
+    if (plan) {
+      rememberApprovedPlanForThread(threadId, plan);
+      return true;
+    }
+    return false;
   }
 
   function clearPendingPlanForThread(threadId: string) {
@@ -2472,15 +2544,17 @@ function App() {
       }
       return next;
     });
-    if (
-      taskPanelActiveTab !== TASK_PANEL_REVIEW_TAB_ID &&
-      taskPanelActiveTab !== TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID &&
-      !activeSubagentCards.some((card) => card.key === taskPanelActiveTab)
-    ) {
+    const planTabActive = taskPanelActiveTab === TASK_PANEL_PLAN_TAB_ID;
+    const taskPanelActiveTabValid =
+      taskPanelActiveTab === TASK_PANEL_REVIEW_TAB_ID ||
+      taskPanelActiveTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
+      (planTabActive && Boolean(taskPanelPlan)) ||
+      activeSubagentCards.some((card) => card.key === taskPanelActiveTab);
+    if (!taskPanelActiveTabValid) {
       setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
       setSelectedSubagentAgentId(undefined);
     }
-  }, [activeSubagentCards, taskPanelActiveTab]);
+  }, [activeSubagentCards, taskPanelActiveTab, taskPanelPlan]);
 
   const closeWorkspacePanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -2522,6 +2596,17 @@ function App() {
     setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
   }, [closeWorkspacePanelForCurrentProject]);
+
+  const openPlanTaskDrawer = useCallback(() => {
+    if (!taskPanelPlan) {
+      return;
+    }
+    closeWorkspacePanelForCurrentProject();
+    setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
+    setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
+    setTaskDrawerOpen(true);
+  }, [closeWorkspacePanelForCurrentProject, taskPanelPlan]);
 
   const openSubagentTaskDrawer = useCallback(
     (agentId: string) => {
@@ -3325,6 +3410,7 @@ function App() {
       subagentSessions,
       subagentMetrics,
       plan,
+      approvedPlan,
       clarification,
       bashApproval,
       followUps,
@@ -3341,6 +3427,9 @@ function App() {
         ? window.eco.listSubagentMetrics(threadId)
         : Promise.resolve(undefined),
       window.eco.getPendingPlan(threadId),
+      typeof window.eco.getApprovedPlan === "function"
+        ? window.eco.getApprovedPlan(threadId)
+        : Promise.resolve(undefined),
       window.eco.getPendingClarification(threadId),
       typeof window.eco.getPendingBashApproval === "function"
         ? window.eco.getPendingBashApproval(threadId)
@@ -3367,6 +3456,11 @@ function App() {
       upsertPendingPlanForThread(threadId, plan);
     } else {
       clearPendingPlanForThread(threadId);
+      if (approvedPlan) {
+        rememberApprovedPlanForThread(threadId, approvedPlan);
+      } else {
+        clearApprovedPlanForThread(threadId);
+      }
     }
     if (clarification) {
       upsertPendingClarificationForThread(threadId, clarification);
@@ -3624,15 +3718,20 @@ function App() {
 
   async function approvePendingPlan() {
     if (!activeThread || !window.eco) return;
+    const planToRemember = pendingPlan;
     setError(undefined);
     setPlanActionBusy(true);
     try {
       const result = await window.eco.approvePlan({
         threadId: activeThread.id,
       });
-      if (result.thread) {
+      if (planToRemember) {
+        rememberApprovedPlanForThread(activeThread.id, planToRemember);
+      }
+      const updatedThread = result.thread;
+      if (updatedThread) {
         setThreads((current) =>
-          current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),
+          current.map((thread) => (thread.id === updatedThread.id ? updatedThread : thread)),
         );
       }
     } catch (caught) {
@@ -3696,9 +3795,10 @@ function App() {
     setPlanActionBusy(true);
     try {
       const result = await window.eco.dismissPlan(activeThread.id);
-      if (result.thread) {
+      const updatedThread = result.thread;
+      if (updatedThread) {
         setThreads((current) =>
-          current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),
+          current.map((thread) => (thread.id === updatedThread.id ? updatedThread : thread)),
         );
       }
       clearPendingPlanForThread(activeThread.id);
@@ -4552,6 +4652,7 @@ function App() {
     setTodosByThread((current) => removeRecordKey(current, threadId));
     setFollowUpsByThread((current) => removeRecordKey(current, threadId));
     clearPendingPlanForThread(threadId);
+    setApprovedPlansByThread((current) => removeRecordKey(current, threadId));
     clearPendingClarificationForThread(threadId);
     clearPendingBashApprovalForThread(threadId);
   }
@@ -5099,6 +5200,7 @@ function App() {
               {...(planFailureMessage && { failureMessage: planFailureMessage })}
               onApprove={() => void approvePendingPlan()}
               onDismiss={() => void dismissPendingPlan()}
+              onOpenInPanel={openPlanTaskDrawer}
             />
           ) : null
         }
@@ -5482,6 +5584,7 @@ function App() {
                   open={taskPanelOpen}
                   fullscreen={taskPanelFullscreenOpen}
                   cards={activeSubagentCards}
+                  {...(taskPanelPlan && { plan: taskPanelPlan })}
                   activeTab={taskPanelActiveTab}
                   openSubagentTabIds={openSubagentTabIds}
                   {...(runProjection && { projection: runProjection })}
@@ -5496,6 +5599,10 @@ function App() {
                   onSelectAgent={(agentId) => {
                     setTaskPanelActiveTab(agentId);
                     setSelectedSubagentAgentId(agentId);
+                  }}
+                  onSelectPlan={() => {
+                    setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
+                    setSelectedSubagentAgentId(undefined);
                   }}
                   onCloseAgent={closeSubagentTaskTab}
                   onSelectBackgroundTasks={() => {
@@ -5548,6 +5655,8 @@ function App() {
                 onToggleComposerMcpServer={(serverKey, enabled) =>
                   void toggleComposerMcpServer(serverKey, enabled)
                 }
+                {...(approvedPlan && { approvedPlan })}
+                onOpenPlan={openPlanTaskDrawer}
                 {...(projectWorkspace && { workspace: projectWorkspace })}
                 {...(currentProjectPath && { workspacePath: currentProjectPath })}
                 workspaceLabel={currentProjectName}

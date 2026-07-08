@@ -1,5 +1,15 @@
 import { resolveMissionDisplayText } from "@eco/runtime";
-import { Bot, ChevronDown, GitBranch, GitCommitHorizontal, ListTodo, Plug, Users } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  FileText,
+  GitBranch,
+  GitCommitHorizontal,
+  ListTodo,
+  PanelRightOpen,
+  Plug,
+  Users,
+} from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type {
@@ -11,6 +21,7 @@ import type {
   SubagentRole,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
+  ThreadPendingPlan,
   ThreadRuntimeConfig,
   ThreadStatus,
   WorkspaceInfo,
@@ -24,9 +35,9 @@ import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
-import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
+import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -68,6 +79,8 @@ export interface WorkspaceFloatingCardsProps {
   composerMcpSettings?: McpServersEnabledSettings;
   onToggleComposerSubagent?: (role: SubagentRole, enabled: boolean) => void | Promise<void>;
   onToggleComposerMcpServer?: (serverKey: string, enabled: boolean) => void | Promise<void>;
+  approvedPlan?: ThreadPendingPlan;
+  onOpenPlan?: () => void;
   subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
   selectedSubagentAgentId?: string;
   agentDisplayNames?: RuntimeAgentDisplayNames;
@@ -186,6 +199,28 @@ function SubagentRunsCardBody({
   );
 }
 
+function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; onOpenPlan?: () => void }) {
+  const preview = thinkingPreviewLine(resolveMissionDisplayText(plan.plan), 150);
+  const planPath = plan.planFilePath?.trim();
+
+  return (
+    <button
+      type="button"
+      className="workspace-plan-card-trigger"
+      onClick={onOpenPlan}
+      disabled={!onOpenPlan}
+      title="在右侧面板查看完整计划"
+    >
+      <span className="workspace-plan-card-main">
+        <span className="workspace-plan-card-title">已批准计划</span>
+        {planPath ? <span className="workspace-plan-card-path">{planPath}</span> : null}
+        <span className="workspace-plan-card-preview">{preview || "打开右侧面板查看完整实施计划"}</span>
+      </span>
+      <PanelRightOpen size={15} className="workspace-plan-card-icon" aria-hidden />
+    </button>
+  );
+}
+
 export function WorkspaceFloatingCards({
   workspace,
   workspacePath,
@@ -219,6 +254,8 @@ export function WorkspaceFloatingCards({
   composerMcpSettings,
   onToggleComposerSubagent,
   onToggleComposerMcpServer,
+  approvedPlan,
+  onOpenPlan,
   subagentRunCards = [],
   selectedSubagentAgentId,
   agentDisplayNames,
@@ -240,6 +277,7 @@ export function WorkspaceFloatingCards({
   const enabledMcpServers = mcpServers.filter((server) => server.enabled && server.name.trim());
   const subagentLabels = agentModelLabels.filter((label) => !label.main);
   const subagentSettings = composerRuntimeConfig?.subagentEnabled ?? subagentEnabled;
+  const composerConfigEditableInWorkspace = Boolean(canEditComposerConfig && !hasActiveThread);
   const enabledSubagents = subagentLabels.filter(
     ({ subagentRole }) => !subagentRole || !subagentSettings || subagentSettings[subagentRole],
   ).length;
@@ -312,10 +350,27 @@ export function WorkspaceFloatingCards({
             <SubagentRunsCardBody
               cards={subagentRunCards}
               {...(selectedSubagentAgentId && { selectedAgentId: selectedSubagentAgentId })}
-              agentDisplayNames={agentDisplayNames}
-              agentThemes={agentThemes}
-              onOpenSubagent={onOpenSubagent}
+              {...(agentDisplayNames && { agentDisplayNames })}
+              {...(agentThemes && { agentThemes })}
+              {...(onOpenSubagent && { onOpenSubagent })}
             />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {approvedPlan ? (
+          <WorkspacePanelSection
+            id="workspace-approved-plan"
+            title="实施计划"
+            defaultExpanded
+            summary={
+              <>
+                <FileText size={14} aria-hidden />
+                <span>已批准</span>
+              </>
+            }
+            maxBodyHeight={220}
+          >
+            <PlanWorkspaceCardBody plan={approvedPlan} {...(onOpenPlan && { onOpenPlan })} />
           </WorkspacePanelSection>
         ) : null}
 
@@ -357,7 +412,7 @@ export function WorkspaceFloatingCards({
               embedded
               labels={agentModelLabels}
               subagentSettings={subagentSettings ?? null}
-              canEditSubagents={Boolean(canEditComposerConfig)}
+              canEditSubagents={composerConfigEditableInWorkspace}
               {...(isSavingSettings !== undefined && { subagentSaving: isSavingSettings })}
               {...(onToggleComposerSubagent && { onToggleSubagent: onToggleComposerSubagent })}
             />
@@ -382,7 +437,7 @@ export function WorkspaceFloatingCards({
             <ComposerMcpCardBody
               servers={mcpServers}
               enabledSettings={composerMcpSettings}
-              canEdit={Boolean(canEditComposerConfig)}
+              canEdit={composerConfigEditableInWorkspace}
               {...(isSavingSettings !== undefined && { saving: isSavingSettings })}
               {...(onToggleComposerMcpServer && { onToggleServer: onToggleComposerMcpServer })}
             />
@@ -397,7 +452,6 @@ export function WorkspaceFloatingCards({
             summary={
               <>
                 <GitCommitHorizontal size={14} aria-hidden />
-                <span>Git 图形</span>
                 <span className="floating-workspace-card-bubble-detail">{branchLabel}</span>
               </>
             }

@@ -459,8 +459,10 @@ import { prepareWorkspaceGit } from "./workspace-git-setup";
 import { WorkspaceGitStatusPublisher } from "./workspace-git-status-publisher";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
+  approvedPlanRelativePath,
   claudePlanFileExists,
   isWorktreeGitCwdError,
+  readApprovedPlanSnapshot,
   readClaudePlanFile,
   resolveWorktreePathHint,
 } from "./worktree-lifecycle";
@@ -611,10 +613,7 @@ const deferredPlanExecutionByThread = new Map<
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
-function resolveRequestTerminalEventScope(input: {
-  role: string;
-  agentId?: string;
-}): ThreadRunEventScope {
+function resolveRequestTerminalEventScope(input: { role: string; agentId?: string }): ThreadRunEventScope {
   if (input.agentId?.trim()) {
     return "agent";
   }
@@ -1646,10 +1645,7 @@ function registerIpcHandlers(): void {
     if (request.mode !== "feed") {
       return projection;
     }
-    return filterFeedProjectionAfterSequence(
-      trimProjectionForFeed(projection),
-      request.afterSequence,
-    );
+    return filterFeedProjectionAfterSequence(trimProjectionForFeed(projection), request.afterSequence);
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadRunProjectionDetailGet, async (payload: unknown) => {
@@ -2586,6 +2582,13 @@ function registerIpcHandlers(): void {
       return undefined;
     }
     return buildThreadPendingPlanView(conversationStore.getPendingPlan(threadId));
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadGetApprovedPlan, async (threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return undefined;
+    }
+    return buildThreadApprovedPlanView(threadId.trim());
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadApprovePlan, async (payload: unknown) => {
@@ -4893,6 +4896,49 @@ async function ensurePendingPlanForExecution(
   return true;
 }
 
+async function buildThreadApprovedPlanView(threadId: string): Promise<ThreadPendingPlan | undefined> {
+  const id = threadId.trim();
+  if (!id || conversationStore.getPendingPlan(id)) {
+    return undefined;
+  }
+
+  const thread = conversationStore.getThread(id);
+  if (!thread) {
+    return undefined;
+  }
+
+  const worktreePath = createSessionPlan(thread.workspacePath, id).worktreePath;
+  const planFilePath = conversationStore.getThreadClaudePlanFilePath(id);
+  if (planFilePath) {
+    const planText = await readClaudePlanFile(thread.workspacePath, planFilePath);
+    if (planText) {
+      return {
+        threadId: id,
+        userPrompt: thread.prompt.trim(),
+        analysis: "",
+        plan: planText,
+        workspacePath: thread.workspacePath,
+        worktreePath,
+        planFilePath,
+      };
+    }
+  }
+
+  const legacySnapshot = await readApprovedPlanSnapshot(thread.workspacePath, id);
+  if (!legacySnapshot) {
+    return undefined;
+  }
+  return {
+    threadId: id,
+    userPrompt: legacySnapshot.userPrompt || thread.prompt.trim(),
+    analysis: legacySnapshot.analysis,
+    plan: legacySnapshot.plan,
+    workspacePath: thread.workspacePath,
+    worktreePath,
+    planFilePath: approvedPlanRelativePath(id),
+  };
+}
+
 async function resolvePlanningContextForThread(
   threadId: string,
   workspacePath: string,
@@ -6700,10 +6746,7 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   lastFeedProjectionSignatures.set(threadId, signature);
   const previousMaxSequence = lastFeedProjectionTimelineSequences.get(threadId);
   const currentMaxSequence = maxFeedProjectionTimelineSequence(feedProjection);
-  const payloadProjection = filterFeedProjectionAfterSequence(
-    feedProjection,
-    previousMaxSequence,
-  );
+  const payloadProjection = filterFeedProjectionAfterSequence(feedProjection, previousMaxSequence);
   if (currentMaxSequence !== undefined) {
     lastFeedProjectionTimelineSequences.set(threadId, currentMaxSequence);
   }

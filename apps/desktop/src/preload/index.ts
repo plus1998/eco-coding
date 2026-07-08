@@ -500,6 +500,9 @@ const api = {
   getPendingPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetPendingPlan, threadId);
   },
+  getApprovedPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadGetApprovedPlan, threadId);
+  },
   getThreadUsageSnapshot(threadId: string): Promise<ThreadUsageSnapshotResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetUsageSnapshot, threadId);
   },

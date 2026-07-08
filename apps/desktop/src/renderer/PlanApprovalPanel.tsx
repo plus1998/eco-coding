@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, PanelRightOpen } from "lucide-react";
 import type { ThreadPendingPlan } from "../shared/ipc";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -9,6 +9,7 @@ interface PlanApprovalPanelProps {
   variant?: "feed" | "dock";
   onApprove: () => void;
   onDismiss: () => void;
+  onOpenInPanel?: () => void;
 }
 
 export function PlanApprovalPanel({
@@ -18,6 +19,7 @@ export function PlanApprovalPanel({
   variant = "feed",
   onApprove,
   onDismiss,
+  onOpenInPanel,
 }: PlanApprovalPanelProps) {
   const planTrimmed = plan.plan.trim();
   const docked = variant === "dock";
@@ -26,6 +28,17 @@ export function PlanApprovalPanel({
     <>
       <header className="plan-approval-header">
         <h3 className={docked ? "plan-approval-dock-title" : undefined}>实施计划</h3>
+        {onOpenInPanel ? (
+          <button
+            type="button"
+            className="plan-approval-open-panel"
+            onClick={onOpenInPanel}
+            title="在右侧面板查看完整计划"
+            aria-label="在右侧面板查看完整计划"
+          >
+            <PanelRightOpen size={15} aria-hidden />
+          </button>
+        ) : null}
       </header>
       {failureMessage ? (
         <div className="plan-approval-error" role="alert">
@@ -34,10 +47,7 @@ export function PlanApprovalPanel({
         </div>
       ) : null}
       <div
-        className={[
-          "plan-approval-markdown",
-          docked ? "plan-approval-dock-markdown" : "",
-        ]
+        className={["plan-approval-markdown", docked ? "plan-approval-dock-markdown" : ""]
           .filter(Boolean)
           .join(" ")}
       >

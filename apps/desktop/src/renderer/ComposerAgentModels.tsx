@@ -82,6 +82,7 @@ function SubagentSwitchRows({
             subagentSettings &&
             onToggleSubagent,
         );
+        const hasSwitch = Boolean(subagentRole);
         const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
 
         return (
@@ -90,7 +91,7 @@ function SubagentSwitchRows({
               <span className="composer-mcp-row-name">{displayName}</span>
               <span className="composer-mcp-row-transport">{modelShort}</span>
             </div>
-            {clickable && subagentRole ? (
+            {hasSwitch && subagentRole ? (
               <label
                 className="composer-switch"
                 title={enabled ? `${displayName} · 已启用` : `${displayName} · 已停用`}
@@ -98,7 +99,7 @@ function SubagentSwitchRows({
                 <input
                   type="checkbox"
                   checked={enabled}
-                  disabled={subagentSaving}
+                  disabled={subagentSaving || !clickable}
                   aria-label={`${displayName} ${enabled ? "已启用" : "已停用"}`}
                   onChange={() => onToggleSubagent?.(subagentRole, !enabled)}
                 />
@@ -336,10 +337,13 @@ export function ComposerAgentModels({
           setOpen(true);
         }}
       >
-        <Users size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className="composer-context-trigger-icon" />
-        <span className="composer-context-trigger-label">
-          {compact ? summary : "编排"}
-        </span>
+        <Users
+          size={COMPOSER_TOOLBAR_ICON_PX}
+          strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
+          aria-hidden
+          className="composer-context-trigger-icon"
+        />
+        <span className="composer-context-trigger-label">{compact ? summary : "编排"}</span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}

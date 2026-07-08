@@ -63,6 +63,7 @@ export const IPC_CHANNELS = {
   threadFollowUpList: "thread:follow-up-list",
   threadFollowUpCancel: "thread:follow-up-cancel",
   threadGetPendingPlan: "thread:get-pending-plan",
+  threadGetApprovedPlan: "thread:get-approved-plan",
   threadGetUsageSnapshot: "thread:get-usage-snapshot",
   threadUsageLedgerEventsList: "thread:usage-ledger-events-list",
   threadTodoList: "thread:todo-list",

@@ -15,6 +15,7 @@ export function buildThreadPendingPlanView(
     plan: pending.plan,
     workspacePath: pending.workspacePath,
     worktreePath: pending.worktreePath,
+    ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
   };
 }
 

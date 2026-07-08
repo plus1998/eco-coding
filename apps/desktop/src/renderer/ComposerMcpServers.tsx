@@ -1,10 +1,10 @@
 import { ChevronDown, Plug } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { sanitizeMcpServerName } from "../shared/mcp";
-import type { McpServerConfigView } from "../shared/ipc";
-import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
+import type { McpServerConfigView } from "../shared/ipc";
+import { sanitizeMcpServerName } from "../shared/mcp";
+import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
@@ -39,20 +39,19 @@ function McpServerRows({
               <span className="composer-mcp-row-name">{server.name}</span>
               <span className="composer-mcp-row-transport">{server.transport}</span>
             </div>
-            {clickable ? (
-              <label className="composer-switch" title={enabled ? `${server.name} · 已启用` : `${server.name} · 已停用`}>
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  disabled={saving}
-                  aria-label={`${server.name} ${enabled ? "已启用" : "已停用"}`}
-                  onChange={() => onToggleServer?.(serverKey, !enabled)}
-                />
-                <span className="composer-switch-track" aria-hidden />
-              </label>
-            ) : (
-              <span className="composer-mcp-row-status">{enabled ? "启用" : "停用"}</span>
-            )}
+            <label
+              className="composer-switch"
+              title={enabled ? `${server.name} · 已启用` : `${server.name} · 已停用`}
+            >
+              <input
+                type="checkbox"
+                checked={enabled}
+                disabled={saving || !clickable}
+                aria-label={`${server.name} ${enabled ? "已启用" : "已停用"}`}
+                onChange={() => onToggleServer?.(serverKey, !enabled)}
+              />
+              <span className="composer-switch-track" aria-hidden />
+            </label>
           </div>
         );
       })}
@@ -91,8 +90,7 @@ export function ComposerMcpServers({
 
   const enabledServers = servers.filter((server) => server.enabled && server.name.trim());
   const enabledCount = countEnabledMcpServers(enabledSettings);
-  const summary =
-    enabledServers.length > 0 ? `${enabledCount}/${enabledServers.length}` : "0";
+  const summary = enabledServers.length > 0 ? `${enabledCount}/${enabledServers.length}` : "0";
 
   const updatePanelPosition = useCallback(() => {
     const anchor = triggerRef.current;
@@ -205,7 +203,12 @@ export function ComposerMcpServers({
           setOpen(true);
         }}
       >
-        <Plug size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className="composer-context-trigger-icon" />
+        <Plug
+          size={COMPOSER_TOOLBAR_ICON_PX}
+          strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
+          aria-hidden
+          className="composer-context-trigger-icon"
+        />
         <span className="composer-context-trigger-label">{compact ? summary : "MCP"}</span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
