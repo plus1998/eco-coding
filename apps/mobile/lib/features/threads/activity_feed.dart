@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
@@ -517,7 +516,6 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     threadSessionFeedHorizontalPadding,
                     0,
                   ),
-              scrollCacheExtent: const ScrollCacheExtent.pixels(600),
               itemCount: displayEntries.length,
               itemBuilder: (context, index) {
                 final entry = displayEntries[index];

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,9 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
+import '../../core/widgets/adaptive_glass_action_button.dart';
+import '../../core/widgets/adaptive_toolbar_icon.dart';
+import '../../core/widgets/eco_android_glass.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
@@ -259,16 +263,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               )
             : null,
         actions: [
-          IconButton(
-            onPressed: actionBusy ? null : _refreshStatus,
-            icon: _refreshing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(EcoIcons.refresh),
-            tooltip: '刷新状态',
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _refreshing
+                ? _GlassRefreshSpinner()
+                : AdaptiveToolbarIcon(
+                    icon: EcoIcons.refresh,
+                    tooltip: '刷新状态',
+                    onPressed: actionBusy ? null : _refreshStatus,
+                    size: sessionToolbarButtonSize,
+                  ),
           ),
         ],
       ),
@@ -1065,12 +1069,10 @@ class _ScanFirstView extends StatelessWidget {
               ),
             ),
             const Spacer(flex: 3),
-            FilledButton(
+            AdaptiveGlassActionButton(
+              label: '扫一扫',
+              icon: EcoIcons.qrScan,
               onPressed: busy ? null : onScan,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 15),
-              ),
-              child: const Text('扫一扫'),
             ),
             const SizedBox(height: 8),
             TextButton(
@@ -1170,18 +1172,17 @@ class _ReadyConnectionView extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            FilledButton(
+            AdaptiveGlassActionButton(
+              label: '进入应用',
+              icon: EcoIcons.goForward,
               onPressed: busy || !overview.readyForThreads ? null : onEnterApp,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: const Text('进入应用'),
             ),
             const SizedBox(height: 8),
-            TextButton.icon(
+            AdaptiveGlassActionButton(
+              label: '绑定新 PC',
+              icon: EcoIcons.qrScan,
               onPressed: busy ? null : onScan,
-              icon: const Icon(EcoIcons.qrScan, size: 18),
-              label: const Text('绑定新 PC'),
+              height: 44,
             ),
           ],
         ),
@@ -1204,6 +1205,54 @@ class _StepBlockedHint extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: ecoColors(context).textMuted),
+      ),
+    );
+  }
+}
+
+class _GlassRefreshSpinner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final spinner = SizedBox(
+      width: 20,
+      height: 20,
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        color: ecoColors(context).textHeading,
+      ),
+    );
+
+    const outerSize = sessionToolbarButtonSize; // 40
+    if (PlatformInfo.isAndroid) {
+      return SizedBox(
+        width: outerSize,
+        height: outerSize,
+        child: Center(
+          child: EcoAndroidGlassSurface(
+            width: outerSize,
+            height: outerSize,
+            borderRadius: BorderRadius.circular(outerSize / 2),
+            child: Center(child: spinner),
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: outerSize,
+      height: outerSize,
+      child: Center(
+        child: AdaptiveButton.child(
+          onPressed: null,
+          style: AdaptiveButtonStyle.glass,
+          size: AdaptiveButtonSize.medium,
+          useSmoothRectangleBorder: false,
+          child: SizedBox(
+            width: outerSize,
+            height: outerSize,
+            child: Center(child: spinner),
+          ),
+        ),
       ),
     );
   }

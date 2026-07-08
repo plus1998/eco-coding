@@ -26,6 +26,7 @@ abstract final class EcoIcons {
   static const IconData expandUp = LucideIcons.chevronUp;
   static const IconData chevronLeft = LucideIcons.chevronLeft;
   static const IconData chevronRight = LucideIcons.chevronRight;
+  static const IconData goForward = LucideIcons.arrowRightCircle;
 
   // ── 设备 / 连接 ───────────────────────────────────────
   static const IconData desktop = LucideIcons.monitor;
