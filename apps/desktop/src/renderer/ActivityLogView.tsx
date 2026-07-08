@@ -1,5 +1,7 @@
 import {
+  formatCostUsd,
   formatRoleModelLabel,
+  formatTokenCount,
   formatUsageBadge,
   isSubagentMissionEnvelope,
   resolveMissionDisplayText,
@@ -88,7 +90,6 @@ import {
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
   type ThreadRunProjectionTimelineFeedEntry,
-  type ThreadRunProjectionToolGroupFeedEntry,
 } from "./thread-run-projection-view";
 import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStreamRequestTiming";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
@@ -824,7 +825,7 @@ function shouldShowActionInlineLoading({
   return isProjectionRequestActive(requestSpan);
 }
 
-type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionToolGroupFeedEntry;
+type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry;
 
 function projectionRequestSpanRenderSignature(span?: ProjectionRequestSpan): string {
   if (!span) {
@@ -860,37 +861,24 @@ function projectionTimelineItemRenderSignature(item: ThreadRunProjectionTimeline
 }
 
 function projectionSubagentDetailEntrySignature(entry: SubagentDetailFeedEntry): string {
-  if (entry.kind === "timeline") {
-    return [
-      "timeline",
-      entry.key,
-      entry.at,
-      entry.sequence,
-      projectionTimelineItemRenderSignature(entry.item),
-    ].join(":");
-  }
   return [
-    "tool-group",
+    "timeline",
     entry.key,
     entry.at,
     entry.sequence,
-    entry.entries
-      .map((child) =>
-        [
-          child.kind,
-          child.key,
-          child.at,
-          child.sequence,
-          child.kind === "agent-echo" ? child.agent.agentId : "",
-          projectionTimelineItemRenderSignature(child.item),
-        ].join(":"),
-      )
-      .join("|"),
+    projectionTimelineItemRenderSignature(entry.item),
   ].join(":");
 }
 
 function projectionSubagentDetailEntryRequestSpanSignature(
   entry: SubagentDetailFeedEntry,
+  requestSpansById: ProjectionRequestSpansById,
+): string {
+  return projectionSubagentDetailTimelineRequestSpanSignature([entry.item], requestSpansById);
+}
+
+function projectionSubagentDetailTimelineRequestSpanSignature(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ProjectionRequestSpansById,
 ): string {
   const requestIds = new Set<string>();
@@ -901,12 +889,8 @@ function projectionSubagentDetailEntryRequestSpanSignature(
     }
   };
 
-  if (entry.kind === "timeline") {
-    addItemRequestId(entry.item);
-  } else {
-    for (const child of entry.entries) {
-      addItemRequestId(child.item);
-    }
+  for (const item of timeline) {
+    addItemRequestId(item);
   }
 
   return [...requestIds]
@@ -921,45 +905,13 @@ function buildSubagentDetailFeedEntries(
   agentId: string,
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): SubagentDetailFeedEntry[] {
-  const grouped: SubagentDetailFeedEntry[] = [];
-  let pending: ThreadRunProjectionTimelineFeedEntry[] = [];
-
-  const flush = () => {
-    if (pending.length > 1) {
-      const first = pending[0];
-      if (first) {
-        grouped.push({
-          kind: "tool-group",
-          key: `subagent-tool-group:${agentId}:${first.key}`,
-          entries: pending,
-          at: first.at,
-          sequence: first.sequence,
-        });
-      }
-    } else {
-      grouped.push(...pending);
-    }
-    pending = [];
-  };
-
-  for (const item of timeline) {
-    const entry: ThreadRunProjectionTimelineFeedEntry = {
-      kind: "timeline",
-      key: `subagent-timeline:${agentId}:${item.id}`,
-      item,
-      at: item.at,
-      sequence: item.sequence,
-    };
-    const block = projectionItemToDetailBlock(item);
-    if (block?.kind === "action") {
-      pending.push(entry);
-      continue;
-    }
-    flush();
-    grouped.push(entry);
-  }
-  flush();
-  return grouped;
+  return timeline.map((item) => ({
+    kind: "timeline",
+    key: `subagent-timeline:${agentId}:${item.id}`,
+    item,
+    at: item.at,
+    sequence: item.sequence,
+  }));
 }
 
 function areProjectionSubagentDetailFeedEntryPropsEqual(
@@ -987,9 +939,6 @@ const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetail
   entry: SubagentDetailFeedEntry;
   requestSpansById: ProjectionRequestSpansById;
 }) {
-  if (entry.kind === "tool-group") {
-    return <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />;
-  }
   return <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />;
 }, areProjectionSubagentDetailFeedEntryPropsEqual);
 
@@ -1207,7 +1156,8 @@ function areProjectionSubagentDetailFeedPropsEqual(
 ): boolean {
   return (
     prev.missionText === next.missionText &&
-    prev.requestSpansById === next.requestSpansById &&
+    projectionSubagentDetailTimelineRequestSpanSignature(prev.agent.timeline, prev.requestSpansById) ===
+      projectionSubagentDetailTimelineRequestSpanSignature(next.agent.timeline, next.requestSpansById) &&
     projectionSubagentDetailAgentSignature(prev.agent) === projectionSubagentDetailAgentSignature(next.agent)
   );
 }
@@ -1224,7 +1174,6 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   const scrollTopRef = useRef(0);
   const programmaticScrollRef = useRef(false);
   const delegation = readProjectionAgentDelegation(agent);
-  const hasDelegation = Boolean(delegation);
   const missionDisplay = resolveMissionDisplayText(
     missionText || delegation?.prompt || delegation?.summary || "",
   );
@@ -1232,10 +1181,8 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
   const filteredTimeline = useMemo(
     () =>
-      agent.timeline.filter(
-        (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), hasDelegation),
-      ),
-    [agent.timeline, hasDelegation, missionText],
+      agent.timeline.filter((item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText))),
+    [agent.timeline, missionText],
   );
   const detailFeedEntries = useMemo(
     () => buildSubagentDetailFeedEntries(agent.agentId, filteredTimeline),
@@ -1358,7 +1305,6 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
           {durationLabel ? ` ${durationLabel}` : ""}
         </span>
       </div>
-      <ProjectionSubagentRunInstanceStrip agent={agent} />
       <div className="subagent-conversation-log">
         {detailFeedEntries.length > 0 ? (
           detailFeedEntries.map((entry) => (
@@ -1372,34 +1318,92 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
           <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
         )}
       </div>
+      <ProjectionSubagentRunInstanceStrip agent={agent} />
     </div>
   );
 }, areProjectionSubagentDetailFeedPropsEqual);
 
 function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProjectionAgent }) {
-  const contextLabel =
-    agent.context && agent.context.limit > 0 ? `上下文 ${agent.context.occupancyPct}%` : undefined;
+  const usage = agent.usage;
+  const context = agent.context;
+  const contextLabel = context && context.limit > 0 ? `${context.occupancyPct}%` : undefined;
+  const contextProgressWidth =
+    context && context.limit > 0 ? `${Math.min(100, Math.max(0, context.occupancyPct))}%` : "0%";
+  const contextDetail =
+    context && context.limit > 0
+      ? `${formatTokenCount(context.occupied)} / ${formatTokenCount(context.limit)}`
+      : undefined;
   const modelId = agent.usage?.modelId ?? agent.context?.modelId;
+  const modelLabel = modelId ? shortenModelId(modelId) : undefined;
+  const costLabel = usage ? formatCostUsd(usage.ecoCostUsd) : undefined;
 
-  if (!agent.usage && !contextLabel && !modelId) {
+  if (!usage && !contextLabel && !modelLabel) {
     return null;
   }
 
   return (
     <div className="subagent-run-instance-strip">
-      {agent.usage ? (
-        <span className="subagent-run-instance-usage">
-          {formatUsageBadge({
-            inputTokens: agent.usage.inputTokens,
-            outputTokens: agent.usage.outputTokens,
-            cacheReadTokens: agent.usage.cacheReadTokens,
-            cacheCreationTokens: agent.usage.cacheCreationTokens,
-          })}
-          {agent.usage.ecoCostUsd > 0 ? ` · $${agent.usage.ecoCostUsd.toFixed(4)}` : ""}
+      {usage ? (
+        <>
+          <span
+            className="subagent-run-instance-metric subagent-run-instance-metric--io"
+            title={`输入 ${formatTokenCount(usage.inputTokens)} / 输出 ${formatTokenCount(
+              usage.outputTokens,
+            )}`}
+          >
+            <span className="subagent-run-instance-label">输入/输出</span>
+            <span className="subagent-run-instance-lines">
+              <span className="subagent-run-instance-line">↑ {formatTokenCount(usage.inputTokens)}</span>
+              <span className="subagent-run-instance-line">↓ {formatTokenCount(usage.outputTokens)}</span>
+            </span>
+          </span>
+          <span
+            className="subagent-run-instance-metric subagent-run-instance-metric--cache"
+            title={`缓存读 ${formatTokenCount(usage.cacheReadTokens)} / 缓存写 ${formatTokenCount(
+              usage.cacheCreationTokens,
+            )}`}
+          >
+            <span className="subagent-run-instance-label">缓存</span>
+            <span className="subagent-run-instance-lines">
+              <span className="subagent-run-instance-line">读 {formatTokenCount(usage.cacheReadTokens)}</span>
+              <span className="subagent-run-instance-line">
+                写 {formatTokenCount(usage.cacheCreationTokens)}
+              </span>
+            </span>
+          </span>
+        </>
+      ) : null}
+      {contextLabel || costLabel ? (
+        <span
+          className="subagent-run-instance-metric subagent-run-instance-metric--context-cost"
+          title={[
+            contextLabel ? `上下文 ${contextLabel}${contextDetail ? ` (${contextDetail})` : ""}` : "",
+            costLabel ? `计费 ${costLabel}` : "",
+          ]
+            .filter(Boolean)
+            .join(" / ")}
+        >
+          <span className="subagent-run-instance-label">上下文/计费</span>
+          <span className="subagent-run-instance-lines">
+            <span className="subagent-run-instance-progress-row">
+              <span className="subagent-run-instance-progress-track" aria-hidden="true">
+                <span
+                  className="subagent-run-instance-progress-fill"
+                  style={{ width: contextProgressWidth }}
+                />
+              </span>
+              <span className="subagent-run-instance-progress-label">{contextLabel ?? "0%"}</span>
+            </span>
+            <span className="subagent-run-instance-line">计费 {costLabel ?? "-"}</span>
+          </span>
         </span>
       ) : null}
-      {contextLabel ? <span className="subagent-run-instance-context">{contextLabel}</span> : null}
-      {modelId ? <span className="subagent-run-instance-model">{shortenModelId(modelId)}</span> : null}
+      {modelLabel ? (
+        <span className="subagent-run-instance-metric subagent-run-instance-metric--model" title={modelId}>
+          <span className="subagent-run-instance-label">模型</span>
+          <span className="subagent-run-instance-model-value">{modelLabel}</span>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1526,9 +1530,12 @@ function resolveSubagentKindBadge(role: string): string {
 function shouldSuppressSubagentCardTimelineItem(
   item: ThreadRunProjectionTimelineItem,
   hasCardMission: boolean,
-  hasDelegation: boolean,
 ): boolean {
-  if (hasDelegation && item.eventType === "agent.started") {
+  if (
+    item.eventType === "agent.started" ||
+    item.eventType === "agent.stopped" ||
+    item.eventType === "agent.abandoned"
+  ) {
     return true;
   }
   if (isSubagentMissionEnvelope(item.text)) {

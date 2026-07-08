@@ -1384,7 +1384,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 }
 
 .codex-main-scroll.is-feed-panel-layout .codex-feed-stack {
-  margin-inline: 0 auto;
+  margin-inline: auto;
 }
 
 .codex-main-scroll.is-workspace-cards-docked .activity-user-message-nav {
@@ -5615,6 +5615,10 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   animation: eco-spin 0.8s linear infinite;
 }
 
+.chat-item-loading .spinning {
+  animation-duration: 1.6s;
+}
+
 @keyframes eco-spin {
   to {
     transform: rotate(360deg);
@@ -6518,16 +6522,31 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 }
 
 .subagent-run-instance-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
+  --subagent-metric-detail: #a3a3a3;
+  --subagent-metric-label: #9ca3af;
+  --subagent-metric-progress-bg: rgba(255, 255, 255, 0.13);
+  --subagent-metric-progress-fill: #cbd5e1;
+  --subagent-metric-strip-bg: rgba(255, 255, 255, 0.055);
+  --subagent-metric-value: #d1d5db;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  align-items: stretch;
+  column-gap: 14px;
+  row-gap: 8px;
   margin-bottom: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  font-size: 12px;
-  color: #a3a3a3;
+  background: var(--subagent-metric-strip-bg);
+  color: var(--subagent-metric-value);
+}
+
+[data-theme="light"] .subagent-run-instance-strip {
+  --subagent-metric-detail: #64748b;
+  --subagent-metric-label: #64748b;
+  --subagent-metric-progress-bg: rgba(17, 24, 39, 0.12);
+  --subagent-metric-progress-fill: #64748b;
+  --subagent-metric-strip-bg: rgba(17, 24, 39, 0.045);
+  --subagent-metric-value: #475569;
 }
 
 .subagent-run-instance-strip .subagent-run-agent-id {
@@ -6535,10 +6554,119 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   color: #737373;
 }
 
-.subagent-run-instance-usage,
-.subagent-run-instance-context,
-.subagent-run-instance-model {
-  color: #a3a3a3;
+.subagent-run-instance-metric {
+  display: grid;
+  grid-template-rows: 13px 34px;
+  min-width: 0;
+  row-gap: 5px;
+  align-content: start;
+  min-height: 52px;
+}
+
+.subagent-run-instance-metric--context-cost {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.subagent-run-instance-metric--model {
+  grid-template-rows: 13px 34px;
+}
+
+.subagent-run-instance-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subagent-metric-label);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-run-instance-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subagent-metric-value);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-run-instance-lines {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: repeat(2, 16px);
+  row-gap: 2px;
+}
+
+.subagent-run-instance-line {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subagent-metric-value);
+  font-size: 13px;
+  font-weight: 580;
+  line-height: 1.28;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-run-instance-progress-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.subagent-run-instance-progress-track {
+  display: block;
+  min-width: 0;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--subagent-metric-progress-bg);
+}
+
+.subagent-run-instance-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--subagent-metric-progress-fill);
+}
+
+.subagent-run-instance-progress-label {
+  color: var(--subagent-metric-value);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-run-instance-model-value {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subagent-metric-value);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.subagent-run-instance-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subagent-metric-detail);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subagent-run-duration {
@@ -19096,9 +19224,11 @@ body.is-resizing-task-panel {
 }
 
 .subagent-task-detail-feed {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 14px 18px 18px;
+  padding: 14px 18px 0;
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
@@ -19147,14 +19277,37 @@ body.is-resizing-task-panel {
 .subagent-conversation-log {
   display: flex;
   min-width: 0;
+  flex: 1 0 auto;
   flex-direction: column;
   gap: 10px;
+  padding-bottom: 12px;
 }
 
 .subagent-conversation .subagent-run-instance-strip {
-  margin: 0 0 12px;
-  padding: 0;
-  background: transparent;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0 -18px;
+  padding: 10px 18px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border-sidebar) 70%, transparent);
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--codex-log-bg, #181818) 55%, transparent),
+    color-mix(in srgb, var(--codex-log-bg, #181818) 92%, transparent) 28%,
+    color-mix(in srgb, var(--codex-log-bg, #181818) 98%, transparent)
+  );
+  backdrop-filter: blur(14px);
+}
+
+[data-theme="light"] .subagent-conversation .subagent-run-instance-strip {
+  border-top-color: rgba(17, 24, 39, 0.12);
+  background: linear-gradient(
+    to bottom,
+    rgba(248, 250, 252, 0.68),
+    rgba(248, 250, 252, 0.94) 28%,
+    rgba(248, 250, 252, 0.98)
+  );
 }
 
 .subagent-conversation .run-log-narrative.compact .run-log-narrative-body,
