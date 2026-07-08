@@ -11,7 +11,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type {
   BackgroundTerminalTask,
   ThreadRunProjectionSnapshot,
@@ -28,6 +28,22 @@ import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
 
+type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
+
+const emptyRequestSpansById = new Map<string, ProjectionRequestSpan>();
+
+type StableSubagentCardSnapshot = {
+  active: boolean;
+  card: ThreadRunProjectionSubagentCard;
+  signature: string;
+};
+
+type StableSubagentRequestSpansSnapshot = {
+  active: boolean;
+  signature: string;
+  spansById: Map<string, ProjectionRequestSpan>;
+};
+
 export type TaskPanelActiveTab =
   | typeof TASK_PANEL_REVIEW_TAB_ID
   | typeof TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID
@@ -37,8 +53,150 @@ function isThreadActive(status?: ThreadStatus | string): boolean {
   return status === "running" || status === "queued" || status === "awaiting_plan";
 }
 
+function isSubagentActive(card: ThreadRunProjectionSubagentCard): boolean {
+  return card.agent.status === "active" || card.agent.status === "launching" || card.running;
+}
+
 function subagentRoleLabel(role: string, displayNames?: RuntimeAgentDisplayNames): string {
   return resolveRuntimeAgentName(role, displayNames) ?? resolveSubagentRunDisplayTitle(role);
+}
+
+function subagentTimelineItemSignature(
+  item: ThreadRunProjectionSubagentCard["agent"]["timeline"][number],
+): string {
+  return (
+    JSON.stringify([
+      item.id,
+      item.sequence,
+      item.eventType,
+      item.scope,
+      item.role ?? "",
+      item.agentId ?? "",
+      item.requestId ?? "",
+      item.streamKey ?? "",
+      item.at,
+      item.text,
+      item.metadata ?? null,
+    ]) ?? ""
+  );
+}
+
+function subagentCardSignature(card: ThreadRunProjectionSubagentCard): string {
+  const timeline = card.agent.timeline;
+  const usage = card.agent.usage;
+  return [
+    card.agent.agentId,
+    card.agent.status,
+    card.agent.endedAt ?? "",
+    card.missionText,
+    card.agent.mission ?? "",
+    card.agent.delegationPrompt ?? "",
+    card.agent.delegationSummary ?? "",
+    timeline.map(subagentTimelineItemSignature).join("|"),
+    usage
+      ? [
+          usage.inputTokens,
+          usage.outputTokens,
+          usage.cacheReadTokens,
+          usage.cacheCreationTokens,
+          usage.ecoCostUsd,
+          usage.modelId ?? "",
+        ].join("/")
+      : "",
+    card.agent.context?.occupancyPct ?? "",
+  ].join(":");
+}
+
+function requestSpanSignature(span: ProjectionRequestSpan): string {
+  return [
+    span.requestId,
+    span.ownerAgentId ?? "",
+    span.status,
+    span.startedAt,
+    span.firstTokenAt ?? "",
+    span.endedAt ?? "",
+    span.error ?? "",
+  ].join(":");
+}
+
+function subagentRequestSpanKeys(card: ThreadRunProjectionSubagentCard): string[] {
+  const keys = new Set<string>();
+  for (const item of card.agent.timeline) {
+    const key = item.requestId?.trim();
+    if (key) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+}
+
+function useStableSubagentCard(
+  card: ThreadRunProjectionSubagentCard | undefined,
+): ThreadRunProjectionSubagentCard | undefined {
+  const snapshotsRef = useRef(new Map<string, StableSubagentCardSnapshot>());
+
+  if (!card) {
+    return undefined;
+  }
+  const active = isSubagentActive(card);
+  const snapshot = snapshotsRef.current.get(card.key);
+  if (!active && snapshot && !snapshot.active) {
+    return snapshot.card;
+  }
+
+  const signature = subagentCardSignature(card);
+  if (active) {
+    if (!snapshot?.active || snapshot.signature !== signature) {
+      snapshotsRef.current.set(card.key, { active, card, signature });
+      return card;
+    }
+    return snapshot.card;
+  }
+
+  if (!snapshot || snapshot.active) {
+    snapshotsRef.current.set(card.key, { active, card, signature });
+    return card;
+  }
+  return snapshot.card;
+}
+
+function useStableSubagentRequestSpansById(
+  card: ThreadRunProjectionSubagentCard | undefined,
+  requestSpans: readonly ProjectionRequestSpan[],
+): Map<string, ProjectionRequestSpan> {
+  const snapshotsRef = useRef(new Map<string, StableSubagentRequestSpansSnapshot>());
+
+  if (!card) {
+    return emptyRequestSpansById;
+  }
+
+  const active = isSubagentActive(card);
+  const snapshot = snapshotsRef.current.get(card.key);
+  if (!active && snapshot && !snapshot.active) {
+    return snapshot.spansById;
+  }
+
+  const requestSpanKeys = subagentRequestSpanKeys(card);
+  const spanById = new Map(requestSpans.map((span) => [span.requestId, span]));
+  const spans = requestSpanKeys
+    .map((key) => spanById.get(key))
+    .filter((span): span is ProjectionRequestSpan => Boolean(span));
+  const signature = spans.map(requestSpanSignature).join("|");
+  if (active) {
+    if (!snapshot?.active || snapshot.signature !== signature) {
+      const spansById = new Map(spans.map((span) => [span.requestId, span]));
+      snapshotsRef.current.set(card.key, { active, signature, spansById });
+      return spansById;
+    }
+    return snapshot.spansById;
+  }
+
+  if (!snapshot || snapshot.active) {
+    const spansById = new Map(spans.map((span) => [span.requestId, span]));
+    snapshotsRef.current.set(card.key, { active, signature, spansById });
+    return spansById;
+  }
+  return snapshot.spansById;
 }
 
 function taskStatusLabel(status: BackgroundTerminalTask["status"]): string {
@@ -178,10 +336,6 @@ export function SubagentTaskDrawer({
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
 }) {
-  const requestSpansById = useMemo(
-    () => new Map((projection?.requestSpans ?? []).map((span) => [span.requestId, span])),
-    [projection?.requestSpans],
-  );
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
   const openSubagentCards = useMemo(
@@ -191,8 +345,13 @@ export function SubagentTaskDrawer({
         .filter((card): card is ThreadRunProjectionSubagentCard => card !== undefined),
     [cards, openSubagentTabIds],
   );
-  const activeSubagentCard =
+  const liveActiveSubagentCard =
     !reviewSelected && !terminalTasksSelected ? cards.find((card) => card.key === activeTab) : undefined;
+  const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
+  const requestSpansById = useStableSubagentRequestSpansById(
+    activeSubagentCard,
+    projection?.requestSpans ?? [],
+  );
 
   if (!open) {
     return null;

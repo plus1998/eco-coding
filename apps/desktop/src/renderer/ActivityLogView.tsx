@@ -87,14 +87,16 @@ import {
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
-  type ThreadRunProjectionToolGroupFeedEntry,
   type ThreadRunProjectionTimelineFeedEntry,
+  type ThreadRunProjectionToolGroupFeedEntry,
 } from "./thread-run-projection-view";
 import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStreamRequestTiming";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 type OpenSubagentHandler = (agentId: string) => void;
+type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
+type ProjectionRequestSpansById = Map<string, ProjectionRequestSpan>;
 
 const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
@@ -131,7 +133,9 @@ function readProjectionRewindTarget(
   return readRewindTarget(item.metadata?.rewindTarget);
 }
 
-function formatRunLogMessageTime(value?: string): { label: string; title: string; dateTime: string } | undefined {
+function formatRunLogMessageTime(
+  value?: string,
+): { label: string; title: string; dateTime: string } | undefined {
   if (!value) {
     return undefined;
   }
@@ -194,7 +198,9 @@ function RunLogMessageMeta({
         "run-log-message-meta",
         align === "end" ? "run-log-message-meta--end" : "run-log-message-meta--start",
         sticky ? "run-log-message-meta--sticky" : "",
-      ].filter(Boolean).join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {restorePrompt ? (
         <button
@@ -256,7 +262,13 @@ function usePlannerLayoutChangeEffect(
 }
 
 function isThreadStoppedForFinalSummary(status: string): boolean {
-  return status === "completed" || status === "failed" || status === "blocked" || status === "cancelled" || status === "idle";
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "blocked" ||
+    status === "cancelled" ||
+    status === "idle"
+  );
 }
 
 function resolveTurnFinalSummaryItemIds(
@@ -508,10 +520,7 @@ function ProjectionMainFeedEntry({
   }
   if (entry.kind === "tool-group") {
     return wrapRunLogFeedEntry(
-      <ProjectionToolGroupEntry
-        entry={entry}
-        requestSpansById={requestSpansById}
-      />,
+      <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />,
       { tight: true },
     );
   }
@@ -527,15 +536,9 @@ function ProjectionMainFeedEntry({
       />,
     );
   }
-  return wrapRunLogFeedEntry(
-    <ProjectionAgentEchoEntry
-      entry={entry}
-      requestSpansById={requestSpansById}
-    />,
-    {
-      tight: isTightAgentEchoEntry(entry),
-    },
-  );
+  return wrapRunLogFeedEntry(<ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />, {
+    tight: isTightAgentEchoEntry(entry),
+  });
 }
 
 function isTightAgentEchoEntry(
@@ -651,11 +654,7 @@ function ProjectionToolGroupChildEntry({
     );
   }
   return (
-    <ProjectionAgentEchoEntry
-      entry={entry}
-      requestSpansById={requestSpansById}
-      forceActionDetailsExpanded
-    />
+    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} forceActionDetailsExpanded />
   );
 }
 
@@ -827,6 +826,97 @@ function shouldShowActionInlineLoading({
 
 type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionToolGroupFeedEntry;
 
+function projectionRequestSpanRenderSignature(span?: ProjectionRequestSpan): string {
+  if (!span) {
+    return "";
+  }
+  return [
+    span.requestId,
+    span.ownerAgentId ?? "",
+    span.status,
+    span.startedAt,
+    span.firstTokenAt ?? "",
+    span.endedAt ?? "",
+    span.error ?? "",
+  ].join(":");
+}
+
+function projectionTimelineItemRenderSignature(item: ThreadRunProjectionTimelineItem): string {
+  return (
+    JSON.stringify([
+      item.id,
+      item.sequence,
+      item.eventType,
+      item.scope,
+      item.role ?? "",
+      item.agentId ?? "",
+      item.requestId ?? "",
+      item.streamKey ?? "",
+      item.at,
+      item.text,
+      item.metadata ?? null,
+    ]) ?? ""
+  );
+}
+
+function projectionSubagentDetailEntrySignature(entry: SubagentDetailFeedEntry): string {
+  if (entry.kind === "timeline") {
+    return [
+      "timeline",
+      entry.key,
+      entry.at,
+      entry.sequence,
+      projectionTimelineItemRenderSignature(entry.item),
+    ].join(":");
+  }
+  return [
+    "tool-group",
+    entry.key,
+    entry.at,
+    entry.sequence,
+    entry.entries
+      .map((child) =>
+        [
+          child.kind,
+          child.key,
+          child.at,
+          child.sequence,
+          child.kind === "agent-echo" ? child.agent.agentId : "",
+          projectionTimelineItemRenderSignature(child.item),
+        ].join(":"),
+      )
+      .join("|"),
+  ].join(":");
+}
+
+function projectionSubagentDetailEntryRequestSpanSignature(
+  entry: SubagentDetailFeedEntry,
+  requestSpansById: ProjectionRequestSpansById,
+): string {
+  const requestIds = new Set<string>();
+  const addItemRequestId = (item: ThreadRunProjectionTimelineItem) => {
+    const requestId = item.requestId?.trim();
+    if (requestId) {
+      requestIds.add(requestId);
+    }
+  };
+
+  if (entry.kind === "timeline") {
+    addItemRequestId(entry.item);
+  } else {
+    for (const child of entry.entries) {
+      addItemRequestId(child.item);
+    }
+  }
+
+  return [...requestIds]
+    .sort()
+    .map(
+      (requestId) => `${requestId}:${projectionRequestSpanRenderSignature(requestSpansById.get(requestId))}`,
+    )
+    .join("|");
+}
+
 function buildSubagentDetailFeedEntries(
   agentId: string,
   timeline: readonly ThreadRunProjectionTimelineItem[],
@@ -871,6 +961,37 @@ function buildSubagentDetailFeedEntries(
   flush();
   return grouped;
 }
+
+function areProjectionSubagentDetailFeedEntryPropsEqual(
+  prev: {
+    entry: SubagentDetailFeedEntry;
+    requestSpansById: ProjectionRequestSpansById;
+  },
+  next: {
+    entry: SubagentDetailFeedEntry;
+    requestSpansById: ProjectionRequestSpansById;
+  },
+): boolean {
+  return (
+    projectionSubagentDetailEntrySignature(prev.entry) ===
+      projectionSubagentDetailEntrySignature(next.entry) &&
+    projectionSubagentDetailEntryRequestSpanSignature(prev.entry, prev.requestSpansById) ===
+      projectionSubagentDetailEntryRequestSpanSignature(next.entry, next.requestSpansById)
+  );
+}
+
+const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetailFeedEntry({
+  entry,
+  requestSpansById,
+}: {
+  entry: SubagentDetailFeedEntry;
+  requestSpansById: ProjectionRequestSpansById;
+}) {
+  if (entry.kind === "tool-group") {
+    return <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />;
+  }
+  return <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />;
+}, areProjectionSubagentDetailFeedEntryPropsEqual);
 
 function ProjectionAgentEchoEntry({
   entry,
@@ -1049,17 +1170,54 @@ function ProjectionSubagentRunRow({
   );
 }
 
-export function ProjectionSubagentDetailFeed({
+interface ProjectionSubagentDetailFeedProps {
+  agent: ThreadRunProjectionAgent;
+  missionText: string;
+  requestSpansById: ProjectionRequestSpansById;
+  threadActive: boolean;
+}
+
+function projectionSubagentDetailAgentSignature(agent: ThreadRunProjectionAgent): string {
+  const usage = agent.usage;
+  return [
+    agent.agentId,
+    agent.status,
+    agent.endedAt ?? "",
+    agent.mission ?? "",
+    agent.delegationPrompt ?? "",
+    agent.delegationSummary ?? "",
+    agent.timeline.map(projectionTimelineItemRenderSignature).join("|"),
+    usage
+      ? [
+          usage.inputTokens,
+          usage.outputTokens,
+          usage.cacheReadTokens,
+          usage.cacheCreationTokens,
+          usage.ecoCostUsd,
+          usage.modelId ?? "",
+        ].join("/")
+      : "",
+    agent.context?.occupancyPct ?? "",
+  ].join(":");
+}
+
+function areProjectionSubagentDetailFeedPropsEqual(
+  prev: ProjectionSubagentDetailFeedProps,
+  next: ProjectionSubagentDetailFeedProps,
+): boolean {
+  return (
+    prev.missionText === next.missionText &&
+    prev.requestSpansById === next.requestSpansById &&
+    projectionSubagentDetailAgentSignature(prev.agent) === projectionSubagentDetailAgentSignature(next.agent)
+  );
+}
+
+export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDetailFeed({
   agent,
   missionText,
   requestSpansById,
   threadActive,
-}: {
-  agent: ThreadRunProjectionAgent;
-  missionText: string;
-  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  threadActive: boolean;
-}) {
+}: ProjectionSubagentDetailFeedProps) {
   void threadActive;
   const feedRef = useRef<HTMLDivElement>(null);
   const userDetachedFromBottomRef = useRef(false);
@@ -1191,7 +1349,9 @@ export function ProjectionSubagentDetailFeed({
 
   return (
     <div ref={feedRef} className="subagent-task-detail-feed subagent-conversation">
-      {missionDisplay ? <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" /> : null}
+      {missionDisplay ? (
+        <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" />
+      ) : null}
       <div className="subagent-conversation-status-row">
         <span className="subagent-conversation-status">
           {running ? "处理中" : "已处理"}
@@ -1201,29 +1361,20 @@ export function ProjectionSubagentDetailFeed({
       <ProjectionSubagentRunInstanceStrip agent={agent} />
       <div className="subagent-conversation-log">
         {detailFeedEntries.length > 0 ? (
-          detailFeedEntries.map((entry) =>
-            entry.kind === "tool-group" ? (
-              <ProjectionToolGroupEntry
-                key={entry.key}
-                entry={entry}
-                requestSpansById={requestSpansById}
-              />
-            ) : (
-              <ProjectionTimelineEntry
-                key={entry.key}
-                item={entry.item}
-                requestSpansById={requestSpansById}
-                compact
-              />
-            ),
-          )
+          detailFeedEntries.map((entry) => (
+            <ProjectionSubagentDetailFeedEntry
+              key={entry.key}
+              entry={entry}
+              requestSpansById={requestSpansById}
+            />
+          ))
         ) : (
           <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
         )}
       </div>
     </div>
   );
-}
+}, areProjectionSubagentDetailFeedPropsEqual);
 
 function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProjectionAgent }) {
   const contextLabel =
@@ -2137,9 +2288,7 @@ function UserPromptBlock({
           >
             <pre
               ref={bodyRef}
-              className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""]
-                .filter(Boolean)
-                .join(" ")}
+              className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""].filter(Boolean).join(" ")}
             >
               {text}
             </pre>
@@ -2160,13 +2309,14 @@ function UserPromptBlock({
       <RunLogMessageMeta
         align="end"
         {...(createdAt && { createdAt })}
-        {...(onRestorePrompt && rewindTarget && {
-          restorePrompt: {
-            text,
-            rewindTarget,
-            onRestorePrompt,
-          },
-        })}
+        {...(onRestorePrompt &&
+          rewindTarget && {
+            restorePrompt: {
+              text,
+              rewindTarget,
+              onRestorePrompt,
+            },
+          })}
       />
     </article>
   );
