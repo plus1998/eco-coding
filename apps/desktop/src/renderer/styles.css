@@ -1387,6 +1387,10 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   margin-inline: 0 auto;
 }
 
+.codex-main-scroll.is-workspace-cards-docked .activity-user-message-nav {
+  display: none;
+}
+
 .codex-feed-stack .codex-composer-wrap {
   position: relative;
   z-index: 3;
@@ -15321,6 +15325,16 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   box-sizing: border-box;
 }
 
+.codex-main:not(.codex-main-landing)
+  .codex-main-scroll.is-workspace-cards-docked:not(.is-workspace-panel-open)
+  .codex-main-scroll-body {
+  padding-right: calc(
+    var(--workspace-cards-panel-width, 300px) +
+    var(--toolbar-edge-inset) +
+    var(--workspace-cards-panel-gap, 18px)
+  );
+}
+
 .codex-main-landing .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
   padding-right: var(--content-inline-start);
   box-sizing: border-box;
@@ -18435,7 +18449,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   top: calc(var(--workspace-toolbar-clearance, 36px) + 10px);
   right: var(--toolbar-edge-inset);
   z-index: 72;
-  width: min(300px, calc(100% - 32px));
+  width: min(var(--workspace-cards-panel-width, 300px), calc(100% - 32px));
   height: auto;
   max-height: calc(100% - var(--workspace-toolbar-clearance, 36px) - 24px);
   overflow: visible;

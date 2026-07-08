@@ -507,12 +507,12 @@ const ACTIVITY_TASK_PANEL_COLUMN_GAP_PX = 18;
 const ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX = 48;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
 const WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX = 48;
-const WORKSPACE_CARDS_FALLBACK_HIDE_WIDTH_PX = 1360;
-const WORKSPACE_CARDS_FALLBACK_SHOW_WIDTH_PX = 1420;
+const WORKSPACE_CARDS_PANEL_WIDTH_PX = 300;
 
 type ActivityFeedScrollJump = "bottom" | "top";
 type ActivityFeedUserScrollDirection = "up" | "down";
 type ActivityWorkspaceLayoutMode = "full" | "feed-panel" | "feed-nav" | "feed-only";
+type WorkspaceCardsLayoutMode = "floating" | "docked";
 
 interface ActivityUserMessageNavItem {
   id: string;
@@ -856,9 +856,8 @@ function App() {
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
     useState<ActivityWorkspaceLayoutMode>("full");
-  const [workspaceCardsAutoHidden, setWorkspaceCardsAutoHidden] = useState(false);
-  const [workspaceCardsManualRevealProjectPath, setWorkspaceCardsManualRevealProjectPath] =
-    useState<string>();
+  const [workspaceCardsLayoutMode, setWorkspaceCardsLayoutMode] =
+    useState<WorkspaceCardsLayoutMode>("floating");
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
@@ -1607,14 +1606,6 @@ function App() {
       return;
     }
     const desiredOpen = currentWorkspacePanelState?.open === true;
-    if (
-      desiredOpen &&
-      workspaceCardsAutoHidden &&
-      workspaceCardsManualRevealProjectPath !== currentProjectPath
-    ) {
-      setWorkspaceCardsManualRevealProjectPath(currentProjectPath);
-      return;
-    }
     const nextOpen = taskDrawerOpen ? true : !desiredOpen;
     setWorkspacePanelByProject((current) => {
       const existing = current[currentProjectPath];
@@ -1625,23 +1616,11 @@ function App() {
           : createProjectWorkspacePanelState(nextOpen),
       };
     });
-    setWorkspaceCardsManualRevealProjectPath((current) => {
-      if (nextOpen) {
-        return taskDrawerOpen || workspaceCardsAutoHidden ? currentProjectPath : undefined;
-      }
-      return current === currentProjectPath ? undefined : current;
-    });
     if (taskDrawerOpen) {
       setTaskDrawerOpen(false);
       setTaskPanelFullscreen(false);
     }
-  }, [
-    currentProjectPath,
-    currentWorkspacePanelState?.open,
-    taskDrawerOpen,
-    workspaceCardsAutoHidden,
-    workspaceCardsManualRevealProjectPath,
-  ]);
+  }, [currentProjectPath, currentWorkspacePanelState?.open, taskDrawerOpen]);
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
@@ -1778,6 +1757,12 @@ function App() {
       const existing = current[currentProjectPath];
       if (projectChanged) {
         if (existing !== undefined) {
+          if (inConversation && !existing.open) {
+            return {
+              ...current,
+              [currentProjectPath]: { ...existing, open: true },
+            };
+          }
           return current;
         }
         return {
@@ -2903,8 +2888,8 @@ function App() {
   );
 
   useLayoutEffect(() => {
-    if (!currentProjectPath || taskDrawerOpen) {
-      setWorkspaceCardsAutoHidden(false);
+    if (!currentProjectPath || !activeThread || !currentWorkspacePanelState?.open || taskDrawerOpen) {
+      setWorkspaceCardsLayoutMode("floating");
       return undefined;
     }
 
@@ -2913,32 +2898,58 @@ function App() {
       return undefined;
     }
 
-    const readCssPixelValue = (value: string): number => {
-      const parsed = Number.parseFloat(value);
+    const readCssPixelValue = (value: string | undefined): number => {
+      const parsed = Number.parseFloat(value ?? "");
       return Number.isFinite(parsed) ? parsed : 0;
     };
-    const measureShouldHide = (currentlyHidden: boolean): boolean => {
+    const measureLayoutMode = (current: WorkspaceCardsLayoutMode): WorkspaceCardsLayoutMode => {
       const scrollBody = scrollBodyRef.current;
-      const workspacePanel = workspaceCardsPanelRef.current;
       const feed = scrollBody?.querySelector<HTMLElement>(".codex-feed-stack");
-      if (!workspacePanel || !feed) {
-        const paneWidth = mainPane.getBoundingClientRect().width;
-        return currentlyHidden
-          ? paneWidth < WORKSPACE_CARDS_FALLBACK_SHOW_WIDTH_PX
-          : paneWidth < WORKSPACE_CARDS_FALLBACK_HIDE_WIDTH_PX;
+      const paneRect = mainPane.getBoundingClientRect();
+      const paneWidth = paneRect.width;
+      if (!scrollBody || !feed || paneWidth <= 0) {
+        return "floating";
       }
 
-      const paneRect = mainPane.getBoundingClientRect();
-      const feedRect = feed.getBoundingClientRect();
-      const panelStyle = window.getComputedStyle(workspacePanel);
-      const panelWidth = workspacePanel.offsetWidth || readCssPixelValue(panelStyle.width) || 300;
-      const panelRight = readCssPixelValue(panelStyle.right);
+      const scrollBodyRect = scrollBody.getBoundingClientRect();
+      const rootStyle = window.getComputedStyle(document.documentElement);
+      const scrollBodyStyle = window.getComputedStyle(scrollBody);
+      const baseLeftInset =
+        readCssPixelValue(rootStyle.getPropertyValue("--content-inline-start")) ||
+        readCssPixelValue(scrollBodyStyle.paddingLeft);
+      const baseRightInset =
+        readCssPixelValue(rootStyle.getPropertyValue("--content-inline-end")) ||
+        readCssPixelValue(scrollBodyStyle.paddingRight);
+      const centeredContentWidth = Math.max(0, scrollBodyRect.width - baseLeftInset - baseRightInset);
+      const feedWidth = Math.min(ACTIVITY_FEED_TARGET_WIDTH_PX, centeredContentWidth);
+      const centeredFeedLeft =
+        scrollBodyRect.left + baseLeftInset + Math.max(0, (centeredContentWidth - feedWidth) / 2);
+      const centeredFeedRight = centeredFeedLeft + feedWidth;
+
+      const workspacePanel = workspaceCardsPanelRef.current;
+      const panelStyle = workspacePanel ? window.getComputedStyle(workspacePanel) : undefined;
+      const panelWidth =
+        workspacePanel?.offsetWidth || readCssPixelValue(panelStyle?.width) || WORKSPACE_CARDS_PANEL_WIDTH_PX;
+      const panelRight =
+        readCssPixelValue(panelStyle?.right) ||
+        readCssPixelValue(rootStyle.getPropertyValue("--toolbar-edge-inset"));
       const panelLeft = paneRect.right - panelRight - panelWidth;
-      const clearance = panelLeft - feedRect.right;
-      const requiredClearance = currentlyHidden
-        ? WORKSPACE_CARDS_RESPONSIVE_GAP_PX + WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX
-        : WORKSPACE_CARDS_RESPONSIVE_GAP_PX;
-      return clearance < requiredClearance;
+      const centeredClearance = panelLeft - centeredFeedRight;
+      const floatingClearanceRequired =
+        current === "floating"
+          ? WORKSPACE_CARDS_RESPONSIVE_GAP_PX
+          : WORKSPACE_CARDS_RESPONSIVE_GAP_PX + WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX;
+      if (centeredClearance >= floatingClearanceRequired) {
+        return "floating";
+      }
+
+      const dockedRequiredWidth =
+        baseLeftInset + feedWidth + WORKSPACE_CARDS_RESPONSIVE_GAP_PX + panelWidth + panelRight;
+      const dockedWidthRequired =
+        current === "docked"
+          ? dockedRequiredWidth - WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX
+          : dockedRequiredWidth;
+      return paneWidth >= dockedWidthRequired ? "docked" : "floating";
     };
 
     let frame = 0;
@@ -2948,7 +2959,7 @@ function App() {
       }
       frame = requestAnimationFrame(() => {
         frame = 0;
-        setWorkspaceCardsAutoHidden((current) => measureShouldHide(current));
+        setWorkspaceCardsLayoutMode((current) => measureLayoutMode(current));
       });
     };
 
@@ -2976,7 +2987,7 @@ function App() {
       observer.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [activeThread?.id, currentProjectPath, taskDrawerOpen]);
+  }, [activeThread?.id, currentProjectPath, currentWorkspacePanelState?.open, taskDrawerOpen]);
 
   useLayoutEffect(() => {
     if (!currentProjectPath || !activeThread || !taskDrawerOpen || taskPanelFullscreen) {
@@ -3042,18 +3053,6 @@ function App() {
       window.removeEventListener("resize", update);
     };
   }, [activeThread?.id, currentProjectPath, taskDrawerOpen, taskPanelFullscreen, taskPanelWidth]);
-
-  useEffect(() => {
-    setWorkspaceCardsManualRevealProjectPath((current) => {
-      if (!current) {
-        return current;
-      }
-      if (current !== currentProjectPath || !workspaceCardsAutoHidden) {
-        return undefined;
-      }
-      return current;
-    });
-  }, [currentProjectPath, workspaceCardsAutoHidden]);
 
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
@@ -4763,15 +4762,14 @@ function App() {
     if (canSend) void sendComposerMessage();
   }
 
+  const showLanding = !activeThread;
   const showWorkspacePanel = Boolean(currentProjectPath);
   const workspaceCardsPanelDesiredOpen = Boolean(
     showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen,
   );
-  const workspaceCardsPanelManuallyRevealed = Boolean(
-    currentProjectPath && workspaceCardsManualRevealProjectPath === currentProjectPath,
-  );
-  const workspaceCardsPanelOpen = Boolean(
-    workspaceCardsPanelDesiredOpen && (!workspaceCardsAutoHidden || workspaceCardsPanelManuallyRevealed),
+  const workspaceCardsPanelOpen = workspaceCardsPanelDesiredOpen;
+  const workspaceCardsDockedLayout = Boolean(
+    workspaceCardsPanelOpen && !showLanding && workspaceCardsLayoutMode === "docked",
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
   const taskPanelAutoHidden = Boolean(
@@ -4782,9 +4780,10 @@ function App() {
   const taskPanelLayoutOpen = Boolean(taskPanelOpen && !taskPanelAutoHidden);
   const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
   const activityUserMessageNavHidden = Boolean(
-    taskPanelOpen &&
-      !taskPanelFullscreen &&
-      (activityWorkspaceLayoutMode === "feed-panel" || activityWorkspaceLayoutMode === "feed-only"),
+    workspaceCardsDockedLayout ||
+      (taskPanelOpen &&
+        !taskPanelFullscreen &&
+        (activityWorkspaceLayoutMode === "feed-panel" || activityWorkspaceLayoutMode === "feed-only")),
   );
   const activityFeedPanelLayout = Boolean(
     taskPanelLayoutOpen && activityWorkspaceLayoutMode === "feed-panel" && !taskPanelFullscreen,
@@ -4795,9 +4794,10 @@ function App() {
   const rightPanelOpen = taskPanelLayoutOpen;
   const rightPanelStyle = {
     "--workspace-panel-width": taskPanelOpen ? `${taskPanelWidth}px` : "300px",
+    "--workspace-cards-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
+    "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
   } as CSSProperties;
-  const showLanding = !activeThread;
   const workspacePanelToolbar = showWorkspacePanel ? (
     <div className="codex-main-toolbar codex-main-toolbar--workspace" aria-label="工作区控制">
       <button
@@ -4884,6 +4884,7 @@ function App() {
     currentProjectPath,
     activeThread?.id,
     currentWorkspacePanelState?.open,
+    workspaceCardsLayoutMode,
     taskDrawerOpen,
     syncTopbarMode,
   ]);
@@ -5312,13 +5313,14 @@ function App() {
           .filter(Boolean)
           .join(" ")}
       >
-        <div ref={mainPaneRef} className="codex-main-pane">
+        <div ref={mainPaneRef} className="codex-main-pane" style={rightPanelStyle}>
           <div
             className={[
               "codex-main-scroll",
               showWorkspacePanel ? "has-workspace-panel" : "",
               rightPanelOpen ? "is-workspace-panel-open" : "",
               taskPanelLayoutOpen ? "is-task-panel-open" : "",
+              workspaceCardsDockedLayout ? "is-workspace-cards-docked" : "",
               activityFeedPanelLayout ? "is-feed-panel-layout" : "",
               activityFeedNavLayout ? "is-feed-nav-layout" : "",
               taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
@@ -5328,7 +5330,6 @@ function App() {
             ]
               .filter(Boolean)
               .join(" ")}
-            style={rightPanelStyle}
           >
             {currentProjectPath ? (
               <header
@@ -5521,6 +5522,7 @@ function App() {
                 "workspace-panel",
                 "workspace-panel--floating-cards",
                 workspaceCardsPanelOpen ? "is-open" : "",
+                workspaceCardsDockedLayout ? "is-docked" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
