@@ -8,6 +8,13 @@ import {
 } from "../src/main/thread-run-projection-feed";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
 
+function requireValue<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`Missing ${label}`);
+  }
+  return value;
+}
+
 function createProjection(text: string, { longDelegation = true } = {}): ThreadRunProjectionSnapshot {
   return {
     thread: {
@@ -59,7 +66,8 @@ test("trimProjectionForFeed truncates long timeline text and keeps metadata flag
 
   expect(trimmed.timeline[0]?.text).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBe(true);
-  expect(trimmed.agents[0]?.timeline).toEqual([]);
+  expect(trimmed.agents[0]?.timeline[0]?.text).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);
+  expect(trimmed.agents[0]?.timeline[0]?.metadata?.textTruncated).toBe(true);
   expect(trimmed.agents[0]?.delegationPrompt).toHaveLength(2_000);
 });
 
@@ -121,9 +129,25 @@ test("trimProjectionForFeed keeps full main timeline history", () => {
   expect(trimmed.timeline.at(-1)?.id).toBe("evt_149");
 });
 
-test("filterFeedProjectionAfterSequence keeps only uncached main timeline items", () => {
+test("filterFeedProjectionAfterSequence keeps only uncached main and subagent timeline items", () => {
+  const baseProjection = createProjection("short message", { longDelegation: false });
   const projection = trimProjectionForFeed({
-    ...createProjection("short message", { longDelegation: false }),
+    ...baseProjection,
+    agents: [
+      {
+        ...requireValue(baseProjection.agents[0], "base agent"),
+        timeline: [
+          {
+            id: "agent_evt_4",
+            sequence: 4,
+            eventType: "message.final",
+            scope: "agent",
+            text: "agent four",
+            at: "2026-01-01T00:00:03.000Z",
+          },
+        ],
+      },
+    ],
     timeline: [
       {
         id: "evt_1",
@@ -155,12 +179,12 @@ test("filterFeedProjectionAfterSequence keeps only uncached main timeline items"
   const filtered = filterFeedProjectionAfterSequence(projection, 1);
 
   expect(filtered.thread).toEqual(projection.thread);
-  expect(filtered.agents).toEqual(projection.agents);
   expect(filtered.timeline.map((item) => item.id)).toEqual(["evt_2", "evt_3"]);
-  expect(maxFeedProjectionTimelineSequence(projection)).toBe(3);
+  expect(filtered.agents[0]?.timeline.map((item) => item.id)).toEqual(["agent_evt_4"]);
+  expect(maxFeedProjectionTimelineSequence(projection)).toBe(4);
 });
 
-test("trimProjectionForFeed strips agent detail timeline from feed", () => {
+test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental updates", () => {
   const items = Array.from({ length: 150 }, (_, index) => ({
     id: `agent_evt_${index}`,
     sequence: index + 1,
@@ -180,7 +204,9 @@ test("trimProjectionForFeed strips agent detail timeline from feed", () => {
     ],
   });
 
-  expect(trimmed.agents[0]?.timeline).toEqual([]);
+  expect(trimmed.agents[0]?.timeline).toHaveLength(items.length);
+  expect(trimmed.agents[0]?.timeline[0]?.id).toBe("agent_evt_0");
+  expect(trimmed.agents[0]?.timeline.at(-1)?.id).toBe("agent_evt_149");
   expect(trimmed.timeline[0]?.text).toBe("short message");
 });
 
@@ -232,10 +258,7 @@ test("trimProjectionForFeed strips tool detail metadata from main feed", () => {
 
 test("trimProjectionForFeed leaves short projection unchanged", () => {
   const projection = createProjection("short message", { longDelegation: false });
-  expect(trimProjectionForFeed(projection)).toEqual({
-    ...projection,
-    agents: [{ ...projection.agents[0]!, timeline: [] }],
-  });
+  expect(trimProjectionForFeed(projection)).toEqual(projection);
 });
 
 test("buildFeedProjectionSignature ignores generatedAt", () => {
@@ -278,6 +301,8 @@ test("buildFeedProjectionSignature ignores active agent duration", () => {
 
 test("buildFeedProjectionSignature changes when feed-visible content changes", () => {
   const projection = createProjection("short message", { longDelegation: false });
+  const projectionAgent = requireValue(projection.agents[0], "projection agent");
+  const projectionAgentItem = requireValue(projectionAgent.timeline[0], "projection agent item");
   const signature = buildFeedProjectionSignature(projection);
 
   expect(
@@ -299,6 +324,22 @@ test("buildFeedProjectionSignature changes when feed-visible content changes", (
         {
           ...projection.timeline[0]!,
           text: "changed message",
+        },
+      ],
+    }),
+  ).not.toBe(signature);
+  expect(
+    buildFeedProjectionSignature({
+      ...projection,
+      agents: [
+        {
+          ...projectionAgent,
+          timeline: [
+            {
+              ...projectionAgentItem,
+              text: "changed subagent message",
+            },
+          ],
         },
       ],
     }),

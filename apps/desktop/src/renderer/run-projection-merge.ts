@@ -1,4 +1,5 @@
 import type {
+  ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
@@ -123,6 +124,26 @@ function mergeStreamTimelineItem(
   return { ...incoming, text };
 }
 
+function timelineItemsEqual(
+  current: ThreadRunProjectionTimelineItem,
+  incoming: ThreadRunProjectionTimelineItem,
+): boolean {
+  return (
+    current === incoming ||
+    (current.id === incoming.id &&
+      current.sequence === incoming.sequence &&
+      current.eventType === incoming.eventType &&
+      current.scope === incoming.scope &&
+      current.role === incoming.role &&
+      current.agentId === incoming.agentId &&
+      current.requestId === incoming.requestId &&
+      current.streamKey === incoming.streamKey &&
+      current.text === incoming.text &&
+      current.at === incoming.at &&
+      JSON.stringify(current.metadata ?? null) === JSON.stringify(incoming.metadata ?? null))
+  );
+}
+
 function mergeProjectionTimelines(
   current: readonly ThreadRunProjectionTimelineItem[],
   incoming: readonly ThreadRunProjectionTimelineItem[],
@@ -130,7 +151,11 @@ function mergeProjectionTimelines(
   const incomingById = new Map(incoming.map((item) => [item.id, item]));
   const merged = current.map((item) => {
     const update = incomingById.get(item.id);
-    return update ? mergeStreamTimelineItem(item, update, incoming) : item;
+    if (!update) {
+      return item;
+    }
+    const next = mergeStreamTimelineItem(item, update, incoming);
+    return timelineItemsEqual(item, next) ? item : next;
   });
   const knownIds = new Set(merged.map((item) => item.id));
   for (const item of incoming) {
@@ -143,6 +168,31 @@ function mergeProjectionTimelines(
   return merged;
 }
 
+function mergeProjectionAgents(
+  current: readonly ThreadRunProjectionAgent[],
+  incoming: readonly ThreadRunProjectionAgent[],
+): ThreadRunProjectionAgent[] {
+  const currentById = new Map(current.map((agent) => [agent.agentId, agent]));
+  const incomingIds = new Set(incoming.map((agent) => agent.agentId));
+  const merged = incoming.map((agent) => {
+    const currentAgent = currentById.get(agent.agentId);
+    if (!currentAgent) {
+      return agent;
+    }
+    return {
+      ...agent,
+      timeline: mergeProjectionTimelines(currentAgent.timeline, agent.timeline),
+    };
+  });
+
+  for (const agent of current) {
+    if (!incomingIds.has(agent.agentId)) {
+      merged.push(agent);
+    }
+  }
+  return merged;
+}
+
 function mergeTrimmedIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
@@ -150,6 +200,7 @@ function mergeTrimmedIncomingProjection(
   return {
     ...incoming,
     timeline: mergeProjectionTimelines(current.timeline, incoming.timeline),
+    agents: mergeProjectionAgents(current.agents, incoming.agents),
     sourceEventCount: Math.max(current.sourceEventCount, incoming.sourceEventCount),
   };
 }
@@ -161,6 +212,7 @@ function mergeIncomingProjection(
   return {
     ...incoming,
     timeline: mergeProjectionTimelines(current.timeline, incoming.timeline),
+    agents: mergeProjectionAgents(current.agents, incoming.agents),
     sourceEventCount: Math.max(current.sourceEventCount, incoming.sourceEventCount),
   };
 }

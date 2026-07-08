@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
-import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 import { mergeThreadRunProjectionUpdate } from "../src/renderer/run-projection-merge";
+import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
+
+function requireValue<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`Missing ${label}`);
+  }
+  return value;
+}
 
 function makeProjection(
   overrides: Partial<ThreadRunProjectionSnapshot> & Pick<ThreadRunProjectionSnapshot, "sourceEventCount">,
@@ -156,4 +163,159 @@ test("mergeThreadRunProjectionUpdate resets thinking text across user prompt bou
   const merged = mergeThreadRunProjectionUpdate(current, incoming);
   const thinking = merged.timeline.find((item) => item.id === "think_1");
   expect(thinking?.text).toBe("new");
+});
+
+test("mergeThreadRunProjectionUpdate appends subagent timeline without dropping existing entries", () => {
+  const existingItem: ThreadRunProjectionTimelineItem = {
+    id: "agent_evt_1",
+    sequence: 1,
+    scope: "agent",
+    eventType: "message.final",
+    text: "first",
+    role: "coder",
+    agentId: "agent_1",
+    at: "2026-01-01T00:00:01.000Z",
+  };
+  const current = makeProjection({
+    sourceEventCount: 1,
+    timeline: [],
+    agents: [
+      {
+        agentId: "agent_1",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        durationMs: 1_000,
+        timeline: [existingItem],
+      },
+    ],
+  });
+  const incoming = makeProjection({
+    sourceEventCount: 2,
+    timeline: [],
+    agents: [
+      {
+        agentId: "agent_1",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        durationMs: 2_000,
+        timeline: [
+          {
+            id: "agent_evt_2",
+            sequence: 2,
+            scope: "agent",
+            eventType: "message.final",
+            text: "second",
+            role: "coder",
+            agentId: "agent_1",
+            at: "2026-01-01T00:00:02.000Z",
+          },
+        ],
+      },
+    ],
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+
+  expect(merged.agents[0]?.timeline.map((item) => item.id)).toEqual(["agent_evt_1", "agent_evt_2"]);
+  expect(merged.agents[0]?.timeline[0]).toBe(existingItem);
+});
+
+test("mergeThreadRunProjectionUpdate preserves subagent timeline when an update has no detail delta", () => {
+  const current = makeProjection({
+    sourceEventCount: 1,
+    timeline: [],
+    agents: [
+      {
+        agentId: "agent_1",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        durationMs: 1_000,
+        timeline: [
+          {
+            id: "agent_evt_1",
+            sequence: 1,
+            scope: "agent",
+            eventType: "message.final",
+            text: "first",
+            at: "2026-01-01T00:00:01.000Z",
+          },
+        ],
+      },
+    ],
+  });
+  const incoming = makeProjection({
+    sourceEventCount: 2,
+    timeline: [],
+    agents: [
+      {
+        ...requireValue(current.agents[0], "current agent"),
+        durationMs: 2_000,
+        timeline: [],
+      },
+    ],
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+
+  expect(merged.agents[0]?.timeline).toEqual(current.agents[0]?.timeline ?? []);
+});
+
+test("mergeThreadRunProjectionUpdate keeps unchanged subagent item identity during full refresh", () => {
+  const existingItem: ThreadRunProjectionTimelineItem = {
+    id: "agent_evt_1",
+    sequence: 1,
+    scope: "agent",
+    eventType: "message.final",
+    text: "first",
+    at: "2026-01-01T00:00:01.000Z",
+  };
+  const current = makeProjection({
+    sourceEventCount: 2,
+    timeline: [],
+    agents: [
+      {
+        agentId: "agent_1",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        durationMs: 1_000,
+        timeline: [existingItem],
+      },
+    ],
+    generatedAt: "2026-01-01T00:00:02.000Z",
+  });
+  const incoming = makeProjection({
+    sourceEventCount: 2,
+    timeline: [],
+    agents: [
+      {
+        ...requireValue(current.agents[0], "current agent"),
+        durationMs: 2_000,
+        timeline: [
+          { ...existingItem },
+          {
+            id: "agent_evt_2",
+            sequence: 2,
+            scope: "agent",
+            eventType: "message.final",
+            text: "second",
+            at: "2026-01-01T00:00:02.000Z",
+          },
+        ],
+      },
+    ],
+    generatedAt: "2026-01-01T00:00:03.000Z",
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+
+  expect(merged.agents[0]?.timeline.map((item) => item.id)).toEqual(["agent_evt_1", "agent_evt_2"]);
+  expect(merged.agents[0]?.timeline[0]).toBe(existingItem);
 });

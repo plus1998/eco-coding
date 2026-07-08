@@ -46,7 +46,7 @@ function trimAgent(agent: ThreadRunProjectionAgent): ThreadRunProjectionAgent {
     : undefined;
   return {
     ...agent,
-    timeline: [],
+    timeline: trimTimeline(agent.timeline),
     ...(delegationPrompt?.truncated
       ? { delegationPrompt: delegationPrompt.text }
       : agent.delegationPrompt
@@ -122,6 +122,10 @@ export function filterFeedProjectionAfterSequence(
   return {
     ...snapshot,
     timeline: snapshot.timeline.filter((item) => item.sequence > afterSequence),
+    agents: snapshot.agents.map((agent) => ({
+      ...agent,
+      timeline: agent.timeline.filter((item) => item.sequence > afterSequence),
+    })),
   };
 }
 
@@ -129,9 +133,11 @@ export function maxFeedProjectionTimelineSequence(
   snapshot: ThreadRunProjectionSnapshot,
 ): number | undefined {
   let maxSequence: number | undefined;
-  for (const item of snapshot.timeline) {
-    if (maxSequence === undefined || item.sequence > maxSequence) {
-      maxSequence = item.sequence;
+  for (const timeline of [snapshot.timeline, ...snapshot.agents.map((agent) => agent.timeline)]) {
+    for (const item of timeline) {
+      if (maxSequence === undefined || item.sequence > maxSequence) {
+        maxSequence = item.sequence;
+      }
     }
   }
   return maxSequence;
