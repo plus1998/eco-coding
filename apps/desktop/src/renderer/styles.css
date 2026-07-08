@@ -898,10 +898,10 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   flex-shrink: 0;
   max-width: 76px;
   padding: 3px 8px;
-  border: 1px solid rgba(52, 211, 153, 0.28);
+  border: 1px solid var(--status-allow-border);
   border-radius: 999px;
-  background: rgba(52, 211, 153, 0.16);
-  color: #86efac;
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
   font-size: 12px;
   font-weight: 650;
   line-height: 1.2;
