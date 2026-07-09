@@ -23,7 +23,9 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
   expectContainsAll(sdkTypes, [
     "prompt: string | AsyncIterable<SDKUserMessage>",
     "export declare interface Query extends AsyncGenerator<SDKMessage, void>",
-    "interrupt(): Promise<void>",
+    "interrupt(): Promise<SDKControlInterruptResponse | undefined>",
+    "export declare type SDKControlInterruptResponse",
+    "still_queued: string[]",
     "streamInput(stream: AsyncIterable<SDKUserMessage>): Promise<void>",
     "close(): void",
     "resume?: string;",
@@ -40,17 +42,16 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
   ]);
 });
 
-test("assistant worker surface is alpha remote-control glue, not Eco's default V2 runtime path", () => {
-  const assistantTypes = readSdkFile("assistant.d.ts");
+test("bridge surface is alpha remote-control glue, not Eco's default V2 runtime path", () => {
+  const bridgeTypes = readSdkFile("bridge.d.ts");
 
-  expectContainsAll(assistantTypes, [
+  expectContainsAll(bridgeTypes, [
     "@alpha",
-    "export type AssistantWorkerOptions",
-    "bridge: ConnectRemoteControlOptions;",
-    "buildQueryOptions: (base: Options) => Options | Promise<Options>;",
-    "stateAdapter?: WorkerStateAdapter;",
-    "pushPrompt(content: string | SDKUserMessage['message']['content']): void;",
-    "interrupt(): Promise<void>;",
-    "export declare function runAssistantWorker(opts: AssistantWorkerOptions): Promise<AssistantWorkerResult>;",
+    "export type BridgeSessionHandle",
+    "sendControlRequest(req: SDKControlRequest): void;",
+    "sendControlResponse(res: SDKControlResponse): void;",
+    "sendControlCancelRequest(requestId: string): void;",
+    "onInterrupt?: () => void;",
+    "export declare function attachBridgeSession(opts: AttachBridgeSessionOptions): Promise<BridgeSessionHandle>;",
   ]);
 });

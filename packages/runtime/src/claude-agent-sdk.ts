@@ -63,9 +63,9 @@ export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js"
 export { type SubagentLaunchRecord, SubagentLaunchRegistry } from "./eco-sdk-hooks.js";
 
 import {
-  buildAutonomousPlanningAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
+  buildAutonomousPlanningAppend,
 } from "./prompts/autonomous.js";
 import {
   ecoBasePromptAppend,
@@ -105,11 +105,15 @@ export { isSubagentRole, SUBAGENT_ROLES, type SubagentRole };
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
-  interrupt?: () => Promise<void>;
+  interrupt?: () => Promise<SdkInterruptReceipt | undefined>;
   setPermissionMode?: (mode: "dontAsk" | "default" | "acceptEdits" | "plan") => Promise<void> | void;
   getContextUsage?: () => Promise<Record<string, unknown>>;
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
+
+interface SdkInterruptReceipt {
+  still_queued?: string[];
+}
 
 interface SdkSessionMutationOptions {
   dir?: string;
@@ -515,11 +519,15 @@ export interface SdkToolPermissionRequest {
   toolName: string;
   input: Record<string, unknown>;
   toolUseId: string;
+  requestId?: string;
   agentId?: string;
   agentType?: string;
   cwd?: string;
   blockedPath?: string;
   decisionReason?: string;
+  title?: string;
+  displayName?: string;
+  description?: string;
   signal: AbortSignal;
 }
 
@@ -1037,7 +1045,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       options: queryOptions,
     });
 
-    input.signal.addEventListener("abort", () => query.close?.(), { once: true });
+    input.signal.addEventListener(
+      "abort",
+      () => {
+        void interruptOrCloseSdkQuery(query, (phase, detail) => this.options.onContextProbe?.(phase, detail));
+      },
+      { once: true },
+    );
 
     let transcript = "";
     const phaseTranscriptBox = { text: "" };
@@ -1477,6 +1491,29 @@ export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, 
   };
 }
 
+async function interruptOrCloseSdkQuery(
+  query: ReturnType<SdkQuery>,
+  onProbe?: (phase: string, detail: Record<string, unknown>) => void,
+): Promise<void> {
+  if (typeof query.interrupt !== "function") {
+    query.close?.();
+    return;
+  }
+
+  try {
+    const receipt = await query.interrupt();
+    onProbe?.("interrupt", {
+      receipt: receipt ?? null,
+      still_queued: isRecord(receipt) ? readStringArray(receipt.still_queued) : [],
+    });
+  } catch (error) {
+    onProbe?.("interrupt_error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    query.close?.();
+  }
+}
+
 export function readSdkUserMessageCheckpointId(message: unknown): string | undefined {
   if (!isRecord(message) || message.type !== "user") {
     return undefined;
@@ -1560,9 +1597,9 @@ function drainToolPermissionDecisionEvents(
 }
 
 export {
-  buildAutonomousPlanningAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
+  buildAutonomousPlanningAppend,
 } from "./prompts/autonomous.js";
 
 export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {
@@ -1588,7 +1625,9 @@ export function extractSdkRunFailure(payload: unknown): string | null {
     return null;
   }
 
-  if (payload.subtype === "success") {
+  const terminalFailureReason = readTerminalFailureReason(payload);
+  const isError = payload.is_error === true;
+  if (payload.subtype === "success" && !terminalFailureReason && !isError) {
     return null;
   }
 
@@ -1603,6 +1642,14 @@ export function extractSdkRunFailure(payload: unknown): string | null {
     }
   }
 
+  if (terminalFailureReason) {
+    return `Agent run failed (terminal_reason: ${terminalFailureReason}).`;
+  }
+
+  if (isError) {
+    return "Agent run failed (is_error: true).";
+  }
+
   return `Agent run failed (${String(payload.subtype ?? "error")}).`;
 }
 
@@ -1610,6 +1657,16 @@ function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
   return (
     "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload)
   );
+}
+
+const benignTerminalReasons = new Set(["completed", "tool_deferred", "background_requested"]);
+
+function readTerminalFailureReason(payload: Record<string, unknown>): string | undefined {
+  const reason = typeof payload.terminal_reason === "string" ? payload.terminal_reason.trim() : "";
+  if (!reason || benignTerminalReasons.has(reason)) {
+    return undefined;
+  }
+  return reason;
 }
 
 export function readSdkSlashCommands(message: unknown): string[] {
@@ -1923,6 +1980,13 @@ export function mapSdkMessageToEvents(
       usage: message.usage,
       modelUsage: message.modelUsage,
       subtype: message.subtype,
+      ...(typeof message.is_error === "boolean" && { is_error: message.is_error }),
+      ...(typeof message.stop_reason === "string" || message.stop_reason === null
+        ? { stop_reason: message.stop_reason }
+        : {}),
+      ...(typeof message.terminal_reason === "string" && { terminal_reason: message.terminal_reason }),
+      ...(typeof message.api_error_status === "number" && { api_error_status: message.api_error_status }),
+      ...(Array.isArray(message.errors) && { errors: message.errors }),
       ...(typeof message.result === "string" && { result: message.result }),
     };
     // Result messages summarize the main session; never attribute them to a stale subagent context.
@@ -2223,13 +2287,18 @@ export function createCanUseTool(
       toolUseId: toolUseId ?? crypto.randomUUID(),
       signal: options.signal instanceof AbortSignal ? options.signal : new AbortController().signal,
     };
+    const requestId = readStringOption(options, ["requestId", "request_id"]);
     const agentId = readStringOption(options, ["agentID", "agentId", "agent_id"]);
     const agentType = readStringOption(options, ["agentType", "agent_type"]);
+    if (requestId) request.requestId = requestId;
     if (agentId) request.agentId = agentId;
     if (agentType) request.agentType = agentType;
     if (typeof options.cwd === "string") request.cwd = options.cwd;
     if (typeof options.blockedPath === "string") request.blockedPath = options.blockedPath;
     if (typeof options.decisionReason === "string") request.decisionReason = options.decisionReason;
+    if (typeof options.title === "string") request.title = options.title;
+    if (typeof options.displayName === "string") request.displayName = options.displayName;
+    if (typeof options.description === "string") request.description = options.description;
 
     const decision = await handler(request);
 

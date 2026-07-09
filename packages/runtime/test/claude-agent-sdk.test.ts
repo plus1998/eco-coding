@@ -7,9 +7,9 @@ import {
   applyClaudeJsonlSessionPersistence,
   applyEcoSdkSettings,
   applyResumeToQueryOptions,
-  buildAutonomousPlanningAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
+  buildAutonomousPlanningAppend,
   buildSdkProcessEnv,
   ClaudeAgentSdkDriver,
   createAgentDefinitions,
@@ -714,6 +714,40 @@ test("extracts SDK error results for execution rollback", () => {
   ).toBe("model not found");
 });
 
+test("extracts SDK terminal_reason failures without treating deferred plans as errors", () => {
+  expect(
+    extractSdkRunFailure({
+      type: "result",
+      subtype: "success",
+      terminal_reason: "api_error",
+      api_error_status: 529,
+    }),
+  ).toBe("Agent run failed (terminal_reason: api_error).");
+  expect(
+    extractSdkRunFailure({
+      type: "result",
+      subtype: "success",
+      terminal_reason: "tool_deferred",
+    }),
+  ).toBeNull();
+  expect(
+    extractSdkRunFailure({
+      type: "result",
+      subtype: "success",
+      terminal_reason: "completed",
+    }),
+  ).toBeNull();
+  expect(
+    extractSdkRunFailure({
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      errors: ["turn setup failed"],
+      terminal_reason: "turn_setup_failed",
+    }),
+  ).toBe("turn setup failed");
+});
+
 test("creates plan.ready event with transcript payload", () => {
   const event = createPlanReadyEvent("thr_1", {
     userPrompt: "Add styles",
@@ -1161,6 +1195,35 @@ test("maps SDK result messages to usage events", () => {
   });
 });
 
+test("preserves SDK result failure metadata on usage events", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "result",
+      subtype: "success",
+      uuid: "sdk_terminal_failure",
+      session_id: "session_1",
+      is_error: true,
+      terminal_reason: "api_error",
+      api_error_status: 529,
+      errors: ["upstream overloaded"],
+      total_cost_usd: 0.01,
+      usage: { input_tokens: 10, output_tokens: 0 },
+      modelUsage: {},
+    },
+    "thr_1",
+  );
+
+  expect(events[0]?.payload).toMatchObject({
+    type: "result",
+    subtype: "success",
+    is_error: true,
+    terminal_reason: "api_error",
+    api_error_status: 529,
+    errors: ["upstream overloaded"],
+  });
+  expect(extractSdkRunFailure(events[0]?.payload)).toBe("upstream overloaded");
+});
+
 test("formatAgentEventLine omits usage.recorded display text", () => {
   expect(
     formatAgentEventLine({
@@ -1220,9 +1283,13 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   const canUseTool = createCanUseTool(async (request) => {
     expect(request.toolName).toBe("Bash");
     expect(request.toolUseId).toBe("tool_1");
+    expect(request.requestId).toBe("req_1");
     expect(request.agentId).toBe("agent_1");
     expect(request.agentType).toBe("eco_coder");
     expect(request.cwd).toBe("/tmp/workspace");
+    expect(request.title).toBe("Claude wants to run a command");
+    expect(request.displayName).toBe("Run command");
+    expect(request.description).toBe("rm -rf src");
     return { behavior: "deny", message: "Approval required", interrupt: true };
   });
 
@@ -1231,9 +1298,13 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
     { command: "rm -rf src" },
     {
       toolUseID: "tool_1",
+      requestId: "req_1",
       agentID: "agent_1",
       agentType: "eco_coder",
       cwd: "/tmp/workspace",
+      title: "Claude wants to run a command",
+      displayName: "Run command",
+      description: "rm -rf src",
       signal: new AbortController().signal,
     },
   );
@@ -1929,6 +2000,73 @@ test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {
 
   expect(capturedOptions[0]?.resume).toBe("sess-resume-test");
   expect(events).toContain("session.captured");
+});
+
+test("ClaudeAgentSdkDriver interrupts SDK query on abort before falling back to close", async () => {
+  const controller = new AbortController();
+  let closeCalled = false;
+  let resolveInterrupted: (() => void) | undefined;
+  const interrupted = new Promise<void>((resolve) => {
+    resolveInterrupted = resolve;
+  });
+  const probes: Array<{ phase: string; detail: Record<string, unknown> }> = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    onContextProbe: (phase, detail) => probes.push({ phase, detail }),
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-interrupt",
+            uuid: "init-interrupt",
+          };
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-interrupt",
+            uuid: "result-interrupt",
+          };
+        },
+        interrupt: async () => {
+          resolveInterrupted?.();
+          return { still_queued: ["queued-follow-up"] };
+        },
+        close: () => {
+          closeCalled = true;
+        },
+      }),
+    }),
+  });
+
+  for await (const event of driver.runAsk({
+    threadId: "thr_interrupt",
+    prompt: "Explain quickly",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: controller.signal,
+  })) {
+    if (event.type === "session.captured") {
+      controller.abort("cancelled by user");
+    }
+  }
+
+  await Promise.race([
+    interrupted,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("interrupt was not called")), 100)),
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(closeCalled).toBe(false);
+  expect(probes).toContainEqual({
+    phase: "interrupt",
+    detail: {
+      receipt: { still_queued: ["queued-follow-up"] },
+      still_queued: ["queued-follow-up"],
+    },
+  });
 });
 
 test("ClaudeAgentSdkDriver wires SDK Bash confirmation callback", async () => {
