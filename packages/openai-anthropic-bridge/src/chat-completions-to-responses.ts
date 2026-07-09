@@ -1,10 +1,15 @@
-import { isReasoningModel, minMaxOutputTokens } from './anthropic-to-responses.js';
+import {
+  isReasoningAutoSummaryEnabled,
+  isReasoningModel,
+  minMaxOutputTokens,
+} from './anthropic-to-responses.js';
 import { jsonMarshal, jsonParse } from './json.js';
 import type {
   ChatCompletionsRequest,
   ChatContentPart,
   ChatFunction,
   ChatMessage,
+  ChatReasoningItem,
   ChatTool,
   ResponsesContentPart,
   ResponsesInputItem,
@@ -21,16 +26,31 @@ interface ChatMessageContent {
 export function chatCompletionsToResponses(
   req: ChatCompletionsRequest,
 ): ResponsesRequest {
-  const input = convertChatMessagesToResponsesInput(req.messages);
+  const converted = convertChatMessagesToResponsesInput(req.messages);
+  let input = converted.input;
+  const instructions = mergeInstructions(req.instructions, converted.instructions);
+  let responsesInstructions = instructions;
+  if (input.length === 0 && instructions !== undefined && instructions !== '') {
+    input = [
+      {
+        type: 'message',
+        role: 'system',
+        content: [{ type: 'input_text', text: instructions }],
+      },
+    ];
+    responsesInstructions = undefined;
+  }
 
   const out: ResponsesRequest = {
     model: req.model,
-    instructions: req.instructions,
-    input: jsonMarshal(input),
+    input,
     stream: req.stream ?? false,
     include: ['reasoning.encrypted_content'],
     service_tier: req.service_tier,
   };
+  if (responsesInstructions !== undefined && responsesInstructions !== '') {
+    out.instructions = responsesInstructions;
+  }
 
   if (!isReasoningModel(req.model)) {
     out.temperature = req.temperature;
@@ -57,8 +77,10 @@ export function chatCompletionsToResponses(
   if (req.reasoning_effort !== undefined && req.reasoning_effort !== '') {
     out.reasoning = {
       effort: req.reasoning_effort,
-      summary: 'auto',
     } satisfies ResponsesReasoning;
+    if (isReasoningAutoSummaryEnabled()) {
+      out.reasoning.summary = 'detailed';
+    }
   }
 
   const tools = req.tools ?? [];
@@ -68,7 +90,7 @@ export function chatCompletionsToResponses(
   }
 
   if (req.tool_choice !== undefined) {
-    out.tool_choice = req.tool_choice;
+    out.tool_choice = normalizeChatToolChoiceForResponses(req.tool_choice);
   } else if (req.function_call !== undefined) {
     out.tool_choice = convertChatFunctionCallToToolChoice(req.function_call);
   }
@@ -78,12 +100,23 @@ export function chatCompletionsToResponses(
 
 function convertChatMessagesToResponsesInput(
   msgs: ChatMessage[],
-): ResponsesInputItem[] {
-  const out: ResponsesInputItem[] = [];
+): { input: ResponsesInputItem[]; instructions: string | undefined } {
+  const input: ResponsesInputItem[] = [];
+  const instructions: string[] = [];
   for (const m of msgs) {
-    out.push(...chatMessageToResponsesItems(m));
+    if (m.role === 'system') {
+      const systemInstruction = chatSystemInstruction(m);
+      if (systemInstruction !== '') {
+        instructions.push(systemInstruction);
+        continue;
+      }
+    }
+    input.push(...chatMessageToResponsesItems(m));
   }
-  return out;
+  return {
+    input,
+    instructions: instructions.length > 0 ? instructions.join('\n') : undefined,
+  };
 }
 
 function chatMessageToResponsesItems(m: ChatMessage): ResponsesInputItem[] {
@@ -106,29 +139,30 @@ function chatMessageToResponsesItems(m: ChatMessage): ResponsesInputItem[] {
 function chatSystemToResponses(m: ChatMessage): ResponsesInputItem[] {
   const parsed = parseChatMessageContent(m.content);
   const content = marshalChatInputContent(parsed);
-  return [{ role: 'system', content }];
+  return [{ type: 'message', role: 'system', content }];
 }
 
 function chatUserToResponses(m: ChatMessage): ResponsesInputItem[] {
   const parsed = parseChatMessageContent(m.content);
   const content = marshalChatInputContent(parsed);
-  return [{ role: 'user', content }];
+  return [{ type: 'message', role: 'user', content }];
 }
 
 function chatAssistantToResponses(m: ChatMessage): ResponsesInputItem[] {
   const items: ResponsesInputItem[] = [];
-  let content = '';
 
-  if (m.reasoning_content !== undefined && m.reasoning_content !== '') {
-    content = `<thinking>${m.reasoning_content}</thinking>`;
+  const reasoningItems = chatReasoningItemsToResponses(m);
+  items.push(...reasoningItems);
+
+  const contentReasoning = extractReasoningTextFromAssistantContent(m.content);
+  if (contentReasoning !== '' && reasoningItems.length === 0) {
+    items.push(makeReasoningInputItem(contentReasoning, items.length));
   }
 
+  let content = '';
   if (m.content !== undefined) {
     const s = parseAssistantContent(m.content);
     if (s !== '') {
-      if (content !== '') {
-        content += '\n';
-      }
       content += s;
     }
   }
@@ -138,8 +172,9 @@ function chatAssistantToResponses(m: ChatMessage): ResponsesInputItem[] {
       { type: 'output_text', text: content },
     ];
     items.push({
+      type: 'message',
       role: 'assistant',
-      content: jsonMarshal(parts),
+      content: parts,
     });
   }
 
@@ -184,11 +219,6 @@ function parseAssistantContent(raw: unknown): string {
       switch (typ) {
         case 'thinking':
         case 'reasoning':
-          if (thinking !== '') {
-            result += `<thinking>${thinking}</thinking>`;
-          } else if (text !== '') {
-            result += `<thinking>${text}</thinking>`;
-          }
           break;
         default:
           if (text !== '') {
@@ -198,36 +228,41 @@ function parseAssistantContent(raw: unknown): string {
     }
     return result;
   } catch {
-    return '';
+    return typeof raw === 'string' ? raw : '';
   }
 }
 
 function chatToolToResponses(m: ChatMessage): ResponsesInputItem[] {
-  let output = parseChatContent(m.content);
-  if (output === '') {
-    output = '(empty)';
-  }
   return [
     {
       type: 'function_call_output',
       call_id: m.tool_call_id ?? '',
-      output,
+      output: chatToolOutputToResponses(m.content),
     },
   ];
 }
 
 function chatFunctionToResponses(m: ChatMessage): ResponsesInputItem[] {
-  let output = parseChatContent(m.content);
-  if (output === '') {
-    output = '(empty)';
-  }
   return [
     {
       type: 'function_call_output',
       call_id: m.name ?? '',
-      output,
+      output: chatToolOutputToResponses(m.content),
     },
   ];
+}
+
+function chatToolOutputToResponses(raw: unknown): unknown {
+  if (raw === undefined || raw === null) {
+    return [];
+  }
+  if (typeof raw === 'string') {
+    return [{ type: 'input_text', text: raw }];
+  }
+  if (Array.isArray(raw)) {
+    return convertChatContentPartsToResponses(raw as ChatContentPart[]);
+  }
+  return [{ type: 'input_text', text: String(raw) }];
 }
 
 function parseChatContent(raw: unknown): string {
@@ -267,13 +302,16 @@ function parseChatMessageContent(raw: unknown): ChatMessageContent {
 
 function marshalChatInputContent(content: ChatMessageContent): unknown {
   if (content.text !== undefined) {
-    return jsonMarshal(content.text);
+    if (content.text === '') {
+      return [];
+    }
+    return [{ type: 'input_text', text: content.text }];
   }
   const parts = convertChatContentPartsToResponses(content.parts ?? []);
   if (parts.length === 0) {
-    return jsonMarshal('');
+    return [];
   }
-  return jsonMarshal(parts);
+  return parts;
 }
 
 function convertChatContentPartsToResponses(
@@ -296,6 +334,7 @@ function convertChatContentPartsToResponses(
           responseParts.push({
             type: 'input_image',
             image_url: p.image_url.url,
+            detail: p.image_url.detail ?? 'auto',
           });
         }
         break;
@@ -368,16 +407,154 @@ function convertChatFunctionCallToToolChoice(raw: unknown): unknown {
   try {
     const parsed = jsonParse(serialized);
     if (typeof parsed === 'string') {
-      return jsonMarshal(parsed);
+      return parsed;
     }
     const obj = parsed as { name?: string };
-    return jsonMarshal({
+    return {
       type: 'function',
       name: obj.name,
-    });
+    };
   } catch (e) {
     throw new Error(
       `convert function_call: ${e instanceof Error ? e.message : String(e)}`,
     );
+  }
+}
+
+function mergeInstructions(
+  explicit: string | undefined,
+  fromMessages: string | undefined,
+): string | undefined {
+  const parts = [explicit, fromMessages]
+    .map((part) => part?.trim() ?? '')
+    .filter((part) => part !== '');
+  return parts.length > 0 ? parts.join('\n') : undefined;
+}
+
+function chatSystemInstruction(m: ChatMessage): string {
+  if (typeof m.content !== 'string') {
+    return '';
+  }
+  try {
+    const parsed = jsonParse(m.content);
+    return typeof parsed === 'string' ? parsed : '';
+  } catch {
+    return m.content;
+  }
+}
+
+function chatReasoningItemsToResponses(m: ChatMessage): ResponsesInputItem[] {
+  const items: ResponsesInputItem[] = [];
+  for (const item of m.reasoning_items ?? []) {
+    const converted = chatReasoningItemToResponsesInput(item, items.length);
+    if (converted !== undefined) {
+      items.push(converted);
+    }
+  }
+  if (items.length > 0) {
+    return items;
+  }
+  const text = chatMessageReasoningText(m);
+  if (text === '') {
+    return [];
+  }
+  return [makeReasoningInputItem(text, 0)];
+}
+
+function chatReasoningItemToResponsesInput(
+  item: ChatReasoningItem,
+  index: number,
+): ResponsesInputItem | undefined {
+  const out: ResponsesInputItem = {
+    type: 'reasoning',
+    id: item.id ?? `rs_${index}`,
+    summary: item.summary ?? [],
+  };
+  if (item.encrypted_content !== undefined && item.encrypted_content !== '') {
+    out.encrypted_content = item.encrypted_content;
+  }
+  if ((out.summary?.length ?? 0) === 0 && out.encrypted_content === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+function chatMessageReasoningText(m: ChatMessage): string {
+  if ((m.reasoning_content ?? '').trim() !== '') {
+    return m.reasoning_content!.trim();
+  }
+  if ((m.reasoning ?? '').trim() !== '') {
+    return m.reasoning!.trim();
+  }
+  const parts: string[] = [];
+  for (const detail of m.reasoning_details ?? []) {
+    const text = detail.text?.trim() ?? '';
+    if (text !== '') {
+      parts.push(text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+function makeReasoningInputItem(text: string, index: number): ResponsesInputItem {
+  return {
+    type: 'reasoning',
+    id: `rs_${index}`,
+    summary: [{ type: 'summary_text', text }],
+  };
+}
+
+function extractReasoningTextFromAssistantContent(raw: unknown): string {
+  if (raw === undefined || raw === null) {
+    return '';
+  }
+  const serialized = typeof raw === 'string' ? raw : jsonMarshal(raw);
+  try {
+    const parsed = jsonParse(serialized);
+    if (!Array.isArray(parsed)) {
+      return '';
+    }
+    const parts = parsed as Record<string, unknown>[];
+    const out: string[] = [];
+    for (const p of parts) {
+      const typ = typeof p.type === 'string' ? p.type : '';
+      if (typ !== 'thinking' && typ !== 'reasoning') {
+        continue;
+      }
+      const thinking = typeof p.thinking === 'string' ? p.thinking : '';
+      const text = typeof p.text === 'string' ? p.text : '';
+      if (thinking !== '') {
+        out.push(thinking);
+      } else if (text !== '') {
+        out.push(text);
+      }
+    }
+    return out.join('\n\n');
+  } catch {
+    return '';
+  }
+}
+
+function normalizeChatToolChoiceForResponses(raw: unknown): unknown {
+  if (typeof raw === 'string') {
+    return raw;
+  }
+  const serialized = jsonMarshal(raw);
+  try {
+    const parsed = jsonParse(serialized) as {
+      type?: string;
+      name?: string;
+      function?: { name?: string };
+    };
+    if (parsed?.type !== 'function') {
+      return raw;
+    }
+    const name = (parsed.name ?? parsed.function?.name ?? '').trim();
+    if (name === '') {
+      return raw;
+    }
+    return { type: 'function', name };
+  } catch {
+    return raw;
   }
 }

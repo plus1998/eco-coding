@@ -31,6 +31,7 @@ import {
   logUpstream,
   logUpstreamError,
 } from "./upstream-log";
+import { logProxyRequestShape } from "./proxy-request-shape-log";
 
 export interface AnthropicProxyRoute {
   role: RuntimeAgentRole;
@@ -119,6 +120,8 @@ export type AnthropicProxyUsageHandler = (
 ) => void | Promise<UpstreamProxyCallBilling | null | undefined>;
 
 export interface AnthropicProxyStartOptions {
+  /** Optional diagnostics correlation id; not forwarded upstream. */
+  threadId?: string;
   pendingImages?: readonly PromptImageAttachment[];
   /**
    * Local count_tokens stub: SDK context meter is authoritative via usage.recorded;
@@ -165,6 +168,7 @@ export async function startAnthropicModelProxy(
   const onUpstreamConnectionError = options?.onUpstreamConnectionError;
   const onUsage = options?.onUsage;
   const upstreamUserAgent = options?.upstreamUserAgent?.trim() || undefined;
+  const diagnosticThreadId = options?.threadId?.trim() || undefined;
   const resolvedRoutes: AnthropicProxyResolvedRoute[] = routes.map((route) => ({
     role: route.role,
     provider: route.provider,
@@ -252,6 +256,7 @@ export async function startAnthropicModelProxy(
         ...(route.maxOutputTokens !== undefined && { maxOutputTokens: route.maxOutputTokens }),
       };
       const bridgeCtx: BridgeForwardContext = {
+        ...(diagnosticThreadId && { threadId: diagnosticThreadId }),
         route: bridgeRoute,
         body,
         ...(request.url && { requestUrl: request.url }),
@@ -305,6 +310,23 @@ export async function startAnthropicModelProxy(
 
       if (countTokensRequest) {
         const inputTokens = resolveCountTokensStubInput(body, route.role, options?.resolveCountTokensInput);
+        logProxyRequestShape({
+          ...(diagnosticThreadId && { threadId: diagnosticThreadId }),
+          operation: "count_tokens",
+          route: {
+            role: route.role,
+            provider: route.provider,
+            modelId: route.modelId,
+            aliasModelId: route.aliasModelId,
+            apiCompat: route.apiCompat,
+          },
+          ...(requestedModel && { requestedModel }),
+          ...(request.url && { requestUrl: request.url }),
+          upstreamUrl: "eco://local/count_tokens-stub",
+          stream: false,
+          converted: false,
+          clientBody: body,
+        });
         logUpstreamProxyCall({
           at: new Date().toISOString(),
           ok: true,

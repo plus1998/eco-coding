@@ -271,16 +271,19 @@ describe("buildOpenAICompatTestRequestBody", () => {
     expect(buildChatCompletionsTestRequestBody("gpt-5.2")).not.toHaveProperty("reasoning_effort");
   });
 
-  test("responses test uses bridge anthropicToResponses with streaming", () => {
+  test("responses test uses list input for compatible providers", () => {
     const body = buildResponsesTestRequestBody("gpt-5.2");
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       model: "gpt-5.2",
-      stream: true,
-      store: false,
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "hi" }],
+        },
+      ],
       max_output_tokens: 256,
     });
-    expect(body.include).toEqual(["reasoning.encrypted_content"]);
-    expect(typeof body.input).toBe("string");
   });
 });
 
@@ -425,7 +428,17 @@ describe("testProviderConnection", () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.example.com/v1/responses");
-      expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true });
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: "gpt-5.4",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "hi" }],
+          },
+        ],
+        max_output_tokens: 256,
+      });
       return new Response(
         JSON.stringify({
           id: "resp_test",

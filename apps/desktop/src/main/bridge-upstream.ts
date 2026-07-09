@@ -68,6 +68,8 @@ import {
   formatUpstreamFetchError,
 } from "./upstream-log";
 import { applyDisableThinkingUpstreamPatch } from "./disable-thinking-patch";
+import { logProxyRequestShape } from "./proxy-request-shape-log";
+import { postJsonWithOpenAIResponsesUnsupportedParameterRetry } from "./openai-responses-compat";
 
 export interface BridgeForwardRoute {
   role: RuntimeAgentRole;
@@ -109,6 +111,7 @@ export interface BridgeUpstreamConnectionErrorInfo {
 }
 
 export interface BridgeForwardContext {
+  threadId?: string;
   route: BridgeForwardRoute;
   body: Record<string, unknown>;
   requestedModel?: string;
@@ -234,12 +237,331 @@ function bridgeFetchInit(
   };
 }
 
+function logBridgeMessagesShape(input: {
+  ctx: BridgeForwardContext;
+  operation: "messages";
+  upstreamUrl: string;
+  stream: boolean;
+  converted: boolean;
+  upstreamBody: Record<string, unknown>;
+}): void {
+  logProxyRequestShape({
+    ...(input.ctx.threadId && { threadId: input.ctx.threadId }),
+    operation: input.operation,
+    route: input.ctx.route,
+    ...(input.ctx.requestedModel && { requestedModel: input.ctx.requestedModel }),
+    ...(input.ctx.requestUrl && { requestUrl: input.ctx.requestUrl }),
+    upstreamUrl: input.upstreamUrl,
+    stream: input.stream,
+    converted: input.converted,
+    clientBody: input.ctx.body,
+    upstreamBody: input.upstreamBody,
+  });
+}
+
 /** Anthropic apiCompat: substitute routed model only (no Responses IR). */
 export function buildAnthropicPassthroughPayload(
   body: Record<string, unknown>,
   modelId: string,
 ): Record<string, unknown> {
   return { ...body, model: modelId };
+}
+
+const CLEAR_TOOL_USES_EDIT_TYPE = "clear_tool_uses_20250919";
+const DEFAULT_CONTEXT_MANAGEMENT_INPUT_TOKENS_TRIGGER = 100_000;
+const DEFAULT_CONTEXT_MANAGEMENT_KEEP_TOOL_USES = 3;
+const CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER = "[Cleared by context management]";
+const APPROX_CHARS_PER_TOKEN = 4;
+
+export interface GatewayContextManagementAppliedEdit {
+  type: typeof CLEAR_TOOL_USES_EDIT_TYPE;
+  cleared_tool_uses: number;
+  estimated_cleared_input_tokens: number;
+  warnings?: string[];
+}
+
+export interface GatewayContextManagementPolyfillResult {
+  request: AnthropicRequest;
+  appliedEdits: GatewayContextManagementAppliedEdit[];
+}
+
+function safeJsonLength(value: unknown): number {
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return 0;
+  }
+}
+
+function estimateAnthropicInputTokens(req: AnthropicRequest): number {
+  const chars = safeJsonLength({
+    system: req.system ?? null,
+    messages: req.messages,
+    tools: req.tools ?? [],
+  });
+  return Math.ceil(chars / APPROX_CHARS_PER_TOKEN);
+}
+
+function readContextManagementEdits(spec: unknown): Record<string, unknown>[] {
+  if (Array.isArray(spec)) {
+    return spec.filter(isRecord);
+  }
+  if (!isRecord(spec) || !Array.isArray(spec.edits)) {
+    return [];
+  }
+  return spec.edits.filter(isRecord);
+}
+
+function contentRecordBlocks(content: unknown): Record<string, unknown>[] {
+  return Array.isArray(content) ? content.filter(isRecord) : [];
+}
+
+function collectToolUseIdsInOrder(messages: AnthropicRequest["messages"]): string[] {
+  const ids: string[] = [];
+  for (const message of messages) {
+    for (const block of contentRecordBlocks(message.content)) {
+      if (block.type === "tool_use" && typeof block.id === "string") {
+        ids.push(block.id);
+      }
+    }
+  }
+  return ids;
+}
+
+function countToolUses(messages: AnthropicRequest["messages"]): number {
+  return collectToolUseIdsInOrder(messages).length;
+}
+
+function lastCompletedToolUseId(messages: AnthropicRequest["messages"]): string | undefined {
+  let lastId: string | undefined;
+  for (const message of messages) {
+    for (const block of contentRecordBlocks(message.content)) {
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+        lastId = block.tool_use_id;
+      }
+    }
+  }
+  return lastId;
+}
+
+function isClearedToolResultContent(content: unknown): boolean {
+  if (content === CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER) {
+    return true;
+  }
+  if (!Array.isArray(content) || content.length !== 1) {
+    return false;
+  }
+  const only = content[0];
+  return (
+    isRecord(only) &&
+    only.type === "text" &&
+    only.text === CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER
+  );
+}
+
+function buildClearedToolResultContent(originalContent: unknown): string | Array<Record<string, string>> {
+  if (Array.isArray(originalContent)) {
+    return [{ type: "text", text: CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER }];
+  }
+  return CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER;
+}
+
+function clearToolResults(
+  messages: AnthropicRequest["messages"],
+  idsToClear: ReadonlySet<string>,
+): { messages: AnthropicRequest["messages"]; clearedCount: number } {
+  let clearedCount = 0;
+  let anyMessageMutated = false;
+  const nextMessages = messages.map((message) => {
+    if (!Array.isArray(message.content)) {
+      return message;
+    }
+
+    let mutated = false;
+    const nextContent = message.content.map((block) => {
+      if (
+        !isRecord(block) ||
+        block.type !== "tool_result" ||
+        typeof block.tool_use_id !== "string" ||
+        !idsToClear.has(block.tool_use_id) ||
+        isClearedToolResultContent(block.content)
+      ) {
+        return block;
+      }
+
+      mutated = true;
+      clearedCount += 1;
+      return {
+        ...block,
+        content: buildClearedToolResultContent(block.content),
+      };
+    });
+
+    if (!mutated) {
+      return message;
+    }
+    anyMessageMutated = true;
+    return { ...message, content: nextContent };
+  });
+
+  return { messages: anyMessageMutated ? nextMessages : messages, clearedCount };
+}
+
+function clearToolUsesTriggerMet(edit: Record<string, unknown>, req: AnthropicRequest): boolean {
+  const trigger = isRecord(edit.trigger)
+    ? edit.trigger
+    : { type: "input_tokens", value: DEFAULT_CONTEXT_MANAGEMENT_INPUT_TOKENS_TRIGGER };
+  const triggerType = typeof trigger.type === "string" ? trigger.type : "input_tokens";
+  const threshold = trigger.value;
+
+  if (triggerType === "tool_uses") {
+    if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
+      return false;
+    }
+    return countToolUses(req.messages) > Math.trunc(threshold);
+  }
+
+  const inputTokenThreshold =
+    typeof threshold === "number" && Number.isFinite(threshold)
+      ? Math.trunc(threshold)
+      : DEFAULT_CONTEXT_MANAGEMENT_INPUT_TOKENS_TRIGGER;
+  return estimateAnthropicInputTokens(req) > inputTokenThreshold;
+}
+
+function resolveClearToolUsesKeepCount(edit: Record<string, unknown>): number {
+  const keep = isRecord(edit.keep)
+    ? edit.keep
+    : { type: "tool_uses", value: DEFAULT_CONTEXT_MANAGEMENT_KEEP_TOOL_USES };
+  if (keep.type !== undefined && keep.type !== "tool_uses") {
+    return DEFAULT_CONTEXT_MANAGEMENT_KEEP_TOOL_USES;
+  }
+  if (typeof keep.value !== "number" || !Number.isFinite(keep.value) || keep.value < 0) {
+    return DEFAULT_CONTEXT_MANAGEMENT_KEEP_TOOL_USES;
+  }
+  return Math.trunc(keep.value);
+}
+
+function applyClearToolUsesEdit(
+  req: AnthropicRequest,
+  edit: Record<string, unknown>,
+): { request: AnthropicRequest; appliedEdit?: GatewayContextManagementAppliedEdit } {
+  if (!clearToolUsesTriggerMet(edit, req)) {
+    return { request: req };
+  }
+
+  const keepCount = resolveClearToolUsesKeepCount(edit);
+  const toolUseIds = collectToolUseIdsInOrder(req.messages);
+  if (toolUseIds.length <= keepCount) {
+    return { request: req };
+  }
+
+  const idsToClear = new Set(toolUseIds.slice(0, toolUseIds.length - keepCount));
+  const lastCompletedId = lastCompletedToolUseId(req.messages);
+  if (lastCompletedId !== undefined) {
+    idsToClear.delete(lastCompletedId);
+  }
+  if (idsToClear.size === 0) {
+    return { request: req };
+  }
+
+  const estimatedTokensBefore = estimateAnthropicInputTokens(req);
+  const cleared = clearToolResults(req.messages, idsToClear);
+  if (cleared.clearedCount === 0) {
+    return { request: req };
+  }
+
+  const editedRequest = { ...req, messages: cleared.messages };
+  const estimatedTokensAfter = estimateAnthropicInputTokens(editedRequest);
+  const ignoredKnobs = ["clear_at_least", "exclude_tools", "clear_tool_inputs"].filter(
+    (knob) => Object.hasOwn(edit, knob),
+  );
+  const appliedEdit: GatewayContextManagementAppliedEdit = {
+    type: CLEAR_TOOL_USES_EDIT_TYPE,
+    cleared_tool_uses: cleared.clearedCount,
+    estimated_cleared_input_tokens: Math.max(estimatedTokensBefore - estimatedTokensAfter, 0),
+    ...(ignoredKnobs.length > 0 && {
+      warnings: ignoredKnobs.map((knob) => `${knob}_ignored`),
+    }),
+  };
+  return { request: editedRequest, appliedEdit };
+}
+
+export function applyGatewayContextManagementPolyfill(
+  request: AnthropicRequest,
+): GatewayContextManagementPolyfillResult {
+  let currentRequest = request;
+  const appliedEdits: GatewayContextManagementAppliedEdit[] = [];
+
+  for (const edit of readContextManagementEdits(request.context_management)) {
+    if (edit.type !== CLEAR_TOOL_USES_EDIT_TYPE) {
+      continue;
+    }
+    const result = applyClearToolUsesEdit(currentRequest, edit);
+    currentRequest = result.request;
+    if (result.appliedEdit !== undefined) {
+      appliedEdits.push(result.appliedEdit);
+    }
+  }
+
+  return { request: currentRequest, appliedEdits };
+}
+
+function logGatewayContextManagementPolyfill(input: {
+  apiCompat: UpstreamApiCompat;
+  requestedModel: string;
+  upstreamModel: string;
+  before: AnthropicRequest;
+  after: AnthropicRequest;
+  appliedEdits: GatewayContextManagementAppliedEdit[];
+}): void {
+  const beforeChars = safeJsonLength(input.before.messages);
+  const afterChars = safeJsonLength(input.after.messages);
+  logUpstream("context-management-polyfill", {
+    apiCompat: input.apiCompat,
+    requestedModel: input.requestedModel,
+    upstreamModel: input.upstreamModel,
+    appliedEdits: input.appliedEdits,
+    messagesJsonCharsBefore: beforeChars,
+    messagesJsonCharsAfter: afterChars,
+    savedMessagesJsonChars: Math.max(beforeChars - afterChars, 0),
+  });
+}
+
+export function isOpenRouterBaseUrl(baseUrl: string): boolean {
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    return hostname === "openrouter.ai" || hostname.endsWith(".openrouter.ai");
+  } catch {
+    return baseUrl.toLowerCase().includes("openrouter.ai");
+  }
+}
+
+export function buildBridgePromptCacheKey(threadId?: string): string | undefined {
+  const trimmed = threadId?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const sanitized = trimmed.replace(/[^A-Za-z0-9._:-]/g, "_");
+  if (!sanitized) {
+    return undefined;
+  }
+  return `eco_thread_${sanitized}`.slice(0, 64);
+}
+
+export function applyResponsesRoutingHints(
+  body: Record<string, unknown>,
+  input: { providerBaseUrl: string; threadId?: string },
+): void {
+  const promptCacheKey = buildBridgePromptCacheKey(input.threadId);
+  if (promptCacheKey === undefined) {
+    return;
+  }
+  if (body.prompt_cache_key === undefined) {
+    body.prompt_cache_key = promptCacheKey;
+  }
+  if (isOpenRouterBaseUrl(input.providerBaseUrl) && body.session_id === undefined) {
+    body.session_id = promptCacheKey;
+  }
 }
 
 /** Responses IR → upstream wire format (OpenAI-compat apiCompat only). */
@@ -259,7 +581,20 @@ export function buildBridgeUpstreamMessagesPayload(
     return payload;
   }
 
-  const responsesReq = anthropicToResponses(anthropicRequest);
+  const polyfill = applyGatewayContextManagementPolyfill(anthropicRequest);
+  const effectiveAnthropicRequest = polyfill.request;
+  if (polyfill.appliedEdits.length > 0) {
+    logGatewayContextManagementPolyfill({
+      apiCompat,
+      requestedModel: anthropicRequest.model,
+      upstreamModel: modelId,
+      before: anthropicRequest,
+      after: effectiveAnthropicRequest,
+      appliedEdits: polyfill.appliedEdits,
+    });
+  }
+
+  const responsesReq = anthropicToResponses(effectiveAnthropicRequest);
   responsesReq.model = modelId;
   responsesReq.stream = stream;
 
@@ -279,7 +614,7 @@ export function buildBridgeUpstreamMessagesPayload(
   delete chatReq.reasoning_effort;
   const payload = chatReq as unknown as Record<string, unknown>;
   applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
-  applyDisableThinkingUpstreamPatch(payload, apiCompat, anthropicRequest);
+  applyDisableThinkingUpstreamPatch(payload, apiCompat, effectiveAnthropicRequest);
   return payload;
 }
 
@@ -560,7 +895,7 @@ async function forwardAnthropicNativeMessages(
     route.provider.requestPath,
     requestUrl,
   );
-  const upstreamBody = buildBridgeUpstreamMessagesPayload(
+  let upstreamBody = buildBridgeUpstreamMessagesPayload(
     route.apiCompat,
     anthropicRequest,
     route.modelId,
@@ -594,6 +929,14 @@ async function forwardAnthropicNativeMessages(
       body: parseJsonForLog(requestPayload),
     });
   }
+  logBridgeMessagesShape({
+    ctx,
+    operation: "messages",
+    upstreamUrl,
+    stream,
+    converted: false,
+    upstreamBody,
+  });
 
   let upstreamResponse: Response;
   try {
@@ -741,14 +1084,18 @@ async function forwardOpenAIResponsesMessages(
     route.provider.requestPath,
     requestUrl,
   );
-  const upstreamBody = buildBridgeUpstreamMessagesPayload(
+  let upstreamBody = buildBridgeUpstreamMessagesPayload(
     route.apiCompat,
     anthropicRequest,
     route.modelId,
     stream,
     route.maxOutputTokens,
   );
-  const requestPayload = JSON.stringify(upstreamBody);
+  applyResponsesRoutingHints(upstreamBody, {
+    providerBaseUrl: route.provider.baseUrl,
+    ...(ctx.threadId && { threadId: ctx.threadId }),
+  });
+  let requestPayload = JSON.stringify(upstreamBody);
   const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const anthropicRequestPayload = JSON.stringify(body);
   const callCommon = () =>
@@ -775,10 +1122,38 @@ async function forwardOpenAIResponsesMessages(
       body: parseJsonForLog(requestPayload),
     });
   }
+  logBridgeMessagesShape({
+    ctx,
+    operation: "messages",
+    upstreamUrl,
+    stream,
+    converted: true,
+    upstreamBody,
+  });
 
   let upstreamResponse: Response;
+  let upstreamResponseText: string | undefined;
   try {
-    upstreamResponse = await fetch(upstreamUrl, bridgeFetchInit(request, upstreamHeaders, requestPayload));
+    const signal = (request as http.IncomingMessage & { signal?: AbortSignal }).signal;
+    const result = await postJsonWithOpenAIResponsesUnsupportedParameterRetry({
+      fetcher: fetch,
+      url: upstreamUrl,
+      headers: upstreamHeaders,
+      body: upstreamBody,
+      ...(signal && { signal }),
+      logContext: {
+        role: route.role,
+        providerId: route.provider.id,
+        provider: route.provider.name,
+        modelId: route.modelId,
+        apiCompat: route.apiCompat,
+        ...(ctx.threadId && { threadId: ctx.threadId }),
+      },
+    });
+    upstreamResponse = result.response;
+    upstreamBody = result.requestBody;
+    requestPayload = result.requestPayload;
+    upstreamResponseText = result.responseText;
   } catch (error) {
     const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
@@ -798,7 +1173,7 @@ async function forwardOpenAIResponsesMessages(
   const isEventStream = contentType.includes("text/event-stream");
 
   if (!upstreamResponse.ok) {
-    const responseText = await upstreamResponse.text();
+    const responseText = upstreamResponseText ?? (await upstreamResponse.text());
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,
@@ -996,6 +1371,14 @@ async function forwardOpenAIChatCompletionsMessages(
       body: parseJsonForLog(requestPayload),
     });
   }
+  logBridgeMessagesShape({
+    ctx,
+    operation: "messages",
+    upstreamUrl,
+    stream,
+    converted: true,
+    upstreamBody,
+  });
 
   let upstreamResponse: Response;
   try {
@@ -1212,7 +1595,7 @@ export async function parseBridgeProbeReply(params: {
   const contentType = params.response.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
 
-  if (params.preferStream && isEventStream && params.response.body) {
+  if (isEventStream && params.response.body) {
     return collectBridgeProbeStreamReply(params);
   }
 

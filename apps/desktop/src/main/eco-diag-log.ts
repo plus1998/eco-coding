@@ -1,5 +1,6 @@
 import type { AgentRole } from "../shared/ipc";
 import type { ContextMonitorSnapshot } from "./context-window-monitor";
+import { appendUpstreamLogLine } from "./upstream-log";
 
 /** Structured stderr diagnostics for context meter + subagent attribution (no raw prompts). */
 export function isEcoDiagLogEnabled(): boolean {
@@ -31,12 +32,17 @@ export function logEcoDiag(topic: string, fields: Record<string, unknown>): void
   const line = JSON.stringify({ topic, ...fields });
   const max = 4000;
   if (line.length <= max) {
-    process.stderr.write(`[eco-diag] ${line}\n`);
+    writeEcoDiagLine(`[eco-diag] ${line}\n`);
     return;
   }
-  process.stderr.write(
+  writeEcoDiagLine(
     `[eco-diag] ${JSON.stringify({ topic, truncated: true, length: line.length, preview: line.slice(0, max) })}\n`,
   );
+}
+
+function writeEcoDiagLine(line: string): void {
+  process.stderr.write(line);
+  appendUpstreamLogLine(line);
 }
 
 /** Rate-limit high-frequency diagnostics (e.g. context meter stream updates). */

@@ -146,3 +146,7 @@ function appendUpstreamLogFile(line: string): void {
     process.stderr.write(`${UPSTREAM_LOG_PREFIX} log-file-error ${message}\n`);
   }
 }
+
+export function appendUpstreamLogLine(line: string): void {
+  appendUpstreamLogFile(line);
+}

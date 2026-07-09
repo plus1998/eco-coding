@@ -24,12 +24,29 @@ export function buildBridgeProviderTestAnthropicRequest(
   return body as unknown as AnthropicRequest;
 }
 
-/** Same wire-shape rules as proxy forwarders; OpenAI compat probes use streaming. */
+/** Provider probes keep the payload small; runtime forwarders still use the full bridge shape. */
 export function buildBridgeProviderTestUpstreamBody(
   apiCompat: UpstreamApiCompat,
   anthropicRequest: AnthropicRequest,
   modelId: string,
 ): { body: Record<string, unknown>; preferStream: boolean } {
+  if (apiCompat === "openai_responses") {
+    return {
+      body: {
+        model: modelId,
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "hi" }],
+          },
+        ],
+        max_output_tokens: PROVIDER_TEST_MAX_TOKENS,
+      },
+      preferStream: false,
+    };
+  }
+
   const stream = apiCompat !== "anthropic";
   const body = buildBridgeUpstreamMessagesPayload(apiCompat, anthropicRequest, modelId, stream);
   return { body, preferStream: stream };

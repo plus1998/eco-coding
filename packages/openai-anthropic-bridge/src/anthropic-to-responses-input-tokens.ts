@@ -10,6 +10,9 @@ export function anthropicToResponsesInputTokensBody(
     model: responsesReq.model,
     input: responsesReq.input,
   };
+  if (responsesReq.instructions !== undefined && responsesReq.instructions !== '') {
+    body.instructions = responsesReq.instructions;
+  }
   if (responsesReq.tools !== undefined && responsesReq.tools.length > 0) {
     body.tools = responsesReq.tools;
   }

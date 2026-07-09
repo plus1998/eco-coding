@@ -671,7 +671,8 @@ export function ModelsSettingsPanel({
       showProviderTestMessage("error", "请先填写 baseURL。");
       return;
     }
-    if (!target.defaultModel.trim()) {
+    const testModel = target.defaultModel.trim();
+    if (!testModel) {
       showProviderTestMessage("error", "请先选择默认模型。");
       return;
     }
@@ -685,7 +686,7 @@ export function ModelsSettingsPanel({
         baseUrl: target.baseUrl,
         ...(target.requestPath !== undefined && { requestPath: target.requestPath }),
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
-        defaultModel: target.defaultModel,
+        defaultModel: testModel,
         thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
         ...(target.id && { providerId: target.id }),
         ...(target.apiKey && { apiKey: target.apiKey }),
@@ -1970,6 +1971,8 @@ function ProviderEditorModal({
   const candidatePanelRef = useRef<CandidateModelPanelHandle>(null);
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
+  const modelOptionsListId = `provider-model-options-${form.id ?? "draft"}`;
+  const canTestProvider = Boolean(!busy && !testing && form.baseUrl.trim() && form.defaultModel.trim());
 
   async function handleSaveProvider() {
     setCandidateSaveError(undefined);
@@ -2158,6 +2161,46 @@ function ProviderEditorModal({
               />
             </label>
 
+            <label className="mcp-field">
+              <span className="mcp-field-label">默认模型</span>
+              <div className="models-provider-endpoint-inline">
+                <input
+                  className="mcp-field-input"
+                  value={form.defaultModel}
+                  list={modelOptionsListId}
+                  placeholder="选择或填写模型 ID"
+                  disabled={busy}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, defaultModel: event.target.value }))
+                  }
+                />
+                <datalist id={modelOptionsListId}>
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.displayName ?? model.id}
+                    </option>
+                  ))}
+                </datalist>
+                <button
+                  type="button"
+                  className="mcp-icon-button"
+                  disabled={busy || modelsLoading || !form.baseUrl.trim()}
+                  onClick={onRefreshModels}
+                  aria-label="刷新模型列表"
+                  title="刷新模型列表"
+                >
+                  <RefreshCw size={16} className={modelsLoading ? "model-refresh-spin" : undefined} />
+                </button>
+              </div>
+              <span className="mcp-field-hint">
+                {modelsError
+                  ? `模型列表获取失败：${modelsError}`
+                  : models.length > 0
+                    ? "从上游模型列表选择，或手动填写兼容网关支持的模型 ID"
+                    : "可先刷新模型列表，或手动填写上游模型 ID"}
+              </span>
+            </label>
+
             <label className="mcp-field models-toggle-field">
               <span className="mcp-field-label">启用此模型服务商</span>
               <label className="mcp-toggle mcp-toggle-sm" title={form.enabled ? "已启用" : "已禁用"}>
@@ -2175,8 +2218,9 @@ function ProviderEditorModal({
               <button
                 type="button"
                 className="settings-secondary-button"
-                disabled={busy || testing || !form.baseUrl.trim()}
+                disabled={!canTestProvider}
                 onClick={onTest}
+                title={!form.defaultModel.trim() ? "请先选择或填写默认模型" : undefined}
               >
                 <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
                 测试连接
@@ -2411,7 +2455,7 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     requestPath: provider?.requestPath ?? "",
     apiCompat: provider?.apiCompat ?? "anthropic",
     apiKey: "",
-    defaultModel: provider?.defaultModel ?? "sonnet",
+    defaultModel: provider?.defaultModel ?? "",
     enabled: provider?.enabled ?? true,
   };
   if (provider) {

@@ -15,6 +15,8 @@ export interface AnthropicRequest {
   effort?: string | undefined;
   tool_choice?: unknown | undefined;
   metadata?: unknown | undefined;
+  context_management?: unknown | undefined;
+  cache_control?: AnthropicCacheControl | undefined;
   output_config?: AnthropicOutputConfig | undefined;
 }
 
@@ -25,6 +27,7 @@ export interface AnthropicOutputConfig {
 export interface AnthropicThinking {
   type: string;
   budget_tokens?: number | undefined;
+  summary?: string | undefined;
 }
 
 export interface AnthropicMessage {
@@ -37,6 +40,8 @@ export interface AnthropicContentBlock {
   cache_control?: AnthropicCacheControl | undefined;
   text?: string | undefined;
   thinking?: string | undefined;
+  data?: string | undefined;
+  signature?: string | undefined;
   source?: AnthropicImageSource | undefined;
   id?: string | undefined;
   name?: string | undefined;
@@ -48,8 +53,9 @@ export interface AnthropicContentBlock {
 
 export interface AnthropicImageSource {
   type: string;
-  media_type: string;
-  data: string;
+  media_type?: string | undefined;
+  data?: string | undefined;
+  url?: string | undefined;
 }
 
 export interface AnthropicCacheControl {
@@ -123,6 +129,10 @@ export interface ResponsesRequest {
   tool_choice?: unknown | undefined;
   service_tier?: string | undefined;
   prompt_cache_key?: string | undefined;
+  prompt_cache_retention?: string | undefined;
+  context_management?: unknown | undefined;
+  cache_control?: AnthropicCacheControl | undefined;
+  session_id?: string | undefined;
   previous_response_id?: string | undefined;
 }
 
@@ -143,13 +153,17 @@ export interface ResponsesInputItem {
   name?: string | undefined;
   arguments?: string | undefined;
   id?: string | undefined;
-  output?: string | undefined;
+  output?: unknown | undefined;
+  encrypted_content?: string | undefined;
+  summary?: ResponsesSummary[] | undefined;
+  status?: string | undefined;
 }
 
 export interface ResponsesContentPart {
   type: string;
   text?: string | undefined;
   image_url?: string | undefined;
+  detail?: string | undefined;
 }
 
 export interface ResponsesWebSearchFilters {
@@ -281,10 +295,18 @@ export interface ChatMessage {
   reasoning_content?: string | undefined;
   reasoning?: string | undefined;
   reasoning_details?: ChatReasoningDetail[] | undefined;
+  reasoning_items?: ChatReasoningItem[] | undefined;
   name?: string | undefined;
   tool_calls?: ChatToolCall[] | undefined;
   tool_call_id?: string | undefined;
   function_call?: ChatFunctionCall | undefined;
+}
+
+export interface ChatReasoningItem {
+  type?: string | undefined;
+  id?: string | undefined;
+  encrypted_content?: string | undefined;
+  summary?: ResponsesSummary[] | undefined;
 }
 
 export interface ChatReasoningDetail {

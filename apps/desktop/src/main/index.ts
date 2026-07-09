@@ -4690,14 +4690,77 @@ function createSdkDriver(
       workspacePath: storedThread.workspacePath,
     },
     toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),
-    onContextProbe: onContextProbe
-      ? (phase, detail) => {
-          onContextProbe(phase, detail);
-        }
-      : (phase, detail) => {
-          logContextSnapshot(phase, { threadId, ...detail });
-        },
+    onContextProbe: (phase, detail) => {
+      onContextProbe?.(phase, detail);
+      logContextSnapshot(phase, { threadId, ...detail });
+      logEcoDiag(`sdk.${normalizeDiagTopicSegment(phase)}`, {
+        threadId: shortThreadId(threadId),
+        phase,
+        ...summarizeSdkProbeForDiag(phase, detail),
+      });
+    },
   });
+}
+
+function normalizeDiagTopicSegment(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "probe";
+}
+
+function summarizeSdkProbeForDiag(
+  phase: string,
+  detail: Record<string, unknown>,
+): Record<string, unknown> {
+  if (phase === "getContextUsage" && isRecord(detail.usage)) {
+    return {
+      timing: detail.timing,
+      usage: summarizeSdkContextUsageForDiag(detail.usage),
+    };
+  }
+  if (phase === "getContextUsage_error") {
+    return { timing: detail.timing, error: detail.error };
+  }
+  if (phase === "query_start") {
+    const { threadId: _threadId, ...rest } = detail;
+    return rest;
+  }
+  if (phase === "query_result") {
+    return detail;
+  }
+  if (phase === "interrupt" || phase === "interrupt_error") {
+    return detail;
+  }
+  return { keys: Object.keys(detail).sort() };
+}
+
+function summarizeSdkContextUsageForDiag(usage: Record<string, unknown>): Record<string, unknown> {
+  const modelUsage = isRecord(usage.modelUsage) ? usage.modelUsage : undefined;
+  const breakdown = usage.breakdown;
+  return {
+    keys: Object.keys(usage).sort(),
+    totalTokens: readNumberForDiag(usage.totalTokens),
+    maxTokens: readNumberForDiag(usage.maxTokens),
+    inputTokens: readNumberForDiag(usage.input_tokens ?? usage.inputTokens),
+    outputTokens: readNumberForDiag(usage.output_tokens ?? usage.outputTokens),
+    cacheReadTokens: readNumberForDiag(
+      usage.cache_read_input_tokens ?? usage.cacheReadInputTokens ?? usage.cache_read_tokens,
+    ),
+    cacheCreationTokens: readNumberForDiag(
+      usage.cache_creation_input_tokens ??
+        usage.cacheCreationInputTokens ??
+        usage.cache_creation_tokens,
+    ),
+    ...(modelUsage && {
+      modelUsageCount: Object.keys(modelUsage).length,
+      modelUsageModels: Object.keys(modelUsage).slice(0, 12),
+    }),
+    ...(Array.isArray(breakdown) && { breakdownRows: breakdown.length }),
+    ...(isRecord(breakdown) && { breakdownKeys: Object.keys(breakdown).slice(0, 20) }),
+    jsonBytes: Buffer.byteLength(JSON.stringify(usage), "utf8"),
+  };
+}
+
+function readNumberForDiag(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 async function deleteThreadSdkSession(threadId: string): Promise<void> {
@@ -5473,6 +5536,27 @@ async function emitProxyUsage(
     contextRole: resolved.contextRole,
     contextOccupied: resolved.contextOccupied,
   });
+  logEcoDiag("proxy.usage", {
+    threadId: shortThreadId(info.threadId),
+    role: info.role,
+    contextRole: resolved.contextRole,
+    requestSeq: currentRequestSeq ?? null,
+    providerId: info.providerId,
+    provider: info.providerName,
+    apiCompat: info.apiCompat,
+    modelId: info.modelId,
+    aliasModelId: info.aliasModelId ?? null,
+    requestedModel: info.requestedModel ?? null,
+    inputTokens: info.usage.inputTokens,
+    outputTokens: info.usage.outputTokens,
+    cacheReadTokens: info.usage.cacheReadTokens,
+    cacheCreationTokens: info.usage.cacheCreationTokens,
+    contextOccupied: resolved.contextOccupied,
+    stampedAgentId: stampedAgentId ? shortAgentId(stampedAgentId) : null,
+    stampedBillingRole: stampedBillingRole ?? null,
+    stampedParentToolUseId: stampedParentToolUseId?.slice(-12) ?? null,
+    runAttemptId: runAttemptId?.slice(-12) ?? null,
+  });
   if (info.requestId?.trim()) {
     emitRequestTerminalEvent(info.threadId, {
       requestId: info.requestId,
@@ -5812,6 +5896,8 @@ function logSdkUsageResolution(
       stream: diagnostic.stream,
       inputTokens: diagnostic.inputTokens,
       outputTokens: diagnostic.outputTokens,
+      cacheReadTokens: diagnostic.cacheReadTokens,
+      cacheCreationTokens: diagnostic.cacheCreationTokens,
     },
     500,
   );
@@ -7437,6 +7523,7 @@ function startRuntimeProxy(
     // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
     const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
     const options: AnthropicProxyStartOptions = {
+      ...(threadId && { threadId }),
       ...(upstreamUserAgent && { upstreamUserAgent }),
       ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
       ...(threadId && {

@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
 import {
   appendStreamUtf8Chunk,
+  applyGatewayContextManagementPolyfill,
+  applyResponsesRoutingHints,
   applyUpstreamMaxOutputLimit,
   buildBridgeUpstreamMessagesPayload,
+  buildBridgePromptCacheKey,
   createStreamUtf8Decoder,
   finalizeStreamUtf8Decoder,
   forwardMessagesViaBridge,
@@ -139,6 +142,362 @@ test("buildBridgeUpstreamMessagesPayload applies manual cap on openai responses 
   expect(body.max_output_tokens).toBe(4096);
 });
 
+test("buildBridgeUpstreamMessagesPayload sends Responses input as a list", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    messages: [{ role: "user", content: "hi" }],
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "local-model",
+    true,
+  );
+
+  expect(Array.isArray(body.input)).toBe(true);
+  expect(body.input).toEqual([
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "hi" }],
+    },
+  ]);
+});
+
+test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body", () => {
+  const request: AnthropicRequest = {
+    model: "alias-model",
+    max_tokens: 4096,
+    system: [
+      { type: "text", text: "System prompt" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "ignored" } },
+      { type: "text", text: "Second instruction" },
+    ],
+    thinking: { type: "enabled", budget_tokens: 4096 },
+    context_management: {
+      edits: [{ type: "compact_20260112", trigger: { type: "input_tokens", value: 150000 } }],
+    },
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Inspect this" },
+          { type: "image", source: { type: "url", url: "https://example.com/input.png" } },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Need the file contents" },
+          { type: "text", text: "I will read it." },
+          { type: "tool_use", id: "call_read", name: "Read", input: { file: "a.txt" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_read",
+            content: [
+              { type: "text", text: "tool text" },
+              {
+                type: "image",
+                source: { type: "base64", media_type: "image/png", data: "abc123" },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    tools: [
+      { name: "Read", description: "Read file", input_schema: { type: "object" } },
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        allowed_domains: ["https://example.com/"],
+      },
+    ],
+    tool_choice: { type: "tool", name: "web_search" },
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "gpt-5.5",
+    true,
+  );
+
+  expect(body.model).toBe("gpt-5.5");
+  expect(body.stream).toBe(true);
+  expect(body.instructions).toBe("System prompt\nSecond instruction");
+  expect(body.max_output_tokens).toBe(4096);
+  expect(body.reasoning).toEqual({ effort: "high" });
+  expect(body.tool_choice).toEqual({ type: "web_search_preview" });
+  expect(body.context_management).toEqual([
+    { type: "compaction", compact_threshold: 150000 },
+  ]);
+  expect(body.tools).toEqual([
+    {
+      type: "function",
+      name: "Read",
+      description: "Read file",
+      parameters: { type: "object", properties: {} },
+      strict: false,
+    },
+    { type: "web_search_preview", filters: { allowed_domains: ["example.com"] } },
+  ]);
+
+  const input = body.input as Array<Record<string, unknown>>;
+  expect(Array.isArray(input)).toBe(true);
+  expect(input.map((item) => item.type)).toEqual([
+    "message",
+    "reasoning",
+    "message",
+    "function_call",
+    "function_call_output",
+    "message",
+  ]);
+  expect(input[0]).toMatchObject({
+    type: "message",
+    role: "user",
+    content: [
+      { type: "input_text", text: "Inspect this" },
+      { type: "input_image", image_url: "https://example.com/input.png" },
+    ],
+  });
+  expect(input[1]).toMatchObject({
+    type: "reasoning",
+    summary: [{ type: "summary_text", text: "Need the file contents" }],
+  });
+  expect(input[3]).toMatchObject({
+    type: "function_call",
+    call_id: "call_read",
+    name: "Read",
+    arguments: "{\"file\":\"a.txt\"}",
+  });
+  expect(input[4]).toEqual({
+    type: "function_call_output",
+    call_id: "call_read",
+    output: "tool text",
+  });
+  expect(input[5]).toEqual({
+    type: "message",
+    role: "user",
+    content: [{ type: "input_image", image_url: "data:image/png;base64,abc123" }],
+  });
+});
+
+test("buildBridgeUpstreamMessagesPayload builds full OpenAI Chat Completions wire body", () => {
+  const request: AnthropicRequest = {
+    model: "alias-model",
+    max_tokens: 4096,
+    system: "System prompt",
+    thinking: { type: "enabled", budget_tokens: 4096 },
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Inspect this" },
+          { type: "image", source: { type: "url", url: "https://example.com/input.png" } },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Need the file contents" },
+          { type: "text", text: "I will read it." },
+          { type: "tool_use", id: "call_read", name: "Read", input: { file: "a.txt" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_read", content: "tool text" }],
+      },
+    ],
+    tools: [{ name: "Read", description: "Read file", input_schema: { type: "object" } }],
+    tool_choice: { type: "tool", name: "Read" },
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "chat-model",
+    true,
+  );
+
+  expect(body.model).toBe("chat-model");
+  expect(body.stream).toBe(true);
+  expect(body.max_tokens).toBe(4096);
+  expect(body.max_completion_tokens).toBe(4096);
+  expect(body).not.toHaveProperty("max_output_tokens");
+  expect(body).not.toHaveProperty("input");
+  expect(body).not.toHaveProperty("reasoning_effort");
+  expect(body.tools).toEqual([
+    {
+      type: "function",
+      function: {
+        name: "Read",
+        description: "Read file",
+        parameters: { type: "object", properties: {} },
+        strict: false,
+      },
+    },
+  ]);
+  expect(body.tool_choice).toEqual({ type: "function", function: { name: "Read" } });
+
+  const messages = body.messages as Array<Record<string, unknown>>;
+  expect(messages[0]).toEqual({ role: "system", content: "System prompt" });
+  expect(messages[1]).toEqual({
+    role: "user",
+    content: [
+      { type: "text", text: "Inspect this" },
+      {
+        type: "image_url",
+        image_url: { url: "https://example.com/input.png" },
+      },
+    ],
+  });
+  expect(messages[2]).toMatchObject({
+    role: "assistant",
+    content: "I will read it.",
+    reasoning_content: "Need the file contents",
+    tool_calls: [
+      {
+        id: "call_read",
+        type: "function",
+        function: { name: "Read", arguments: "{\"file\":\"a.txt\"}" },
+      },
+    ],
+  });
+  expect(messages[3]).toEqual({
+    role: "tool",
+    tool_call_id: "call_read",
+    content: "tool text",
+  });
+});
+
+test("buildBridgeUpstreamMessagesPayload polyfills clear_tool_uses for openai responses", () => {
+  const largeResult1 = `result 1 ${"x".repeat(2048)}`;
+  const largeResult2 = `result 2 ${"y".repeat(2048)}`;
+  const largeResult3 = `result 3 ${"z".repeat(2048)}`;
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 8192,
+    context_management: {
+      edits: [
+        {
+          type: "clear_tool_uses_20250919",
+          trigger: { type: "tool_uses", value: 1 },
+          keep: { type: "tool_uses", value: 2 },
+        },
+      ],
+    },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "call_1", name: "Read", input: { file: "a" } },
+          { type: "tool_use", id: "call_2", name: "Read", input: { file: "b" } },
+          { type: "tool_use", id: "call_3", name: "Read", input: { file: "c" } },
+          { type: "tool_use", id: "call_4", name: "Read", input: { file: "d" } },
+          { type: "tool_use", id: "call_5", name: "Read", input: { file: "e" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "call_1", content: largeResult1 },
+          { type: "tool_result", tool_use_id: "call_2", content: largeResult2 },
+          { type: "tool_result", tool_use_id: "call_3", content: largeResult3 },
+          { type: "tool_result", tool_use_id: "call_4", content: "result 4" },
+          { type: "tool_result", tool_use_id: "call_5", content: "result 5" },
+        ],
+      },
+    ],
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "local-model",
+    false,
+  );
+  expect(Array.isArray(body.input)).toBe(true);
+  const items = body.input as Array<Record<string, unknown>>;
+  const outputs = items.filter((item) => item.type === "function_call_output");
+
+  expect(outputs.map((item) => item.output)).toEqual([
+    "[Cleared by context management]",
+    "[Cleared by context management]",
+    "[Cleared by context management]",
+    "result 4",
+    "result 5",
+  ]);
+  expect((request.messages[1]?.content as Array<{ content: string }>)[0]?.content).toBe(largeResult1);
+});
+
+test("applyGatewayContextManagementPolyfill never clears latest completed tool_result", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 8192,
+    context_management: {
+      edits: [
+        {
+          type: "clear_tool_uses_20250919",
+          trigger: { type: "tool_uses", value: 0 },
+          keep: { type: "tool_uses", value: 0 },
+        },
+      ],
+    },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "call_1", name: "Read", input: {} },
+          { type: "tool_use", id: "call_2", name: "Read", input: {} },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "call_1", content: "old result" },
+          { type: "tool_result", tool_use_id: "call_2", content: "latest result" },
+        ],
+      },
+    ],
+  };
+
+  const result = applyGatewayContextManagementPolyfill(request);
+  const content = result.request.messages[1]?.content as Array<{ content: string }>;
+
+  expect(content[0]?.content).toBe("[Cleared by context management]");
+  expect(content[1]?.content).toBe("latest result");
+  expect(result.appliedEdits[0]?.cleared_tool_uses).toBe(1);
+});
+
+test("applyResponsesRoutingHints sets prompt_cache_key and OpenRouter session_id", () => {
+  expect(buildBridgePromptCacheKey("thread 123")).toBe("eco_thread_thread_123");
+
+  const openRouterBody: Record<string, unknown> = {};
+  applyResponsesRoutingHints(openRouterBody, {
+    providerBaseUrl: "https://openrouter.ai/api",
+    threadId: "thread 123",
+  });
+  expect(openRouterBody.prompt_cache_key).toBe("eco_thread_thread_123");
+  expect(openRouterBody.session_id).toBe("eco_thread_thread_123");
+
+  const strictBody: Record<string, unknown> = {};
+  applyResponsesRoutingHints(strictBody, {
+    providerBaseUrl: "https://api.example.com",
+    threadId: "thread 123",
+  });
+  expect(strictBody.prompt_cache_key).toBe("eco_thread_thread_123");
+  expect(strictBody.session_id).toBeUndefined();
+});
+
 test("forwardMessagesViaBridge passthrough anthropic json response without sse replay", async () => {
   const originalFetch = globalThis.fetch;
   const upstreamRaw = JSON.stringify({
@@ -216,6 +575,98 @@ test("forwardMessagesViaBridge passthrough anthropic json response without sse r
     expect(responseHeaders).toEqual({ "content-type": "application/json" });
     expect(chunks.join("")).toBe(upstreamRaw);
     expect(chunks.join("")).not.toContain("event:");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("forwardMessagesViaBridge retries openai responses after dropping unsupported max_output_tokens", async () => {
+  const originalFetch = globalThis.fetch;
+  const upstreamRaw = JSON.stringify({
+    id: "resp_1",
+    object: "response",
+    model: "gpt-5.5",
+    status: "completed",
+    output: [
+      {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text: "ok" }],
+      },
+    ],
+    usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+  });
+  const upstreamBodies: Array<Record<string, unknown>> = [];
+
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    upstreamBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    if (upstreamBodies.length === 1) {
+      return new Response(JSON.stringify({ detail: "Unsupported parameter: max_output_tokens" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(upstreamRaw, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const chunks: string[] = [];
+    let statusCode = 0;
+    const response = {
+      writableEnded: false,
+      writeHead(status: number) {
+        statusCode = status;
+        return this;
+      },
+      write(chunk: unknown) {
+        chunks.push(String(chunk));
+        return true;
+      },
+      end(chunk?: unknown) {
+        if (chunk !== undefined) {
+          chunks.push(String(chunk));
+        }
+        this.writableEnded = true;
+        return this;
+      },
+    } as unknown as ServerResponse;
+
+    await forwardMessagesViaBridge(
+      { headers: { "user-agent": "claude-sdk/1.0" } } as unknown as IncomingMessage,
+      response,
+      {
+        route: {
+          role: "planner",
+          provider: {
+            id: "p1",
+            name: "Provider",
+            baseUrl: "https://api.example.com",
+            requestPath: "",
+            apiKey: "sk-test",
+          },
+          modelId: "gpt-5.5",
+          apiCompat: "openai_responses",
+          aliasModelId: "alias-gpt",
+        },
+        body: {
+          model: "alias-gpt",
+          max_tokens: 128000,
+          stream: false,
+          messages: [{ role: "user", content: "hi" }],
+        },
+      },
+    );
+
+    expect(upstreamBodies).toHaveLength(2);
+    expect(upstreamBodies[0]).toHaveProperty("max_output_tokens", 128000);
+    expect(upstreamBodies[1]).not.toHaveProperty("max_output_tokens");
+    expect(statusCode).toBe(200);
+    expect(chunks.join("")).toContain("ok");
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -14,7 +14,7 @@ import type {
   ThreadContextSnapshot,
 } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
-import { logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
+import { logEcoDiag, logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
 
 const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
@@ -367,21 +367,70 @@ export class ContextWindowMonitor {
 
   shouldCompact(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
     const state = this.states.get(threadId);
-    if (!state || state.compactInFlight || state.autoCompactSuspended) {
+    const now = Date.now();
+    if (!state) {
+      logCompactDecision(threadId, {
+        shouldCompact: false,
+        reason: "no_state",
+        threshold,
+      });
       return false;
     }
-    if (Date.now() - state.lastCompactAt < COMPACT_COOLDOWN_MS) {
+    if (state.compactInFlight) {
+      logCompactDecision(threadId, {
+        shouldCompact: false,
+        reason: "compact_in_flight",
+        threshold,
+      });
+      return false;
+    }
+    if (state.autoCompactSuspended) {
+      logCompactDecision(threadId, {
+        shouldCompact: false,
+        reason: "auto_compact_suspended",
+        threshold,
+        failures: state.consecutiveAutoCompactFailures,
+      });
+      return false;
+    }
+    const cooldownRemainingMs = COMPACT_COOLDOWN_MS - (now - state.lastCompactAt);
+    if (cooldownRemainingMs > 0) {
+      logCompactDecision(threadId, {
+        shouldCompact: false,
+        reason: "cooldown",
+        threshold,
+        cooldownRemainingMs,
+      });
       return false;
     }
     const planner = state.byRole.planner;
     if (!planner) {
+      logCompactDecision(threadId, {
+        shouldCompact: false,
+        reason: "no_planner",
+        threshold,
+      });
       return false;
     }
+    const compactLimit = compactLimitForRole(planner);
     const { atThreshold } = computeOccupancyRatio(
       planner.occupied,
-      compactLimitForRole(planner),
+      compactLimit,
       threshold,
     );
+    logCompactDecision(threadId, {
+      shouldCompact: atThreshold,
+      reason: atThreshold ? "at_threshold" : "below_threshold",
+      threshold,
+      occupied: planner.occupied,
+      limit: planner.limit,
+      compactLimit,
+      compactRatio: compactLimit > 0 ? planner.occupied / compactLimit : 0,
+      nominalRatio: planner.limit > 0 ? planner.occupied / planner.limit : 0,
+      modelId: planner.modelId ?? null,
+      limitsResolved: planner.limitsResolved,
+      maxOutputTokens: planner.maxOutputTokens ?? null,
+    });
     return atThreshold;
   }
 
@@ -615,6 +664,30 @@ function compactLimitForRole(roleState: RoleOccupancyState): number {
     return roleState.compactLimit;
   }
   return effectiveContextLimit(roleState.limit, roleState.maxOutputTokens);
+}
+
+function logCompactDecision(
+  threadId: string,
+  fields: {
+    shouldCompact: boolean;
+    reason: string;
+    threshold: number;
+    occupied?: number;
+    limit?: number;
+    compactLimit?: number;
+    compactRatio?: number;
+    nominalRatio?: number;
+    cooldownRemainingMs?: number;
+    failures?: number;
+    modelId?: string | null;
+    limitsResolved?: boolean;
+    maxOutputTokens?: number | null;
+  },
+): void {
+  logEcoDiag("context.compact_decision", {
+    threadId: shortThreadId(threadId),
+    ...fields,
+  });
 }
 
 function sortRuntimeRoles(roles: Iterable<RuntimeAgentRole>): RuntimeAgentRole[] {

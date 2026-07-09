@@ -27,6 +27,7 @@ export interface EcoCompactRunResult {
 
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
+import { logEcoDiag, shortThreadId } from "./eco-diag-log";
 
 type SdkDriver = ClaudeAgentSdkDriver & {
   compactSession?: AgentRuntimeDriver["compactSession"];
@@ -71,6 +72,14 @@ function logContextCompaction(
     fields.push(`detail=${input.detail}`);
   }
   process.stderr.write(`${fields.join(" ")}\n`);
+  logEcoDiag(`context.compaction.${event}`, {
+    threadId: shortThreadId(input.threadId),
+    trigger: input.trigger,
+    ...(input.method && { method: input.method }),
+    ...(input.sessionId && { sessionId: input.sessionId }),
+    ...(input.postTokens !== undefined && { postTokens: input.postTokens }),
+    ...(input.detail && { detail: input.detail }),
+  });
 }
 
 export interface ContextSnapshotSchedulerOptions {
@@ -121,8 +130,25 @@ export class ContextSnapshotScheduler {
   applySdkContextUsageBreakdown(threadId: string, payload: unknown): boolean {
     const parsed = parseSdkGetContextUsageBreakdown(payload);
     if (!parsed) {
+      logEcoDiag("context.sdk_breakdown_parse", {
+        threadId: shortThreadId(threadId),
+        ok: false,
+        payloadKind: typeof payload,
+      });
       return false;
     }
+    logEcoDiag("context.sdk_breakdown_parse", {
+      threadId: shortThreadId(threadId),
+      ok: true,
+      occupied: parsed.occupied,
+      limit: parsed.limit,
+      occupancyPct: parsed.occupancyPct ?? null,
+      segmentCount: parsed.segments.length,
+      segments: parsed.segments.slice(0, 8).map((segment) => ({
+        key: segment.key,
+        tokens: segment.tokens,
+      })),
+    });
     void this.options.monitor.updateOccupied(threadId, "planner", parsed.occupied, {
       limit: parsed.limit,
     });

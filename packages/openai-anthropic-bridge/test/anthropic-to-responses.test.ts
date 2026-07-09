@@ -4,6 +4,21 @@ import { responsesToChatCompletionsRequest } from '../src/chat-completions-respo
 import { jsonParse } from '../src/json.js';
 import type { ResponsesContentPart, ResponsesInputItem } from '../src/types.js';
 
+function responseInputItems(resp: { input: unknown }): ResponsesInputItem[] {
+  expect(Array.isArray(resp.input)).toBe(true);
+  return resp.input as ResponsesInputItem[];
+}
+
+function responseContentParts(raw: unknown): ResponsesContentPart[] {
+  if (Array.isArray(raw)) {
+    return raw as ResponsesContentPart[];
+  }
+  if (typeof raw === 'string') {
+    return jsonParse<ResponsesContentPart[]>(raw);
+  }
+  throw new Error('expected Responses content parts');
+}
+
 describe('anthropicToResponses', () => {
   test('basic text user message', () => {
     const resp = anthropicToResponses({
@@ -18,17 +33,28 @@ describe('anthropicToResponses', () => {
     expect(resp.max_output_tokens).toBe(1024);
     expect(resp.store).toBe(false);
 
-    const items = jsonParse<ResponsesInputItem[]>(resp.input as string);
+    const items = responseInputItems(resp);
     expect(items).toHaveLength(1);
     expect(items[0]?.type).toBe('message');
     expect(items[0]?.role).toBe('user');
-    const parts = jsonParse<ResponsesContentPart[]>(items[0]?.content as string);
+    const parts = responseContentParts(items[0]?.content);
     expect(parts).toHaveLength(1);
     expect(parts[0]?.type).toBe('input_text');
     expect(parts[0]?.text).toBe('Hello');
   });
 
-  test('system prompt as developer message', () => {
+  test('emits Responses input as an array, not a JSON string', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 128,
+      messages: [{ role: 'user', content: 'Hello' }],
+    });
+
+    expect(Array.isArray(resp.input)).toBe(true);
+    expect(typeof resp.input).not.toBe('string');
+  });
+
+  test('system prompt as Responses instructions', () => {
     const resp = anthropicToResponses({
       model: 'gpt-5.2',
       max_tokens: 100,
@@ -36,11 +62,10 @@ describe('anthropicToResponses', () => {
       system: 'You are helpful.',
     });
 
-    const items = jsonParse<ResponsesInputItem[]>(resp.input as string);
-    expect(items).toHaveLength(2);
-    expect(items[0]?.role).toBe('developer');
-    const parts = jsonParse<ResponsesContentPart[]>(items[0]?.content as string);
-    expect(parts[0]?.text).toBe('You are helpful.');
+    const items = responseInputItems(resp);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.role).toBe('user');
+    expect(resp.instructions).toBe('You are helpful.');
   });
 
   test('skips anthropic billing header in system', () => {
@@ -54,10 +79,9 @@ describe('anthropicToResponses', () => {
       ],
     });
 
-    const items = jsonParse<ResponsesInputItem[]>(resp.input as string);
-    const parts = jsonParse<ResponsesContentPart[]>(items[0]?.content as string);
-    expect(parts).toHaveLength(1);
-    expect(parts[0]?.text).toBe('Project prompt');
+    const items = responseInputItems(resp);
+    expect(items).toHaveLength(1);
+    expect(resp.instructions).toBe('Project prompt');
   });
 
   test('tool use round-trip shape', () => {
@@ -92,7 +116,7 @@ describe('anthropicToResponses', () => {
       ],
     });
 
-    const items = jsonParse<ResponsesInputItem[]>(resp.input as string);
+    const items = responseInputItems(resp);
     const fc = items.find((i) => i.type === 'function_call');
     expect(fc?.call_id).toBe('call_1');
     expect(fc?.name).toBe('get_weather');
@@ -119,7 +143,7 @@ describe('anthropicToResponses', () => {
       output_config: { effort: 'high' },
     });
 
-    expect(resp.reasoning).toEqual({ effort: 'high', summary: 'auto' });
+    expect(resp.reasoning).toEqual({ effort: 'high' });
   });
 
   test('maps top-level effort to reasoning and max to xhigh', () => {
@@ -131,7 +155,29 @@ describe('anthropicToResponses', () => {
       thinking: { type: 'adaptive' },
     });
 
-    expect(resp.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' });
+    expect(resp.reasoning).toEqual({ effort: 'xhigh' });
+  });
+
+  test('maps Anthropic thinking budget to Responses reasoning effort', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking: { type: 'enabled', budget_tokens: 4096 },
+    });
+
+    expect(resp.reasoning).toEqual({ effort: 'high' });
+  });
+
+  test('maps adaptive thinking to medium effort when no explicit effort is set', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking: { type: 'adaptive' },
+    });
+
+    expect(resp.reasoning).toEqual({ effort: 'medium' });
   });
 
   test('omits reasoning when no effort is configured', () => {
@@ -160,13 +206,24 @@ describe('anthropicToResponses', () => {
       tool_choice: { type: 'tool', name: 'web_search' },
     });
 
-    expect(resp.tool_choice).toEqual({ type: 'web_search' });
+    expect(resp.tool_choice).toEqual({ type: 'web_search_preview' });
     expect(resp.tools).toEqual([
       {
-        type: 'web_search',
+        type: 'web_search_preview',
         filters: { allowed_domains: ['weather.com.cn', 'tianqi.com'] },
       },
     ]);
+  });
+
+  test('maps Anthropic any tool_choice to Responses required object', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: 'hi' }],
+      tool_choice: { type: 'any' },
+    });
+
+    expect(resp.tool_choice).toEqual({ type: 'required' });
   });
 
   test('keeps function tool_choice for non-web_search tools', () => {
@@ -253,5 +310,51 @@ describe('anthropicToResponses', () => {
       type: 'string',
     });
     expect(params?.required).toContain('plan');
+  });
+
+  test('maps Anthropic cache_control breakpoints to Responses top-level cache_control', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 1024,
+      system: [{ type: 'text', text: 'Project prompt', cache_control: { type: 'ephemeral' } }],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Use the cached context.',
+              cache_control: { type: 'ephemeral', ttl: '5m' },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(resp.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
+  });
+
+  test('maps compact context_management to Responses format and leaves clear_tool_uses to gateway polyfill', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: 'hi' }],
+      context_management: {
+        edits: [
+          {
+            type: 'clear_tool_uses_20250919',
+            trigger: { type: 'tool_uses', value: 3 },
+          },
+          {
+            type: 'compact_20260112',
+            trigger: { type: 'input_tokens', value: 150000 },
+          },
+        ],
+      },
+    });
+
+    expect(resp.context_management).toEqual([
+      { type: 'compaction', compact_threshold: 150000 },
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import { isUpstreamLogVerbose } from "./upstream-proxy-log";
+import { appendUpstreamLogLine } from "./upstream-log";
 
 export function isContextSnapshotLogEnabled(): boolean {
   const flag = process.env.ECO_CONTEXT_SNAPSHOT_LOG?.trim().toLowerCase();
@@ -15,10 +16,15 @@ export function logContextSnapshot(phase: string, detail: Record<string, unknown
   const line = JSON.stringify({ phase, ...detail });
   const max = 64_000;
   if (line.length <= max) {
-    process.stderr.write(`[eco] context-usage ${line}\n`);
+    writeContextSnapshotLine(`[eco] context-usage ${line}\n`);
     return;
   }
-  process.stderr.write(
+  writeContextSnapshotLine(
     `[eco] context-usage ${JSON.stringify({ phase, truncated: true, length: line.length, preview: line.slice(0, max) })}\n`,
   );
+}
+
+function writeContextSnapshotLine(line: string): void {
+  process.stderr.write(line);
+  appendUpstreamLogLine(line);
 }

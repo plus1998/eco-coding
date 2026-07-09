@@ -1,4 +1,4 @@
-import { jsonMarshal, jsonParse } from './json.js';
+import { bytesTrimSpace, jsonMarshal, jsonParse } from './json.js';
 import type {
   AnthropicContentBlock,
   AnthropicImageSource,
@@ -30,8 +30,12 @@ export function responsesToAnthropicRequest(
     stream: req.stream,
   };
 
-  if (system !== undefined) {
-    out.system = system;
+  const combinedSystem = combineResponsesInstructionsAndSystem(
+    req.instructions,
+    system,
+  );
+  if (combinedSystem !== undefined) {
+    out.system = combinedSystem;
   }
 
   if (req.max_output_tokens !== undefined && req.max_output_tokens > 0) {
@@ -143,10 +147,18 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
   const messages: AnthropicMessage[] = [];
 
   for (const item of items) {
-    if (item.role === 'system') {
+    if (item.role === 'system' || item.role === 'developer') {
       const text = extractTextFromContent(item.content);
       if (text !== '') {
-        system = jsonMarshal(text);
+        system = appendSystemText(system, text);
+      }
+    } else if (item.type === 'reasoning') {
+      const blocks = responsesReasoningInputToAnthropicBlocks(item);
+      if (blocks.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: jsonMarshal(blocks),
+        });
       }
     } else if (item.type === 'function_call') {
       let input: unknown = {};
@@ -165,11 +177,9 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
         content: blockJSON,
       });
     } else if (item.type === 'function_call_output') {
-      let outputContent = item.output ?? '';
-      if (outputContent === '') {
-        outputContent = '(empty)';
-      }
-      const contentJSON = jsonMarshal(outputContent);
+      const contentJSON = convertResponsesFunctionCallOutputToAnthropicContent(
+        item.output,
+      );
       const block: AnthropicContentBlock = {
         type: 'tool_result',
         tool_use_id: fromResponsesCallIdToAnthropic(item.call_id ?? ''),
@@ -211,6 +221,105 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
     messages: mergeConsecutiveMessages(messages),
     err: undefined,
   };
+}
+
+function combineResponsesInstructionsAndSystem(
+  instructions: string | undefined,
+  system: unknown | undefined,
+): unknown | undefined {
+  const parts: string[] = [];
+  if (instructions !== undefined && bytesTrimSpace(instructions) !== '') {
+    parts.push(instructions);
+  }
+  const systemText = extractTextFromContent(system);
+  if (systemText !== '') {
+    parts.push(systemText);
+  }
+  if (parts.length === 0) {
+    return undefined;
+  }
+  return parts.join('\n');
+}
+
+function appendSystemText(
+  current: unknown | undefined,
+  text: string,
+): unknown {
+  const existing = extractTextFromContent(current);
+  if (existing === '') {
+    return text;
+  }
+  return `${existing}\n${text}`;
+}
+
+function responsesReasoningInputToAnthropicBlocks(
+  item: ResponsesInputItem,
+): AnthropicContentBlock[] {
+  const blocks: AnthropicContentBlock[] = [];
+  const summaryText = (item.summary ?? [])
+    .filter((summary) => summary.type === 'summary_text' && summary.text !== '')
+    .map((summary) => summary.text)
+    .join('\n\n');
+  if (summaryText !== '') {
+    blocks.push({
+      type: 'thinking',
+      thinking: summaryText,
+    });
+  }
+  if (item.encrypted_content !== undefined && item.encrypted_content !== '') {
+    blocks.push({
+      type: 'redacted_thinking',
+      data: item.encrypted_content,
+    });
+  }
+  return blocks;
+}
+
+function convertResponsesFunctionCallOutputToAnthropicContent(raw: unknown): string {
+  if (raw === undefined || raw === null) {
+    return jsonMarshal('(empty)');
+  }
+  if (typeof raw === 'string') {
+    if (raw === '') {
+      return jsonMarshal('(empty)');
+    }
+    try {
+      const parsed = jsonParse(raw);
+      return convertResponsesFunctionCallOutputToAnthropicContent(parsed);
+    } catch {
+      return jsonMarshal(raw);
+    }
+  }
+  if (Array.isArray(raw)) {
+    const blocks: AnthropicContentBlock[] = [];
+    for (const part of raw) {
+      if (part === null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const p = part as ResponsesContentPart;
+      switch (p.type) {
+        case 'input_text':
+        case 'output_text':
+        case 'text':
+          if (p.text !== undefined && p.text !== '') {
+            blocks.push({ type: 'text', text: p.text });
+          }
+          break;
+        case 'input_image': {
+          const source = dataUriToAnthropicImageSource(p.image_url ?? '');
+          if (source !== undefined) {
+            blocks.push({ type: 'image', source });
+          }
+          break;
+        }
+      }
+    }
+    if (blocks.length > 0) {
+      return jsonMarshal(blocks);
+    }
+    return jsonMarshal('(empty)');
+  }
+  return jsonMarshal(raw);
 }
 
 export function extractTextFromContent(raw: unknown): string {
@@ -478,6 +587,7 @@ function convertResponsesToAnthropicTools(
   for (const t of tools) {
     switch (t.type) {
       case 'web_search':
+      case 'web_search_preview':
       case 'google_search':
       case 'web_search_20250305': {
         const webSearchTool: AnthropicTool = {
@@ -562,8 +672,16 @@ function convertResponsesToAnthropicToolChoice(raw: unknown): {
     name?: string;
     function?: { name?: string };
   };
-  if (tc.type === 'web_search') {
+  if (tc.type === 'web_search' || tc.type === 'web_search_preview') {
     return { value: { type: 'tool', name: 'web_search' }, err: undefined };
+  }
+
+  if (tc.type === 'required') {
+    return { value: { type: 'any' }, err: undefined };
+  }
+
+  if (tc.type === 'auto' || tc.type === 'none') {
+    return { value: { type: tc.type }, err: undefined };
   }
 
   if (tc.type === 'function') {

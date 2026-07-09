@@ -8,6 +8,7 @@ import type {
   ChatFunction,
   ChatImageURL,
   ChatMessage,
+  ChatReasoningItem,
   ChatTool,
   ChatToolCall,
   ChatUsage,
@@ -141,6 +142,7 @@ function buildChatMessagesFromItems(
   rawItems: string[],
 ): ChatMessage[] {
   let pendingReasoning = '';
+  let pendingReasoningItem: ChatReasoningItem | undefined;
 
   for (let raw of rawItems) {
     raw = bytesTrimSpace(raw);
@@ -175,10 +177,11 @@ function buildChatMessagesFromItems(
         if (txt !== '') {
           pendingReasoning = txt;
         }
+        pendingReasoningItem = responsesInputReasoningItemToChat(item);
         continue;
       }
       case 'function_call': {
-        let arguments_ = rawString(item.arguments);
+        let arguments_ = rawStringOrJson(item.arguments);
         if (bytesTrimSpace(arguments_) === '') {
           arguments_ = '{}';
         }
@@ -197,23 +200,32 @@ function buildChatMessagesFromItems(
           if ((last.reasoning_content ?? '') === '') {
             last.reasoning_content = pendingReasoning;
           }
+          if (pendingReasoningItem !== undefined && (last.reasoning_items?.length ?? 0) === 0) {
+            last.reasoning_items = [pendingReasoningItem];
+          }
         } else {
-          messages.push({
+          const assistant: ChatMessage = {
             role: 'assistant',
             tool_calls: [toolCall],
             reasoning_content: pendingReasoning,
-          });
+          };
+          if (pendingReasoningItem !== undefined) {
+            assistant.reasoning_items = [pendingReasoningItem];
+          }
+          messages.push(assistant);
         }
         pendingReasoning = '';
+        pendingReasoningItem = undefined;
         continue;
       }
       case 'function_call_output':
         messages.push({
           role: 'tool',
           tool_call_id: rawString(item.call_id),
-          content: rawString(item.output),
+          content: responsesFunctionCallOutputToChatContent(item.output),
         });
         pendingReasoning = '';
+        pendingReasoningItem = undefined;
         continue;
       case 'input_text':
       case 'text':
@@ -222,17 +234,20 @@ function buildChatMessagesFromItems(
           content: rawString(item.text),
         });
         pendingReasoning = '';
+        pendingReasoningItem = undefined;
         continue;
       case 'input_image': {
         const content = chatContentFromSingleResponsesPart(itemType, item);
         messages.push({ role: 'user', content });
         pendingReasoning = '';
+        pendingReasoningItem = undefined;
         continue;
       }
     }
 
     if (itemType !== '' && itemType !== 'message') {
       pendingReasoning = '';
+      pendingReasoningItem = undefined;
       continue;
     }
 
@@ -244,13 +259,89 @@ function buildChatMessagesFromItems(
       }
     }
     const chatContent = responsesContentToChatContent(content, role);
-    messages.push({ role, content: chatContent });
+    const message: ChatMessage = { role, content: chatContent };
+    if (role === 'assistant') {
+      if (pendingReasoning !== '') {
+        message.reasoning_content = pendingReasoning;
+      }
+      if (pendingReasoningItem !== undefined) {
+        message.reasoning_items = [pendingReasoningItem];
+      }
+    }
+    messages.push(message);
     if (role !== 'assistant') {
       pendingReasoning = '';
+      pendingReasoningItem = undefined;
+    } else {
+      pendingReasoning = '';
+      pendingReasoningItem = undefined;
     }
   }
 
   return messages;
+}
+
+function responsesInputReasoningItemToChat(
+  item: Record<string, string>,
+): ChatReasoningItem | undefined {
+  const summary: ResponsesSummary[] = [];
+  const summaryRaw = bytesTrimSpace(item.summary ?? '');
+  if (summaryRaw !== '' && summaryRaw !== 'null') {
+    try {
+      const parsed = jsonParse(summaryRaw) as unknown[];
+      if (Array.isArray(parsed)) {
+        for (const part of parsed) {
+          if (part !== null && typeof part === 'object' && !Array.isArray(part)) {
+            const summaryPart = part as ResponsesSummary;
+            if (summaryPart.text !== undefined && summaryPart.text !== '') {
+              summary.push({
+                type: summaryPart.type ?? 'summary_text',
+                text: summaryPart.text,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      /* not a summary array */
+    }
+  }
+
+  const encryptedContent = rawString(item.encrypted_content);
+  const id = rawString(item.id);
+  if (summary.length === 0 && encryptedContent === '') {
+    return undefined;
+  }
+  const out: ChatReasoningItem = {
+    type: 'reasoning',
+    summary,
+  };
+  if (id !== '') {
+    out.id = id;
+  }
+  if (encryptedContent !== '') {
+    out.encrypted_content = encryptedContent;
+  }
+  return out;
+}
+
+function responsesFunctionCallOutputToChatContent(raw: string | undefined): unknown {
+  const trimmed = bytesTrimSpace(raw ?? '');
+  if (trimmed === '' || trimmed === 'null') {
+    return '';
+  }
+  try {
+    const parsed = jsonParse(trimmed);
+    if (typeof parsed === 'string') {
+      return parsed;
+    }
+    if (Array.isArray(parsed)) {
+      return responsesContentPartsToChatContent(parsed, 'tool');
+    }
+  } catch {
+    /* rawString below handles JSON string literals */
+  }
+  return rawString(raw);
 }
 
 /** Match sub2api json.RawMessage: quote scalars, keep embedded JSON text as-is. */
@@ -504,10 +595,14 @@ function responsesContentPartsToChatContent(
         if (imageURL === '') {
           continue;
         }
+        const detail = rawString(part.detail);
         hasNonText = true;
         chatParts.push({
           type: 'image_url',
-          image_url: { url: imageURL } satisfies ChatImageURL,
+          image_url: {
+            url: imageURL,
+            ...(detail !== '' && { detail }),
+          } satisfies ChatImageURL,
         });
         break;
       }
@@ -515,9 +610,9 @@ function responsesContentPartsToChatContent(
   }
 
   if (!hasNonText) {
-    return textParts.join('\n\n');
+    return role === 'tool' ? textParts.join('') : textParts.join('\n\n');
   }
-  if (role !== 'user') {
+  if (role !== 'user' && role !== 'tool') {
     return textParts.join('\n\n');
   }
   if (chatParts.length === 0) {
@@ -537,10 +632,14 @@ function chatContentFromSingleResponsesPart(
       if (imageURL === '') {
         imageURL = rawNestedString(part.image_url, 'url');
       }
+      const detail = rawString(part.detail);
       return [
         {
           type: 'image_url',
-          image_url: { url: imageURL },
+          image_url: {
+            url: imageURL,
+            ...(detail !== '' && { detail }),
+          },
         } satisfies ChatContentPart,
       ];
     }
@@ -571,30 +670,28 @@ function responsesToolsToChatTools(tools: ResponsesTool[]): ChatTool[] {
 }
 
 function responsesToolChoiceToChatToolChoice(raw: unknown): unknown {
-  const serialized =
-    typeof raw === 'string' ? raw : jsonMarshal(raw);
-  let choice: Record<string, string>;
+  let choice: Record<string, unknown>;
   try {
-    choice = jsonParse(serialized) as Record<string, string>;
+    const parsed = typeof raw === 'string' ? jsonParse(raw) : raw;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return raw;
+    }
+    choice = parsed as Record<string, unknown>;
   } catch {
     return raw;
   }
-  if (rawString(choice.type) !== 'function') {
+  if (choice.type !== 'function') {
     return raw;
   }
-  let name = rawString(choice.name);
-  if (name === '') {
-    name = rawNestedString(choice.function, 'name');
+  let name = typeof choice.name === 'string' ? choice.name.trim() : '';
+  if (name === '' && choice.function !== null && typeof choice.function === 'object') {
+    const fn = choice.function as Record<string, unknown>;
+    name = typeof fn.name === 'string' ? fn.name.trim() : '';
   }
   if (name === '') {
     return raw;
   }
-  return jsonParse(
-    jsonMarshal({
-      type: 'function',
-      function: { name },
-    }),
-  );
+  return { type: 'function', function: { name } };
 }
 
 // ---------------------------------------------------------------------------
@@ -667,18 +764,23 @@ function chatMessageReasoningText(message: ChatMessage): string {
 
 function chatMessageToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
   const outputs: ResponsesOutput[] = [];
-  const reasoningText = chatMessageReasoningText(message);
-  if (reasoningText !== '') {
-    outputs.push({
-      type: 'reasoning',
-      id: generateItemId(),
-      summary: [
-        {
-          type: 'summary_text',
-          text: reasoningText,
-        } satisfies ResponsesSummary,
-      ],
-    });
+  const reasoningItems = chatReasoningItemsToResponsesOutput(message);
+  if (reasoningItems.length > 0) {
+    outputs.push(...reasoningItems);
+  } else {
+    const reasoningText = chatMessageReasoningText(message);
+    if (reasoningText !== '') {
+      outputs.push({
+        type: 'reasoning',
+        id: generateItemId(),
+        summary: [
+          {
+            type: 'summary_text',
+            text: reasoningText,
+          } satisfies ResponsesSummary,
+        ],
+      });
+    }
   }
 
   const text = chatMessageContentText(message.content);
@@ -708,6 +810,23 @@ function chatMessageToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
   }
 
   return outputs;
+}
+
+function chatReasoningItemsToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
+  const out: ResponsesOutput[] = [];
+  for (const item of message.reasoning_items ?? []) {
+    const summary = item.summary ?? [];
+    if (summary.length === 0 && (item.encrypted_content ?? '') === '') {
+      continue;
+    }
+    out.push({
+      type: 'reasoning',
+      id: item.id ?? generateItemId(),
+      encrypted_content: item.encrypted_content,
+      summary,
+    });
+  }
+  return out;
 }
 
 function emptyResponsesMessageOutput(): ResponsesOutput {
@@ -1296,6 +1415,18 @@ function rawString(raw: string | undefined): string {
     }
   } catch {
     /* not JSON string */
+  }
+  return '';
+}
+
+function rawStringOrJson(raw: string | undefined): string {
+  const text = rawString(raw);
+  if (text !== '') {
+    return text;
+  }
+  const trimmed = bytesTrimSpace(raw ?? '');
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return trimmed;
   }
   return '';
 }

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  DEFAULT_UPSTREAM_USER_AGENT,
   buildProviderDirectUpstreamHeaders,
   buildProxyUpstreamHeaders,
 } from "../src/main/upstream-request-headers";
@@ -26,13 +27,13 @@ test("buildProxyUpstreamHeaders passthrough SDK user-agent on openai path", () =
   expect(headers["anthropic-version"]).toBeUndefined();
 });
 
-test("buildProxyUpstreamHeaders omits user-agent when client has none and no override", () => {
+test("buildProxyUpstreamHeaders uses Eco user-agent when client has none and no override", () => {
   const headers = buildProxyUpstreamHeaders({
     clientHeaders: {},
     apiKey: "",
     apiCompat: "openai_chat_completions",
   });
-  expect(headers["user-agent"]).toBeUndefined();
+  expect(headers["user-agent"]).toBe(DEFAULT_UPSTREAM_USER_AGENT);
 });
 
 test("buildProxyUpstreamHeaders global override wins over SDK", () => {
@@ -45,13 +46,13 @@ test("buildProxyUpstreamHeaders global override wins over SDK", () => {
   expect(headers["user-agent"]).toBe("custom-gateway/9");
 });
 
-test("buildProviderDirectUpstreamHeaders only sets user-agent when override configured", () => {
+test("buildProviderDirectUpstreamHeaders identifies as Eco by default and honors override", () => {
   expect(
     buildProviderDirectUpstreamHeaders({
       apiKey: "k",
       apiCompat: "anthropic",
     })["user-agent"],
-  ).toBeUndefined();
+  ).toBe(DEFAULT_UPSTREAM_USER_AGENT);
   expect(
     buildProviderDirectUpstreamHeaders({
       apiKey: "k",

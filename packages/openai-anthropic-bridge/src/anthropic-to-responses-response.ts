@@ -42,8 +42,18 @@ export function anthropicToResponsesResponse(
         if (block.thinking !== '') {
           outputs.push({
             type: 'reasoning',
-            id: generateItemId(),
+            id: block.id ?? generateItemId(),
             summary: [{ type: 'summary_text', text: block.thinking ?? '' }],
+          });
+        }
+        break;
+      case 'redacted_thinking':
+        if (block.data !== undefined && block.data !== '') {
+          outputs.push({
+            type: 'reasoning',
+            id: block.id ?? generateItemId(),
+            encrypted_content: block.data,
+            summary: [],
           });
         }
         break;
@@ -147,6 +157,7 @@ export interface AnthropicEventToResponsesState {
   outputIndex: number;
   currentItemId: string;
   currentItemType: string;
+  currentEncryptedContent: string;
   contentIndex: number;
   currentCallId: string;
   currentName: string;
@@ -167,6 +178,7 @@ export function newAnthropicEventToResponsesState(): AnthropicEventToResponsesSt
     outputIndex: 0,
     currentItemId: '',
     currentItemType: '',
+    currentEncryptedContent: '',
     contentIndex: 0,
     currentCallId: '',
     currentName: '',
@@ -261,6 +273,7 @@ function anthToResHandleContentBlockStart(
     case 'thinking':
       state.currentItemId = generateItemId();
       state.currentItemType = 'reasoning';
+      state.currentEncryptedContent = '';
       state.contentIndex = 0;
 
       events.push(
@@ -269,6 +282,25 @@ function anthToResHandleContentBlockStart(
           item: {
             type: 'reasoning',
             id: state.currentItemId,
+          },
+        }),
+      );
+      break;
+
+    case 'redacted_thinking':
+      state.currentItemId = generateItemId();
+      state.currentItemType = 'reasoning';
+      state.currentEncryptedContent = evt.content_block.data ?? '';
+      state.contentIndex = 0;
+
+      events.push(
+        makeResponsesEvent(state, 'response.output_item.added', {
+          output_index: state.outputIndex,
+          item: {
+            type: 'reasoning',
+            id: state.currentItemId,
+            encrypted_content: state.currentEncryptedContent,
+            summary: [],
           },
         }),
       );
@@ -461,9 +493,11 @@ function closeCurrentResponsesItem(
 
   const itemType = state.currentItemType;
   const itemId = state.currentItemId;
+  const encryptedContent = state.currentEncryptedContent;
 
   state.currentItemType = '';
   state.currentItemId = '';
+  state.currentEncryptedContent = '';
   state.currentCallId = '';
   state.currentName = '';
   state.outputIndex++;
@@ -475,6 +509,11 @@ function closeCurrentResponsesItem(
       item: {
         type: itemType,
         id: itemId,
+        encrypted_content:
+          itemType === 'reasoning' && encryptedContent !== ''
+            ? encryptedContent
+            : undefined,
+        summary: itemType === 'reasoning' ? [] : undefined,
         status: 'completed',
       },
     }),

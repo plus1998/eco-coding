@@ -99,4 +99,159 @@ describe('responses → anthropic stream events (sub2api parity)', () => {
     const sse = responsesAnthropicEventToSse(start!);
     expect(sse).toContain('"input":{}');
   });
+
+  test('output_text.done with full text emits missing text delta', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.created',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+      }),
+      ...push({ type: 'response.output_text.done', output_index: 0, text: 'Hello from done' }),
+      ...push({
+        type: 'response.completed',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_start')).toMatchObject([
+      { index: 0, content_block: { type: 'text', text: '' } },
+    ]);
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'text_delta', text: 'Hello from done' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('message output_item.done with content emits missing text delta', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.created',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+      }),
+      ...push({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'message',
+          id: 'msg_1',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Hello from item' }],
+        },
+      }),
+      ...push({
+        type: 'response.completed',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'text_delta', text: 'Hello from item' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('reasoning delta without output_item.added opens thinking block', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.created',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+      }),
+      ...push({
+        type: 'response.reasoning_summary_text.delta',
+        output_index: 0,
+        delta: 'thinking',
+      }),
+      ...push({ type: 'response.reasoning_summary_text.done', output_index: 0 }),
+      ...push({
+        type: 'response.completed',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_start')).toMatchObject([
+      { index: 0, content_block: { type: 'thinking', thinking: '' } },
+    ]);
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'thinking' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('reasoning output_item.done with summary emits missing thinking delta', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.created',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+      }),
+      ...push({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_1',
+          summary: [{ type: 'summary_text', text: 'reasoning from item' }],
+        },
+      }),
+      ...push({
+        type: 'response.completed',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'reasoning from item' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('completed response output backfills missing reasoning and text', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.created',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+      }),
+      ...push({
+        type: 'response.completed',
+        response: {
+          id: 'r1',
+          object: 'response',
+          model: 'm',
+          status: 'completed',
+          output: [
+            {
+              type: 'reasoning',
+              id: 'rs_1',
+              summary: [{ type: 'summary_text', text: 'final reasoning' }],
+            },
+            {
+              type: 'message',
+              id: 'msg_1',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: 'final answer' }],
+            },
+          ],
+        },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_start')).toMatchObject([
+      { index: 0, content_block: { type: 'thinking', thinking: '' } },
+      { index: 1, content_block: { type: 'text', text: '' } },
+    ]);
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'final reasoning' } },
+      { index: 1, delta: { type: 'text_delta', text: 'final answer' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
 });

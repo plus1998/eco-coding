@@ -1,6 +1,8 @@
 import { jsonMarshal, jsonParse, type JsonValue } from './json.js';
 import type {
+  AnthropicCacheControl,
   AnthropicContentBlock,
+  AnthropicImageSource,
   AnthropicMessage,
   AnthropicRequest,
   AnthropicTool,
@@ -8,7 +10,6 @@ import type {
   ResponsesInputItem,
   ResponsesReasoning,
   ResponsesRequest,
-  ResponsesText,
   ResponsesTool,
 } from './types.js';
 
@@ -44,15 +45,38 @@ export function mapAnthropicEffortToResponses(effort: string): string {
   return effort;
 }
 
+export function reasoningEffortFromThinkingBudget(budgetTokens: number): string {
+  if (budgetTokens >= 4096) {
+    return 'high';
+  }
+  if (budgetTokens >= 2048) {
+    return 'medium';
+  }
+  if (budgetTokens >= 1024) {
+    return 'low';
+  }
+  return 'minimal';
+}
+
+export function isReasoningAutoSummaryEnabled(): boolean {
+  return (
+    (process.env.LITELLM_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true' ||
+    (process.env.ECO_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true'
+  );
+}
+
 export function isAnthropicBillingHeaderText(text: string): boolean {
   return text.startsWith('x-anthropic-billing-header: ');
 }
 
-export function anthropicImageToDataURI(src: {
-  media_type?: string;
-  data?: string;
-} | undefined): string {
-  if (src === undefined || src.data === '') {
+export function anthropicImageToDataURI(src: AnthropicImageSource | undefined): string {
+  if (src === undefined) {
+    return '';
+  }
+  if (src.type === 'url') {
+    return src.url?.trim() ?? '';
+  }
+  if (src.data === undefined || src.data === '') {
     return '';
   }
   let mediaType = src.media_type ?? '';
@@ -99,6 +123,97 @@ export function normalizeToolParameters(schema: unknown): unknown {
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readAnthropicCacheControl(raw: unknown): AnthropicCacheControl | undefined {
+  if (!isUnknownRecord(raw) || typeof raw.type !== 'string' || raw.type === '') {
+    return undefined;
+  }
+  return raw as unknown as AnthropicCacheControl;
+}
+
+function cacheControlFromContentBlocks(raw: unknown): AnthropicCacheControl | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+
+  let found: AnthropicCacheControl | undefined;
+  for (const block of raw) {
+    if (!isUnknownRecord(block)) {
+      continue;
+    }
+    const cacheControl = readAnthropicCacheControl(block.cache_control);
+    if (cacheControl !== undefined) {
+      found = cacheControl;
+    }
+  }
+  return found;
+}
+
+export function resolveAnthropicCacheControlForResponses(
+  req: AnthropicRequest,
+): AnthropicCacheControl | undefined {
+  const topLevel = readAnthropicCacheControl(req.cache_control);
+  if (topLevel !== undefined) {
+    return topLevel;
+  }
+
+  let found = cacheControlFromContentBlocks(req.system);
+  for (const message of req.messages) {
+    if (isUnknownRecord(message)) {
+      const messageCacheControl = readAnthropicCacheControl(message.cache_control);
+      if (messageCacheControl !== undefined) {
+        found = messageCacheControl;
+      }
+    }
+    const contentCacheControl = cacheControlFromContentBlocks(message.content);
+    if (contentCacheControl !== undefined) {
+      found = contentCacheControl;
+    }
+  }
+
+  for (const tool of req.tools ?? []) {
+    const cacheControl = readAnthropicCacheControl(tool.cache_control);
+    if (cacheControl !== undefined) {
+      found = cacheControl;
+    }
+  }
+
+  return found;
+}
+
+export function translateAnthropicContextManagementToResponses(raw: unknown): unknown | undefined {
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (!isUnknownRecord(raw) || !Array.isArray(raw.edits)) {
+    return undefined;
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (const edit of raw.edits) {
+    if (!isUnknownRecord(edit)) {
+      continue;
+    }
+    if (edit.type !== 'compact_20260112') {
+      continue;
+    }
+    const converted: Record<string, unknown> = { type: 'compaction' };
+    const trigger = edit.trigger;
+    if (isUnknownRecord(trigger)) {
+      const value = trigger.value;
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        converted.compact_threshold = Math.trunc(value);
+      }
+    }
+    out.push(converted);
+  }
+
+  return out.length > 0 ? out : undefined;
 }
 
 export function normalizeExitPlanModeToolParameters(schema: unknown): unknown {
@@ -177,24 +292,45 @@ export function resolveAnthropicReasoningForResponses(
     effort = req.output_config.effort;
   } else if (req.effort !== undefined && req.effort !== '') {
     effort = req.effort;
+  } else if (req.thinking?.type === 'adaptive') {
+    effort = 'medium';
+  } else if (req.thinking?.type === 'enabled') {
+    effort = reasoningEffortFromThinkingBudget(req.thinking.budget_tokens ?? 0);
   }
 
   if (effort === undefined) {
     return undefined;
   }
 
-  return {
+  const reasoning: ResponsesReasoning = {
     effort: mapAnthropicEffortToResponses(effort),
-    summary: 'auto',
   };
+
+  if (req.thinking?.summary !== undefined && req.thinking.summary !== '') {
+    reasoning.summary = req.thinking.summary;
+  } else if (isReasoningAutoSummaryEnabled()) {
+    reasoning.summary = 'detailed';
+  }
+
+  return reasoning;
 }
 
 export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
-  const input = convertAnthropicToResponsesInput(req.system, req.messages);
+  let input = convertAnthropicToResponsesInput(undefined, req.messages);
+  const instructions = anthropicSystemToResponsesInstructions(req.system);
+  if (input.length === 0 && instructions !== '') {
+    input = [
+      {
+        type: 'message',
+        role: 'system',
+        content: [{ type: 'input_text', text: instructions }],
+      },
+    ];
+  }
 
   const out: ResponsesRequest = {
     model: req.model,
-    input: jsonMarshal(input),
+    input,
     stream: req.stream ?? false,
     include: ['reasoning.encrypted_content'],
   };
@@ -207,6 +343,10 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
   out.store = false;
   out.parallel_tool_calls = true;
   out.text = { verbosity: 'medium' };
+
+  if (instructions !== '' && input.length > 0 && input[0]?.role !== 'system') {
+    out.instructions = instructions;
+  }
 
   if (req.max_tokens > 0) {
     let v = req.max_tokens;
@@ -229,6 +369,16 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
     out.tool_choice = convertAnthropicToolChoiceToResponses(req.tool_choice);
   }
 
+  const cacheControl = resolveAnthropicCacheControlForResponses(req);
+  if (cacheControl !== undefined) {
+    out.cache_control = cacheControl;
+  }
+
+  const contextManagement = translateAnthropicContextManagementToResponses(req.context_management);
+  if (contextManagement !== undefined) {
+    out.context_management = contextManagement;
+  }
+
   return out;
 }
 
@@ -236,14 +386,14 @@ export function convertAnthropicToolChoiceToResponses(raw: unknown): unknown {
   const tc = raw as { type?: string; name?: string };
   switch (tc.type) {
     case 'auto':
-      return 'auto';
+      return { type: 'auto' };
     case 'any':
-      return 'required';
+      return { type: 'required' };
     case 'none':
-      return 'none';
+      return { type: 'none' };
     case 'tool':
       return isWebSearchToolName(tc.name)
-        ? { type: 'web_search' }
+        ? { type: 'web_search_preview' }
         : { type: 'function', name: tc.name };
     default:
       return raw;
@@ -262,7 +412,7 @@ export function convertAnthropicToResponsesInput(
       out.push({
         type: 'message',
         role: 'developer',
-        content: jsonMarshal(sysParts),
+        content: sysParts,
       });
     }
   }
@@ -273,12 +423,26 @@ export function convertAnthropicToResponsesInput(
   return out;
 }
 
+export function anthropicSystemToResponsesInstructions(raw: unknown): string {
+  const parts = parseAnthropicSystemContentParts(raw);
+  return parts
+    .map((part) => part.text ?? '')
+    .filter((text) => text !== '')
+    .join('\n');
+}
+
 export function parseAnthropicSystemContentParts(raw: unknown): ResponsesContentPart[] {
+  if (raw === undefined || raw === null) {
+    return [];
+  }
   if (typeof raw === 'string') {
     if (isAnthropicBillingHeaderText(raw) || raw === '') {
       return [];
     }
     return [{ type: 'input_text', text: raw }];
+  }
+  if (!Array.isArray(raw)) {
+    return [];
   }
   const blocks = raw as AnthropicContentBlock[];
   const parts: ResponsesContentPart[] = [];
@@ -304,7 +468,7 @@ export function anthropicMsgToResponsesItems(m: AnthropicMessage): ResponsesInpu
 export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
   if (typeof raw === 'string') {
     const parts: ResponsesContentPart[] = [{ type: 'input_text', text: raw }];
-    return [{ type: 'message', role: 'user', content: jsonMarshal(parts) }];
+    return [{ type: 'message', role: 'user', content: parts }];
   }
 
   const blocks = raw as AnthropicContentBlock[];
@@ -344,7 +508,7 @@ export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
   parts.push(...toolResultImageParts);
 
   if (parts.length > 0) {
-    out.push({ type: 'message', role: 'user', content: jsonMarshal(parts) });
+    out.push({ type: 'message', role: 'user', content: parts });
   }
 
   return out;
@@ -353,16 +517,23 @@ export function anthropicUserToResponses(raw: unknown): ResponsesInputItem[] {
 export function anthropicAssistantToResponses(raw: unknown): ResponsesInputItem[] {
   if (typeof raw === 'string') {
     const parts: ResponsesContentPart[] = [{ type: 'output_text', text: raw }];
-    return [{ type: 'message', role: 'assistant', content: jsonMarshal(parts) }];
+    return [{ type: 'message', role: 'assistant', content: parts }];
   }
 
   const blocks = raw as AnthropicContentBlock[];
   const items: ResponsesInputItem[] = [];
 
+  for (const b of blocks) {
+    const reasoning = anthropicThinkingBlockToResponsesItem(b, items.length);
+    if (reasoning !== undefined) {
+      items.push(reasoning);
+    }
+  }
+
   const text = extractAnthropicTextFromBlocks(blocks);
   if (text !== '') {
     const parts: ResponsesContentPart[] = [{ type: 'output_text', text }];
-    items.push({ type: 'message', role: 'assistant', content: jsonMarshal(parts) });
+    items.push({ type: 'message', role: 'assistant', content: parts });
   }
 
   for (const b of blocks) {
@@ -384,16 +555,41 @@ export function anthropicAssistantToResponses(raw: unknown): ResponsesInputItem[
   return items;
 }
 
+function anthropicThinkingBlockToResponsesItem(
+  block: AnthropicContentBlock,
+  index: number,
+): ResponsesInputItem | undefined {
+  if (block.type !== 'thinking' && block.type !== 'redacted_thinking') {
+    return undefined;
+  }
+
+  const item: ResponsesInputItem = {
+    type: 'reasoning',
+    id: block.id ?? `rs_${index}`,
+    summary: [],
+  };
+  if (block.type === 'thinking' && block.thinking !== undefined && block.thinking !== '') {
+    item.summary = [{ type: 'summary_text', text: block.thinking }];
+  }
+  if (block.type === 'redacted_thinking' && block.data !== undefined && block.data !== '') {
+    item.encrypted_content = block.data;
+  }
+  if ((item.summary?.length ?? 0) === 0 && item.encrypted_content === undefined) {
+    return undefined;
+  }
+  return item;
+}
+
 export function convertToolResultOutput(b: AnthropicContentBlock): {
   outputText: string;
   imageParts: ResponsesContentPart[];
 } {
   if (b.content === undefined || b.content === null) {
-    return { outputText: '(empty)', imageParts: [] };
+    return { outputText: '', imageParts: [] };
   }
 
   if (typeof b.content === 'string') {
-    return { outputText: b.content === '' ? '(empty)' : b.content, imageParts: [] };
+    return { outputText: b.content, imageParts: [] };
   }
 
   const inner = b.content as AnthropicContentBlock[];
@@ -416,11 +612,7 @@ export function convertToolResultOutput(b: AnthropicContentBlock): {
     }
   }
 
-  let text = textParts.join('\n\n');
-  if (text === '') {
-    text = '(empty)';
-  }
-  return { outputText: text, imageParts };
+  return { outputText: textParts.join('\n'), imageParts };
 }
 
 export function extractAnthropicTextFromBlocks(blocks: AnthropicContentBlock[]): string {
@@ -436,8 +628,11 @@ export function extractAnthropicTextFromBlocks(blocks: AnthropicContentBlock[]):
 export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): ResponsesTool[] {
   const out: ResponsesTool[] = [];
   for (const t of tools) {
-    if (t.type !== undefined && t.type.startsWith('web_search')) {
-      const converted: ResponsesTool = { type: 'web_search' };
+    if (
+      (t.type !== undefined && t.type.startsWith('web_search')) ||
+      isWebSearchToolName(t.name)
+    ) {
+      const converted: ResponsesTool = { type: 'web_search_preview' };
       const allowedDomains = (t.allowed_domains ?? [])
         .map(normalizeWebSearchDomain)
         .filter((domain) => domain !== '');

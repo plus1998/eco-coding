@@ -73,6 +73,8 @@ export interface SdkUsageDiagnostic {
   parentToolUseId?: string;
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 export interface SdkUsageMissDiagnostic {
@@ -330,6 +332,10 @@ function buildUsageDiagnostic(input: {
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(usage?.inputTokens !== undefined && { inputTokens: usage.inputTokens }),
     ...(usage?.outputTokens !== undefined && { outputTokens: usage.outputTokens }),
+    ...(usage?.cacheReadTokens !== undefined && { cacheReadTokens: usage.cacheReadTokens }),
+    ...(usage?.cacheCreationTokens !== undefined && {
+      cacheCreationTokens: usage.cacheCreationTokens,
+    }),
   };
 }
 

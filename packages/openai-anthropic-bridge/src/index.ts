@@ -15,7 +15,9 @@ export {
   minMaxOutputTokens,
   normalizeToolParameters,
   normalizeFunctionCallNameForRequest,
+  resolveAnthropicCacheControlForResponses,
   toResponsesCallID,
+  translateAnthropicContextManagementToResponses,
 } from './anthropic-to-responses.js';
 
 export {

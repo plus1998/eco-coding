@@ -1020,6 +1020,52 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       queryOptions.agents = phase.agents;
     }
 
+    this.options.onContextProbe?.("query_start", {
+      threadId: input.threadId,
+      runMode: phase.planningPhase ? "plan" : phase.askPhase ? "ask" : "agent",
+      permissionMode: phase.permissionMode,
+      planningPhase: phase.planningPhase === true,
+      askPhase: phase.askPhase === true,
+      prompt: summarizeTextForProbe(phase.prompt),
+      session: {
+        isResume: Boolean(input.resume?.resumeSessionId),
+        ...(input.resume?.resumeSessionId && { resumeSessionId: input.resume.resumeSessionId }),
+        ...(input.resume?.resumeSessionAt && { resumeSessionAt: input.resume.resumeSessionAt }),
+        forkSession: input.resume?.forkSession === true,
+      },
+      cwd: summarizeTextForProbe(sessionCwd),
+      model: mainModel,
+      fallbackModel: plannerRoute.fallbacks[0]?.modelId ?? null,
+      routes: input.routes.map((route) => ({
+        role: route.role,
+        primaryModel: route.primary.modelId,
+        fallbackCount: route.fallbacks.length,
+      })),
+      systemPrompt: summarizeSystemPromptForProbe(systemPrompt),
+      tools: {
+        allowedCount: allowedTools.length,
+        allowed: allowedTools.slice(0, 40),
+        disallowedCount: sdkDisallowedTools.length,
+        disallowed: sdkDisallowedTools.slice(0, 40),
+      },
+      agents: summarizeAgentsForProbe(
+        (queryOptions.agents as Record<string, unknown> | undefined) ?? undefined,
+      ),
+      mcp: {
+        serverCount: Object.keys(session.mcpServers).length,
+      },
+      skills: {
+        count: session.skills?.length ?? 0,
+        names: session.skills?.slice(0, 40) ?? [],
+      },
+      settingSources: session.settingSources,
+      flags: {
+        includePartialMessages: queryOptions.includePartialMessages === true,
+        enableFileCheckpointing: queryOptions.enableFileCheckpointing === true,
+        excludeDynamicSections: this.options.excludeDynamicSections === true,
+      },
+    });
+
     const resolveSubagent = this.options.hookContext?.subagentAttribution?.resolveAgentId;
     const streamCtx = createSdkStreamContext({
       ...(resolveSubagent && {
@@ -1097,6 +1143,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         !contextUsageCollected &&
         typeof query.getContextUsage === "function"
       ) {
+        this.options.onContextProbe?.("query_result", summarizeSdkResultForProbe(message, activeSessionId));
         contextUsageCollected = true;
         pendingContextEvents = await this.collectContextUsageEvents(query, input.threadId, activeSessionId);
       }
@@ -1208,6 +1255,131 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     ) => Promise<ClaudeAgentSdkModule>;
     return dynamicImport("@anthropic-ai/claude-agent-sdk");
   }
+}
+
+interface ProbeTextSummary {
+  chars: number;
+  bytes: number;
+  hash: string;
+}
+
+function summarizeTextForProbe(value: string): ProbeTextSummary {
+  return {
+    chars: value.length,
+    bytes: Buffer.byteLength(value, "utf8"),
+    hash: stableTextDigest(value),
+  };
+}
+
+function summarizeSystemPromptForProbe(systemPrompt: unknown): Record<string, unknown> {
+  if (!isRecord(systemPrompt)) {
+    return { kind: typeof systemPrompt, bytes: jsonBytes(systemPrompt) };
+  }
+  const append = typeof systemPrompt.append === "string" ? systemPrompt.append : undefined;
+  const prompt = typeof systemPrompt.prompt === "string" ? systemPrompt.prompt : undefined;
+  return {
+    kind: typeof systemPrompt.type === "string" ? systemPrompt.type : "object",
+    keys: Object.keys(systemPrompt).sort(),
+    bytes: jsonBytes(systemPrompt),
+    ...(typeof systemPrompt.preset === "string" && { preset: systemPrompt.preset }),
+    ...(append !== undefined && { append: summarizeTextForProbe(append) }),
+    ...(prompt !== undefined && { prompt: summarizeTextForProbe(prompt) }),
+    excludeDynamicSections: systemPrompt.excludeDynamicSections === true,
+  };
+}
+
+function summarizeAgentsForProbe(agents: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!agents) {
+    return { count: 0, keys: [] };
+  }
+  const entries = Object.entries(agents);
+  return {
+    count: entries.length,
+    keys: entries.map(([key]) => key).slice(0, 40),
+    definitions: entries.slice(0, 20).map(([key, definition]) => {
+      const record = isRecord(definition) ? definition : {};
+      return {
+        key,
+        model: typeof record.model === "string" ? record.model : null,
+        description: typeof record.description === "string" ? summarizeTextForProbe(record.description) : null,
+        prompt: typeof record.prompt === "string" ? summarizeTextForProbe(record.prompt) : null,
+        toolsCount: readStringArray(record.tools).length,
+        disallowedToolsCount: readStringArray(record.disallowedTools).length,
+        skillsCount: readStringArray(record.skills).length,
+      };
+    }),
+  };
+}
+
+function summarizeSdkResultForProbe(
+  message: Record<string, unknown>,
+  activeSessionId: string,
+): Record<string, unknown> {
+  const modelUsage = isRecord(message.modelUsage) ? message.modelUsage : undefined;
+  const usage = isRecord(message.usage) ? message.usage : undefined;
+  return {
+    sessionId: typeof message.session_id === "string" ? message.session_id : activeSessionId,
+    uuid: typeof message.uuid === "string" ? message.uuid : undefined,
+    subtype: typeof message.subtype === "string" ? message.subtype : undefined,
+    terminalReason:
+      typeof message.terminal_reason === "string" ? message.terminal_reason : undefined,
+    isError: message.is_error === true,
+    hasUsage: Boolean(usage),
+    ...(usage && { usage: summarizeUsageObjectForProbe(usage) }),
+    modelUsageCount: modelUsage ? Object.keys(modelUsage).length : 0,
+    ...(modelUsage && {
+      modelUsage: Object.entries(modelUsage)
+        .slice(0, 12)
+        .map(([modelId, entry]) => ({
+          modelId,
+          ...(isRecord(entry) && { usage: summarizeUsageObjectForProbe(entry) }),
+        })),
+    }),
+    ...(typeof message.totalCostUsd === "number" && { totalCostUsd: message.totalCostUsd }),
+    ...(typeof message.total_cost_usd === "number" && { totalCostUsd: message.total_cost_usd }),
+  };
+}
+
+function summarizeUsageObjectForProbe(usage: Record<string, unknown>): Record<string, unknown> {
+  return {
+    inputTokens: readNumberField(usage, "input_tokens", "inputTokens"),
+    outputTokens: readNumberField(usage, "output_tokens", "outputTokens"),
+    cacheReadTokens: readNumberField(
+      usage,
+      "cache_read_input_tokens",
+      "cacheReadInputTokens",
+      "cache_read_tokens",
+    ),
+    cacheCreationTokens: readNumberField(
+      usage,
+      "cache_creation_input_tokens",
+      "cacheCreationInputTokens",
+      "cache_creation_tokens",
+    ),
+  };
+}
+
+function readNumberField(record: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function stableTextDigest(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 /** @deprecated Use createAutonomousAgentDefinitions */

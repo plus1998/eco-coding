@@ -3,6 +3,7 @@ import { isOpenAICompat, type UpstreamApiCompat } from "../shared/api-compat";
 import { buildAnthropicHeaders, buildOpenAIHeaders } from "./provider-models";
 
 const ANTHROPIC_VERSION = "2023-06-01";
+export const DEFAULT_UPSTREAM_USER_AGENT = "Eco-Coding/0.0.0";
 
 const PASSTHROUGH_HEADER_NAMES = ["accept", "anthropic-beta", "anthropic-version", "user-agent"] as const;
 
@@ -24,7 +25,9 @@ function applyUserAgent(
   const clientUa = readHeaderString(clientHeaders, "user-agent");
   if (clientUa) {
     headers["user-agent"] = clientUa;
+    return;
   }
+  headers["user-agent"] = DEFAULT_UPSTREAM_USER_AGENT;
 }
 
 /** Headers for proxy bridge → upstream (SDK client headers + optional global UA override). */
@@ -63,7 +66,7 @@ export function buildProxyUpstreamHeaders(input: {
   return headers;
 }
 
-/** Headers for provider test / model list (no SDK client); only applies global UA override. */
+/** Headers for provider test / model list (no SDK client); identifies as Eco unless overridden. */
 export function buildProviderDirectUpstreamHeaders(input: {
   apiKey: string;
   apiCompat: UpstreamApiCompat;

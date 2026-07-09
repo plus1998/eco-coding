@@ -4,6 +4,7 @@ import type {
   ChatCompletionsResponse,
   ChatDelta,
   ChatMessage,
+  ChatReasoningItem,
   ChatTokenDetails,
   ChatToolCall,
   ChatUsage,
@@ -39,6 +40,7 @@ export function responsesToChatCompletions(
 
   let contentText = '';
   let reasoningText = '';
+  const reasoningItems: ChatReasoningItem[] = [];
   const toolCalls: ChatToolCall[] = [];
 
   for (const item of resp.output ?? []) {
@@ -61,6 +63,12 @@ export function responsesToChatCompletions(
         });
         break;
       case 'reasoning':
+        reasoningItems.push({
+          type: 'reasoning',
+          id: item.id,
+          encrypted_content: item.encrypted_content,
+          summary: item.summary ?? [],
+        });
         for (const s of item.summary ?? []) {
           if (s.type === 'summary_text' && s.text !== '') {
             reasoningText += s.text;
@@ -81,6 +89,9 @@ export function responsesToChatCompletions(
   }
   if (reasoningText !== '') {
     msg.reasoning_content = reasoningText;
+  }
+  if (reasoningItems.length > 0) {
+    msg.reasoning_items = reasoningItems;
   }
 
   const finishReason = responsesStatusToChatFinishReason(

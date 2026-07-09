@@ -21,6 +21,7 @@ import {
   buildBridgeProviderTestUpstreamBody,
   parseBridgeProviderTestReply,
 } from "./bridge-provider-test";
+import { postJsonWithOpenAIResponsesUnsupportedParameterRetry } from "./openai-responses-compat";
 import type { ThinkingEffort } from "../shared/ipc";
 import type { ProviderStore } from "./provider-store";
 import {
@@ -293,7 +294,7 @@ async function postUpstreamCompatTest(
   const effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
   const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat);
   const anthropicRequest = buildBridgeProviderTestAnthropicRequest(input.modelId, thinkingEffort);
-  const { body: requestBody, preferStream } = buildBridgeProviderTestUpstreamBody(
+  let { body: requestBody, preferStream } = buildBridgeProviderTestUpstreamBody(
     input.apiCompat,
     anthropicRequest,
     input.modelId,
@@ -337,12 +338,34 @@ async function postUpstreamCompatTest(
       body: requestBody,
     });
 
-    const response = await fetcher(upstreamUrl, {
-      method: "POST",
-      headers: requestHeaders,
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
+    let response: Response;
+    let responseText: string | undefined;
+    if (input.apiCompat === "openai_responses") {
+      const retryResult = await postJsonWithOpenAIResponsesUnsupportedParameterRetry({
+        fetcher,
+        url: upstreamUrl,
+        headers: requestHeaders,
+        body: requestBody,
+        signal: controller.signal,
+        logContext: {
+          providerId: input.providerId,
+          role: input.role,
+          apiCompat: input.apiCompat,
+          phase: "provider-test",
+          model: input.modelId,
+        },
+      });
+      response = retryResult.response;
+      requestBody = retryResult.requestBody;
+      responseText = retryResult.responseText;
+    } else {
+      response = await fetcher(upstreamUrl, {
+        method: "POST",
+        headers: requestHeaders,
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    }
 
     const elapsedMs = Date.now() - startedAt;
     logUpstream("provider-test-response", {
@@ -356,7 +379,7 @@ async function postUpstreamCompatTest(
     });
 
     if (!response.ok) {
-      const raw = await response.text();
+      const raw = responseText ?? (await response.text());
       const error = formatUpstreamError(response.status, raw);
       logUpstream("provider-test-error", {
         providerId: input.providerId,

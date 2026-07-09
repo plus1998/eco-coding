@@ -53,6 +53,12 @@ export function responsesToAnthropic(
             thinking: summaryText,
           });
         }
+        if (item.encrypted_content !== undefined && item.encrypted_content !== '') {
+          blocks.push({
+            type: 'redacted_thinking',
+            data: item.encrypted_content,
+          });
+        }
         break;
       }
       case 'message':
@@ -251,6 +257,9 @@ export interface ResponsesEventToAnthropicState {
   currentToolHadDelta: boolean;
   hasToolCall: boolean;
   outputIndexToBlockIdx: Map<number, number>;
+  closedToolOutputIndexes: Set<number>;
+  emittedTextByOutputIndex: Map<number, string>;
+  emittedReasoningByOutputIndex: Map<number, string>;
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -274,6 +283,9 @@ export function newResponsesEventToAnthropicState(
     currentToolHadDelta: false,
     hasToolCall: false,
     outputIndexToBlockIdx: new Map(),
+    closedToolOutputIndexes: new Set(),
+    emittedTextByOutputIndex: new Map(),
+    emittedReasoningByOutputIndex: new Map(),
     inputTokens: 0,
     outputTokens: 0,
     cacheReadInputTokens: 0,
@@ -296,7 +308,7 @@ export function responsesEventToAnthropicEvents(
     case 'response.output_text.delta':
       return resToAnthHandleTextDelta(evt, state);
     case 'response.output_text.done':
-      return resToAnthHandleTextBlockDone(state);
+      return resToAnthHandleTextBlockDone(evt, state);
     case 'response.function_call_arguments.delta':
       return resToAnthHandleFuncArgsDelta(evt, state);
     case 'response.function_call_arguments.done':
@@ -306,7 +318,7 @@ export function responsesEventToAnthropicEvents(
     case 'response.reasoning_summary_text.delta':
       return resToAnthHandleReasoningDelta(evt, state);
     case 'response.reasoning_summary_text.done':
-      return resToAnthHandleReasoningBlockDone(state);
+      return resToAnthHandleReasoningBlockDone(evt, state);
     case 'response.completed':
     case 'response.done':
     case 'response.incomplete':
@@ -460,7 +472,19 @@ function resToAnthHandleTextDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
-  if (evt.delta === '') {
+  if (evt.delta === undefined || evt.delta === '') {
+    return [];
+  }
+
+  return emitTextDeltaForOutputIndex(evt.output_index ?? 0, evt.delta, state);
+}
+
+function emitTextDeltaForOutputIndex(
+  outputIndex: number,
+  delta: string,
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  if (delta === '') {
     return [];
   }
 
@@ -476,6 +500,7 @@ function resToAnthHandleTextDelta(
     events.push(...closeCurrentBlock(state));
 
     const idx = state.contentBlockIndex;
+    state.outputIndexToBlockIdx.set(outputIndex, idx);
     state.contentBlockOpen = true;
     state.currentBlockType = 'text';
 
@@ -495,9 +520,11 @@ function resToAnthHandleTextDelta(
     index: idx,
     delta: {
       type: 'text_delta',
-      text: evt.delta,
+      text: delta,
     },
   });
+  const emitted = state.emittedTextByOutputIndex.get(outputIndex) ?? '';
+  state.emittedTextByOutputIndex.set(outputIndex, emitted + delta);
   return events;
 }
 
@@ -573,19 +600,19 @@ function resToAnthHandleFuncArgsDone(
         },
       });
     }
-    events.push(...closeCurrentBlock(state));
+    events.push(...closeCurrentToolBlock(evt.output_index ?? 0, state));
     return events;
   }
 
   if (raw === '' || state.currentToolHadDelta) {
-    return closeCurrentBlock(state);
+    return closeCurrentToolBlock(evt.output_index ?? 0, state);
   }
   if (state.currentToolName === 'Read') {
     const sanitized = sanitizeAnthropicToolUseInput(state.currentToolName, raw);
     const sanitizedStr =
       typeof sanitized === 'string' ? sanitized : jsonMarshal(sanitized);
     if (sanitizedStr === '' || sanitizedStr === '{}') {
-      return closeCurrentBlock(state);
+      return closeCurrentToolBlock(evt.output_index ?? 0, state);
     }
     raw = sanitizedStr;
   }
@@ -602,7 +629,7 @@ function resToAnthHandleFuncArgsDone(
       },
     },
   ];
-  events.push(...closeCurrentBlock(state));
+  events.push(...closeCurrentToolBlock(evt.output_index ?? 0, state));
   return events;
 }
 
@@ -610,51 +637,139 @@ function resToAnthHandleReasoningDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
-  if (evt.delta === '') {
+  if (evt.delta === undefined || evt.delta === '') {
     return [];
   }
 
-  const blockIdx = state.outputIndexToBlockIdx.get(evt.output_index ?? 0);
-  if (blockIdx === undefined) {
+  return emitReasoningDeltaForOutputIndex(evt.output_index ?? 0, evt.delta, state);
+}
+
+function emitReasoningDeltaForOutputIndex(
+  outputIndex: number,
+  delta: string,
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  if (delta === '') {
     return [];
   }
 
-  if (
-    !state.contentBlockOpen ||
-    state.currentBlockType !== 'thinking' ||
-    blockIdx !== state.contentBlockIndex
-  ) {
-    return [];
-  }
+  const events: AnthropicStreamEvent[] = [];
+  if (!state.contentBlockOpen || state.currentBlockType !== 'thinking') {
+    events.push(...closeCurrentBlock(state));
 
-  return [
-    {
-      type: 'content_block_delta',
-      index: blockIdx,
-      delta: {
-        type: 'thinking_delta',
-        thinking: evt.delta,
+    const idx = state.contentBlockIndex;
+    state.outputIndexToBlockIdx.set(outputIndex, idx);
+    state.contentBlockOpen = true;
+    state.currentBlockType = 'thinking';
+
+    events.push({
+      type: 'content_block_start',
+      index: idx,
+      content_block: {
+        type: 'thinking',
+        thinking: '',
       },
+    });
+  }
+
+  const blockIdx = state.contentBlockIndex;
+  events.push({
+    type: 'content_block_delta',
+    index: blockIdx,
+    delta: {
+      type: 'thinking_delta',
+      thinking: delta,
     },
-  ];
+  });
+  const emitted = state.emittedReasoningByOutputIndex.get(outputIndex) ?? '';
+  state.emittedReasoningByOutputIndex.set(outputIndex, emitted + delta);
+  return events;
 }
 
 function resToAnthHandleTextBlockDone(
+  evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
-  if (!state.contentBlockOpen || state.currentBlockType !== 'text') {
-    return [];
+  const events: AnthropicStreamEvent[] = [];
+  if (evt.text !== undefined && evt.text !== '') {
+    events.push(...emitMissingTextFromFullText(evt.output_index ?? 0, evt.text, state));
   }
-  return closeCurrentBlock(state);
+  if (!state.contentBlockOpen || state.currentBlockType !== 'text') {
+    return events;
+  }
+  events.push(...closeCurrentBlock(state));
+  return events;
 }
 
 function resToAnthHandleReasoningBlockDone(
+  evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
+  const events: AnthropicStreamEvent[] = [];
+  if (evt.text !== undefined && evt.text !== '') {
+    events.push(...emitMissingReasoningFromFullText(evt.output_index ?? 0, evt.text, state));
+  }
   if (!state.contentBlockOpen || state.currentBlockType !== 'thinking') {
+    return events;
+  }
+  events.push(...closeCurrentBlock(state));
+  return events;
+}
+
+function emitMissingTextFromFullText(
+  outputIndex: number,
+  fullText: string,
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  if (fullText === '') {
     return [];
   }
-  return closeCurrentBlock(state);
+
+  const emitted = state.emittedTextByOutputIndex.get(outputIndex) ?? '';
+  if (emitted !== '' && !fullText.startsWith(emitted)) {
+    return [];
+  }
+
+  const delta = fullText.slice(emitted.length);
+  return emitTextDeltaForOutputIndex(outputIndex, delta, state);
+}
+
+function emitMissingReasoningFromFullText(
+  outputIndex: number,
+  fullText: string,
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  if (fullText === '') {
+    return [];
+  }
+
+  const emitted = state.emittedReasoningByOutputIndex.get(outputIndex) ?? '';
+  if (emitted !== '' && !fullText.startsWith(emitted)) {
+    return [];
+  }
+
+  const delta = fullText.slice(emitted.length);
+  return emitReasoningDeltaForOutputIndex(outputIndex, delta, state);
+}
+
+function collectMessageOutputText(item: ResponsesOutput): string {
+  let text = '';
+  for (const part of item.content ?? []) {
+    if (part.type === 'output_text' && part.text !== undefined && part.text !== '') {
+      text += part.text;
+    }
+  }
+  return text;
+}
+
+function collectReasoningSummaryText(item: ResponsesOutput): string {
+  let text = '';
+  for (const summary of item.summary ?? []) {
+    if (summary.type === 'summary_text' && summary.text !== '') {
+      text += summary.text;
+    }
+  }
+  return text;
 }
 
 function resToAnthHandleOutputItemDone(
@@ -669,12 +784,12 @@ function resToAnthHandleOutputItemDone(
     return resToAnthHandleWebSearchDone(evt, state);
   }
 
-  if (!state.contentBlockOpen) {
-    return [];
-  }
-
   switch (evt.item.type) {
     case 'function_call': {
+      const outputIndex = evt.output_index ?? 0;
+      if (state.closedToolOutputIndexes.has(outputIndex)) {
+        return [];
+      }
       const toolName = normalizeFunctionCallNameForRequest(
         evt.item.name ?? state.currentToolName,
         state.requestToolNames,
@@ -687,7 +802,7 @@ function resToAnthHandleOutputItemDone(
       events.push(...closeCurrentBlock(state));
 
       const idx = state.contentBlockIndex;
-      state.outputIndexToBlockIdx.set(evt.output_index ?? 0, idx);
+      state.outputIndexToBlockIdx.set(outputIndex, idx);
       state.contentBlockOpen = true;
       state.currentBlockType = 'tool_use';
       state.currentToolName = toolName;
@@ -708,16 +823,28 @@ function resToAnthHandleOutputItemDone(
       events.push(...emitPendingToolUseArguments(evt, state));
       return events;
     }
-    case 'reasoning':
+    case 'reasoning': {
+      const events = emitMissingReasoningFromFullText(
+        evt.output_index ?? 0,
+        collectReasoningSummaryText(evt.item),
+        state,
+      );
       if (state.currentBlockType === 'thinking') {
-        return closeCurrentBlock(state);
+        events.push(...closeCurrentBlock(state));
       }
-      return [];
-    case 'message':
+      return events;
+    }
+    case 'message': {
+      const events = emitMissingTextFromFullText(
+        evt.output_index ?? 0,
+        collectMessageOutputText(evt.item),
+        state,
+      );
       if (state.currentBlockType === 'text') {
-        return closeCurrentBlock(state);
+        events.push(...closeCurrentBlock(state));
       }
-      return [];
+      return events;
+    }
     default:
       return [];
   }
@@ -774,6 +901,42 @@ function resToAnthHandleWebSearchDone(
   return events;
 }
 
+function emitFinalResponseOutputFallback(
+  output: ResponsesOutput[],
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  const events: AnthropicStreamEvent[] = [];
+  for (let outputIndex = 0; outputIndex < output.length; outputIndex++) {
+    const item = output[outputIndex];
+    if (item === undefined) {
+      continue;
+    }
+    switch (item.type) {
+      case 'reasoning':
+        events.push(
+          ...emitMissingReasoningFromFullText(
+            outputIndex,
+            collectReasoningSummaryText(item),
+            state,
+          ),
+        );
+        if (state.currentBlockType === 'thinking') {
+          events.push(...closeCurrentBlock(state));
+        }
+        break;
+      case 'message':
+        events.push(
+          ...emitMissingTextFromFullText(outputIndex, collectMessageOutputText(item), state),
+        );
+        if (state.currentBlockType === 'text') {
+          events.push(...closeCurrentBlock(state));
+        }
+        break;
+    }
+  }
+  return events;
+}
+
 function resToAnthHandleCompleted(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
@@ -783,6 +946,9 @@ function resToAnthHandleCompleted(
   }
 
   const events: AnthropicStreamEvent[] = [];
+  if (evt.response?.output !== undefined) {
+    events.push(...emitFinalResponseOutputFallback(evt.response.output, state));
+  }
   events.push(...closeCurrentBlock(state));
 
   let stopReason = 'end_turn';
@@ -874,8 +1040,17 @@ function emitPendingToolUseArguments(
   }
 
   if (state.contentBlockOpen && state.currentBlockType === 'tool_use') {
-    events.push(...closeCurrentBlock(state));
+    events.push(...closeCurrentToolBlock(evt.output_index ?? 0, state));
   }
+  return events;
+}
+
+function closeCurrentToolBlock(
+  outputIndex: number,
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  const events = closeCurrentBlock(state);
+  state.closedToolOutputIndexes.add(outputIndex);
   return events;
 }
 

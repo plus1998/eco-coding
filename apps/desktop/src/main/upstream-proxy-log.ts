@@ -292,12 +292,12 @@ export function formatUpstreamProxyCallLog(summary: UpstreamProxyCallLog): strin
     );
   }
 
-  // if (summary.debug?.clientRequest !== undefined) {
-  //   lines.push(...formatDebugSection("SDK 请求体（Anthropic）", summary.debug.clientRequest));
-  // }
-  // if (summary.debug?.upstreamRequest !== undefined) {
-  //   lines.push(...formatDebugSection("实际上游请求体", summary.debug.upstreamRequest));
-  // }
+  if (summary.debug?.clientRequest !== undefined) {
+    lines.push(...formatDebugSection("SDK 请求体（Anthropic）", summary.debug.clientRequest));
+  }
+  if (summary.debug?.upstreamRequest !== undefined) {
+    lines.push(...formatDebugSection("实际上游请求体", summary.debug.upstreamRequest));
+  }
   if (summary.debug?.responseBody !== undefined) {
     lines.push(...formatDebugSection("上游响应", summary.debug.responseBody));
   }
