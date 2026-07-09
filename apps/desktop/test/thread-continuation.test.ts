@@ -83,7 +83,7 @@ test("awaiting plan follow-up routes to plan revision without resume", () => {
   ).toEqual({ kind: "revise_plan" });
 });
 
-test("awaiting plan follow-up still revises plan after ExitPlanMode disables plan mode", () => {
+test("agent mode ignores stale awaiting plan without resume", () => {
   expect(
     resolveThreadContinueAction({
       followUp: "把测试覆盖也加进计划",
@@ -97,7 +97,24 @@ test("awaiting plan follow-up still revises plan after ExitPlanMode disables pla
       threadStatus: "awaiting_plan",
       activityLines: [],
     }),
-  ).toEqual({ kind: "revise_plan" });
+  ).toEqual({ kind: "fresh_autonomous" });
+});
+
+test("agent mode resumes execution even when stale pending plan exists", () => {
+  expect(
+    resolveThreadContinueAction({
+      followUp: "把测试覆盖也加进去",
+      canResume: true,
+      sessionMode: "agent",
+      hasPendingPlan: true,
+      hasApprovedPlanOnDisk: false,
+      enteredExecutionPhase: false,
+      hasCoderTodos: false,
+      hasAppliedDiff: false,
+      threadStatus: "awaiting_plan",
+      activityLines: [],
+    }),
+  ).toEqual({ kind: "resume_sdk", phase: "execution" });
 });
 
 test("interrupted execution follow-up resumes sdk when possible", () => {

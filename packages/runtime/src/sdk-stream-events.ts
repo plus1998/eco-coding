@@ -112,7 +112,9 @@ export function createAttributedAgentEvent(
       role: input.role,
       sessionId: input.sessionId,
       payload: input.payload,
-      messageParentToolUseId: input.messageParentToolUseId,
+      ...(input.messageParentToolUseId !== undefined
+        ? { messageParentToolUseId: input.messageParentToolUseId }
+        : {}),
     },
     streamCtx,
   );
@@ -604,7 +606,7 @@ function createStreamDeltaEvent(
       role,
       type: "message.delta",
       payload: payload as Record<string, unknown>,
-      messageParentToolUseId,
+      ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
     },
     streamCtx,
   );
@@ -628,7 +630,7 @@ function createToolStartedEvent(
       role,
       type: "tool.started",
       payload: payload as Record<string, unknown>,
-      messageParentToolUseId,
+      ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
     },
     streamCtx,
   );

@@ -108,6 +108,34 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   expect(store.getThread("thr_test")?.runtimeConfig?.sessionMode).toBe("agent");
 });
 
+test.skipIf(!sqliteAvailable)("persists the approved deferred ExitPlanMode tool id", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-pending-plan-exit-id-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_plan",
+    title: "Plan",
+    prompt: "ship it",
+    workspacePath: "/tmp/project",
+    status: "awaiting_plan",
+    message: "waiting",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  store.saveThread(thread);
+  store.savePendingPlan({
+    threadId: thread.id,
+    userPrompt: thread.prompt,
+    analysis: "analysis",
+    plan: "plan",
+    workspacePath: thread.workspacePath,
+    worktreePath: thread.workspacePath,
+    routesJson: "[]",
+    deferredExitPlanToolUseId: "tool_exit_approved",
+  });
+
+  expect(store.getPendingPlan(thread.id)?.deferredExitPlanToolUseId).toBe("tool_exit_approved");
+});
+
 test.skipIf(!sqliteAvailable)("listThreads keeps creation order when updated_at changes", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-order-"));
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));

@@ -300,6 +300,7 @@ export class ConversationStore {
         workspace_path TEXT NOT NULL,
         worktree_path TEXT NOT NULL,
         routes_json TEXT NOT NULL,
+        deferred_exit_plan_tool_use_id TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
@@ -768,6 +769,9 @@ export class ConversationStore {
     const pendingPlanNames = new Set(pendingPlanColumns.map((column) => column.name));
     if (!pendingPlanNames.has("plan_file_path")) {
       this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN plan_file_path TEXT`);
+    }
+    if (!pendingPlanNames.has("deferred_exit_plan_tool_use_id")) {
+      this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN deferred_exit_plan_tool_use_id TEXT`);
     }
   }
 
@@ -2516,8 +2520,9 @@ export class ConversationStore {
     this.db
       .prepare(
         `INSERT INTO thread_pending_plans (
-           thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, plan_file_path, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json,
+           plan_file_path, deferred_exit_plan_tool_use_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(thread_id) DO UPDATE SET
            user_prompt = excluded.user_prompt,
            analysis = excluded.analysis,
@@ -2526,6 +2531,7 @@ export class ConversationStore {
            worktree_path = excluded.worktree_path,
            routes_json = excluded.routes_json,
            plan_file_path = excluded.plan_file_path,
+           deferred_exit_plan_tool_use_id = excluded.deferred_exit_plan_tool_use_id,
            created_at = excluded.created_at`,
       )
       .run(
@@ -2537,6 +2543,7 @@ export class ConversationStore {
         plan.worktreePath,
         plan.routesJson,
         plan.planFilePath?.trim() || null,
+        plan.deferredExitPlanToolUseId?.trim() || null,
         new Date().toISOString(),
       );
   }
@@ -2544,7 +2551,8 @@ export class ConversationStore {
   getPendingPlan(threadId: string): (ThreadPendingPlan & { routesJson: string }) | undefined {
     const row = this.db
       .prepare(
-        `SELECT thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, plan_file_path
+        `SELECT thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json,
+                plan_file_path, deferred_exit_plan_tool_use_id
          FROM thread_pending_plans
          WHERE thread_id = ?`,
       )
@@ -2558,6 +2566,7 @@ export class ConversationStore {
           worktree_path: string;
           routes_json: string;
           plan_file_path: string | null;
+          deferred_exit_plan_tool_use_id: string | null;
         }
       | undefined;
 
@@ -2574,6 +2583,9 @@ export class ConversationStore {
       worktreePath: row.worktree_path,
       routesJson: row.routes_json,
       ...(row.plan_file_path?.trim() ? { planFilePath: row.plan_file_path.trim() } : {}),
+      ...(row.deferred_exit_plan_tool_use_id?.trim()
+        ? { deferredExitPlanToolUseId: row.deferred_exit_plan_tool_use_id.trim() }
+        : {}),
     };
   }
 

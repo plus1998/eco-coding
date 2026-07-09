@@ -372,7 +372,10 @@ import { resolveOrphanedThreadRecoveryAction } from "./thread-orphan-recovery";
 import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
 import { buildThreadPendingPlanView, buildThreadPlanLivePayload } from "./thread-pending-plan-view";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
-import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
+import {
+  applyThreadPlanReadyEffects,
+  buildExecutionFailureRestorePendingPlan,
+} from "./thread-plan-ready-effects";
 import { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-episode";
 import { resolveThreadPromptCacheFingerprint, ThreadPromptCacheMonitor } from "./thread-prompt-cache-monitor";
 import {
@@ -3678,6 +3681,9 @@ async function runCodingThreadExecution(
     plan: pending.plan,
     ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
     ...(options?.planUserEdited ? { planUserEdited: true } : {}),
+    ...(pending.deferredExitPlanToolUseId
+      ? { deferredExitPlanToolUseId: pending.deferredExitPlanToolUseId }
+      : {}),
   };
 
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
@@ -3704,10 +3710,7 @@ async function runCodingThreadExecution(
     emitTodoList,
   });
   const taskRunHooks = taskRuntime.taskRunHooks;
-  const executionPlan = {
-    ...pending,
-    routesJson: pending.routesJson || "[]",
-  };
+  const executionPlan = buildExecutionFailureRestorePendingPlan(pending);
 
   try {
     conversationStore.clearPendingPlan(threadId);
@@ -3746,6 +3749,15 @@ async function runCodingThreadExecution(
               }
               const followUp = options?.followUp?.trim();
               const runPrompt = followUp || pending.userPrompt;
+              const continuationPlanning = resume
+                ? planning
+                : {
+                    userPrompt: planning.userPrompt,
+                    analysis: planning.analysis,
+                    plan: planning.plan,
+                    ...(planning.planFilePath ? { planFilePath: planning.planFilePath } : {}),
+                    ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+                  };
               return await consumeSdkRunEvents({
                 events: driver.runContinuation(
                   buildSdkRunInput({
@@ -3761,7 +3773,7 @@ async function runCodingThreadExecution(
                     resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
                   }),
                   "execution",
-                  planning,
+                  continuationPlanning,
                 ),
                 threadId,
                 worktreePath: executionCwd,
@@ -4950,6 +4962,9 @@ async function resolvePlanningContextForThread(
       analysis: pending.analysis,
       plan: pending.plan,
       ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
+      ...(pending.deferredExitPlanToolUseId
+        ? { deferredExitPlanToolUseId: pending.deferredExitPlanToolUseId }
+        : {}),
     };
   }
   const planFilePath = conversationStore.getThreadClaudePlanFilePath(threadId);
@@ -5053,6 +5068,9 @@ async function dispatchThreadContinueAction(input: {
         action.phase === "execution"
           ? await resolvePlanningContextForThread(threadId, workspace.path)
           : undefined;
+      if (action.phase === "execution") {
+        conversationStore.clearPendingPlan(threadId);
+      }
       await runThreadContinuation(
         updated,
         workspace,
@@ -5070,6 +5088,7 @@ async function dispatchThreadContinueAction(input: {
   }
 
   if (action.kind === "fresh_autonomous") {
+    conversationStore.clearPendingPlan(threadId);
     conversationStore.clearSubagentSessions(threadId);
     subagentMetricsRegistry.clearThread(threadId);
     void runCodingThreadAutonomous(
@@ -5090,17 +5109,15 @@ async function dispatchThreadContinueAction(input: {
       conversationStore.clearSubagentSessions(threadId);
       subagentMetricsRegistry.clearThread(threadId);
     }
-    void runThreadContinuation(
+    void runPlanThread(
       updated,
       workspace,
       runtimeConfig,
       agentPrompt,
-      "planning",
-      existingWorktreePlan,
+      existingWorktreePlan?.worktreePath,
+      resumeOverride,
       attachments,
       roleRoutes,
-      undefined,
-      resumeOverride,
     );
   }
 }
@@ -5937,7 +5954,9 @@ function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {
     typeof candidate.userPrompt === "string" &&
     typeof candidate.analysis === "string" &&
     typeof candidate.plan === "string" &&
-    (candidate.planFilePath === undefined || typeof candidate.planFilePath === "string")
+    (candidate.planFilePath === undefined || typeof candidate.planFilePath === "string") &&
+    (candidate.deferredExitPlanToolUseId === undefined ||
+      typeof candidate.deferredExitPlanToolUseId === "string")
   );
 }
 

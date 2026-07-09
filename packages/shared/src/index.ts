@@ -107,6 +107,8 @@ export interface PlanReadyPayload {
   plan: string;
   /** Claude Code plan file written by ExitPlanMode (workspace-relative when possible). */
   planFilePath?: string;
+  /** Exact deferred ExitPlanMode call that may complete after approval. */
+  deferredExitPlanToolUseId?: string;
 }
 
 export interface SessionCapturedPayload {

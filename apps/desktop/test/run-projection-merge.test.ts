@@ -319,3 +319,67 @@ test("mergeThreadRunProjectionUpdate keeps unchanged subagent item identity duri
   expect(merged.agents[0]?.timeline.map((item) => item.id)).toEqual(["agent_evt_1", "agent_evt_2"]);
   expect(merged.agents[0]?.timeline[0]).toBe(existingItem);
 });
+
+test("mergeThreadRunProjectionUpdate reuses projection on generatedAt-only full refresh", () => {
+  const current = makeProjection({
+    sourceEventCount: 2,
+    timeline: [
+      {
+        id: "evt_1",
+        sequence: 1,
+        scope: "main" as const,
+        eventType: "message.final" as const,
+        text: "first",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ],
+    generatedAt: "2026-01-01T00:00:02.000Z",
+  });
+  const incoming = {
+    ...current,
+    thread: {
+      ...current.thread,
+      generatedAt: "2026-01-01T00:00:03.000Z",
+    },
+  };
+
+  expect(mergeThreadRunProjectionUpdate(current, incoming)).toBe(current);
+});
+
+test("mergeThreadRunProjectionUpdate ignores active subagent duration-only refresh", () => {
+  const current = makeProjection({
+    sourceEventCount: 2,
+    timeline: [],
+    agents: [
+      {
+        agentId: "agent_1",
+        role: "coder",
+        kind: "subagent",
+        status: "active",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        durationMs: 1_000,
+        timeline: [
+          {
+            id: "agent_evt_1",
+            sequence: 1,
+            scope: "agent" as const,
+            eventType: "message.final" as const,
+            text: "first",
+            at: "2026-01-01T00:00:01.000Z",
+          },
+        ],
+      },
+    ],
+  });
+  const incoming = {
+    ...current,
+    agents: [
+      {
+        ...requireValue(current.agents[0], "current agent"),
+        durationMs: 2_000,
+      },
+    ],
+  };
+
+  expect(mergeThreadRunProjectionUpdate(current, incoming)).toBe(current);
+});

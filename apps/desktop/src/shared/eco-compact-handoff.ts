@@ -99,8 +99,9 @@ export function buildStructuredEcoCompactFallbackSummary(input: {
   threadPrompt: string;
   olderMessages: readonly string[];
 }): string {
+  const taskGoal = input.threadPrompt.trim();
   return buildStructuredCompactFallback({
-    taskGoal: input.threadPrompt.trim() || undefined,
+    ...(taskGoal ? { taskGoal } : {}),
     olderMessages: input.olderMessages,
   });
 }

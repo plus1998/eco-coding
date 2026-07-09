@@ -7,6 +7,7 @@ import {
   applyClaudeJsonlSessionPersistence,
   applyEcoSdkSettings,
   applyResumeToQueryOptions,
+  buildAutonomousPlanningAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
   buildSdkProcessEnv,
@@ -492,6 +493,15 @@ test("autonomous orchestrator append keeps minimal product constraints", () => {
   expect(append).not.toContain("Available Eco subagents in this session:");
 });
 
+test("autonomous planning append is read-only and submits via ExitPlanMode", () => {
+  const append = buildAutonomousPlanningAppend();
+  expect(append).toContain("Session mode: plan (read-only)");
+  expect(append).toContain("Use AskUserQuestion");
+  expect(append).toContain("ExitPlanMode");
+  expect(append).toContain("Do not implement");
+  expect(append).toContain("Do not use the SDK Workflow tool");
+});
+
 test("buildAutonomousPlanContinuationPrompt carries approved plan context", () => {
   const prompt = buildAutonomousPlanContinuationPrompt({
     userPrompt: "Add feature X",
@@ -503,6 +513,30 @@ test("buildAutonomousPlanContinuationPrompt carries approved plan context", () =
   expect(prompt).toContain("approved your submitted plan");
   expect(prompt).toContain("Do the thing");
   expect(prompt).toContain("also add unit tests");
+});
+
+test("buildAutonomousPlanContinuationPrompt includes plan when execution cannot resume SDK session", () => {
+  const prompt = buildAutonomousPlanContinuationPrompt({
+    userPrompt: "Add feature X",
+    analysis: "Needs tests",
+    plan: "Do the thing",
+    isResume: false,
+  });
+  expect(prompt).toContain("No resumable SDK planning session is available");
+  expect(prompt).toContain("Approved plan:");
+  expect(prompt).toContain("Do the thing");
+});
+
+test("buildAutonomousPlanContinuationPrompt avoids duplicating unedited plan on SDK resume", () => {
+  const prompt = buildAutonomousPlanContinuationPrompt({
+    userPrompt: "Add feature X",
+    analysis: "Needs tests",
+    plan: "Do the thing",
+    isResume: true,
+  });
+  expect(prompt).toContain("already submitted in this SDK session");
+  expect(prompt).not.toContain("Approved plan:");
+  expect(prompt).not.toContain("Do the thing");
 });
 
 test("planning explore uses only codebase read tools while architect keeps network lookup", () => {
@@ -1211,12 +1245,15 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   });
 });
 
-test("canUseTool delegates ExitPlanMode to the permission handler (hooks own capture/defer)", async () => {
+test("canUseTool reserves ExitPlanMode for the Plan approval boundary", async () => {
   let handlerCalled = false;
-  const canUseTool = createCanUseTool(async () => {
-    handlerCalled = true;
-    return { behavior: "allow" };
-  });
+  const canUseTool = createCanUseTool(
+    async () => {
+      handlerCalled = true;
+      return { behavior: "allow" };
+    },
+    { planModeToolPolicy: "user-approval" },
+  );
 
   const decision = await canUseTool(
     "ExitPlanMode",
@@ -1224,7 +1261,7 @@ test("canUseTool delegates ExitPlanMode to the permission handler (hooks own cap
     { toolUseID: "tool_plan", signal: new AbortController().signal },
   );
 
-  expect(handlerCalled).toBe(true);
+  expect(handlerCalled).toBe(false);
   expect(decision).toMatchObject({
     behavior: "allow",
     updatedInput: { plan: "## Plan\n\nShip it." },
@@ -1249,7 +1286,46 @@ test("canUseTool refuses other Plan Mode tools before generic approval handler",
     behavior: "deny",
     interrupt: true,
   });
-  expect(String(decision.message)).toContain("Plan approval");
+  expect(String(decision.message)).toContain("AskUserQuestion");
+});
+
+test("canUseTool denies ExitPlanMode in Agent mode before generic auto-approval", async () => {
+  let handlerCalled = false;
+  const canUseTool = createCanUseTool(async () => {
+    handlerCalled = true;
+    return { behavior: "allow" };
+  });
+
+  const decision = await canUseTool(
+    "ExitPlanMode",
+    { plan: "## Plan\n\nUnexpected." },
+    { toolUseID: "tool_unexpected", signal: new AbortController().signal },
+  );
+
+  expect(handlerCalled).toBe(false);
+  expect(decision).toMatchObject({ behavior: "deny", interrupt: true });
+  expect(String(decision.message)).toContain("AskUserQuestion");
+});
+
+test("canUseTool completes only the exact approved deferred ExitPlanMode call", async () => {
+  const canUseTool = createCanUseTool(async () => ({ behavior: "allow" }), {
+    planModeToolPolicy: "resume-approved-exit",
+    approvedExitPlanToolUseId: "tool_approved",
+  });
+
+  const approved = await canUseTool(
+    "ExitPlanMode",
+    { plan: "## Plan\n\nApproved." },
+    { toolUseID: "tool_approved", signal: new AbortController().signal },
+  );
+  const unexpected = await canUseTool(
+    "ExitPlanMode",
+    { plan: "## Plan\n\nUnexpected." },
+    { toolUseID: "tool_other", signal: new AbortController().signal },
+  );
+
+  expect(approved).toMatchObject({ behavior: "allow" });
+  expect(unexpected).toMatchObject({ behavior: "deny", interrupt: true });
 });
 
 test("maps SDK compact_boundary system messages", () => {
@@ -1529,6 +1605,9 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
     expect.arrayContaining(["Write", "Bash", "ExitPlanMode", "EnterPlanMode"]),
   );
   expect(capturedOptions[1]?.allowedTools).not.toContain("AskUserQuestion");
+  const askSystemPrompt = capturedOptions[1]?.systemPrompt as { append?: string } | undefined;
+  expect(askSystemPrompt?.append).toContain("Session mode: ask (read-only)");
+  expect(askSystemPrompt?.append).not.toContain("File edits apply directly");
 
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
@@ -1545,6 +1624,8 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   expect(continuationAgents?.[ecoSubagentKeyForRole("coder")]?.model).toBe("qwen-coder-anthropic");
   expect(continuationAgents).not.toHaveProperty("Explore");
   expect(continuationAgents).not.toHaveProperty("coder");
+  const executionSystemPrompt = capturedOptions[2]?.systemPrompt as { append?: string } | undefined;
+  expect(executionSystemPrompt?.append).toContain("File edits apply directly");
 });
 
 test("ClaudeAgentSdkDriver forwards universal agent registry without coding prompt wrappers", async () => {
@@ -1628,7 +1709,19 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     // Without a researcher route in test `routes`, resolveSdkModelId falls back to planner.
     model: "claude-opus-4",
     tools: ["WebSearch", "WebFetch"],
-    disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
+    disallowedTools: expect.arrayContaining([
+      "Bash",
+      "Agent",
+      "Task",
+      "TaskList",
+      "TaskOutput",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "AskUserQuestion",
+      "ExitPlanMode",
+    ]),
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
     mcpServers: ["sources", "browser"],
     skills: ["workspace-research"],
@@ -2026,6 +2119,19 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
   expect(capturedOptions[0]?.allowedTools).not.toContain("ExitPlanMode");
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
+  const planAgents = capturedOptions[0]?.agents as Record<string, unknown> | undefined;
+  expect(Object.keys(planAgents ?? {}).sort()).toEqual([
+    ecoSubagentKeyForRole("architect"),
+    ecoSubagentKeyForRole("explore"),
+  ]);
+  expect(planAgents).not.toHaveProperty(ecoSubagentKeyForRole("coder"));
+  expect(planAgents).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
+  expect(planAgents).not.toHaveProperty(ecoSubagentKeyForRole("tester"));
+  const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
+  expect(systemPrompt?.append).toContain("Session mode: plan (read-only)");
+  expect(systemPrompt?.append).toContain("Use AskUserQuestion");
+  expect(systemPrompt?.append).not.toContain("File edits apply directly");
+  expect(systemPrompt?.append).not.toContain("use git and tests to verify changes");
   const settings = capturedOptions[0]?.settings as { permissions?: { deny?: string[] } } | undefined;
   expect(settings?.permissions?.deny).not.toContain("Agent(Plan)");
   expect(settings?.permissions?.deny).toContain("Agent(Explore)");
@@ -2144,6 +2250,7 @@ test("ClaudeAgentSdkDriver planning captures plan from deferred_tool_use result 
   expect(ready?.payload).toMatchObject({
     plan: "## Summary\n\nShip the deferred plan.",
     planFilePath: ".claude/plans/deferred.md",
+    deferredExitPlanToolUseId: "tool_exit_deferred",
   });
 });
 
@@ -2193,6 +2300,54 @@ test("ClaudeAgentSdkDriver planning completes after PermissionRequest approval",
 
   const ready = events.find((event) => event.type === "plan.ready");
   expect(ready?.payload).toMatchObject({ plan: "## Summary\n\nShip the captured plan." });
+  expect(ready?.payload).not.toHaveProperty("deferredExitPlanToolUseId");
+});
+
+test("ClaudeAgentSdkDriver execution continuation includes approved plan without SDK resume", async () => {
+  const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        capturedQueries.push({ prompt, options });
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-exec-no-resume",
+              uuid: "result-exec-no-resume",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runContinuation(
+    {
+      threadId: "thr_exec_no_resume",
+      prompt: "继续",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    "execution",
+    {
+      userPrompt: "Add markdown rendering",
+      analysis: "Approved",
+      plan: "## Summary\n\nShip it.",
+    },
+  )) {
+    // drain
+  }
+
+  expect(capturedQueries[0]?.prompt).toContain("No resumable SDK planning session is available");
+  expect(capturedQueries[0]?.prompt).toContain("Approved plan:");
+  expect(capturedQueries[0]?.prompt).toContain("## Summary\n\nShip it.");
 });
 
 test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissionMode", async () => {
@@ -2251,12 +2406,13 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
   expect(setPermissionModeMode).toBe("acceptEdits");
   expect(capturedOptions[0]?.permissionMode).toBe("acceptEdits");
   expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain("Bash");
+  expect(capturedOptions[0]?.disallowedTools ?? []).toContain("ExitPlanMode");
   expect(capturedOptions[0]?.agents).toBeDefined();
   const hooks = capturedOptions[0]?.hooks as Partial<Record<string, Array<{ matcher?: string }>>> | undefined;
   expect(
     hooks?.PermissionRequest?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? [],
   ).toHaveLength(0);
-  expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher === "ExitPlanMode") ?? false).toBe(true);
+  expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher?.includes("ExitPlanMode")) ?? false).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", async () => {
@@ -2264,6 +2420,9 @@ test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", 
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
+    hookContext: {
+      awaitPlanApproval: async () => "approved",
+    },
     loadSdk: async () => ({
       query: ({ options }) => {
         capturedOptions.push(options);
@@ -2296,10 +2455,17 @@ test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", 
 
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.allowedTools).not.toContain("ExitPlanMode");
+  expect(capturedOptions[0]?.allowedTools).toContain("AskUserQuestion");
   expect(capturedOptions[0]?.disallowedTools).toEqual(
     expect.arrayContaining(["ExitPlanMode", "EnterPlanMode", "mcp__eco_plan__finalize_plan"]),
   );
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
+  const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
+  expect(systemPrompt?.append).toContain("Use AskUserQuestion");
+  expect(systemPrompt?.append).toContain("Do not call EnterPlanMode or ExitPlanMode");
+  const hooks = capturedOptions[0]?.hooks as Partial<Record<string, Array<{ matcher?: string }>>> | undefined;
+  expect(hooks?.PermissionRequest ?? []).toHaveLength(0);
+  expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher?.includes("ExitPlanMode")) ?? false).toBe(true);
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 

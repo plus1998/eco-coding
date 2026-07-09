@@ -27,6 +27,8 @@ import {
   captureDeferredExitPlanModeFromResult,
   type EcoHookContext,
   type EcoToolPermissionDecisionAudit,
+  type PlanModeToolPolicy,
+  parseDeferredExitPlanModeResult,
 } from "./eco-sdk-hooks.js";
 import type {
   AgentRuntimeDriver,
@@ -61,11 +63,13 @@ export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js"
 export { type SubagentLaunchRecord, SubagentLaunchRegistry } from "./eco-sdk-hooks.js";
 
 import {
+  buildAutonomousPlanningAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
 } from "./prompts/autonomous.js";
 import {
   ecoBasePromptAppend,
+  ecoExecutionPromptAppend,
   executionArchitectDescription,
   executionArchitectPrompt,
   executionCoderDescription,
@@ -161,6 +165,16 @@ const askAllowedTools = [
 const askDisallowedSdkTools = [...planningDisallowedSdkTools, ...protectedPlanModeToolNames] as const;
 /** Agent / execution: Plan tools belong to sessionMode plan only (align with Ask). */
 const agentDisallowedSdkTools = [...protectedPlanModeToolNames] as const;
+const readOnlyAgentDefinitionDisallowedTools = [
+  "Agent",
+  "Task",
+  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  "Bash",
+  "AskUserQuestion",
+  "Workflow",
+  ...protectedPlanModeToolNames,
+] as const;
 const exploreSubagentTools = ["Read", "Glob", "Grep"] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
 const readOnlySubagentBashTools = [
@@ -174,6 +188,10 @@ const executionCoderTools = [
   "Bash",
 ] as const;
 const autonomousAllowedTools = [...defaultAllowedTools, "AskUserQuestion"] as const;
+const agentSessionRulesAppend = [
+  "Use AskUserQuestion when a missing user decision materially changes the implementation.",
+  "Do not call EnterPlanMode or ExitPlanMode. For complex work, keep an internal task breakdown and execute it directly.",
+].join("\n");
 const universalEcoBasePromptAppend = [
   "You are running inside Eco, a configurable agent command center.",
   "Follow the active Eco orchestration profile and delegate only to the listed Eco subagents.",
@@ -220,13 +238,20 @@ const universalDelegateOptions = {
 } as const;
 
 function buildUniversalPhaseAppend(phase: "plan" | "execute" | "autonomous"): string {
-  const sessionLine =
-    phase === "plan"
-      ? "Session mode: plan (read-only until ExitPlanMode)."
-      : phase === "execute"
-        ? "Session mode: agent (execution)."
-        : "Session mode: agent.";
-  return [sessionLine, "Do not use the SDK Workflow tool."].join("\n");
+  if (phase === "plan") {
+    return [
+      "Session mode: plan (read-only).",
+      "Do not implement, edit files, run Bash, run tests, run builds, or delegate implementation in this phase.",
+      "Use AskUserQuestion when a missing user decision materially changes the plan.",
+      "When the spec is decision-complete, submit a complete Markdown plan with ExitPlanMode.",
+      "The ExitPlanMode tool input must include the complete plan in the `plan` field. Do not call ExitPlanMode with `{}` or only `allowedPrompts`.",
+      "Do not use the SDK Workflow tool.",
+    ].join("\n");
+  }
+  const sessionLine = phase === "execute" ? "Session mode: agent (execution)." : "Session mode: agent.";
+  return [sessionLine, agentSessionRulesAppend, "Do not use the SDK Workflow tool."]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function shouldAppendMainAgentHandsOnBoundary(capability: MainAgentHandsOnCapability): boolean {
@@ -252,6 +277,71 @@ function appendMainAgentHandsOnBoundaryIfNeeded(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function resolveCodingBasePromptAppend(phase: {
+  permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
+  planningPhase?: boolean;
+  askPhase?: boolean;
+}): string {
+  if (phase.permissionMode === "acceptEdits" && phase.planningPhase !== true && phase.askPhase !== true) {
+    return ecoExecutionPromptAppend;
+  }
+  return ecoBasePromptAppend;
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function isReadOnlyPhaseAgentToolAllowed(toolName: string, phaseAllowedTools: ReadonlySet<string>): boolean {
+  const trimmed = toolName.trim();
+  if (
+    trimmed === "Agent" ||
+    trimmed === "Task" ||
+    (SDK_DELEGATION_SUPPORT_TOOL_NAMES as readonly string[]).includes(trimmed) ||
+    (SDK_FILESYSTEM_WRITE_TOOL_NAMES as readonly string[]).includes(trimmed) ||
+    trimmed === "Bash" ||
+    trimmed === "AskUserQuestion" ||
+    trimmed === "Workflow" ||
+    (protectedPlanModeToolNames as readonly string[]).includes(trimmed)
+  ) {
+    return false;
+  }
+  return phaseAllowedTools.has(trimmed) || trimmed.startsWith("mcp__");
+}
+
+function capAgentDefinitionsForReadOnlyPhase(
+  definitions: Record<string, unknown>,
+  phaseAllowedTools: readonly string[],
+): Record<string, unknown> {
+  const phaseAllowed = new Set(phaseAllowedTools);
+  return Object.fromEntries(
+    Object.entries(definitions).map(([key, definition]) => {
+      if (!isRecord(definition)) {
+        return [key, definition];
+      }
+      const tools = readStringArray(definition.tools);
+      const disallowedTools = uniqueStrings([
+        ...readStringArray(definition.disallowedTools),
+        ...readOnlyAgentDefinitionDisallowedTools,
+      ]);
+      return [
+        key,
+        {
+          ...definition,
+          ...(tools.length > 0
+            ? { tools: tools.filter((toolName) => isReadOnlyPhaseAgentToolAllowed(toolName, phaseAllowed)) }
+            : {}),
+          disallowedTools,
+        },
+      ];
+    }),
+  );
 }
 
 function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
@@ -508,6 +598,7 @@ interface FinalizePlanPayload {
   analysis: string;
   plan: string;
   planFilePath?: string;
+  deferredExitPlanToolUseId?: string;
 }
 
 function buildExitPlanModeAnalysis(submission: { planFilePath?: string }): string {
@@ -608,6 +699,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const planFile = planning?.planFilePath?.trim()
       ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
       : undefined;
+    const isSdkResume = Boolean(input.resume?.resumeSessionId);
     const continuationPrompt =
       mode === "execution" && planning
         ? universalProfile
@@ -618,7 +710,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
                 ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
               },
               input.prompt,
-              { isResume: true, includePlanOnResume: planning.planUserEdited === true },
+              { isResume: isSdkResume, includePlanOnResume: planning.planUserEdited === true },
             )
           : buildAutonomousPlanContinuationPrompt({
               userPrompt: planning.userPrompt,
@@ -626,6 +718,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               plan: planning.plan,
               ...(planning.planUserEdited ? { planUserEdited: true } : {}),
               followUp: input.prompt,
+              isResume: isSdkResume,
             })
         : mode === "planning" && universalProfile
           ? buildUniversalPlanningContinuationPrompt(input.prompt)
@@ -642,10 +735,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const sessionResult = yield* this.runSingleSession(input, {
       prompt: continuationPrompt,
       permissionMode: "acceptEdits",
-      approveDeferredExitPlanMode: true,
+      ...(planning?.deferredExitPlanToolUseId
+        ? { approvedExitPlanToolUseId: planning.deferredExitPlanToolUseId }
+        : {}),
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile ? buildUniversalPhaseAppend("execute") : buildAutonomousOrchestratorAppend(),
+        universalProfile
+          ? buildUniversalPhaseAppend("execute")
+          : [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
         handsOn,
         availability,
         universalProfile,
@@ -659,19 +756,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   private async *runPlanningPass(input: AgentRuntimeRunInput, prompt: string): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     const sessionResult = yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "plan",
       planningPhase: true,
       allowedTools: [...planningContinuationAllowedTools],
-      phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile ? buildUniversalPhaseAppend("plan") : buildAutonomousOrchestratorAppend(),
-        handsOn,
-        availability,
-        universalProfile,
-      ),
-      agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
+      phaseAppend: universalProfile ? buildUniversalPhaseAppend("plan") : buildAutonomousPlanningAppend(),
+      agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
     const finalizedPlan = sessionResult.finalizedPlan;
@@ -681,6 +772,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         analysis: finalizedPlan.analysis,
         plan: finalizedPlan.plan,
         ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
+        ...(finalizedPlan.deferredExitPlanToolUseId
+          ? { deferredExitPlanToolUseId: finalizedPlan.deferredExitPlanToolUseId }
+          : {}),
       });
     }
   }
@@ -694,7 +788,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile ? buildUniversalPhaseAppend("autonomous") : buildAutonomousOrchestratorAppend(),
+        universalProfile
+          ? buildUniversalPhaseAppend("autonomous")
+          : [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
         handsOn,
         availability,
         universalProfile,
@@ -711,8 +807,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
       planningPhase?: boolean;
       askPhase?: boolean;
-      /** Execution resume after Eco plan approval: complete the deferred ExitPlanMode call. */
-      approveDeferredExitPlanMode?: boolean;
+      /** Execution resume after Eco plan approval: complete only this deferred ExitPlanMode call. */
+      approvedExitPlanToolUseId?: string;
       allowedTools: string[];
       phaseAppend: string;
       agents?: Record<string, unknown>;
@@ -727,7 +823,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const systemAppend = [
-      usesUniversalAgentProfile(input) ? universalEcoBasePromptAppend : ecoBasePromptAppend,
+      usesUniversalAgentProfile(input) ? universalEcoBasePromptAppend : resolveCodingBasePromptAppend(phase),
       phase.phaseAppend,
     ]
       .filter(Boolean)
@@ -760,6 +856,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : phase.allowedTools;
     const applyPhaseToolCap =
       phase.planningPhase === true || phase.permissionMode === "plan" || phase.permissionMode === "dontAsk";
+    const effectiveDynamicDefinitions =
+      dynamicDefinitions && applyPhaseToolCap
+        ? capAgentDefinitionsForReadOnlyPhase(dynamicDefinitions, phase.allowedTools)
+        : dynamicDefinitions;
     const toolPermissions = input.agentRegistry
       ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
@@ -791,10 +891,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         }
       : undefined;
     const allowedSdkBuiltinAgentKeys = phase.planningPhase ? [SDK_PLAN_AGENT_KEY] : undefined;
-    const approveDeferredExitPlanMode = !phase.planningPhase && phase.approveDeferredExitPlanMode === true;
+    const approvedExitPlanToolUseId = !phase.planningPhase
+      ? phase.approvedExitPlanToolUseId?.trim()
+      : undefined;
+    const planModeToolPolicy: PlanModeToolPolicy = phase.planningPhase
+      ? "user-approval"
+      : approvedExitPlanToolUseId
+        ? "resume-approved-exit"
+        : "forbidden";
     const hookContext = this.options.hookContext;
     const shouldBuildHooks = Boolean(
-      hookContext || onExitPlanMode || approveDeferredExitPlanMode || dynamicAgentKeys || toolPermissions,
+      hookContext ||
+        onExitPlanMode ||
+        approvedExitPlanToolUseId ||
+        dynamicAgentKeys ||
+        toolPermissions ||
+        planModeToolPolicy === "forbidden",
     );
     const mergedAllowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
     const allowedTools = stripProtectedPlanModeAutoApprovedTools(
@@ -806,7 +918,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       toolPermissions?.main.disallowed,
       phase.planningPhase ? planningDisallowedSdkTools : [],
       phase.askPhase ? askDisallowedSdkTools : [],
-      !phase.planningPhase && !phase.askPhase && !approveDeferredExitPlanMode ? agentDisallowedSdkTools : [],
+      !phase.planningPhase
+        ? approvedExitPlanToolUseId
+          ? protectedPlanModeToolNames.filter((toolName) => toolName !== "ExitPlanMode")
+          : agentDisallowedSdkTools
+        : [],
     );
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
     // attributed to the planner role; raw profile model ids are ambiguous when multiple
@@ -838,7 +954,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools,
       ...(sdkDisallowedTools.length > 0 ? { disallowedTools: sdkDisallowedTools } : {}),
       ...(this.options.toolPermissionHandler
-        ? { canUseTool: createCanUseTool(this.options.toolPermissionHandler) }
+        ? {
+            canUseTool: createCanUseTool(this.options.toolPermissionHandler, {
+              planModeToolPolicy,
+              ...(approvedExitPlanToolUseId ? { approvedExitPlanToolUseId } : {}),
+            }),
+          }
         : {}),
       systemPrompt,
       tools: { type: "preset", preset: "claude_code" },
@@ -846,6 +967,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? {
             hooks: buildEcoSdkHooks({
               ...(this.options.hookContext ?? {}),
+              planModeToolPolicy,
               ...(input.sdkSession?.implicitReadAllowRoots?.length
                 ? { implicitReadAllowRoots: input.sdkSession.implicitReadAllowRoots }
                 : {}),
@@ -854,7 +976,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
                 ? { awaitPlanApproval: this.options.hookContext.awaitPlanApproval }
                 : {}),
               ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
-              ...(approveDeferredExitPlanMode ? { approveDeferredExitPlanMode: true } : {}),
+              ...(approvedExitPlanToolUseId ? { approvedExitPlanToolUseId } : {}),
               ...(phase.planningPhase ? { getPhaseTranscript: () => phaseTranscriptBox.text } : {}),
               workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
@@ -884,8 +1006,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
     }
-    if (dynamicDefinitions) {
-      queryOptions.agents = dynamicDefinitions;
+    if (effectiveDynamicDefinitions) {
+      queryOptions.agents = effectiveDynamicDefinitions;
     } else if (phase.agents) {
       queryOptions.agents = phase.agents;
     }
@@ -980,10 +1102,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       // call (`deferred_tool_use`). The PreToolUse capture covers the same tool use id, so
       // this only lands when the hook path missed it.
       if (onExitPlanMode) {
-        await captureDeferredExitPlanModeFromResult(message, onExitPlanMode, exitPlanCaptureState, {
-          searchRoots: [input.workspacePath, sessionCwd],
-          getPhaseTranscript: () => phaseTranscriptBox.text,
-        });
+        const capturedDeferredExit = await captureDeferredExitPlanModeFromResult(
+          message,
+          onExitPlanMode,
+          exitPlanCaptureState,
+          {
+            searchRoots: [input.workspacePath, sessionCwd],
+            getPhaseTranscript: () => phaseTranscriptBox.text,
+          },
+        );
+        const deferredExit = capturedDeferredExit ? parseDeferredExitPlanModeResult(message) : undefined;
+        if (finalizedPlan && deferredExit) {
+          finalizedPlan.deferredExitPlanToolUseId = deferredExit.toolUseId;
+        }
       }
 
       if (input.signal.aborted) {
@@ -1429,6 +1560,7 @@ function drainToolPermissionDecisionEvents(
 }
 
 export {
+  buildAutonomousPlanningAppend,
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
 } from "./prompts/autonomous.js";
@@ -1650,7 +1782,7 @@ function mapTaskSystemMessageToEvents(
           ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
           ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
         },
-        messageParentToolUseId,
+        ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
       },
       streamCtx,
     ),
@@ -1777,7 +1909,7 @@ export function mapSdkMessageToEvents(
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
           },
-          messageParentToolUseId,
+          ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
         },
         streamCtx,
       ),
@@ -1865,7 +1997,7 @@ export function mapSdkMessageToEvents(
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
           },
-          messageParentToolUseId,
+          ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
         },
         streamCtx,
       ),
@@ -2021,7 +2153,7 @@ function mapAssistantMessageToEvents(
                 subagent_type: block.input.subagent_type,
               }),
           },
-          messageParentToolUseId,
+          ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
         },
         streamCtx,
       ),
@@ -2052,6 +2184,10 @@ function hasEmittedStreamBlockKind(
 
 export function createCanUseTool(
   handler: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>,
+  config: {
+    planModeToolPolicy?: PlanModeToolPolicy;
+    approvedExitPlanToolUseId?: string;
+  } = {},
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -2059,21 +2195,32 @@ export function createCanUseTool(
 ) => Promise<Record<string, unknown>> {
   return async (toolName, input, options) => {
     const normalizedToolName = toolName.trim();
-    // ExitPlanMode is captured/deferred by Eco hooks; canUseTool must not block the SDK flow.
-    // Other plan-submission tools stay protected so generic auto-approval cannot bypass Eco UI.
-    if (normalizedToolName !== "ExitPlanMode" && isProtectedPlanModeToolName(normalizedToolName)) {
+    const planModeToolPolicy = config.planModeToolPolicy ?? "forbidden";
+    const toolUseId = readStringOption(options, ["toolUseID", "toolUseId", "tool_use_id"]);
+    const exitPlanModeAllowed =
+      normalizedToolName === "ExitPlanMode" &&
+      (planModeToolPolicy === "user-approval" ||
+        (planModeToolPolicy === "resume-approved-exit" &&
+          Boolean(config.approvedExitPlanToolUseId?.trim()) &&
+          toolUseId === config.approvedExitPlanToolUseId?.trim()));
+    if (isProtectedPlanModeToolName(normalizedToolName) && !exitPlanModeAllowed) {
       return {
         behavior: "deny",
         message:
-          "Eco Plan approval is handled by Plan Mode hooks and the Eco approval UI; generic tool auto-approval must not approve this tool.",
+          planModeToolPolicy === "forbidden"
+            ? "Plan Mode tools are unavailable in Agent and Ask sessions. Use AskUserQuestion when clarification is required."
+            : "Eco Plan approval is handled by Plan Mode hooks and the Eco approval UI; generic tool auto-approval must not approve this tool.",
         interrupt: true,
       };
+    }
+    if (exitPlanModeAllowed) {
+      return { behavior: "allow", updatedInput: input };
     }
 
     const request: SdkToolPermissionRequest = {
       toolName,
       input,
-      toolUseId: readStringOption(options, ["toolUseID", "toolUseId", "tool_use_id"]) ?? crypto.randomUUID(),
+      toolUseId: toolUseId ?? crypto.randomUUID(),
       signal: options.signal instanceof AbortSignal ? options.signal : new AbortController().signal,
     };
     const agentId = readStringOption(options, ["agentID", "agentId", "agent_id"]);

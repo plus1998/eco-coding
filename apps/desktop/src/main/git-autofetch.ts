@@ -15,7 +15,7 @@ export interface GitAutoFetcherOptions {
 }
 
 export class GitAutoFetcher {
-  private workspacePath?: string;
+  private workspacePath: string | undefined;
   private autofetchEnabled = true;
   private periodMs = DEFAULT_GIT_AUTOFETCH_PERIOD_SECONDS * 1000;
   private windowFocused = true;

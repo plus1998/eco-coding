@@ -108,6 +108,9 @@ export function buildThreadRunProjection(
         discoveredAgentsById.get(agentId) ??
         agentRecordFromStartedEvent(event) ??
         agentRecordFromDelegationLink(event, parentToolUseId);
+      if (!linked) {
+        return;
+      }
       const withParent =
         linked.parentToolUseId?.trim() === parentToolUseId
           ? linked

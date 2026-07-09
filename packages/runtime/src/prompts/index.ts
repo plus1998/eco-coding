@@ -4,6 +4,7 @@ export {
 } from "./autonomous.js";
 export {
   ecoBasePromptAppend,
+  ecoExecutionPromptAppend,
   executeCoreGoalAppend,
 } from "./eco-common.js";
 export {

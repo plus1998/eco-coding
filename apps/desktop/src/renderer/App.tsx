@@ -2301,7 +2301,7 @@ function App() {
       profileAssignedServers: selectedRuntimeProfile
         ? collectProfileAssignedMcpServers(selectedRuntimeProfile, settings.agentTemplates)
         : [],
-      remembered: workflowSettings.mcpServersEnabled,
+      ...(workflowSettings.mcpServersEnabled ? { remembered: workflowSettings.mcpServersEnabled } : {}),
     });
   }, [
     composerRuntimeConfig?.mcpServersEnabled,
@@ -4150,8 +4150,12 @@ function App() {
               profileAssignedServers: profile
                 ? collectProfileAssignedMcpServers(profile, settings.agentTemplates)
                 : [],
-              existing: composerRuntimeConfig.mcpServersEnabled,
-              remembered: workflowSettings.mcpServersEnabled,
+              ...(composerRuntimeConfig.mcpServersEnabled
+                ? { existing: composerRuntimeConfig.mcpServersEnabled }
+                : {}),
+              ...(workflowSettings.mcpServersEnabled
+                ? { remembered: workflowSettings.mcpServersEnabled }
+                : {}),
             }),
           }
         : {}),

@@ -299,9 +299,10 @@ Eco Composer 三档模式由用户显式选择（`sessionMode: agent | plan | as
 | `sessionMode` | SDK `permissionMode` | 典型入口 |
 |---------------|----------------------|----------|
 | **agent** | `acceptEdits` | `driver.run()` / execution continuation |
-| **plan** | `plan` | `runContinuation("planning")` |
+| **plan** | `plan` | `driver.runPlan()` / `runContinuation("planning")` |
 | **ask** | `dontAsk`（只读工具集；禁用 Plan 工具） | `driver.runAsk()` / `runContinuation("ask")` |
-| **plan** | `plan`（调研 + `AskUserQuestion` + `ExitPlanMode`） | `driver.runPlan()` / `runContinuation("planning")` |
+
+Agent 模式保留 `AskUserQuestion`，但 `EnterPlanMode` / `ExitPlanMode` 在 SDK deny、PreToolUse 和 `canUseTool` 三层均被拒绝。Plan 模式的 `ExitPlanMode` 只能进入 Eco 审批桥；兼容 deferred resume 时仅允许原始已批准 `toolUseId` 完成一次。
 
 ### Eco 子代理 vs SDK 内置
 

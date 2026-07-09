@@ -145,7 +145,7 @@ export function evaluateFilesystemReadConfirmation(
   if (resolved.kind === "deny") {
     return toConfirmationDecision({
       action: "deny",
-      reason: resolved.reason,
+      reason: resolved.reason ?? filesystemReadScopeAskReason(input.toolName, resolved.displayPath, scopeRoot),
       riskScore: 100,
       riskLevel: "high",
       matchedRule: "filesystem_outside_scope",
@@ -285,7 +285,7 @@ function bashPolicyToConfirmation(policy: BashPolicyDecision): ToolConfirmationD
     reason: policy.reason,
     riskScore: policy.riskScore,
     riskLevel: policy.riskLevel,
-    matchedRule: policy.matchedRule,
+    ...(policy.matchedRule ? { matchedRule: policy.matchedRule } : {}),
   });
 }
 

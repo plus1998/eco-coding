@@ -394,6 +394,8 @@ export function buildToolPermissionPolicyFromProfile(
 ): EcoRuntimeToolPermissionPolicy {
   const explicitAgentKeys = options.agentKeys ? new Set(options.agentKeys) : undefined;
   const templateById = new Map(templates.map((template) => [template.id, template]));
+  const phaseCapTools =
+    options.phaseAllowedTools && options.phaseAllowedTools.length > 0 ? options.phaseAllowedTools : undefined;
   const agents: Record<string, EcoRuntimeToolPermissionEntry> = {};
   const builtinExploreKey = ecoSubagentKeyForRole("explore");
   if (!explicitAgentKeys || explicitAgentKeys.has(builtinExploreKey)) {
@@ -411,10 +413,8 @@ export function buildToolPermissionPolicyFromProfile(
     if (!template) {
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
-    agents[sdkKey] = resolveAgentToolPermission(agent, template);
+    agents[sdkKey] = resolveAgentToolPermission(agent, template, phaseCapTools);
   }
-  const phaseCapTools =
-    options.phaseAllowedTools && options.phaseAllowedTools.length > 0 ? options.phaseAllowedTools : undefined;
   const mainToolPolicy = phaseCapTools
     ? capEcoToolPolicyForPhase(profile.mainAgent.tools, phaseCapTools)
     : materializeEcoToolPolicy(profile.mainAgent.tools);
@@ -569,12 +569,29 @@ function resolveProfileAgentSkills(
 function resolveAgentToolPermission(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
+  phaseAllowedTools?: readonly string[],
 ): EcoRuntimeToolPermissionEntry {
   const tools = applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation);
+  const childPhaseAllowedTools = phaseAllowedTools
+    ? phaseAllowedTools.filter((tool) => !isReadOnlyChildAgentBlockedTool(tool))
+    : undefined;
+  const effectiveTools = childPhaseAllowedTools ? capEcoToolPolicyForPhase(tools, childPhaseAllowedTools) : tools;
+  const skillExtraAllowed = childPhaseAllowedTools
+    ? [SDK_SKILL_TOOL_NAME].filter((tool) => childPhaseAllowedTools.includes(tool))
+    : [SDK_SKILL_TOOL_NAME];
   return normalizeToolPermissionEntry(
-    tools,
-    [SDK_SKILL_TOOL_NAME],
-    resolveAssignedMcpServers(tools, [...template.mcpServers, ...agent.mcpServers]),
+    effectiveTools,
+    skillExtraAllowed,
+    resolveAssignedMcpServers(effectiveTools, [...template.mcpServers, ...agent.mcpServers]),
+  );
+}
+
+function isReadOnlyChildAgentBlockedTool(toolName: string): boolean {
+  return (
+    toolName === "Agent" ||
+    toolName === "Task" ||
+    (SDK_DELEGATION_SUPPORT_TOOL_NAMES as readonly string[]).includes(toolName) ||
+    toolName === "AskUserQuestion"
   );
 }
 

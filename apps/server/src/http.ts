@@ -122,13 +122,14 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
     },
     websocket: {
       async open(ws) {
+        const clientIp = normalizeIpAddress(ws.remoteAddress);
         const peer: RpcPeer = {
           sessionId: ws.data.sessionId,
           userId: ws.data.claims.userId,
           deviceId: ws.data.claims.deviceId,
           deviceKind: ws.data.claims.deviceKind,
           capabilities: ws.data.claims.capabilities,
-          clientIp: normalizeIpAddress(ws.remoteAddress),
+          ...(clientIp ? { clientIp } : {}),
           send(message) {
             ws.send(JSON.stringify(message));
           },
@@ -260,9 +261,11 @@ export async function handleEcoHttpRoute(input: {
     assertCapability(claims, "device:admin");
     const body = await readJsonObject(request);
     const kind = requireDeviceKind(body, "kind");
+    const metadataInput = readOptionalDeviceMetadata(body.metadata);
+    const clientIp = resolveClientIp(request);
     const metadata = enrichDeviceMetadata({
-      metadata: readOptionalDeviceMetadata(body.metadata),
-      clientIp: resolveClientIp(request),
+      ...(metadataInput ? { metadata: metadataInput } : {}),
+      ...(clientIp ? { clientIp } : {}),
       deviceKind: kind,
     });
     const registered = await devices.registerDevice({
@@ -315,9 +318,11 @@ export async function handleEcoHttpRoute(input: {
       throw new Error("Device was not found.");
     }
     const body = await readJsonObject(request);
+    const metadataInput = readOptionalDeviceMetadata(body.metadata);
+    const clientIp = resolveClientIp(request);
     const metadata = enrichDeviceMetadata({
-      metadata: readOptionalDeviceMetadata(body.metadata),
-      clientIp: resolveClientIp(request),
+      ...(metadataInput ? { metadata: metadataInput } : {}),
+      ...(clientIp ? { clientIp } : {}),
       deviceKind: existing.kind,
     });
     const device = await devices.updateDeviceProfile({

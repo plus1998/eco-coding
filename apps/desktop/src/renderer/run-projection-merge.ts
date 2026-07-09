@@ -149,23 +149,55 @@ function mergeProjectionTimelines(
   incoming: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem[] {
   const incomingById = new Map(incoming.map((item) => [item.id, item]));
+  let changed = false;
   const merged = current.map((item) => {
     const update = incomingById.get(item.id);
     if (!update) {
       return item;
     }
     const next = mergeStreamTimelineItem(item, update, incoming);
-    return timelineItemsEqual(item, next) ? item : next;
+    if (timelineItemsEqual(item, next)) {
+      return item;
+    }
+    changed = true;
+    return next;
   });
   const knownIds = new Set(merged.map((item) => item.id));
   for (const item of incoming) {
     if (!knownIds.has(item.id)) {
       merged.push(item);
       knownIds.add(item.id);
+      changed = true;
     }
+  }
+  if (!changed) {
+    return current as ThreadRunProjectionTimelineItem[];
   }
   merged.sort(compareTimelineItems);
   return merged;
+}
+
+function projectionAgentStableSignature(agent: ThreadRunProjectionAgent): string {
+  const isActive = agent.status === "active" || agent.status === "launching";
+  return JSON.stringify({
+    agentId: agent.agentId,
+    role: agent.role,
+    kind: agent.kind,
+    status: agent.status,
+    startedAt: agent.startedAt,
+    durationMs: isActive ? undefined : agent.durationMs,
+    runAttemptId: agent.runAttemptId,
+    parentAgentId: agent.parentAgentId,
+    parentToolUseId: agent.parentToolUseId,
+    mission: agent.mission,
+    delegationSummary: agent.delegationSummary,
+    delegationPrompt: agent.delegationPrompt,
+    todoId: agent.todoId,
+    endedAt: agent.endedAt,
+    latestActivity: agent.latestActivity,
+    usage: agent.usage,
+    context: agent.context,
+  });
 }
 
 function mergeProjectionAgents(
@@ -174,14 +206,27 @@ function mergeProjectionAgents(
 ): ThreadRunProjectionAgent[] {
   const currentById = new Map(current.map((agent) => [agent.agentId, agent]));
   const incomingIds = new Set(incoming.map((agent) => agent.agentId));
+  let changed = false;
   const merged = incoming.map((agent) => {
     const currentAgent = currentById.get(agent.agentId);
     if (!currentAgent) {
+      changed = true;
       return agent;
     }
-    return {
+    const timeline = mergeProjectionTimelines(currentAgent.timeline, agent.timeline);
+    const nextAgent = {
       ...agent,
-      timeline: mergeProjectionTimelines(currentAgent.timeline, agent.timeline),
+      timeline,
+    };
+    if (
+      timeline === currentAgent.timeline &&
+      projectionAgentStableSignature(currentAgent) === projectionAgentStableSignature(nextAgent)
+    ) {
+      return currentAgent;
+    }
+    changed = true;
+    return {
+      ...nextAgent,
     };
   });
 
@@ -190,6 +235,9 @@ function mergeProjectionAgents(
       merged.push(agent);
     }
   }
+  if (!changed) {
+    return current as ThreadRunProjectionAgent[];
+  }
   return merged;
 }
 
@@ -197,10 +245,23 @@ function mergeTrimmedIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
+  const timeline = mergeProjectionTimelines(current.timeline, incoming.timeline);
+  const agents = mergeProjectionAgents(current.agents, incoming.agents);
+  if (
+    timeline === current.timeline &&
+    agents === current.agents &&
+    incoming.sourceEventCount === current.sourceEventCount &&
+    projectionThreadStableSignature(incoming) === projectionThreadStableSignature(current) &&
+    JSON.stringify(incoming.attempts) === JSON.stringify(current.attempts) &&
+    JSON.stringify(incoming.requestSpans) === JSON.stringify(current.requestSpans) &&
+    JSON.stringify(incoming.diagnostics) === JSON.stringify(current.diagnostics)
+  ) {
+    return current;
+  }
   return {
     ...incoming,
-    timeline: mergeProjectionTimelines(current.timeline, incoming.timeline),
-    agents: mergeProjectionAgents(current.agents, incoming.agents),
+    timeline,
+    agents,
     sourceEventCount: Math.max(current.sourceEventCount, incoming.sourceEventCount),
   };
 }
@@ -209,12 +270,34 @@ function mergeIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
+  const timeline = mergeProjectionTimelines(current.timeline, incoming.timeline);
+  const agents = mergeProjectionAgents(current.agents, incoming.agents);
+  if (
+    timeline === current.timeline &&
+    agents === current.agents &&
+    incoming.sourceEventCount === current.sourceEventCount &&
+    projectionThreadStableSignature(incoming) === projectionThreadStableSignature(current) &&
+    JSON.stringify(incoming.attempts) === JSON.stringify(current.attempts) &&
+    JSON.stringify(incoming.requestSpans) === JSON.stringify(current.requestSpans) &&
+    JSON.stringify(incoming.diagnostics) === JSON.stringify(current.diagnostics)
+  ) {
+    return current;
+  }
   return {
     ...incoming,
-    timeline: mergeProjectionTimelines(current.timeline, incoming.timeline),
-    agents: mergeProjectionAgents(current.agents, incoming.agents),
+    timeline,
+    agents,
     sourceEventCount: Math.max(current.sourceEventCount, incoming.sourceEventCount),
   };
+}
+
+function projectionThreadStableSignature(snapshot: ThreadRunProjectionSnapshot): string {
+  return JSON.stringify({
+    threadId: snapshot.thread.threadId,
+    status: snapshot.thread.status,
+    message: snapshot.thread.message,
+    currentAttemptId: snapshot.thread.currentAttemptId,
+  });
 }
 
 export function mergeThreadRunProjectionUpdate(

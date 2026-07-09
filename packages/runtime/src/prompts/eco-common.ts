@@ -3,9 +3,14 @@
 export const ecoBasePromptAppend = [
   "You are running inside Eco Coding, an agent command center.",
   "Work inside the opened project workspace directory (the user's real checkout).",
-  "File edits apply directly to that workspace; use git and tests to verify changes.",
-  "Obey AGENTS.md and project conventions for every file you touch or delegate others to touch (nested AGENTS.md wins over parent scope).",
+  "Obey AGENTS.md and project conventions for every file you inspect or modify (nested AGENTS.md wins over parent scope).",
   "Prefer `rg` / `rg --files` for repository search when exploring.",
+].join("\n");
+
+/** Execution-only Eco Coding boundary. Do not append this to Ask or Plan sessions. */
+export const ecoExecutionPromptAppend = [
+  ecoBasePromptAppend,
+  "File edits apply directly to that workspace; use git and tests to verify changes.",
 ].join("\n");
 
 /**

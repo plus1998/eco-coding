@@ -90,6 +90,6 @@ test("agent profile archive parser accepts arrays and single profile objects", (
 
 test("agent profile archive parser rejects unrelated JSON", () => {
   expect(() => parseAgentProfileArchive(JSON.stringify({ hello: "world" }))).toThrow(
-    "导入文件没有包含 Agent Profiles",
+    "导入文件没有包含智能体配置",
   );
 });

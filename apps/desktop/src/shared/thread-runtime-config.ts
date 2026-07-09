@@ -258,7 +258,9 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
       ? {
           mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
             profileAssignedServers: profileAssignedMcpServers,
-            remembered: input.workflowDefaults.mcpServersEnabled,
+            ...(input.workflowDefaults.mcpServersEnabled
+              ? { remembered: input.workflowDefaults.mcpServersEnabled }
+              : {}),
           }),
         }
       : {}),

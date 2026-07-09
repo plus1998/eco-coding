@@ -4,13 +4,18 @@ export type ThreadPendingPlanWithRoutes = ThreadPendingPlan & { routesJson: stri
 
 export type ThreadPlanReadyPayload = Pick<
   ThreadPendingPlan,
+  "analysis" | "plan" | "userPrompt" | "planFilePath" | "deferredExitPlanToolUseId"
+>;
+
+type ThreadPlanReadyDisplayPayload = Pick<
+  ThreadPendingPlan,
   "analysis" | "plan" | "userPrompt" | "planFilePath"
 >;
 
 export interface ThreadPlanReadyAwaitingPlanEvent {
   threadId: string;
   message: string;
-  plan: ThreadPlanReadyPayload;
+  plan: ThreadPlanReadyDisplayPayload;
 }
 
 export interface ThreadPlanReadyEffects {
@@ -33,6 +38,15 @@ export interface AppliedThreadPlanReadyEffects {
   pendingPlan: ThreadPendingPlanWithRoutes;
 }
 
+export function buildExecutionFailureRestorePendingPlan(
+  pending: ThreadPendingPlanWithRoutes,
+): ThreadPendingPlanWithRoutes {
+  return {
+    ...pending,
+    routesJson: pending.routesJson || "[]",
+  };
+}
+
 export function applyThreadPlanReadyEffects(
   input: ApplyThreadPlanReadyEffectsInput,
 ): AppliedThreadPlanReadyEffects {
@@ -45,8 +59,11 @@ export function applyThreadPlanReadyEffects(
     worktreePath: input.worktreePath,
     routesJson: input.routesJson,
     ...(input.payload.planFilePath ? { planFilePath: input.payload.planFilePath } : {}),
+    ...(input.payload.deferredExitPlanToolUseId
+      ? { deferredExitPlanToolUseId: input.payload.deferredExitPlanToolUseId }
+      : {}),
   };
-  const plan: ThreadPlanReadyPayload = {
+  const plan: ThreadPlanReadyDisplayPayload = {
     userPrompt: input.payload.userPrompt,
     analysis: input.payload.analysis,
     plan: input.payload.plan,

@@ -901,17 +901,45 @@ function projectionSubagentDetailTimelineRequestSpanSignature(
     .join("|");
 }
 
-function buildSubagentDetailFeedEntries(
+function useStableSubagentDetailFeedEntries(
   agentId: string,
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): SubagentDetailFeedEntry[] {
-  return timeline.map((item) => ({
-    kind: "timeline",
-    key: `subagent-timeline:${agentId}:${item.id}`,
-    item,
-    at: item.at,
-    sequence: item.sequence,
-  }));
+  const cacheRef = useRef(
+    new Map<string, { signature: string; entry: SubagentDetailFeedEntry }>(),
+  );
+  const agentIdRef = useRef(agentId);
+  return useMemo(() => {
+    if (agentIdRef.current !== agentId) {
+      agentIdRef.current = agentId;
+      cacheRef.current.clear();
+    }
+    const activeKeys = new Set<string>();
+    const entries = timeline.map((item) => {
+      const key = `subagent-timeline:${agentId}:${item.id}`;
+      activeKeys.add(key);
+      const signature = projectionTimelineItemRenderSignature(item);
+      const cached = cacheRef.current.get(key);
+      if (cached?.signature === signature) {
+        return cached.entry;
+      }
+      const entry: SubagentDetailFeedEntry = {
+        kind: "timeline",
+        key,
+        item,
+        at: item.at,
+        sequence: item.sequence,
+      };
+      cacheRef.current.set(key, { signature, entry });
+      return entry;
+    });
+    for (const key of cacheRef.current.keys()) {
+      if (!activeKeys.has(key)) {
+        cacheRef.current.delete(key);
+      }
+    }
+    return entries;
+  }, [agentId, timeline]);
 }
 
 function areProjectionSubagentDetailFeedEntryPropsEqual(
@@ -1184,10 +1212,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
       agent.timeline.filter((item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText))),
     [agent.timeline, missionText],
   );
-  const detailFeedEntries = useMemo(
-    () => buildSubagentDetailFeedEntries(agent.agentId, filteredTimeline),
-    [agent.agentId, filteredTimeline],
-  );
+  const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, filteredTimeline);
   const latestTimelineItem = filteredTimeline.at(-1);
   const layoutSignature = [
     agent.agentId,

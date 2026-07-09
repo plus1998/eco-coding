@@ -1,5 +1,7 @@
 import type { ThreadRunToolMetadata } from "./thread-run-events";
 import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
+import type { McpServersEnabledSettings } from "./composer-mcp";
+import type { McpSettingsSnapshot } from "./mcp";
 
 export const IPC_CHANNELS = {
   appSetThemeSource: "app:set-theme-source",
@@ -810,6 +812,8 @@ export interface ThreadPendingPlan {
   worktreePath: string;
   /** Claude Code `.claude/plans/` path (workspace-relative when possible). */
   planFilePath?: string;
+  /** Exact deferred ExitPlanMode call that may complete after approval. */
+  deferredExitPlanToolUseId?: string;
 }
 
 /** Approve execution of the pending plan captured from the planner. */

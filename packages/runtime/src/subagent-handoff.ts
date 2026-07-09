@@ -100,8 +100,9 @@ export function buildFallbackSubagentHandoffSummary(
       任务目标: originalPrompt.trim() || "无",
     });
   }
+  const taskGoal = originalPrompt.trim();
   return buildStructuredCompactFallback({
-    taskGoal: originalPrompt.trim() || undefined,
+    ...(taskGoal ? { taskGoal } : {}),
     olderMessages,
   });
 }

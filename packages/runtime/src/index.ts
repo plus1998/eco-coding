@@ -70,6 +70,8 @@ export interface EcoPlanningContext {
   planFilePath?: string;
   /** User edited plan/analysis in Eco UI before approving execution. */
   planUserEdited?: boolean;
+  /** Exact deferred ExitPlanMode tool use approved with this plan, when fallback resume is required. */
+  deferredExitPlanToolUseId?: string;
 }
 
 export interface AgentRuntimeDriver {

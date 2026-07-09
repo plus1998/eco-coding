@@ -16,9 +16,9 @@ import {
   createExitPlanModeAwaitApprovalHook,
   createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
-  createExitPlanModeResumeApproveHook,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
+  createPlanModeBoundaryPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
   createSubagentLaunchPreToolHook,
@@ -26,16 +26,20 @@ import {
   createSubagentStopHook,
   createSubagentToolAttributionPreToolHook,
   createTaskCreatedHook,
-  resolveSubagentStartParentToolUseId,
-  SubagentLaunchRegistry,
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
   parseDeferredExitPlanModeResult,
   parseExitPlanModeInput,
   parseExitPlanModeOutput,
+  resolveSubagentStartParentToolUseId,
+  SubagentLaunchRegistry,
 } from "../src/eco-sdk-hooks";
-import { ecoSubagentKeyForRole, SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "../src/subagent-availability";
+import {
+  ecoSubagentKeyForRole,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
+} from "../src/subagent-availability";
 
 test("parseExitPlanModeInput reads injected plan payload", () => {
   const parsed = parseExitPlanModeInput({
@@ -356,52 +360,6 @@ test("createExitPlanModePreToolHook captures injected plan and defers SDK comple
     hookEventName: "PreToolUse",
     permissionDecision: "defer",
   });
-});
-
-test("createExitPlanModeResumeApproveHook allows deferred ExitPlanMode with echoed input", async () => {
-  const hook = createExitPlanModeResumeApproveHook();
-
-  const result = await hook(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "ExitPlanMode",
-      tool_input: { allowedPrompts: [{ tool: "Bash", prompt: "run tests" }] },
-      tool_use_id: "tool_exit_resume",
-      session_id: "s1",
-      cwd: "/tmp/workspace",
-      plan: "## Summary\n\nApproved plan.",
-      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
-    } as PreToolUseHookInput & { plan: string; planFilePath: string },
-    "tool_exit_resume",
-    { signal: new AbortController().signal },
-  );
-
-  expect(result.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "allow",
-    updatedInput: {
-      allowedPrompts: [{ tool: "Bash", prompt: "run tests" }],
-      plan: "## Summary\n\nApproved plan.",
-      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
-    },
-  });
-});
-
-test("createExitPlanModeResumeApproveHook ignores other tools", async () => {
-  const hook = createExitPlanModeResumeApproveHook();
-  const result = await hook(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "Bash",
-      tool_input: { command: "echo hi" },
-      tool_use_id: "tool_bash",
-      session_id: "s1",
-      cwd: "/tmp",
-    } satisfies PreToolUseHookInput,
-    "tool_bash",
-    { signal: new AbortController().signal },
-  );
-  expect(result).toEqual({});
 });
 
 test("parseDeferredExitPlanModeResult reads deferred_tool_use from result message", () => {
@@ -2411,7 +2369,7 @@ test("buildEcoSdkHooks does not register AskUserQuestion PreToolUse hooks", () =
   expect(hooks.PostToolUse ?? []).toHaveLength(0);
 });
 
-test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without planning capture", async () => {
+test("buildEcoSdkHooks permits only the exact approved deferred ExitPlanMode call", async () => {
   const exitPlanInput = {
     hook_event_name: "PreToolUse",
     tool_name: "ExitPlanMode",
@@ -2422,9 +2380,9 @@ test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without p
     plan: "## Summary\n\nApproved plan.",
   } as PreToolUseHookInput & { plan: string };
 
-  const executionHooks = buildEcoSdkHooks({ approveDeferredExitPlanMode: true });
-  const exitPlanMatchers = executionHooks.PreToolUse?.filter(
-    (matcher) => matcher.matcher === "ExitPlanMode",
+  const executionHooks = buildEcoSdkHooks({ approvedExitPlanToolUseId: "tool_exit" });
+  const exitPlanMatchers = executionHooks.PreToolUse?.filter((matcher) =>
+    matcher.matcher?.includes("ExitPlanMode"),
   );
   expect(exitPlanMatchers).toHaveLength(1);
   const approveResult = await exitPlanMatchers![0]!.hooks[0]!(exitPlanInput, "tool_exit", {
@@ -2434,6 +2392,10 @@ test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without p
     permissionDecision: "allow",
     updatedInput: { plan: "## Summary\n\nApproved plan." },
   });
+  const deniedResult = await exitPlanMatchers![0]!.hooks[0]!(exitPlanInput, "tool_other", {
+    signal: new AbortController().signal,
+  });
+  expect(deniedResult.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
 
   const planningHooks = buildEcoSdkHooks({
     onExitPlanMode: () => {},
@@ -2443,9 +2405,9 @@ test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without p
     (matcher) => matcher.matcher === "ExitPlanMode",
   );
   expect(planningPermissionMatchers).toHaveLength(1);
-  expect(planningHooks.PreToolUse?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? []).toHaveLength(
-    0,
-  );
+  expect(
+    planningHooks.PreToolUse?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? [],
+  ).toHaveLength(0);
   const allowResult = await planningPermissionMatchers![0]!.hooks[0]!(
     {
       hook_event_name: "PermissionRequest",
@@ -2462,6 +2424,49 @@ test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without p
     hookEventName: "PermissionRequest",
     decision: { behavior: "allow" },
   });
+});
+
+test("createPlanModeBoundaryPreToolHook denies ExitPlanMode in Agent mode", async () => {
+  const hook = createPlanModeBoundaryPreToolHook("forbidden");
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: { plan: "## Plan" },
+      tool_use_id: "tool_exit",
+      session_id: "s1",
+      cwd: "/tmp/workspace",
+    } as PreToolUseHookInput,
+    "tool_exit",
+    { signal: new AbortController().signal },
+  );
+  expect(result.hookSpecificOutput).toMatchObject({
+    permissionDecision: "deny",
+  });
+  expect(String(result.hookSpecificOutput?.permissionDecisionReason)).toContain("AskUserQuestion");
+});
+
+test("buildEcoSdkHooks keeps Agent mode forbidden when an approval callback is available", async () => {
+  const hooks = buildEcoSdkHooks({
+    planModeToolPolicy: "forbidden",
+    awaitPlanApproval: async () => "approved",
+  });
+  expect(hooks.PermissionRequest ?? []).toHaveLength(0);
+  const boundary = hooks.PreToolUse?.find((matcher) => matcher.matcher?.includes("ExitPlanMode"));
+  expect(boundary).toBeDefined();
+  const result = await boundary!.hooks[0]!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: { plan: "## Plan" },
+      tool_use_id: "tool_exit",
+      session_id: "s1",
+      cwd: "/tmp/workspace",
+    } as PreToolUseHookInput,
+    "tool_exit",
+    { signal: new AbortController().signal },
+  );
+  expect(result.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
 });
 
 test("createPreCompactHook delegates trigger and session id", async () => {

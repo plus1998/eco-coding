@@ -146,8 +146,10 @@ export interface EcoHookContext {
   ) => Promise<PlanApprovalDecision>;
   /** Tracks ExitPlanMode captures to avoid duplicate Pre/Post hook submissions. */
   exitPlanCaptureState?: { capturedToolUseIds: Set<string> };
-  /** Execution resume: auto-approve the deferred ExitPlanMode call (official defer protocol step 5). */
-  approveDeferredExitPlanMode?: boolean;
+  /** Execution resume: only this previously approved deferred ExitPlanMode call may complete. */
+  approvedExitPlanToolUseId?: string;
+  /** Explicit current phase boundary; do not infer Agent mode from available callbacks. */
+  planModeToolPolicy?: PlanModeToolPolicy;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
   subagentLaunchRegistry?: SubagentLaunchRegistry;
@@ -194,6 +196,8 @@ export interface SdkExitPlanModeRequest {
 }
 
 export type PlanApprovalDecision = "approved" | "denied";
+
+export type PlanModeToolPolicy = "forbidden" | "user-approval" | "resume-approved-exit";
 
 export function parseExitPlanModeOutput(
   response: unknown,
@@ -498,29 +502,54 @@ export function createExitPlanModePermissionRequestHook(
   };
 }
 
-/**
- * PreToolUse (execution resume): complete the deferred ExitPlanMode call after Eco approval.
- * Official defer protocol: resume re-fires PreToolUse for the same tool call; the hook must
- * return `allow` + `updatedInput` (interactive tools reject a bare `allow` in `-p` mode).
- * Without this, the pending ExitPlanMode is synthesized as a rejection in the transcript,
- * which models can misread as "plan denied" (claude-code#34111).
- */
-export function createExitPlanModeResumeApproveHook(): HookCallback {
-  return async (input) => {
+export function createPlanModeBoundaryPreToolHook(
+  policy: PlanModeToolPolicy,
+  approvedExitPlanToolUseId?: string,
+): HookCallback {
+  return async (input, toolUseID) => {
     if (input.hook_event_name !== "PreToolUse") {
       return {};
     }
     const preInput = input as PreToolUseHookInput;
-    if (preInput.tool_name !== "ExitPlanMode") {
+    const toolName = preInput.tool_name;
+    if (
+      toolName !== "EnterPlanMode" &&
+      toolName !== "ExitPlanMode" &&
+      toolName !== "mcp__eco_plan__finalize_plan"
+    ) {
       return {};
     }
-    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+
+    if (policy === "user-approval" && toolName === "ExitPlanMode") {
+      return {};
+    }
+
+    const actualToolUseId = toolUseID ?? preInput.tool_use_id;
+    if (
+      policy === "resume-approved-exit" &&
+      toolName === "ExitPlanMode" &&
+      approvedExitPlanToolUseId?.trim() &&
+      actualToolUseId === approvedExitPlanToolUseId.trim()
+    ) {
+      const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          permissionDecisionReason: "Completing the exact ExitPlanMode call already approved in Eco.",
+          updatedInput: mergeExitPlanModeInjectedFields(toolInput, preInput),
+        },
+      };
+    }
+
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        permissionDecisionReason: "Plan already approved in Eco. Completing deferred ExitPlanMode.",
-        updatedInput: mergeExitPlanModeInjectedFields(toolInput, preInput),
+        permissionDecision: "deny",
+        permissionDecisionReason:
+          policy === "forbidden"
+            ? "Plan Mode tools are unavailable in Agent and Ask sessions. Use AskUserQuestion when clarification is required."
+            : "This Plan Mode tool call is not the ExitPlanMode call previously approved in Eco.",
       },
     };
   };
@@ -894,7 +923,7 @@ function evaluateFilesystemToolPolicy(
   const confirmationMode = options.resolveBashReviewMode?.() ?? options.bashReviewMode ?? "always";
   const gate = evaluateFilesystemHookGate({
     toolName: input.tool_name,
-    toolInput: input.tool_input,
+    toolInput: isRecord(input.tool_input) ? input.tool_input : {},
     cwd: input.cwd,
     workspacePath,
     confirmationMode,
@@ -1438,13 +1467,26 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {};
 
   const availability = ctx.subagentAvailability ?? normalizeSubagentAvailability();
+  const planModeToolPolicy: PlanModeToolPolicy =
+    ctx.planModeToolPolicy ??
+    (ctx.awaitPlanApproval
+      ? "user-approval"
+      : ctx.approvedExitPlanToolUseId
+        ? "resume-approved-exit"
+        : "forbidden");
 
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createPlanModeBoundaryPreToolHook(planModeToolPolicy, ctx.approvedExitPlanToolUseId),
+    "EnterPlanMode|ExitPlanMode|mcp__eco_plan__finalize_plan",
+  );
   const exitPlanHookOptions = {
     ...(ctx.workspacePath ? { workspacePath: ctx.workspacePath } : {}),
     ...(ctx.getPhaseTranscript ? { getPhaseTranscript: ctx.getPhaseTranscript } : {}),
   };
-  if (ctx.awaitPlanApproval) {
+  if (planModeToolPolicy === "user-approval" && ctx.awaitPlanApproval) {
     pushHook(
       hooks,
       "PermissionRequest",
@@ -1456,8 +1498,6 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       ),
       "ExitPlanMode",
     );
-  } else if (ctx.approveDeferredExitPlanMode) {
-    pushHook(hooks, "PreToolUse", createExitPlanModeResumeApproveHook(), "ExitPlanMode");
   }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(

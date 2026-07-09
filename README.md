@@ -4,7 +4,7 @@ Anthropic-compatible AI coding agent desktop app.
 
 The first version focuses on a router-first command center:
 
-- Claude Agent SDK runtime with native subagents. The **main agent** (Planner session) orchestrates work in a single SDK session: it may edit directly, delegate to Eco subagents when their **description** fits, or call **`ExitPlanMode`** when a formal plan needs approval. There is **no fixed** explore → architect → coder → reviewer → tester pipeline. Subagents cannot nest; only the main session spawns subagents.
+- Claude Agent SDK runtime with native subagents. The **main agent** orchestrates work in a single SDK session: in Agent mode it may edit directly, delegate to Eco subagents when their **description** fits, and call `AskUserQuestion` when a user decision is required. Formal planning through **`ExitPlanMode`** is available only in Plan mode. There is **no fixed** explore → architect → coder → reviewer → tester pipeline. Subagents cannot nest; only the main session spawns subagents.
 - Anthropic-compatible model endpoints only.
 - Worker-per-thread isolation.
 - SQLite event storage with secrets kept in the system keychain.
@@ -18,11 +18,11 @@ Users pick the mode explicitly in Composer — **Agent | Plan | Ask**. Eco does 
 |------|------|---------------|----------------------|
 | **Agent** (default) | Coding / implementation | `driver.run()` or execution continuation | `acceptEdits` |
 | **Plan** | User wants plan-first workflow | `runContinuation("planning")` | `plan` (official Claude Plan Mode) |
-| **Ask** | Read-only Q&A | `driver.runAsk()` or `runContinuation("ask")` | `plan` + read-only `allowedTools` |
+| **Ask** | Read-only Q&A | `driver.runAsk()` or `runContinuation("ask")` | `dontAsk` + read-only `allowedTools` |
 
 `sessionMode` is stored on the thread (`thread.runtimeConfig.sessionMode`) and on workflow defaults (`agent` | `plan` | `ask`).
 
-**Plan** changes continuation routing and enables SDK Plan Mode on planning turns. The main agent still chooses when to explore, delegate, implement, or submit a plan via `ExitPlanMode`.
+**Agent** keeps `AskUserQuestion` available but explicitly disables `EnterPlanMode` and `ExitPlanMode`. **Plan** changes continuation routing, enables SDK Plan Mode on planning turns, and submits through `ExitPlanMode`.
 
 Plan approval uses the **ExitPlanMode bridge**: hooks capture the plan, Eco shows the approval UI, and execution continues in the **same SDK session** after approval.
 
@@ -60,7 +60,7 @@ claude_code preset (SDK built-in)
 
 | `phaseAppend` source | Used in |
 |----------------------|---------|
-| `buildAutonomousOrchestratorAppend()` | Agent mode: minimal constraints (no mandatory roster) |
+| `buildAutonomousOrchestratorAppend()` + Agent session rules | Agent mode: no Plan tools; use `AskUserQuestion` for material ambiguity |
 | `buildUniversalPhaseAppend(phase)` | Universal profiles: `Session mode: …` one-liner |
 | `askSessionPhaseAppend` | Ask mode: `Session mode: ask (read-only).` |
 

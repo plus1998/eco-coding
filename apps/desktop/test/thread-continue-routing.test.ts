@@ -161,6 +161,23 @@ test("plan mode off without resumable session starts fresh autonomous handling",
   expect(continueStatusMessage(action)).toBe("正在交给主代理处理…");
 });
 
+test("agent mode does not enter planning for stale pending plan", () => {
+  const action = resolveThreadContinueAction({
+    followUp: "继续",
+    canResume: true,
+    sessionMode: "agent",
+    hasPendingPlan: true,
+    hasApprovedPlanOnDisk: false,
+    enteredExecutionPhase: false,
+    hasCoderTodos: false,
+    hasAppliedDiff: false,
+    threadStatus: "awaiting_plan",
+    activityLines: [{ role: "planner", message: "计划已生成，等待确认。" }],
+  });
+  expect(action).toEqual({ kind: "resume_sdk", phase: "execution" });
+  expect(continueStatusMessage(action)).toBe("正在继续执行…");
+});
+
 test("parseApprovedPlanDocument round-trips snapshot sections", () => {
   const doc = [
     "# Eco approved plan",

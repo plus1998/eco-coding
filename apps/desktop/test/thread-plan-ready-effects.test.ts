@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import {
   applyThreadPlanReadyEffects,
-  type ThreadPlanReadyAwaitingPlanEvent,
+  buildExecutionFailureRestorePendingPlan,
   type ThreadPendingPlanWithRoutes,
+  type ThreadPlanReadyAwaitingPlanEvent,
 } from "../src/main/thread-plan-ready-effects";
 
 test("applyThreadPlanReadyEffects persists plan and emits awaiting event", () => {
@@ -15,6 +16,7 @@ test("applyThreadPlanReadyEffects persists plan and emits awaiting event", () =>
       userPrompt: "Build billing ledger",
       analysis: "Need a stable ledger domain.",
       plan: "1. Capture usage events\n2. Project billing",
+      deferredExitPlanToolUseId: "tool_exit_deferred",
     },
     workspacePath: "/repo",
     worktreePath: "/repo/.worktrees/thr_plan_ready",
@@ -40,6 +42,7 @@ test("applyThreadPlanReadyEffects persists plan and emits awaiting event", () =>
       workspacePath: "/repo",
       worktreePath: "/repo/.worktrees/thr_plan_ready",
       routesJson: '{"planner":"model_planner"}',
+      deferredExitPlanToolUseId: "tool_exit_deferred",
     },
   });
   expect(savedPlans).toEqual([result.pendingPlan]);
@@ -80,4 +83,23 @@ test("applyThreadPlanReadyEffects keeps caller-specific awaiting messages out of
   expect(savedPlans[0]?.plan).toBe("Inspect attribution.");
   expect(savedPlans[0]).not.toHaveProperty("message");
   expect(emittedEvents[0]?.message).toBe("Agent 请求确认计划，请审批后继续。");
+});
+
+test("buildExecutionFailureRestorePendingPlan keeps approved deferred ExitPlanMode id", () => {
+  const pending: ThreadPendingPlanWithRoutes = {
+    threadId: "thr_execution_failure",
+    userPrompt: "Ship it",
+    analysis: "Approved",
+    plan: "Do the work",
+    workspacePath: "/repo",
+    worktreePath: "/repo",
+    routesJson: "",
+    deferredExitPlanToolUseId: "tool_exit_deferred",
+  };
+
+  expect(buildExecutionFailureRestorePendingPlan(pending)).toEqual({
+    ...pending,
+    routesJson: "[]",
+    deferredExitPlanToolUseId: "tool_exit_deferred",
+  });
 });
