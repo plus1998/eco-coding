@@ -5,16 +5,22 @@ import path from "node:path";
 const UPSTREAM_LOG_PREFIX = "[eco-upstream]";
 const MAX_LOG_BODY_CHARS = 12_000;
 
-let logFilePath: string | undefined;
+function getUpstreamLogBaseDir(): string {
+  return (
+    process.env.ECO_UPSTREAM_LOG_DIR?.trim() ||
+    path.join(os.homedir(), ".eco-coding", "logs")
+  );
+}
 
-export function getUpstreamLogFilePath(): string {
-  if (!logFilePath) {
-    const baseDir =
-      process.env.ECO_UPSTREAM_LOG_DIR?.trim() ||
-      path.join(os.homedir(), ".eco-coding", "logs");
-    logFilePath = path.join(baseDir, "upstream.log");
-  }
-  return logFilePath;
+export function formatUpstreamLogDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function getUpstreamLogFilePath(date = new Date()): string {
+  return path.join(getUpstreamLogBaseDir(), `upstream-${formatUpstreamLogDateKey(date)}.log`);
 }
 
 export function logUpstream(phase: string, payload: Record<string, unknown>): void {
@@ -23,7 +29,7 @@ export function logUpstream(phase: string, payload: Record<string, unknown>): vo
   appendUpstreamLogFile(line);
 }
 
-/** Errors: stderr + upstream.log + main-process console.error (visible in Electron main devtools). */
+/** Errors: stderr + daily upstream log file + main-process console.error (visible in Electron main devtools). */
 export function logUpstreamError(phase: string, payload: Record<string, unknown>): void {
   logUpstream(phase, payload);
   console.error(UPSTREAM_LOG_PREFIX, phase, payload);
