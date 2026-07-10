@@ -131,7 +131,6 @@ export interface ResponsesRequest {
   prompt_cache_key?: string | undefined;
   prompt_cache_retention?: string | undefined;
   context_management?: unknown | undefined;
-  cache_control?: AnthropicCacheControl | undefined;
   session_id?: string | undefined;
   previous_response_id?: string | undefined;
 }

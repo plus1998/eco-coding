@@ -166,6 +166,44 @@ test("buildBridgeUpstreamMessagesPayload sends Responses input as a list", () =>
   ]);
 });
 
+test("buildBridgeUpstreamMessagesPayload does not send Anthropic cache_control to Responses", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    cache_control: { type: "ephemeral" },
+    system: [{ type: "text", text: "cached system", cache_control: { type: "ephemeral" } }],
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "hi",
+            cache_control: { type: "ephemeral", ttl: "5m" },
+          },
+        ],
+      },
+    ],
+    tools: [
+      {
+        name: "lookup",
+        input_schema: { type: "object" },
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "gpt-5.5",
+    true,
+  );
+
+  expect(body).not.toHaveProperty("cache_control");
+  expect(JSON.stringify(body)).not.toContain('"cache_control"');
+});
+
 test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body", () => {
   const request: AnthropicRequest = {
     model: "alias-model",

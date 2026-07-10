@@ -312,10 +312,11 @@ describe('anthropicToResponses', () => {
     expect(params?.required).toContain('plan');
   });
 
-  test('maps Anthropic cache_control breakpoints to Responses top-level cache_control', () => {
+  test('does not promote Anthropic cache_control to a Responses top-level parameter', () => {
     const resp = anthropicToResponses({
       model: 'gpt-5.2',
       max_tokens: 1024,
+      cache_control: { type: 'ephemeral' },
       system: [{ type: 'text', text: 'Project prompt', cache_control: { type: 'ephemeral' } }],
       messages: [
         {
@@ -329,9 +330,17 @@ describe('anthropicToResponses', () => {
           ],
         },
       ],
+      tools: [
+        {
+          name: 'lookup',
+          input_schema: { type: 'object' },
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
     });
 
-    expect(resp.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
+    expect(resp).not.toHaveProperty('cache_control');
+    expect(JSON.stringify(resp)).not.toContain('"cache_control"');
   });
 
   test('maps compact context_management to Responses format and leaves clear_tool_uses to gateway polyfill', () => {

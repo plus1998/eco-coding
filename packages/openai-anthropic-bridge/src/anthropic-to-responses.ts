@@ -1,6 +1,5 @@
 import { jsonMarshal, jsonParse, type JsonValue } from './json.js';
 import type {
-  AnthropicCacheControl,
   AnthropicContentBlock,
   AnthropicImageSource,
   AnthropicMessage,
@@ -127,63 +126,6 @@ function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function readAnthropicCacheControl(raw: unknown): AnthropicCacheControl | undefined {
-  if (!isUnknownRecord(raw) || typeof raw.type !== 'string' || raw.type === '') {
-    return undefined;
-  }
-  return raw as unknown as AnthropicCacheControl;
-}
-
-function cacheControlFromContentBlocks(raw: unknown): AnthropicCacheControl | undefined {
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
-
-  let found: AnthropicCacheControl | undefined;
-  for (const block of raw) {
-    if (!isUnknownRecord(block)) {
-      continue;
-    }
-    const cacheControl = readAnthropicCacheControl(block.cache_control);
-    if (cacheControl !== undefined) {
-      found = cacheControl;
-    }
-  }
-  return found;
-}
-
-export function resolveAnthropicCacheControlForResponses(
-  req: AnthropicRequest,
-): AnthropicCacheControl | undefined {
-  const topLevel = readAnthropicCacheControl(req.cache_control);
-  if (topLevel !== undefined) {
-    return topLevel;
-  }
-
-  let found = cacheControlFromContentBlocks(req.system);
-  for (const message of req.messages) {
-    if (isUnknownRecord(message)) {
-      const messageCacheControl = readAnthropicCacheControl(message.cache_control);
-      if (messageCacheControl !== undefined) {
-        found = messageCacheControl;
-      }
-    }
-    const contentCacheControl = cacheControlFromContentBlocks(message.content);
-    if (contentCacheControl !== undefined) {
-      found = contentCacheControl;
-    }
-  }
-
-  for (const tool of req.tools ?? []) {
-    const cacheControl = readAnthropicCacheControl(tool.cache_control);
-    if (cacheControl !== undefined) {
-      found = cacheControl;
-    }
-  }
-
-  return found;
 }
 
 export function translateAnthropicContextManagementToResponses(raw: unknown): unknown | undefined {
@@ -369,11 +311,9 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
     out.tool_choice = convertAnthropicToolChoiceToResponses(req.tool_choice);
   }
 
-  const cacheControl = resolveAnthropicCacheControlForResponses(req);
-  if (cacheControl !== undefined) {
-    out.cache_control = cacheControl;
-  }
-
+  // Anthropic cache_control breakpoints (including the top-level shortcut) have no
+  // direct Responses wire-body equivalent. Promoting one to a top-level parameter
+  // makes strict Responses gateways reject the request.
   const contextManagement = translateAnthropicContextManagementToResponses(req.context_management);
   if (contextManagement !== undefined) {
     out.context_management = contextManagement;
