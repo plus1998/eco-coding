@@ -4653,10 +4653,11 @@ function buildSdkHookContextExtras(
             messageIds,
             exactAgentId,
             (conflict) =>
-              logEcoDiag("subagent.feed_identity_conflict", {
+              logEcoDiag("subagent.feed_identity_rebound", {
                 threadId: shortThreadId(threadId),
                 agentId: exactAgentId,
                 role,
+                resolution: "exact_sdk_message_id",
                 ...conflict,
               }),
           ),

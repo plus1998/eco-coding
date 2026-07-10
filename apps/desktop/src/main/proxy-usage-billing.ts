@@ -79,7 +79,13 @@ export function resolveProxyUsageBilling(
     ...(input.stampedParentToolUseId && { parentToolUseId: input.stampedParentToolUseId }),
   });
   const { billingRole, subagentAgentId, attempted: attributionAttempted } = attribution;
-  const attributionPending = attributionAttempted && !subagentAgentId;
+  // A planner route can also carry built-in general-purpose subagent traffic. When the
+  // request has a downstream assistant message id but no exact agent stamp, the route
+  // role is not authoritative. Keep it pending until the SDK or sidechain transcript
+  // binds that exact message id to an agent instance.
+  const attributionPending =
+    !subagentAgentId &&
+    (attributionAttempted || Boolean(info.downstreamMessageId?.trim()));
   const usage: ParsedUsage = {
     inputTokens: info.usage.inputTokens,
     outputTokens: info.usage.outputTokens,

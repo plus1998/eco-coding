@@ -11,6 +11,7 @@ import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
 import type {
   AgentInstanceRecord,
   RunAttemptStatus,
+  UsageLedgerAttributionUpdate,
   UsageLedgerEvent,
 } from "./usage-ledger";
 import {
@@ -22,6 +23,8 @@ import { shortThreadId } from "./eco-diag-log";
 import {
   PROXY_PENDING_TIMEOUT_REASON,
   ProxyUsagePendingRegistry,
+  USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
+  USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY,
   type ProxyMessageIdentityBinding,
   type ProxyMessageIdentityDiagnostic,
   type ProxyUsagePendingEntry,
@@ -41,7 +44,7 @@ export interface UsageLedgerCoordinatorStore {
   listAgentInstances(threadId: string): AgentInstanceRecord[];
   updateUsageLedgerEventAttribution?(
     eventId: string,
-    update: { agentId?: string; attribution: UsageLedgerEvent["attribution"] },
+    update: UsageLedgerAttributionUpdate,
   ): boolean;
 }
 
@@ -388,6 +391,8 @@ export class UsageLedgerCoordinator {
     update: {
       eventId: string;
       agentId?: string;
+      role?: RuntimeAgentRole;
+      parentToolUseId?: string;
       attribution: UsageLedgerEvent["attribution"];
     },
   ): UsageLedgerEvent | undefined {
@@ -395,10 +400,20 @@ export class UsageLedgerCoordinator {
       return undefined;
     }
     try {
+      const existing = this.store
+        .listUsageLedgerEvents(threadId)
+        .find((candidate) => candidate.id === update.eventId);
+      const metadata =
+        existing && update.role
+          ? rebindUsageLedgerMetadata(existing.metadata, update.role)
+          : existing?.metadata;
       const updated = this.store.updateUsageLedgerEventAttribution(
         update.eventId,
         {
           ...(update.agentId && { agentId: update.agentId }),
+          ...(update.role && { role: update.role }),
+          ...(update.parentToolUseId && { parentToolUseId: update.parentToolUseId }),
+          ...(metadata && { metadata }),
           attribution: update.attribution,
         },
       );
@@ -636,6 +651,29 @@ export class UsageLedgerCoordinator {
       this.settleInterruptedStreamPartials(threadId, entry.runAttemptId, entry.runStatus);
     }
   }
+}
+
+function rebindUsageLedgerMetadata(
+  metadata: Record<string, unknown> | undefined,
+  role: RuntimeAgentRole,
+): Record<string, unknown> {
+  const contextUpdate = metadata?.[USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY];
+  return {
+    ...(metadata ?? {}),
+    [USAGE_LEDGER_BILLING_ROLE_METADATA_KEY]: role,
+    ...(isRecord(contextUpdate)
+      ? {
+          [USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY]: {
+            ...contextUpdate,
+            role,
+          },
+        }
+      : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

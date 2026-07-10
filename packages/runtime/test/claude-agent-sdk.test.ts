@@ -2658,6 +2658,40 @@ test("ClaudeAgentSdkDriver planning completes without ExitPlanMode", async () =>
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 
+test("maps camelCase AgentOutput from persisted Claude transcripts", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "sdk_agent_output_camel",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_general_camel", content: "done" }],
+      },
+      toolUseResult: {
+        status: "completed",
+        agentId: "agent_general_camel",
+        agentType: "general-purpose",
+        totalTokens: 321,
+        content: [{ type: "text", text: "done" }],
+      },
+    },
+    "thr_agent_output_camel",
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    agentId: "agent_general_camel",
+    role: "general-purpose",
+    type: "agent.completed",
+    payload: {
+      type: "agent_output",
+      tool_use_id: "call_general_camel",
+      totalTokens: 321,
+    },
+  });
+});
+
 test("maps completed AgentOutput as an exact terminal event without billing duplication", () => {
   const events = mapSdkMessageToEvents(
     {

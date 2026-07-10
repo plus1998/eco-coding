@@ -2303,10 +2303,14 @@ function mapUserAgentOutputToEvents(
   fallbackRole: RuntimeAgentRole,
   uuid: string,
 ): AgentEvent[] {
-  if (!isRecord(message.tool_use_result)) {
+  const output = isRecord(message.tool_use_result)
+    ? message.tool_use_result
+    : isRecord(message.toolUseResult)
+      ? message.toolUseResult
+      : undefined;
+  if (!output) {
     return [];
   }
-  const output = message.tool_use_result;
   if (output.status !== "completed") {
     return [];
   }

@@ -76,16 +76,22 @@ export function handleSdkUsageRecordedEvent(input: {
 
   if (
     (resolved.kind === "assistant_ignored" || resolved.kind === "assistant_subagent") &&
-    resolved.messageId &&
-    resolved.subagentAgentId
+    resolved.messageId
   ) {
-    services.noteAssistantMessageIdentity({
-      threadId,
-      messageId: resolved.messageId,
-      agentId: resolved.subagentAgentId,
-      role: resolved.billingRole,
-      ...(resolved.parentToolUseId && { parentToolUseId: resolved.parentToolUseId }),
-    });
+    const exactAgentId =
+      resolved.subagentAgentId ??
+      (resolved.billingRole === "planner" && !resolved.parentToolUseId
+        ? plannerAgentId
+        : undefined);
+    if (exactAgentId) {
+      services.noteAssistantMessageIdentity({
+        threadId,
+        messageId: resolved.messageId,
+        agentId: exactAgentId,
+        role: resolved.billingRole,
+        ...(resolved.parentToolUseId && { parentToolUseId: resolved.parentToolUseId }),
+      });
+    }
   }
 
   return {

@@ -168,3 +168,28 @@ test("resolveProxyUsageBilling carries OpenAI-compat apiCompat for planner conte
 
   expect(resolved.billingInput.apiCompat).toBe("openai_chat_completions");
 });
+
+test("resolveProxyUsageBilling keeps planner-route message usage pending without exact agent identity", () => {
+  const resolved = resolveProxyUsageBilling({
+    info: {
+      ...proxyUsage({
+        role: "planner",
+        downstreamMessageId: "resp_general_purpose",
+      }),
+      threadId: "thr_proxy",
+    },
+    plannerAgentId: "planner_attempt_1",
+    resolver: resolver(),
+  });
+
+  expect(resolved.billingRole).toBe("planner");
+  expect(resolved.subagentAgentId).toBeUndefined();
+  expect(resolved.attributionPending).toBe(true);
+  expect(resolved.billingInput).toMatchObject({
+    role: "planner",
+    messageId: "resp_general_purpose",
+    plannerAgentId: "planner_attempt_1",
+    attributionPending: true,
+  });
+  expect(resolved.billingInput.agentId).toBeUndefined();
+});

@@ -54,11 +54,12 @@ export async function reconcileProxyAttributionContexts(
     };
     const usage = usageFromLedgerEvent(settlement.event);
     const messageId = settlement.messageId ?? settlement.event.sdkMessageId;
+    const plannerSettlement = settlement.role === "planner";
     const contextUpdated = await services.context.applyUpdate({
       threadId,
       usage,
       contextUpdate,
-      agentId: settlement.agentId,
+      ...(!plannerSettlement && { agentId: settlement.agentId }),
       ...(messageId && { messageId }),
     });
     if (!contextUpdated) {
@@ -70,12 +71,14 @@ export async function reconcileProxyAttributionContexts(
       continue;
     }
 
-    const context = resolveSubagentBillingMetricsContext({
-      role: settlement.role,
-      agentId: settlement.agentId,
-      snapshot: services.context.getSnapshot(threadId),
-      fallbackUsage: usage,
-    });
+    const context = plannerSettlement
+      ? undefined
+      : resolveSubagentBillingMetricsContext({
+          role: settlement.role,
+          agentId: settlement.agentId,
+          snapshot: services.context.getSnapshot(threadId),
+          fallbackUsage: usage,
+        });
     if (context) {
       services.subagentMetrics.recordContextObservation(
         threadId,

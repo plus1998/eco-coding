@@ -83,6 +83,14 @@ export interface UsageLedgerAppendResult {
   inserted: boolean;
 }
 
+export interface UsageLedgerAttributionUpdate {
+  attribution: UsageAttribution;
+  agentId?: string;
+  role?: RuntimeAgentRole;
+  parentToolUseId?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface UsageLedgerTotals {
   inputTokens: number;
   outputTokens: number;
@@ -190,7 +198,7 @@ export class InMemoryUsageLedger {
 
   updateUsageEventAttribution(
     eventId: string,
-    update: { agentId?: string; attribution: UsageAttribution },
+    update: UsageLedgerAttributionUpdate,
   ): UsageLedgerEvent | undefined {
     const existing = [...this.eventsByIdempotencyKey.values()].find((event) => event.id === eventId);
     if (!existing) {
@@ -200,6 +208,9 @@ export class InMemoryUsageLedger {
     const updated: UsageLedgerEvent = {
       ...(update.agentId ? existing : existingWithoutAgentId),
       ...(update.agentId ? { agentId: update.agentId } : {}),
+      ...(update.role && { role: update.role }),
+      ...(update.parentToolUseId && { parentToolUseId: update.parentToolUseId }),
+      ...(update.metadata && { metadata: update.metadata }),
       attribution: update.attribution,
     };
     this.eventsByIdempotencyKey.set(updated.idempotencyKey, updated);

@@ -203,3 +203,46 @@ test("handleSdkUsageRecordedEvent passes authoritative observations into assista
     },
   ]);
 });
+
+test("handleSdkUsageRecordedEvent binds an exact main-session message to the planner instance", () => {
+  const identities: Array<{
+    threadId: string;
+    messageId: string;
+    agentId: string;
+    role: string;
+    parentToolUseId?: string;
+  }> = [];
+
+  const result = handleSdkUsageRecordedEvent({
+    threadId: "thr_sdk",
+    event: event({
+      role: "planner",
+      payload: {
+        messageId: "resp_planner_exact",
+        model: "sonnet",
+        usage: {
+          input_tokens: 10,
+          output_tokens: 2,
+        },
+      },
+    }),
+    services: createServices({
+      usagePlannerAgentId: () => "planner_attempt_1",
+      noteAssistantMessageIdentity: (identity) => identities.push(identity),
+      dispatchUsageBilling: ({ resolved }) =>
+        resolved.kind === "assistant_ignored"
+          ? { dispatched: false, reason: "assistant_ignored" }
+          : { dispatched: false, reason: "none" },
+    }),
+  });
+
+  expect(result.resolutionKind).toBe("assistant_ignored");
+  expect(identities).toEqual([
+    {
+      threadId: "thr_sdk",
+      messageId: "resp_planner_exact",
+      agentId: "planner_attempt_1",
+      role: "planner",
+    },
+  ]);
+});

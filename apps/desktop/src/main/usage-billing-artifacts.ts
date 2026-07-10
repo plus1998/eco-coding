@@ -141,7 +141,9 @@ export async function resolveSingleUsageBillingArtifacts(
 
   const requestBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
   const { savedUsd } = computeSavings(requestBilling.plannerTokenCostUsd, requestBilling.ecoCostUsd);
-  const ledgerAgentId = input.agentId ?? (billingRole === "planner" ? input.plannerAgentId : undefined);
+  const ledgerAgentId =
+    input.agentId ??
+    (!input.attributionPending && billingRole === "planner" ? input.plannerAgentId : undefined);
   const pendingAttributionReason = input.parentToolUseId
     ? PROXY_PENDING_PARENT_UNMAPPED_REASON
     : PROXY_PENDING_ATTRIBUTION_REASON;

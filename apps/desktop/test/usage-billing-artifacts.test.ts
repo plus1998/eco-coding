@@ -167,3 +167,30 @@ test("resolveSdkRunBillingModels resolves model rates and computed billing", asy
   expect(result.models[0]?.plannerRates).toEqual(sonnetRates);
   expect(result.models[0]?.computedBilling.ecoCostUsd).toBeCloseTo(0.0056, 6);
 });
+
+test("resolveSingleUsageBillingArtifacts does not pre-attribute pending planner-route usage", async () => {
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_pending_planner_route",
+    role: "planner",
+    source: "proxy",
+    usage: usage(),
+    runtimeRoutes: routes,
+    lookupPricing,
+    modelId: "sonnet",
+    messageId: "resp_pending_identity",
+    plannerAgentId: "planner_attempt_1",
+    attributionPending: true,
+    requestKey: "proxy:planner:pending",
+    routeRole: "planner",
+  });
+
+  expect(artifacts.ledgerEvent).toMatchObject({
+    role: "planner",
+    sdkMessageId: "resp_pending_identity",
+    attribution: {
+      status: "pending",
+      reason: "missing_structured_agent_id",
+    },
+  });
+  expect(artifacts.ledgerEvent.agentId).toBeUndefined();
+});

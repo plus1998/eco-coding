@@ -46,6 +46,7 @@ import {
   type RunAttemptRecord,
   type RunAttemptStatus,
   type UsageAttribution,
+  type UsageLedgerAttributionUpdate,
   type UsageLedgerEvent,
   type UsageLedgerKind,
   type UsageLedgerSource,
@@ -1962,15 +1963,26 @@ export class ConversationStore {
 
   updateUsageLedgerEventAttribution(
     eventId: string,
-    update: { agentId?: string; attribution: UsageAttribution },
+    update: UsageLedgerAttributionUpdate,
   ): boolean {
     const result = this.db
       .prepare(
         `UPDATE thread_usage_ledger_events
-         SET agent_id = ?, attribution_json = ?
+         SET agent_id = ?,
+             role = COALESCE(?, role),
+             parent_tool_use_id = COALESCE(?, parent_tool_use_id),
+             attribution_json = ?,
+             metadata_json = COALESCE(?, metadata_json)
          WHERE id = ?`,
       )
-      .run(update.agentId ?? null, JSON.stringify(update.attribution), eventId) as {
+      .run(
+        update.agentId ?? null,
+        update.role ?? null,
+        update.parentToolUseId ?? null,
+        JSON.stringify(update.attribution),
+        update.metadata ? JSON.stringify(update.metadata) : null,
+        eventId,
+      ) as {
       changes?: number;
     };
     return (result.changes ?? 0) > 0;
@@ -2104,21 +2116,32 @@ export class ConversationStore {
     if (!normalizedAgentId || normalizedMessageIds.size === 0) {
       return 0;
     }
+    const exactAgent = this.listAgentInstances(threadId).find(
+      (candidate) => candidate.agentId === normalizedAgentId,
+    );
+    const exactRole = exactAgent?.role.trim();
+    const exactParentAgentId = exactAgent?.parentAgentId?.trim();
+    const exactParentToolUseId = exactAgent?.parentToolUseId?.trim();
     const rows = this.db
       .prepare(
-        `SELECT id, agent_id, scope, metadata_json
+        `SELECT id, event_type, role, agent_id, parent_agent_id, parent_tool_use_id, scope, metadata_json
          FROM thread_run_events
          WHERE thread_id = ? AND metadata_json IS NOT NULL`,
       )
       .all(threadId) as Array<{
       id: string;
+      event_type: string;
+      role: string | null;
       agent_id: string | null;
+      parent_agent_id: string | null;
+      parent_tool_use_id: string | null;
       scope: string;
       metadata_json: string | null;
     }>;
     const update = this.db.prepare(
       `UPDATE thread_run_events
-       SET agent_id = ?, scope = 'agent'
+       SET role = ?, agent_id = ?, parent_agent_id = ?, parent_tool_use_id = ?,
+           scope = 'agent', metadata_json = ?
        WHERE thread_id = ? AND id = ?`,
     );
     const plannerSessionId = this.getSdkSession(threadId)?.sessionId?.trim();
@@ -2130,9 +2153,6 @@ export class ConversationStore {
         continue;
       }
       const existingAgentId = row.agent_id?.trim();
-      if (existingAgentId === normalizedAgentId && row.scope === "agent") {
-        continue;
-      }
       if (existingAgentId && existingAgentId !== normalizedAgentId && existingAgentId !== plannerSessionId) {
         onConflict?.({
           eventId: row.id,
@@ -2140,9 +2160,50 @@ export class ConversationStore {
           existingAgentId,
           incomingAgentId: normalizedAgentId,
         });
+      }
+
+      const nextRole =
+        exactRole && row.role !== "thinking" && !row.event_type.startsWith("thinking.")
+          ? exactRole
+          : row.role;
+      const nextParentAgentId = exactParentAgentId ?? row.parent_agent_id;
+      const nextParentToolUseId = exactParentToolUseId ?? row.parent_tool_use_id;
+      let nextMetadataJson = row.metadata_json;
+      const metadataParentToolUseId =
+        typeof metadata?.parentToolUseId === "string" ? metadata.parentToolUseId.trim() : "";
+      const metadataParentToolUseIdSnake =
+        typeof metadata?.parent_tool_use_id === "string" ? metadata.parent_tool_use_id.trim() : "";
+      if (
+        exactParentToolUseId &&
+        (metadataParentToolUseId !== exactParentToolUseId ||
+          metadataParentToolUseIdSnake !== exactParentToolUseId)
+      ) {
+        nextMetadataJson = JSON.stringify({
+          ...(metadata ?? {}),
+          parentToolUseId: exactParentToolUseId,
+          parent_tool_use_id: exactParentToolUseId,
+        });
+      }
+
+      if (
+        existingAgentId === normalizedAgentId &&
+        row.scope === "agent" &&
+        row.role === nextRole &&
+        row.parent_agent_id === nextParentAgentId &&
+        row.parent_tool_use_id === nextParentToolUseId &&
+        row.metadata_json === nextMetadataJson
+      ) {
         continue;
       }
-      const result = update.run(normalizedAgentId, threadId, row.id);
+      const result = update.run(
+        nextRole,
+        normalizedAgentId,
+        nextParentAgentId,
+        nextParentToolUseId,
+        nextMetadataJson,
+        threadId,
+        row.id,
+      );
       updated += Number(result.changes ?? 0);
     }
     return updated;

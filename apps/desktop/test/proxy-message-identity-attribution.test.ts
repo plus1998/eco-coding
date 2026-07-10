@@ -140,6 +140,55 @@ function appendPending(
   });
 }
 
+test("planner-route pending usage is rebound to the exact general-purpose role and parent", () => {
+  const { ledger, coordinator } = createCoordinator();
+  const event = pendingProxyEvent({
+    eventId: "evt_planner_route",
+    messageId: "resp_general_exact",
+  });
+  event.role = "planner";
+  event.metadata = {
+    ...event.metadata,
+    [USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY]: "planner",
+    [USAGE_LEDGER_BILLING_ROLE_METADATA_KEY]: "planner",
+    [USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY]: {
+      role: "planner",
+      modelId: "claude-sonnet",
+      providerBaseUrl: "https://api.example.test",
+    },
+  };
+  coordinator.appendEvents([event]);
+  coordinator.registerProxyPendingAttribution(threadId, {
+    eventId: event.id,
+    requestKey: event.requestKey ?? event.sourceEventId,
+    routeRole: "planner",
+    billingRole: "planner",
+    observedAt: event.observedAt,
+    messageId: "resp_general_exact",
+  });
+
+  expect(
+    coordinator.bindProxyMessageIdentity(threadId, {
+      messageId: "resp_general_exact",
+      agentId: "agent_general_exact",
+      role: "general-purpose",
+      parentToolUseId: "call_general_exact",
+    }),
+  ).toBe(1);
+
+  expect(ledger.listUsageEvents(threadId)[0]).toMatchObject({
+    role: "general-purpose",
+    agentId: "agent_general_exact",
+    parentToolUseId: "call_general_exact",
+    attribution: { status: "attributed", agentId: "agent_general_exact" },
+    metadata: {
+      [USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY]: "planner",
+      [USAGE_LEDGER_BILLING_ROLE_METADATA_KEY]: "general-purpose",
+      [USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY]: { role: "general-purpose" },
+    },
+  });
+});
+
 test("proxy usage first settles when the SDK assistant message identity arrives", () => {
   const { ledger, coordinator } = createCoordinator();
   appendPending(

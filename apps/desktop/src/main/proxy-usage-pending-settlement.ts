@@ -39,7 +39,6 @@ export interface ProxyUsagePendingSettlementUpdate {
 export interface ProxyMessageIdentityDiagnostic {
   reason:
     | "message_identity_conflict"
-    | "pending_role_conflict"
     | "pending_parent_tool_use_conflict";
   messageId: string;
   eventId?: string;
@@ -349,16 +348,6 @@ function buildMutationForBoundEntry(
   binding: ProxyMessageIdentityBinding,
 ): ProxyUsagePendingMutationResult {
   const diagnostics: ProxyMessageIdentityDiagnostic[] = [];
-  if (entry.billingRole !== binding.role) {
-    diagnostics.push({
-      reason: "pending_role_conflict",
-      messageId: binding.messageId,
-      eventId: entry.eventId,
-      existingRole: entry.billingRole,
-      incomingRole: binding.role,
-      incomingAgentId: binding.agentId,
-    });
-  }
   if (
     entry.parentToolUseId &&
     binding.parentToolUseId &&
