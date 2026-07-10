@@ -4,6 +4,7 @@ import { StringDecoder } from "node:string_decoder";
 export interface StreamingUsageTracker {
   push(chunk: Uint8Array): void;
   finish(): ParsedUsage | null;
+  downstreamMessageId(): string | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,6 +106,14 @@ export function resolveChatCompletionsStreamUsage(
   return bridgeParsed ? normalizeOverlappingCacheContextUsage(bridgeParsed) : null;
 }
 
+function extractDownstreamMessageIdFromStreamEvent(event: unknown): string | undefined {
+  if (!isRecord(event) || !isRecord(event.message)) {
+    return undefined;
+  }
+  const id = event.message.id;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+}
+
 function extractRawUsageFromStreamEvent(event: unknown): ParsedUsage | null {
   if (!isRecord(event)) {
     return null;
@@ -136,6 +145,7 @@ function mergeStreamingUsage(current: ParsedUsage | null, incoming: ParsedUsage 
 export function createStreamingUsageTracker(): StreamingUsageTracker {
   let buffer = "";
   let latest: ParsedUsage | null = null;
+  let downstreamMessageId: string | undefined;
   const utf8Decoder = new StringDecoder("utf8");
 
   const processBlock = (block: string) => {
@@ -152,6 +162,7 @@ export function createStreamingUsageTracker(): StreamingUsageTracker {
     }
     try {
       const parsed = JSON.parse(data) as unknown;
+      downstreamMessageId ??= extractDownstreamMessageIdFromStreamEvent(parsed);
       latest = mergeStreamingUsage(latest, extractRawUsageFromStreamEvent(parsed));
     } catch {
       // Ignore malformed SSE chunks.
@@ -176,6 +187,9 @@ export function createStreamingUsageTracker(): StreamingUsageTracker {
         processBlock(buffer);
       }
       return latest ? normalizeOverlappingCacheContextUsage(latest) : null;
+    },
+    downstreamMessageId() {
+      return downstreamMessageId;
     },
   };
 }

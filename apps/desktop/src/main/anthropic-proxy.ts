@@ -108,6 +108,7 @@ export interface AnthropicProxyUsageInfo {
   requestedModel?: string;
   aliasModelId?: string;
   requestId?: string;
+  downstreamMessageId?: string;
   usage: ParsedUsage;
   stampedAgentId?: string;
   stampedBillingRole?: RuntimeAgentRole;
@@ -292,6 +293,7 @@ export async function startAnthropicModelProxy(
               aliasModelId: route.aliasModelId,
               ...(info.requestedModel && { requestedModel: info.requestedModel }),
               ...(info.requestId && { requestId: info.requestId }),
+              ...(info.downstreamMessageId && { downstreamMessageId: info.downstreamMessageId }),
               usage: info.usage,
               ...(requestBillingStamp.agentId && { stampedAgentId: requestBillingStamp.agentId }),
               ...(requestBillingStamp.billingRole && {

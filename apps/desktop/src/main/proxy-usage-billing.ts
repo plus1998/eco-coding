@@ -23,6 +23,7 @@ export interface ProxyUsageBillingInput {
   requestKey: string;
   sourceEventId: string;
   providerRequestId?: string;
+  messageId?: string;
   runAttemptId?: string;
   plannerAgentId?: string;
   reconciliationOnly: true;
@@ -113,6 +114,7 @@ export function resolveProxyUsageBilling(
       requestKey,
       sourceEventId: requestKey,
       ...(info.requestId && { providerRequestId: info.requestId }),
+      ...(info.downstreamMessageId && { messageId: info.downstreamMessageId }),
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
       reconciliationOnly: true,

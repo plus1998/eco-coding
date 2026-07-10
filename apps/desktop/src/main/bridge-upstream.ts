@@ -131,6 +131,7 @@ export interface BridgeUsageInfo {
   apiCompat: UpstreamApiCompat;
   requestedModel?: string;
   requestId?: string;
+  downstreamMessageId?: string;
   usage: ParsedUsage;
 }
 
@@ -160,6 +161,7 @@ function buildBridgeUsageInfo(
   usage: ParsedUsage,
   requestedModel?: string,
   requestId?: string,
+  downstreamMessageId?: string,
 ): BridgeUsageInfo {
   return {
     role: route.role,
@@ -170,6 +172,7 @@ function buildBridgeUsageInfo(
     apiCompat: route.apiCompat,
     ...(requestedModel && { requestedModel }),
     ...(requestId && { requestId }),
+    ...(downstreamMessageId && { downstreamMessageId }),
     usage,
   };
 }
@@ -994,13 +997,22 @@ async function forwardAnthropicNativeMessages(
   if (!isEventStream) {
     const responseText = await upstreamResponse.text();
     let usage: ParsedUsage | null = null;
+    let downstreamMessageId: string | undefined;
     try {
-      usage = extractUsageFromResponseBody(JSON.parse(responseText));
+      const responseBody = JSON.parse(responseText) as unknown;
+      usage = extractUsageFromResponseBody(responseBody);
+      if (responseBody && typeof responseBody === "object" && "id" in responseBody) {
+        const id = (responseBody as { id?: unknown }).id;
+        downstreamMessageId = typeof id === "string" && id.trim() ? id.trim() : undefined;
+      }
     } catch {
       usage = null;
     }
     const billing = usage
-      ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel, requestId))
+      ? await resolveProxyCallBilling(
+          onUsage,
+          buildBridgeUsageInfo(route, usage, requestedModel, requestId, downstreamMessageId),
+        )
       : null;
     logUpstreamProxyCall({
       at: new Date().toISOString(),
@@ -1039,7 +1051,16 @@ async function forwardAnthropicNativeMessages(
 
     const usage = usageTracker.finish();
     const billing = usage
-      ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel, requestId))
+      ? await resolveProxyCallBilling(
+          onUsage,
+          buildBridgeUsageInfo(
+            route,
+            usage,
+            requestedModel,
+            requestId,
+            usageTracker.downstreamMessageId(),
+          ),
+        )
       : null;
     logUpstreamProxyCall({
       at: new Date().toISOString(),
@@ -1224,7 +1245,10 @@ async function forwardOpenAIResponsesMessages(
 
     const usage = extractUsageFromResponseBody(anthropicMessage);
     const billing = usage
-      ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel))
+      ? await resolveProxyCallBilling(
+          onUsage,
+          buildBridgeUsageInfo(route, usage, requestedModel, undefined, anthropicMessage.id),
+        )
       : null;
     logUpstreamProxyCall({
       at: new Date().toISOString(),
@@ -1292,7 +1316,16 @@ async function forwardOpenAIResponsesMessages(
 
     const usage = usageTracker.finish();
     const billing = usage
-      ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel))
+      ? await resolveProxyCallBilling(
+          onUsage,
+          buildBridgeUsageInfo(
+            route,
+            usage,
+            requestedModel,
+            undefined,
+            usageTracker.downstreamMessageId(),
+          ),
+        )
       : null;
     logUpstreamProxyCall({
       at: new Date().toISOString(),
@@ -1453,7 +1486,10 @@ async function forwardOpenAIChatCompletionsMessages(
 
     const usage = extractUsageFromResponseBody(anthropicMessage);
     const billing = usage
-      ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel))
+      ? await resolveProxyCallBilling(
+          onUsage,
+          buildBridgeUsageInfo(route, usage, requestedModel, undefined, anthropicMessage.id),
+        )
       : null;
     logUpstreamProxyCall({
       at: new Date().toISOString(),
@@ -1545,7 +1581,16 @@ async function forwardOpenAIChatCompletionsMessages(
     const trackerUsage = usageTracker.finish();
     const usage = resolveChatCompletionsStreamUsage(trackerUsage, ccToResState.usage);
     const billing = usage
-      ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel))
+      ? await resolveProxyCallBilling(
+          onUsage,
+          buildBridgeUsageInfo(
+            route,
+            usage,
+            requestedModel,
+            undefined,
+            usageTracker.downstreamMessageId(),
+          ),
+        )
       : null;
     logUpstreamProxyCall({
       at: new Date().toISOString(),
