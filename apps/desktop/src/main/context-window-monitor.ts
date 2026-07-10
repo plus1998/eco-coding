@@ -13,8 +13,8 @@ import type {
   RuntimeAgentRole,
   ThreadContextSnapshot,
 } from "../shared/ipc";
-import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { logEcoDiag, logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
+import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
@@ -159,9 +159,7 @@ export class ContextWindowMonitor {
     }
     this.refreshDisplayRole(state);
     const snapshot = this.toSnapshot(state);
-    const prevOccupied = subagentAgentId
-      ? state.byInstance.get(subagentAgentId)?.occupied
-      : prev?.occupied;
+    const prevOccupied = subagentAgentId ? state.byInstance.get(subagentAgentId)?.occupied : prev?.occupied;
     logEcoDiagThrottled(`context:${threadId}`, "context.update", {
       threadId: shortThreadId(threadId),
       role,
@@ -341,11 +339,7 @@ export class ContextWindowMonitor {
       if (instance.occupied >= instance.limit) {
         return true;
       }
-      const { atThreshold } = computeOccupancyRatio(
-        instance.occupied,
-        instance.compactLimit,
-        threshold,
-      );
+      const { atThreshold } = computeOccupancyRatio(instance.occupied, instance.compactLimit, threshold);
       return atThreshold;
     }
 
@@ -363,6 +357,17 @@ export class ContextWindowMonitor {
       threshold,
     );
     return atThreshold;
+  }
+
+  isAtCompactionThreshold(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
+    const planner = this.states.get(threadId)?.byRole.planner;
+    if (!planner?.limitsResolved || planner.occupied <= 0) {
+      return false;
+    }
+    if (planner.occupied >= planner.limit) {
+      return true;
+    }
+    return computeOccupancyRatio(planner.occupied, compactLimitForRole(planner), threshold).atThreshold;
   }
 
   shouldCompact(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
@@ -413,11 +418,7 @@ export class ContextWindowMonitor {
       return false;
     }
     const compactLimit = compactLimitForRole(planner);
-    const { atThreshold } = computeOccupancyRatio(
-      planner.occupied,
-      compactLimit,
-      threshold,
-    );
+    const { atThreshold } = computeOccupancyRatio(planner.occupied, compactLimit, threshold);
     logCompactDecision(threadId, {
       shouldCompact: atThreshold,
       reason: atThreshold ? "at_threshold" : "below_threshold",
@@ -510,8 +511,7 @@ export class ContextWindowMonitor {
       state.byRole[roleSnapshot.role] = {
         occupied: roleSnapshot.occupied,
         limit: roleSnapshot.limit,
-        compactLimit:
-          prev?.compactLimit ?? effectiveContextLimit(roleSnapshot.limit, maxOutputTokens),
+        compactLimit: prev?.compactLimit ?? effectiveContextLimit(roleSnapshot.limit, maxOutputTokens),
         limitsResolved: roleSnapshot.limitsResolved,
         ...(roleSnapshot.modelId && { modelId: roleSnapshot.modelId }),
         ...(maxOutputTokens !== undefined && { maxOutputTokens }),

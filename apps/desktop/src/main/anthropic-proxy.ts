@@ -9,29 +9,32 @@ import type {
   RuntimeAgentRole,
   ThinkingEffort,
 } from "../shared/ipc";
+import type { UpstreamModelOption } from "../shared/models";
+import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
+import { estimateAnthropicRequestTokens } from "../shared/token-estimate";
 import {
-  forwardMessagesViaBridge,
   type BridgeForwardContext,
   type BridgeForwardRoute,
   type BridgeUsageInfo,
+  forwardMessagesViaBridge,
 } from "./bridge-upstream";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
-import type { UpstreamModelOption } from "../shared/models";
-import {
-  logUpstreamProxyCall,
-  proxyCallCommonFields,
-  type UpstreamProxyCallBilling,
-} from "./upstream-proxy-log";
-import { isProxyCchAuditEnabled } from "./proxy-cch-audit";
+import { countProviderInputTokens } from "./provider-token-counter";
 import { readProxyBillingStampFromHeaders } from "./proxy-billing-stamp";
+import { isProxyCchAuditEnabled } from "./proxy-cch-audit";
+import { logProxyRequestShape } from "./proxy-request-shape-log";
 import {
   announceUpstreamLogDestination,
   formatUpstreamFetchError,
   logUpstream,
   logUpstreamError,
 } from "./upstream-log";
-import { logProxyRequestShape } from "./proxy-request-shape-log";
+import {
+  logUpstreamProxyCall,
+  proxyCallCommonFields,
+  type UpstreamProxyCallBilling,
+} from "./upstream-proxy-log";
 
 export interface AnthropicProxyRoute {
   role: RuntimeAgentRole;
@@ -72,10 +75,7 @@ export function runtimeRouteToProxyRoute(route: RuntimeRouteProxySource): Anthro
 }
 
 /** Apply configured per-role output cap before bridge/upstream conversion. */
-export function applyRouteMaxOutputTokens(
-  body: Record<string, unknown>,
-  maxOutputTokens?: number,
-): void {
+export function applyRouteMaxOutputTokens(body: Record<string, unknown>, maxOutputTokens?: number): void {
   if (maxOutputTokens === undefined || maxOutputTokens <= 0) {
     return;
   }
@@ -125,8 +125,8 @@ export interface AnthropicProxyStartOptions {
   threadId?: string;
   pendingImages?: readonly PromptImageAttachment[];
   /**
-   * Local count_tokens stub: SDK context meter is authoritative via usage.recorded;
-   * return a non-zero estimate so Claude Code does not see perpetual 0 occupancy.
+   * Optional local count_tokens override. Production defaults to a provider-neutral
+   * estimate of the current request body instead of reusing stale monitor occupancy.
    */
   resolveCountTokensInput?: (input: {
     role: RuntimeAgentRole;
@@ -283,35 +283,55 @@ export async function startAnthropicModelProxy(
         }),
         ...(onUsage && {
           onUsage: async (info: BridgeUsageInfo) => {
-            return (await onUsage({
-              role: info.role,
-              providerId: info.providerId,
-              providerName: info.providerName,
-              providerBaseUrl: info.providerBaseUrl,
-              modelId: info.modelId,
-              apiCompat: route.apiCompat,
-              aliasModelId: route.aliasModelId,
-              ...(info.requestedModel && { requestedModel: info.requestedModel }),
-              ...(info.requestId && { requestId: info.requestId }),
-              ...(info.downstreamMessageId && { downstreamMessageId: info.downstreamMessageId }),
-              usage: info.usage,
-              ...(requestBillingStamp.agentId && { stampedAgentId: requestBillingStamp.agentId }),
-              ...(requestBillingStamp.billingRole && {
-                stampedBillingRole: requestBillingStamp.billingRole,
-              }),
-              ...(requestBillingStamp.parentToolUseId && {
-                stampedParentToolUseId: requestBillingStamp.parentToolUseId,
-              }),
-              ...(requestBillingStamp.runAttemptId && {
-                stampedRunAttemptId: requestBillingStamp.runAttemptId,
-              }),
-            })) ?? null;
+            return (
+              (await onUsage({
+                role: info.role,
+                providerId: info.providerId,
+                providerName: info.providerName,
+                providerBaseUrl: info.providerBaseUrl,
+                modelId: info.modelId,
+                apiCompat: route.apiCompat,
+                aliasModelId: route.aliasModelId,
+                ...(info.requestedModel && { requestedModel: info.requestedModel }),
+                ...(info.requestId && { requestId: info.requestId }),
+                ...(info.downstreamMessageId && { downstreamMessageId: info.downstreamMessageId }),
+                usage: info.usage,
+                ...(requestBillingStamp.agentId && { stampedAgentId: requestBillingStamp.agentId }),
+                ...(requestBillingStamp.billingRole && {
+                  stampedBillingRole: requestBillingStamp.billingRole,
+                }),
+                ...(requestBillingStamp.parentToolUseId && {
+                  stampedParentToolUseId: requestBillingStamp.parentToolUseId,
+                }),
+                ...(requestBillingStamp.runAttemptId && {
+                  stampedRunAttemptId: requestBillingStamp.runAttemptId,
+                }),
+              })) ?? null
+            );
           },
         }),
       };
 
       if (countTokensRequest) {
-        const inputTokens = resolveCountTokensStubInput(body, route.role, options?.resolveCountTokensInput);
+        const overrideInputTokens = resolveCountTokensOverride(
+          body,
+          route.role,
+          options?.resolveCountTokensInput,
+        );
+        const tokenCount =
+          overrideInputTokens !== undefined
+            ? {
+                tokens: overrideInputTokens,
+                precision: "heuristic" as const,
+                source: "eco:resolveCountTokensInput_override",
+              }
+            : await countProviderInputTokens({
+                mode: normalizeProviderTokenCountMode(route.provider.tokenCountMode),
+                provider: route.provider,
+                modelId: route.modelId,
+                anthropicBody: body,
+                ...(options?.upstreamUserAgent && { upstreamUserAgent: options.upstreamUserAgent }),
+              });
         logProxyRequestShape({
           ...(diagnosticThreadId && { threadId: diagnosticThreadId }),
           operation: "count_tokens",
@@ -324,9 +344,9 @@ export async function startAnthropicModelProxy(
           },
           ...(requestedModel && { requestedModel }),
           ...(request.url && { requestUrl: request.url }),
-          upstreamUrl: "eco://local/count_tokens-stub",
+          upstreamUrl: tokenCount.source,
           stream: false,
-          converted: false,
+          converted: tokenCount.precision !== "heuristic",
           clientBody: body,
         });
         logUpstreamProxyCall({
@@ -339,17 +359,17 @@ export async function startAnthropicModelProxy(
             apiCompat: bridgeRoute.apiCompat,
             modelId: bridgeRoute.modelId,
             aliasModelId: bridgeRoute.aliasModelId,
-            upstreamUrl: "eco://local/count_tokens-stub",
+            upstreamUrl: tokenCount.source,
             stream: false,
-            converted: false,
+            converted: tokenCount.precision !== "heuristic",
             ...(requestedModel && { requestedModel }),
             ...(request.url && { requestUrl: request.url }),
           }),
           http: { status: 200, streaming: false },
-          tokens: { input: inputTokens, output: 0, cacheRead: 0, cacheCreation: 0 },
+          tokens: { input: tokenCount.tokens, output: 0, cacheRead: 0, cacheCreation: 0 },
           billing: null,
         });
-        writeJson(response, 200, { input_tokens: inputTokens });
+        writeJson(response, 200, { input_tokens: tokenCount.tokens });
         return;
       }
 
@@ -441,9 +461,7 @@ export function toSdkModelAlias(baseAlias: string, contextTokens?: number): stri
 
 /** Family ids for configured model variants (e.g. gpt-5.4-mini → gpt-5.4). */
 export function canonicalModelFamilyIds(modelId: string): readonly string[] {
-  const match = modelId.match(
-    /^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i,
-  );
+  const match = modelId.match(/^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i);
   const family = match?.groups?.family?.trim();
   return family ? [family] : [];
 }
@@ -598,37 +616,24 @@ function isCountTokensPath(url: string | undefined): boolean {
   return url.split("?")[0]?.includes("/count_tokens") === true;
 }
 
-/** Rough token estimate from count_tokens / messages request JSON (chars / 4). */
+/** Provider-neutral estimate for the current count_tokens request body. */
 export function estimateInputTokensFromAnthropicBody(body: Record<string, unknown>): number {
-  const parts: string[] = [];
-  if (typeof body.system === "string") {
-    parts.push(body.system);
-  } else if (Array.isArray(body.system)) {
-    parts.push(JSON.stringify(body.system));
-  }
-  if (Array.isArray(body.tools)) {
-    parts.push(JSON.stringify(body.tools));
-  }
-  if (Array.isArray(body.messages)) {
-    parts.push(JSON.stringify(body.messages));
-  }
-  const text = parts.join("\n");
-  if (!text) {
-    return 0;
-  }
-  return Math.max(1, Math.ceil(text.length / 4));
+  return estimateAnthropicRequestTokens(body);
 }
 
-function resolveCountTokensStubInput(
+function resolveCountTokensOverride(
   body: Record<string, unknown>,
   role: RuntimeAgentRole,
   resolve?: AnthropicProxyStartOptions["resolveCountTokensInput"],
-): number {
+): number | undefined {
   const fromHook = resolve?.({ role, body });
-  if (typeof fromHook === "number" && Number.isFinite(fromHook) && fromHook >= 0) {
-    return Math.trunc(fromHook);
+  if (fromHook === undefined) {
+    return undefined;
   }
-  return estimateInputTokensFromAnthropicBody(body);
+  if (typeof fromHook !== "number" || !Number.isFinite(fromHook) || fromHook < 0) {
+    throw new Error("resolveCountTokensInput 返回了无效 token 数。");
+  }
+  return Math.trunc(fromHook);
 }
 
 export function injectImagesIntoMessagesBody(

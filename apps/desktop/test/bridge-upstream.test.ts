@@ -1,20 +1,21 @@
 import { expect, test } from "bun:test";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
 import {
   appendStreamUtf8Chunk,
   applyGatewayContextManagementPolyfill,
   applyResponsesRoutingHints,
   applyUpstreamMaxOutputLimit,
-  buildBridgeUpstreamMessagesPayload,
   buildBridgePromptCacheKey,
+  buildBridgeUpstreamMessagesPayload,
   createStreamUtf8Decoder,
   finalizeStreamUtf8Decoder,
   forwardMessagesViaBridge,
   parseAnthropicStreamEventBlock,
   parseBridgeProbeReply,
   splitSseBlocks,
+  stripSemanticCompactionDirectives,
 } from "../src/main/bridge-upstream";
-import type { AnthropicRequest } from "@eco/openai-anthropic-bridge";
-import type { IncomingMessage, ServerResponse } from "node:http";
 
 test("buildBridgeUpstreamMessagesPayload passthrough anthropic without responses ir", () => {
   const request: AnthropicRequest = {
@@ -31,6 +32,38 @@ test("buildBridgeUpstreamMessagesPayload passthrough anthropic without responses
   expect(body).not.toHaveProperty("input");
   expect(body).not.toHaveProperty("store");
   expect(body).not.toHaveProperty("parallel_tool_calls");
+});
+
+test("stripSemanticCompactionDirectives removes provider compaction but preserves tool clearing", () => {
+  const request: AnthropicRequest = {
+    model: "claude-sonnet-4-6",
+    max_tokens: 256,
+    context_management: {
+      edits: [
+        { type: "compact_20260112", trigger: { type: "input_tokens", value: 100_000 } },
+        { type: "clear_tool_uses_20250919", keep: { type: "tool_uses", value: 2 } },
+      ],
+    },
+    messages: [{ role: "user", content: "hi" }],
+  };
+
+  const stripped = stripSemanticCompactionDirectives(request);
+  expect(stripped.context_management).toEqual({
+    edits: [{ type: "clear_tool_uses_20250919", keep: { type: "tool_uses", value: 2 } }],
+  });
+  expect(request.context_management).toHaveProperty("edits.0.type", "compact_20260112");
+});
+
+test("buildBridgeUpstreamMessagesPayload strips semantic compaction for Anthropic passthrough", () => {
+  const request: AnthropicRequest = {
+    model: "claude-sonnet-4-6",
+    max_tokens: 256,
+    context_management: [{ type: "compaction", compact_threshold: 100_000 }],
+    messages: [{ role: "user", content: "hi" }],
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload("anthropic", request, "claude-sonnet-4-6", false);
+  expect(body.context_management).toBeUndefined();
 });
 
 test("buildBridgeUpstreamMessagesPayload preserves anthropic stream when SDK sends it", () => {
@@ -54,12 +87,7 @@ test("buildBridgeUpstreamMessagesPayload maps max_tokens for openai chat complet
     max_tokens: 4096,
     messages: [{ role: "user", content: "hi" }],
   };
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "local-model",
-    false,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "local-model", false);
   expect(body.max_tokens).toBe(4096);
   expect(body.max_completion_tokens).toBe(4096);
 });
@@ -73,12 +101,7 @@ test("buildBridgeUpstreamMessagesPayload omits reasoning_effort for openai chat 
     effort: "medium",
     messages: [{ role: "user", content: "hi" }],
   };
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "local-model",
-    true,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "local-model", true);
   expect(body.stream).toBe(true);
   expect(body).not.toHaveProperty("reasoning_effort");
 });
@@ -90,12 +113,7 @@ test("buildBridgeUpstreamMessagesPayload adds disable-thinking kwargs for openai
     thinking: { type: "disabled" },
     messages: [{ role: "user", content: "hi" }],
   };
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "local-model",
-    false,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "local-model", false);
   expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
 });
 
@@ -106,12 +124,7 @@ test("buildBridgeUpstreamMessagesPayload does not add chat kwargs when thinking 
     thinking: { type: "adaptive" },
     messages: [{ role: "user", content: "hi" }],
   };
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "local-model",
-    false,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "local-model", false);
   expect(body).not.toHaveProperty("chat_template_kwargs");
 });
 
@@ -132,13 +145,7 @@ test("buildBridgeUpstreamMessagesPayload applies manual cap on openai responses 
     max_tokens: 8192,
     messages: [{ role: "user", content: "hi" }],
   };
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "local-model",
-    false,
-    4096,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_responses", request, "local-model", false, 4096);
   expect(body.max_output_tokens).toBe(4096);
 });
 
@@ -149,12 +156,7 @@ test("buildBridgeUpstreamMessagesPayload sends Responses input as a list", () =>
     messages: [{ role: "user", content: "hi" }],
   };
 
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "local-model",
-    true,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_responses", request, "local-model", true);
 
   expect(Array.isArray(body.input)).toBe(true);
   expect(body.input).toEqual([
@@ -193,12 +195,7 @@ test("buildBridgeUpstreamMessagesPayload does not send Anthropic cache_control t
     ],
   };
 
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "gpt-5.5",
-    true,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_responses", request, "gpt-5.5", true);
 
   expect(body).not.toHaveProperty("cache_control");
   expect(JSON.stringify(body)).not.toContain('"cache_control"');
@@ -261,12 +258,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
     tool_choice: { type: "tool", name: "web_search" },
   };
 
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "gpt-5.5",
-    true,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_responses", request, "gpt-5.5", true);
 
   expect(body.model).toBe("gpt-5.5");
   expect(body.stream).toBe(true);
@@ -274,9 +266,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
   expect(body.max_output_tokens).toBe(4096);
   expect(body.reasoning).toEqual({ effort: "high" });
   expect(body.tool_choice).toEqual({ type: "web_search_preview" });
-  expect(body.context_management).toEqual([
-    { type: "compaction", compact_threshold: 150000 },
-  ]);
+  expect(body.context_management).toBeUndefined();
   expect(body.tools).toEqual([
     {
       type: "function",
@@ -314,7 +304,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
     type: "function_call",
     call_id: "call_read",
     name: "Read",
-    arguments: "{\"file\":\"a.txt\"}",
+    arguments: '{"file":"a.txt"}',
   });
   expect(input[4]).toEqual({
     type: "function_call_output",
@@ -359,12 +349,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Chat Completions wir
     tool_choice: { type: "tool", name: "Read" },
   };
 
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    "chat-model",
-    true,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_chat_completions", request, "chat-model", true);
 
   expect(body.model).toBe("chat-model");
   expect(body.stream).toBe(true);
@@ -406,7 +391,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Chat Completions wir
       {
         id: "call_read",
         type: "function",
-        function: { name: "Read", arguments: "{\"file\":\"a.txt\"}" },
+        function: { name: "Read", arguments: '{"file":"a.txt"}' },
       },
     ],
   });
@@ -457,12 +442,7 @@ test("buildBridgeUpstreamMessagesPayload polyfills clear_tool_uses for openai re
     ],
   };
 
-  const body = buildBridgeUpstreamMessagesPayload(
-    "openai_responses",
-    request,
-    "local-model",
-    false,
-  );
+  const body = buildBridgeUpstreamMessagesPayload("openai_responses", request, "local-model", false);
   expect(Array.isArray(body.input)).toBe(true);
   const items = body.input as Array<Record<string, unknown>>;
   const outputs = items.filter((item) => item.type === "function_call_output");

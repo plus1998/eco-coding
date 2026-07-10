@@ -41,7 +41,6 @@ test("emits one occupancy segment per independent role window", () => {
     monitor,
     isThreadRunning: () => false,
     getResume: () => undefined,
-    withSdkDriver: async () => {},
     emitContext: (_threadId, snapshot) => emitted.push(snapshot),
     emitCompactionStatus: () => {},
   });
@@ -72,9 +71,7 @@ test("emits one occupancy segment per independent role window", () => {
     { key: "conversation", label: "会话", tokens: 10_000, color: "#ea580c" },
   ]);
   const coderSegments = snapshot?.roles?.find((role) => role.role === "coder")?.segments;
-  expect(coderSegments).toEqual([
-    { key: "conversation", label: "会话", tokens: 40_000, color: "#ea580c" },
-  ]);
+  expect(coderSegments).toEqual([{ key: "conversation", label: "会话", tokens: 40_000, color: "#ea580c" }]);
 });
 
 test("clearSubagentState drops cached child role snapshots and segments", () => {
@@ -114,7 +111,6 @@ test("clearSubagentState drops cached child role snapshots and segments", () => 
     monitor,
     isThreadRunning: () => false,
     getResume: () => undefined,
-    withSdkDriver: async () => {},
     emitContext: () => {},
     emitCompactionStatus: () => {},
   });
@@ -181,7 +177,9 @@ test("applySdkContextUsageBreakdown updates planner segments from getContextUsag
         ...monitorSnapshot,
         occupied,
         roles: monitorSnapshot.roles.map((entry) =>
-          entry.role === role ? { ...entry, occupied, occupancyPct: Math.round((occupied / entry.limit) * 100) } : entry,
+          entry.role === role
+            ? { ...entry, occupied, occupancyPct: Math.round((occupied / entry.limit) * 100) }
+            : entry,
         ),
       };
       return monitorSnapshot;
@@ -195,7 +193,6 @@ test("applySdkContextUsageBreakdown updates planner segments from getContextUsag
     monitor,
     isThreadRunning: () => false,
     getResume: () => undefined,
-    withSdkDriver: async () => {},
     emitContext: (_threadId, snapshot) => emitted.push(snapshot),
     emitCompactionStatus: () => {},
   });
@@ -216,493 +213,250 @@ test("applySdkContextUsageBreakdown updates planner segments from getContextUsag
 
   const snapshot = emitted.at(-1);
   expect(snapshot?.occupied).toBe(31_528);
-  expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments.some((s) => s.label === "未归因上下文")).toBe(
-    true,
-  );
+  expect(
+    snapshot?.roles
+      ?.find((role) => role.role === "planner")
+      ?.segments.some((s) => s.label === "未归因上下文"),
+  ).toBe(true);
 });
 
-test("ensureHeadroom runs while thread is running when ignoreRunningGuard is set", async () => {
-  let compactCalled = false;
-  const monitor = {
+interface MutableCompactionMonitorState {
+  inFlight: boolean;
+  suspended: boolean;
+  failures: number;
+  completedTokens?: number;
+}
+
+function createCompactionMonitor(
+  state: MutableCompactionMonitorState,
+  options: { shouldCompact?: boolean; atThreshold?: boolean } = {},
+): ContextWindowMonitor {
+  return {
     getSnapshot: () => undefined,
+    getRoleOccupancy: () => 80_000,
     restoreFromContextSnapshot: () => {},
     clearThread: () => {},
-    shouldCompact: () => true,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => {},
-    updateFromUsage: async () => ({}),
+    shouldCompact: () => options.shouldCompact ?? true,
+    isAtCompactionThreshold: () => options.atThreshold ?? true,
+    isAutoCompactSuspended: () => state.suspended,
+    isCompactInFlight: () => state.inFlight,
+    beginCompactIfIdle: () => {
+      if (state.inFlight) return false;
+      state.inFlight = true;
+      return true;
+    },
+    markCompactInFlight: () => {
+      state.inFlight = true;
+    },
+    clearCompactInFlight: () => {
+      state.inFlight = false;
+    },
+    markCompactCompleted: (_threadId: string, postTokens?: number) => {
+      state.inFlight = false;
+      state.failures = 0;
+      state.suspended = false;
+      state.completedTokens = postTokens;
+      return {} as ContextMonitorSnapshot;
+    },
+    recordAutoCompactFailure: () => {
+      state.failures += 1;
+      state.suspended = state.failures >= 3;
+      return { tripped: state.suspended, failures: state.failures };
+    },
   } as unknown as ContextWindowMonitor;
+}
+
+test("ensureHeadroom runs Eco compaction while thread is running when ignoreRunningGuard is set", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  const calls: string[] = [];
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state),
     isThreadRunning: () => true,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      compactCalled = true;
-      const driver = {
-        compactSession: async function* () {
-          yield {
-            type: "agent.started",
-            payload: { subtype: "compact_boundary", compact_metadata: { post_tokens: 10_000 } },
-          };
-        },
-      };
-      await fn(driver as never, new AbortController().signal, []);
-    },
     emitContext: () => {},
     emitCompactionStatus: () => {},
+    archiveBeforeCompaction: async () => {
+      calls.push("archive");
+    },
+    runEcoCompact: async () => {
+      calls.push("eco");
+      return { postTokensEstimate: 9_000 };
+    },
+    recordEcoCompactionBoundary: () => {
+      calls.push("boundary");
+    },
   });
 
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal, {
+  const compacted = await scheduler.ensureHeadroom("t1", "/tmp", new AbortController().signal, {
     ignoreRunningGuard: true,
   });
-  expect(compactCalled).toBe(true);
+  expect(compacted).toBe(true);
+  expect(calls).toEqual(["archive", "eco", "boundary"]);
+  expect(state.completedTokens).toBe(9_000);
 });
 
-test("ensureHeadroom skips while thread is running without ignoreRunningGuard", async () => {
-  let compactCalled = false;
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => true,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => {},
-  } as unknown as ContextWindowMonitor;
+test("ensureHeadroom skips a running thread without ignoreRunningGuard", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  let ecoCalled = false;
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state),
     isThreadRunning: () => true,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async () => {
-      compactCalled = true;
+    emitContext: () => {},
+    emitCompactionStatus: () => {},
+    runEcoCompact: async () => {
+      ecoCalled = true;
+      return { postTokensEstimate: 9_000 };
     },
+  });
+
+  const compacted = await scheduler.ensureHeadroom("t1", "/tmp", new AbortController().signal);
+  expect(compacted).toBe(false);
+  expect(ecoCalled).toBe(false);
+});
+
+test("ensureHeadroom returns false when no resumable SDK session exists", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  const scheduler = new ContextSnapshotScheduler({
+    monitor: createCompactionMonitor(state),
+    isThreadRunning: () => false,
+    getResume: () => undefined,
     emitContext: () => {},
     emitCompactionStatus: () => {},
   });
 
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-  expect(compactCalled).toBe(false);
+  expect(await scheduler.ensureHeadroom("t1", "/tmp", new AbortController().signal)).toBe(false);
 });
 
-test("ensureHeadroom applies sdk_context_usage from compact session events", async () => {
-  const emitted: ThreadContextSnapshot[] = [];
-  let monitorSnapshot: ContextMonitorSnapshot = {
-    occupied: 90_000,
-    limit: 200_000,
-    ratio: 0.45,
-    occupancyPct: 45,
-    limitsResolved: true,
-    displayRole: "planner",
-    roles: [
-      {
-        role: "planner",
-        occupied: 90_000,
-        limit: 200_000,
-        ratio: 0.45,
-        occupancyPct: 45,
-        limitsResolved: true,
-      },
-    ],
-  };
-  const monitor = {
-    getSnapshot: () => monitorSnapshot,
-    updateOccupied: async (_threadId: string, role: "planner", occupied: number) => {
-      monitorSnapshot = {
-        ...monitorSnapshot,
-        occupied,
-        roles: monitorSnapshot.roles.map((entry) =>
-          entry.role === role ? { ...entry, occupied, occupancyPct: Math.round((occupied / entry.limit) * 100) } : entry,
-        ),
-      };
-      return monitorSnapshot;
-    },
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => true,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => {},
-    updateFromUsage: async () => monitorSnapshot,
-  } as unknown as ContextWindowMonitor;
+test("compactManual always uses Eco compaction without checking the auto threshold", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  const calls: string[] = [];
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state, { shouldCompact: false }),
     isThreadRunning: () => false,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      const driver = {
-        compactSession: async function* () {
-          yield {
-            type: "usage.recorded",
-            payload: {
-              type: "sdk_context_usage",
-              ecoSdkContextUsage: {
-                totalTokens: 40_000,
-                maxTokens: 200_000,
-                percentage: 20,
-                messageBreakdown: {
-                  userMessageTokens: 5000,
-                  assistantMessageTokens: 1000,
-                  unattributedTokens: 34_000,
-                },
-              },
-            },
-          };
-        },
-      };
-      await fn(driver as never, new AbortController().signal, []);
-    },
-    emitContext: (_threadId, snapshot) => emitted.push(snapshot),
-    emitCompactionStatus: () => {},
-  });
-
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-  const snapshot = emitted.at(-1);
-  expect(snapshot?.occupied).toBe(40_000);
-});
-
-test("compactManual runs /compact without shouldCompact threshold", async () => {
-  let compactCalled = false;
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => false,
-    isCompactInFlight: () => false,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => ({}),
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
-  const scheduler = new ContextSnapshotScheduler({
-    monitor,
-    isThreadRunning: () => false,
-    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      const driver = {
-        compactSession: async function* () {
-          compactCalled = true;
-          yield { type: "agent.started", payload: { subtype: "compact_boundary", compact_metadata: { post_tokens: 1000 } } };
-        },
-      };
-      await fn(driver as never, new AbortController().signal, []);
-    },
     emitContext: () => {},
     emitCompactionStatus: () => {},
+    archiveBeforeCompaction: async () => {
+      calls.push("archive");
+    },
+    runEcoCompact: async () => {
+      calls.push("eco");
+      return { postTokensEstimate: 4_000 };
+    },
+    recordEcoCompactionBoundary: () => {
+      calls.push("boundary");
+    },
   });
 
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: true });
-  expect(compactCalled).toBe(true);
+  expect(await scheduler.compactManual("t1", "/tmp", new AbortController().signal)).toEqual({ ok: true });
+  expect(calls).toEqual(["archive", "eco", "boundary"]);
 });
 
 test("compactManual rejects while thread is running", async () => {
-  const monitor = {
-    isCompactInFlight: () => false,
-  } as unknown as ContextWindowMonitor;
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state),
     isThreadRunning: () => true,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async () => {},
     emitContext: () => {},
     emitCompactionStatus: () => {},
   });
 
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: false, reason: "thread_running" });
-});
-
-test("runCompactSession emits completed when SDK omits compact_boundary", async () => {
-  const compactionStatuses: Array<{ stage: string; trigger: string; postTokens?: number }> = [];
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => false,
-    isCompactInFlight: () => false,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => ({}),
-    clearCompactInFlight: () => {},
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
-  const scheduler = new ContextSnapshotScheduler({
-    monitor,
-    isThreadRunning: () => false,
-    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      const driver = {
-        compactSession: async function* () {
-          // SDK finished without emitting compact_boundary.
-        },
-      };
-      await fn(driver as never, new AbortController().signal, []);
-    },
-    emitContext: () => {},
-    emitCompactionStatus: (_threadId, status) => {
-      compactionStatuses.push(status);
-    },
+  expect(await scheduler.compactManual("t1", "/tmp", new AbortController().signal)).toEqual({
+    ok: false,
+    reason: "thread_running",
   });
-
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: true });
-  expect(compactionStatuses).toEqual([{ stage: "completed", trigger: "manual" }]);
 });
 
-test("ensureHeadroom clears compact in flight after failure", async () => {
-  let compactInFlight = false;
-  let failureCount = 0;
-  const compactionStatuses: Array<{
-    stage: string;
-    trigger: string;
-    detail?: string;
-    consecutiveFailures?: number;
-  }> = [];
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => true,
-    markCompactInFlight: () => {
-      compactInFlight = true;
-    },
-    clearCompactInFlight: () => {
-      compactInFlight = false;
-    },
-    recordAutoCompactFailure: () => {
-      failureCount += 1;
-      return { tripped: false, failures: failureCount };
-    },
-    markCompactCompleted: () => ({}),
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
+test("ensureHeadroom records failure, clears the lock, and rethrows", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  const failures: Array<{ trigger: string; detail: string }> = [];
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state),
     isThreadRunning: () => false,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async () => {
-      throw new Error("driver unavailable");
-    },
-    emitContext: () => {},
-    emitCompactionStatus: (_threadId, status) => {
-      compactionStatuses.push(status);
-    },
-  });
-
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-  expect(compactInFlight).toBe(false);
-  expect(failureCount).toBe(1);
-  expect(compactionStatuses).toEqual([
-    { stage: "started", trigger: "auto" },
-    { stage: "failed", trigger: "auto", detail: "driver unavailable", consecutiveFailures: 1 },
-  ]);
-});
-
-test("ensureHeadroom emits suspended after third consecutive auto compact failure", async () => {
-  let failureCount = 0;
-  const compactionStatuses: Array<{
-    stage: string;
-    trigger: string;
-    consecutiveFailures?: number;
-  }> = [];
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => failureCount < 3,
-    markCompactInFlight: () => {},
-    clearCompactInFlight: () => {},
-    recordAutoCompactFailure: () => {
-      failureCount += 1;
-      return { tripped: failureCount >= 3, failures: failureCount };
-    },
-    markCompactCompleted: () => ({}),
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
-  const scheduler = new ContextSnapshotScheduler({
-    monitor,
-    isThreadRunning: () => false,
-    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async () => {
-      throw new Error("compact failed");
-    },
-    emitContext: () => {},
-    emitCompactionStatus: (_threadId, status) => {
-      compactionStatuses.push(status);
-    },
-  });
-
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
-
-  expect(failureCount).toBe(3);
-  expect(compactionStatuses.filter((status) => status.stage === "suspended")).toEqual([
-    { stage: "suspended", trigger: "auto", consecutiveFailures: 3 },
-  ]);
-});
-
-test("compactManual uses eco path when slash commands omit compact", async () => {
-  let ecoCompactCalled = false;
-  let sdkCompactCalled = false;
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => false,
-    isCompactInFlight: () => false,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => ({}),
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
-  const scheduler = new ContextSnapshotScheduler({
-    monitor,
-    isThreadRunning: () => false,
-    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      const driver = {
-        compactSession: async function* () {
-          sdkCompactCalled = true;
-          yield {
-            type: "agent.started",
-            payload: {
-              type: "system",
-              subtype: "init",
-              slash_commands: ["/context", "/help"],
-            },
-          };
-        },
-      };
-      await fn(driver as never, new AbortController().signal, []);
-    },
     emitContext: () => {},
     emitCompactionStatus: () => {},
     runEcoCompact: async () => {
-      ecoCompactCalled = true;
-      return { postTokensEstimate: 12_000 };
+      throw new Error("summary failed");
+    },
+    recordEcoCompactionFailure: (_threadId, input) => failures.push(input),
+  });
+
+  await expect(scheduler.ensureHeadroom("t1", "/tmp", new AbortController().signal)).rejects.toThrow(
+    "summary failed",
+  );
+  expect(state.inFlight).toBe(false);
+  expect(state.failures).toBe(1);
+  expect(failures).toEqual([{ trigger: "auto", detail: "summary failed", sessionId: "sess-1" }]);
+});
+
+test("ensureHeadroom emits suspended after the third consecutive Eco failure", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  const statuses: Array<{ stage: string; consecutiveFailures?: number }> = [];
+  const scheduler = new ContextSnapshotScheduler({
+    monitor: createCompactionMonitor(state),
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    emitContext: () => {},
+    emitCompactionStatus: (_threadId, status) => statuses.push(status),
+    runEcoCompact: async () => {
+      throw new Error("summary failed");
     },
   });
 
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: true });
-  expect(sdkCompactCalled).toBe(true);
-  expect(ecoCompactCalled).toBe(true);
+  for (let index = 0; index < 3; index += 1) {
+    await expect(scheduler.ensureHeadroom("t1", "/tmp", new AbortController().signal)).rejects.toThrow(
+      "summary failed",
+    );
+  }
+  expect(statuses.at(-1)).toEqual({ stage: "suspended", trigger: "auto", consecutiveFailures: 3 });
 });
 
-test("compactManual keeps SDK path when slash commands include compact", async () => {
-  let ecoCompactCalled = false;
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => false,
-    isCompactInFlight: () => false,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => ({}),
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
+test("ensureHeadroom blocks an over-threshold session after auto compaction is suspended", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: true, failures: 3 };
+  let ecoCalled = false;
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state),
     isThreadRunning: () => false,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      const driver = {
-        compactSession: async function* () {
-          yield {
-            type: "agent.started",
-            payload: {
-              type: "system",
-              subtype: "init",
-              slash_commands: ["/compact", "/context"],
-            },
-          };
-          yield {
-            type: "agent.started",
-            payload: {
-              subtype: "compact_boundary",
-              compact_metadata: { post_tokens: 4000 },
-            },
-          };
-        },
-      };
-      await fn(driver as never, new AbortController().signal, []);
-    },
     emitContext: () => {},
     emitCompactionStatus: () => {},
     runEcoCompact: async () => {
-      ecoCompactCalled = true;
-      return { postTokensEstimate: 12_000 };
+      ecoCalled = true;
+      return { postTokensEstimate: 1 };
     },
   });
 
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: true });
-  expect(ecoCompactCalled).toBe(false);
+  await expect(scheduler.ensureHeadroom("t1", "/tmp", new AbortController().signal)).rejects.toThrow(
+    "不能继续恢复旧会话",
+  );
+  expect(ecoCalled).toBe(false);
 });
 
-test("compactManual uses eco path when shouldPreferEcoCompact is true", async () => {
-  let ecoCompactCalled = false;
-  let withSdkDriverCalled = false;
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => false,
-    isCompactInFlight: () => false,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => ({}),
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
+test("compactManual reports Eco summary failures explicitly", async () => {
+  const state: MutableCompactionMonitorState = { inFlight: false, suspended: false, failures: 0 };
+  const statuses: Array<{ stage: string; detail?: string }> = [];
   const scheduler = new ContextSnapshotScheduler({
-    monitor,
+    monitor: createCompactionMonitor(state),
     isThreadRunning: () => false,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    shouldPreferEcoCompact: () => true,
-    withSdkDriver: async () => {
-      withSdkDriverCalled = true;
-    },
     emitContext: () => {},
-    emitCompactionStatus: () => {},
-    runEcoCompact: async () => {
-      ecoCompactCalled = true;
-      return { postTokensEstimate: 9000 };
-    },
-  });
-
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: true });
-  expect(ecoCompactCalled).toBe(true);
-  expect(withSdkDriverCalled).toBe(false);
-});
-
-test("compactManual emits failed compaction status when eco compact times out", async () => {
-  const compactionStatuses: Array<{ stage: string; trigger?: string; detail?: string }> = [];
-  const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
-    clearThread: () => {},
-    shouldCompact: () => false,
-    isCompactInFlight: () => false,
-    markCompactInFlight: () => {},
-    markCompactCompleted: () => ({}),
-    clearCompactInFlight: () => {},
-    updateFromUsage: async () => undefined,
-  } as unknown as ContextWindowMonitor;
-  const scheduler = new ContextSnapshotScheduler({
-    monitor,
-    isThreadRunning: () => false,
-    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    shouldPreferEcoCompact: () => true,
-    withSdkDriver: async () => {},
-    emitContext: () => {},
-    emitCompactionStatus: (_threadId, status) => {
-      compactionStatuses.push(status);
-    },
+    emitCompactionStatus: (_threadId, status) => statuses.push(status),
     runEcoCompact: async () => {
       throw new Error("摘要生成超时（180 秒）");
     },
   });
 
-  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
-  expect(result).toEqual({ ok: false, reason: "摘要生成超时（180 秒）" });
-  expect(compactionStatuses).toEqual([
-    { stage: "failed", trigger: "manual", detail: "摘要生成超时（180 秒）" },
-  ]);
+  expect(await scheduler.compactManual("t1", "/tmp", new AbortController().signal)).toEqual({
+    ok: false,
+    reason: "摘要生成超时（180 秒）",
+  });
+  expect(statuses).toContainEqual({
+    stage: "failed",
+    trigger: "manual",
+    detail: "摘要生成超时（180 秒）",
+  });
+  expect(state.inFlight).toBe(false);
 });

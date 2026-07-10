@@ -584,6 +584,7 @@ export interface ProxyBridgeSettingsSnapshot {
 
 import type { AgentTemplate, OrchestrationProfile } from "./agent-orchestration";
 import type { UpstreamApiCompat } from "./api-compat";
+import type { ProviderTokenCountMode } from "./provider-token-count";
 import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
 
 export type {
@@ -601,6 +602,7 @@ export type {
   ToolPolicy,
 } from "./agent-orchestration";
 export type { UpstreamApiCompat };
+export type { ProviderTokenCountMode };
 
 export interface ProviderConfigInput {
   id?: string;
@@ -610,6 +612,8 @@ export interface ProviderConfigInput {
   requestPath?: string;
   /** Default upstream API for this provider (role routes may override). */
   apiCompat?: UpstreamApiCompat;
+  /** Explicit count_tokens implementation; never inferred from apiCompat. */
+  tokenCountMode?: ProviderTokenCountMode;
   apiKey?: string;
   defaultModel: string;
   enabled: boolean;
@@ -621,6 +625,7 @@ export interface ProviderConfigView {
   baseUrl: string;
   requestPath: string;
   apiCompat: UpstreamApiCompat;
+  tokenCountMode?: ProviderTokenCountMode;
   defaultModel: string;
   enabled: boolean;
   hasApiKey: boolean;

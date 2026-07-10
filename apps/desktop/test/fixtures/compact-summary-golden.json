@@ -1,0 +1,64 @@
+[
+  {
+    "id": "preserves_paths_commands_errors_and_next_steps",
+    "expectedOk": true,
+    "sourceTexts": [
+      "用户要求不要用 fallback 掩盖失败。",
+      "修改 apps/desktop/src/main/eco-compact-service.ts。",
+      "运行 bun test apps/desktop/test/eco-compact-service.test.ts，退出码 1，错误为 ECOMPACT_INVALID_SUMMARY_ERROR。",
+      "尚未完成 provider token counter adapter。"
+    ],
+    "requiredFacts": {
+      "filePaths": ["apps/desktop/src/main/eco-compact-service.ts"],
+      "commands": ["bun test apps/desktop/test/eco-compact-service.test.ts"],
+      "errors": ["ECOMPACT_INVALID_SUMMARY_ERROR", "退出码 1"],
+      "unfinished": ["provider token counter adapter"],
+      "constraints": ["不要用 fallback 掩盖失败"]
+    },
+    "forbiddenClaims": ["全量测试通过"],
+    "summary": "## 任务目标\n完善跨平台上下文压缩，且不要用 fallback 掩盖失败。\n\n## 已读/已改文件\napps/desktop/src/main/eco-compact-service.ts\n\n## 测试结果与错误\n运行 bun test apps/desktop/test/eco-compact-service.test.ts，退出码 1；错误为 ECOMPACT_INVALID_SUMMARY_ERROR。\n\n## 已做决策\n压缩失败必须明确返回错误。\n\n## 未完成事项\n实现 provider token counter adapter。"
+  },
+  {
+    "id": "detects_missing_error_text",
+    "expectedOk": false,
+    "sourceTexts": ["测试报错 SQLITE_CONSTRAINT_NOTNULL。"],
+    "requiredFacts": {
+      "errors": ["SQLITE_CONSTRAINT_NOTNULL"]
+    },
+    "summary": "## 任务目标\n修复数据库迁移。\n\n## 已读/已改文件\n无。\n\n## 测试结果与错误\n测试失败，具体错误未记录。\n\n## 已做决策\n继续调查。\n\n## 未完成事项\n修复迁移。"
+  },
+  {
+    "id": "detects_fabricated_all_tests_passed",
+    "expectedOk": false,
+    "sourceTexts": ["只运行了一个定向测试，结果 3 pass；全量测试尚未运行。"],
+    "forbiddenClaims": ["全量测试通过"],
+    "summary": "## 任务目标\n完成压缩。\n\n## 已读/已改文件\n无。\n\n## 测试结果与错误\n全量测试通过。\n\n## 已做决策\n可以发布。\n\n## 未完成事项\n无。"
+  },
+  {
+    "id": "rolling_generation_retains_prior_and_new_critical_facts",
+    "expectedOk": true,
+    "sourceTexts": [
+      "generation 1: 用户禁止清除损坏 handoff；关键文件 apps/desktop/src/main/conversation-store.ts。",
+      "generation 2: 已加入 BEGIN IMMEDIATE；仍需补 source session race 测试。"
+    ],
+    "requiredFacts": {
+      "filePaths": ["apps/desktop/src/main/conversation-store.ts"],
+      "constraints": ["禁止清除损坏 handoff"],
+      "decisions": ["BEGIN IMMEDIATE"],
+      "unfinished": ["source session race 测试"]
+    },
+    "summary": "## 任务目标\n保证压缩状态转换原子且禁止清除损坏 handoff。\n\n## 已读/已改文件\napps/desktop/src/main/conversation-store.ts\n\n## 测试结果与错误\n尚未执行 source session race 测试。\n\n## 已做决策\n事务使用 BEGIN IMMEDIATE。\n\n## 未完成事项\n补充 source session race 测试。"
+  },
+  {
+    "id": "rolling_generation_detects_lost_prior_constraint",
+    "expectedOk": false,
+    "sourceTexts": [
+      "generation 1: 用户禁止清除损坏 handoff。",
+      "generation 2: 完成分块摘要。"
+    ],
+    "requiredFacts": {
+      "constraints": ["禁止清除损坏 handoff"]
+    },
+    "summary": "## 任务目标\n完成分块摘要。\n\n## 已读/已改文件\n无。\n\n## 测试结果与错误\n未执行。\n\n## 已做决策\n使用分块合并。\n\n## 未完成事项\n继续优化。"
+  }
+]

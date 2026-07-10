@@ -1,22 +1,18 @@
-import type { ResolvedModelRoute } from "@eco/model-router";
 import {
-  type AgentRuntimeDriver,
   alignBreakdownSegmentsToOccupied,
   type EcoSdkResumeOptions,
   normalizeContextSegments,
   parseSdkGetContextUsageBreakdown,
-  parseUsagePayload,
 } from "@eco/runtime";
-import {
-  type ClaudeAgentSdkDriver,
-  extractCompactPostTokens,
-  readSdkSlashCommands,
-  sdkSupportsSlashCommand,
-} from "@eco/runtime/sdk";
+import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
+import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
+import { logEcoDiag, shortThreadId } from "./eco-diag-log";
 
 export interface EcoCompactRunRequest {
   trigger: "auto" | "manual";
-  sessionId?: string;
+  sessionId: string;
+  preTokensEstimate?: number;
+  preTokensSource?: "sdk_context_usage" | "local_heuristic";
   worktreePath: string;
   signal: AbortSignal;
 }
@@ -25,26 +21,10 @@ export interface EcoCompactRunResult {
   postTokensEstimate: number;
 }
 
-import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
-import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
-import { logEcoDiag, shortThreadId } from "./eco-diag-log";
-
-type SdkDriver = ClaudeAgentSdkDriver & {
-  compactSession?: AgentRuntimeDriver["compactSession"];
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-type ContextCompactionMethod =
-  | "sdk"
-  | "eco"
-  | "eco-fallback:no-compact-session"
-  | "eco-fallback:unsupported-slash-command";
+type ContextCompactionMethod = "eco";
 
 function logContextCompaction(
-  event: "start" | "complete" | "fallback" | "fail",
+  event: "start" | "complete" | "fail",
   input: {
     threadId: string;
     trigger: "auto" | "manual";
@@ -88,10 +68,6 @@ export interface ContextSnapshotSchedulerOptions {
   getResume: (threadId: string, worktreePath: string) => EcoSdkResumeOptions | undefined;
   /** When set, skip context refresh if the worktree path is missing or no longer a git worktree. */
   isWorktreePathReady?: (worktreePath: string) => Promise<boolean>;
-  withSdkDriver: (
-    threadId: string,
-    fn: (driver: SdkDriver, signal: AbortSignal, routes: readonly ResolvedModelRoute[]) => Promise<void>,
-  ) => Promise<void>;
   emitContext: (threadId: string, snapshot: ThreadContextSnapshot) => void;
   emitCompactionStatus: (
     threadId: string,
@@ -103,11 +79,6 @@ export interface ContextSnapshotSchedulerOptions {
       consecutiveFailures?: number;
     },
   ) => void;
-  onCompactionBoundary?: (
-    threadId: string,
-    input: { payload: Record<string, unknown>; sourceEventId?: string },
-  ) => void;
-  shouldPreferEcoCompact?: (threadId: string) => boolean;
   runEcoCompact?: (threadId: string, input: EcoCompactRunRequest) => Promise<EcoCompactRunResult>;
   archiveBeforeCompaction?: (
     threadId: string,
@@ -117,6 +88,10 @@ export interface ContextSnapshotSchedulerOptions {
   recordEcoCompactionBoundary?: (
     threadId: string,
     input: { trigger: "auto" | "manual"; postTokens: number },
+  ) => void;
+  recordEcoCompactionFailure?: (
+    threadId: string,
+    input: { trigger: "auto" | "manual"; sessionId?: string; detail: string },
   ) => void;
 }
 
@@ -223,43 +198,43 @@ export class ContextSnapshotScheduler {
 
   async ensureHeadroom(
     threadId: string,
-    routes: readonly ResolvedModelRoute[],
     worktreePath: string,
     signal: AbortSignal,
     options?: { ignoreRunningGuard?: boolean },
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (this.options.monitor.isCompactInFlight(threadId)) {
+      throw new Error("上下文正在压缩中，请稍候。");
+    }
+    if (
+      this.options.monitor.isAutoCompactSuspended(threadId) &&
+      this.options.monitor.isAtCompactionThreshold(threadId)
+    ) {
+      throw new Error("自动上下文压缩已暂停；当前会话仍超过压缩阈值，不能继续恢复旧会话。");
+    }
     if (!this.options.monitor.shouldCompact(threadId)) {
-      return;
+      return false;
     }
     if (!options?.ignoreRunningGuard && this.options.isThreadRunning(threadId)) {
-      return;
+      return false;
     }
-
     if (this.options.isWorktreePathReady && !(await this.options.isWorktreePathReady(worktreePath))) {
-      return;
+      return false;
     }
 
     const resume = this.options.getResume(threadId, worktreePath);
     if (!resume?.resumeSessionId) {
-      return;
+      return false;
     }
 
-    this.options.monitor.markCompactInFlight(threadId);
-    this.options.emitCompactionStatus(threadId, { stage: "started", trigger: "auto" });
-
     try {
-      await this.runCompactSession(threadId, worktreePath, signal, routes, resume, "auto");
+      await this.runEcoCompactPath(threadId, worktreePath, signal, resume, "auto");
+      return true;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.options.monitor.clearCompactInFlight(threadId);
       const failure = this.options.monitor.recordAutoCompactFailure(threadId);
-      logContextCompaction("fail", { threadId, trigger: "auto", detail });
-      this.options.emitCompactionStatus(threadId, {
-        stage: "failed",
-        trigger: "auto",
-        detail,
-        consecutiveFailures: failure.failures,
-      });
+      logContextCompaction("fail", { threadId, trigger: "auto", method: "eco", detail });
+      this.recordCompactionFailure(threadId, "auto", detail, resume.resumeSessionId);
       if (failure.tripped) {
         this.options.emitCompactionStatus(threadId, {
           stage: "suspended",
@@ -268,12 +243,12 @@ export class ContextSnapshotScheduler {
         });
       }
       process.stderr.write(`[eco] context compact failed: ${detail}\n`);
+      throw error;
     }
   }
 
   async compactManual(
     threadId: string,
-    routes: readonly ResolvedModelRoute[],
     worktreePath: string,
     signal: AbortSignal,
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -293,157 +268,16 @@ export class ContextSnapshotScheduler {
     }
 
     try {
-      await this.runCompactSession(threadId, worktreePath, signal, routes, resume, "manual");
+      await this.runEcoCompactPath(threadId, worktreePath, signal, resume, "manual");
       return { ok: true };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.options.monitor.clearCompactInFlight(threadId);
-      logContextCompaction("fail", { threadId, trigger: "manual", detail });
-      this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "manual", detail });
+      logContextCompaction("fail", { threadId, trigger: "manual", method: "eco", detail });
+      this.recordCompactionFailure(threadId, "manual", detail, resume.resumeSessionId);
       process.stderr.write(`[eco] manual context compact failed: ${detail}\n`);
       return { ok: false, reason: detail };
     }
-  }
-
-  private async runCompactSession(
-    threadId: string,
-    worktreePath: string,
-    signal: AbortSignal,
-    routes: readonly ResolvedModelRoute[],
-    resume: EcoSdkResumeOptions,
-    trigger: "auto" | "manual",
-  ): Promise<void> {
-    logContextCompaction("start", {
-      threadId,
-      trigger,
-      ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
-    });
-
-    if (this.options.shouldPreferEcoCompact?.(threadId)) {
-      await this.runEcoCompactPath(threadId, worktreePath, signal, resume, trigger, "eco");
-      return;
-    }
-
-    await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
-      const activeRoutes = driverRoutes.length > 0 ? driverRoutes : routes;
-      if (!driver.compactSession) {
-        logContextCompaction("fallback", {
-          threadId,
-          trigger,
-          method: "eco-fallback:no-compact-session",
-          detail: "driver has no compactSession",
-        });
-        await this.runEcoCompactPath(
-          threadId,
-          worktreePath,
-          runSignal ?? signal,
-          resume,
-          trigger,
-          "eco-fallback:no-compact-session",
-        );
-        return;
-      }
-
-      const sdkMethod: ContextCompactionMethod = "sdk";
-      logContextCompaction("start", {
-        threadId,
-        trigger,
-        method: sdkMethod,
-        ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
-      });
-
-      let slashCommands: string[] = [];
-      let postTokens: number | undefined;
-      let boundaryRecorded = false;
-      let shouldFallbackToEco = false;
-
-      for await (const event of driver.compactSession({
-        threadId,
-        prompt: "/compact",
-        workspacePath: worktreePath,
-        worktreePath,
-        routes: [...activeRoutes],
-        signal: runSignal ?? signal,
-        resume,
-      })) {
-        if (event.type === "agent.started" && event.payload) {
-          const payload = event.payload as Record<string, unknown>;
-          const commands = readSdkSlashCommands(payload);
-          if (commands.length > 0) {
-            slashCommands = commands;
-            if (!sdkSupportsSlashCommand(commands, "compact")) {
-              shouldFallbackToEco = true;
-              break;
-            }
-          }
-          if (payload.subtype === "compact_boundary") {
-            boundaryRecorded = true;
-            postTokens = extractCompactPostTokens(payload);
-            this.options.onCompactionBoundary?.(threadId, {
-              payload,
-              ...(typeof event.id === "string" && { sourceEventId: event.id }),
-            });
-          }
-        }
-        if (event.type === "usage.recorded" && isRecord(event.payload)) {
-          if (event.payload.type === "sdk_context_usage") {
-            this.applySdkContextUsageBreakdown(threadId, event.payload.ecoSdkContextUsage);
-            continue;
-          }
-          const usage = parseUsagePayload(event.payload);
-          const planner = activeRoutes.find((route) => route.role === "planner") ?? activeRoutes[0];
-          if (usage && planner) {
-            await this.options.monitor.updateFromUsage(threadId, usage, {
-              role: "planner",
-              modelId: planner.primary.modelId,
-              providerBaseUrl: planner.primary.baseUrl,
-            });
-          }
-        }
-      }
-
-      if (
-        shouldFallbackToEco ||
-        (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact"))
-      ) {
-        const fallbackMethod: ContextCompactionMethod = "eco-fallback:unsupported-slash-command";
-        logContextCompaction("fallback", {
-          threadId,
-          trigger,
-          method: fallbackMethod,
-          detail:
-            slashCommands.length > 0
-              ? `slashCommands=${slashCommands.join(",")}`
-              : "sdk compact session ended without compact support",
-        });
-        await this.runEcoCompactPath(
-          threadId,
-          worktreePath,
-          runSignal ?? signal,
-          resume,
-          trigger,
-          fallbackMethod,
-        );
-        return;
-      }
-
-      this.options.monitor.markCompactCompleted(threadId, postTokens);
-      this.emitLiveFromMonitor(threadId);
-      logContextCompaction("complete", {
-        threadId,
-        trigger,
-        method: sdkMethod,
-        ...(postTokens !== undefined && { postTokens }),
-        ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
-      });
-      if (!boundaryRecorded) {
-        this.options.emitCompactionStatus(threadId, {
-          stage: "completed",
-          trigger,
-          ...(postTokens !== undefined && { postTokens }),
-        });
-      }
-    });
   }
 
   private async runEcoCompactPath(
@@ -452,44 +286,79 @@ export class ContextSnapshotScheduler {
     signal: AbortSignal,
     resume: EcoSdkResumeOptions,
     trigger: "auto" | "manual",
-    method: ContextCompactionMethod,
   ): Promise<void> {
+    if (!this.options.monitor.beginCompactIfIdle(threadId)) {
+      throw new Error("上下文正在压缩中，请稍候。");
+    }
     logContextCompaction("start", {
       threadId,
       trigger,
-      method,
+      method: "eco",
       ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
     });
+
     if (!this.options.runEcoCompact) {
-      throw new Error("当前驱动不支持上下文压缩。");
+      throw new Error("Eco 上下文压缩服务未配置。");
     }
-    if (trigger === "auto") {
-      await this.options.archiveBeforeCompaction?.(threadId, trigger, resume.resumeSessionId);
+    if (this.options.archiveBeforeCompaction) {
+      await this.options.archiveBeforeCompaction(threadId, trigger, resume.resumeSessionId);
+    } else {
+      this.options.emitCompactionStatus(threadId, { stage: "started", trigger });
     }
+
+    const sourceSessionId = resume.resumeSessionId;
+    if (!sourceSessionId) {
+      throw new Error("缺少待压缩的源 SDK session。");
+    }
+    const preTokensEstimate = this.options.monitor.getRoleOccupancy(threadId, "planner");
     const result = await this.options.runEcoCompact(threadId, {
       trigger,
-      ...(resume.resumeSessionId ? { sessionId: resume.resumeSessionId } : {}),
+      sessionId: sourceSessionId,
+      ...(preTokensEstimate > 0 && {
+        preTokensEstimate,
+        preTokensSource: "sdk_context_usage" as const,
+      }),
       worktreePath,
       signal,
     });
-    this.options.recordEcoCompactionBoundary?.(threadId, {
-      trigger,
-      postTokens: result.postTokensEstimate,
-    });
     this.options.monitor.markCompactCompleted(threadId, result.postTokensEstimate);
     this.emitLiveFromMonitor(threadId);
+    if (this.options.recordEcoCompactionBoundary) {
+      this.options.recordEcoCompactionBoundary(threadId, {
+        trigger,
+        postTokens: result.postTokensEstimate,
+      });
+    } else {
+      this.options.emitCompactionStatus(threadId, {
+        stage: "completed",
+        trigger,
+        postTokens: result.postTokensEstimate,
+      });
+    }
     logContextCompaction("complete", {
       threadId,
       trigger,
-      method,
+      method: "eco",
       postTokens: result.postTokensEstimate,
       ...(resume.resumeSessionId && { sessionId: resume.resumeSessionId }),
     });
-    this.options.emitCompactionStatus(threadId, {
-      stage: "completed",
-      trigger,
-      postTokens: result.postTokensEstimate,
-    });
+  }
+
+  private recordCompactionFailure(
+    threadId: string,
+    trigger: "auto" | "manual",
+    detail: string,
+    sessionId?: string,
+  ): void {
+    if (this.options.recordEcoCompactionFailure) {
+      this.options.recordEcoCompactionFailure(threadId, {
+        trigger,
+        ...(sessionId && { sessionId }),
+        detail,
+      });
+      return;
+    }
+    this.options.emitCompactionStatus(threadId, { stage: "failed", trigger, detail });
   }
 
   private buildSnapshot(threadId: string): ThreadContextSnapshot | undefined {

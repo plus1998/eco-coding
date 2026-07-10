@@ -1,50 +1,62 @@
-import http from "node:http";
+import type http from "node:http";
 import { StringDecoder } from "node:string_decoder";
 import {
+  type AnthropicRequest,
+  type AnthropicResponse,
+  type AnthropicStreamEvent,
   anthropicEventToResponsesEvents,
   anthropicToResponses,
+  type ChatCompletionsChunk,
+  type ChatCompletionsResponse,
   chatCompletionsChunkToResponsesEvents,
   chatCompletionsResponseToResponses,
+  checkAnthropicStreamEvent,
   extractAnthropicRequestToolNames,
   finalizeAnthropicResponsesStream,
   finalizeChatCompletionsResponsesStream,
   finalizeResponsesAnthropicStream,
   newAnthropicEventToResponsesState,
+  newAnthropicStreamSequenceState,
   newChatCompletionsToResponsesStreamState,
   newResponsesEventToAnthropicState,
-  checkAnthropicStreamEvent,
-  newAnthropicStreamSequenceState,
+  type ResponsesResponse,
+  type ResponsesStreamEvent,
   responsesAnthropicEventToSse,
   responsesEventToAnthropicEvents,
   responsesToAnthropic,
   responsesToChatCompletionsRequest,
-  type AnthropicRequest,
-  type AnthropicResponse,
-  type AnthropicStreamEvent,
-  type ChatCompletionsChunk,
-  type ChatCompletionsResponse,
-  type ResponsesResponse,
-  type ResponsesStreamEvent,
 } from "@eco/openai-anthropic-bridge";
-import type { RuntimeAgentRole } from "../shared/ipc";
+import type { ParsedUsage } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
-import {
-  anthropicResponseToStreamEvents,
-  writeAnthropicStreamEvents,
-} from "./anthropic-stream-replay";
-import {
-  buildChatCompletionsUrl,
-  buildOpenAICompatUpstreamUrl,
-  buildProviderRequestBaseUrl,
-} from "./provider-models";
-import { buildProxyUpstreamHeaders } from "./upstream-request-headers";
-import type { ProviderConfigSecret } from "./provider-store";
+import type { RuntimeAgentRole } from "../shared/ipc";
+import { anthropicResponseToStreamEvents, writeAnthropicStreamEvents } from "./anthropic-stream-replay";
 import {
   createStreamingUsageTracker,
   extractUsageFromResponseBody,
   resolveChatCompletionsStreamUsage,
 } from "./anthropic-usage";
-import type { ParsedUsage } from "@eco/runtime";
+import { applyDisableThinkingUpstreamPatch } from "./disable-thinking-patch";
+import { postJsonWithOpenAIResponsesUnsupportedParameterRetry } from "./openai-responses-compat";
+import {
+  buildChatCompletionsUrl,
+  buildOpenAICompatUpstreamUrl,
+  buildProviderRequestBaseUrl,
+} from "./provider-models";
+import type { ProviderConfigSecret } from "./provider-store";
+import {
+  auditAnthropicMessagesBody,
+  isProxyCchAuditEnabled,
+  isProxyCchNormalizeEnabled,
+  normalizeAnthropicMessagesBodyForCache,
+} from "./proxy-cch-audit";
+import { logProxyRequestShape } from "./proxy-request-shape-log";
+import {
+  formatUpstreamFetchError,
+  headersToLoggable,
+  logUpstream,
+  logUpstreamError,
+  parseJsonForLog,
+} from "./upstream-log";
 import {
   buildProxyCallDebug,
   isUpstreamLogVerbose,
@@ -54,22 +66,7 @@ import {
   tokensFromUsage,
   type UpstreamProxyCallBilling,
 } from "./upstream-proxy-log";
-import {
-  auditAnthropicMessagesBody,
-  isProxyCchAuditEnabled,
-  isProxyCchNormalizeEnabled,
-  normalizeAnthropicMessagesBodyForCache,
-} from "./proxy-cch-audit";
-import {
-  headersToLoggable,
-  logUpstream,
-  logUpstreamError,
-  parseJsonForLog,
-  formatUpstreamFetchError,
-} from "./upstream-log";
-import { applyDisableThinkingUpstreamPatch } from "./disable-thinking-patch";
-import { logProxyRequestShape } from "./proxy-request-shape-log";
-import { postJsonWithOpenAIResponsesUnsupportedParameterRetry } from "./openai-responses-compat";
+import { buildProxyUpstreamHeaders } from "./upstream-request-headers";
 
 export interface BridgeForwardRoute {
   role: RuntimeAgentRole;
@@ -199,11 +196,7 @@ function bridgeProxyCallCommonFields(input: {
   });
 }
 
-function notifyBridgeProxyFailure(
-  ctx: BridgeForwardContext,
-  error: string,
-  statusCode?: number,
-): void {
+function notifyBridgeProxyFailure(ctx: BridgeForwardContext, error: string, statusCode?: number): void {
   ctx.onUpstreamConnectionError?.({
     role: ctx.route.role,
     error,
@@ -305,6 +298,48 @@ function estimateAnthropicInputTokens(req: AnthropicRequest): number {
   return Math.ceil(chars / APPROX_CHARS_PER_TOKEN);
 }
 
+const SEMANTIC_COMPACTION_EDIT_TYPES = new Set(["compact_20260112", "compaction"]);
+
+function isSemanticCompactionEdit(value: unknown): boolean {
+  return isRecord(value) && typeof value.type === "string" && SEMANTIC_COMPACTION_EDIT_TYPES.has(value.type);
+}
+
+/**
+ * Eco owns semantic history compaction. Provider-specific compaction directives are
+ * removed before any Anthropic passthrough or OpenAI-compatible conversion.
+ */
+export function stripSemanticCompactionDirectives(request: AnthropicRequest): AnthropicRequest {
+  const contextManagement = request.context_management;
+  if (Array.isArray(contextManagement)) {
+    const edits = contextManagement.filter((edit) => !isSemanticCompactionEdit(edit));
+    if (edits.length === contextManagement.length) {
+      return request;
+    }
+    const next = { ...request };
+    if (edits.length > 0) {
+      next.context_management = edits;
+    } else {
+      delete next.context_management;
+    }
+    return next;
+  }
+  if (!isRecord(contextManagement) || !Array.isArray(contextManagement.edits)) {
+    return request;
+  }
+  const edits = contextManagement.edits.filter((edit) => !isSemanticCompactionEdit(edit));
+  if (edits.length === contextManagement.edits.length) {
+    return request;
+  }
+  const nextContextManagement = { ...contextManagement, edits };
+  const next = { ...request };
+  if (edits.length === 0 && Object.keys(nextContextManagement).length === 1) {
+    delete next.context_management;
+  } else {
+    next.context_management = nextContextManagement;
+  }
+  return next;
+}
+
 function readContextManagementEdits(spec: unknown): Record<string, unknown>[] {
   if (Array.isArray(spec)) {
     return spec.filter(isRecord);
@@ -356,9 +391,7 @@ function isClearedToolResultContent(content: unknown): boolean {
   }
   const only = content[0];
   return (
-    isRecord(only) &&
-    only.type === "text" &&
-    only.text === CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER
+    isRecord(only) && only.type === "text" && only.text === CONTEXT_MANAGEMENT_CLEARED_TOOL_RESULT_PLACEHOLDER
   );
 }
 
@@ -475,8 +508,8 @@ function applyClearToolUsesEdit(
 
   const editedRequest = { ...req, messages: cleared.messages };
   const estimatedTokensAfter = estimateAnthropicInputTokens(editedRequest);
-  const ignoredKnobs = ["clear_at_least", "exclude_tools", "clear_tool_inputs"].filter(
-    (knob) => Object.hasOwn(edit, knob),
+  const ignoredKnobs = ["clear_at_least", "exclude_tools", "clear_tool_inputs"].filter((knob) =>
+    Object.hasOwn(edit, knob),
   );
   const appliedEdit: GatewayContextManagementAppliedEdit = {
     type: CLEAR_TOOL_USES_EDIT_TYPE,
@@ -575,23 +608,24 @@ export function buildBridgeUpstreamMessagesPayload(
   stream: boolean,
   maxOutputTokens?: number,
 ): Record<string, unknown> {
+  const sanitizedAnthropicRequest = stripSemanticCompactionDirectives(anthropicRequest);
   if (apiCompat === "anthropic") {
     const payload = buildAnthropicPassthroughPayload(
-      anthropicRequest as unknown as Record<string, unknown>,
+      sanitizedAnthropicRequest as unknown as Record<string, unknown>,
       modelId,
     );
     applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
     return payload;
   }
 
-  const polyfill = applyGatewayContextManagementPolyfill(anthropicRequest);
+  const polyfill = applyGatewayContextManagementPolyfill(sanitizedAnthropicRequest);
   const effectiveAnthropicRequest = polyfill.request;
   if (polyfill.appliedEdits.length > 0) {
     logGatewayContextManagementPolyfill({
       apiCompat,
-      requestedModel: anthropicRequest.model,
+      requestedModel: sanitizedAnthropicRequest.model,
       upstreamModel: modelId,
-      before: anthropicRequest,
+      before: sanitizedAnthropicRequest,
       after: effectiveAnthropicRequest,
       appliedEdits: polyfill.appliedEdits,
     });
@@ -898,7 +932,7 @@ async function forwardAnthropicNativeMessages(
     route.provider.requestPath,
     requestUrl,
   );
-  let upstreamBody = buildBridgeUpstreamMessagesPayload(
+  const upstreamBody = buildBridgeUpstreamMessagesPayload(
     route.apiCompat,
     anthropicRequest,
     route.modelId,
@@ -962,9 +996,7 @@ async function forwardAnthropicNativeMessages(
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
   const requestId =
-    upstreamResponse.headers.get("x-request-id") ??
-    upstreamResponse.headers.get("request-id") ??
-    undefined;
+    upstreamResponse.headers.get("x-request-id") ?? upstreamResponse.headers.get("request-id") ?? undefined;
   if (requestId) {
     ctx.onUpstreamRequestId?.(requestId);
   }
@@ -982,9 +1014,7 @@ async function forwardAnthropicNativeMessages(
     });
     notifyBridgeProxyFailure(
       ctx,
-      responseText.trim().slice(0, 500) ||
-        upstreamResponse.statusText ||
-        String(upstreamResponse.status),
+      responseText.trim().slice(0, 500) || upstreamResponse.statusText || String(upstreamResponse.status),
       upstreamResponse.status,
     );
     response.writeHead(upstreamResponse.status, {
@@ -1053,13 +1083,7 @@ async function forwardAnthropicNativeMessages(
     const billing = usage
       ? await resolveProxyCallBilling(
           onUsage,
-          buildBridgeUsageInfo(
-            route,
-            usage,
-            requestedModel,
-            requestId,
-            usageTracker.downstreamMessageId(),
-          ),
+          buildBridgeUsageInfo(route, usage, requestedModel, requestId, usageTracker.downstreamMessageId()),
         )
       : null;
     logUpstreamProxyCall({
@@ -1206,9 +1230,7 @@ async function forwardOpenAIResponsesMessages(
     });
     notifyBridgeProxyFailure(
       ctx,
-      responseText.trim().slice(0, 500) ||
-        upstreamResponse.statusText ||
-        String(upstreamResponse.status),
+      responseText.trim().slice(0, 500) || upstreamResponse.statusText || String(upstreamResponse.status),
       upstreamResponse.status,
     );
     response.writeHead(upstreamResponse.status, {
@@ -1318,13 +1340,7 @@ async function forwardOpenAIResponsesMessages(
     const billing = usage
       ? await resolveProxyCallBilling(
           onUsage,
-          buildBridgeUsageInfo(
-            route,
-            usage,
-            requestedModel,
-            undefined,
-            usageTracker.downstreamMessageId(),
-          ),
+          buildBridgeUsageInfo(route, usage, requestedModel, undefined, usageTracker.downstreamMessageId()),
         )
       : null;
     logUpstreamProxyCall({
@@ -1447,9 +1463,7 @@ async function forwardOpenAIChatCompletionsMessages(
     });
     notifyBridgeProxyFailure(
       ctx,
-      responseText.trim().slice(0, 500) ||
-        upstreamResponse.statusText ||
-        String(upstreamResponse.status),
+      responseText.trim().slice(0, 500) || upstreamResponse.statusText || String(upstreamResponse.status),
       upstreamResponse.status,
     );
     response.writeHead(upstreamResponse.status, {
@@ -1573,9 +1587,7 @@ async function forwardOpenAIChatCompletionsMessages(
     writeAnthropicSse(finalizeResponsesAnthropicStream(anthropicState));
 
     if (sseSequence.open.size > 0) {
-      sseViolations.push(
-        `流结束仍有未关闭的 content block: ${[...sseSequence.open].join(", ")}`,
-      );
+      sseViolations.push(`流结束仍有未关闭的 content block: ${[...sseSequence.open].join(", ")}`);
     }
 
     const trackerUsage = usageTracker.finish();
@@ -1583,13 +1595,7 @@ async function forwardOpenAIChatCompletionsMessages(
     const billing = usage
       ? await resolveProxyCallBilling(
           onUsage,
-          buildBridgeUsageInfo(
-            route,
-            usage,
-            requestedModel,
-            undefined,
-            usageTracker.downstreamMessageId(),
-          ),
+          buildBridgeUsageInfo(route, usage, requestedModel, undefined, usageTracker.downstreamMessageId()),
         )
       : null;
     logUpstreamProxyCall({
@@ -1645,12 +1651,7 @@ export async function parseBridgeProbeReply(params: {
   }
 
   const raw = await params.response.text();
-  const reply = parseBridgeProbeBufferedReply(
-    raw,
-    params.apiCompat,
-    params.modelId,
-    params.anthropicRequest,
-  );
+  const reply = parseBridgeProbeBufferedReply(raw, params.apiCompat, params.modelId, params.anthropicRequest);
   if (reply) {
     params.onTextDelta?.(reply, reply);
     return { reply };

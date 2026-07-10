@@ -2138,6 +2138,29 @@ function ProviderEditorModal({
             </div>
 
             <label className="mcp-field">
+              <span className="mcp-field-label">Token 计数模式</span>
+              <select
+                className="mcp-field-input"
+                value={form.tokenCountMode ?? "local_heuristic"}
+                disabled={busy}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    tokenCountMode: event.target.value as NonNullable<ProviderConfigInput["tokenCountMode"]>,
+                  }))
+                }
+              >
+                <option value="local_heuristic">本地启发式（兼容所有平台）</option>
+                <option value="anthropic_messages">Anthropic-style /v1/messages/count_tokens（含新版 llama.cpp）</option>
+                <option value="openai_responses">OpenAI /v1/responses/input_tokens</option>
+                <option value="llama_tokenize">llama.cpp /apply-template + /tokenize</option>
+              </select>
+              <span className="mcp-field-hint">
+                必须按上游真实能力显式选择，不根据 API 兼容模式自动猜测；精确接口失败会直接报错，不会伪装成本地精确计数。
+              </span>
+            </label>
+
+            <label className="mcp-field">
               <span className="models-provider-label-row">
                 <span className="mcp-field-label">API key</span>
                 {activePreset ? (
@@ -2454,6 +2477,7 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     baseUrl: provider?.baseUrl ?? "https://api.anthropic.com",
     requestPath: provider?.requestPath ?? "",
     apiCompat: provider?.apiCompat ?? "anthropic",
+    tokenCountMode: provider?.tokenCountMode ?? "local_heuristic",
     apiKey: "",
     defaultModel: provider?.defaultModel ?? "",
     enabled: provider?.enabled ?? true,

@@ -2,9 +2,28 @@ import { expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createConversationStore } from "../src/main/conversation-store";
+import { createConversationStore, parseCompactHandoffRecentMessages } from "../src/main/conversation-store";
 import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
 import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
+
+test("parseCompactHandoffRecentMessages accepts structured and legacy records", () => {
+  expect(
+    parseCompactHandoffRecentMessages(
+      JSON.stringify(["legacy user", { id: "msg_2", role: "assistant", message: "structured assistant" }]),
+      "thr_parse",
+    ),
+  ).toEqual([
+    { role: "user", message: "legacy user" },
+    { id: "msg_2", role: "assistant", message: "structured assistant" },
+  ]);
+});
+
+test("parseCompactHandoffRecentMessages rejects corrupted records", () => {
+  expect(() => parseCompactHandoffRecentMessages("not-json", "thr_bad_json")).toThrow("JSON 损坏");
+  expect(() =>
+    parseCompactHandoffRecentMessages(JSON.stringify([{ role: "assistant" }]), "thr_bad_entry"),
+  ).toThrow("条目结构无效");
+});
 
 const sqliteAvailable = await (async () => {
   try {
@@ -196,12 +215,74 @@ test.skipIf(!sqliteAvailable)("saves and lists compaction archives", async () =>
   expect(archives[0]?.payload.activityLineCount).toBe(2);
 });
 
-test.skipIf(!sqliteAvailable)("saves, reads, and clears compact handoff", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-"));
+test.skipIf(!sqliteAvailable)(
+  "atomically commits compact handoff and clears main/subagent sessions",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-atomic-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_handoff_atomic",
+      title: "Handoff",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "ok",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.saveThread(thread);
+    store.saveSdkSession(thread.id, "sess_source", "/tmp/project");
+    store.upsertSubagentSessionActive({
+      threadId: thread.id,
+      role: "coder",
+      agentId: "agent_1",
+      phase: "execution",
+    });
+
+    const handoff = store.commitCompactHandoffAndClearSession(thread.id, {
+      sourceSessionId: "sess_source",
+      sourceStartMessageId: "msg_start",
+      sourceEndMessageId: "msg_end",
+      summary: "summary text",
+      recentMessages: [
+        { id: "u1", role: "user", message: "recent-1" },
+        { id: "a1", role: "assistant", message: "recent-2" },
+      ],
+      preTokensEstimate: 10_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 2_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.2,
+      schemaVersion: 2,
+    });
+
+    expect(handoff).toMatchObject({
+      threadId: thread.id,
+      schemaVersion: 2,
+      generation: 1,
+      sourceSessionId: "sess_source",
+      preTokensEstimate: 10_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 2_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.2,
+    });
+    expect(handoff.summaryId).toStartWith("csm_");
+    expect(store.getSdkSession(thread.id)).toBeUndefined();
+    expect(store.listSubagentSessions(thread.id)).toEqual([]);
+    expect(store.getCompactHandoff(thread.id)?.recentMessages).toEqual([
+      { id: "u1", role: "user", message: "recent-1" },
+      { id: "a1", role: "assistant", message: "recent-2" },
+    ]);
+  },
+);
+
+test.skipIf(!sqliteAvailable)("rolls back compact handoff when the source session changed", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-race-"));
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
   const thread: ThreadSummary = {
-    id: "thr_handoff",
-    title: "Handoff",
+    id: "thr_handoff_race",
+    title: "Handoff race",
     prompt: "hello",
     workspacePath: "/tmp/project",
     status: "idle",
@@ -210,21 +291,269 @@ test.skipIf(!sqliteAvailable)("saves, reads, and clears compact handoff", async 
     updatedAt: new Date().toISOString(),
   };
   store.saveThread(thread);
-
-  store.saveCompactHandoff("thr_handoff", {
-    summary: "summary text",
-    recentUserMessages: ["recent-1", "recent-2"],
-    postTokensEstimate: 1234,
+  store.saveSdkSession(thread.id, "sess_current", "/tmp/project");
+  store.upsertSubagentSessionActive({
+    threadId: thread.id,
+    role: "coder",
+    agentId: "agent_current",
+    phase: "execution",
   });
 
-  const handoff = store.getCompactHandoff("thr_handoff");
-  expect(handoff?.summary).toBe("summary text");
-  expect(handoff?.recentUserMessages).toEqual(["recent-1", "recent-2"]);
-  expect(handoff?.postTokensEstimate).toBe(1234);
-
-  store.clearCompactHandoff("thr_handoff");
-  expect(store.getCompactHandoff("thr_handoff")).toBeUndefined();
+  expect(() =>
+    store.commitCompactHandoffAndClearSession(thread.id, {
+      sourceSessionId: "sess_stale",
+      sourceStartMessageId: "msg_start",
+      sourceEndMessageId: "msg_end",
+      summary: "stale summary",
+      recentMessages: [{ role: "user", message: "recent" }],
+      preTokensEstimate: 10_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 2_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.2,
+    }),
+  ).toThrow("源 SDK session 已变化");
+  expect(store.getSdkSession(thread.id)?.sessionId).toBe("sess_current");
+  expect(store.listSubagentSessions(thread.id)).toHaveLength(1);
+  expect(store.getLatestCompactSummary(thread.id)).toBeUndefined();
 });
+
+test.skipIf(!sqliteAvailable)(
+  "consumes a pending handoff without deleting rolling summary state",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-consume-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_handoff_consume",
+      title: "Handoff consume",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "ok",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.saveThread(thread);
+    store.saveSdkSession(thread.id, "sess_source", "/tmp/project");
+    store.commitCompactHandoffAndClearSession(thread.id, {
+      sourceSessionId: "sess_source",
+      sourceStartMessageId: "msg_start",
+      sourceEndMessageId: "msg_end",
+      summary: "summary text",
+      recentMessages: [{ role: "user", message: "recent" }],
+      preTokensEstimate: 10_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 2_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.2,
+    });
+
+    expect(store.getCompactHandoff(thread.id)).toBeDefined();
+    expect(store.captureSdkSessionAndConsumeCompactHandoff(thread.id, "sess_target", "/tmp/project")).toBe(
+      true,
+    );
+    expect(store.getSdkSession(thread.id)).toEqual({
+      sessionId: "sess_target",
+      cwd: "/tmp/project",
+    });
+    expect(store.getCompactHandoff(thread.id)).toBeUndefined();
+    expect(store.markCompactHandoffConsumed(thread.id, "sess_other")).toBe(false);
+    expect(store.getLatestCompactSummary(thread.id)).toMatchObject({
+      generation: 1,
+      sourceSessionId: "sess_source",
+      targetSessionId: "sess_target",
+    });
+    expect(store.getLatestCompactSummary(thread.id)?.consumedAt).toBeTruthy();
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "rejects reinstalling the compacted source session and keeps the handoff pending",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-source-reuse-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_handoff_source_reuse",
+      title: "Handoff source reuse",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "ok",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.saveThread(thread);
+    store.saveSdkSession(thread.id, "sess_source", "/tmp/project");
+    store.commitCompactHandoffAndClearSession(thread.id, {
+      sourceSessionId: "sess_source",
+      sourceStartMessageId: "msg_start",
+      sourceEndMessageId: "msg_end",
+      summary: "summary text",
+      recentMessages: [{ role: "user", message: "recent" }],
+      preTokensEstimate: 10_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 2_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.2,
+    });
+
+    expect(() =>
+      store.captureSdkSessionAndConsumeCompactHandoff(thread.id, "sess_source", "/tmp/project"),
+    ).toThrow("新 SDK session 与源 session 相同");
+    expect(store.getSdkSession(thread.id)).toBeUndefined();
+    const pending = store.getCompactHandoff(thread.id);
+    expect(pending?.sourceSessionId).toBe("sess_source");
+    expect(pending?.targetSessionId).toBeUndefined();
+    expect(pending?.consumedAt).toBeUndefined();
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "increments compact summary generation across replacement sessions",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-generation-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const thread: ThreadSummary = {
+      id: "thr_handoff_generation",
+      title: "Handoff generation",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "ok",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.saveThread(thread);
+    store.saveSdkSession(thread.id, "sess_1", "/tmp/project");
+    const first = store.commitCompactHandoffAndClearSession(thread.id, {
+      sourceSessionId: "sess_1",
+      sourceStartMessageId: "msg_start",
+      sourceEndMessageId: "msg_end",
+      summary: "generation one",
+      recentMessages: [{ role: "user", message: "recent one" }],
+      preTokensEstimate: 10_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 2_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.2,
+    });
+    store.captureSdkSessionAndConsumeCompactHandoff(thread.id, "sess_2", "/tmp/project");
+    const second = store.commitCompactHandoffAndClearSession(thread.id, {
+      sourceSessionId: "sess_2",
+      sourceStartMessageId: "msg_start",
+      sourceEndMessageId: "msg_end",
+      summary: "generation two",
+      recentMessages: [{ role: "user", message: "recent two" }],
+      preTokensEstimate: 12_000,
+      preTokensSource: "sdk_context_usage",
+      postTokensEstimate: 3_000,
+      postTokensSource: "local_heuristic",
+      compressionRatio: 0.25,
+    });
+
+    expect(first.generation).toBe(1);
+    expect(second.generation).toBe(2);
+    expect(second.summaryId).not.toBe(first.summaryId);
+    expect(store.getCompactHandoff(thread.id)?.summary).toBe("generation two");
+  },
+);
+
+test.skipIf(!sqliteAvailable)("migrates legacy compact handoff metadata deterministically", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-legacy-"));
+  const dbPath = path.join(dir, "eco-coding.sqlite");
+  const sqlite = await import("node:sqlite");
+  const db = new sqlite.DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      workspace_path TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE thread_compact_handoff (
+      thread_id TEXT PRIMARY KEY,
+      summary TEXT NOT NULL,
+      recent_user_messages_json TEXT NOT NULL,
+      post_tokens_estimate INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.prepare(
+    `INSERT INTO thread_compact_handoff (
+       thread_id, summary, recent_user_messages_json, post_tokens_estimate, created_at
+     ) VALUES (?, ?, ?, ?, ?)`,
+  ).run(
+    "thr_handoff_legacy",
+    "legacy summary",
+    JSON.stringify(["old user 1", "old user 2"]),
+    10,
+    new Date().toISOString(),
+  );
+  db.close();
+
+  const store = await createConversationStore(dbPath);
+  expect(store.getCompactHandoff("thr_handoff_legacy")).toMatchObject({
+    summaryId: "legacy-thr_handoff_legacy",
+    schemaVersion: 1,
+    generation: 1,
+    recentMessages: [
+      { role: "user", message: "old user 1" },
+      { role: "user", message: "old user 2" },
+    ],
+    preTokensEstimate: 10,
+    preTokensSource: "local_heuristic",
+    postTokensEstimate: 10,
+    postTokensSource: "local_heuristic",
+    compressionRatio: 1,
+  });
+});
+
+test.skipIf(!sqliteAvailable)(
+  "rejects corrupted compact handoff version, token source, and metrics",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-corrupt-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const store = await createConversationStore(dbPath);
+    const thread: ThreadSummary = {
+      id: "thr_handoff_corrupt",
+      title: "Handoff corrupt",
+      prompt: "hello",
+      workspacePath: "/tmp/project",
+      status: "idle",
+      message: "ok",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.saveThread(thread);
+    store.saveCompactHandoff(thread.id, {
+      summary: "summary",
+      recentMessages: [{ role: "user", message: "recent" }],
+      preTokensEstimate: 100,
+      postTokensEstimate: 50,
+      compressionRatio: 0.5,
+    });
+
+    const sqlite = await import("node:sqlite");
+    const db = new sqlite.DatabaseSync(dbPath);
+    db.prepare("UPDATE thread_compact_handoff SET pre_tokens_source = 'unknown' WHERE thread_id = ?").run(
+      thread.id,
+    );
+    expect(() => store.getLatestCompactSummary(thread.id)).toThrow("token 来源无效");
+    db.prepare(
+      "UPDATE thread_compact_handoff SET pre_tokens_source = 'local_heuristic', generation = 0 WHERE thread_id = ?",
+    ).run(thread.id);
+    expect(() => store.getLatestCompactSummary(thread.id)).toThrow("版本信息无效");
+    db.prepare(
+      "UPDATE thread_compact_handoff SET generation = 1, compression_ratio = 0.9 WHERE thread_id = ?",
+    ).run(thread.id);
+    expect(() => store.getLatestCompactSummary(thread.id)).toThrow("压缩比例与 token 估算不一致");
+    db.close();
+  },
+);
 
 test.skipIf(!sqliteAvailable)("deleteThread removes thread-owned records", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-delete-thread-"));

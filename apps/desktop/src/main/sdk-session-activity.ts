@@ -81,6 +81,39 @@ export async function listSdkSessionActivityLines(
   }
 }
 
+export async function listSdkSessionCompactionActivityLines(
+  threadId: string,
+  services: SdkSessionActivityServices,
+): Promise<ThreadActivityLine[]> {
+  const session = services.getSdkSession(threadId);
+  if (!session?.sessionId) {
+    throw new Error(`SDK session metadata is unavailable for compaction: ${threadId}`);
+  }
+  if (!session.cwd.trim()) {
+    throw new Error(`SDK session cwd is unavailable for compaction: ${threadId}`);
+  }
+  try {
+    const sdk = services.loadSdk
+      ? await services.loadSdk()
+      : ((await import("@anthropic-ai/claude-agent-sdk")) as SdkSessionActivityModule);
+    if (typeof sdk.getSessionMessages !== "function") {
+      throw new Error("SDK getSessionMessages is unavailable.");
+    }
+    const messages = await sdk.getSessionMessages(session.sessionId, {
+      dir: session.cwd,
+      includeSystemMessages: false,
+    });
+    return messages
+      .map((message) => sdkSessionMessageToActivityLine(message, { includeToolContext: true }))
+      .filter((line): line is ThreadActivityLine => line !== undefined);
+  } catch (error) {
+    services.writeError?.(
+      `[eco] failed to read SDK compaction context thread=${threadId} session=${session.sessionId}: ${errorMessage(error)}\n`,
+    );
+    throw error;
+  }
+}
+
 export async function listSdkSubagentActivityLines(
   threadId: string,
   agentId: string,
@@ -114,13 +147,13 @@ export async function listSdkSubagentActivityLines(
 
 export function sdkSessionMessageToActivityLine(
   message: SdkSessionMessage,
-  options: { agentId?: string } = {},
+  options: { agentId?: string; includeToolContext?: boolean } = {},
 ): ThreadActivityLine | undefined {
   const uuid = message.uuid?.trim();
   if (!uuid || (message.type !== "user" && message.type !== "assistant")) {
     return undefined;
   }
-  const text = extractSdkMessageText(message.message);
+  const text = extractSdkMessageText(message.message, options.includeToolContext === true);
   if (!text) {
     return undefined;
   }
@@ -139,7 +172,7 @@ export function sdkSessionMessageToActivityLine(
   };
 }
 
-function extractSdkMessageText(message: unknown): string {
+function extractSdkMessageText(message: unknown, includeToolContext = false): string {
   if (typeof message === "string") {
     return message.trim();
   }
@@ -164,9 +197,71 @@ function extractSdkMessageText(message: unknown): string {
     }
     if (block.type === "text" && typeof block.content === "string" && block.content.trim()) {
       chunks.push(block.content.trim());
+      continue;
+    }
+    if (!includeToolContext) {
+      continue;
+    }
+    if (block.type === "tool_use" && typeof block.name === "string") {
+      chunks.push(
+        `[工具调用 ${block.name}] ${truncateToolContext(stringifyToolContext(block.input), 2_000)}`,
+      );
+      continue;
+    }
+    if (block.type === "tool_result") {
+      const toolUseId = typeof block.tool_use_id === "string" ? ` ${block.tool_use_id}` : "";
+      const resultText = extractToolResultText(block.content);
+      if (resultText) {
+        chunks.push(`[工具结果${toolUseId}] ${truncateToolContext(resultText, 4_000)}`);
+      }
     }
   }
   return chunks.join("\n").trim();
+}
+
+function extractToolResultText(content: unknown): string {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+  if (!Array.isArray(content)) {
+    return stringifyToolContext(content);
+  }
+  return content
+    .flatMap((entry): string[] => {
+      if (typeof entry === "string") {
+        return entry.trim() ? [entry.trim()] : [];
+      }
+      if (!isRecord(entry)) {
+        return [];
+      }
+      if (typeof entry.text === "string" && entry.text.trim()) {
+        return [entry.text.trim()];
+      }
+      return [];
+    })
+    .join("\n")
+    .trim();
+}
+
+function stringifyToolContext(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function truncateToolContext(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars - 1)}…`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

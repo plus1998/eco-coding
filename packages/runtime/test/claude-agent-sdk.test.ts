@@ -295,11 +295,13 @@ test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in su
   applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/");
   const settings = options.settings as {
     disableWorkflows?: boolean;
+    autoCompactEnabled?: boolean;
     permissions?: { deny?: string[] };
     env?: Record<string, string>;
   };
   const deny = settings.permissions?.deny ?? [];
   expect(settings.disableWorkflows).toBe(true);
+  expect(settings.autoCompactEnabled).toBe(false);
   expect(deny).toEqual(["Agent(statusline-setup)", "Agent(Explore)", "Agent(Plan)", "Agent(Bash)"]);
   expect(deny.includes("Agent(general-purpose)")).toBe(false);
   expect(settings.env).toEqual({

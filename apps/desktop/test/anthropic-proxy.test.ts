@@ -6,8 +6,8 @@ import {
   canonicalModelFamilyIds,
   createModelAlias,
   createStreamingUsageTracker,
-  extractUsageFromResponseBody,
   estimateInputTokensFromAnthropicBody,
+  extractUsageFromResponseBody,
   injectImagesIntoMessagesBody,
   normalizeThinkingEffortFields,
   resolveProxyRoute,
@@ -243,6 +243,18 @@ test("estimateInputTokensFromAnthropicBody counts messages and system", () => {
   expect(estimate).toBeGreaterThan(0);
 });
 
+test("estimateInputTokensFromAnthropicBody reflects the current request body", () => {
+  const small = estimateInputTokensFromAnthropicBody({
+    messages: [{ role: "user", content: "short" }],
+  });
+  const large = estimateInputTokensFromAnthropicBody({
+    system: "系统约束",
+    tools: [{ name: "Read", input_schema: { type: "object" } }],
+    messages: [{ role: "user", content: "long ".repeat(1_000) }],
+  });
+  expect(large).toBeGreaterThan(small);
+});
+
 test("injectImagesIntoMessagesBody prepends image blocks to last user message", () => {
   const body = {
     messages: [
@@ -250,9 +262,7 @@ test("injectImagesIntoMessagesBody prepends image blocks to last user message", 
       { role: "user", content: "describe this" },
     ],
   };
-  injectImagesIntoMessagesBody(body, [
-    { mediaType: "image/png", data: "abc123" },
-  ]);
+  injectImagesIntoMessagesBody(body, [{ mediaType: "image/png", data: "abc123" }]);
   const user = body.messages[1] as { content: Array<{ type: string }> };
   expect(Array.isArray(user.content)).toBe(true);
   expect(user.content[0]?.type).toBe("image");

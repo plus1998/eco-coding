@@ -29,12 +29,13 @@ export interface CompactionAuditServiceInput {
   emitCompactionStatus(
     threadId: string,
     status: {
-      stage: "started" | "completed";
+      stage: "started" | "completed" | "failed";
       trigger?: "auto" | "manual";
       sessionId?: string;
       archiveId?: string;
       preTokens?: number;
       postTokens?: number;
+      detail?: string;
     },
   ): void;
   markCompactInFlight(threadId: string): void;
@@ -49,6 +50,10 @@ export interface CompactionAuditService {
     input: { trigger: "auto" | "manual"; sessionId?: string },
   ): Promise<void>;
   recordBoundary(threadId: string, payload: Record<string, unknown>, sourceEventId?: string): void;
+  recordFailure(
+    threadId: string,
+    input: { trigger: "auto" | "manual"; sessionId?: string; detail: string },
+  ): void;
 }
 
 export function createCompactionAuditService(services: CompactionAuditServiceInput): CompactionAuditService {
@@ -57,7 +62,7 @@ export function createCompactionAuditService(services: CompactionAuditServiceInp
   function appendCompactionLedgerEvent(input: {
     threadId: string;
     sourceEventId: string;
-    stage: "started" | "completed";
+    stage: "started" | "completed" | "failed";
     trigger?: "auto" | "manual";
     sessionId?: string;
     archiveId?: string;
@@ -142,6 +147,7 @@ export function createCompactionAuditService(services: CompactionAuditServiceInp
         services.markCompactInFlight(threadId);
       } catch (error) {
         services.writeError(`[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`);
+        throw error;
       }
     },
     recordBoundary(threadId, payload, sourceEventId) {
@@ -170,6 +176,29 @@ export function createCompactionAuditService(services: CompactionAuditServiceInp
         ...(pending?.archiveId && { archiveId: pending.archiveId }),
         ...(preTokens !== undefined && { preTokens }),
         ...(metadata.postTokens !== undefined && { postTokens: metadata.postTokens }),
+      });
+    },
+    recordFailure(threadId, input) {
+      const pending = takePendingCompactionAudit(threadId, input.sessionId);
+      const trigger = pending?.trigger ?? input.trigger;
+      const sessionId = pending?.sessionId ?? input.sessionId;
+      appendCompactionLedgerEvent({
+        threadId,
+        sourceEventId: `compact:${threadId}:${services.nowMs()}:failed`,
+        stage: "failed",
+        trigger,
+        ...(sessionId && { sessionId }),
+        ...(pending?.archiveId && { archiveId: pending.archiveId }),
+        ...(pending?.preTokens !== undefined && { preTokens: pending.preTokens }),
+        payload: { detail: input.detail },
+      });
+      services.emitCompactionStatus(threadId, {
+        stage: "failed",
+        trigger,
+        ...(sessionId && { sessionId }),
+        ...(pending?.archiveId && { archiveId: pending.archiveId }),
+        ...(pending?.preTokens !== undefined && { preTokens: pending.preTokens }),
+        detail: input.detail,
       });
     },
   };

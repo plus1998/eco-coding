@@ -4,6 +4,7 @@ import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { isFreshSubagentRequest, mergeStreamText } from "@eco/runtime";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
+import type { CompactConversationMessage } from "../shared/eco-compact-handoff";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
 import type {
   CoderTodoItem,
@@ -154,12 +155,190 @@ export interface ThreadCompactionArchiveRecord {
   createdAt: string;
 }
 
+export type CompactTokenCountSource =
+  | "provider_exact"
+  | "tokenizer_exact"
+  | "sdk_context_usage"
+  | "local_heuristic";
+
 export interface ThreadCompactHandoffRecord {
   threadId: string;
+  summaryId: string;
+  schemaVersion: number;
+  generation: number;
   summary: string;
-  recentUserMessages: string[];
+  recentMessages: CompactConversationMessage[];
+  preTokensEstimate: number;
+  preTokensSource: CompactTokenCountSource;
   postTokensEstimate: number;
+  postTokensSource: CompactTokenCountSource;
+  compressionRatio: number;
+  sourceSessionId?: string;
+  sourceStartMessageId?: string;
+  sourceEndMessageId?: string;
+  targetSessionId?: string;
+  consumedAt?: string;
   createdAt: string;
+}
+
+export interface CommitCompactHandoffInput {
+  sourceSessionId: string;
+  sourceStartMessageId: string;
+  sourceEndMessageId: string;
+  summary: string;
+  recentMessages: CompactConversationMessage[];
+  preTokensEstimate: number;
+  preTokensSource: CompactTokenCountSource;
+  postTokensEstimate: number;
+  postTokensSource: CompactTokenCountSource;
+  compressionRatio: number;
+  schemaVersion?: number;
+}
+
+interface CompactHandoffRow {
+  thread_id: string;
+  summary_id: string;
+  schema_version: number;
+  generation: number;
+  summary: string;
+  recent_user_messages_json: string;
+  pre_tokens_estimate: number;
+  pre_tokens_source: string;
+  post_tokens_estimate: number;
+  post_tokens_source: string;
+  compression_ratio: number;
+  source_session_id: string | null;
+  source_start_message_id: string | null;
+  source_end_message_id: string | null;
+  target_session_id: string | null;
+  consumed_at: string | null;
+  created_at: string;
+}
+
+export function parseCompactHandoffRecentMessages(
+  serialized: string,
+  threadId: string,
+): CompactConversationMessage[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`压缩交接近期对话 JSON 损坏（${threadId}）：${detail}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`压缩交接近期对话不是数组（${threadId}）。`);
+  }
+  return parsed.map((entry, index) => {
+    if (typeof entry === "string") {
+      const message = entry.trim();
+      if (!message) {
+        throw new Error(`压缩交接近期对话包含空的 legacy 消息（${threadId}，index=${index}）。`);
+      }
+      return { role: "user", message };
+    }
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      typeof (entry as { role?: unknown }).role !== "string" ||
+      typeof (entry as { message?: unknown }).message !== "string"
+    ) {
+      throw new Error(`压缩交接近期对话条目结构无效（${threadId}，index=${index}）。`);
+    }
+    const role = (entry as { role: string }).role.trim();
+    const message = (entry as { message: string }).message.trim();
+    const rawId = (entry as { id?: unknown }).id;
+    if (rawId !== undefined && typeof rawId !== "string") {
+      throw new Error(`压缩交接近期对话 id 无效（${threadId}，index=${index}）。`);
+    }
+    const id = typeof rawId === "string" ? rawId.trim() : "";
+    if (!role || !message) {
+      throw new Error(`压缩交接近期对话条目为空（${threadId}，index=${index}）。`);
+    }
+    return { ...(id && { id }), role, message };
+  });
+}
+
+function compactHandoffRowToRecord(
+  row: CompactHandoffRow,
+  requestedThreadId: string,
+): ThreadCompactHandoffRecord {
+  const summary = row.summary.trim();
+  if (!summary) {
+    throw new Error(`压缩交接摘要为空（${requestedThreadId}）。`);
+  }
+  const summaryId = row.summary_id?.trim();
+  if (!summaryId) {
+    throw new Error(`压缩交接 summary id 无效（${requestedThreadId}）。`);
+  }
+  const record: ThreadCompactHandoffRecord = {
+    threadId: row.thread_id,
+    summaryId,
+    schemaVersion: Math.trunc(row.schema_version),
+    generation: Math.trunc(row.generation),
+    summary,
+    recentMessages: parseCompactHandoffRecentMessages(row.recent_user_messages_json, requestedThreadId),
+    preTokensEstimate: row.pre_tokens_estimate,
+    preTokensSource: parseCompactTokenCountSource(row.pre_tokens_source, requestedThreadId),
+    postTokensEstimate: row.post_tokens_estimate,
+    postTokensSource: parseCompactTokenCountSource(row.post_tokens_source, requestedThreadId),
+    compressionRatio: row.compression_ratio,
+    ...(row.source_session_id && { sourceSessionId: row.source_session_id }),
+    ...(row.source_start_message_id && { sourceStartMessageId: row.source_start_message_id }),
+    ...(row.source_end_message_id && { sourceEndMessageId: row.source_end_message_id }),
+    ...(row.target_session_id && { targetSessionId: row.target_session_id }),
+    ...(row.consumed_at && { consumedAt: row.consumed_at }),
+    createdAt: row.created_at,
+  };
+  validateCompactMetrics(requestedThreadId, record);
+  if (record.schemaVersion < 1 || record.generation < 1) {
+    throw new Error(`压缩交接版本信息无效（${requestedThreadId}）。`);
+  }
+  return record;
+}
+
+function parseCompactTokenCountSource(value: string, threadId: string): CompactTokenCountSource {
+  if (
+    value === "provider_exact" ||
+    value === "tokenizer_exact" ||
+    value === "sdk_context_usage" ||
+    value === "local_heuristic"
+  ) {
+    return value;
+  }
+  throw new Error(`压缩交接 token 来源无效（${threadId}）：${value}`);
+}
+
+function validateCompactMetrics(
+  threadId: string,
+  input: {
+    preTokensEstimate: number;
+    postTokensEstimate: number;
+    compressionRatio: number;
+  },
+): void {
+  if (
+    !Number.isFinite(input.preTokensEstimate) ||
+    input.preTokensEstimate <= 0 ||
+    !Number.isInteger(input.preTokensEstimate)
+  ) {
+    throw new Error(`压缩交接压缩前 token 估算无效（${threadId}）。`);
+  }
+  if (
+    !Number.isFinite(input.postTokensEstimate) ||
+    input.postTokensEstimate < 0 ||
+    !Number.isInteger(input.postTokensEstimate)
+  ) {
+    throw new Error(`压缩交接压缩后 token 估算无效（${threadId}）。`);
+  }
+  if (!Number.isFinite(input.compressionRatio) || input.compressionRatio < 0) {
+    throw new Error(`压缩交接压缩比例无效（${threadId}）。`);
+  }
+  const expectedRatio = input.postTokensEstimate / input.preTokensEstimate;
+  const ratioTolerance = Math.max(1e-9, Math.abs(expectedRatio) * 1e-9);
+  if (Math.abs(input.compressionRatio - expectedRatio) > ratioTolerance) {
+    throw new Error(`压缩交接压缩比例与 token 估算不一致（${threadId}）。`);
+  }
 }
 
 interface AppliedDiffRow {
@@ -379,9 +558,21 @@ export class ConversationStore {
 
       CREATE TABLE IF NOT EXISTS thread_compact_handoff (
         thread_id TEXT PRIMARY KEY,
+        summary_id TEXT NOT NULL,
+        schema_version INTEGER NOT NULL DEFAULT 2,
+        generation INTEGER NOT NULL DEFAULT 1,
         summary TEXT NOT NULL,
         recent_user_messages_json TEXT NOT NULL,
+        pre_tokens_estimate INTEGER NOT NULL DEFAULT 0,
+        pre_tokens_source TEXT NOT NULL DEFAULT 'local_heuristic',
         post_tokens_estimate INTEGER NOT NULL,
+        post_tokens_source TEXT NOT NULL DEFAULT 'local_heuristic',
+        compression_ratio REAL NOT NULL DEFAULT 0,
+        source_session_id TEXT,
+        source_start_message_id TEXT,
+        source_end_message_id TEXT,
+        target_session_id TEXT,
+        consumed_at TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
@@ -534,6 +725,52 @@ export class ConversationStore {
     if (!names.has("runtime_config_json")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN runtime_config_json TEXT`);
     }
+
+    const compactHandoffColumns = this.db
+      .prepare(`PRAGMA table_info(thread_compact_handoff)`)
+      .all() as Array<{ name: string }>;
+    const compactHandoffNames = new Set(compactHandoffColumns.map((column) => column.name));
+    const compactHandoffMigrations = [
+      ["summary_id", "TEXT"],
+      ["schema_version", "INTEGER NOT NULL DEFAULT 1"],
+      ["generation", "INTEGER NOT NULL DEFAULT 1"],
+      ["pre_tokens_estimate", "INTEGER NOT NULL DEFAULT 0"],
+      ["pre_tokens_source", "TEXT NOT NULL DEFAULT 'local_heuristic'"],
+      ["post_tokens_source", "TEXT NOT NULL DEFAULT 'local_heuristic'"],
+      ["compression_ratio", "REAL NOT NULL DEFAULT 0"],
+      ["source_session_id", "TEXT"],
+      ["source_start_message_id", "TEXT"],
+      ["source_end_message_id", "TEXT"],
+      ["target_session_id", "TEXT"],
+      ["consumed_at", "TEXT"],
+    ] as const;
+    for (const [name, definition] of compactHandoffMigrations) {
+      if (!compactHandoffNames.has(name)) {
+        this.db.exec(`ALTER TABLE thread_compact_handoff ADD COLUMN ${name} ${definition}`);
+      }
+    }
+    this.db.exec(`
+      UPDATE thread_compact_handoff
+      SET summary_id = COALESCE(NULLIF(summary_id, ''), 'legacy-' || thread_id),
+          schema_version = COALESCE(schema_version, 1),
+          generation = COALESCE(generation, 1),
+          pre_tokens_estimate = CASE
+            WHEN pre_tokens_estimate IS NULL OR pre_tokens_estimate <= 0
+            THEN post_tokens_estimate
+            ELSE pre_tokens_estimate
+          END,
+          pre_tokens_source = COALESCE(NULLIF(pre_tokens_source, ''), 'local_heuristic'),
+          post_tokens_source = COALESCE(NULLIF(post_tokens_source, ''), 'local_heuristic')
+    `);
+    this.db.exec(`
+      UPDATE thread_compact_handoff
+      SET compression_ratio = CASE
+        WHEN compression_ratio IS NULL OR compression_ratio < 0
+          OR (compression_ratio = 0 AND post_tokens_estimate > 0)
+        THEN CAST(post_tokens_estimate AS REAL) / pre_tokens_estimate
+        ELSE compression_ratio
+      END
+    `);
 
     const activityColumns = this.db.prepare(`PRAGMA table_info(thread_activity)`).all() as Array<{
       name: string;
@@ -923,83 +1160,241 @@ export class ConversationStore {
   }
 
   getCompactHandoff(threadId: string): ThreadCompactHandoffRecord | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT thread_id, summary, recent_user_messages_json, post_tokens_estimate, created_at
-         FROM thread_compact_handoff
-         WHERE thread_id = ?`,
-      )
-      .get(threadId) as
-      | {
-          thread_id: string;
-          summary: string;
-          recent_user_messages_json: string;
-          post_tokens_estimate: number;
-          created_at: string;
-        }
-      | undefined;
-
-    if (!row) {
-      return undefined;
-    }
-
-    let recentUserMessages: string[] = [];
-    try {
-      const parsed = JSON.parse(row.recent_user_messages_json) as unknown;
-      if (Array.isArray(parsed)) {
-        recentUserMessages = parsed.filter((entry): entry is string => typeof entry === "string");
-      }
-    } catch {
-      recentUserMessages = [];
-    }
-
-    return {
-      threadId: row.thread_id,
-      summary: row.summary,
-      recentUserMessages,
-      postTokensEstimate: row.post_tokens_estimate,
-      createdAt: row.created_at,
-    };
+    const row = this.selectCompactHandoffRow(threadId, true);
+    return row ? compactHandoffRowToRecord(row, threadId) : undefined;
   }
 
-  saveCompactHandoff(
+  /** Latest committed summary, including a handoff already consumed by a replacement SDK session. */
+  getLatestCompactSummary(threadId: string): ThreadCompactHandoffRecord | undefined {
+    const row = this.selectCompactHandoffRow(threadId, false);
+    return row ? compactHandoffRowToRecord(row, threadId) : undefined;
+  }
+
+  /**
+   * Atomic compaction commit: install the handoff only if the source SDK session is still current,
+   * then clear main/subagent resume state in the same SQLite transaction.
+   */
+  commitCompactHandoffAndClearSession(
     threadId: string,
-    input: {
-      summary: string;
-      recentUserMessages: string[];
-      postTokensEstimate: number;
-    },
+    input: CommitCompactHandoffInput,
   ): ThreadCompactHandoffRecord {
+    const sourceSessionId = input.sourceSessionId.trim();
+    if (!sourceSessionId) {
+      throw new Error(`压缩提交缺少源 SDK session（${threadId}）。`);
+    }
+    const sourceStartMessageId = input.sourceStartMessageId.trim();
+    const sourceEndMessageId = input.sourceEndMessageId.trim();
+    if (!sourceStartMessageId || !sourceEndMessageId) {
+      throw new Error(`压缩提交缺少源消息范围（${threadId}）。`);
+    }
+    const summary = input.summary.trim();
+    if (!summary) {
+      throw new Error(`压缩提交摘要为空（${threadId}）。`);
+    }
+    validateCompactMetrics(threadId, input);
+
     const createdAt = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO thread_compact_handoff (
-           thread_id, summary, recent_user_messages_json, post_tokens_estimate, created_at
-         ) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(thread_id) DO UPDATE SET
-           summary = excluded.summary,
-           recent_user_messages_json = excluded.recent_user_messages_json,
-           post_tokens_estimate = excluded.post_tokens_estimate,
-           created_at = excluded.created_at`,
-      )
-      .run(
-        threadId,
-        input.summary,
-        JSON.stringify(input.recentUserMessages),
-        input.postTokensEstimate,
+    const summaryId = `csm_${crypto.randomUUID()}`;
+    const schemaVersion = Math.max(1, Math.trunc(input.schemaVersion ?? 2));
+    let generation = 1;
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const previous = this.db
+        .prepare(`SELECT generation FROM thread_compact_handoff WHERE thread_id = ?`)
+        .get(threadId) as { generation: number } | undefined;
+      generation = Math.max(1, Math.trunc(previous?.generation ?? 0) + 1);
+
+      const sessionUpdate = this.db
+        .prepare(
+          `UPDATE threads
+           SET sdk_session_id = NULL, sdk_cwd = NULL, updated_at = ?
+           WHERE id = ? AND sdk_session_id = ?`,
+        )
+        .run(createdAt, threadId, sourceSessionId);
+      if (Number(sessionUpdate.changes ?? 0) !== 1) {
+        throw new Error(`源 SDK session 已变化，拒绝提交旧压缩摘要（${threadId}）。`);
+      }
+
+      this.writeCompactHandoffRow(threadId, {
+        summaryId,
+        schemaVersion,
+        generation,
+        summary,
+        recentMessages: input.recentMessages,
+        preTokensEstimate: input.preTokensEstimate,
+        preTokensSource: input.preTokensSource,
+        postTokensEstimate: input.postTokensEstimate,
+        postTokensSource: input.postTokensSource,
+        compressionRatio: input.compressionRatio,
+        sourceSessionId,
+        sourceStartMessageId,
+        sourceEndMessageId,
         createdAt,
-      );
+      });
+      this.db.prepare(`DELETE FROM thread_subagent_sessions WHERE thread_id = ?`).run(threadId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
     return {
       threadId,
-      summary: input.summary,
-      recentUserMessages: [...input.recentUserMessages],
+      summaryId,
+      schemaVersion,
+      generation,
+      summary,
+      recentMessages: input.recentMessages.map((message) => ({ ...message })),
+      preTokensEstimate: input.preTokensEstimate,
+      preTokensSource: input.preTokensSource,
       postTokensEstimate: input.postTokensEstimate,
+      postTokensSource: input.postTokensSource,
+      compressionRatio: input.compressionRatio,
+      sourceSessionId,
+      sourceStartMessageId,
+      sourceEndMessageId,
       createdAt,
     };
   }
 
+  /** Non-atomic fixture/import helper. Production compaction uses commitCompactHandoffAndClearSession. */
+  saveCompactHandoff(
+    threadId: string,
+    input: {
+      summary: string;
+      recentMessages: CompactConversationMessage[];
+      postTokensEstimate: number;
+      preTokensEstimate?: number;
+      preTokensSource?: CompactTokenCountSource;
+      postTokensSource?: CompactTokenCountSource;
+      compressionRatio?: number;
+    },
+  ): ThreadCompactHandoffRecord {
+    const createdAt = new Date().toISOString();
+    const previous = this.selectCompactHandoffRow(threadId, false);
+    const generation = Math.max(1, Math.trunc(previous?.generation ?? 0) + 1);
+    const summaryId = `csm_${crypto.randomUUID()}`;
+    const preTokensEstimate = input.preTokensEstimate ?? input.postTokensEstimate;
+    const compressionRatio =
+      input.compressionRatio ?? (preTokensEstimate > 0 ? input.postTokensEstimate / preTokensEstimate : 1);
+    const record: ThreadCompactHandoffRecord = {
+      threadId,
+      summaryId,
+      schemaVersion: 2,
+      generation,
+      summary: input.summary.trim(),
+      recentMessages: input.recentMessages.map((message) => ({ ...message })),
+      preTokensEstimate,
+      preTokensSource: input.preTokensSource ?? "local_heuristic",
+      postTokensEstimate: input.postTokensEstimate,
+      postTokensSource: input.postTokensSource ?? "local_heuristic",
+      compressionRatio,
+      createdAt,
+    };
+    validateCompactMetrics(threadId, record);
+    this.writeCompactHandoffRow(threadId, record);
+    return record;
+  }
+
+  /** Non-atomic fixture/import helper. Production session capture uses captureSdkSessionAndConsumeCompactHandoff. */
+  markCompactHandoffConsumed(threadId: string, targetSessionId: string): boolean {
+    const sessionId = targetSessionId.trim();
+    if (!sessionId) {
+      throw new Error(`压缩交接消费缺少目标 SDK session（${threadId}）。`);
+    }
+    const consumedAt = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE thread_compact_handoff
+         SET target_session_id = ?, consumed_at = ?
+         WHERE thread_id = ? AND consumed_at IS NULL`,
+      )
+      .run(sessionId, consumedAt, threadId);
+    return Number(result.changes ?? 0) === 1;
+  }
+
   clearCompactHandoff(threadId: string): void {
     this.db.prepare(`DELETE FROM thread_compact_handoff WHERE thread_id = ?`).run(threadId);
+  }
+
+  private selectCompactHandoffRow(threadId: string, onlyPending: boolean): CompactHandoffRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT thread_id, summary_id, schema_version, generation, summary,
+                recent_user_messages_json, pre_tokens_estimate, pre_tokens_source,
+                post_tokens_estimate, post_tokens_source, compression_ratio,
+                source_session_id, source_start_message_id, source_end_message_id,
+                target_session_id, consumed_at, created_at
+         FROM thread_compact_handoff
+         WHERE thread_id = ?${onlyPending ? " AND consumed_at IS NULL" : ""}`,
+      )
+      .get(threadId) as CompactHandoffRow | undefined;
+  }
+
+  private writeCompactHandoffRow(
+    threadId: string,
+    input: {
+      summaryId: string;
+      schemaVersion: number;
+      generation: number;
+      summary: string;
+      recentMessages: CompactConversationMessage[];
+      preTokensEstimate: number;
+      preTokensSource: CompactTokenCountSource;
+      postTokensEstimate: number;
+      postTokensSource: CompactTokenCountSource;
+      compressionRatio: number;
+      sourceSessionId?: string;
+      sourceStartMessageId?: string;
+      sourceEndMessageId?: string;
+      createdAt: string;
+    },
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO thread_compact_handoff (
+           thread_id, summary_id, schema_version, generation, summary,
+           recent_user_messages_json, pre_tokens_estimate, pre_tokens_source,
+           post_tokens_estimate, post_tokens_source, compression_ratio,
+           source_session_id, source_start_message_id, source_end_message_id,
+           target_session_id, consumed_at, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           summary_id = excluded.summary_id,
+           schema_version = excluded.schema_version,
+           generation = excluded.generation,
+           summary = excluded.summary,
+           recent_user_messages_json = excluded.recent_user_messages_json,
+           pre_tokens_estimate = excluded.pre_tokens_estimate,
+           pre_tokens_source = excluded.pre_tokens_source,
+           post_tokens_estimate = excluded.post_tokens_estimate,
+           post_tokens_source = excluded.post_tokens_source,
+           compression_ratio = excluded.compression_ratio,
+           source_session_id = excluded.source_session_id,
+           source_start_message_id = excluded.source_start_message_id,
+           source_end_message_id = excluded.source_end_message_id,
+           target_session_id = NULL,
+           consumed_at = NULL,
+           created_at = excluded.created_at`,
+      )
+      .run(
+        threadId,
+        input.summaryId,
+        input.schemaVersion,
+        input.generation,
+        input.summary,
+        JSON.stringify(input.recentMessages),
+        input.preTokensEstimate,
+        input.preTokensSource,
+        input.postTokensEstimate,
+        input.postTokensSource,
+        input.compressionRatio,
+        input.sourceSessionId ?? null,
+        input.sourceStartMessageId ?? null,
+        input.sourceEndMessageId ?? null,
+        input.createdAt,
+      );
   }
 
   listThreadMetrics(): ThreadMetricsRecord[] {
@@ -1355,6 +1750,62 @@ export class ConversationStore {
          WHERE id = ?`,
       )
       .run(sessionId, cwd, new Date().toISOString(), threadId);
+  }
+
+  /**
+   * Atomically captures the replacement SDK session and consumes any pending compact handoff.
+   * A compacted source session must never be reinstalled as the target session.
+   */
+  captureSdkSessionAndConsumeCompactHandoff(threadId: string, sessionId: string, cwd: string): boolean {
+    const targetSessionId = sessionId.trim();
+    const targetCwd = cwd.trim();
+    if (!targetSessionId) {
+      throw new Error(`SDK session capture 缺少 session id（${threadId}）。`);
+    }
+    if (!targetCwd) {
+      throw new Error(`SDK session capture 缺少 cwd（${threadId}）。`);
+    }
+
+    const capturedAt = new Date().toISOString();
+    let consumedHandoff = false;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const pendingRow = this.selectCompactHandoffRow(threadId, true);
+      const pendingHandoff = pendingRow ? compactHandoffRowToRecord(pendingRow, threadId) : undefined;
+      if (pendingHandoff?.sourceSessionId === targetSessionId) {
+        throw new Error(`压缩后的新 SDK session 与源 session 相同，拒绝恢复旧上下文（${threadId}）。`);
+      }
+
+      const sessionUpdate = this.db
+        .prepare(
+          `UPDATE threads
+           SET sdk_session_id = ?, sdk_cwd = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(targetSessionId, targetCwd, capturedAt, threadId);
+      if (Number(sessionUpdate.changes ?? 0) !== 1) {
+        throw new Error(`SDK session capture 找不到线程记录（${threadId}）。`);
+      }
+
+      if (pendingHandoff) {
+        const consumed = this.db
+          .prepare(
+            `UPDATE thread_compact_handoff
+             SET target_session_id = ?, consumed_at = ?
+             WHERE thread_id = ? AND consumed_at IS NULL`,
+          )
+          .run(targetSessionId, capturedAt, threadId);
+        if (Number(consumed.changes ?? 0) !== 1) {
+          throw new Error(`压缩交接消费状态已变化，拒绝提交 SDK session（${threadId}）。`);
+        }
+        consumedHandoff = true;
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return consumedHandoff;
   }
 
   getSdkSession(threadId: string): ThreadSdkSession | undefined {
@@ -1961,10 +2412,7 @@ export class ConversationStore {
     return (result.changes ?? 0) > 0;
   }
 
-  updateUsageLedgerEventAttribution(
-    eventId: string,
-    update: UsageLedgerAttributionUpdate,
-  ): boolean {
+  updateUsageLedgerEventAttribution(eventId: string, update: UsageLedgerAttributionUpdate): boolean {
     const result = this.db
       .prepare(
         `UPDATE thread_usage_ledger_events

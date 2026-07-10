@@ -93,6 +93,34 @@ test.skipIf(!sqliteAvailable)(
   },
 );
 
+test.skipIf(!sqliteAvailable)("provider token count mode is persisted explicitly", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-token-count-mode-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const provider = store.saveProvider({
+    name: "P",
+    baseUrl: "https://api.example.com",
+    apiKey: "k",
+    defaultModel: "m1",
+    tokenCountMode: "openai_responses",
+    enabled: true,
+  });
+  expect(provider.tokenCountMode).toBe("openai_responses");
+  expect(store.getProviderWithSecret(provider.id)?.tokenCountMode).toBe("openai_responses");
+
+  expect(() =>
+    store.saveProvider({
+      id: provider.id,
+      name: "P",
+      baseUrl: "https://api.example.com",
+      apiKey: "",
+      defaultModel: "m1",
+      tokenCountMode: "invalid" as never,
+      enabled: true,
+    }),
+  ).toThrow("无效的 Provider token 计数模式");
+});
+
 test.skipIf(!sqliteAvailable)("candidate model manual pricing preserves zero values", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-candidate-zero-"));
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));

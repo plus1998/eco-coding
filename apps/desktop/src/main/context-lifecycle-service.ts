@@ -17,53 +17,42 @@ export interface ContextLifecycleServiceInput {
     worktreePath: string,
     signal: AbortSignal,
     options?: { ignoreRunningGuard?: boolean },
-  ): Promise<void>;
+  ): Promise<boolean>;
   getThreadStatus(threadId: string): ThreadStatus | undefined;
   resolveThreadWorktreePath(threadId: string): string | undefined;
   applySdkContextUsageBreakdown(threadId: string, payload: unknown): void;
-  recordCompactionBoundary(
-    threadId: string,
-    payload: Record<string, unknown>,
-    sourceEventId?: string,
-  ): void;
+  recordCompactionBoundary(threadId: string, payload: Record<string, unknown>, sourceEventId?: string): void;
+  onPostRunCompactionError?(threadId: string, error: unknown): void;
 }
 
 export interface ContextLifecycleService {
-  afterRunRefresh(threadId: string, worktreePath?: string): void;
+  afterRunRefresh(threadId: string, worktreePath?: string): Promise<void>;
   schedulePostRunCompactionIfNeeded(threadId: string, worktreePath: string): Promise<boolean>;
   markCompactInFlight(threadId: string): void;
   noteCompactionObserved(threadId: string): void;
-  handleSdkContextEvent(input: {
-    threadId: string;
-    eventId: string;
-    payload: unknown;
-  }): boolean;
+  handleSdkContextEvent(input: { threadId: string; eventId: string; payload: unknown }): boolean;
 }
 
-export function createContextLifecycleService(
-  input: ContextLifecycleServiceInput,
-): ContextLifecycleService {
-  async function schedulePostRunCompactionIfNeeded(
-    threadId: string,
-    worktreePath: string,
-  ): Promise<boolean> {
-    if (!input.monitor.shouldCompact(threadId)) {
-      return false;
-    }
-    await input.ensureHeadroom(threadId, worktreePath, new AbortController().signal);
-    return true;
+export function createContextLifecycleService(input: ContextLifecycleServiceInput): ContextLifecycleService {
+  async function schedulePostRunCompactionIfNeeded(threadId: string, worktreePath: string): Promise<boolean> {
+    return input.ensureHeadroom(threadId, worktreePath, new AbortController().signal);
   }
 
   return {
-    afterRunRefresh(threadId, worktreePath) {
+    async afterRunRefresh(threadId, worktreePath) {
       input.emitLiveContext(threadId);
       const status = input.getThreadStatus(threadId);
       if (status === "blocked" || status === "failed") {
         return;
       }
       const path = worktreePath ?? input.resolveThreadWorktreePath(threadId);
-      if (path) {
-        void schedulePostRunCompactionIfNeeded(threadId, path);
+      if (!path) {
+        return;
+      }
+      try {
+        await schedulePostRunCompactionIfNeeded(threadId, path);
+      } catch (error) {
+        input.onPostRunCompactionError?.(threadId, error);
       }
     },
     schedulePostRunCompactionIfNeeded,

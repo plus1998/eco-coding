@@ -6,13 +6,8 @@ import {
   parseBridgeProbeReply,
   resolveBridgeUpstreamUrl,
 } from "./bridge-upstream";
+import { headersToLoggable, logUpstream, logUpstreamError, truncateForLog } from "./upstream-log";
 import { buildProviderDirectUpstreamHeaders } from "./upstream-request-headers";
-import {
-  headersToLoggable,
-  logUpstream,
-  logUpstreamError,
-  truncateForLog,
-} from "./upstream-log";
 
 type Fetcher = typeof fetch;
 
@@ -36,6 +31,7 @@ export interface PostAuxiliaryBridgeRequestResult {
   text?: string;
   upstreamError?: string;
   status?: number;
+  error?: string;
 }
 
 export async function postAuxiliaryBridgeRequest(
@@ -100,7 +96,7 @@ export async function postAuxiliaryBridgeRequest(
         statusText: response.statusText,
         body: truncateForLog(raw),
       });
-      return { ok: false, status: response.status };
+      return { ok: false, status: response.status, error: truncateForLog(raw) };
     }
 
     const parsed = await parseBridgeProbeReply({
@@ -152,6 +148,6 @@ export async function postAuxiliaryBridgeRequest(
       url: requestUrl,
       error: error instanceof Error ? error.message : String(error),
     });
-    return { ok: false };
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }

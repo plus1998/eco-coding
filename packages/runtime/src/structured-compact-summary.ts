@@ -11,7 +11,7 @@ export type StructuredCompactHeading = (typeof STRUCTURED_COMPACT_HEADINGS)[numb
 export type StructuredCompactSections = Partial<Record<StructuredCompactHeading, string>>;
 
 export function structuredCompactInstructionSuffix(context: "thread" | "subagent"): string {
-  const subject = context === "subagent" ? "子代理输出" : "较早的用户消息";
+  const subject = context === "subagent" ? "子代理输出" : "较早对话";
   return [
     `请将以下编码对话中${subject}压缩为结构化摘要。`,
     "必须按以下二级标题逐段输出（无内容的段落写「无」）：",
@@ -90,7 +90,7 @@ export function buildStructuredCompactFallback(input: {
   return formatStructuredCompactSections({
     任务目标: input.taskGoal?.trim() || olderBullets[0] || "无",
     "已读/已改文件": filePaths.length > 0 ? filePaths.join("\n") : "无",
-    "测试结果与错误": testResults.length > 0 ? testResults.join("\n") : "无",
+    测试结果与错误: testResults.length > 0 ? testResults.join("\n") : "无",
     已做决策: decisions.length > 0 ? decisions.join("\n") : summarizeOlderMessages(olderBullets),
     未完成事项: pending.length > 0 ? pending.join("\n") : "无",
   });

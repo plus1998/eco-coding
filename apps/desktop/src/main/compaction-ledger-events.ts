@@ -1,8 +1,8 @@
 import type { AgentRole } from "../shared/ipc";
-import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
 import type { UsageLedgerEvent } from "./usage-ledger";
+import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
 
-export type CompactionLedgerStage = "started" | "completed";
+export type CompactionLedgerStage = "started" | "completed" | "failed";
 
 export interface CompactionLedgerEventInput {
   threadId: string;

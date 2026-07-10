@@ -4,6 +4,7 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { createBuiltInAgentTemplates } from "../shared/agent-orchestration";
 import { normalizeUpstreamApiCompat } from "../shared/api-compat";
 import { normalizeStoredPriceMultiplier } from "../shared/manual-spec-pricing";
+import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
 import {
   AGENT_ROLES,
   type AgentRole,
@@ -26,6 +27,7 @@ interface ProviderRow {
   base_url: string;
   request_path: string;
   api_compat: string;
+  token_count_mode: string;
   api_key: string;
   default_model: string;
   enabled: number;
@@ -131,6 +133,7 @@ export class ProviderStore {
     this.migrateRoleRoutesModelsDevMapping();
     this.migrateRoleRoutesManualSpec();
     this.migrateProviderApiCompat();
+    this.migrateProviderTokenCountMode();
     this.migrateRoleRoutesApiCompat();
     this.migrateLegacyOpenaiApiCompatValues();
     this.migrateCandidateModelsTable();
@@ -180,13 +183,15 @@ export class ProviderStore {
     this.db
       .prepare(`
         INSERT INTO provider_configs (
-          id, name, base_url, request_path, api_compat, api_key, default_model, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, name, base_url, request_path, api_compat, token_count_mode,
+          api_key, default_model, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_url = excluded.base_url,
           request_path = excluded.request_path,
           api_compat = excluded.api_compat,
+          token_count_mode = excluded.token_count_mode,
           api_key = excluded.api_key,
           default_model = excluded.default_model,
           enabled = excluded.enabled,
@@ -198,6 +203,7 @@ export class ProviderStore {
         input.baseUrl.trim(),
         normalizeRequestPath(input.requestPath),
         normalizeUpstreamApiCompat(input.apiCompat ?? existing?.api_compat),
+        normalizeProviderTokenCountMode(input.tokenCountMode ?? existing?.token_count_mode),
         apiKey,
         input.defaultModel.trim(),
         input.enabled ? 1 : 0,
@@ -504,6 +510,16 @@ export class ProviderStore {
     this.db.exec(`ALTER TABLE provider_configs ADD COLUMN api_compat TEXT NOT NULL DEFAULT 'anthropic'`);
   }
 
+  private migrateProviderTokenCountMode(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "token_count_mode")) {
+      return;
+    }
+    this.db.exec(
+      `ALTER TABLE provider_configs ADD COLUMN token_count_mode TEXT NOT NULL DEFAULT 'local_heuristic'`,
+    );
+  }
+
   private migrateRoleRoutesApiCompat(): void {
     const columns = this.db.prepare("PRAGMA table_info(role_routes)").all() as Array<{ name: string }>;
     if (columns.some((column) => column.name === "api_compat")) {
@@ -523,7 +539,8 @@ export class ProviderStore {
   private listProviderRows(): ProviderRow[] {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, request_path, api_compat, api_key, default_model, enabled, created_at, updated_at
+        SELECT id, name, base_url, request_path, api_compat, token_count_mode,
+               api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         ORDER BY updated_at DESC, name ASC
       `)
@@ -533,7 +550,8 @@ export class ProviderStore {
   private getProviderRow(id: string): ProviderRow | undefined {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, request_path, api_compat, api_key, default_model, enabled, created_at, updated_at
+        SELECT id, name, base_url, request_path, api_compat, token_count_mode,
+               api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
       `)
@@ -750,6 +768,7 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
     baseUrl: row.base_url,
     requestPath: row.request_path ?? "",
     apiCompat: normalizeUpstreamApiCompat(row.api_compat),
+    tokenCountMode: normalizeProviderTokenCountMode(row.token_count_mode),
     defaultModel: row.default_model,
     enabled: row.enabled === 1,
     hasApiKey: row.api_key.length > 0,

@@ -20,7 +20,7 @@ export interface ThreadRunCleanupDeps {
   resetSdkStream: (threadId: string) => void;
   flushUsageUpdates: (threadId: string) => Promise<void>;
   finishActiveRun: (threadId: string) => void;
-  afterRunContextRefresh: (threadId: string, worktreePath?: string) => void;
+  afterRunContextRefresh: (threadId: string, worktreePath?: string) => Promise<void>;
   getThread: (threadId: string) => ThreadRunCleanupThread | undefined;
   updateThreadIdle: (threadId: string, message: string) => void;
 }
@@ -62,7 +62,7 @@ export async function finalizeThreadRunCleanup(
   deps.resetSdkStream(input.threadId);
   await deps.flushUsageUpdates(input.threadId);
   deps.finishActiveRun(input.threadId);
-  deps.afterRunContextRefresh(input.threadId, input.worktreePath);
+  await deps.afterRunContextRefresh(input.threadId, input.worktreePath);
 
   if (!input.idleFallbackMessage) {
     return;

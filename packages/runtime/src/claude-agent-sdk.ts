@@ -1625,6 +1625,7 @@ export function applyEcoSdkSettings(
   queryOptions.settings = {
     ...existing,
     disableWorkflows: true,
+    autoCompactEnabled: false,
     plansDirectory: ".claude/plans",
     permissions: {
       ...existingPermissions,

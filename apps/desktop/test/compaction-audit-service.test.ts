@@ -214,3 +214,58 @@ test("recordBoundary uses metadata and generated source when no pending audit ex
     },
   });
 });
+
+test("recordFailure closes the pending audit and records explicit failed status", async () => {
+  const { service, ledgerEvents, compactionStatuses } = createService();
+
+  await service.archiveBeforeCompaction("thr_compact", {
+    trigger: "auto",
+    sessionId: "sdk_session_1",
+  });
+  service.recordFailure("thr_compact", {
+    trigger: "auto",
+    sessionId: "sdk_session_1",
+    detail: "summary failed",
+  });
+
+  expect(ledgerEvents).toHaveLength(2);
+  expect(ledgerEvents[1]).toMatchObject({
+    sourceEventId: "compact:thr_compact:123:failed",
+    metadata: {
+      path: "compaction",
+      stage: "failed",
+      trigger: "auto",
+      sessionId: "sdk_session_1",
+      archiveId: "archive_1",
+      preTokens: 12_345,
+      compactMetadata: { detail: "summary failed" },
+    },
+  });
+  expect(compactionStatuses.at(-1)).toEqual({
+    threadId: "thr_compact",
+    status: {
+      stage: "failed",
+      trigger: "auto",
+      sessionId: "sdk_session_1",
+      archiveId: "archive_1",
+      preTokens: 12_345,
+      detail: "summary failed",
+    },
+  });
+});
+
+test("archiveBeforeCompaction rethrows archive failures", async () => {
+  const { service, errors } = createService({
+    saveCompactionArchive: () => {
+      throw new Error("archive unavailable");
+    },
+  });
+
+  await expect(
+    service.archiveBeforeCompaction("thr_compact", {
+      trigger: "manual",
+      sessionId: "sdk_session_1",
+    }),
+  ).rejects.toThrow("archive unavailable");
+  expect(errors).toEqual(["[eco] compaction archive failed for thr_compact: archive unavailable\n"]);
+});
