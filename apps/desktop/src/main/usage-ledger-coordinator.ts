@@ -22,7 +22,11 @@ import { shortThreadId } from "./eco-diag-log";
 import {
   PROXY_PENDING_TIMEOUT_REASON,
   ProxyUsagePendingRegistry,
+  type ProxyMessageIdentityBinding,
+  type ProxyMessageIdentityDiagnostic,
   type ProxyUsagePendingEntry,
+  type ProxyUsagePendingMutationResult,
+  type ProxyUsagePendingSettlementUpdate,
 } from "./proxy-usage-pending-settlement";
 import { buildThreadUsageLedgerEventView } from "./usage-ledger-view";
 
@@ -49,6 +53,14 @@ export interface UsageLedgerCoordinatorMetrics {
   ): string | undefined;
 }
 
+export interface ProxyAttributionSettlement {
+  event: UsageLedgerEvent;
+  agentId: string;
+  role: RuntimeAgentRole;
+  messageId?: string;
+  parentToolUseId?: string;
+}
+
 export interface UsageLedgerCoordinatorOptions {
   store: UsageLedgerCoordinatorStore;
   metrics: UsageLedgerCoordinatorMetrics;
@@ -60,7 +72,10 @@ export interface UsageLedgerCoordinatorOptions {
     intervalMs?: number,
   ) => void;
   writeError?: (message: string) => void;
-  onProxyAttributionSettled?: (threadId: string) => void;
+  onProxyAttributionSettled?: (
+    threadId: string,
+    settlements: readonly ProxyAttributionSettlement[],
+  ) => void | Promise<void>;
 }
 
 export type UsageLedgerBillingSnapshotSource = "legacy" | "ledger";
@@ -85,7 +100,10 @@ export class UsageLedgerCoordinator {
   private readonly logDiagThrottled: UsageLedgerCoordinatorOptions["logDiagThrottled"] | undefined;
   private readonly writeError: (message: string) => void;
   private readonly onProxyAttributionSettled:
-    | ((threadId: string) => void)
+    | ((
+        threadId: string,
+        settlements: readonly ProxyAttributionSettlement[],
+      ) => void | Promise<void>)
     | undefined;
   private readonly proxyPendingRegistry = new ProxyUsagePendingRegistry();
   private readonly pendingInterruptedStreamSettlements = new Map<
@@ -127,7 +145,11 @@ export class UsageLedgerCoordinator {
       if (!pending || pending.size === 0) {
         this.settleQueuedInterruptedStreamPartials(threadId);
         this.settleProxyPendingTimeouts(threadId);
-        return;
+        const afterSettlement = this.pendingUsageUpdates.get(threadId);
+        if (!afterSettlement || afterSettlement.size === 0) {
+          return;
+        }
+        continue;
       }
       await Promise.allSettled([...pending]);
     }
@@ -180,43 +202,73 @@ export class UsageLedgerCoordinator {
     }
   }
 
-  registerProxyPendingAttribution(threadId: string, entry: ProxyUsagePendingEntry): void {
-    this.proxyPendingRegistry.register(threadId, entry);
+  registerProxyPendingAttribution(
+    threadId: string,
+    entry: ProxyUsagePendingEntry,
+  ): number {
+    return this.applyProxyPendingMutation(
+      threadId,
+      this.proxyPendingRegistry.register(threadId, entry),
+    );
+  }
+
+  bindProxyMessageIdentity(
+    threadId: string,
+    binding: ProxyMessageIdentityBinding,
+  ): number {
+    const mutation = this.proxyPendingRegistry.bindMessageIdentity(
+      threadId,
+      binding,
+    );
+    const settledCount = this.applyProxyPendingMutation(threadId, mutation);
+    this.logDiag?.("usage_ledger.proxy_message_identity", {
+      threadId: shortThreadId(threadId),
+      messageId: binding.messageId.slice(-12),
+      agentId: binding.agentId,
+      role: binding.role,
+      bindingStatus: mutation.bindingStatus ?? "invalid",
+      settledCount,
+    });
+    return settledCount;
   }
 
   settleProxyPendingForSubagentStart(
     threadId: string,
-    input: { agentId: string; role: RuntimeAgentRole; parentToolUseId?: string },
+    input: {
+      agentId: string;
+      role: RuntimeAgentRole;
+      parentToolUseId?: string;
+    },
   ): number {
     const parentToolUseId = input.parentToolUseId?.trim();
     if (!parentToolUseId) {
       return 0;
     }
-    let settledCount = 0;
+    const updates: ProxyUsagePendingSettlementUpdate[] = [];
     while (true) {
       const update = this.proxyPendingRegistry.consumeForParentToolUse(
         threadId,
         parentToolUseId,
         input.agentId,
+        input.role,
       );
       if (!update) {
         break;
       }
-      if (this.applyProxyAttributionUpdate(update)) {
-        settledCount += 1;
-      }
+      updates.push(update);
     }
-    if (settledCount > 0) {
-      this.onProxyAttributionSettled?.(threadId);
+    const settlements = this.applyProxyAttributionUpdates(threadId, updates);
+    if (settlements.length > 0) {
+      this.notifyProxyAttributionSettled(threadId, settlements);
       this.logDiag?.("usage_ledger.proxy_pending_settled", {
         threadId: shortThreadId(threadId),
         role: input.role,
         agentId: input.agentId,
         parentToolUseId: parentToolUseId.slice(-12),
-        settledCount,
+        settledCount: settlements.length,
       });
     }
-    return settledCount;
+    return settlements.length;
   }
 
   settleProxyPendingTimeouts(threadId: string): number {
@@ -224,7 +276,7 @@ export class UsageLedgerCoordinator {
     if (pending.length === 0) {
       return 0;
     }
-    let settledCount = 0;
+    const settlements: ProxyAttributionSettlement[] = [];
     let timedOutCount = 0;
     for (const entry of pending) {
       const resolvedAgentId = entry.parentToolUseId
@@ -234,32 +286,37 @@ export class UsageLedgerCoordinator {
           })
         : undefined;
       if (resolvedAgentId) {
-        const applied = this.applyProxyAttributionUpdate({
+        const settlement = this.applyProxyAttributionUpdate(threadId, {
           eventId: entry.eventId,
           agentId: resolvedAgentId,
+          role: entry.billingRole,
           attribution: { status: "attributed", agentId: resolvedAgentId },
+          ...(entry.messageId && { messageId: entry.messageId }),
+          ...(entry.parentToolUseId && {
+            parentToolUseId: entry.parentToolUseId,
+          }),
         });
-        if (applied) {
-          settledCount += 1;
+        if (settlement) {
+          settlements.push(settlement);
         }
         continue;
       }
-      const applied = this.applyProxyAttributionUpdate({
+      const updated = this.updateProxyAttribution(threadId, {
         eventId: entry.eventId,
         attribution: {
           status: "unattributed",
           reason: PROXY_PENDING_TIMEOUT_REASON,
         },
       });
-      if (applied) {
+      if (updated) {
         timedOutCount += 1;
       }
     }
-    if (settledCount > 0) {
-      this.onProxyAttributionSettled?.(threadId);
+    if (settlements.length > 0) {
+      this.notifyProxyAttributionSettled(threadId, settlements);
       this.logDiag?.("usage_ledger.proxy_pending_settled_on_timeout", {
         threadId: shortThreadId(threadId),
-        settledCount,
+        settledCount: settlements.length,
       });
     }
     if (timedOutCount > 0) {
@@ -268,30 +325,133 @@ export class UsageLedgerCoordinator {
         timedOutCount,
       });
     }
-    return settledCount + timedOutCount;
+    return settlements.length + timedOutCount;
   }
 
   rebuildProxyPendingFromEvents(threadId: string): void {
-    this.proxyPendingRegistry.clearThread(threadId);
-    this.proxyPendingRegistry.rebuildFromEvents(this.store.listUsageLedgerEvents(threadId));
+    const mutation = this.proxyPendingRegistry.rebuildFromEvents(
+      this.store.listUsageLedgerEvents(threadId),
+    );
+    this.applyProxyPendingMutation(threadId, mutation);
   }
 
-  private applyProxyAttributionUpdate(update: {
-    eventId: string;
-    agentId?: string;
-    attribution: UsageLedgerEvent["attribution"];
-  }): boolean {
+  clearProxyAttributionState(threadId: string): void {
+    this.proxyPendingRegistry.clearThread(threadId);
+  }
+
+  private applyProxyPendingMutation(
+    threadId: string,
+    mutation: ProxyUsagePendingMutationResult,
+  ): number {
+    this.logProxyMessageIdentityDiagnostics(threadId, mutation.diagnostics);
+    const settlements = this.applyProxyAttributionUpdates(
+      threadId,
+      mutation.updates,
+    );
+    if (settlements.length > 0) {
+      this.notifyProxyAttributionSettled(threadId, settlements);
+    }
+    return settlements.length;
+  }
+
+  private applyProxyAttributionUpdates(
+    threadId: string,
+    updates: readonly ProxyUsagePendingSettlementUpdate[],
+  ): ProxyAttributionSettlement[] {
+    return updates.flatMap((update) => {
+      const settlement = this.applyProxyAttributionUpdate(threadId, update);
+      return settlement ? [settlement] : [];
+    });
+  }
+
+  private applyProxyAttributionUpdate(
+    threadId: string,
+    update: ProxyUsagePendingSettlementUpdate,
+  ): ProxyAttributionSettlement | undefined {
+    const event = this.updateProxyAttribution(threadId, update);
+    if (!event) {
+      return undefined;
+    }
+    return {
+      event,
+      agentId: update.agentId,
+      role: update.role,
+      ...(update.messageId && { messageId: update.messageId }),
+      ...(update.parentToolUseId && {
+        parentToolUseId: update.parentToolUseId,
+      }),
+    };
+  }
+
+  private updateProxyAttribution(
+    threadId: string,
+    update: {
+      eventId: string;
+      agentId?: string;
+      attribution: UsageLedgerEvent["attribution"];
+    },
+  ): UsageLedgerEvent | undefined {
     if (!this.store.updateUsageLedgerEventAttribution) {
-      return false;
+      return undefined;
     }
     try {
-      return this.store.updateUsageLedgerEventAttribution(update.eventId, {
-        ...(update.agentId && { agentId: update.agentId }),
-        attribution: update.attribution,
-      });
+      const updated = this.store.updateUsageLedgerEventAttribution(
+        update.eventId,
+        {
+          ...(update.agentId && { agentId: update.agentId }),
+          attribution: update.attribution,
+        },
+      );
+      if (!updated) {
+        return undefined;
+      }
+      return this.store
+        .listUsageLedgerEvents(threadId)
+        .find((candidate) => candidate.id === update.eventId);
     } catch (error) {
-      this.writeError(`[eco] usage ledger attribution update failed: ${errorMessage(error)}\n`);
-      return false;
+      this.writeError(
+        `[eco] usage ledger attribution update failed: ${errorMessage(error)}\n`,
+      );
+      return undefined;
+    }
+  }
+
+  private notifyProxyAttributionSettled(
+    threadId: string,
+    settlements: readonly ProxyAttributionSettlement[],
+  ): void {
+    if (!this.onProxyAttributionSettled || settlements.length === 0) {
+      return;
+    }
+    try {
+      const task = this.onProxyAttributionSettled(threadId, settlements);
+      if (task && typeof (task as Promise<void>).then === "function") {
+        this.trackUsageUpdate(
+          threadId,
+          Promise.resolve(task).catch((error) => {
+            this.writeError(
+              `[eco] proxy attribution settlement effects failed: ${errorMessage(error)}\n`,
+            );
+          }),
+        );
+      }
+    } catch (error) {
+      this.writeError(
+        `[eco] proxy attribution settlement effects failed: ${errorMessage(error)}\n`,
+      );
+    }
+  }
+
+  private logProxyMessageIdentityDiagnostics(
+    threadId: string,
+    diagnostics: readonly ProxyMessageIdentityDiagnostic[],
+  ): void {
+    for (const diagnostic of diagnostics) {
+      this.logDiag?.("usage_ledger.proxy_message_identity_conflict", {
+        threadId: shortThreadId(threadId),
+        ...diagnostic,
+        messageId: diagnostic.messageId.slice(-12),
+      });
     }
   }
 

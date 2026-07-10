@@ -628,3 +628,58 @@ test("applySdkRunBillingEffects does not backfill legacy subagent metrics when l
   expect(billing.sourceReportedCostUsd).toBe(0.03);
   expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });
+
+test("applySingleUsageBillingEffects keeps unresolved proxy context out of role-level snapshots", async () => {
+  const { ledger, coordinator } = createLedgerCoordinator();
+  const contextUpdates: Array<{ threadId: string; usage: ParsedUsage; options: unknown }> = [];
+  const contextObservations: unknown[] = [];
+  const services: UsageBillingEffectsServices = {
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage(threadId, nextUsage, options) {
+          contextUpdates.push({ threadId, usage: nextUsage, options });
+        },
+        getSnapshot: () => undefined,
+      },
+      emitLiveContext: () => undefined,
+    }),
+    usageLedger: coordinator,
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics: {
+      recordContextObservation: (_threadId, input) => {
+        contextObservations.push(input);
+        return undefined;
+      },
+      recordSdkUsage: () => undefined,
+    },
+    emitUsageUpdated: () => undefined,
+    schedulePersistThreadMetrics: () => undefined,
+  };
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_pending_context",
+    role: "coder",
+    source: "proxy",
+    usage: usage(12_000),
+    runtimeRoutes: routes,
+    lookupPricing,
+    modelId: "haiku",
+    messageId: "msg_pending_context",
+    requestKey: "proxy:coder:pending-context",
+    attributionPending: true,
+  });
+
+  await applySingleUsageBillingEffects(services, {
+    threadId: "thr_pending_context",
+    artifacts,
+    updateContext: true,
+    messageId: "msg_pending_context",
+    reconciliationOnly: true,
+  });
+
+  expect(ledger.listUsageEvents("thr_pending_context")[0]).toMatchObject({
+    sdkMessageId: "msg_pending_context",
+    attribution: { status: "pending" },
+  });
+  expect(contextUpdates).toHaveLength(0);
+  expect(contextObservations).toHaveLength(0);
+});

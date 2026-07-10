@@ -442,6 +442,7 @@ import {
 import { emitToolOutputTruncated as emitToolOutputTruncatedEvent } from "./tool-output-run-events";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
+import { reconcileProxyAttributionContexts } from "./proxy-attribution-context-reconciliation";
 import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
 import {
   applySdkRunBillingEffects,
@@ -756,8 +757,21 @@ app.whenReady().then(async () => {
     metrics: subagentMetricsRegistry,
     logDiag: logEcoDiag,
     logDiagThrottled: logEcoDiagThrottled,
-    onProxyAttributionSettled: (threadId) => {
-      schedulePersistThreadMetrics(threadId);
+    onProxyAttributionSettled: async (threadId, settlements) => {
+      await reconcileProxyAttributionContexts(
+        {
+          context: createUsageContextService({
+            monitor: contextMonitor,
+            emitLiveContext: (targetThreadId: string) =>
+              contextScheduler.emitLiveFromMonitor(targetThreadId),
+          }),
+          subagentMetrics: subagentMetricsRegistry,
+          schedulePersistThreadMetrics,
+          logDiag: logEcoDiag,
+        },
+        threadId,
+        settlements,
+      );
       emitSubagentTimingUpdated(threadId);
     },
   });
@@ -4797,6 +4811,7 @@ function clearThreadRuntimeMemory(threadId: string): void {
   threadPromptCacheEpisodeMonitor.clearThread(threadId);
   threadCacheHitMonitor.clearThread(threadId);
   subagentMetricsRegistry.clearThread(threadId);
+  usageLedgerCoordinator.clearProxyAttributionState(threadId);
   clearThreadSubagentLaunchRegistry(threadId);
   subagentDelegationLinkersByThread.delete(threadId);
   const timer = runProjectionEmitTimers.get(threadId);
@@ -5851,6 +5866,20 @@ function sdkUsageRecordedEventHandlerServices() {
     usageRunAttemptId: (threadId: string) => agentLifecycle.usageRunAttemptId(threadId),
     usagePlannerAgentId: (threadId: string) => agentLifecycle.usagePlannerAgentId(threadId),
     listObservedAuthoritativeUsage: (threadId: string) => activeRunBillingState.listObservations(threadId),
+    noteAssistantMessageIdentity: (input: {
+      threadId: string;
+      messageId: string;
+      agentId: string;
+      role: RuntimeAgentRole;
+      parentToolUseId?: string;
+    }) => {
+      usageLedgerCoordinator.bindProxyMessageIdentity(input.threadId, {
+        messageId: input.messageId,
+        agentId: input.agentId,
+        role: input.role,
+        ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      });
+    },
     resolver: subagentMetricsRegistry,
     dispatchUsageBilling: dispatchSdkEventUsageBilling,
     dispatchServices: sdkUsageBillingDispatchServices(),

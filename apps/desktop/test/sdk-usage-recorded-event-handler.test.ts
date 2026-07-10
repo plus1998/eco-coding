@@ -65,6 +65,7 @@ function createServices(
     usageRunAttemptId: () => undefined,
     usagePlannerAgentId: () => undefined,
     listObservedAuthoritativeUsage: () => undefined,
+    noteAssistantMessageIdentity: () => undefined,
     resolver: resolver(),
     dispatchUsageBilling: () => ({ dispatched: false, reason: "none" }),
     dispatchServices: dispatchServices(),
@@ -151,6 +152,13 @@ test("handleSdkUsageRecordedEvent passes authoritative observations into assista
     },
   ];
   const dispatches: SdkEventUsageBillingResolution[] = [];
+  const identities: Array<{
+    threadId: string;
+    messageId: string;
+    agentId: string;
+    role: string;
+    parentToolUseId?: string;
+  }> = [];
   const result = handleSdkUsageRecordedEvent({
     threadId: "thr_sdk",
     event: event({
@@ -170,6 +178,7 @@ test("handleSdkUsageRecordedEvent passes authoritative observations into assista
       resolver: resolver({
         roleByAgent: { agent_coder: "coder" },
       }),
+      noteAssistantMessageIdentity: (identity) => identities.push(identity),
       dispatchUsageBilling: ({ resolved }): SdkUsageBillingDispatchResult => {
         dispatches.push(resolved);
         return resolved.kind === "assistant_ignored"
@@ -185,4 +194,12 @@ test("handleSdkUsageRecordedEvent passes authoritative observations into assista
     dispatch: { dispatched: false, reason: "assistant_ignored" },
   });
   expect(dispatches[0]?.kind).toBe("assistant_ignored");
+  expect(identities).toEqual([
+    {
+      threadId: "thr_sdk",
+      messageId: "msg_1",
+      agentId: "agent_coder",
+      role: "coder",
+    },
+  ]);
 });

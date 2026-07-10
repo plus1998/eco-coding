@@ -31,6 +31,7 @@ import {
   USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
   USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY,
   USAGE_LEDGER_PROVIDER_ID_METADATA_KEY,
+  USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
 
 export interface UsageBillingPricingRoute {
@@ -205,6 +206,7 @@ export async function resolveSingleUsageBillingArtifacts(
         ...(input.aliasModelId && { [USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY]: input.aliasModelId }),
         ...(input.providerId && { [USAGE_LEDGER_PROVIDER_ID_METADATA_KEY]: input.providerId }),
         ...(input.sourceDedupId && { sourceDedupId: input.sourceDedupId }),
+        ...(contextUpdate && { [USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY]: contextUpdate }),
       },
     }),
     parsedUsage,

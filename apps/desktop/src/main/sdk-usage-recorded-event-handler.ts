@@ -1,3 +1,4 @@
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { UsageBillingObservation } from "./billing-orchestration";
 import {
   resolveSdkEventUsageBilling,
@@ -21,6 +22,13 @@ export interface SdkUsageRecordedEventHandlerServices {
   usageRunAttemptId(threadId: string): string | undefined;
   usagePlannerAgentId(threadId: string): string | undefined;
   listObservedAuthoritativeUsage(threadId: string): readonly UsageBillingObservation[] | undefined;
+  noteAssistantMessageIdentity(input: {
+    threadId: string;
+    messageId: string;
+    agentId: string;
+    role: RuntimeAgentRole;
+    parentToolUseId?: string;
+  }): void;
   resolver: SubagentUsageAttributionResolver;
   dispatchUsageBilling(input: {
     threadId: string;
@@ -65,6 +73,20 @@ export function handleSdkUsageRecordedEvent(input: {
     ...(plannerAgentId && { plannerAgentId }),
     ...(observedAuthoritativeUsage && { observedAuthoritativeUsage }),
   });
+
+  if (
+    (resolved.kind === "assistant_ignored" || resolved.kind === "assistant_subagent") &&
+    resolved.messageId &&
+    resolved.subagentAgentId
+  ) {
+    services.noteAssistantMessageIdentity({
+      threadId,
+      messageId: resolved.messageId,
+      agentId: resolved.subagentAgentId,
+      role: resolved.billingRole,
+      ...(resolved.parentToolUseId && { parentToolUseId: resolved.parentToolUseId }),
+    });
+  }
 
   return {
     handled: "usage",

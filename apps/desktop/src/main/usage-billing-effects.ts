@@ -106,13 +106,18 @@ export async function applySingleUsageBillingEffects(
       ...(artifacts.ledgerEvent.parentToolUseId && {
         parentToolUseId: artifacts.ledgerEvent.parentToolUseId,
       }),
+      ...(artifacts.ledgerEvent.sdkMessageId && {
+        messageId: artifacts.ledgerEvent.sdkMessageId,
+      }),
     });
   }
 
+  const pendingExactAttribution =
+    artifacts.ledgerEvent.attribution.status === "pending" && !input.agentId;
   await services.context.applyUpdate({
     threadId: input.threadId,
     usage: artifacts.delta,
-    updateContext: input.updateContext,
+    updateContext: pendingExactAttribution ? false : input.updateContext,
     ...(artifacts.contextUpdate && { contextUpdate: artifacts.contextUpdate }),
     ...(input.agentId && { agentId: input.agentId }),
     ...(input.messageId && { messageId: input.messageId }),
