@@ -333,6 +333,7 @@ import { formatUserFacingRequestError, type RequestAttemptResult } from "./reque
 import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
+import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliation";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import { listSdkSessionActivityLines, listSdkSubagentActivityLines } from "./sdk-session-activity.js";
@@ -358,6 +359,7 @@ import {
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
+import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconciliation.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
@@ -762,8 +764,7 @@ app.whenReady().then(async () => {
         {
           context: createUsageContextService({
             monitor: contextMonitor,
-            emitLiveContext: (targetThreadId: string) =>
-              contextScheduler.emitLiveFromMonitor(targetThreadId),
+            emitLiveContext: (targetThreadId: string) => contextScheduler.emitLiveFromMonitor(targetThreadId),
           }),
           subagentMetrics: subagentMetricsRegistry,
           schedulePersistThreadMetrics,
@@ -4635,6 +4636,44 @@ function buildSdkHookContextExtras(
     onSubagentBillingStampClear: ({ agentId }) => {
       proxyBillingStampRegistry.unregister(threadId, agentId);
     },
+    onTerminalReconciliation: async ({ agentId, role, agentTranscriptPath, transcriptPath }) => {
+      const agentRecord = conversationStore
+        .listAgentInstances(threadId)
+        .find((record) => record.agentId === agentId);
+      const result = await reconcileSubagentTerminalTranscript({
+        threadId,
+        agentId,
+        role,
+        ...(agentTranscriptPath && { agentTranscriptPath }),
+        ...(agentRecord?.parentToolUseId && { parentToolUseId: agentRecord.parentToolUseId }),
+        bindMessageIdentity: (binding) => usageLedgerCoordinator.bindProxyMessageIdentity(threadId, binding),
+        attributeFeedEvents: (messageIds, exactAgentId) =>
+          conversationStore.attributeThreadRunEventsBySdkMessageIds(
+            threadId,
+            messageIds,
+            exactAgentId,
+            (conflict) =>
+              logEcoDiag("subagent.feed_identity_conflict", {
+                threadId: shortThreadId(threadId),
+                agentId: exactAgentId,
+                role,
+                ...conflict,
+              }),
+          ),
+        logDiagnostic: logEcoDiag,
+      });
+      if (result.attributedFeedEventCount > 0) {
+        scheduleThreadRunProjectionUpdated(threadId);
+      }
+      if (!agentTranscriptPath && transcriptPath) {
+        logEcoDiag("subagent.terminal_reconciliation_main_transcript_only", {
+          threadId: shortThreadId(threadId),
+          agentId,
+          role,
+          transcriptPath,
+        });
+      }
+    },
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
     contextMonitor,
     handoffService: subagentHandoffService,
@@ -4717,13 +4756,16 @@ function createSdkDriver(
 }
 
 function normalizeDiagTopicSegment(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "probe";
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "probe"
+  );
 }
 
-function summarizeSdkProbeForDiag(
-  phase: string,
-  detail: Record<string, unknown>,
-): Record<string, unknown> {
+function summarizeSdkProbeForDiag(phase: string, detail: Record<string, unknown>): Record<string, unknown> {
   if (phase === "getContextUsage" && isRecord(detail.usage)) {
     return {
       timing: detail.timing,
@@ -4759,9 +4801,7 @@ function summarizeSdkContextUsageForDiag(usage: Record<string, unknown>): Record
       usage.cache_read_input_tokens ?? usage.cacheReadInputTokens ?? usage.cache_read_tokens,
     ),
     cacheCreationTokens: readNumberForDiag(
-      usage.cache_creation_input_tokens ??
-        usage.cacheCreationInputTokens ??
-        usage.cache_creation_tokens,
+      usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens ?? usage.cache_creation_tokens,
     ),
     ...(modelUsage && {
       modelUsageCount: Object.keys(modelUsage).length,
@@ -5397,6 +5437,21 @@ function tryResolveStreamSubagentDelegation(threadId: string, parentToolUseId: s
 
 /** SDK drives narrative, tool, todo, and billing activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
+  reconcileSdkAgentTerminalEvent(threadId, event, {
+    resolveParentToolUseAgentId: (parentToolUseId) =>
+      resolveAgentIdByParentToolUseId(threadId, parentToolUseId),
+    linkParentToolUse: (parentToolUseId, agentId) => {
+      subagentMetricsRegistry.linkToolUseToAgent(threadId, parentToolUseId, agentId);
+      agentLifecycle.linkSubagentParentToolUse({ threadId, agentId, parentToolUseId });
+    },
+    settlePendingByParent: ({ agentId, role, parentToolUseId }) =>
+      usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, {
+        agentId,
+        role,
+        parentToolUseId,
+      }),
+    logDiagnostic: logEcoDiag,
+  });
   if (event.type === "tool.started" && isRecord(event.payload)) {
     const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
     const toolUseId = typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;

@@ -387,8 +387,7 @@ test("emits structured SDK tool metadata for tool progress activity", () => {
 
 test("emits structured file change metadata for Edit tool started activity", () => {
   const bridge = new SdkStreamActivityBridge();
-  const emitted: Array<{ tool?: { name: string; fileChange?: { path: string; additions: number } } }> =
-    [];
+  const emitted: Array<{ tool?: { name: string; fileChange?: { path: string; additions: number } } }> = [];
 
   bridge.handleEvent(
     "thr_1",
@@ -658,5 +657,76 @@ test("carries SDK stream block key through activity metadata", () => {
     { type: "message.delta", message: "", stream: true, sdkStreamBlockKey: "text:0" },
     { type: "message.delta", message: "第一句正文。", stream: false, sdkStreamBlockKey: "text:0" },
     { type: "message.delta", message: "", stream: true, sdkStreamBlockKey: "text:2" },
+  ]);
+});
+
+test("persists exact SDK message id in activity metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const metadata: Record<string, unknown>[] = [];
+
+  bridge.handleEvent(
+    "thr_message_id",
+    {
+      type: "message.delta",
+      role: "general-purpose",
+      agentId: "agent_general_message",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        text: "done",
+        streamFinalize: true,
+        stream_block_key: "text:0",
+        messageId: "msg_feed_exact",
+      },
+    },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      metadata.push(extras?.metadata ?? {});
+    },
+    undefined,
+    { activityAgentId: "agent_general_message" },
+  );
+
+  expect(metadata).toEqual([
+    {
+      sdkMessageId: "msg_feed_exact",
+      sdkStreamBlockKey: "text:0",
+    },
+  ]);
+});
+
+test("persists task terminal aggregate usage as diagnostics metadata only", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const metadata: Record<string, unknown>[] = [];
+
+  bridge.handleEvent(
+    "thr_task_terminal",
+    {
+      type: "todo.updated",
+      role: "general-purpose",
+      agentId: "agent_general_task",
+      payload: {
+        sdkKind: "task_notification",
+        task_id: "task_general",
+        tool_use_id: "call_general",
+        status: "completed",
+        summary: "Done",
+        usage: { total_tokens: 900, tool_uses: 5, duration_ms: 7000 },
+      },
+    },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      metadata.push(extras?.metadata ?? {});
+    },
+    undefined,
+    { activityAgentId: "agent_general_task", parentToolUseId: "call_general" },
+  );
+
+  expect(metadata).toEqual([
+    {
+      sdkTaskId: "task_general",
+      sdkTaskKind: "task_notification",
+      sdkTaskToolUseId: "call_general",
+      sdkTaskStatus: "completed",
+      sdkTaskUsage: { total_tokens: 900, tool_uses: 5, duration_ms: 7000 },
+    },
   ]);
 });

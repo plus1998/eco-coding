@@ -17,13 +17,9 @@ function createMemoryStore(initial: CoderTodoItem[] = []) {
 function createTracker(initial: CoderTodoItem[] = []) {
   const store = createMemoryStore(initial);
   const emitted: CoderTodoItem[][] = [];
-  const tracker = createSdkTaskTracker(
-    "thr_1",
-    store,
-    (_threadId, todos) => {
-      emitted.push(todos);
-    },
-  );
+  const tracker = createSdkTaskTracker("thr_1", store, (_threadId, todos) => {
+    emitted.push(todos);
+  });
   const hooks = tracker.createHookHandlers();
   return { store, emitted, tracker, hooks };
 }
@@ -189,4 +185,36 @@ test("onStop completes running todos", () => {
 
   hooks.onStop("completed");
   expect(store.getTodos()[0]?.status).toBe("completed");
+});
+
+test("task_notification completes the exact linked SDK task and preserves summary", () => {
+  const snapshots: CoderTodoItem[][] = [];
+  const tracker = createSdkTaskTracker(
+    "thr_notification",
+    {
+      listTodos: () => [],
+      replaceTodos: (todos) => snapshots.push(todos),
+    },
+    () => {},
+  );
+  const hooks = tracker.createHookHandlers();
+  hooks.onTaskCreated({
+    taskId: "task_notify",
+    subject: "Inspect attribution",
+    description: "Inspect attribution",
+  });
+
+  tracker.handleTaskProgress({
+    sdkKind: "task_notification",
+    task_id: "task_notify",
+    tool_use_id: "call_notify",
+    status: "completed",
+    summary: "Attribution verified",
+    usage: { total_tokens: 400, tool_uses: 2, duration_ms: 3000 },
+  });
+
+  expect(snapshots.at(-1)?.[0]).toMatchObject({
+    status: "completed",
+    detail: "Attribution verified",
+  });
 });

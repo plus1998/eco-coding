@@ -18,8 +18,8 @@ export interface SdkStreamContext {
   subagentRoleByParentToolUseId: Map<string, RuntimeAgentRole>;
   /** Subagent instance ids registered from SubagentStart before stream parent_tool_use_id arrives. */
   registeredSubagentByParentToolUseId: Map<string, string>;
-  /** Latest subagent instance id per role when parent_tool_use_id is not yet known. */
-  registeredSubagentByRole: Map<RuntimeAgentRole, string>;
+  /** Exact Anthropic assistant message id observed from message_start. */
+  currentMessageId?: string;
   activeBlockIndex?: number;
   emittedStreamBlockKeys: Set<string>;
   emittedToolUseIds: Set<string>;
@@ -40,36 +40,10 @@ export function createSdkStreamContext(options?: {
     parentToolUseId: null,
     subagentRoleByParentToolUseId: new Map(),
     registeredSubagentByParentToolUseId: new Map(),
-    registeredSubagentByRole: new Map(),
     emittedStreamBlockKeys: new Set(),
     emittedToolUseIds: new Set(),
     ...(options?.resolveSubagentAgentId && { resolveSubagentAgentId: options.resolveSubagentAgentId }),
   };
-}
-
-/** Resolve parent tool id from stream context when the SDK message omits it. */
-export function resolveParentToolUseIdFromStreamContext(
-  streamCtx: SdkStreamContext | undefined,
-  role?: RuntimeAgentRole,
-): string | undefined {
-  if (!streamCtx) {
-    return undefined;
-  }
-  const direct = streamCtx.parentToolUseId?.trim();
-  if (direct) {
-    return direct;
-  }
-  const targetRole = role ?? streamCtx.activeSubagentRole;
-  if (!targetRole) {
-    return undefined;
-  }
-  const matches: string[] = [];
-  for (const [parentId, subRole] of streamCtx.subagentRoleByParentToolUseId) {
-    if (subRole === targetRole) {
-      matches.push(parentId);
-    }
-  }
-  return matches.length === 1 ? matches[0] : undefined;
 }
 
 /** Seed stream attribution from PreToolUse / SubagentStart before SDK stream carries parent_tool_use_id. */
@@ -83,9 +57,6 @@ export function registerSubagentOnStreamContext(
     return;
   }
   streamCtx.activeSubagentRole = input.role;
-  if (agentId) {
-    streamCtx.registeredSubagentByRole.set(input.role, agentId);
-  }
   if (parentToolUseId) {
     streamCtx.subagentRoleByParentToolUseId.set(parentToolUseId, input.role);
     streamCtx.parentToolUseId = parentToolUseId;
@@ -149,13 +120,8 @@ export function applySubagentUsageAttribution(
   }
   const parentFromPayload =
     typeof input.payload.parent_tool_use_id === "string" ? input.payload.parent_tool_use_id.trim() : "";
-  const attributionRole =
-    explicit !== undefined ? input.role : (streamCtx?.activeSubagentRole ?? input.role);
-  const parentToolUseId =
-    (typeof explicit === "string" && explicit.trim()) ||
-    parentFromPayload ||
-    resolveParentToolUseIdFromStreamContext(streamCtx, attributionRole) ||
-    undefined;
+  const attributionRole = explicit !== undefined ? input.role : (streamCtx?.activeSubagentRole ?? input.role);
+  const parentToolUseId = (typeof explicit === "string" && explicit.trim()) || parentFromPayload || undefined;
 
   const registeredAgentId =
     parentToolUseId && streamCtx?.registeredSubagentByParentToolUseId.get(parentToolUseId);
@@ -169,29 +135,19 @@ export function applySubagentUsageAttribution(
     };
   }
 
-  const roleRegisteredAgentId = streamCtx?.registeredSubagentByRole.get(attributionRole);
-  if (roleRegisteredAgentId) {
-    return {
-      agentId: roleRegisteredAgentId,
-      payload: parentToolUseId
-        ? { ...input.payload, parent_tool_use_id: parentToolUseId }
-        : input.payload,
-    };
-  }
-
-  const subagentAgentId = streamCtx?.resolveSubagentAgentId?.({
-    role: attributionRole,
-    sessionId: input.sessionId,
-    ...(parentToolUseId && { parentToolUseId }),
-  });
+  const subagentAgentId = parentToolUseId
+    ? streamCtx?.resolveSubagentAgentId?.({
+        role: attributionRole,
+        sessionId: input.sessionId,
+        parentToolUseId,
+      })
+    : undefined;
   if (!subagentAgentId) {
     // Keep parent_tool_use_id on the payload so downstream billing can still attribute the
     // usage to a subagent instance when runtime-side resolution is unavailable or ambiguous.
     return {
       agentId: input.sessionId,
-      payload: parentToolUseId
-        ? { ...input.payload, parent_tool_use_id: parentToolUseId }
-        : input.payload,
+      payload: parentToolUseId ? { ...input.payload, parent_tool_use_id: parentToolUseId } : input.payload,
     };
   }
   return {
@@ -215,6 +171,7 @@ export type EcoStreamPayload =
       parent_tool_use_id?: string | null;
       subagent_type?: string;
       agent_type?: string;
+      messageId?: string;
     }
   | {
       type: "tool_use";
@@ -226,6 +183,7 @@ export type EcoStreamPayload =
       parent_tool_use_id?: string | null;
       subagent_type?: string;
       agent_type?: string;
+      messageId?: string;
     };
 
 export function slimStreamEventMessage(message: Record<string, unknown>): Record<string, unknown> {
@@ -325,11 +283,22 @@ export function mapStreamEventToEvents(
     return [];
   }
 
+  if (event.type === "message_start" && isRecord(event.message)) {
+    const messageId = typeof event.message.id === "string" ? event.message.id.trim() : "";
+    if (messageId) {
+      ctx.currentMessageId = messageId;
+    } else {
+      delete ctx.currentMessageId;
+    }
+    return [];
+  }
+
   const events: AgentEvent[] = [];
   const streamMeta = {
     ...(parentToolUseId && { parent_tool_use_id: parentToolUseId }),
     ...(subagentType && { subagent_type: subagentType }),
     ...(agentType && { agent_type: agentType }),
+    ...(ctx.currentMessageId && { messageId: ctx.currentMessageId }),
   };
 
   if (event.type === "content_block_start" && isRecord(event.content_block)) {
@@ -355,13 +324,21 @@ export function mapStreamEventToEvents(
         ctx.emittedToolUseIds.add(ctx.currentToolUseId);
       }
       events.push(
-        createToolStartedEvent(threadId, sessionId, streamRole, uuid, {
-          type: "tool_use",
-          tool_name: block.name,
-          ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
-          streaming: true,
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createToolStartedEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "tool_use",
+            tool_name: block.name,
+            ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
+            streaming: true,
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
       return events;
     }
@@ -369,13 +346,21 @@ export function mapStreamEventToEvents(
       ctx.inToolBlock = false;
       ctx.activeBlockKind = "thinking";
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-          type: "eco_stream",
-          blockKind: "thinking",
-          streamPlaceholder: true,
-          ...streamBlockMetadata("thinking", event, ctx),
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createStreamDeltaEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "eco_stream",
+            blockKind: "thinking",
+            streamPlaceholder: true,
+            ...streamBlockMetadata("thinking", event, ctx),
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
       return events;
     }
@@ -383,13 +368,21 @@ export function mapStreamEventToEvents(
       ctx.inToolBlock = false;
       ctx.activeBlockKind = "text";
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-          type: "eco_stream",
-          blockKind: "text",
-          streamPlaceholder: true,
-          ...streamBlockMetadata("text", event, ctx),
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createStreamDeltaEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "eco_stream",
+            blockKind: "text",
+            streamPlaceholder: true,
+            ...streamBlockMetadata("text", event, ctx),
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
       return events;
     }
@@ -415,14 +408,22 @@ export function mapStreamEventToEvents(
         for (const [index, block] of embedded.entries()) {
           if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
             events.push(
-              createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-                type: "eco_stream",
-                blockKind: "text",
-                text: block.text,
-                streamFinalize: true,
-                stream_block_key: `embedded:text:${index}`,
-                ...streamMeta,
-              }, ctx, parentToolUseId),
+              createStreamDeltaEvent(
+                threadId,
+                sessionId,
+                streamRole,
+                uuid,
+                {
+                  type: "eco_stream",
+                  blockKind: "text",
+                  text: block.text,
+                  streamFinalize: true,
+                  stream_block_key: `embedded:text:${index}`,
+                  ...streamMeta,
+                },
+                ctx,
+                parentToolUseId,
+              ),
             );
           } else if (
             block.type === "thinking" &&
@@ -430,14 +431,22 @@ export function mapStreamEventToEvents(
             block.thinking.trim()
           ) {
             events.push(
-              createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-                type: "eco_stream",
-                blockKind: "thinking",
-                text: block.thinking,
-                streamFinalize: true,
-                stream_block_key: `embedded:thinking:${index}`,
-                ...streamMeta,
-              }, ctx, parentToolUseId),
+              createStreamDeltaEvent(
+                threadId,
+                sessionId,
+                streamRole,
+                uuid,
+                {
+                  type: "eco_stream",
+                  blockKind: "thinking",
+                  text: block.thinking,
+                  streamFinalize: true,
+                  stream_block_key: `embedded:thinking:${index}`,
+                  ...streamMeta,
+                },
+                ctx,
+                parentToolUseId,
+              ),
             );
           } else if (block.type === "tool_use" && typeof block.name === "string") {
             const toolUseId = typeof block.id === "string" ? block.id : undefined;
@@ -448,26 +457,42 @@ export function mapStreamEventToEvents(
               ctx.emittedToolUseIds.add(toolUseId);
             }
             events.push(
-              createToolStartedEvent(threadId, sessionId, streamRole, `${uuid}:embedded:${index}`, {
-                type: "tool_use",
-                tool_name: block.name,
-                ...(toolUseId && { tool_use_id: toolUseId }),
-                ...(isRecord(block.input) && { input: block.input }),
-                ...streamMeta,
-              }, ctx, parentToolUseId),
+              createToolStartedEvent(
+                threadId,
+                sessionId,
+                streamRole,
+                `${uuid}:embedded:${index}`,
+                {
+                  type: "tool_use",
+                  tool_name: block.name,
+                  ...(toolUseId && { tool_use_id: toolUseId }),
+                  ...(isRecord(block.input) && { input: block.input }),
+                  ...streamMeta,
+                },
+                ctx,
+                parentToolUseId,
+              ),
             );
           }
         }
         return events;
       }
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-          type: "eco_stream",
-          blockKind: "text",
-          text,
-          ...streamBlockMetadata("text", event, ctx),
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createStreamDeltaEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "eco_stream",
+            blockKind: "text",
+            text,
+            ...streamBlockMetadata("text", event, ctx),
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
       return events;
     }
@@ -477,13 +502,21 @@ export function mapStreamEventToEvents(
         return events;
       }
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-          type: "eco_stream",
-          blockKind: "thinking",
-          text: thinking,
-          ...streamBlockMetadata("thinking", event, ctx),
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createStreamDeltaEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "eco_stream",
+            blockKind: "thinking",
+            text: thinking,
+            ...streamBlockMetadata("thinking", event, ctx),
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
       return events;
     }
@@ -495,36 +528,60 @@ export function mapStreamEventToEvents(
       const parsedInput = parseToolInputJson(ctx.currentToolInputJson);
       if (ctx.currentToolName) {
         events.push(
-          createToolStartedEvent(threadId, sessionId, streamRole, uuid, {
-            type: "tool_use",
-            tool_name: ctx.currentToolName,
-            ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
-            ...(parsedInput && { input: parsedInput }),
-            streaming: true,
-            input_complete: true,
-            ...streamMeta,
-          }, ctx, parentToolUseId),
+          createToolStartedEvent(
+            threadId,
+            sessionId,
+            streamRole,
+            uuid,
+            {
+              type: "tool_use",
+              tool_name: ctx.currentToolName,
+              ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
+              ...(parsedInput && { input: parsedInput }),
+              streaming: true,
+              input_complete: true,
+              ...streamMeta,
+            },
+            ctx,
+            parentToolUseId,
+          ),
         );
       }
     } else if (ctx.activeBlockKind === "thinking") {
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-          type: "eco_stream",
-          blockKind: "thinking",
-          streamFinalize: true,
-          ...streamBlockMetadata("thinking", event, ctx),
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createStreamDeltaEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "eco_stream",
+            blockKind: "thinking",
+            streamFinalize: true,
+            ...streamBlockMetadata("thinking", event, ctx),
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
     } else if (ctx.activeBlockKind === "text") {
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
-          type: "eco_stream",
-          blockKind: "text",
-          streamFinalize: true,
-          ...streamBlockMetadata("text", event, ctx),
-          ...streamMeta,
-        }, ctx, parentToolUseId),
+        createStreamDeltaEvent(
+          threadId,
+          sessionId,
+          streamRole,
+          uuid,
+          {
+            type: "eco_stream",
+            blockKind: "text",
+            streamFinalize: true,
+            ...streamBlockMetadata("text", event, ctx),
+            ...streamMeta,
+          },
+          ctx,
+          parentToolUseId,
+        ),
       );
     }
     ctx.inToolBlock = false;
@@ -543,7 +600,7 @@ export function mapStreamEventToEvents(
       {
         role: streamRole,
         sessionId,
-        payload: { usage: event.usage },
+        payload: { usage: event.usage, ...(ctx.currentMessageId && { messageId: ctx.currentMessageId }) },
         ...(parentToolUseId != null
           ? { messageParentToolUseId: parentToolUseId }
           : messageRole
@@ -562,6 +619,10 @@ export function mapStreamEventToEvents(
         payload: attributed.payload,
       }),
     );
+  }
+
+  if (event.type === "message_stop") {
+    delete ctx.currentMessageId;
   }
 
   return events;

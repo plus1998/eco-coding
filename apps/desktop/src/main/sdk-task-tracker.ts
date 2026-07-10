@@ -308,6 +308,30 @@ export function createSdkTaskTracker(
     );
   };
 
+  const applyTaskNotification = (payload: SdkTodoUpdatedPayload) => {
+    const todoId = todoIdForSdkTask(payload.task_id);
+    if (!todoId || !payload.status) {
+      return;
+    }
+    progressFromSdk = true;
+    const status: CoderTodoStatus =
+      payload.status === "completed" ? "completed" : payload.status === "failed" ? "blocked" : "cancelled";
+    const detail = payload.summary?.trim();
+    const now = new Date().toISOString();
+    persist(
+      todos.map((todo) =>
+        todo.id === todoId
+          ? {
+              ...todo,
+              status,
+              ...(detail && { detail }),
+              updatedAt: now,
+            }
+          : todo,
+      ),
+    );
+  };
+
   const applySubagentTaskStarted = (payload: SdkTodoUpdatedPayload) => {
     if (payload.skip_transcript || !payload.subagent_type) {
       return;
@@ -337,6 +361,10 @@ export function createSdkTaskTracker(
       }
       if (payload.sdkKind === "task_started") {
         applySubagentTaskStarted(payload);
+        return;
+      }
+      if (payload.sdkKind === "task_notification") {
+        applyTaskNotification(payload);
       }
     },
     createHookHandlers(getStopStatus) {

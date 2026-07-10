@@ -1106,9 +1106,7 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
   expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
     'Tool "Edit" is disallowed for eco_coder.',
   );
-  expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).not.toContain(
-    "Delegate the work",
-  );
+  expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).not.toContain("Delegate the work");
 });
 
 test("createToolPermissionPreToolHook denies only explicitly disallowed tools in plan phase", async () => {
@@ -2125,8 +2123,9 @@ test("buildEcoSdkHooks launch hook attributes SDK built-in Agent delegations", a
     onPreCompact: async () => {},
   });
   const agentPreToolHooks =
-    hooks.PreToolUse?.filter((matcher) => !matcher.matcher || /Agent|Task/.test(matcher.matcher))
-      .flatMap((matcher) => matcher.hooks) ?? [];
+    hooks.PreToolUse?.filter((matcher) => !matcher.matcher || /Agent|Task/.test(matcher.matcher)).flatMap(
+      (matcher) => matcher.hooks,
+    ) ?? [];
   for (const hook of agentPreToolHooks) {
     await hook(
       {
@@ -2510,4 +2509,47 @@ test("createWorkflowDenyPreToolHook denies Workflow tool", async () => {
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
+});
+
+test("createSubagentStopHook forwards exact sidechain transcript paths and awaits reconciliation", async () => {
+  const stops: Array<Record<string, unknown>> = [];
+  let reconciled = false;
+  const stopHook = createSubagentStopHook({
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_stop_paths",
+      onStart() {},
+      async onStop(input) {
+        await Bun.sleep(1);
+        stops.push(input);
+        reconciled = true;
+      },
+      resolveResume: () => undefined,
+    },
+  });
+
+  await stopHook(
+    {
+      hook_event_name: "SubagentStop",
+      stop_hook_active: false,
+      agent_id: "agent_general_paths",
+      agent_type: "general-purpose",
+      agent_transcript_path: "/tmp/session/subagents/agent-general.jsonl",
+      transcript_path: "/tmp/session/main.jsonl",
+      session_id: "session_planner",
+      cwd: "/tmp",
+    } satisfies SubagentStopHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(reconciled).toBe(true);
+  expect(stops).toEqual([
+    {
+      agentId: "agent_general_paths",
+      agentType: "general-purpose",
+      agentTranscriptPath: "/tmp/session/subagents/agent-general.jsonl",
+      transcriptPath: "/tmp/session/main.jsonl",
+    },
+  ]);
 });

@@ -1301,7 +1301,8 @@ function summarizeAgentsForProbe(agents: Record<string, unknown> | undefined): R
       return {
         key,
         model: typeof record.model === "string" ? record.model : null,
-        description: typeof record.description === "string" ? summarizeTextForProbe(record.description) : null,
+        description:
+          typeof record.description === "string" ? summarizeTextForProbe(record.description) : null,
         prompt: typeof record.prompt === "string" ? summarizeTextForProbe(record.prompt) : null,
         toolsCount: readStringArray(record.tools).length,
         disallowedToolsCount: readStringArray(record.disallowedTools).length,
@@ -1321,8 +1322,7 @@ function summarizeSdkResultForProbe(
     sessionId: typeof message.session_id === "string" ? message.session_id : activeSessionId,
     uuid: typeof message.uuid === "string" ? message.uuid : undefined,
     subtype: typeof message.subtype === "string" ? message.subtype : undefined,
-    terminalReason:
-      typeof message.terminal_reason === "string" ? message.terminal_reason : undefined,
+    terminalReason: typeof message.terminal_reason === "string" ? message.terminal_reason : undefined,
     isError: message.is_error === true,
     hasUsage: Boolean(usage),
     ...(usage && { usage: summarizeUsageObjectForProbe(usage) }),
@@ -1906,12 +1906,13 @@ export function appendToPhaseTranscript(transcript: string, event: AgentEvent): 
   return transcript ? `${transcript}\n${line}` : line;
 }
 
-export type SdkTodoUpdatedKind = "task_started" | "task_updated" | "task_progress";
+export type SdkTodoUpdatedKind = "task_started" | "task_updated" | "task_progress" | "task_notification";
 
 /** Payload for `todo.updated` events — mirrors Claude Agent SDK task system messages. */
 export interface SdkTodoUpdatedPayload {
   sdkKind: SdkTodoUpdatedKind;
   task_id: string;
+  tool_use_id?: string;
   description?: string;
   subagent_type?: string;
   task_type?: string;
@@ -1919,6 +1920,13 @@ export interface SdkTodoUpdatedPayload {
   prompt?: string;
   last_tool_name?: string;
   summary?: string;
+  status?: "completed" | "failed" | "stopped";
+  output_file?: string;
+  usage?: {
+    total_tokens: number;
+    tool_uses: number;
+    duration_ms: number;
+  };
   patch?: {
     status?: string;
     description?: string;
@@ -1928,7 +1936,12 @@ export interface SdkTodoUpdatedPayload {
 
 export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): SdkTodoUpdatedPayload | null {
   const subtype = message.subtype;
-  if (subtype !== "task_started" && subtype !== "task_updated" && subtype !== "task_progress") {
+  if (
+    subtype !== "task_started" &&
+    subtype !== "task_updated" &&
+    subtype !== "task_progress" &&
+    subtype !== "task_notification"
+  ) {
     return null;
   }
 
@@ -1942,6 +1955,9 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
     task_id: taskId,
   };
 
+  if (typeof message.tool_use_id === "string" && message.tool_use_id.trim()) {
+    payload.tool_use_id = message.tool_use_id.trim();
+  }
   if (typeof message.description === "string" && message.description.trim()) {
     payload.description = message.description.trim();
   }
@@ -1962,6 +1978,34 @@ export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): Sd
   }
   if (typeof message.summary === "string" && message.summary.trim()) {
     payload.summary = message.summary.trim();
+  }
+  if (
+    subtype === "task_notification" &&
+    (message.status === "completed" || message.status === "failed" || message.status === "stopped")
+  ) {
+    payload.status = message.status;
+  }
+  if (typeof message.output_file === "string" && message.output_file.trim()) {
+    payload.output_file = message.output_file.trim();
+  }
+  if (isRecord(message.usage)) {
+    const totalTokens = message.usage.total_tokens;
+    const toolUses = message.usage.tool_uses;
+    const durationMs = message.usage.duration_ms;
+    if (
+      typeof totalTokens === "number" &&
+      Number.isFinite(totalTokens) &&
+      typeof toolUses === "number" &&
+      Number.isFinite(toolUses) &&
+      typeof durationMs === "number" &&
+      Number.isFinite(durationMs)
+    ) {
+      payload.usage = {
+        total_tokens: totalTokens,
+        tool_uses: toolUses,
+        duration_ms: durationMs,
+      };
+    }
   }
   if (subtype === "task_updated" && isRecord(message.patch)) {
     const patch: SdkTodoUpdatedPayload["patch"] = {};
@@ -1994,9 +2038,12 @@ function mapTaskSystemMessageToEvents(
   if (!payload) {
     return [];
   }
-  const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
   const messageParentToolUseId =
-    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
+    (typeof message.tool_use_id === "string" && message.tool_use_id.trim()) ||
+    (typeof message.parent_tool_use_id === "string" && message.parent_tool_use_id.trim()) ||
+    undefined;
+  const streamRole =
+    (messageParentToolUseId && streamCtx?.subagentRoleByParentToolUseId.get(messageParentToolUseId)) || role;
 
   return [
     createAttributedAgentEvent(
@@ -2061,11 +2108,14 @@ function resolveSdkMessageStreamRole(
   streamCtx: SdkStreamContext | undefined,
   fallback: RuntimeAgentRole,
 ): RuntimeAgentRole {
-  const fromMessage = inferRole(message);
-  if (fromMessage !== "planner") {
-    return fromMessage;
+  const parentToolUseId =
+    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id.trim() : "";
+  const linkedRole = parentToolUseId && streamCtx?.subagentRoleByParentToolUseId.get(parentToolUseId);
+  if (linkedRole) {
+    return linkedRole;
   }
-  return streamCtx?.activeSubagentRole ?? fallback;
+  const fromMessage = inferRole(message);
+  return fromMessage !== "planner" ? fromMessage : fallback;
 }
 
 export function mapSdkMessageToEvents(
@@ -2118,6 +2168,10 @@ export function mapSdkMessageToEvents(
 
   if (message.type === "assistant") {
     return mapAssistantMessageToEvents(message, threadId, sessionId, role, uuid, streamCtx);
+  }
+
+  if (message.type === "user") {
+    return mapUserAgentOutputToEvents(message, threadId, role, uuid);
   }
 
   if (message.type === "tool_progress") {
@@ -2182,7 +2236,7 @@ export function mapSdkMessageToEvents(
     if (message.subtype === "thinking_tokens") {
       return [];
     }
-    if (message.subtype === "task_progress") {
+    if (message.subtype === "task_progress" || message.subtype === "task_notification") {
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid, streamCtx);
     }
     if (
@@ -2243,6 +2297,68 @@ export function mapSdkMessageToEvents(
   return [];
 }
 
+function mapUserAgentOutputToEvents(
+  message: Record<string, unknown>,
+  threadId: string,
+  fallbackRole: RuntimeAgentRole,
+  uuid: string,
+): AgentEvent[] {
+  if (!isRecord(message.tool_use_result)) {
+    return [];
+  }
+  const output = message.tool_use_result;
+  if (output.status !== "completed") {
+    return [];
+  }
+  const agentId = typeof output.agentId === "string" ? output.agentId.trim() : "";
+  if (!agentId) {
+    return [];
+  }
+  const agentType = typeof output.agentType === "string" ? output.agentType.trim() : "";
+  const outputRole = agentType ? normalizeSdkRuntimeAgentRole(agentType) : undefined;
+  const toolUseId = readUserToolResultUseId(message);
+  return [
+    createAgentEvent({
+      id: `${uuid}:agent-output:${agentId}`,
+      threadId,
+      agentId,
+      role: outputRole ?? fallbackRole,
+      type: "agent.completed",
+      payload: {
+        type: "agent_output",
+        status: "completed",
+        agentId,
+        ...(agentType && { agentType }),
+        ...(toolUseId && { tool_use_id: toolUseId }),
+        ...(typeof output.resolvedModel === "string" && { resolvedModel: output.resolvedModel }),
+        ...(typeof output.totalToolUseCount === "number" && {
+          totalToolUseCount: output.totalToolUseCount,
+        }),
+        ...(typeof output.totalDurationMs === "number" && { totalDurationMs: output.totalDurationMs }),
+        ...(typeof output.totalTokens === "number" && { totalTokens: output.totalTokens }),
+        ...(isRecord(output.usage) && { usage: output.usage }),
+        ...(Array.isArray(output.content) && { content: output.content }),
+        ...(typeof output.prompt === "string" && { prompt: output.prompt }),
+      },
+    }),
+  ];
+}
+
+function readUserToolResultUseId(message: Record<string, unknown>): string | undefined {
+  if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
+    return undefined;
+  }
+  for (const block of message.message.content) {
+    if (!isRecord(block) || block.type !== "tool_result") {
+      continue;
+    }
+    if (typeof block.tool_use_id === "string" && block.tool_use_id.trim()) {
+      return block.tool_use_id.trim();
+    }
+  }
+  return undefined;
+}
+
 function mapAssistantMessageToEvents(
   message: Record<string, unknown>,
   threadId: string,
@@ -2252,43 +2368,44 @@ function mapAssistantMessageToEvents(
   streamCtx?: SdkStreamContext,
 ): AgentEvent[] {
   const events: AgentEvent[] = [];
-
+  const nestedMessage = isRecord(message.message) ? message.message : undefined;
+  const messageId = nestedMessage && typeof nestedMessage.id === "string" ? nestedMessage.id : undefined;
   const messageParentToolUseId =
     typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
+  const contentRole =
+    (typeof messageParentToolUseId === "string" &&
+      streamCtx?.subagentRoleByParentToolUseId.get(messageParentToolUseId)) ||
+    role;
 
-  if (isRecord(message.message)) {
-    const nested = message.message;
-    const messageId = typeof nested.id === "string" ? nested.id : undefined;
-    if (isRecord(nested.usage)) {
-      const assistantPayload: Record<string, unknown> = {
-        usage: nested.usage,
-        ...(messageId && { messageId }),
-        ...(typeof nested.model === "string" && { model: nested.model }),
-        ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
-        ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
-      };
-      const attributed = applySubagentUsageAttribution(
-        { role, sessionId, payload: assistantPayload, messageParentToolUseId },
-        streamCtx,
-      );
-      events.push(
-        createAgentEvent({
-          id: `${uuid}:assistant-usage`,
-          threadId,
-          agentId: attributed.agentId,
-          role,
-          type: "usage.recorded",
-          payload: attributed.payload,
-        }),
-      );
-    }
+  if (nestedMessage && isRecord(nestedMessage.usage)) {
+    const assistantPayload: Record<string, unknown> = {
+      usage: nestedMessage.usage,
+      ...(messageId && { messageId }),
+      ...(typeof nestedMessage.model === "string" && { model: nestedMessage.model }),
+      ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+      ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+    };
+    const attributed = applySubagentUsageAttribution(
+      { role: contentRole, sessionId, payload: assistantPayload, messageParentToolUseId },
+      streamCtx,
+    );
+    events.push(
+      createAgentEvent({
+        id: `${uuid}:assistant-usage`,
+        threadId,
+        agentId: attributed.agentId,
+        role: contentRole,
+        type: "usage.recorded",
+        payload: attributed.payload,
+      }),
+    );
   }
 
-  if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
+  if (!nestedMessage || !Array.isArray(nestedMessage.content)) {
     return events;
   }
   const content = expandAssistantMessageContent(
-    message.message.content.filter((block): block is Record<string, unknown> => isRecord(block)),
+    nestedMessage.content.filter((block): block is Record<string, unknown> => isRecord(block)),
   );
   for (const [index, block] of content.entries()) {
     if (!isRecord(block)) {
@@ -2303,25 +2420,30 @@ function mapAssistantMessageToEvents(
         continue;
       }
       events.push(
-        createAgentEvent({
-          id: `${uuid}:text:${index}`,
-          threadId,
-          agentId: sessionId,
-          role,
-          type: "message.delta",
-          payload: {
-            type: "eco_stream",
-            blockKind: "text",
-            text: block.text,
-            streamFinalize: true,
-            stream_block_key: streamBlockKey,
-            ...(typeof message.parent_tool_use_id === "string" && {
-              parent_tool_use_id: message.parent_tool_use_id,
-            }),
-            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
-            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+        createAttributedAgentEvent(
+          {
+            id: `${uuid}:text:${index}`,
+            threadId,
+            sessionId,
+            role: contentRole,
+            type: "message.delta",
+            payload: {
+              type: "eco_stream",
+              blockKind: "text",
+              text: block.text,
+              streamFinalize: true,
+              stream_block_key: streamBlockKey,
+              ...(messageId && { messageId }),
+              ...(typeof message.parent_tool_use_id === "string" && {
+                parent_tool_use_id: message.parent_tool_use_id,
+              }),
+              ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+              ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+            },
+            messageParentToolUseId,
           },
-        }),
+          streamCtx,
+        ),
       );
       continue;
     }
@@ -2334,25 +2456,30 @@ function mapAssistantMessageToEvents(
         continue;
       }
       events.push(
-        createAgentEvent({
-          id: `${uuid}:thinking:${index}`,
-          threadId,
-          agentId: sessionId,
-          role,
-          type: "message.delta",
-          payload: {
-            type: "eco_stream",
-            blockKind: "thinking",
-            text: block.thinking,
-            streamFinalize: true,
-            stream_block_key: streamBlockKey,
-            ...(typeof message.parent_tool_use_id === "string" && {
-              parent_tool_use_id: message.parent_tool_use_id,
-            }),
-            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
-            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+        createAttributedAgentEvent(
+          {
+            id: `${uuid}:thinking:${index}`,
+            threadId,
+            sessionId,
+            role: contentRole,
+            type: "message.delta",
+            payload: {
+              type: "eco_stream",
+              blockKind: "thinking",
+              text: block.thinking,
+              streamFinalize: true,
+              stream_block_key: streamBlockKey,
+              ...(messageId && { messageId }),
+              ...(typeof message.parent_tool_use_id === "string" && {
+                parent_tool_use_id: message.parent_tool_use_id,
+              }),
+              ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+              ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+            },
+            messageParentToolUseId,
           },
-        }),
+          streamCtx,
+        ),
       );
       continue;
     }
@@ -2364,9 +2491,6 @@ function mapAssistantMessageToEvents(
     if (toolUseId && streamCtx?.emittedToolUseIds.has(toolUseId)) {
       continue;
     }
-    const streamRole = resolveSdkMessageStreamRole(message, streamCtx, role);
-    const messageParentToolUseId =
-      typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : undefined;
 
     events.push(
       createAttributedAgentEvent(
@@ -2374,12 +2498,13 @@ function mapAssistantMessageToEvents(
           id: `${uuid}:tool:${index}`,
           threadId,
           sessionId,
-          role: streamRole,
+          role: contentRole,
           type: "tool.started",
           payload: {
             type: "tool_use",
             tool_name: block.name,
             input: block.input,
+            ...(messageId && { messageId }),
             ...(toolUseId && { tool_use_id: toolUseId }),
             ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
             ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
@@ -2389,7 +2514,7 @@ function mapAssistantMessageToEvents(
                 subagent_type: block.input.subagent_type,
               }),
           },
-          ...(messageParentToolUseId !== undefined ? { messageParentToolUseId } : {}),
+          messageParentToolUseId,
         },
         streamCtx,
       ),
@@ -2614,6 +2739,9 @@ export function formatAgentEventLine(event: Pick<AgentEvent, "type" | "payload" 
         subagent_type: sdkPayload.subagent_type,
         last_tool_name: sdkPayload.last_tool_name,
         summary: sdkPayload.summary,
+        status: sdkPayload.status,
+        output_file: sdkPayload.output_file,
+        usage: sdkPayload.usage,
       });
     }
     if (event.type === "usage.recorded") {
@@ -2877,6 +3005,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
       }
       return description || null;
     }
+    if (payload.subtype === "task_notification") {
+      const summary = typeof payload.summary === "string" ? payload.summary.trim() : "";
+      const status = typeof payload.status === "string" ? payload.status : "completed";
+      return summary || `Task ${status}`;
+    }
     if (payload.subtype === "task_updated" && isRecord(payload.patch)) {
       const status = payload.patch.status;
       if (typeof status === "string") {
@@ -2984,7 +3117,12 @@ function isSdkTodoUpdatedPayload(payload: unknown): payload is SdkTodoUpdatedPay
     return false;
   }
   const sdkKind = payload.sdkKind;
-  if (sdkKind !== "task_started" && sdkKind !== "task_updated" && sdkKind !== "task_progress") {
+  if (
+    sdkKind !== "task_started" &&
+    sdkKind !== "task_updated" &&
+    sdkKind !== "task_progress" &&
+    sdkKind !== "task_notification"
+  ) {
     return false;
   }
   return typeof payload.task_id === "string" && payload.task_id.length > 0;

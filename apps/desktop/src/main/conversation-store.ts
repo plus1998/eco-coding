@@ -2088,6 +2088,66 @@ export class ConversationStore {
     return Number(result.changes ?? 0);
   }
 
+  attributeThreadRunEventsBySdkMessageIds(
+    threadId: string,
+    messageIds: readonly string[],
+    agentId: string,
+    onConflict?: (input: {
+      eventId: string;
+      messageId: string;
+      existingAgentId: string;
+      incomingAgentId: string;
+    }) => void,
+  ): number {
+    const normalizedAgentId = agentId.trim();
+    const normalizedMessageIds = new Set(messageIds.map((messageId) => messageId.trim()).filter(Boolean));
+    if (!normalizedAgentId || normalizedMessageIds.size === 0) {
+      return 0;
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, agent_id, scope, metadata_json
+         FROM thread_run_events
+         WHERE thread_id = ? AND metadata_json IS NOT NULL`,
+      )
+      .all(threadId) as Array<{
+      id: string;
+      agent_id: string | null;
+      scope: string;
+      metadata_json: string | null;
+    }>;
+    const update = this.db.prepare(
+      `UPDATE thread_run_events
+       SET agent_id = ?, scope = 'agent'
+       WHERE thread_id = ? AND id = ?`,
+    );
+    const plannerSessionId = this.getSdkSession(threadId)?.sessionId?.trim();
+    let updated = 0;
+    for (const row of rows) {
+      const metadata = parseJsonRecord(row.metadata_json);
+      const sdkMessageId = typeof metadata?.sdkMessageId === "string" ? metadata.sdkMessageId.trim() : "";
+      if (!sdkMessageId || !normalizedMessageIds.has(sdkMessageId)) {
+        continue;
+      }
+      const existingAgentId = row.agent_id?.trim();
+      if (existingAgentId === normalizedAgentId && row.scope === "agent") {
+        continue;
+      }
+      if (existingAgentId && existingAgentId !== normalizedAgentId && existingAgentId !== plannerSessionId) {
+        onConflict?.({
+          eventId: row.id,
+          messageId: sdkMessageId,
+          existingAgentId,
+          incomingAgentId: normalizedAgentId,
+        });
+        continue;
+      }
+      const result = update.run(normalizedAgentId, threadId, row.id);
+      updated += Number(result.changes ?? 0);
+    }
+    return updated;
+  }
+
   listThreadRunEvents(threadId: string): ThreadRunEvent[] {
     const rows = this.db
       .prepare(

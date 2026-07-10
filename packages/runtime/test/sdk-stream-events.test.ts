@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { mapSdkMessageToEvents } from "../src/claude-agent-sdk";
-import { createSdkStreamContext, mapStreamEventToEvents, registerSubagentOnStreamContext } from "../src/sdk-stream-events";
+import {
+  createSdkStreamContext,
+  mapStreamEventToEvents,
+  registerSubagentOnStreamContext,
+} from "../src/sdk-stream-events";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("maps tool_use content_block_start to tool.started", () => {
@@ -529,7 +533,7 @@ test("maps message_delta usage to usage.recorded", () => {
   expect(events.some((event) => event.type === "usage.recorded")).toBe(true);
 });
 
-test("assistant tool_use falls back to stream context parent_tool_use_id", () => {
+test("assistant tool_use without message parent stays unresolved instead of inheriting stream context", () => {
   const ctx = createSdkStreamContext();
   ctx.parentToolUseId = "toolu_delegate";
   ctx.activeSubagentRole = "explore";
@@ -539,6 +543,7 @@ test("assistant tool_use falls back to stream context parent_tool_use_id", () =>
       uuid: "u_assistant",
       session_id: "sess",
       message: {
+        id: "msg_unresolved",
         content: [{ type: "tool_use", name: "Read", id: "toolu_read", input: { file_path: "/a.ts" } }],
       },
     },
@@ -548,16 +553,18 @@ test("assistant tool_use falls back to stream context parent_tool_use_id", () =>
 
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
+    agentId: "sess",
     type: "tool.started",
-    role: "explore",
+    role: "planner",
   });
   expect(events[0]?.payload).toMatchObject({
-    parent_tool_use_id: "toolu_delegate",
+    messageId: "msg_unresolved",
     tool_name: "Read",
   });
+  expect((events[0]?.payload as Record<string, unknown>).parent_tool_use_id).toBeUndefined();
 });
 
-test("task_progress carries stream context parent_tool_use_id", () => {
+test("task_progress without tool_use_id does not inherit stale stream identity", () => {
   const ctx = createSdkStreamContext();
   ctx.parentToolUseId = "toolu_delegate";
   ctx.activeSubagentRole = "explore";
@@ -577,41 +584,14 @@ test("task_progress carries stream context parent_tool_use_id", () => {
 
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
+    agentId: "session_1",
     type: "todo.updated",
-    role: "explore",
+    role: "planner",
   });
-  expect(events[0]?.payload).toMatchObject({
-    parent_tool_use_id: "toolu_delegate",
-    sdkKind: "task_progress",
-  });
+  expect((events[0]?.payload as Record<string, unknown>).parent_tool_use_id).toBeUndefined();
 });
 
-test("task_progress recovers parent_tool_use_id from subagent role map when context was cleared", () => {
-  const ctx = createSdkStreamContext();
-  ctx.subagentRoleByParentToolUseId.set("call_delegate", "explore");
-  ctx.activeSubagentRole = "explore";
-  const events = mapSdkMessageToEvents(
-    {
-      type: "system",
-      subtype: "task_progress",
-      task_id: "task_abc",
-      description: "Inspecting auth module",
-      last_tool_name: "Read",
-      uuid: "sdk_task_2",
-      session_id: "session_1",
-      role: "explore",
-    },
-    "thr_1",
-    ctx,
-  );
-
-  expect(events[0]?.payload).toMatchObject({
-    parent_tool_use_id: "call_delegate",
-    sdkKind: "task_progress",
-  });
-});
-
-test("task_progress carries parent_tool_use_id from PreToolUse registration without agentId", () => {
+test("task_progress uses exact tool_use_id and preserves aggregate terminal diagnostics", () => {
   const ctx = createSdkStreamContext();
   registerSubagentOnStreamContext(ctx, {
     role: "explore",
@@ -622,24 +602,32 @@ test("task_progress carries parent_tool_use_id from PreToolUse registration with
       type: "system",
       subtype: "task_progress",
       task_id: "task_abc",
+      tool_use_id: "call_delegate",
       description: "Inspecting auth module",
       last_tool_name: "Read",
+      usage: { total_tokens: 120, tool_uses: 3, duration_ms: 4500 },
       uuid: "sdk_task_pre",
       session_id: "session_planner",
-      role: "explore",
     },
     "thr_1",
     ctx,
   );
 
-  expect(events[0]?.payload).toMatchObject({
-    parent_tool_use_id: "call_delegate",
-    sdkKind: "task_progress",
+  expect(events[0]).toMatchObject({
+    agentId: "session_planner",
+    role: "explore",
+    type: "todo.updated",
+    payload: {
+      parent_tool_use_id: "call_delegate",
+      sdkKind: "task_progress",
+      tool_use_id: "call_delegate",
+      usage: { total_tokens: 120, tool_uses: 3, duration_ms: 4500 },
+    },
   });
-  expect(events[0]?.agentId).toBe("session_planner");
+  expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
 });
 
-test("task_progress carries agentId registered from SubagentStart role map without parent", () => {
+test("task_progress does not use SubagentStart role-only registration", () => {
   const ctx = createSdkStreamContext();
   registerSubagentOnStreamContext(ctx, {
     role: "explore",
@@ -654,16 +642,16 @@ test("task_progress carries agentId registered from SubagentStart role map witho
       last_tool_name: "Read",
       uuid: "sdk_task_role",
       session_id: "session_planner",
-      role: "explore",
+      subagent_type: "eco_explore",
     },
     "thr_1",
     ctx,
   );
 
-  expect(events[0]?.agentId).toBe("agent_explore_a");
+  expect(events[0]?.agentId).toBe("session_planner");
 });
 
-test("task_progress carries agentId registered from SubagentStart", () => {
+test("task_progress resolves agent from exact tool_use_id registration", () => {
   const ctx = createSdkStreamContext();
   registerSubagentOnStreamContext(ctx, {
     role: "explore",
@@ -675,11 +663,11 @@ test("task_progress carries agentId registered from SubagentStart", () => {
       type: "system",
       subtype: "task_progress",
       task_id: "task_abc",
+      tool_use_id: "call_delegate",
       description: "Inspecting auth module",
       last_tool_name: "Read",
       uuid: "sdk_task_3",
       session_id: "session_planner",
-      role: "explore",
     },
     "thr_1",
     ctx,
@@ -692,7 +680,50 @@ test("task_progress carries agentId registered from SubagentStart", () => {
   });
 });
 
-test("tool_progress and tool_use_summary carry parent_tool_use_id from message or context", () => {
+test("task_notification preserves exact terminal fields without producing billing usage", () => {
+  const ctx = createSdkStreamContext();
+  registerSubagentOnStreamContext(ctx, {
+    role: "general-purpose",
+    agentId: "agent_general_a",
+    parentToolUseId: "call_general",
+  });
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_notification",
+      task_id: "task_general",
+      tool_use_id: "call_general",
+      status: "completed",
+      output_file: "/tmp/task.output",
+      summary: "Done",
+      usage: { total_tokens: 900, tool_uses: 5, duration_ms: 7000 },
+      uuid: "sdk_task_notification",
+      session_id: "session_planner",
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    agentId: "agent_general_a",
+    role: "general-purpose",
+    type: "todo.updated",
+    payload: {
+      sdkKind: "task_notification",
+      task_id: "task_general",
+      tool_use_id: "call_general",
+      parent_tool_use_id: "call_general",
+      status: "completed",
+      output_file: "/tmp/task.output",
+      summary: "Done",
+      usage: { total_tokens: 900, tool_uses: 5, duration_ms: 7000 },
+    },
+  });
+  expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
+});
+
+test("tool progress uses direct parent id while summary does not inherit context", () => {
   const ctx = createSdkStreamContext();
   ctx.parentToolUseId = "toolu_ctx";
   ctx.activeSubagentRole = "coder";
@@ -718,5 +749,135 @@ test("tool_progress and tool_use_summary carry parent_tool_use_id from message o
     "thr_1",
     ctx,
   );
-  expect(summary[0]?.payload).toMatchObject({ parent_tool_use_id: "toolu_ctx" });
+  expect((summary[0]?.payload as Record<string, unknown>).parent_tool_use_id).toBeUndefined();
+  expect(summary[0]?.agentId).toBe("sess");
+});
+
+test("message_start propagates one exact message id to streamed text, thinking, tool, and usage", () => {
+  const ctx = createSdkStreamContext();
+  registerSubagentOnStreamContext(ctx, {
+    role: "general-purpose",
+    agentId: "agent_general_stream",
+    parentToolUseId: "call_general_stream",
+  });
+  mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      parent_tool_use_id: "call_general_stream",
+      subagent_type: "general-purpose",
+      event: { type: "message_start", message: { id: "msg_stream_exact" } },
+    },
+    "thr_stream_exact",
+    "session_planner",
+    "planner",
+    "stream_start",
+    ctx,
+  );
+
+  const text = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      parent_tool_use_id: "call_general_stream",
+      subagent_type: "general-purpose",
+      event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hello" } },
+    },
+    "thr_stream_exact",
+    "session_planner",
+    "planner",
+    "stream_text",
+    ctx,
+  );
+  const thinking = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      parent_tool_use_id: "call_general_stream",
+      subagent_type: "general-purpose",
+      event: {
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "thinking_delta", thinking: "reason" },
+      },
+    },
+    "thr_stream_exact",
+    "session_planner",
+    "planner",
+    "stream_thinking",
+    ctx,
+  );
+  const tool = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      parent_tool_use_id: "call_general_stream",
+      subagent_type: "general-purpose",
+      event: {
+        type: "content_block_start",
+        index: 2,
+        content_block: { type: "tool_use", name: "Read", id: "tool_read_exact" },
+      },
+    },
+    "thr_stream_exact",
+    "session_planner",
+    "planner",
+    "stream_tool",
+    ctx,
+  );
+  const usage = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      parent_tool_use_id: "call_general_stream",
+      subagent_type: "general-purpose",
+      event: { type: "message_delta", usage: { input_tokens: 40, output_tokens: 8 } },
+    },
+    "thr_stream_exact",
+    "session_planner",
+    "planner",
+    "stream_usage",
+    ctx,
+  );
+
+  for (const event of [...text, ...thinking, ...tool, ...usage]) {
+    expect(event.agentId).toBe("agent_general_stream");
+    expect((event.payload as Record<string, unknown>).messageId).toBe("msg_stream_exact");
+  }
+});
+
+test("assistant final replay uses one exact agent and message id across all content kinds", () => {
+  const ctx = createSdkStreamContext();
+  registerSubagentOnStreamContext(ctx, {
+    role: "general-purpose",
+    agentId: "agent_general_final",
+    parentToolUseId: "call_general_final",
+  });
+  const events = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_final_exact",
+      session_id: "session_planner",
+      parent_tool_use_id: "call_general_final",
+      subagent_type: "general-purpose",
+      message: {
+        id: "msg_final_exact",
+        usage: { input_tokens: 80, output_tokens: 20 },
+        content: [
+          { type: "thinking", thinking: "reason" },
+          { type: "text", text: "answer" },
+          { type: "tool_use", id: "tool_final_read", name: "Read", input: { file_path: "/a.ts" } },
+        ],
+      },
+    },
+    "thr_final_exact",
+    ctx,
+  );
+
+  expect(events.map((event) => event.type).sort()).toEqual([
+    "message.delta",
+    "message.delta",
+    "tool.started",
+    "usage.recorded",
+  ]);
+  for (const event of events) {
+    expect(event.agentId).toBe("agent_general_final");
+    expect(event.role).toBe("general-purpose");
+    expect((event.payload as Record<string, unknown>).messageId).toBe("msg_final_exact");
+  }
 });

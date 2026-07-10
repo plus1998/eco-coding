@@ -6,7 +6,10 @@ import type { ConversationStore } from "./conversation-store.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
-import { buildSubagentLifecycleRunEvent, buildSubagentMissionAttributedRunEvent } from "./thread-run-event-normalizer.js";
+import {
+  buildSubagentLifecycleRunEvent,
+  buildSubagentMissionAttributedRunEvent,
+} from "./thread-run-event-normalizer.js";
 import type { ContextWindowMonitor } from "./context-window-monitor.js";
 import type { SubagentHandoffService } from "./subagent-handoff-service.js";
 import { logEcoDiagThrottled } from "./eco-diag-log.js";
@@ -32,6 +35,12 @@ export function createSubagentSessionHooks(
       runAttemptId?: string;
     }) => void;
     onSubagentBillingStampClear?: (input: { agentId: string }) => void;
+    onTerminalReconciliation?: (input: {
+      agentId: string;
+      role: RuntimeAgentRole;
+      agentTranscriptPath?: string;
+      transcriptPath?: string;
+    }) => void | Promise<void>;
     attribution?: Pick<EcoSubagentAttributionHooks, "onSubagentRegistered">;
     contextMonitor?: Pick<ContextWindowMonitor, "shouldHandoffSubagentResume" | "getInstanceOccupancy">;
     handoffService?: SubagentHandoffService;
@@ -47,8 +56,7 @@ export function createSubagentSessionHooks(
       }
       const prompt = input.prompt?.trim() ?? "";
       const todoId = input.todoId?.trim() || undefined;
-      const missionKey =
-        role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
+      const missionKey = role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
       store.upsertSubagentSessionActive({
         threadId,
         role,
@@ -118,8 +126,7 @@ export function createSubagentSessionHooks(
       if (!prompt || !parentToolUseId) {
         return;
       }
-      const missionKey =
-        role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
+      const missionKey = role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
       store.upsertSubagentSessionActive({
         threadId,
         role,
@@ -161,7 +168,7 @@ export function createSubagentSessionHooks(
       });
       options?.onTimingChanged?.();
     },
-    onStop(input) {
+    async onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
       const role = resolveSubagentSessionRole(input.agentType) as RuntimeAgentRole | undefined;
       if (role) {
@@ -181,6 +188,12 @@ export function createSubagentSessionHooks(
           role,
           lifecycle: "stopped",
           ...(runAttemptId && { runAttemptId }),
+        });
+        await options?.onTerminalReconciliation?.({
+          agentId: input.agentId,
+          role,
+          ...(input.agentTranscriptPath && { agentTranscriptPath: input.agentTranscriptPath }),
+          ...(input.transcriptPath && { transcriptPath: input.transcriptPath }),
         });
         options?.onSubagentBillingStampClear?.({ agentId: input.agentId });
       }

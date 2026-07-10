@@ -92,7 +92,12 @@ export interface EcoSubagentSessionHooks {
     prompt?: string;
     todoId?: string;
   }): void;
-  onStop(input: { agentId: string; agentType: string }): void;
+  onStop(input: {
+    agentId: string;
+    agentType: string;
+    agentTranscriptPath?: string;
+    transcriptPath?: string;
+  }): void | Promise<void>;
   /** SDK stream paired parent_tool_use_id with a SubagentStart agent id. */
   onDelegationLinked?(input: {
     agentId: string;
@@ -130,11 +135,7 @@ export interface EcoSubagentAttributionHooks {
   }): string | undefined;
   onTaskToolUse?(toolUseId: string, input?: { role?: RuntimeAgentRole }): void;
   /** Seed runtime stream context when a subagent instance is known (SubagentStart / delegation link). */
-  onSubagentRegistered?(input: {
-    role: RuntimeAgentRole;
-    agentId?: string;
-    parentToolUseId?: string;
-  }): void;
+  onSubagentRegistered?(input: { role: RuntimeAgentRole; agentId?: string; parentToolUseId?: string }): void;
 }
 
 export interface EcoHookContext {
@@ -363,8 +364,7 @@ export function createExitPlanModeAwaitApprovalHook(
     });
     const rawToolUseId = hookRecord.tool_use_id;
     const toolUseId =
-      (typeof rawToolUseId === "string" && rawToolUseId.trim()) ||
-      `permission:${requestInput.session_id}`;
+      (typeof rawToolUseId === "string" && rawToolUseId.trim()) || `permission:${requestInput.session_id}`;
     if (!resolved.plan.trim()) {
       return {
         hookSpecificOutput: {
@@ -387,7 +387,10 @@ export function createExitPlanModeAwaitApprovalHook(
           hookEventName: "PermissionRequest",
           decision: {
             behavior: "allow",
-            updatedInput: mergeExitPlanModeInjectedFields(toolInput, requestInput as unknown as PreToolUseHookInput),
+            updatedInput: mergeExitPlanModeInjectedFields(
+              toolInput,
+              requestInput as unknown as PreToolUseHookInput,
+            ),
           },
         },
       };
@@ -771,9 +774,7 @@ export function createToolPermissionPreToolHook(
       return {};
     }
     const actor = resolveToolPermissionActor(preInput);
-    const entry = materializeRuntimeToolPermissionEntry(
-      resolveToolPermissionEntryForActor(policy, actor),
-    );
+    const entry = materializeRuntimeToolPermissionEntry(resolveToolPermissionEntryForActor(policy, actor));
     if (!entry) {
       return recordToolPermissionDecision(
         preInput,
@@ -784,8 +785,7 @@ export function createToolPermissionPreToolHook(
     }
     if (matchesAnyToolPattern(preInput.tool_name, entry.disallowed)) {
       const handsOnDenial =
-        actor === "main" &&
-        (WRITE_FILESYSTEM_TOOLS.has(preInput.tool_name) || preInput.tool_name === "Bash");
+        actor === "main" && (WRITE_FILESYSTEM_TOOLS.has(preInput.tool_name) || preInput.tool_name === "Bash");
       return recordToolPermissionDecision(
         preInput,
         actor,
@@ -971,10 +971,7 @@ function evaluateMcpToolPolicy(
   }
   const assigned = new Set(assignedServers.map((server) => sanitizeMcpServerName(server)));
   if (!assigned.has(toolServer)) {
-    return denyTool(
-      input.tool_name,
-      `MCP server "${toolServer}" is not assigned to ${actorLabel}.`,
-    );
+    return denyTool(input.tool_name, `MCP server "${toolServer}" is not assigned to ${actorLabel}.`);
   }
   return undefined;
 }
@@ -1367,9 +1364,13 @@ export function createSubagentStopHook(handlers: {
     const payload = {
       agentId: stopped.agent_id,
       agentType,
+      ...(stopped.agent_transcript_path?.trim() && {
+        agentTranscriptPath: stopped.agent_transcript_path.trim(),
+      }),
+      ...(stopped.transcript_path?.trim() && { transcriptPath: stopped.transcript_path.trim() }),
     };
     handlers.taskTracker?.onSubagentStop(payload);
-    handlers.subagentSessions?.onStop(payload);
+    await handlers.subagentSessions?.onStop(payload);
     return {};
   };
 }
@@ -1529,16 +1530,11 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     pushHook(
       hooks,
       "PreToolUse",
-      createSubagentResumePreToolHook(
-        sessions.threadId,
-        sessions.phase,
-        sessions.resolveResume,
-        {
-          ...(sessions.todoIdHint && { todoIdHint: sessions.todoIdHint }),
-          ...(sessions.shouldHandoff && { shouldHandoff: sessions.shouldHandoff }),
-          ...(sessions.resolveHandoffPrompt && { resolveHandoffPrompt: sessions.resolveHandoffPrompt }),
-        },
-      ),
+      createSubagentResumePreToolHook(sessions.threadId, sessions.phase, sessions.resolveResume, {
+        ...(sessions.todoIdHint && { todoIdHint: sessions.todoIdHint }),
+        ...(sessions.shouldHandoff && { shouldHandoff: sessions.shouldHandoff }),
+        ...(sessions.resolveHandoffPrompt && { resolveHandoffPrompt: sessions.resolveHandoffPrompt }),
+      }),
       "Agent|Task",
     );
   }

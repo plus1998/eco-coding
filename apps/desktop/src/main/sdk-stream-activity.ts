@@ -1,8 +1,4 @@
-import {
-  mergeStreamText,
-  resolveSkillDisplayName,
-  type AgentEvent,
-} from "@eco/runtime";
+import { type AgentEvent, mergeStreamText, resolveSkillDisplayName } from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
 import {
   enrichFileChangeFromToolOutput,
@@ -207,15 +203,7 @@ export class SdkStreamActivityBridge {
     } else {
       this.lastStreamLine.delete(streamKey);
     }
-    emit(
-      threadId,
-      event.type,
-      message,
-      role,
-      stream,
-      activityAgentId,
-      emitExtras,
-    );
+    emit(threadId, event.type, message, role, stream, activityAgentId, emitExtras);
   }
 
   private scheduleThrottledDelta(
@@ -282,6 +270,41 @@ function readSdkStreamBlockKey(payload: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readSdkMessageId(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const value = (payload as { messageId?: unknown }).messageId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readSdkTaskReconciliationMetadata(payload: unknown): Record<string, unknown> | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.sdkKind !== "task_progress" && record.sdkKind !== "task_notification") {
+    return undefined;
+  }
+  const taskId = readString(record.task_id);
+  if (!taskId) {
+    return undefined;
+  }
+  const toolUseId = readString(record.tool_use_id);
+  const status = readString(record.status);
+  const usage =
+    record.usage && typeof record.usage === "object" && !Array.isArray(record.usage)
+      ? record.usage
+      : undefined;
+  return {
+    sdkTaskId: taskId,
+    sdkTaskKind: record.sdkKind,
+    ...(toolUseId && { sdkTaskToolUseId: toolUseId }),
+    ...(status && { sdkTaskStatus: status }),
+    ...(usage ? { sdkTaskUsage: usage } : {}),
+  };
+}
+
 function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMetadata | undefined {
   if (event.type === "tool.started") {
     return resolveSdkToolUseMetadata(event.payload) ?? resolveSdkToolProgressMetadata(event.payload);
@@ -308,9 +331,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   }
   const name = readString(record.tool_name) ?? "Bash";
   const command =
-    readString(record.command) ??
-    readString(record.full_command) ??
-    readString(record.bash_command);
+    readString(record.command) ?? readString(record.full_command) ?? readString(record.bash_command);
   const output =
     readString(record.output) ??
     readString(record.stdout) ??
@@ -320,7 +341,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
-      ? readString(record.description) ?? readBashDescriptionFromToolInput(record.input)
+      ? (readString(record.description) ?? readBashDescriptionFromToolInput(record.input))
       : undefined;
   const fileChangeFromInput = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
@@ -593,11 +614,15 @@ function mergeSdkActivityEmitExtras(
 ): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
   const activityOrigin = classifySdkStreamMessageOrigin(message);
   const sdkStreamBlockKey = readSdkStreamBlockKey(payload);
+  const sdkMessageId = readSdkMessageId(payload);
+  const taskMetadata = readSdkTaskReconciliationMetadata(payload);
   const metadata =
-    activityOrigin || sdkStreamBlockKey
+    activityOrigin || sdkStreamBlockKey || sdkMessageId || taskMetadata
       ? {
           ...(activityOrigin && { activityOrigin }),
           ...(sdkStreamBlockKey && { sdkStreamBlockKey }),
+          ...(sdkMessageId && { sdkMessageId }),
+          ...(taskMetadata ?? {}),
         }
       : undefined;
   if (!tool && !metadata) {

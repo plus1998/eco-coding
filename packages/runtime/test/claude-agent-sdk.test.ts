@@ -2657,3 +2657,54 @@ test("ClaudeAgentSdkDriver planning completes without ExitPlanMode", async () =>
 
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
+
+test("maps completed AgentOutput as an exact terminal event without billing duplication", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "sdk_agent_output",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_general_output", content: "done" }],
+      },
+      tool_use_result: {
+        status: "completed",
+        agentId: "agent_general_output",
+        agentType: "general-purpose",
+        resolvedModel: "claude-sonnet-4-5",
+        totalToolUseCount: 4,
+        totalDurationMs: 5000,
+        totalTokens: 700,
+        usage: {
+          input_tokens: 600,
+          output_tokens: 100,
+          cache_creation_input_tokens: null,
+          cache_read_input_tokens: null,
+          server_tool_use: null,
+          service_tier: null,
+          cache_creation: null,
+        },
+        content: [{ type: "text", text: "done" }],
+        prompt: "inspect",
+      },
+    },
+    "thr_agent_output",
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    agentId: "agent_general_output",
+    role: "general-purpose",
+    type: "agent.completed",
+    payload: {
+      type: "agent_output",
+      status: "completed",
+      agentId: "agent_general_output",
+      agentType: "general-purpose",
+      tool_use_id: "call_general_output",
+      totalTokens: 700,
+    },
+  });
+  expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
+});
