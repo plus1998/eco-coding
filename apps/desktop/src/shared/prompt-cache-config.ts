@@ -1,8 +1,15 @@
 import { listEnabledGlobalMcpServerKeys } from "./composer-mcp";
-import type { ModelSettingsSnapshot, McpServerConfigView, OrchestrationProfile, ProviderConfigView } from "./ipc";
+import type {
+  McpServerConfigView,
+  ModelSettingsSnapshot,
+  OrchestrationProfile,
+  ProviderConfigView,
+} from "./ipc";
 import {
+  resolveMainAgentModelOverrideForProvider,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
+  runtimeRoleRoutesFromAgentProfile,
   type ThreadRuntimeConfig,
 } from "./thread-runtime-config";
 
@@ -11,11 +18,35 @@ export interface PromptCacheProfileLabel {
   profileName: string;
 }
 
-export type PromptCacheConfigDriftKind = "profile" | "mcp";
+export type PromptCacheConfigDriftKind = "profile" | "main_model" | "mcp";
 
 export interface PromptCacheRuntimeSignature {
   profileId: string;
+  mainAgentModelKey: string;
   mcpServerKeys: string[];
+}
+
+interface MainAgentModelIdentity {
+  providerId: string;
+  modelId: string;
+  thinkingEffort?: string;
+}
+
+/** Stable identity for request-affecting main-agent model settings. */
+export function buildMainAgentModelKey(model: MainAgentModelIdentity | undefined): string {
+  return JSON.stringify([
+    model?.providerId.trim() ?? "",
+    model?.modelId.trim() ?? "",
+    model?.thinkingEffort?.trim() ?? "",
+  ]);
+}
+
+export function resolveMainAgentModelKey(
+  settings: ModelSettingsSnapshot,
+  runtimeConfig: ThreadRuntimeConfig,
+): string {
+  const profile = resolveThreadAgentProfile(settings, runtimeConfig);
+  return buildMainAgentModelKey(resolveEffectiveMainAgentModel(profile, runtimeConfig));
 }
 
 export function resolvePromptCacheRuntimeSignature(input: {
@@ -29,6 +60,9 @@ export function resolvePromptCacheRuntimeSignature(input: {
     input.runtimeConfig.agentProfileId?.trim() ||
     input.runtimeConfig.routeProfileId?.trim() ||
     "";
+  const mainAgentModelKey = buildMainAgentModelKey(
+    resolveEffectiveMainAgentModel(profile, input.runtimeConfig),
+  );
   const mcpServerKeys = resolveThreadRuntimeMcpServerKeys({
     runtimeConfig: input.runtimeConfig,
     settings: input.settings,
@@ -36,7 +70,21 @@ export function resolvePromptCacheRuntimeSignature(input: {
   })
     .slice()
     .sort();
-  return { profileId, mcpServerKeys };
+  return { profileId, mainAgentModelKey, mcpServerKeys };
+}
+
+function resolveEffectiveMainAgentModel(
+  profile: OrchestrationProfile | undefined,
+  runtimeConfig: ThreadRuntimeConfig,
+): MainAgentModelIdentity | undefined {
+  if (!profile) {
+    return undefined;
+  }
+  const override = resolveMainAgentModelOverrideForProvider(
+    profile.mainAgent.modelRef.providerId,
+    runtimeConfig.mainAgentModelOverride,
+  );
+  return runtimeRoleRoutesFromAgentProfile(profile, override).find((route) => route.role === "planner");
 }
 
 export function diffPromptCacheRuntimeSignatures(
@@ -46,6 +94,9 @@ export function diffPromptCacheRuntimeSignatures(
   const kinds: PromptCacheConfigDriftKind[] = [];
   if (baseline.profileId !== current.profileId) {
     kinds.push("profile");
+  }
+  if (baseline.mainAgentModelKey !== current.mainAgentModelKey) {
+    kinds.push("main_model");
   }
   if (!stringArraysEqual(baseline.mcpServerKeys, current.mcpServerKeys)) {
     kinds.push("mcp");
@@ -108,9 +159,10 @@ function formatPromptCacheDriftChangeParts(
 ): string[] {
   const parts: string[] = [];
   if (kinds.includes("profile")) {
-    parts.push(
-      profileLabel ? formatPromptCacheProfileSwitchPhrase(profileLabel) : "Agent Profile 已变更",
-    );
+    parts.push(profileLabel ? formatPromptCacheProfileSwitchPhrase(profileLabel) : "Agent Profile 已变更");
+  }
+  if (kinds.includes("main_model")) {
+    parts.push("主代理模型或思考强度已变更");
   }
   if (kinds.includes("mcp")) {
     parts.push("MCP 配置已变更");

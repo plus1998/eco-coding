@@ -1,39 +1,43 @@
-import { collectProfileAssignedMcpServers, defaultSubagentAvailability, normalizeSubagentAvailability, SUBAGENT_ROLES } from "@eco/runtime";
-import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import {
-  isSessionMode,
-  normalizeSessionMode,
-  resolveSessionMode,
-  type SessionMode,
-} from "./session-mode";
+  collectProfileAssignedMcpServers,
+  defaultSubagentAvailability,
+  normalizeSubagentAvailability,
+  SUBAGENT_ROLES,
+} from "@eco/runtime";
+import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import {
   deriveMcpServersEnabled,
   listEnabledGlobalMcpServerKeys,
+  type McpServersEnabledSettings,
   normalizeMcpServersEnabled,
   resolveEnabledMcpServerKeys,
-  type McpServersEnabledSettings,
 } from "./composer-mcp";
 import type {
-  ModelSettingsSnapshot,
   McpServerConfigView,
-  OrchestrationModeSetting,
+  ModelSettingsSnapshot,
   OrchestrationProfile,
   RoleRouteConfig,
   RuntimeAgentRole,
   RuntimeRoleRouteConfig,
   SubagentEnabledSettings,
+  ThinkingEffort,
   WorkflowSettingsSnapshot,
 } from "./ipc";
+import { isSessionMode, normalizeSessionMode, resolveSessionMode, type SessionMode } from "./session-mode";
 
-export type { McpServersEnabledSettings };
+export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
 
-export type { BashReviewMode };
-
-export type { SessionMode };
+export interface MainAgentModelOverride {
+  providerId: string;
+  modelId: string;
+  thinkingEffort?: ThinkingEffort;
+  candidateModelId?: string;
+}
 
 export interface ThreadRuntimeConfig {
   routeProfileId: string;
   agentProfileId?: string;
+  mainAgentModelOverride?: MainAgentModelOverride;
   subagentEnabled: SubagentEnabledSettings;
   mcpServersEnabled?: McpServersEnabledSettings;
   sessionMode: SessionMode;
@@ -41,6 +45,14 @@ export interface ThreadRuntimeConfig {
 }
 
 export type ThreadRuntimeConfigInput = ThreadRuntimeConfig;
+
+export function resolveMainAgentModelOverrideForProvider(
+  providerId: string | undefined,
+  override: MainAgentModelOverride | undefined,
+): MainAgentModelOverride | undefined {
+  const currentProviderId = providerId?.trim();
+  return currentProviderId && override?.providerId.trim() === currentProviderId ? override : undefined;
+}
 
 export function getDefaultRouteProfileId(settings: ModelSettingsSnapshot): string | undefined {
   return settings.routeProfiles[0]?.id;
@@ -57,7 +69,10 @@ export function getRoutesForProfile(
   return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
 }
 
-export function runtimeRoleRoutesFromAgentProfile(profile: OrchestrationProfile): RuntimeRoleRouteConfig[] {
+export function runtimeRoleRoutesFromAgentProfile(
+  profile: OrchestrationProfile,
+  mainAgentModelOverride?: MainAgentModelOverride,
+): RuntimeRoleRouteConfig[] {
   const routes = new Map<RuntimeAgentRole, RuntimeRoleRouteConfig>();
   routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
   routes.set("explore", routeFromAgentProfileModelRef("explore", profile.builtinAgents.explore.modelRef));
@@ -67,7 +82,38 @@ export function runtimeRoleRoutesFromAgentProfile(profile: OrchestrationProfile)
       routes.set(role, routeFromAgentProfileModelRef(role, agent.modelRef));
     }
   }
-  return [...routes.values()];
+  return applyMainAgentModelOverride([...routes.values()], mainAgentModelOverride);
+}
+
+export function applyMainAgentModelOverride(
+  routes: readonly RuntimeRoleRouteConfig[],
+  override?: MainAgentModelOverride,
+): RuntimeRoleRouteConfig[] {
+  if (!override) {
+    return routes.map((route) => ({ ...route }));
+  }
+  return routes.map((route) => {
+    if (route.role !== "planner") {
+      return { ...route };
+    }
+    const applicableOverride = resolveMainAgentModelOverrideForProvider(route.providerId, override);
+    if (!applicableOverride) {
+      return { ...route };
+    }
+    const sameModel = route.modelId.trim() === applicableOverride.modelId.trim();
+    return {
+      ...(sameModel ? route : {}),
+      role: "planner",
+      providerId: applicableOverride.providerId,
+      modelId: applicableOverride.modelId,
+      ...(applicableOverride.thinkingEffort !== undefined
+        ? { thinkingEffort: applicableOverride.thinkingEffort }
+        : {}),
+      ...(applicableOverride.candidateModelId
+        ? { candidateModelId: applicableOverride.candidateModelId }
+        : {}),
+    };
+  });
 }
 
 function routeFromAgentProfileModelRef(
@@ -123,17 +169,24 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (!record.subagentEnabled || typeof record.subagentEnabled !== "object") {
     return false;
   }
+  if (
+    record.mainAgentModelOverride !== undefined &&
+    !isMainAgentModelOverride(record.mainAgentModelOverride)
+  ) {
+    return false;
+  }
   const subagents = record.subagentEnabled as Record<string, unknown>;
   if (!SUBAGENT_ROLES.every((role) => typeof subagents[role] === "boolean")) {
     return false;
   }
   const bashReviewMode = record.bashReviewMode;
   return (
-    bashReviewMode === undefined ||
-    bashReviewMode === "always" ||
-    bashReviewMode === "auto" ||
-    bashReviewMode === "allow_all"
-  ) && (record.mcpServersEnabled === undefined || isMcpServersEnabledRecord(record.mcpServersEnabled));
+    (bashReviewMode === undefined ||
+      bashReviewMode === "always" ||
+      bashReviewMode === "auto" ||
+      bashReviewMode === "allow_all") &&
+    (record.mcpServersEnabled === undefined || isMcpServersEnabledRecord(record.mcpServersEnabled))
+  );
 }
 
 function isMcpServersEnabledRecord(value: unknown): boolean {
@@ -171,6 +224,9 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   return {
     routeProfileId,
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
+    ...(config.mainAgentModelOverride
+      ? { mainAgentModelOverride: normalizeMainAgentModelOverride(config.mainAgentModelOverride) }
+      : {}),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
     ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
     sessionMode: normalizeSessionMode(config.sessionMode),
@@ -294,8 +350,61 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
   return (
     left.routeProfileId === right.routeProfileId &&
     left.agentProfileId === right.agentProfileId &&
+    mainAgentModelOverridesEqual(left.mainAgentModelOverride, right.mainAgentModelOverride) &&
     left.sessionMode === right.sessionMode &&
     SUBAGENT_ROLES.every((role) => left.subagentEnabled[role] === right.subagentEnabled[role])
+  );
+}
+
+function isMainAgentModelOverride(value: unknown): value is MainAgentModelOverride {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.providerId === "string" &&
+    Boolean(record.providerId.trim()) &&
+    typeof record.modelId === "string" &&
+    Boolean(record.modelId.trim()) &&
+    (record.thinkingEffort === undefined ||
+      (typeof record.thinkingEffort === "string" && isThinkingEffort(record.thinkingEffort))) &&
+    (record.candidateModelId === undefined || typeof record.candidateModelId === "string")
+  );
+}
+
+function normalizeMainAgentModelOverride(override: MainAgentModelOverride): MainAgentModelOverride {
+  const candidateModelId = override.candidateModelId?.trim();
+  return {
+    providerId: override.providerId.trim(),
+    modelId: override.modelId.trim(),
+    ...(override.thinkingEffort !== undefined ? { thinkingEffort: override.thinkingEffort } : {}),
+    ...(candidateModelId ? { candidateModelId } : {}),
+  };
+}
+
+function mainAgentModelOverridesEqual(
+  left?: MainAgentModelOverride,
+  right?: MainAgentModelOverride,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return (
+    left.providerId === right.providerId &&
+    left.modelId === right.modelId &&
+    left.thinkingEffort === right.thinkingEffort &&
+    left.candidateModelId === right.candidateModelId
+  );
+}
+
+function isThinkingEffort(value: string): value is ThinkingEffort {
+  return (
+    value === "off" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh" ||
+    value === "max"
   );
 }
 
@@ -303,4 +412,4 @@ export function isAutonomousThreadRuntime(config: ThreadRuntimeConfig): boolean 
   return resolveSessionMode(config) === "agent";
 }
 
-export { resolveSessionMode, isAskSessionMode, isPlanSessionMode } from "./session-mode";
+export { isAskSessionMode, isPlanSessionMode, resolveSessionMode } from "./session-mode";

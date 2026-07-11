@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/bash_review_ui.dart';
-import '../../core/constants/session_mode.dart';
 import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
@@ -25,26 +24,6 @@ const _subagentRoleLabels = {
   'reviewer': 'Reviewer',
   'tester': 'Tester',
 };
-
-extension ThreadRuntimeConfigCopy on ThreadRuntimeConfig {
-  ThreadRuntimeConfig copyWith({
-    String? routeProfileId,
-    String? agentProfileId,
-    Map<String, bool>? subagentEnabled,
-    Map<String, bool>? mcpServersEnabled,
-    SessionMode? sessionMode,
-    String? bashReviewMode,
-  }) {
-    return ThreadRuntimeConfig(
-      routeProfileId: routeProfileId ?? this.routeProfileId,
-      agentProfileId: agentProfileId ?? this.agentProfileId,
-      subagentEnabled: subagentEnabled ?? this.subagentEnabled,
-      mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
-      sessionMode: sessionMode ?? this.sessionMode,
-      bashReviewMode: bashReviewMode ?? this.bashReviewMode,
-    );
-  }
-}
 
 Future<void> persistComposerMcpWorkflowDefaults(
   WidgetRef ref, {

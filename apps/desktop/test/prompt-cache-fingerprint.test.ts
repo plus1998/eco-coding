@@ -8,6 +8,7 @@ import {
 test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", () => {
   const baseline = buildPromptCacheFingerprint({
     profileId: "profile-a",
+    mainAgentModelKey: '["p1","m1","high"]',
     mcpServerKeys: ["github", "mongo"],
     claudeMdDigest: "abc123",
   });
@@ -16,6 +17,7 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
       baseline,
       buildPromptCacheFingerprint({
         profileId: "profile-b",
+        mainAgentModelKey: '["p1","m1","high"]',
         mcpServerKeys: ["github", "mongo"],
         claudeMdDigest: "abc123",
       }),
@@ -26,6 +28,7 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
       baseline,
       buildPromptCacheFingerprint({
         profileId: "profile-a",
+        mainAgentModelKey: '["p1","m1","high"]',
         mcpServerKeys: ["github"],
         claudeMdDigest: "abc123",
       }),
@@ -36,11 +39,34 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
       baseline,
       buildPromptCacheFingerprint({
         profileId: "profile-a",
+        mainAgentModelKey: '["p1","m1","high"]',
         mcpServerKeys: ["github", "mongo"],
         claudeMdDigest: "def456",
       }),
     ),
   ).toEqual(["claude_md_changed"]);
+  expect(
+    diffPromptCacheFingerprint(
+      baseline,
+      buildPromptCacheFingerprint({
+        profileId: "profile-a",
+        mainAgentModelKey: '["p1","m1","xhigh"]',
+        mcpServerKeys: ["github", "mongo"],
+        claudeMdDigest: "abc123",
+      }),
+    ),
+  ).toEqual(["main_agent_model_changed"]);
+  expect(
+    diffPromptCacheFingerprint(
+      baseline,
+      buildPromptCacheFingerprint({
+        profileId: "profile-b",
+        mainAgentModelKey: '["p2","m2","xhigh"]',
+        mcpServerKeys: ["github", "mongo"],
+        claudeMdDigest: "abc123",
+      }),
+    ),
+  ).toEqual(["profile_changed", "main_agent_model_changed"]);
 });
 
 test("formatPromptCacheBreakMessage combines multiple reasons", () => {
@@ -52,4 +78,7 @@ test("formatPromptCacheBreakMessage combines multiple reasons", () => {
       profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
     }),
   ).toBe("已经变更为 GPT+DeepSeek（Composer），本会话 prompt cache 已失效");
+  expect(formatPromptCacheBreakMessage(["main_agent_model_changed"])).toBe(
+    "主代理模型或思考强度已变更，本会话 prompt cache 已失效",
+  );
 });

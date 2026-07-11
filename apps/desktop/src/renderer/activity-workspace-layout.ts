@@ -69,7 +69,7 @@ export function resolveActivityWorkspaceLayoutMode(
 }
 
 export function workspacePanelLayoutForMode(mode: ActivityWorkspaceLayoutMode): WorkspacePanelLayoutMode {
-  return mode === "full" || mode === "feed-panel" ? "docked" : "floating";
+  return mode === "feed-panel" ? "docked" : "floating";
 }
 
 export function shouldAutoOpenWorkspacePanel(mode: ActivityWorkspaceLayoutMode): boolean {

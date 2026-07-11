@@ -3,12 +3,11 @@ import {
   buildOrchestrationProfileFromPreset,
   createBuiltInPresetCatalog,
 } from "../src/shared/agent-orchestration";
-import type { ModelSettingsSnapshot, McpServerConfigView } from "../src/shared/ipc";
+import type { McpServerConfigView, ModelSettingsSnapshot } from "../src/shared/ipc";
 import {
-  diffPromptCacheRuntimeSignatures,
+  formatProfileModelStack,
   formatPromptCacheConfigDriftHint,
   formatPromptCacheConfigDriftMessage,
-  formatProfileModelStack,
   resolvePromptCacheConfigDrift,
   resolvePromptCacheProfileLabel,
 } from "../src/shared/prompt-cache-config";
@@ -102,6 +101,105 @@ test("resolvePromptCacheConfigDrift detects profile and mcp changes", () => {
       mcpServers,
     }),
   ).toEqual(["mcp"]);
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline,
+      current: config({
+        agentProfileId: "profile-b",
+        routeProfileId: "profile-b",
+        mcpServersEnabled: { github: true, mongo: false },
+        mainAgentModelOverride: {
+          providerId: "p1",
+          modelId: "m2",
+          thinkingEffort: "high",
+        },
+      }),
+      settings,
+      mcpServers,
+    }),
+  ).toEqual(["profile", "main_model"]);
+});
+
+test("resolvePromptCacheConfigDrift ignores an override from another provider", () => {
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline: config({}),
+      current: config({
+        mainAgentModelOverride: {
+          providerId: "p2",
+          modelId: "m2",
+          thinkingEffort: "high",
+        },
+      }),
+      settings,
+      mcpServers,
+    }),
+  ).toEqual([]);
+});
+
+test("resolvePromptCacheConfigDrift detects main model or thinking changes within one profile", () => {
+  const baseline = config({});
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline,
+      current: config({
+        mainAgentModelOverride: {
+          providerId: "p1",
+          modelId: "m1",
+          thinkingEffort: "high",
+          candidateModelId: "candidate-a",
+        },
+      }),
+      settings,
+      mcpServers,
+    }),
+  ).toEqual(["main_model"]);
+
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline: config({
+        mainAgentModelOverride: {
+          providerId: "p1",
+          modelId: "m1",
+          thinkingEffort: "high",
+          candidateModelId: "candidate-a",
+        },
+      }),
+      current: config({
+        mainAgentModelOverride: {
+          providerId: "p1",
+          modelId: "m1",
+          thinkingEffort: "high",
+          candidateModelId: "candidate-b",
+        },
+      }),
+      settings,
+      mcpServers,
+    }),
+  ).toEqual([]);
+});
+
+test("resolvePromptCacheConfigDrift uses inherited effort for a same-model override", () => {
+  const profileWithEffort = structuredClone(profileA);
+  profileWithEffort.mainAgent.modelRef.thinkingEffort = "high";
+  const settingsWithEffort = {
+    ...settings,
+    orchestrationProfiles: [profileWithEffort],
+  };
+
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline: config({}),
+      current: config({
+        mainAgentModelOverride: {
+          providerId: "p1",
+          modelId: "m1",
+        },
+      }),
+      settings: settingsWithEffort,
+      mcpServers,
+    }),
+  ).toEqual([]);
 });
 
 test("formatPromptCacheConfigDriftHint describes combined drift", () => {
@@ -116,6 +214,7 @@ test("formatPromptCacheConfigDriftHint describes combined drift", () => {
     }),
   ).toContain("MCP 配置已变更");
   expect(formatPromptCacheConfigDriftHint(["mcp"])).toContain("仍可继续使用");
+  expect(formatPromptCacheConfigDriftHint(["main_model"])).toContain("主代理模型或思考强度已变更");
 });
 
 test("resolvePromptCacheProfileLabel builds provider stack and profile name", () => {
@@ -148,9 +247,10 @@ test("formatPromptCacheConfigDriftMessage uses profile switch phrase", () => {
       profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
     }),
   ).toBe("已经变更为 GPT+DeepSeek（Composer）");
+  expect(formatPromptCacheConfigDriftMessage(["main_model"])).toBe("主代理模型或思考强度已变更");
 });
 
-test("diffPromptCacheRuntimeSignatures returns empty when signatures match", () => {
+test("resolvePromptCacheConfigDrift returns empty when signatures match", () => {
   expect(
     resolvePromptCacheConfigDrift({
       baseline: config({ mcpServersEnabled: { github: true } }),

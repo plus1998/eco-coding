@@ -4,22 +4,32 @@ import path from "node:path";
 import type { PromptCacheProfileLabel } from "../shared/prompt-cache-config";
 import { formatPromptCacheProfileSwitchPhrase } from "../shared/prompt-cache-config";
 
-export type PromptCacheBreakReason = "profile_changed" | "mcp_servers_changed" | "claude_md_changed";
+export type PromptCacheBreakReason =
+  | "profile_changed"
+  | "main_agent_model_changed"
+  | "mcp_servers_changed"
+  | "claude_md_changed";
 
 export interface PromptCacheFingerprint {
   profileId: string;
+  mainAgentModelKey: string;
   mcpServerKeys: string[];
   claudeMdDigest: string;
 }
 
 export function buildPromptCacheFingerprint(input: {
   profileId: string;
+  mainAgentModelKey: string;
   mcpServerKeys: readonly string[];
   claudeMdDigest: string;
 }): PromptCacheFingerprint {
   return {
     profileId: input.profileId.trim(),
-    mcpServerKeys: [...input.mcpServerKeys].map((key) => key.trim()).filter(Boolean).sort(),
+    mainAgentModelKey: input.mainAgentModelKey.trim(),
+    mcpServerKeys: [...input.mcpServerKeys]
+      .map((key) => key.trim())
+      .filter(Boolean)
+      .sort(),
     claudeMdDigest: input.claudeMdDigest.trim(),
   };
 }
@@ -31,6 +41,9 @@ export function diffPromptCacheFingerprint(
   const reasons: PromptCacheBreakReason[] = [];
   if (before.profileId !== after.profileId) {
     reasons.push("profile_changed");
+  }
+  if (before.mainAgentModelKey !== after.mainAgentModelKey) {
+    reasons.push("main_agent_model_changed");
   }
   if (!stringArraysEqual(before.mcpServerKeys, after.mcpServerKeys)) {
     reasons.push("mcp_servers_changed");
@@ -55,6 +68,9 @@ export function formatPromptCacheBreakMessage(
         ? formatPromptCacheProfileSwitchPhrase(options.profileLabel)
         : "Agent Profile 已变更",
     );
+  }
+  if (reasons.includes("main_agent_model_changed")) {
+    parts.push("主代理模型或思考强度已变更");
   }
   if (reasons.includes("mcp_servers_changed")) {
     parts.push("MCP 配置已变更");

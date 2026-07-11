@@ -1,4 +1,5 @@
 import type { OrchestrationProfile, ThreadRuntimeConfig } from "../shared/ipc";
+import { resolveMainAgentModelOverrideForProvider } from "../shared/thread-runtime-config";
 
 export function buildComposerSavedProfile(input: {
   profile: OrchestrationProfile;
@@ -17,6 +18,26 @@ export function buildComposerSavedProfile(input: {
       enabled: runtimeEnabled ?? agent.enabled,
     };
   });
+  const override = resolveMainAgentModelOverrideForProvider(
+    copy.mainAgent.modelRef.providerId,
+    input.runtimeConfig.mainAgentModelOverride,
+  );
+  const sameMainModel =
+    override &&
+    copy.mainAgent.modelRef.providerId === override.providerId &&
+    copy.mainAgent.modelRef.modelId === override.modelId;
+  const mainAgent = override
+    ? {
+        ...copy.mainAgent,
+        modelRef: {
+          ...(sameMainModel ? copy.mainAgent.modelRef : {}),
+          providerId: override.providerId,
+          modelId: override.modelId,
+          ...(override.thinkingEffort !== undefined ? { thinkingEffort: override.thinkingEffort } : {}),
+          ...(override.candidateModelId ? { candidateModelId: override.candidateModelId } : {}),
+        },
+      }
+    : copy.mainAgent;
   const name = input.name.trim();
   return {
     ...withoutSourceRoute,
@@ -24,6 +45,7 @@ export function buildComposerSavedProfile(input: {
     name,
     source: "user",
     updatedAt: new Date().toISOString(),
+    mainAgent,
     agents,
     strategy: structuredClone(copy.strategy) as OrchestrationProfile["strategy"],
   };

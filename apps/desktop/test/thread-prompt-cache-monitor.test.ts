@@ -2,9 +2,15 @@ import { expect, test } from "bun:test";
 import { buildPromptCacheFingerprint } from "../src/main/prompt-cache-fingerprint";
 import { ThreadPromptCacheMonitor } from "../src/main/thread-prompt-cache-monitor";
 
-function fingerprint(profileId: string, mcp: string[], digest = "digest-a") {
+function fingerprint(
+  profileId: string,
+  mcp: string[],
+  digest = "digest-a",
+  mainAgentModelKey = '["p1","m1","high"]',
+) {
   return buildPromptCacheFingerprint({
     profileId,
+    mainAgentModelKey,
     mcpServerKeys: mcp,
     claudeMdDigest: digest,
   });
@@ -23,6 +29,9 @@ test("ThreadPromptCacheMonitor reports breaks only when fingerprint changes", ()
     "mcp_servers_changed",
   ]);
   expect(monitor.observe("t1", fingerprint("profile-a", ["github", "mongo"]))).toEqual([]);
+  expect(
+    monitor.observe("t1", fingerprint("profile-a", ["github", "mongo"], "digest-a", '["p1","m1","xhigh"]')),
+  ).toEqual(["main_agent_model_changed"]);
 });
 
 test("ThreadPromptCacheMonitor clearThread resets baseline", () => {

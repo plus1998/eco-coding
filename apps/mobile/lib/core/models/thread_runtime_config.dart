@@ -113,6 +113,7 @@ ThreadRuntimeConfig buildRuntimeConfigForProfile({
             existing: runtimeConfig.mcpServersEnabled,
             remembered: remembered,
           ),
+    mainAgentModelOverride: null,
     sessionMode: runtimeConfig.sessionMode,
     bashReviewMode: runtimeConfig.bashReviewMode,
   );

@@ -1,7 +1,6 @@
+import type { McpSettingsSnapshot } from "./mcp";
 import type { ThreadRunToolMetadata } from "./thread-run-events";
 import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
-import type { McpServersEnabledSettings } from "./composer-mcp";
-import type { McpSettingsSnapshot } from "./mcp";
 
 export const IPC_CHANNELS = {
   appSetThemeSource: "app:set-theme-source",
@@ -601,8 +600,7 @@ export type {
   OrchestrationStrategy,
   ToolPolicy,
 } from "./agent-orchestration";
-export type { UpstreamApiCompat };
-export type { ProviderTokenCountMode };
+export type { ProviderTokenCountMode, UpstreamApiCompat };
 
 export interface ProviderConfigInput {
   id?: string;
@@ -728,6 +726,12 @@ export {
   deriveMcpServersEnabled,
   listEnabledGlobalMcpServerKeys,
 } from "./composer-mcp";
+export type {
+  MainAgentModelOverride,
+  McpServersEnabledSettings,
+  ThreadRuntimeConfig,
+  ThreadRuntimeConfigInput,
+} from "./thread-runtime-config";
 export {
   buildThreadRuntimeConfigFromDefaults,
   deriveSubagentEnabledFromProfile,
@@ -739,13 +743,13 @@ export {
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
+  resolveMainAgentModelOverrideForProvider,
   resolveSessionMode,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
   withAgentSessionMode,
 } from "./thread-runtime-config";
-export type { McpServersEnabledSettings, ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 
 export interface PromptImageAttachment {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";

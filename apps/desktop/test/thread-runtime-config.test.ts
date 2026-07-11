@@ -21,7 +21,6 @@ import {
   runtimeRoleRoutesFromAgentProfile,
   serializeThreadRuntimeConfig,
   withAgentSessionMode,
-  withAgentSessionMode,
 } from "../src/shared/thread-runtime-config";
 
 const threadSubagentEnabled: SubagentEnabledSettings = {
@@ -257,6 +256,123 @@ test("serialize and parse thread runtime config round-trip", () => {
   expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
 });
 
+test("thread runtime config preserves and normalizes a main-agent model override", () => {
+  const config = {
+    ...buildThreadRuntimeConfigFromDefaults({
+      settings: agentSettings,
+      workflowDefaults: { sessionMode: "agent" },
+    }),
+    mainAgentModelOverride: {
+      providerId: " provider-alt ",
+      modelId: " gpt-5.6-sol ",
+      candidateModelId: " candidate-sol ",
+      thinkingEffort: "high" as const,
+    },
+  };
+
+  const normalized = normalizeThreadRuntimeConfig(config);
+  expect(normalized.mainAgentModelOverride).toEqual({
+    providerId: "provider-alt",
+    modelId: "gpt-5.6-sol",
+    candidateModelId: "candidate-sol",
+    thinkingEffort: "high",
+  });
+  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(normalized);
+});
+
+test("thread runtime config accepts a main-agent model override without thinking effort", () => {
+  const config = {
+    ...buildThreadRuntimeConfigFromDefaults({
+      settings: agentSettings,
+      workflowDefaults: { sessionMode: "agent" },
+    }),
+    mainAgentModelOverride: {
+      providerId: " p1 ",
+      modelId: " gpt-5.6-sol ",
+    },
+  };
+
+  expect(isThreadRuntimeConfig(config)).toBe(true);
+  expect(normalizeThreadRuntimeConfig(config).mainAgentModelOverride).toEqual({
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+  });
+  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(
+    normalizeThreadRuntimeConfig(config),
+  );
+});
+
+test("thread runtime config rejects malformed main-agent model overrides", () => {
+  const base = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { sessionMode: "agent" },
+  });
+  expect(
+    isThreadRuntimeConfig({ ...base, mainAgentModelOverride: { modelId: "m2", thinkingEffort: "high" } }),
+  ).toBe(false);
+  expect(
+    isThreadRuntimeConfig({
+      ...base,
+      mainAgentModelOverride: { providerId: "p1", modelId: "m2", thinkingEffort: "ultra" },
+    }),
+  ).toBe(false);
+  expect(
+    parseThreadRuntimeConfigJson(
+      JSON.stringify({
+        ...base,
+        mainAgentModelOverride: { providerId: "p1", modelId: "m2", thinkingEffort: "ultra" },
+      }),
+    ),
+  ).toBeUndefined();
+});
+
+test("runtime profile routes replace only the main agent with the temporary model", () => {
+  const originalPlanner = profileA.mainAgent.modelRef;
+  const routes = runtimeRoleRoutesFromAgentProfile(profileA, {
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+    candidateModelId: "candidate-sol",
+    thinkingEffort: "high",
+  });
+
+  expect(routes.find((route) => route.role === "planner")).toEqual({
+    role: "planner",
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+    candidateModelId: "candidate-sol",
+    thinkingEffort: "high",
+  });
+  expect(routes.find((route) => route.role === "explore")?.modelId).toBe("m1");
+  expect(profileA.mainAgent.modelRef).toEqual(originalPlanner);
+});
+
+test("runtime profile routes do not add thinking effort when the override omits it", () => {
+  const routes = runtimeRoleRoutesFromAgentProfile(profileA, {
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+  });
+
+  expect(routes.find((route) => route.role === "planner")).toEqual({
+    role: "planner",
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+  });
+});
+
+test("runtime profile routes ignore a main-agent override from another provider", () => {
+  const routes = runtimeRoleRoutesFromAgentProfile(profileA, {
+    providerId: "provider-alt",
+    modelId: "gpt-5.6-sol",
+    thinkingEffort: "high",
+  });
+
+  expect(routes.find((route) => route.role === "planner")).toEqual({
+    role: "planner",
+    providerId: "p1",
+    modelId: "m1",
+  });
+});
+
 test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads with sessionMode", () => {
   expect(
     parseThreadRuntimeConfigJson(
@@ -331,16 +447,22 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
     sessionMode: "plan" as const,
     bashReviewMode: "always" as const,
   };
-  expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" }),
-  ).toBe(true);
-  expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, sessionMode: "agent" }),
-  ).toBe(false);
+  expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" })).toBe(true);
+  expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, sessionMode: "agent" })).toBe(false);
   expect(
     isBashReviewModeOnlyRuntimeConfigUpdate(base, {
       ...base,
       subagentEnabled: { ...threadSubagentEnabled, coder: false },
+    }),
+  ).toBe(false);
+  expect(
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
+      ...base,
+      mainAgentModelOverride: {
+        providerId: "p2",
+        modelId: "gpt-5.6-sol",
+        thinkingEffort: "high",
+      },
     }),
   ).toBe(false);
 });

@@ -19,13 +19,14 @@ test("resolveActivityWorkspaceLayoutMode retains modes inside resize hysteresis"
   expect(resolveActivityWorkspaceLayoutMode(830, "feed-nav")).toBe("feed-nav");
 });
 
-test("workspace panel docks only when feed and panel fit together", () => {
+test("workspace panel docks only when feed and panel need dedicated space", () => {
   expect(workspacePanelLayoutForMode("feed-only")).toBe("floating");
   expect(workspacePanelLayoutForMode("feed-nav")).toBe("floating");
   expect(workspacePanelLayoutForMode("feed-panel")).toBe("docked");
-  expect(workspacePanelLayoutForMode("full")).toBe("docked");
+  expect(workspacePanelLayoutForMode("full")).toBe("floating");
   expect(shouldAutoOpenWorkspacePanel("feed-nav")).toBe(false);
   expect(shouldAutoOpenWorkspacePanel("feed-panel")).toBe(true);
+  expect(shouldAutoOpenWorkspacePanel("full")).toBe(true);
 });
 
 test("message navigation needs at least three messages and a nav-capable mode", () => {

@@ -174,7 +174,9 @@ import {
 import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
+  buildMainAgentModelKey,
   diffPromptCacheRuntimeSignatures,
+  resolveMainAgentModelKey,
   resolvePromptCacheProfileLabel,
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
@@ -1153,7 +1155,9 @@ function roleRoutesForThreadConfig(
   if (!profile) {
     throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
   }
-  return resolveCandidateModelDefaults(runtimeRoleRoutesFromAgentProfile(profile));
+  return resolveCandidateModelDefaults(
+    runtimeRoleRoutesFromAgentProfile(profile, config.mainAgentModelOverride),
+  );
 }
 
 function resolveCandidateModelDefaults(routes: readonly RuntimeRoleRouteConfig[]): RuntimeRoleRouteConfig[] {
@@ -6086,6 +6090,9 @@ async function buildSdkSessionOptions(
   const profile = hydrated?.runtimeConfig
     ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
     : undefined;
+  const mainAgentModelKey = hydrated?.runtimeConfig
+    ? resolveMainAgentModelKey(settings, hydrated.runtimeConfig)
+    : buildMainAgentModelKey(undefined);
   const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
   await auditThreadPromptCacheBeforeSdkSession({
     threadId,
@@ -6094,6 +6101,7 @@ async function buildSdkSessionOptions(
       hydrated?.runtimeConfig?.agentProfileId?.trim() ||
       hydrated?.runtimeConfig?.routeProfileId?.trim() ||
       "unknown",
+    mainAgentModelKey,
     mcpServerKeys: enabledMcpServers,
     ...(workspacePath ? { workspacePath } : {}),
     includeUserClaudeMd: skillConfig.settingSources.includes("user"),
@@ -6509,6 +6517,7 @@ function formatContextCompactionMessage(
 async function auditThreadPromptCacheBeforeSdkSession(input: {
   threadId: string;
   profileId: string;
+  mainAgentModelKey: string;
   mcpServerKeys: readonly string[];
   workspacePath?: string;
   includeUserClaudeMd: boolean;
@@ -6518,6 +6527,7 @@ async function auditThreadPromptCacheBeforeSdkSession(input: {
   }
   const fingerprint = await resolveThreadPromptCacheFingerprint({
     profileId: input.profileId,
+    mainAgentModelKey: input.mainAgentModelKey,
     mcpServerKeys: input.mcpServerKeys,
     ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
     userHomeDir: os.homedir(),

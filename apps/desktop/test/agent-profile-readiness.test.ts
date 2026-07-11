@@ -70,6 +70,32 @@ test("isAgentProfileReady requires the built-in Explore model", () => {
   expect(isAgentProfileReady(draft, providers)).toBe(false);
 });
 
+test("isAgentProfileReady evaluates the temporary main model override", () => {
+  const overrideProvider = { ...provider, id: "p2", name: "Override Provider" };
+  const providers = new Map([
+    [provider.id, provider],
+    [overrideProvider.id, overrideProvider],
+  ]);
+  const draft = profile(false);
+  draft.mainAgent.modelRef = { providerId: "p1", modelId: "" };
+
+  expect(isAgentProfileReady(draft, providers)).toBe(false);
+  expect(
+    isAgentProfileReady(draft, providers, {
+      providerId: "p1",
+      modelId: "gpt-5.6-sol",
+      thinkingEffort: "high",
+    }),
+  ).toBe(true);
+  expect(
+    isAgentProfileReady(draft, providers, {
+      providerId: "p2",
+      modelId: "gpt-5.6-sol",
+      thinkingEffort: "high",
+    }),
+  ).toBe(false);
+});
+
 test("areCodingRoutesReady requires all required coding routes", () => {
   const providers = new Map([[provider.id, provider]]);
 

@@ -90,3 +90,62 @@ test("buildComposerSavedProfile preserves strategy when plan mode is off", () =>
     guidancePrompt: "Delegate only when useful.",
   });
 });
+
+test("buildComposerSavedProfile promotes the temporary main model into the saved profile", () => {
+  const saved = buildComposerSavedProfile({
+    profile: profile(),
+    runtimeConfig: runtimeConfig({
+      mainAgentModelOverride: {
+        providerId: "p1",
+        modelId: "gpt-5.6-sol",
+        candidateModelId: "candidate-sol",
+        thinkingEffort: "high",
+      },
+    }),
+    name: "Sol High",
+    existingIds: [],
+  });
+
+  expect(saved.mainAgent.modelRef).toEqual({
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+    candidateModelId: "candidate-sol",
+    thinkingEffort: "high",
+  });
+});
+
+test("buildComposerSavedProfile omits thinking effort when the override does not set it", () => {
+  const saved = buildComposerSavedProfile({
+    profile: profile(),
+    runtimeConfig: runtimeConfig({
+      mainAgentModelOverride: {
+        providerId: "p1",
+        modelId: "gpt-5.6-sol",
+      },
+    }),
+    name: "Sol Default Effort",
+    existingIds: [],
+  });
+
+  expect(saved.mainAgent.modelRef).toEqual({
+    providerId: "p1",
+    modelId: "gpt-5.6-sol",
+  });
+});
+
+test("buildComposerSavedProfile ignores an override from another provider", () => {
+  const saved = buildComposerSavedProfile({
+    profile: profile(),
+    runtimeConfig: runtimeConfig({
+      mainAgentModelOverride: {
+        providerId: "p2",
+        modelId: "gpt-5.6-sol",
+        thinkingEffort: "high",
+      },
+    }),
+    name: "Current Backend",
+    existingIds: [],
+  });
+
+  expect(saved.mainAgent.modelRef).toEqual({ providerId: "p1", modelId: "m1" });
+});

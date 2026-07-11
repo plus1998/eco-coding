@@ -11,9 +11,7 @@ Map<String, bool> defaultSubagentAvailability() {
   return {for (final role in subagentRoles) role: true};
 }
 
-Map<String, bool> normalizeSubagentAvailability(
-  Map<String, bool>? input,
-) {
+Map<String, bool> normalizeSubagentAvailability(Map<String, bool>? input) {
   final availability = defaultSubagentAvailability();
   if (input == null) return availability;
   for (final role in subagentRoles) {
@@ -31,12 +29,66 @@ Map<String, bool> normalizeSubagentAvailability(
 typedef BashReviewMode = String;
 const bashReviewModes = ['always', 'auto', 'allow_all'];
 
+const mainAgentThinkingEfforts = {
+  'off',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+};
+
+class MainAgentModelOverride {
+  const MainAgentModelOverride({
+    required this.providerId,
+    required this.modelId,
+    this.thinkingEffort,
+    this.candidateModelId,
+  });
+
+  factory MainAgentModelOverride.fromJson(Map<String, dynamic> json) {
+    final providerId = _requiredMainAgentOverrideString(json, 'providerId');
+    final modelId = _requiredMainAgentOverrideString(json, 'modelId');
+    final thinkingEffort = json.containsKey('thinkingEffort')
+        ? _requiredMainAgentOverrideString(json, 'thinkingEffort')
+        : null;
+    if (thinkingEffort != null &&
+        !mainAgentThinkingEfforts.contains(thinkingEffort)) {
+      throw FormatException(
+        'Invalid mainAgentModelOverride.thinkingEffort: $thinkingEffort',
+      );
+    }
+    final candidateModelId = json.containsKey('candidateModelId')
+        ? _requiredMainAgentOverrideString(json, 'candidateModelId')
+        : null;
+    return MainAgentModelOverride(
+      providerId: providerId,
+      modelId: modelId,
+      thinkingEffort: thinkingEffort,
+      candidateModelId: candidateModelId,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'providerId': providerId,
+    'modelId': modelId,
+    if (thinkingEffort != null) 'thinkingEffort': thinkingEffort,
+    if (candidateModelId != null) 'candidateModelId': candidateModelId,
+  };
+
+  final String providerId;
+  final String modelId;
+  final String? thinkingEffort;
+  final String? candidateModelId;
+}
+
 class ThreadRuntimeConfig {
   const ThreadRuntimeConfig({
     required this.routeProfileId,
     this.agentProfileId,
     required this.subagentEnabled,
     this.mcpServersEnabled,
+    this.mainAgentModelOverride,
     required this.sessionMode,
     required this.bashReviewMode,
   });
@@ -57,32 +109,88 @@ class ThreadRuntimeConfig {
         rawMcp.map((key, value) => MapEntry(key.toString(), value)),
       );
     }
+    MainAgentModelOverride? mainAgentModelOverride;
+    if (json.containsKey('mainAgentModelOverride')) {
+      mainAgentModelOverride = MainAgentModelOverride.fromJson(
+        _requiredJsonObject(
+          json['mainAgentModelOverride'],
+          'mainAgentModelOverride',
+        ),
+      );
+    }
     final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
     return ThreadRuntimeConfig(
       routeProfileId: json['routeProfileId'] as String? ?? '',
       agentProfileId: json['agentProfileId'] as String?,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
       mcpServersEnabled: parsedMcp,
+      mainAgentModelOverride: mainAgentModelOverride,
       sessionMode: sessionMode,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'routeProfileId': routeProfileId,
-        if (agentProfileId != null) 'agentProfileId': agentProfileId,
-        'subagentEnabled': subagentEnabled,
-        if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
-        'sessionMode': sessionMode,
-        'bashReviewMode': bashReviewMode,
-      };
+    'routeProfileId': routeProfileId,
+    if (agentProfileId != null) 'agentProfileId': agentProfileId,
+    'subagentEnabled': subagentEnabled,
+    if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
+    if (mainAgentModelOverride != null)
+      'mainAgentModelOverride': mainAgentModelOverride!.toJson(),
+    'sessionMode': sessionMode,
+    'bashReviewMode': bashReviewMode,
+  };
+
+  ThreadRuntimeConfig copyWith({
+    String? routeProfileId,
+    String? agentProfileId,
+    Map<String, bool>? subagentEnabled,
+    Map<String, bool>? mcpServersEnabled,
+    MainAgentModelOverride? mainAgentModelOverride,
+    SessionMode? sessionMode,
+    String? bashReviewMode,
+  }) {
+    return ThreadRuntimeConfig(
+      routeProfileId: routeProfileId ?? this.routeProfileId,
+      agentProfileId: agentProfileId ?? this.agentProfileId,
+      subagentEnabled: subagentEnabled ?? this.subagentEnabled,
+      mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
+      mainAgentModelOverride:
+          mainAgentModelOverride ?? this.mainAgentModelOverride,
+      sessionMode: sessionMode ?? this.sessionMode,
+      bashReviewMode: bashReviewMode ?? this.bashReviewMode,
+    );
+  }
 
   final String routeProfileId;
   final String? agentProfileId;
   final Map<String, bool> subagentEnabled;
   final Map<String, bool>? mcpServersEnabled;
+  final MainAgentModelOverride? mainAgentModelOverride;
   final SessionMode sessionMode;
   final String bashReviewMode;
+}
+
+String _requiredMainAgentOverrideString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! String || value.trim().isEmpty) {
+    throw FormatException('Invalid mainAgentModelOverride.$key');
+  }
+  return value.trim();
+}
+
+Map<String, dynamic> _requiredJsonObject(Object? value, String field) {
+  if (value is! Map) {
+    throw FormatException('Invalid $field');
+  }
+  final result = <String, dynamic>{};
+  for (final entry in value.entries) {
+    if (entry.key is! String) {
+      throw FormatException('Invalid $field');
+    }
+    result[entry.key as String] = entry.value;
+  }
+  return result;
 }
 
 typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
@@ -109,10 +217,10 @@ class WorkflowSettingsSnapshot {
   }
 
   Map<String, dynamic> toJson() => {
-        'sessionMode': sessionMode,
-        'planModelEnabled': sessionMode == 'plan',
-        if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
-      };
+    'sessionMode': sessionMode,
+    'planModelEnabled': sessionMode == 'plan',
+    if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
+  };
 
   final SessionMode sessionMode;
   final Map<String, bool>? mcpServersEnabled;
@@ -143,20 +251,20 @@ class ThreadSummary {
   });
 
   factory ThreadSummary.fromJson(Map<String, dynamic> json) => ThreadSummary(
-        id: json['id'] as String? ?? '',
-        title: json['title'] as String? ?? '',
-        prompt: json['prompt'] as String? ?? '',
-        workspacePath: json['workspacePath'] as String? ?? '',
-        status: json['status'] as String? ?? 'idle',
-        createdAt: json['createdAt'] as String? ?? '',
-        updatedAt: json['updatedAt'] as String? ?? '',
-        message: json['message'] as String? ?? '',
-        runtimeConfig: json['runtimeConfig'] != null
-            ? ThreadRuntimeConfig.fromJson(
-                json['runtimeConfig'] as Map<String, dynamic>,
-              )
-            : null,
-      );
+    id: json['id'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    prompt: json['prompt'] as String? ?? '',
+    workspacePath: json['workspacePath'] as String? ?? '',
+    status: json['status'] as String? ?? 'idle',
+    createdAt: json['createdAt'] as String? ?? '',
+    updatedAt: json['updatedAt'] as String? ?? '',
+    message: json['message'] as String? ?? '',
+    runtimeConfig: json['runtimeConfig'] != null
+        ? ThreadRuntimeConfig.fromJson(
+            json['runtimeConfig'] as Map<String, dynamic>,
+          )
+        : null,
+  );
 
   ThreadSummary copyWith({
     String? title,
@@ -204,14 +312,14 @@ class CoderTodoItem {
   });
 
   factory CoderTodoItem.fromJson(Map<String, dynamic> json) => CoderTodoItem(
-        id: json['id'] as String? ?? '',
-        threadId: json['threadId'] as String? ?? '',
-        title: json['title'] as String? ?? '',
-        detail: json['detail'] as String? ?? '',
-        status: json['status'] as String? ?? 'pending',
-        position: (json['position'] as num?)?.toInt() ?? 0,
-        updatedAt: json['updatedAt'] as String? ?? '',
-      );
+    id: json['id'] as String? ?? '',
+    threadId: json['threadId'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    detail: json['detail'] as String? ?? '',
+    status: json['status'] as String? ?? 'pending',
+    position: (json['position'] as num?)?.toInt() ?? 0,
+    updatedAt: json['updatedAt'] as String? ?? '',
+  );
 
   final String id;
   final String threadId;
@@ -333,9 +441,11 @@ class ClarificationQuestion {
         question: json['question'] as String? ?? '',
         header: json['header'] as String?,
         options: (json['options'] as List<dynamic>? ?? [])
-            .map((e) => ClarificationQuestionOption.fromJson(
-                  e as Map<String, dynamic>,
-                ))
+            .map(
+              (e) => ClarificationQuestionOption.fromJson(
+                e as Map<String, dynamic>,
+              ),
+            )
             .toList(),
         multiSelect: json['multiSelect'] as bool?,
       );
@@ -358,9 +468,9 @@ class ClarificationRequest {
         toolUseId: json['toolUseId'] as String? ?? '',
         threadId: json['threadId'] as String? ?? '',
         questions: (json['questions'] as List<dynamic>? ?? [])
-            .map((e) => ClarificationQuestion.fromJson(
-                  e as Map<String, dynamic>,
-                ))
+            .map(
+              (e) => ClarificationQuestion.fromJson(e as Map<String, dynamic>),
+            )
             .toList(),
       );
 
@@ -461,9 +571,8 @@ class ThreadSessionBootstrapResult {
           : null,
       followUps: followUpsRaw
           .map(
-            (entry) => ThreadPendingFollowUp.fromJson(
-              entry as Map<String, dynamic>,
-            ),
+            (entry) =>
+                ThreadPendingFollowUp.fromJson(entry as Map<String, dynamic>),
           )
           .toList(),
       pendingPlan: json['pendingPlan'] is Map<String, dynamic>
@@ -528,69 +637,69 @@ class ThreadLiveEvent {
     final projectionRaw = json['projection'];
     final sessionsRaw = json['subagentSessions'];
     return ThreadLiveEvent(
-        threadId: json['threadId'] as String? ?? '',
-        type: json['type'] as String? ?? '',
-        message: json['message'] as String? ?? '',
-        role: json['role'] as String?,
-        stream: json['stream'] as bool?,
-        activityLine: json['activityLine'] != null
-            ? ThreadActivityLine.fromJson(
-                json['activityLine'] as Map<String, dynamic>,
-              )
-            : null,
-        plan: json['plan'] != null
-            ? ThreadPendingPlan.fromJson({
-                ...json['plan'] as Map<String, dynamic>,
-                'threadId': json['threadId'],
-              })
-            : null,
-        clarification: json['clarification'] != null
-            ? ClarificationRequest.fromJson(
-                json['clarification'] as Map<String, dynamic>,
-              )
-            : null,
-        bashApproval: json['bashApproval'] != null
-            ? BashApprovalRequest.fromJson(
-                json['bashApproval'] as Map<String, dynamic>,
-              )
-            : null,
-        followUp: json['followUp'] != null
-            ? ThreadPendingFollowUp.fromJson(
-                json['followUp'] as Map<String, dynamic>,
-              )
-            : null,
-        runtimeConfig: json['runtimeConfig'] != null
-            ? ThreadRuntimeConfig.fromJson(
-                json['runtimeConfig'] as Map<String, dynamic>,
-              )
-            : null,
-        projection: projectionRaw is Map<String, dynamic>
-            ? ThreadRunProjectionSnapshot.fromJson(projectionRaw)
-            : null,
-        subagentSessions: sessionsRaw is List
-            ? sessionsRaw
+      threadId: json['threadId'] as String? ?? '',
+      type: json['type'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      role: json['role'] as String?,
+      stream: json['stream'] as bool?,
+      activityLine: json['activityLine'] != null
+          ? ThreadActivityLine.fromJson(
+              json['activityLine'] as Map<String, dynamic>,
+            )
+          : null,
+      plan: json['plan'] != null
+          ? ThreadPendingPlan.fromJson({
+              ...json['plan'] as Map<String, dynamic>,
+              'threadId': json['threadId'],
+            })
+          : null,
+      clarification: json['clarification'] != null
+          ? ClarificationRequest.fromJson(
+              json['clarification'] as Map<String, dynamic>,
+            )
+          : null,
+      bashApproval: json['bashApproval'] != null
+          ? BashApprovalRequest.fromJson(
+              json['bashApproval'] as Map<String, dynamic>,
+            )
+          : null,
+      followUp: json['followUp'] != null
+          ? ThreadPendingFollowUp.fromJson(
+              json['followUp'] as Map<String, dynamic>,
+            )
+          : null,
+      runtimeConfig: json['runtimeConfig'] != null
+          ? ThreadRuntimeConfig.fromJson(
+              json['runtimeConfig'] as Map<String, dynamic>,
+            )
+          : null,
+      projection: projectionRaw is Map<String, dynamic>
+          ? ThreadRunProjectionSnapshot.fromJson(projectionRaw)
+          : null,
+      subagentSessions: sessionsRaw is List
+          ? sessionsRaw
                 .map(
                   (entry) => ThreadSubagentSessionTiming.fromJson(
                     entry as Map<String, dynamic>,
                   ),
                 )
                 .toList()
-            : null,
-        billing: json['billing'] is Map<String, dynamic>
-            ? ThreadBillingSnapshot.fromJson(
-                json['billing'] as Map<String, dynamic>,
-              )
-            : null,
-        contextSnapshot: json['context'] is Map<String, dynamic>
-            ? ThreadContextSnapshot.fromJson(
-                json['context'] as Map<String, dynamic>,
-              )
-            : null,
-        title: json['title'] as String?,
-        tool: json['tool'] is Map<String, dynamic>
-            ? threadRunToolMetadataFromJson(json['tool'] as Map<String, dynamic>)
-            : null,
-      );
+          : null,
+      billing: json['billing'] is Map<String, dynamic>
+          ? ThreadBillingSnapshot.fromJson(
+              json['billing'] as Map<String, dynamic>,
+            )
+          : null,
+      contextSnapshot: json['context'] is Map<String, dynamic>
+          ? ThreadContextSnapshot.fromJson(
+              json['context'] as Map<String, dynamic>,
+            )
+          : null,
+      title: json['title'] as String?,
+      tool: json['tool'] is Map<String, dynamic>
+          ? threadRunToolMetadataFromJson(json['tool'] as Map<String, dynamic>)
+          : null,
+    );
   }
 
   final String threadId;
@@ -622,12 +731,12 @@ class WorkspaceInfo {
   });
 
   factory WorkspaceInfo.fromJson(Map<String, dynamic> json) => WorkspaceInfo(
-        path: json['path'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        isGitRepository: json['isGitRepository'] as bool? ?? false,
-        branch: json['branch'] as String?,
-        dirtyFileCount: (json['dirtyFileCount'] as num?)?.toInt() ?? 0,
-      );
+    path: json['path'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    isGitRepository: json['isGitRepository'] as bool? ?? false,
+    branch: json['branch'] as String?,
+    dirtyFileCount: (json['dirtyFileCount'] as num?)?.toInt() ?? 0,
+  );
 
   final String path;
   final String name;
@@ -743,14 +852,12 @@ class ModelSettingsSnapshot {
     return ModelSettingsSnapshot(
       orchestrationProfiles:
           (json['orchestrationProfiles'] as List<dynamic>? ?? [])
-              .map((e) => OrchestrationProfile.fromJson(
-                    e as Map<String, dynamic>,
-                  ))
+              .map(
+                (e) => OrchestrationProfile.fromJson(e as Map<String, dynamic>),
+              )
               .toList(),
       routeProfiles: (json['routeProfiles'] as List<dynamic>? ?? [])
-          .map((e) => RouteProfileSummary.fromJson(
-                e as Map<String, dynamic>,
-              ))
+          .map((e) => RouteProfileSummary.fromJson(e as Map<String, dynamic>))
           .toList(),
       mcpSettings: rawMcpSettings is Map<String, dynamic>
           ? McpSettingsSnapshot.fromJson(rawMcpSettings)

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/constants/session_mode.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
@@ -117,6 +116,7 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                         routeProfileId: value,
                         agentProfileId: value,
                         subagentEnabled: runtimeConfig.subagentEnabled,
+                        mainAgentModelOverride: null,
                         sessionMode: runtimeConfig.sessionMode,
                         bashReviewMode: runtimeConfig.bashReviewMode,
                       ),
@@ -139,25 +139,5 @@ class _ComposerSettingsSheet extends ConsumerWidget {
           threadId: threadId,
           runtimeConfig: config,
         );
-  }
-}
-
-extension on ThreadRuntimeConfig {
-  ThreadRuntimeConfig copyWith({
-    String? routeProfileId,
-    String? agentProfileId,
-    Map<String, bool>? subagentEnabled,
-    Map<String, bool>? mcpServersEnabled,
-    SessionMode? sessionMode,
-    String? bashReviewMode,
-  }) {
-    return ThreadRuntimeConfig(
-      routeProfileId: routeProfileId ?? this.routeProfileId,
-      agentProfileId: agentProfileId ?? this.agentProfileId,
-      subagentEnabled: subagentEnabled ?? this.subagentEnabled,
-      mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
-      sessionMode: sessionMode ?? this.sessionMode,
-      bashReviewMode: bashReviewMode ?? this.bashReviewMode,
-    );
   }
 }

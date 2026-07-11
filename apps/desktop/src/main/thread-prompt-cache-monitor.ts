@@ -30,6 +30,7 @@ export class ThreadPromptCacheMonitor {
 
 export async function resolveThreadPromptCacheFingerprint(input: {
   profileId: string;
+  mainAgentModelKey: string;
   mcpServerKeys: readonly string[];
   workspacePath?: string;
   userHomeDir: string;
@@ -47,6 +48,7 @@ export async function resolveThreadPromptCacheFingerprint(input: {
   });
   return buildPromptCacheFingerprint({
     profileId: input.profileId,
+    mainAgentModelKey: input.mainAgentModelKey,
     mcpServerKeys: input.mcpServerKeys,
     claudeMdDigest,
   });

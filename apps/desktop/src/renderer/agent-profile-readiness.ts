@@ -1,5 +1,11 @@
+import type {
+  MainAgentModelOverride,
+  ModelSettingsSnapshot,
+  OrchestrationProfile,
+  RuntimeRoleRouteConfig,
+} from "../shared/ipc";
 import { AGENT_ROLES } from "../shared/ipc";
-import type { ModelSettingsSnapshot, OrchestrationProfile, RuntimeRoleRouteConfig } from "../shared/ipc";
+import { resolveMainAgentModelOverrideForProvider } from "../shared/thread-runtime-config";
 
 type ProviderView = ModelSettingsSnapshot["providers"][number];
 
@@ -14,9 +20,13 @@ export function isModelRefReady(
 export function isAgentProfileReady(
   profile: OrchestrationProfile,
   providersById: ReadonlyMap<string, ProviderView>,
+  mainAgentModelOverride?: MainAgentModelOverride,
 ): boolean {
+  const effectiveMainModel =
+    resolveMainAgentModelOverrideForProvider(profile.mainAgent.modelRef.providerId, mainAgentModelOverride) ??
+    profile.mainAgent.modelRef;
   return (
-    isModelRefReady(profile.mainAgent.modelRef, providersById) &&
+    isModelRefReady(effectiveMainModel, providersById) &&
     isModelRefReady(profile.builtinAgents.explore.modelRef, providersById) &&
     profile.agents
       .filter((agent) => agent.enabled)

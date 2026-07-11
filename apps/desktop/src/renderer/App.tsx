@@ -52,8 +52,8 @@ import {
 import {
   buildThreadRuntimeConfigFromDefaults,
   type BackgroundTerminalTask,
-  normalizeThreadRuntimeConfig,
   type BashApprovalRequest,
+  type CandidateModelView,
   type ClarificationRequest,
   type CoderTodoItem,
   deriveSubagentEnabledFromProfile,
@@ -64,6 +64,7 @@ import {
   type McpServerCheckResult,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
+  type MainAgentModelOverride,
   type ModelSettingsSnapshot,
   type OrchestrationProfile,
   type GitSettingsSnapshot,
@@ -73,6 +74,7 @@ import {
   type RouteCapabilityHint,
   type RoutePricingHint,
   resolveThreadAgentProfile,
+  resolveMainAgentModelOverrideForProvider,
   runtimeRoleRoutesFromAgentProfile,
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
@@ -126,6 +128,11 @@ import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerMcpServers } from "./ComposerMcpServers";
+import {
+  buildComposerModelOptions,
+  ComposerModelSelector,
+  type ComposerModelOption,
+} from "./ComposerModelSelector";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
@@ -828,6 +835,10 @@ function App() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
+  const [composerCandidateModels, setComposerCandidateModels] = useState<CandidateModelView[]>([]);
+  const [composerModelsLoading, setComposerModelsLoading] = useState(false);
+  const [composerModelsError, setComposerModelsError] = useState<string>();
+  const [composerModelsRefreshNonce, setComposerModelsRefreshNonce] = useState(0);
   const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
   const [gitStatusLoading, setGitStatusLoading] = useState(false);
@@ -2252,9 +2263,88 @@ function App() {
     settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
   ]);
+  const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
+    if (!selectedRuntimeProfile) {
+      return undefined;
+    }
+    const route = runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile).find(
+      (candidate) => candidate.role === "planner",
+    );
+    if (!route) {
+      return undefined;
+    }
+    const provider = settings.providers.find((candidate) => candidate.id === route.providerId);
+    return {
+      providerId: route.providerId,
+      providerName: provider?.name.trim() || route.providerId,
+      modelId: route.modelId,
+      ...(route.candidateModelId ? { candidateModelId: route.candidateModelId } : {}),
+      ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
+    };
+  }, [selectedRuntimeProfile, settings.providers]);
+  const composerModelProvider = templateMainModel
+    ? settings.providers.find((provider) => provider.id === templateMainModel.providerId)
+    : undefined;
+  const composerModelProviderId = composerModelProvider?.enabled ? composerModelProvider.id : undefined;
+  const composerMainAgentModelOverride = resolveMainAgentModelOverrideForProvider(
+    templateMainModel?.providerId,
+    composerRuntimeConfig?.mainAgentModelOverride,
+  );
+  const refreshComposerCandidateModels = useCallback(() => {
+    setComposerModelsRefreshNonce((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    const eco = window.eco;
+    if (!eco || !composerModelProviderId) {
+      setComposerCandidateModels([]);
+      setComposerModelsError(undefined);
+      setComposerModelsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setComposerModelsError(undefined);
+    setComposerModelsLoading(true);
+    void eco
+      .listCandidateModels(composerModelProviderId)
+      .then((candidates) => {
+        if (!cancelled) {
+          setComposerCandidateModels(candidates);
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setComposerCandidateModels([]);
+          setComposerModelsError(`候选模型加载失败：${errorMessage(caught)}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setComposerModelsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [composerModelProviderId, composerModelsRefreshNonce]);
+
+  const composerModelOptions = useMemo<ComposerModelOption[]>(() => {
+    return templateMainModel
+      ? buildComposerModelOptions({
+          provider: composerModelProvider,
+          candidates: composerCandidateModels,
+          templateModel: templateMainModel,
+        })
+      : [];
+  }, [composerCandidateModels, composerModelProvider, templateMainModel]);
   const activeRoutes = useMemo(() => {
-    return selectedRuntimeProfile ? runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
-  }, [selectedRuntimeProfile]);
+    return selectedRuntimeProfile
+      ? runtimeRoleRoutesFromAgentProfile(
+          selectedRuntimeProfile,
+          composerMainAgentModelOverride,
+        )
+      : [];
+  }, [composerMainAgentModelOverride, selectedRuntimeProfile]);
 
   useEffect(() => {
     if (!window.eco || activeRoutes.length === 0) {
@@ -2277,7 +2367,11 @@ function App() {
     [settings.providers],
   );
   const routesReady = selectedRuntimeProfile
-    ? isAgentProfileReady(selectedRuntimeProfile, providerById) &&
+    ? isAgentProfileReady(
+        selectedRuntimeProfile,
+        providerById,
+        composerMainAgentModelOverride,
+      ) &&
       (selectedRuntimeProfile.preset !== "coding" || areCodingRoutesReady(activeRoutes, providerById))
     : areCodingRoutesReady(activeRoutes, providerById);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
@@ -3925,8 +4019,10 @@ function App() {
     const profile = findOrchestrationProfileBySelectionId(settings, profileId);
     const agentProfileId = profile?.id ?? profileId;
     const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
+    const { mainAgentModelOverride: _previousMainAgentOverride, ...baseRuntimeConfig } =
+      composerRuntimeConfig;
     const next: ThreadRuntimeConfig = {
-      ...composerRuntimeConfig,
+      ...baseRuntimeConfig,
       routeProfileId: agentProfileId,
       agentProfileId,
       ...(profile
@@ -3954,6 +4050,25 @@ function App() {
     setComposerRoutePopoverOpen(false);
   }
 
+  async function selectComposerMainAgentModel(override: MainAgentModelOverride | undefined) {
+    if (!composerRuntimeConfig || !canEditComposerConfig) {
+      return;
+    }
+    if (
+      override &&
+      !resolveMainAgentModelOverrideForProvider(templateMainModel?.providerId, override)
+    ) {
+      setError("只能选择当前配置后端的模型。");
+      return;
+    }
+    const { mainAgentModelOverride: _currentOverride, ...baseRuntimeConfig } = composerRuntimeConfig;
+    const next: ThreadRuntimeConfig = {
+      ...baseRuntimeConfig,
+      ...(override ? { mainAgentModelOverride: override } : {}),
+    };
+    await persistComposerRuntimeConfig(next);
+  }
+
   async function saveComposerSelectionAsProfile() {
     if (!window.eco?.saveOrchestrationProfile || !window.eco?.getModelSettings) {
       setError("智能体配置保存接口不可用。");
@@ -3979,8 +4094,9 @@ function App() {
       const saved = await window.eco.saveOrchestrationProfile(profile);
       const nextSettings = await window.eco.getModelSettings();
       setSettings(nextSettings);
+      const { mainAgentModelOverride: _savedMainAgentOverride, ...baseRuntimeConfig } = composerRuntimeConfig;
       const nextRuntimeConfig: ThreadRuntimeConfig = {
-        ...composerRuntimeConfig,
+        ...baseRuntimeConfig,
         agentProfileId: saved.id,
         routeProfileId: saved.id,
       };
@@ -4954,6 +5070,19 @@ function App() {
     />
   );
 
+  const composerModelControl = templateMainModel ? (
+    <ComposerModelSelector
+      options={composerModelOptions}
+      templateModel={templateMainModel}
+      value={composerMainAgentModelOverride}
+      disabled={!canEditComposerConfig || isSavingSettings}
+      loading={composerModelsLoading}
+      error={composerModelsError}
+      onOpen={refreshComposerCandidateModels}
+      onChange={(override) => void selectComposerMainAgentModel(override)}
+    />
+  ) : null;
+
   const composer = (
     <div className="codex-composer-wrap">
       {displayedQueuedFollowUps.length > 0 ? (
@@ -5134,6 +5263,7 @@ function App() {
                     agentThemes={activeRuntimeAgentThemes}
                   />
                 ) : null}
+                {composerModelControl}
                 <button
                   type="button"
                   className={composerActionClassName}

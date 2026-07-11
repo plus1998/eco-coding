@@ -3,14 +3,17 @@ import { AGENT_ROLES, type RuntimeRoleRouteConfig } from "./ipc";
 /** Stable fingerprint for comparing route profiles across provider switches. */
 export function computeRouteFingerprint(routes: readonly RuntimeRoleRouteConfig[]): string {
   const byRole = new Map(routes.map((route) => [route.role, route]));
-  return orderedRuntimeRouteRoles(routes).map((role) => {
-    const route = byRole.get(role);
-    if (!route) {
-      return `${role}:`;
-    }
-    const compat = route.apiCompat ?? "";
-    return `${role}:${route.providerId}:${route.modelId.trim()}:${compat}`;
-  }).join("|");
+  return orderedRuntimeRouteRoles(routes)
+    .map((role) => {
+      const route = byRole.get(role);
+      if (!route) {
+        return `${role}:`;
+      }
+      const compat = route.apiCompat ?? "";
+      const thinkingEffort = route.thinkingEffort ?? "";
+      return `${role}:${route.providerId}:${route.modelId.trim()}:${compat}:${thinkingEffort}`;
+    })
+    .join("|");
 }
 
 export function routesMatchFingerprint(

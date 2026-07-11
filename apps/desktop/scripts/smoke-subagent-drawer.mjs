@@ -4,6 +4,7 @@ const cdpUrl = process.env.ECO_CDP_URL ?? "http://127.0.0.1:9222";
 const marker = process.env.ECO_SMOKE_MARKER ?? `ECO_SUBAGENT_DRAWER_${Date.now()}`;
 const timeoutMs = Number.parseInt(process.env.ECO_SMOKE_TIMEOUT_MS ?? "90000", 10);
 const connectOnly = process.argv.includes("--connect-only") || process.env.ECO_SMOKE_CONNECT_ONLY === "1";
+const workspaceLayoutOnly = process.argv.includes("--workspace-layout-only");
 const prompt =
   process.env.ECO_SMOKE_PROMPT ??
   [
@@ -20,6 +21,13 @@ if (connectOnly) {
   console.log(
     `[smoke-subagent-drawer] connected title=${JSON.stringify(await page.title())} url=${page.url()}`,
   );
+  process.exit(0);
+}
+
+if (workspaceLayoutOnly) {
+  await page.locator(".codex-feed-stack").waitFor({ state: "visible", timeout: 10_000 });
+  await expectResponsiveWorkspaceModes(page);
+  console.log("[smoke-subagent-drawer] workspace layout ok");
   process.exit(0);
 }
 
@@ -310,10 +318,10 @@ async function expectMainFeedLayoutRestored(page) {
 async function expectResponsiveWorkspaceModes(page) {
   const originalViewport = page.viewportSize() ?? { width: 1440, height: 900 };
   const scenarios = [
-    { width: 1800, mode: "is-full", panelOpen: true },
-    { width: 1450, mode: "is-feed-panel", panelOpen: true },
-    { width: 1150, mode: "is-feed-nav", panelOpen: false },
-    { width: 1000, mode: "is-feed-only", panelOpen: false },
+    { width: 1800, mode: "is-full", panelOpen: true, panelDocked: false },
+    { width: 1450, mode: "is-feed-panel", panelOpen: true, panelDocked: true },
+    { width: 1150, mode: "is-feed-nav", panelOpen: false, panelDocked: false },
+    { width: 1000, mode: "is-feed-only", panelOpen: false, panelDocked: false },
   ];
   try {
     for (const [index, scenario] of scenarios.entries()) {
@@ -325,10 +333,16 @@ async function expectResponsiveWorkspaceModes(page) {
         { timeout: 10_000 },
       );
       await expectWorkspacePanelOpen(page, scenario.panelOpen);
+      await expectWorkspacePanelLayout(page, scenario.panelDocked);
 
       if (index === 0) {
+        const openFeedRect = await expectFloatingWorkspacePanelClearOfFeed(page);
         await page.locator('.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]').click();
         await expectWorkspacePanelOpen(page, false);
+        await expectFeedRect(page, openFeedRect);
+      }
+      if (index === 1) {
+        await expectDockedWorkspacePanelReservesFeed(page);
       }
       if (index === 2) {
         await page.locator('.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]').click();
@@ -338,6 +352,114 @@ async function expectResponsiveWorkspaceModes(page) {
   } finally {
     await page.setViewportSize(originalViewport);
   }
+}
+
+async function expectWorkspacePanelLayout(page, expectedDocked) {
+  await page.waitForFunction(
+    (docked) => {
+      const shell = document.querySelector(".activity-workspace-shell");
+      const scroll = document.querySelector(".codex-main-scroll");
+      const panel = document.querySelector("#workspace-cards-panel");
+      return (
+        shell instanceof HTMLElement &&
+        scroll instanceof HTMLElement &&
+        panel instanceof HTMLElement &&
+        shell.classList.contains("has-docked-workspace-cards") === docked &&
+        scroll.classList.contains("is-workspace-cards-docked") === docked &&
+        panel.classList.contains("is-docked") === docked
+      );
+    },
+    expectedDocked,
+    { timeout: 10_000 },
+  );
+}
+
+async function expectFloatingWorkspacePanelClearOfFeed(page) {
+  await page.waitForFunction(
+    () => {
+      const feed = document.querySelector(".codex-feed-stack");
+      const panel = document.querySelector("#workspace-cards-panel");
+      if (!(feed instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+        return false;
+      }
+      const panelTransform = new DOMMatrixReadOnly(window.getComputedStyle(panel).transform);
+      if (Math.abs(panelTransform.m41) > 0.5) {
+        return false;
+      }
+      const feedRect = feed.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      if (panelRect.left - feedRect.right < 8) {
+        return false;
+      }
+      return true;
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
+  return await page.locator(".codex-feed-stack").evaluate((feed) => {
+    const rect = feed.getBoundingClientRect();
+    return { left: rect.left, width: rect.width };
+  });
+}
+
+async function expectDockedWorkspacePanelReservesFeed(page) {
+  const openGeometry = await page.evaluate(() => {
+    const feed = document.querySelector(".codex-feed-stack");
+    const panel = document.querySelector("#workspace-cards-panel");
+    const scrollBody = document.querySelector(".codex-main-scroll-body");
+    if (
+      !(feed instanceof HTMLElement) ||
+      !(panel instanceof HTMLElement) ||
+      !(scrollBody instanceof HTMLElement)
+    ) {
+      return null;
+    }
+    const feedRect = feed.getBoundingClientRect();
+    return {
+      feedLeft: feedRect.left,
+      feedWidth: feedRect.width,
+      panelWidth: panel.getBoundingClientRect().width,
+      paddingRight: Number.parseFloat(window.getComputedStyle(scrollBody).paddingRight),
+    };
+  });
+  if (!openGeometry) {
+    throw new Error("Expected docked workspace panel geometry to be measurable.");
+  }
+
+  await page.locator('.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]').click();
+  await expectWorkspacePanelOpen(page, false);
+  await page.waitForFunction(
+    (open) => {
+      const feed = document.querySelector(".codex-feed-stack");
+      const scrollBody = document.querySelector(".codex-main-scroll-body");
+      if (!(feed instanceof HTMLElement) || !(scrollBody instanceof HTMLElement)) {
+        return false;
+      }
+      const feedRect = feed.getBoundingClientRect();
+      const paddingRight = Number.parseFloat(window.getComputedStyle(scrollBody).paddingRight);
+      return (
+        open.paddingRight - paddingRight >= open.panelWidth * 0.75 &&
+        (Math.abs(feedRect.left - open.feedLeft) > 2 || Math.abs(feedRect.width - open.feedWidth) > 2)
+      );
+    },
+    openGeometry,
+    { timeout: 10_000 },
+  );
+}
+
+async function expectFeedRect(page, expectedRect) {
+  await page.waitForFunction(
+    (expected) => {
+      const feed = document.querySelector(".codex-feed-stack");
+      if (!(feed instanceof HTMLElement)) {
+        return false;
+      }
+      const rect = feed.getBoundingClientRect();
+      return Math.abs(rect.left - expected.left) <= 1 && Math.abs(rect.width - expected.width) <= 1;
+    },
+    expectedRect,
+    { timeout: 10_000 },
+  );
 }
 
 async function expectWorkspacePanelOpen(page, expectedOpen) {
