@@ -4,7 +4,7 @@ export type WorkspacePanelLayoutMode = "floating" | "docked";
 
 export const ACTIVITY_WORKSPACE_LAYOUT_THRESHOLDS = {
   feedNav: 860,
-  feedPanel: 1_068,
+  feedPanel: 1_024,
   full: 1_426,
   hysteresis: 48,
 } as const;

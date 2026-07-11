@@ -9,7 +9,7 @@ import {
 test("resolveActivityWorkspaceLayoutMode maps the four available-width scenarios", () => {
   expect(resolveActivityWorkspaceLayoutMode(700, "feed-only")).toBe("feed-only");
   expect(resolveActivityWorkspaceLayoutMode(920, "feed-only")).toBe("feed-nav");
-  expect(resolveActivityWorkspaceLayoutMode(1_160, "feed-nav")).toBe("feed-panel");
+  expect(resolveActivityWorkspaceLayoutMode(1_120, "feed-nav")).toBe("feed-panel");
   expect(resolveActivityWorkspaceLayoutMode(1_520, "feed-panel")).toBe("full");
 });
 
@@ -19,7 +19,7 @@ test("resolveActivityWorkspaceLayoutMode retains modes inside resize hysteresis"
   expect(resolveActivityWorkspaceLayoutMode(830, "feed-nav")).toBe("feed-nav");
 });
 
-test("workspace panel docks only when feed and panel need dedicated space", () => {
+test("workspace panel docks only in feed-panel mode", () => {
   expect(workspacePanelLayoutForMode("feed-only")).toBe("floating");
   expect(workspacePanelLayoutForMode("feed-nav")).toBe("floating");
   expect(workspacePanelLayoutForMode("feed-panel")).toBe("docked");

@@ -50,7 +50,7 @@ void main() {
   });
 
   group('formatDeviceDetail', () {
-    test('includes ip, platform, and short id', () {
+    test('includes ip and platform without device id', () {
       expect(
         formatDeviceDetail(
           const PublicDevice(
@@ -64,9 +64,8 @@ void main() {
               platform: 'darwin 25.5.0',
             ),
           ),
-          'dev_desktop_2',
         ),
-        '192.168.1.10 · darwin 25.5.0 · dev_desk…op_2',
+        '192.168.1.10 · darwin 25.5.0',
       );
     });
   });

@@ -18933,15 +18933,13 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   padding: 0;
 }
 
-.codex-main-scroll.has-workspace-panel.is-task-panel-open.is-workspace-panel-open.is-task-panel-fullscreen,
-.codex-main-scroll.has-workspace-panel.is-task-panel-open.is-workspace-panel-open.is-task-panel-fullscreen:has(
-  .codex-feed-stack
-) {
+.codex-main-pane.is-task-panel-open.is-task-panel-fullscreen,
+.codex-main-pane.is-task-panel-open.is-task-panel-fullscreen:has(.codex-feed-stack) {
   grid-template-columns: minmax(0, 1fr);
   column-gap: 0;
 }
 
-.codex-main-scroll.is-task-panel-fullscreen .workspace-panel.is-task-panel-mode {
+.codex-main-pane.is-task-panel-fullscreen > .workspace-panel.is-task-panel-mode {
   position: absolute;
   z-index: 90;
   inset: 0;
@@ -18956,8 +18954,8 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   pointer-events: auto;
 }
 
-.codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-task-panel-fullscreen
-  .workspace-panel.is-task-panel-mode {
+.codex-main-pane.is-task-panel-open.is-task-panel-fullscreen
+  > .workspace-panel.is-task-panel-mode {
   position: absolute;
   inset: 0;
   grid-column: 1 / -1;

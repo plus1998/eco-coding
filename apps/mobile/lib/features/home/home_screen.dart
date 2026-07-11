@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,12 +11,14 @@ import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_session.dart';
 import '../../core/theme/eco_icons.dart';
+import '../../core/theme/eco_adaptive_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
 import '../../core/widgets/adaptive_glass_action_button.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart';
 import '../../core/widgets/eco_android_glass.dart';
+import '../../core/widgets/ios26_liquid_glass_action_button.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
@@ -249,14 +252,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: const Text('连接 PC'),
         leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: const Icon(EcoIcons.back),
+            ? AdaptiveToolbarIcon(
+                icon: EcoIcons.back,
+                tooltip: '返回',
+                size: sessionToolbarButtonSize,
                 onPressed: actionBusy ? null : () => context.pop(),
               )
             : _showManualSetup && !overview.setupComplete
-            ? IconButton(
-                icon: const Icon(EcoIcons.qrScan),
+            ? AdaptiveToolbarIcon(
+                icon: EcoIcons.qrScan,
                 tooltip: '返回扫码',
+                size: sessionToolbarButtonSize,
                 onPressed: actionBusy
                     ? null
                     : () => setState(() => _showManualSetup = false),
@@ -849,7 +855,7 @@ class _SelectPcStep extends ConsumerWidget {
                 : stableOnline ?? onlineIds.contains(desktopId);
             final device = presence.where((d) => d.id == desktopId).firstOrNull;
             final name = formatDesktopLabel(device, desktopId);
-            final detail = formatDeviceDetail(device, desktopId);
+            final detail = formatDeviceDetail(device);
             final selected = selectedDesktop == desktopId;
             return Padding(
               padding: EdgeInsets.only(bottom: compact ? 6 : 8),
@@ -1172,17 +1178,11 @@ class _ReadyConnectionView extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            AdaptiveGlassActionButton(
-              label: '进入应用',
-              icon: EcoIcons.goForward,
-              onPressed: busy || !overview.readyForThreads ? null : onEnterApp,
-            ),
-            const SizedBox(height: 8),
-            AdaptiveGlassActionButton(
-              label: '绑定新 PC',
-              icon: EcoIcons.qrScan,
-              onPressed: busy ? null : onScan,
-              height: 44,
+            _ConnectionActionStrip(
+              busy: busy,
+              onEnterApp: onEnterApp,
+              onScan: onScan,
+              canEnterApp: overview.canEnterApp,
             ),
           ],
         ),
@@ -1205,6 +1205,162 @@ class _StepBlockedHint extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: ecoColors(context).textMuted),
+      ),
+    );
+  }
+}
+
+class _ConnectionActionStrip extends StatelessWidget {
+  const _ConnectionActionStrip({
+    required this.busy,
+    required this.onEnterApp,
+    required this.onScan,
+    required this.canEnterApp,
+  });
+
+  final bool busy;
+  final VoidCallback onEnterApp;
+  final VoidCallback onScan;
+  final bool canEnterApp;
+
+  static const actionWidth = 112.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: actionWidth,
+          child: _ConnectionActionButton(
+            label: '进入应用',
+            icon: EcoIcons.goForward,
+            onPressed: busy || !canEnterApp ? null : onEnterApp,
+            isPrimary: true,
+          ),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: actionWidth,
+          child: _ConnectionActionButton(
+            label: '绑定新 PC',
+            icon: EcoIcons.qrScan,
+            onPressed: busy ? null : onScan,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConnectionActionButton extends StatelessWidget {
+  const _ConnectionActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.isPrimary = false,
+  });
+
+  static const height = 64.0;
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final enabled = onPressed != null;
+    final foreground = enabled
+        ? isPrimary
+              ? eco.accentText
+              : eco.textHeading
+        : eco.textHeading.withValues(alpha: 0.38);
+    final radius = BorderRadius.circular(height / 2);
+    final content = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 22, color: foreground),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: foreground,
+            fontSize: 8,
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0,
+          ),
+        ),
+      ],
+    );
+
+    if (PlatformInfo.isIOS) {
+      return Semantics(
+        button: true,
+        enabled: enabled,
+        label: label,
+        child: SizedBox(
+          height: height,
+          child: PlatformInfo.isIOS26OrHigher()
+              ? IOS26LiquidGlassActionButton(
+                  label: label,
+                  sfSymbol: ecoIconSfSymbol(icon) ?? 'circle',
+                  foregroundColor: foreground,
+                  onPressed: onPressed,
+                  height: height,
+                )
+              : CupertinoButton(
+                  onPressed: onPressed,
+                  padding: EdgeInsets.zero,
+                  borderRadius: radius,
+                  color: CupertinoColors.tertiarySystemFill,
+                  child: content,
+                ),
+        ),
+      );
+    }
+
+    if (PlatformInfo.isAndroid) {
+      return Semantics(
+        button: true,
+        enabled: enabled,
+        label: label,
+        child: EcoAndroidGlassSurface(
+          height: height,
+          borderRadius: radius,
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: onPressed,
+              customBorder: RoundedRectangleBorder(borderRadius: radius),
+              child: SizedBox(
+                height: height,
+                child: Center(child: content),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: label,
+      child: SizedBox(
+        height: height,
+        child: FilledButton.tonal(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            shape: const StadiumBorder(),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+          ),
+          child: content,
+        ),
       ),
     );
   }

@@ -55,6 +55,10 @@ class SetupOverview {
         steps[3].state == SetupStepState.done &&
         steps[4].state == SetupStepState.done;
   }
+
+  /// Entering the app only needs a valid local setup. The selected PC may be
+  /// temporarily offline while the session screen loads its cached content.
+  bool get canEnterApp => setupComplete;
 }
 
 final setupOverviewProvider = Provider<SetupOverview>((ref) {

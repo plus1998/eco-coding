@@ -51,7 +51,7 @@ String formatDeviceLabel(
   return shortenDeviceId(deviceId);
 }
 
-String? formatDeviceDetail(PublicDevice? device, String deviceId) {
+String? formatDeviceDetail(PublicDevice? device) {
   final parts = <String>[];
   final ipAddress = device?.metadata.ipAddress?.trim();
   final platform = device?.metadata.platform?.trim();
@@ -61,7 +61,6 @@ String? formatDeviceDetail(PublicDevice? device, String deviceId) {
   if (platform != null && platform.isNotEmpty) {
     parts.add(platform);
   }
-  parts.add(shortenDeviceId(deviceId));
   return parts.isEmpty ? null : parts.join(' · ');
 }
 

@@ -24,7 +24,7 @@ class AdaptiveToolbarIcon extends StatelessWidget {
     this.size = adaptiveToolbarTouchSize,
     this.iconSize,
     this.visualOnly = false,
-  }) : assert(visualOnly || onPressed != null);
+  });
 
   final IconData icon;
   final VoidCallback? onPressed;

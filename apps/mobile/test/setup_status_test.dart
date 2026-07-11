@@ -62,6 +62,20 @@ void main() {
     });
   });
 
+  group('SetupOverview.canEnterApp', () {
+    test('does not require the selected PC to be online', () {
+      final overview = _overview(
+        selectedDesktopId: 'dev_desktop',
+        login: SetupStepState.done,
+        bind: SetupStepState.done,
+        select: SetupStepState.done,
+      );
+
+      expect(overview.readyForThreads, isFalse);
+      expect(overview.canEnterApp, isTrue);
+    });
+  });
+
   group('applyPresenceDeviceEvent', () {
     test('updates matching device online state', () {
       final devices = [

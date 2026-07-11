@@ -394,7 +394,7 @@ export function WorkspaceFloatingCards({
         {hasActiveThread && agentModelLabels.length > 0 ? (
           <WorkspacePanelSection
             id="workspace-agents"
-            title="子代理"
+            title="智能体编排"
             defaultExpanded
             summary={
               <>
