@@ -264,7 +264,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
   expect(body.stream).toBe(true);
   expect(body.instructions).toBe("System prompt\nSecond instruction");
   expect(body.max_output_tokens).toBe(4096);
-  expect(body.reasoning).toEqual({ effort: "high" });
+  expect(body.reasoning).toEqual({ effort: "high", summary: "auto" });
   expect(body.tool_choice).toEqual({ type: "web_search_preview" });
   expect(body.context_management).toBeUndefined();
   expect(body.tools).toEqual([

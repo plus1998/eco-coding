@@ -34,6 +34,36 @@ describe('responsesStreamEventToJSON', () => {
     expect(parsed.call_id).toBe('call_1');
   });
 
+  test('reasoning_text.delta includes content index', () => {
+    const evt: ResponsesStreamEvent = {
+      type: 'response.reasoning_text.delta',
+      sequence_number: 3,
+      output_index: 1,
+      content_index: 2,
+      delta: 'thinking',
+      item_id: 'rs_1',
+    };
+    const parsed = jsonParse<Record<string, unknown>>(responsesStreamEventToJSON(evt));
+    expect(parsed.output_index).toBe(1);
+    expect(parsed.content_index).toBe(2);
+    expect(parsed.delta).toBe('thinking');
+  });
+
+  test('reasoning output item preserves reasoning_text content', () => {
+    const evt: ResponsesStreamEvent = {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'reasoning',
+        id: 'rs_1',
+        content: [{ type: 'reasoning_text', text: 'raw reasoning' }],
+      },
+    };
+    const parsed = jsonParse<Record<string, unknown>>(responsesStreamEventToJSON(evt));
+    const item = parsed.item as Record<string, unknown>;
+    expect(item.content).toEqual([{ type: 'reasoning_text', text: 'raw reasoning' }]);
+  });
+
   test('output_item.added message has content array', () => {
     const evt: ResponsesStreamEvent = {
       type: 'response.output_item.added',

@@ -143,7 +143,7 @@ describe('anthropicToResponses', () => {
       output_config: { effort: 'high' },
     });
 
-    expect(resp.reasoning).toEqual({ effort: 'high' });
+    expect(resp.reasoning).toEqual({ effort: 'high', summary: 'auto' });
   });
 
   test('maps top-level effort to reasoning and max to xhigh', () => {
@@ -155,7 +155,7 @@ describe('anthropicToResponses', () => {
       thinking: { type: 'adaptive' },
     });
 
-    expect(resp.reasoning).toEqual({ effort: 'xhigh' });
+    expect(resp.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' });
   });
 
   test('maps Anthropic thinking budget to Responses reasoning effort', () => {
@@ -166,7 +166,7 @@ describe('anthropicToResponses', () => {
       thinking: { type: 'enabled', budget_tokens: 4096 },
     });
 
-    expect(resp.reasoning).toEqual({ effort: 'high' });
+    expect(resp.reasoning).toEqual({ effort: 'high', summary: 'auto' });
   });
 
   test('maps adaptive thinking to medium effort when no explicit effort is set', () => {
@@ -177,7 +177,7 @@ describe('anthropicToResponses', () => {
       thinking: { type: 'adaptive' },
     });
 
-    expect(resp.reasoning).toEqual({ effort: 'medium' });
+    expect(resp.reasoning).toEqual({ effort: 'medium', summary: 'auto' });
   });
 
   test('omits reasoning when no effort is configured', () => {

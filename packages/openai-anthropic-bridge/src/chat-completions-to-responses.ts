@@ -1,5 +1,5 @@
 import {
-  isReasoningAutoSummaryEnabled,
+  defaultReasoningSummaryMode,
   isReasoningModel,
   minMaxOutputTokens,
 } from './anthropic-to-responses.js';
@@ -78,9 +78,7 @@ export function chatCompletionsToResponses(
     out.reasoning = {
       effort: req.reasoning_effort,
     } satisfies ResponsesReasoning;
-    if (isReasoningAutoSummaryEnabled()) {
-      out.reasoning.summary = 'detailed';
-    }
+    out.reasoning.summary = defaultReasoningSummaryMode();
   }
 
   const tools = req.tools ?? [];

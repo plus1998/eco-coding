@@ -145,7 +145,7 @@ describe('LiteLLM parity: Anthropic Messages -> Responses input', () => {
     ]);
   });
 
-  test('request-level thinking budgets map to reasoning effort without auto summary by default', () => {
+  test('request-level thinking budgets map to reasoning effort and request a parseable summary', () => {
     expect(
       anthropicToResponses({
         model: 'gpt-5.2',
@@ -153,7 +153,7 @@ describe('LiteLLM parity: Anthropic Messages -> Responses input', () => {
         messages: [{ role: 'user', content: 'hi' }],
         thinking: { type: 'enabled', budget_tokens: 500 },
       }).reasoning,
-    ).toEqual({ effort: 'minimal' });
+    ).toEqual({ effort: 'minimal', summary: 'auto' });
 
     expect(
       anthropicToResponses({
@@ -162,7 +162,7 @@ describe('LiteLLM parity: Anthropic Messages -> Responses input', () => {
         messages: [{ role: 'user', content: 'hi' }],
         thinking: { type: 'enabled', budget_tokens: 2048 },
       }).reasoning,
-    ).toEqual({ effort: 'medium' });
+    ).toEqual({ effort: 'medium', summary: 'auto' });
 
     expect(
       anthropicToResponses({
@@ -171,7 +171,7 @@ describe('LiteLLM parity: Anthropic Messages -> Responses input', () => {
         messages: [{ role: 'user', content: 'hi' }],
         thinking: { type: 'enabled', budget_tokens: 4096 },
       }).reasoning,
-    ).toEqual({ effort: 'high' });
+    ).toEqual({ effort: 'high', summary: 'auto' });
   });
 
   test('tool definitions keep order while web_search becomes a hosted Responses tool', () => {
@@ -590,7 +590,7 @@ describe('LiteLLM parity: full request fields', () => {
       parameters: { type: 'object', properties: {} },
     });
     expect(resp.tool_choice).toEqual({ type: 'function', name: 'do_thing' });
-    expect(resp.reasoning).toEqual({ effort: 'high' });
+    expect(resp.reasoning).toEqual({ effort: 'high', summary: 'auto' });
     expect(resp.context_management).toEqual([
       { type: 'compaction', compact_threshold: 150000 },
     ]);

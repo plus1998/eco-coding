@@ -193,6 +193,67 @@ describe('roundtrip', () => {
     expect(reasoningItems[1]?.encrypted_content).toBe('ciphertext');
   });
 
+  test('responses reasoning summary strips upstream HTML comment artifacts', () => {
+    const anthropic = responsesToAnthropic(
+      {
+        id: 'resp_reasoning_comment',
+        object: 'response',
+        model: 'gpt-5.6-sol',
+        status: 'completed',
+        output: [
+          {
+            type: 'reasoning',
+            id: 'rs_comment',
+            summary: [
+              {
+                type: 'summary_text',
+                text: '**Determining unique true statement**\n\n<!-- -->',
+              },
+            ],
+          },
+        ],
+      },
+      'gpt-5.6-sol',
+    );
+
+    expect(anthropic.content).toEqual([
+      { type: 'thinking', thinking: '**Determining unique true statement**\n\n' },
+    ]);
+  });
+
+  test('responses reasoning_text content becomes anthropic thinking', () => {
+    const anthropic = responsesToAnthropic(
+      {
+        id: 'resp_reasoning_content',
+        object: 'response',
+        model: 'gpt-5.2',
+        status: 'completed',
+        output: [
+          {
+            type: 'reasoning',
+            id: 'rs_content',
+            content: [{ type: 'reasoning_text', text: 'raw reasoning content' }],
+          },
+        ],
+      },
+      'gpt-5.2',
+    );
+
+    expect(anthropic.content).toEqual([
+      { type: 'thinking', thinking: 'raw reasoning content' },
+    ]);
+  });
+
+  test('chat reasoning effort requests an auto summary for response parsing', () => {
+    const responses = chatCompletionsToResponses({
+      model: 'gpt-5.2',
+      messages: [{ role: 'user', content: 'hi' }],
+      reasoning_effort: 'high',
+    });
+
+    expect(responses.reasoning).toEqual({ effort: 'high', summary: 'auto' });
+  });
+
   test('anthropic user text survives anthropic → responses → chat completions', () => {
     const responsesReq = anthropicToResponses({
       model: 'glm-5.1',

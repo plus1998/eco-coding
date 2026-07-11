@@ -47,6 +47,20 @@ export function responsesStreamEventToJSON(evt: ResponsesStreamEvent): string {
       return jsonMarshal(m);
     }
 
+    case 'response.reasoning_text.delta':
+    case 'response.reasoning_text.done': {
+      const m = wireBase(evt);
+      putItemID(m, evt);
+      m.output_index = evt.output_index ?? 0;
+      m.content_index = evt.content_index ?? 0;
+      if (evt.type === 'response.reasoning_text.done') {
+        m.text = evt.text ?? '';
+      } else {
+        m.delta = evt.delta ?? '';
+      }
+      return jsonMarshal(m);
+    }
+
     case 'response.reasoning_summary_part.added':
     case 'response.reasoning_summary_part.done': {
       const m = wireBase(evt);
@@ -142,6 +156,9 @@ function responsesItemWire(item: ResponsesOutput | undefined): Record<string, un
     }
     case 'reasoning':
       m.summary = reasoningSummaryWire(item.summary ?? []);
+      if (item.content !== undefined) {
+        m.content = reasoningContentWire(item.content);
+      }
       if (item.encrypted_content !== undefined && item.encrypted_content !== '') {
         m.encrypted_content = item.encrypted_content;
       }
@@ -173,4 +190,10 @@ function reasoningSummaryWire(summary: ResponsesSummary[]): Record<string, unkno
     }
     return { type: typ, text: s.text ?? '' };
   });
+}
+
+function reasoningContentWire(parts: ResponsesContentPart[]): Record<string, unknown>[] {
+  return parts
+    .filter((part) => part.type === 'reasoning_text' || part.type === 'text')
+    .map((part) => ({ type: part.type, text: part.text ?? '' }));
 }

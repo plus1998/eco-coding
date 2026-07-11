@@ -183,6 +183,100 @@ describe('responses → anthropic stream events (sub2api parity)', () => {
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });
 
+  test('reasoning_text delta is translated to an Anthropic thinking delta', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.created',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'in_progress', output: [] },
+      }),
+      ...push({
+        type: 'response.reasoning_text.delta',
+        output_index: 0,
+        content_index: 0,
+        delta: 'raw reasoning',
+      }),
+      ...push({
+        type: 'response.reasoning_text.done',
+        output_index: 0,
+        content_index: 0,
+        text: 'raw reasoning',
+      }),
+      ...push({
+        type: 'response.completed',
+        response: { id: 'r1', object: 'response', model: 'm', status: 'completed', output: [] },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'raw reasoning' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('removes HTML comment artifacts split across reasoning summary deltas', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.reasoning_summary_text.delta',
+        output_index: 0,
+        delta: '**Determining unique truth**\n\n<!',
+      }),
+      ...push({
+        type: 'response.reasoning_summary_text.delta',
+        output_index: 0,
+        delta: '-- -->',
+      }),
+      ...push({
+        type: 'response.reasoning_summary_text.done',
+        output_index: 0,
+        text: '**Determining unique truth**\n\n<!-- -->',
+      }),
+    ];
+
+    const thinking = events
+      .filter((event) => event.type === 'content_block_delta')
+      .map((event) => event.delta?.thinking ?? '')
+      .join('');
+    expect(thinking).toBe('**Determining unique truth**\n\n');
+    expect(thinking).not.toContain('<!--');
+    expect(thinking).not.toContain('-->');
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('removes complete HTML comments but preserves surrounding reasoning text', () => {
+    const state = newResponsesEventToAnthropicState();
+    const events = responsesEventToAnthropicEvents(
+      {
+        type: 'response.reasoning_text.delta',
+        output_index: 0,
+        delta: 'before<!-- internal-only -->after',
+      },
+      state,
+    );
+
+    expect(events.filter((event) => event.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'beforeafter' } },
+    ]);
+  });
+
+  test('does not duplicate reasoning when a gateway emits both content and summary deltas', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({ type: 'response.reasoning_text.delta', output_index: 0, delta: 'raw reasoning' }),
+      ...push({ type: 'response.reasoning_summary_text.delta', output_index: 0, delta: 'summary' }),
+      ...push({ type: 'response.reasoning_text.done', output_index: 0, text: 'raw reasoning' }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'raw reasoning' } },
+    ]);
+    expect(events.filter((e) => e.type === 'content_block_delta')).toHaveLength(1);
+  });
+
   test('reasoning output_item.done with summary emits missing thinking delta', () => {
     const state = newResponsesEventToAnthropicState();
     const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
@@ -208,6 +302,27 @@ describe('responses → anthropic stream events (sub2api parity)', () => {
 
     expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
       { index: 0, delta: { type: 'thinking_delta', thinking: 'reasoning from item' } },
+    ]);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
+  test('reasoning output_item.done with reasoning_text content emits missing thinking delta', () => {
+    const state = newResponsesEventToAnthropicState();
+    const push = (evt: ResponsesStreamEvent) => responsesEventToAnthropicEvents(evt, state);
+    const events = [
+      ...push({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_1',
+          content: [{ type: 'reasoning_text', text: 'reasoning from content' }],
+        },
+      }),
+    ];
+
+    expect(events.filter((e) => e.type === 'content_block_delta')).toMatchObject([
+      { index: 0, delta: { type: 'thinking_delta', thinking: 'reasoning from content' } },
     ]);
     expect(validateAnthropicStreamEvents(events)).toEqual([]);
   });

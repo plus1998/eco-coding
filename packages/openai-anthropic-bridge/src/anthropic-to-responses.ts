@@ -57,11 +57,11 @@ export function reasoningEffortFromThinkingBudget(budgetTokens: number): string 
   return 'minimal';
 }
 
-export function isReasoningAutoSummaryEnabled(): boolean {
-  return (
+export function defaultReasoningSummaryMode(): 'auto' | 'detailed' {
+  const detailed =
     (process.env.LITELLM_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true' ||
-    (process.env.ECO_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true'
-  );
+    (process.env.ECO_REASONING_AUTO_SUMMARY ?? '').toLowerCase() === 'true';
+  return detailed ? 'detailed' : 'auto';
 }
 
 export function isAnthropicBillingHeaderText(text: string): boolean {
@@ -250,8 +250,11 @@ export function resolveAnthropicReasoningForResponses(
 
   if (req.thinking?.summary !== undefined && req.thinking.summary !== '') {
     reasoning.summary = req.thinking.summary;
-  } else if (isReasoningAutoSummaryEnabled()) {
-    reasoning.summary = 'detailed';
+  } else {
+    // Anthropic thinking clients expect a textual thinking block. Without a
+    // Responses reasoning summary request, closed reasoning models may return
+    // only encrypted state and token counts, leaving nothing to translate.
+    reasoning.summary = defaultReasoningSummaryMode();
   }
 
   return reasoning;

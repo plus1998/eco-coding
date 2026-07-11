@@ -41,16 +41,11 @@ export function responsesToAnthropic(
   for (const item of resp.output ?? []) {
     switch (item.type) {
       case 'reasoning': {
-        let summaryText = '';
-        for (const s of item.summary ?? []) {
-          if (s.type === 'summary_text' && s.text !== '') {
-            summaryText += s.text;
-          }
-        }
-        if (summaryText !== '') {
+        const reasoningText = sanitizeReasoningDisplayText(collectReasoningText(item));
+        if (reasoningText !== '') {
           blocks.push({
             type: 'thinking',
-            thinking: summaryText,
+            thinking: reasoningText,
           });
         }
         if (item.encrypted_content !== undefined && item.encrypted_content !== '') {
@@ -260,6 +255,8 @@ export interface ResponsesEventToAnthropicState {
   closedToolOutputIndexes: Set<number>;
   emittedTextByOutputIndex: Map<number, string>;
   emittedReasoningByOutputIndex: Map<number, string>;
+  receivedReasoningByOutputIndex: Map<number, string>;
+  reasoningSourceByOutputIndex: Map<number, 'summary' | 'content'>;
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -286,6 +283,8 @@ export function newResponsesEventToAnthropicState(
     closedToolOutputIndexes: new Set(),
     emittedTextByOutputIndex: new Map(),
     emittedReasoningByOutputIndex: new Map(),
+    receivedReasoningByOutputIndex: new Map(),
+    reasoningSourceByOutputIndex: new Map(),
     inputTokens: 0,
     outputTokens: 0,
     cacheReadInputTokens: 0,
@@ -316,9 +315,13 @@ export function responsesEventToAnthropicEvents(
     case 'response.output_item.done':
       return resToAnthHandleOutputItemDone(evt, state);
     case 'response.reasoning_summary_text.delta':
-      return resToAnthHandleReasoningDelta(evt, state);
+      return resToAnthHandleReasoningDelta(evt, state, 'summary');
+    case 'response.reasoning_text.delta':
+      return resToAnthHandleReasoningDelta(evt, state, 'content');
     case 'response.reasoning_summary_text.done':
-      return resToAnthHandleReasoningBlockDone(evt, state);
+      return resToAnthHandleReasoningBlockDone(evt, state, 'summary');
+    case 'response.reasoning_text.done':
+      return resToAnthHandleReasoningBlockDone(evt, state, 'content');
     case 'response.completed':
     case 'response.done':
     case 'response.incomplete':
@@ -444,6 +447,12 @@ function resToAnthHandleOutputItemAdded(
     case 'reasoning': {
       const events: AnthropicStreamEvent[] = [];
       events.push(...closeCurrentBlock(state));
+
+      const outputIndex = evt.output_index ?? 0;
+      const initialSource = selectReasoningSource(evt.item);
+      if (initialSource !== undefined) {
+        state.reasoningSourceByOutputIndex.set(outputIndex, initialSource);
+      }
 
       const idx = state.contentBlockIndex;
       state.outputIndexToBlockIdx.set(evt.output_index ?? 0, idx);
@@ -636,20 +645,44 @@ function resToAnthHandleFuncArgsDone(
 function resToAnthHandleReasoningDelta(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
+  source: 'summary' | 'content',
 ): AnthropicStreamEvent[] {
   if (evt.delta === undefined || evt.delta === '') {
     return [];
   }
 
-  return emitReasoningDeltaForOutputIndex(evt.output_index ?? 0, evt.delta, state);
+  return emitReasoningDeltaForOutputIndex(evt.output_index ?? 0, evt.delta, state, source);
 }
 
 function emitReasoningDeltaForOutputIndex(
   outputIndex: number,
   delta: string,
   state: ResponsesEventToAnthropicState,
+  source?: 'summary' | 'content',
 ): AnthropicStreamEvent[] {
   if (delta === '') {
+    return [];
+  }
+
+  if (source !== undefined) {
+    const selectedSource = state.reasoningSourceByOutputIndex.get(outputIndex);
+    if (selectedSource !== undefined && selectedSource !== source) {
+      return [];
+    }
+    state.reasoningSourceByOutputIndex.set(outputIndex, source);
+  }
+
+  const received = (state.receivedReasoningByOutputIndex.get(outputIndex) ?? '') + delta;
+  state.receivedReasoningByOutputIndex.set(outputIndex, received);
+
+  const sanitized = sanitizeReasoningDisplayText(received);
+  const emitted = state.emittedReasoningByOutputIndex.get(outputIndex) ?? '';
+  if (!sanitized.startsWith(emitted)) {
+    return [];
+  }
+  const visibleDelta = sanitized.slice(emitted.length);
+  state.emittedReasoningByOutputIndex.set(outputIndex, sanitized);
+  if (visibleDelta === '') {
     return [];
   }
 
@@ -678,11 +711,9 @@ function emitReasoningDeltaForOutputIndex(
     index: blockIdx,
     delta: {
       type: 'thinking_delta',
-      thinking: delta,
+      thinking: visibleDelta,
     },
   });
-  const emitted = state.emittedReasoningByOutputIndex.get(outputIndex) ?? '';
-  state.emittedReasoningByOutputIndex.set(outputIndex, emitted + delta);
   return events;
 }
 
@@ -704,10 +735,17 @@ function resToAnthHandleTextBlockDone(
 function resToAnthHandleReasoningBlockDone(
   evt: ResponsesStreamEvent,
   state: ResponsesEventToAnthropicState,
+  source: 'summary' | 'content',
 ): AnthropicStreamEvent[] {
+  const outputIndex = evt.output_index ?? 0;
+  const selectedSource = state.reasoningSourceByOutputIndex.get(outputIndex);
+  if (selectedSource !== undefined && selectedSource !== source) {
+    return [];
+  }
+
   const events: AnthropicStreamEvent[] = [];
   if (evt.text !== undefined && evt.text !== '') {
-    events.push(...emitMissingReasoningFromFullText(evt.output_index ?? 0, evt.text, state));
+    events.push(...emitMissingReasoningFromFullText(outputIndex, evt.text, state, source));
   }
   if (!state.contentBlockOpen || state.currentBlockType !== 'thinking') {
     return events;
@@ -738,18 +776,54 @@ function emitMissingReasoningFromFullText(
   outputIndex: number,
   fullText: string,
   state: ResponsesEventToAnthropicState,
+  source?: 'summary' | 'content',
 ): AnthropicStreamEvent[] {
   if (fullText === '') {
     return [];
   }
 
-  const emitted = state.emittedReasoningByOutputIndex.get(outputIndex) ?? '';
-  if (emitted !== '' && !fullText.startsWith(emitted)) {
+  const received = state.receivedReasoningByOutputIndex.get(outputIndex) ?? '';
+  if (received !== '' && !fullText.startsWith(received)) {
     return [];
   }
 
-  const delta = fullText.slice(emitted.length);
-  return emitReasoningDeltaForOutputIndex(outputIndex, delta, state);
+  const delta = fullText.slice(received.length);
+  return emitReasoningDeltaForOutputIndex(outputIndex, delta, state, source);
+}
+
+
+/** Remove upstream-only HTML comments from user-visible reasoning summaries. */
+function sanitizeReasoningDisplayText(text: string): string {
+  let output = '';
+  let offset = 0;
+
+  while (offset < text.length) {
+    const commentStart = text.indexOf('<!--', offset);
+    if (commentStart < 0) {
+      const tail = text.slice(offset);
+      output += stripTrailingHtmlCommentOpenerPrefix(tail);
+      break;
+    }
+
+    output += text.slice(offset, commentStart);
+    const commentEnd = text.indexOf('-->', commentStart + 4);
+    if (commentEnd < 0) {
+      break;
+    }
+    offset = commentEnd + 3;
+  }
+
+  return output;
+}
+
+function stripTrailingHtmlCommentOpenerPrefix(text: string): string {
+  const opener = '<!--';
+  for (let length = opener.length - 1; length > 0; length--) {
+    if (text.endsWith(opener.slice(0, length))) {
+      return text.slice(0, -length);
+    }
+  }
+  return text;
 }
 
 function collectMessageOutputText(item: ResponsesOutput): string {
@@ -770,6 +844,45 @@ function collectReasoningSummaryText(item: ResponsesOutput): string {
     }
   }
   return text;
+}
+
+function collectReasoningContentText(item: ResponsesOutput): string {
+  let text = '';
+  for (const part of item.content ?? []) {
+    if (
+      (part.type === 'reasoning_text' || part.type === 'text') &&
+      part.text !== undefined &&
+      part.text !== ''
+    ) {
+      text += part.text;
+    }
+  }
+  return text;
+}
+
+function selectReasoningSource(
+  item: ResponsesOutput,
+): 'summary' | 'content' | undefined {
+  if (sanitizeReasoningDisplayText(collectReasoningSummaryText(item)) !== '') {
+    return 'summary';
+  }
+  if (sanitizeReasoningDisplayText(collectReasoningContentText(item)) !== '') {
+    return 'content';
+  }
+  return undefined;
+}
+
+function collectReasoningText(
+  item: ResponsesOutput,
+  source?: 'summary' | 'content',
+): string {
+  if (source === 'summary') {
+    return collectReasoningSummaryText(item);
+  }
+  if (source === 'content') {
+    return collectReasoningContentText(item);
+  }
+  return collectReasoningSummaryText(item) || collectReasoningContentText(item);
 }
 
 function resToAnthHandleOutputItemDone(
@@ -826,7 +939,10 @@ function resToAnthHandleOutputItemDone(
     case 'reasoning': {
       const events = emitMissingReasoningFromFullText(
         evt.output_index ?? 0,
-        collectReasoningSummaryText(evt.item),
+        collectReasoningText(
+          evt.item,
+          state.reasoningSourceByOutputIndex.get(evt.output_index ?? 0),
+        ),
         state,
       );
       if (state.currentBlockType === 'thinking') {
@@ -916,7 +1032,10 @@ function emitFinalResponseOutputFallback(
         events.push(
           ...emitMissingReasoningFromFullText(
             outputIndex,
-            collectReasoningSummaryText(item),
+            collectReasoningText(
+              item,
+              state.reasoningSourceByOutputIndex.get(outputIndex),
+            ),
             state,
           ),
         );
