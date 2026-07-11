@@ -90,6 +90,7 @@ import {
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
   type ThreadRunProjectionTimelineFeedEntry,
+  type ThreadRunProjectionToolGroupFeedEntry,
 } from "./thread-run-projection-view";
 import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStreamRequestTiming";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
@@ -826,6 +827,42 @@ function shouldShowActionInlineLoading({
 }
 
 type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry;
+type SubagentDetailDisplayEntry = SubagentDetailFeedEntry | ThreadRunProjectionToolGroupFeedEntry;
+
+function groupSubagentDetailFeedEntries(
+  entries: readonly SubagentDetailFeedEntry[],
+): SubagentDetailDisplayEntry[] {
+  const grouped: SubagentDetailDisplayEntry[] = [];
+  let pending: SubagentDetailFeedEntry[] = [];
+
+  const flush = () => {
+    const first = pending[0];
+    if (pending.length > 1 && first) {
+      grouped.push({
+        kind: "tool-group",
+        key: `subagent-tool-group:${first.key}`,
+        entries: pending,
+        at: first.at,
+        sequence: first.sequence,
+      });
+    } else {
+      grouped.push(...pending);
+    }
+    pending = [];
+  };
+
+  for (const entry of entries) {
+    const block = projectionItemToDetailBlock(entry.item);
+    if (block?.kind === "action" && !block.bashRun) {
+      pending.push(entry);
+      continue;
+    }
+    flush();
+    grouped.push(entry);
+  }
+  flush();
+  return grouped;
+}
 
 function projectionRequestSpanRenderSignature(span?: ProjectionRequestSpan): string {
   if (!span) {
@@ -905,9 +942,7 @@ function useStableSubagentDetailFeedEntries(
   agentId: string,
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): SubagentDetailFeedEntry[] {
-  const cacheRef = useRef(
-    new Map<string, { signature: string; entry: SubagentDetailFeedEntry }>(),
-  );
+  const cacheRef = useRef(new Map<string, { signature: string; entry: SubagentDetailFeedEntry }>());
   const agentIdRef = useRef(agentId);
   return useMemo(() => {
     if (agentIdRef.current !== agentId) {
@@ -967,6 +1002,27 @@ const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetail
   entry: SubagentDetailFeedEntry;
   requestSpansById: ProjectionRequestSpansById;
 }) {
+  const block = projectionItemToDetailBlock(entry.item);
+  const isFinalResult =
+    entry.item.eventType === "message.final" &&
+    block?.kind === "narrative" &&
+    !block.streaming &&
+    Boolean(block.text.trim());
+
+  if (isFinalResult) {
+    return (
+      <section className="subagent-conversation-result" aria-label="子代理执行结果">
+        <header className="subagent-conversation-result-header">
+          <ShieldCheck size={14} aria-hidden />
+          <span>执行结果</span>
+        </header>
+        <div className="subagent-conversation-result-body">
+          <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />
+        </div>
+      </section>
+    );
+  }
+
   return <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />;
 }, areProjectionSubagentDetailFeedEntryPropsEqual);
 
@@ -1213,12 +1269,16 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     [agent.timeline, missionText],
   );
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, filteredTimeline);
+  const detailDisplayEntries = useMemo(
+    () => groupSubagentDetailFeedEntries(detailFeedEntries),
+    [detailFeedEntries],
+  );
   const latestTimelineItem = filteredTimeline.at(-1);
   const layoutSignature = [
     agent.agentId,
     agent.status,
     missionDisplay.length,
-    detailFeedEntries.length,
+    detailDisplayEntries.length,
     latestTimelineItem?.id ?? "",
     latestTimelineItem?.text.length ?? 0,
   ].join(":");
@@ -1331,14 +1391,18 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
         </span>
       </div>
       <div className="subagent-conversation-log">
-        {detailFeedEntries.length > 0 ? (
-          detailFeedEntries.map((entry) => (
-            <ProjectionSubagentDetailFeedEntry
-              key={entry.key}
-              entry={entry}
-              requestSpansById={requestSpansById}
-            />
-          ))
+        {detailDisplayEntries.length > 0 ? (
+          detailDisplayEntries.map((entry) =>
+            entry.kind === "tool-group" ? (
+              <ProjectionToolGroupEntry key={entry.key} entry={entry} requestSpansById={requestSpansById} />
+            ) : (
+              <ProjectionSubagentDetailFeedEntry
+                key={entry.key}
+                entry={entry}
+                requestSpansById={requestSpansById}
+              />
+            ),
+          )
         ) : (
           <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
         )}

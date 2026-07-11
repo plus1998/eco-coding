@@ -248,14 +248,15 @@ function groupProjectionToolFeedEntries(
   const flush = () => {
     if (pending.length > 1) {
       const first = pending[0];
-      const last = pending[pending.length - 1];
-      if (!first || !last) {
+      if (!first) {
         pending = [];
         return;
       }
       grouped.push({
         kind: "tool-group",
-        key: `tool-group:${first.key}:${last.key}:${pending.length}`,
+        // Keep the group mounted while adjacent tool events are appended so its
+        // user-controlled expanded state is not reset by a changing React key.
+        key: `tool-group:${first.key}`,
         entries: pending,
         at: first.at,
         sequence: first.sequence,
@@ -284,7 +285,8 @@ function isGroupableToolFeedEntry(
   if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
     return false;
   }
-  return projectionItemToDetailBlock(entry.item)?.kind === "action";
+  const block = projectionItemToDetailBlock(entry.item);
+  return block?.kind === "action" && !block.bashRun;
 }
 
 function filterMainTimelineForFeed(

@@ -2243,7 +2243,7 @@ test("buildThreadRunProjectionViewModel keeps active thinking below bash cards",
   );
 });
 
-test("buildThreadRunProjectionViewModel keeps bash card order when tool completes", () => {
+test("buildThreadRunProjectionViewModel keeps bash cards direct and ordered when a tool completes", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       timeline: [
@@ -2287,15 +2287,42 @@ test("buildThreadRunProjectionViewModel keeps bash card order when tool complete
     }),
   );
 
-  expect(view.mainFeedEntries).toHaveLength(1);
-  const group = view.mainFeedEntries[0];
-  expect(group?.kind).toBe("tool-group");
-  if (group?.kind === "tool-group") {
-    expect(group.entries.map((entry) => entry.key)).toEqual([
-      "main:lifecycle:toolu_bash_a",
-      "main:lifecycle:toolu_bash_b",
-    ]);
-  }
+  expect(view.mainFeedEntries).toHaveLength(2);
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "timeline"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:lifecycle:toolu_bash_a",
+    "main:lifecycle:toolu_bash_b",
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel keeps a growing file tool group key stable", () => {
+  const fileTool = (id: string, sequence: number, name: "Read" | "Edit", detail: string) =>
+    item({
+      id,
+      sequence,
+      eventType: "tool.completed",
+      text: `Tool: ${name} · ${detail}`,
+      metadata: {
+        tool: {
+          name,
+          detail,
+          toolUseId: `toolu_${id}`,
+          status: "completed",
+        },
+      },
+    });
+  const initialTimeline = [
+    fileTool("read-a", 1, "Read", "src/a.ts"),
+    fileTool("read-b", 2, "Read", "src/b.ts"),
+  ];
+  const initial = buildThreadRunProjectionViewModel(projection({ timeline: initialTimeline }));
+  const appended = buildThreadRunProjectionViewModel(
+    projection({ timeline: [...initialTimeline, fileTool("edit-c", 3, "Edit", "src/c.ts")] }),
+  );
+
+  expect(initial.mainFeedEntries[0]?.kind).toBe("tool-group");
+  expect(appended.mainFeedEntries[0]?.kind).toBe("tool-group");
+  expect(appended.mainFeedEntries[0]?.key).toBe(initial.mainFeedEntries[0]?.key);
 });
 
 test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta per stream", () => {

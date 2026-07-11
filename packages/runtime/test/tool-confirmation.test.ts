@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import {
   evaluateBashConfirmation,
   evaluateBashHookGate,
+  evaluateFilesystemHookGate,
   evaluateFilesystemReadConfirmation,
+  evaluateFilesystemWriteConfirmation,
 } from "../src/tool-confirmation";
 
 test("evaluateBashHookGate only hard-denies destructive commands", () => {
@@ -58,5 +60,45 @@ test("evaluateFilesystemReadConfirmation asks for external paths in auto mode", 
     workspacePath: "/repo",
     confirmationMode: "auto",
   });
-  expect(decision?.action).toBe("deny");
+  expect(decision?.action).toBe("ask");
+  expect(decision?.matchedRule).toBe("filesystem_external_read");
+});
+
+test("evaluateFilesystemWriteConfirmation asks for external paths in auto mode", () => {
+  const decision = evaluateFilesystemWriteConfirmation({
+    toolName: "Write",
+    toolInput: { file_path: "/tmp/omni-proxy-verify.mjs" },
+    cwd: "/repo",
+    workspacePath: "/repo",
+    confirmationMode: "auto",
+  });
+  expect(decision).toMatchObject({
+    action: "ask",
+    matchedRule: "filesystem_external_write",
+    riskLevel: "high",
+  });
+});
+
+test("evaluateFilesystemHookGate asks before an external write", () => {
+  const decision = evaluateFilesystemHookGate({
+    toolName: "Edit",
+    toolInput: { file_path: "/tmp/outside.ts" },
+    cwd: "/repo",
+    workspacePath: "/repo",
+    confirmationMode: "always",
+    filesystemRead: "workspace",
+    filesystemWrite: "workspace",
+  });
+  expect(decision?.action).toBe("ask");
+});
+
+test("evaluateFilesystemWriteConfirmation allows external paths in allow_all mode", () => {
+  const decision = evaluateFilesystemWriteConfirmation({
+    toolName: "Write",
+    toolInput: { file_path: "/tmp/allowed.mjs" },
+    cwd: "/repo",
+    workspacePath: "/repo",
+    confirmationMode: "allow_all",
+  });
+  expect(decision?.action).toBe("allow");
 });

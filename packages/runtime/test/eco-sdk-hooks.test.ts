@@ -1458,7 +1458,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
   );
   expect(outsideRead.hookSpecificOutput).toMatchObject({
     hookEventName: "PreToolUse",
-    permissionDecision: "deny",
+    permissionDecision: "ask",
   });
   expect(outsideRead.hookSpecificOutput?.permissionDecisionReason).toContain("outside");
 
@@ -1495,6 +1495,39 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
     { signal: new AbortController().signal },
   );
   expect(allowedFetch.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook asks before writing outside the workspace", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Write", "Edit"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: false, webFetch: false },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo", bashReviewMode: "auto" },
+  );
+  const outsideWrite = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/tmp/omni-proxy-verify.mjs", content: "export {};" },
+      tool_use_id: "tool_write_outside",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_write_outside",
+    { signal: new AbortController().signal },
+  );
+
+  expect(outsideWrite.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+  });
+  expect(outsideWrite.hookSpecificOutput?.permissionDecisionReason).toContain("/tmp/omni-proxy-verify.mjs");
 });
 
 test("createToolPermissionPreToolHook passes risky bash through to canUseTool confirmation", async () => {

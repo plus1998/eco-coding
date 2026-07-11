@@ -16,7 +16,9 @@ import {
   type EcoSdkSessionOptions,
   type EcoSubagentAttributionHooks,
   evaluateFilesystemReadConfirmation,
+  evaluateFilesystemWriteConfirmation,
   isReadFilesystemTool,
+  isWriteFilesystemTool,
   normalizeSdkSubagentType,
   type PlanReadyPayload,
   readFilesystemPath,
@@ -7178,12 +7180,12 @@ function createThreadBashAndFilesystemToolPermissionHandler(
   runPhase: SubagentRunPhase = "execution",
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   return async (request) => {
-    if (isReadFilesystemTool(request.toolName)) {
+    if (isReadFilesystemTool(request.toolName) || isWriteFilesystemTool(request.toolName)) {
       const thread = conversationStore.getThread(threadId);
       if (!thread) {
         return {
           behavior: "deny",
-          message: "Thread was not found; Eco could not request filesystem read approval.",
+          message: "Thread was not found; Eco could not request filesystem approval.",
           interrupt: true,
         };
       }
@@ -7192,7 +7194,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
       const runtimeConfig = ensureThreadRuntimeConfig(thread).runtimeConfig;
       const confirmationMode = runtimeConfig?.bashReviewMode ?? "always";
-      const readApproval = resolveFilesystemReadApprovalRequest({
+      const filesystemApproval = resolveFilesystemApprovalRequest({
         toolName: request.toolName,
         input: request.input,
         cwd: cwd ?? thread.workspacePath ?? ".",
@@ -7200,17 +7202,17 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         confirmationMode,
         ...(request.decisionReason ? { fallbackReason: request.decisionReason } : {}),
       });
-      if (!readApproval) {
+      if (!filesystemApproval) {
         return { behavior: "allow", updatedInput: request.input };
       }
-      if (readApproval.action === "deny") {
+      if (filesystemApproval.action === "deny") {
         return {
           behavior: "deny",
-          message: readApproval.reason,
+          message: filesystemApproval.reason,
           interrupt: false,
         };
       }
-      const filesystemPath = readApproval.filesystemPath;
+      const filesystemPath = filesystemApproval.filesystemPath;
       const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
       if (!approvalAgentId) {
         return {
@@ -7225,14 +7227,14 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         threadId,
         command: `${request.toolName} ${filesystemPath}`,
         cwd,
-        reason: readApproval.reason,
-        riskScore: readApproval.riskScore ?? 40,
-        riskLevel: readApproval.riskLevel ?? "medium",
+        reason: filesystemApproval.reason,
+        riskScore: filesystemApproval.riskScore ?? 40,
+        riskLevel: filesystemApproval.riskLevel ?? "medium",
         agentId: approvalAgentId,
         filesystemTool: request.toolName,
         filesystemPath,
         ...(request.agentType ? { agentType: request.agentType } : {}),
-        description: readApproval.userMessage,
+        description: filesystemApproval.userMessage,
       };
 
       emitThreadEvent(
@@ -7405,7 +7407,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
   };
 }
 
-function resolveFilesystemReadApprovalRequest(input: {
+function resolveFilesystemApprovalRequest(input: {
   toolName: string;
   input: Record<string, unknown>;
   cwd: string;
@@ -7423,7 +7425,10 @@ function resolveFilesystemReadApprovalRequest(input: {
     }
   | { action: "deny"; reason: string; userMessage: string }
   | undefined {
-  const decision = evaluateFilesystemReadConfirmation({
+  const evaluateConfirmation = isWriteFilesystemTool(input.toolName)
+    ? evaluateFilesystemWriteConfirmation
+    : evaluateFilesystemReadConfirmation;
+  const decision = evaluateConfirmation({
     toolName: input.toolName,
     toolInput: input.input,
     cwd: input.cwd,

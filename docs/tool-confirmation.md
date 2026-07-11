@@ -22,18 +22,18 @@ Composer 里的执行确认（持久化字段仍为 `bashReviewMode`）：
 ```
 Profile / sessionMode：能不能用这工具？
         ↓ 不能 → 硬拒（无弹窗）
-PreToolUse Hook：硬拒（denylist、越界写、阶段禁用等）
+PreToolUse Hook：硬拒 denylist / 阶段禁用；工作区外文件访问返回 ask
         ↓ 通过
 canUseTool（Desktop）：evaluateToolConfirmation
         ↓
   allow → 执行
-  ask   → 统一确认 UI（BashApprovalPanel，也用于工作区外 Read/Glob/Grep）
+  ask   → 统一确认 UI（BashApprovalPanel，也用于工作区外 Read/Glob/Grep/Write/Edit）
   deny  → 失败（无弹窗）
 ```
 
 **Bash 的风险打分与用户确认只在 `canUseTool` 做一次**；Hook 不再对 Bash 发 `ask`，避免重复判断。
 
-工作区外读取在 `acceptEdits` 下可能被 SDK 自动放行，因此 **外读仍在 Hook 层发 `ask`**（当确认档位不是 `allow_all` 时），与 Bash 的「仅 canUseTool 确认」略有不同——这是 SDK 管线约束，不是两套产品逻辑。
+工作区外读写在 `acceptEdits` 下可能被 SDK 自动放行，因此 **外部文件访问仍在 Hook 层发 `ask`**（当确认档位不是 `allow_all` 时），与 Bash 的「仅 canUseTool 确认」略有不同——这是 SDK 管线约束，不是两套产品逻辑。
 
 ---
 

@@ -127,13 +127,11 @@ export function BashApprovalPanel({
   const title =
     request.description?.trim() ||
     request.reason ||
-    (request.filesystemTool
-      ? `允许在工作区外执行 ${request.filesystemTool}？`
-      : "需要确认工具权限");
+    (request.filesystemTool ? `允许在工作区外执行 ${request.filesystemTool}？` : "需要确认工具权限");
   const runningLabel = request.filesystemTool
     ? `正在请求 ${request.filesystemTool}`
     : `正在运行 ${request.command}`;
-  const panelLabel = request.filesystemTool ? "工具读取确认" : "Bash 执行确认";
+  const panelLabel = request.filesystemTool ? "文件访问确认" : "Bash 执行确认";
   const detail = request.filesystemPath ?? request.command;
   const docked = variant === "dock";
 
@@ -193,7 +191,9 @@ export function BashApprovalPanel({
               {CIRCLED_OPTION_MARKERS[optionIndex] ?? `${optionIndex + 1}.`}
             </span>
             <span className="bash-approval-option-label bash-approval-option-remember">
-              <span className="bash-approval-option-remember-intro">{BASH_APPROVAL_REMEMBER_PREFIX_INTRO}</span>
+              <span className="bash-approval-option-remember-intro">
+                {BASH_APPROVAL_REMEMBER_PREFIX_INTRO}
+              </span>
               <span className="bash-approval-option-remember-command" title={rememberCommand}>
                 {rememberCommandPreview}
               </span>

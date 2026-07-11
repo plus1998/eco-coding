@@ -10,6 +10,10 @@ export function isReadFilesystemTool(toolName: string): boolean {
   return (READ_FILESYSTEM_TOOL_NAMES as readonly string[]).includes(toolName);
 }
 
+export function isWriteFilesystemTool(toolName: string): boolean {
+  return WRITE_FILESYSTEM_TOOLS.has(toolName);
+}
+
 export function isDiscoveryFilesystemTool(toolName: string): boolean {
   return toolName === "Glob" || toolName === "Grep";
 }
@@ -112,11 +116,7 @@ export function isPathInsideAnyPolicyScope(candidatePath: string, roots: readonl
   return roots.some((root) => isPathInsidePolicyScope(candidatePath, root));
 }
 
-export function filesystemReadScopeAskReason(
-  toolName: string,
-  filePath: string,
-  scopeRoot: string,
-): string {
+export function filesystemReadScopeAskReason(toolName: string, filePath: string, scopeRoot: string): string {
   return `Filesystem read path "${filePath}" is outside Eco workspace "${scopeRoot}". Approve to allow this ${toolName} call.`;
 }
 

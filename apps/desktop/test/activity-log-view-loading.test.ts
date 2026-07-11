@@ -292,6 +292,52 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("只读检查路由链路");
   expect(html).toContain("已处理 2m 8s");
   expect(html).toContain("检查完成，问题在 role fallback。");
+  expect(html).toContain("subagent-conversation-result");
+  expect(html).toContain("执行结果");
+});
+
+test("ActivityLogView renders Bash directly without an outer tool group", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "bash-done",
+            sequence: 1,
+            eventType: "tool.completed",
+            text: "Tool: Bash · bun test",
+            metadata: {
+              tool: {
+                name: "Bash",
+                detail: "bun test",
+                toolUseId: "toolu_bash",
+                status: "completed",
+                output: "2 pass",
+              },
+            },
+          }),
+          item({
+            id: "read-done-after-bash",
+            sequence: 2,
+            eventType: "tool.completed",
+            text: "Tool: Read · src/index.ts",
+            metadata: {
+              tool: {
+                name: "Read",
+                detail: "src/index.ts",
+                toolUseId: "toolu_read_after_bash",
+                status: "completed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-action--bash-card");
+  expect(html).not.toContain("run-log-tool-group");
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {

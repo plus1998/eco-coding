@@ -16,12 +16,12 @@ import {
   isPathInsidePolicyScope,
   isReadFilesystemTool,
   isReviewableExternalReadPath,
+  isWriteFilesystemTool,
   pathContainsGlobMeta,
   readFilesystemPath,
   resolveFilesystemScopeRoot,
   resolvePolicyPath,
   resolvePolicySearchBase,
-  WRITE_FILESYSTEM_TOOLS,
 } from "./filesystem-scope-policy.js";
 
 /** Composer「执行确认」档位（持久化字段仍为 `bashReviewMode`）。 */
@@ -56,6 +56,11 @@ export interface EvaluateFilesystemReadConfirmationInput {
   implicitReadAllowRoots?: readonly string[];
   fallbackReason?: string;
 }
+
+export type EvaluateFilesystemWriteConfirmationInput = Omit<
+  EvaluateFilesystemReadConfirmationInput,
+  "implicitReadAllowRoots"
+>;
 
 export interface ResolveAgentBashPolicyInput {
   registry?: EcoAgentRuntimeConfig;
@@ -103,7 +108,9 @@ export function evaluateBashConfirmation(input: EvaluateBashConfirmationInput): 
 }
 
 /** PreToolUse：仅硬拒；通过则交给 canUseTool 做确认。 */
-export function evaluateBashHookGate(input: EvaluateBashConfirmationInput): ToolConfirmationDecision | undefined {
+export function evaluateBashHookGate(
+  input: EvaluateBashConfirmationInput,
+): ToolConfirmationDecision | undefined {
   if (input.phaseAllowsExecution === false) {
     return toConfirmationDecision({
       action: "deny",
@@ -136,7 +143,13 @@ export function evaluateFilesystemReadConfirmation(
   const scopeRoot = resolveFilesystemScopeRoot(input.workspacePath, input.cwd);
   const implicitRoots = input.implicitReadAllowRoots ?? [];
   const filePath = readFilesystemPath(input.toolInput, input.toolName);
-  const resolved = resolveFilesystemReadCandidate(input.toolName, filePath, input.cwd, scopeRoot, implicitRoots);
+  const resolved = resolveFilesystemReadCandidate(
+    input.toolName,
+    filePath,
+    input.cwd,
+    scopeRoot,
+    implicitRoots,
+  );
 
   if (!resolved) {
     return { action: "allow", reason: "Path is inside workspace scope.", userMessage: "工作区内访问" };
@@ -145,7 +158,8 @@ export function evaluateFilesystemReadConfirmation(
   if (resolved.kind === "deny") {
     return toConfirmationDecision({
       action: "deny",
-      reason: resolved.reason ?? filesystemReadScopeAskReason(input.toolName, resolved.displayPath, scopeRoot),
+      reason:
+        resolved.reason ?? filesystemReadScopeAskReason(input.toolName, resolved.displayPath, scopeRoot),
       riskScore: 100,
       riskLevel: "high",
       matchedRule: "filesystem_outside_scope",
@@ -161,8 +175,7 @@ export function evaluateFilesystemReadConfirmation(
   }
 
   const reason =
-    input.fallbackReason ??
-    filesystemReadScopeAskReason(input.toolName, resolved.displayPath, scopeRoot);
+    input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, resolved.displayPath, scopeRoot);
   return toConfirmationDecision({
     action: "ask",
     reason,
@@ -172,7 +185,40 @@ export function evaluateFilesystemReadConfirmation(
   });
 }
 
-/** PreToolUse：写路径越界硬拒；外读在需要确认时返回 ask（避免 acceptEdits 自动放行）。 */
+export function evaluateFilesystemWriteConfirmation(
+  input: EvaluateFilesystemWriteConfirmationInput,
+): ToolConfirmationDecision | undefined {
+  if (!isWriteFilesystemTool(input.toolName)) {
+    return undefined;
+  }
+
+  const scopeRoot = resolveFilesystemScopeRoot(input.workspacePath, input.cwd);
+  const filePath = readFilesystemPath(input.toolInput, input.toolName);
+  const writeTarget = filePath ? resolvePolicyPath(filePath, input.cwd) : resolvePolicyPath(".", input.cwd);
+  if (isPathInsidePolicyScope(writeTarget, scopeRoot)) {
+    return { action: "allow", reason: "Path is inside workspace scope.", userMessage: "工作区内访问" };
+  }
+  if (input.confirmationMode === "allow_all") {
+    return {
+      action: "allow",
+      reason: "External write allowed by execution confirmation mode.",
+      userMessage: "已允许工作区外写入",
+    };
+  }
+
+  const displayPath = filePath ?? ".";
+  return toConfirmationDecision({
+    action: "ask",
+    reason:
+      input.fallbackReason ??
+      `Filesystem write path "${displayPath}" is outside Eco workspace "${scopeRoot}". Approve to allow this ${input.toolName} call.`,
+    riskScore: 70,
+    riskLevel: "high",
+    matchedRule: "filesystem_external_write",
+  });
+}
+
+/** PreToolUse：工作区外读写返回 ask，避免 acceptEdits 自动放行。 */
 export function evaluateFilesystemHookGate(input: {
   toolName: string;
   toolInput: Record<string, unknown>;
@@ -184,7 +230,7 @@ export function evaluateFilesystemHookGate(input: {
   filesystemRead: "workspace" | "extra_dirs" | "none";
 }): ToolConfirmationDecision | undefined {
   const isReadTool = isReadFilesystemTool(input.toolName);
-  const isWriteTool = WRITE_FILESYSTEM_TOOLS.has(input.toolName);
+  const isWriteTool = isWriteFilesystemTool(input.toolName);
   if (!isReadTool && !isWriteTool) {
     return undefined;
   }
@@ -192,22 +238,16 @@ export function evaluateFilesystemHookGate(input: {
     return undefined;
   }
 
-  const scopeRoot = resolveFilesystemScopeRoot(input.workspacePath, input.cwd);
-  const filePath = readFilesystemPath(input.toolInput, input.toolName);
-
   if (isWriteTool && input.filesystemWrite === "workspace") {
-    const writeTarget = filePath
-      ? resolvePolicyPath(filePath, input.cwd)
-      : resolvePolicyPath(".", input.cwd);
-    if (!isPathInsidePolicyScope(writeTarget, scopeRoot)) {
-      const displayPath = filePath ?? ".";
-      return toConfirmationDecision({
-        action: "deny",
-        reason: `Filesystem write path "${displayPath}" is outside Eco workspace "${scopeRoot}".`,
-        riskScore: 100,
-        riskLevel: "critical",
-        matchedRule: "filesystem_write_outside_scope",
-      });
+    const writeDecision = evaluateFilesystemWriteConfirmation({
+      toolName: input.toolName,
+      toolInput: input.toolInput,
+      cwd: input.cwd,
+      workspacePath: input.workspacePath,
+      confirmationMode: input.confirmationMode,
+    });
+    if (writeDecision?.action !== "allow") {
+      return writeDecision;
     }
   }
 
@@ -217,9 +257,7 @@ export function evaluateFilesystemHookGate(input: {
     cwd: input.cwd,
     workspacePath: input.workspacePath,
     confirmationMode: input.confirmationMode,
-    ...(input.implicitReadAllowRoots?.length
-      ? { implicitReadAllowRoots: input.implicitReadAllowRoots }
-      : {}),
+    ...(input.implicitReadAllowRoots?.length ? { implicitReadAllowRoots: input.implicitReadAllowRoots } : {}),
   });
   if (!readDecision || readDecision.action === "allow") {
     return undefined;
@@ -233,9 +271,7 @@ function resolveFilesystemReadCandidate(
   cwd: string,
   scopeRoot: string,
   implicitRoots: readonly string[],
-):
-  | undefined
-  | { kind: "ask" | "deny"; displayPath: string; reason?: string } {
+): undefined | { kind: "ask" | "deny"; displayPath: string; reason?: string } {
   if (!filePath) {
     if (isDiscoveryFilesystemTool(toolName)) {
       const cwdInsideScope = isPathInsidePolicyScope(resolvePolicyPath(".", cwd), scopeRoot);
@@ -272,11 +308,7 @@ function resolveFilesystemReadCandidate(
     return { kind: "ask", displayPath: filePath };
   }
 
-  return {
-    kind: "deny",
-    displayPath: filePath,
-    reason: `Filesystem read path "${filePath}" is outside Eco workspace "${scopeRoot}".`,
-  };
+  return { kind: "ask", displayPath: filePath };
 }
 
 function bashPolicyToConfirmation(policy: BashPolicyDecision): ToolConfirmationDecision {
@@ -325,6 +357,9 @@ export function formatConfirmationUserMessage(
   }
   if (matchedRule === "filesystem_external_read") {
     return "需要确认：访问工作区外的路径";
+  }
+  if (matchedRule === "filesystem_external_write") {
+    return "需要确认：写入工作区外的路径";
   }
   if (matchedRule === "filesystem_write_outside_scope" || matchedRule === "filesystem_outside_scope") {
     return "不允许写入或读取工作区外的路径";

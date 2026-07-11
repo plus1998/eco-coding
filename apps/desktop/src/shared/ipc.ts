@@ -1068,7 +1068,7 @@ export interface BashApprovalRequest {
   agentId: string;
   agentType?: string;
   description?: string;
-  /** When set, this approval is for Read/Glob/Grep outside the workspace. */
+  /** When set, this approval is for a filesystem tool outside the workspace. */
   filesystemTool?: string;
   filesystemPath?: string;
 }
