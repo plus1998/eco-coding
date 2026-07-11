@@ -178,6 +178,13 @@ import {
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
+import {
+  type ActivityWorkspaceLayoutMode,
+  resolveActivityWorkspaceLayoutMode,
+  shouldAutoOpenWorkspacePanel,
+  shouldShowActivityMessageNav,
+  workspacePanelLayoutForMode,
+} from "./activity-workspace-layout";
 import { TerminalPanel } from "./TerminalPanel";
 import {
   createProjectTerminalState,
@@ -194,13 +201,6 @@ import {
   listTerminalSessionEntriesForProject,
   replaceTerminalSessionsForProject,
 } from "./terminal-session-cache";
-import {
-  createProjectWorkspacePanelState,
-  getProjectWorkspacePanelState,
-  readWorkspacePanelWorkspaceState,
-  saveWorkspacePanelWorkspaceState,
-  type WorkspacePanelWorkspaceState,
-} from "./workspace-panel-storage";
 import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
@@ -500,21 +500,11 @@ const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
-const ACTIVITY_FEED_TARGET_WIDTH_PX = 750;
-const ACTIVITY_FEED_WITH_PANEL_MIN_WIDTH_PX = 500;
-const ACTIVITY_FEED_WITH_NAV_MIN_WIDTH_PX = 640;
-const ACTIVITY_USER_MESSAGE_NAV_RESERVE_PX = 340;
-const ACTIVITY_TASK_PANEL_COLUMN_GAP_PX = 18;
-const ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX = 48;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
-const WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX = 48;
 const WORKSPACE_CARDS_PANEL_WIDTH_PX = 300;
 
 type ActivityFeedScrollJump = "bottom" | "top";
 type ActivityFeedUserScrollDirection = "up" | "down";
-type ActivityWorkspaceLayoutMode = "full" | "feed-panel" | "feed-nav" | "feed-only";
-type WorkspaceCardsLayoutMode = "floating" | "docked";
-
 interface ActivityUserMessageNavItem {
   id: string;
   userMessage: string;
@@ -847,9 +837,12 @@ function App() {
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [storedTerminalByProject] = useState<TerminalWorkspaceState>(() => readTerminalWorkspaceState());
   const [terminalByProject, setTerminalByProject] = useState<TerminalWorkspaceState>({});
-  const [workspacePanelByProject, setWorkspacePanelByProject] = useState<WorkspacePanelWorkspaceState>(() =>
-    readWorkspacePanelWorkspaceState(),
-  );
+  const [workspacePanelManualOverride, setWorkspacePanelManualOverride] = useState<{
+    layoutMode: ActivityWorkspaceLayoutMode;
+    projectPath: string | undefined;
+    threadId: string | undefined;
+    open: boolean;
+  }>();
   const [backgroundTerminalTasks, setBackgroundTerminalTasks] = useState<BackgroundTerminalTask[]>([]);
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_REVIEW_TAB_ID);
@@ -858,9 +851,7 @@ function App() {
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
-    useState<ActivityWorkspaceLayoutMode>("full");
-  const [workspaceCardsLayoutMode, setWorkspaceCardsLayoutMode] =
-    useState<WorkspaceCardsLayoutMode>("floating");
+    useState<ActivityWorkspaceLayoutMode>("feed-only");
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
@@ -1576,12 +1567,23 @@ function App() {
     }
     return getProjectTerminalState(terminalByProject, currentProjectPath);
   }, [currentProjectPath, terminalByProject]);
-  const currentWorkspacePanelState = useMemo(() => {
-    if (!currentProjectPath) {
-      return undefined;
-    }
-    return getProjectWorkspacePanelState(workspacePanelByProject, currentProjectPath);
-  }, [currentProjectPath, workspacePanelByProject]);
+  const activeThread = useMemo(
+    () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
+    [selectedThreadId, threads],
+  );
+  const workspacePanelResponsiveDefaultOpen = Boolean(
+    activeThread && shouldAutoOpenWorkspacePanel(activityWorkspaceLayoutMode),
+  );
+  const workspacePanelManualOpen =
+    workspacePanelManualOverride?.layoutMode === activityWorkspaceLayoutMode &&
+    workspacePanelManualOverride.projectPath === currentProjectPath &&
+    workspacePanelManualOverride.threadId === activeThread?.id
+      ? workspacePanelManualOverride.open
+      : undefined;
+  const workspacePanelResolvedOpen = workspacePanelManualOpen ?? workspacePanelResponsiveDefaultOpen;
+  useLayoutEffect(() => {
+    setWorkspacePanelManualOverride(undefined);
+  }, [activityWorkspaceLayoutMode, currentProjectPath, activeThread?.id]);
   useEffect(() => {
     setReviewDiff(undefined);
     setReviewDiffLoading(false);
@@ -1628,26 +1630,13 @@ function App() {
     if (!currentProjectPath) {
       return;
     }
-    const desiredOpen = currentWorkspacePanelState?.open === true;
-    const nextOpen = taskDrawerOpen ? true : !desiredOpen;
-    setWorkspacePanelByProject((current) => {
-      const existing = current[currentProjectPath];
-      return {
-        ...current,
-        [currentProjectPath]: existing
-          ? { ...existing, open: nextOpen }
-          : createProjectWorkspacePanelState(nextOpen),
-      };
+    setWorkspacePanelManualOverride({
+      layoutMode: activityWorkspaceLayoutMode,
+      projectPath: currentProjectPath,
+      threadId: activeThread?.id,
+      open: !workspacePanelResolvedOpen,
     });
-    if (taskDrawerOpen) {
-      setTaskDrawerOpen(false);
-      setTaskPanelFullscreen(false);
-    }
-  }, [currentProjectPath, currentWorkspacePanelState?.open, taskDrawerOpen]);
-  const activeThread = useMemo(
-    () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
-    [selectedThreadId, threads],
-  );
+  }, [activeThread?.id, activityWorkspaceLayoutMode, currentProjectPath, workspacePanelResolvedOpen]);
   const pendingPlan = activeThread ? pendingPlansByThread[activeThread.id] : undefined;
   const approvedPlan = activeThread ? approvedPlansByThread[activeThread.id] : undefined;
   const taskPanelPlan = pendingPlan ?? approvedPlan;
@@ -1740,9 +1729,6 @@ function App() {
     saveTerminalWorkspaceState(terminalByProject);
   }, [terminalByProject]);
   useEffect(() => {
-    saveWorkspacePanelWorkspaceState(workspacePanelByProject);
-  }, [workspacePanelByProject]);
-  useEffect(() => {
     saveTaskPanelWidth(taskPanelWidth);
   }, [taskPanelWidth]);
   useEffect(() => {
@@ -1809,50 +1795,6 @@ function App() {
     storedTerminalByProject,
     terminalLifecycleEpoch,
   ]);
-  const workspacePanelModeRef = useRef<{
-    projectPath?: string;
-    inConversation?: boolean;
-  }>({});
-  useEffect(() => {
-    if (!currentProjectPath) {
-      return;
-    }
-    const inConversation = Boolean(activeThread && activeThread.workspacePath === currentProjectPath);
-    const prev = workspacePanelModeRef.current;
-    const projectChanged = prev.projectPath !== currentProjectPath;
-    const modeChanged = !projectChanged && prev.inConversation !== inConversation;
-    workspacePanelModeRef.current = {
-      projectPath: currentProjectPath,
-      inConversation,
-    };
-    setWorkspacePanelByProject((current) => {
-      const existing = current[currentProjectPath];
-      if (projectChanged) {
-        if (existing !== undefined) {
-          if (inConversation && !existing.open) {
-            return {
-              ...current,
-              [currentProjectPath]: { ...existing, open: true },
-            };
-          }
-          return current;
-        }
-        return {
-          ...current,
-          [currentProjectPath]: createProjectWorkspacePanelState(inConversation),
-        };
-      }
-      if (!modeChanged) {
-        return current;
-      }
-      return {
-        ...current,
-        [currentProjectPath]: existing
-          ? { ...existing, open: inConversation }
-          : createProjectWorkspacePanelState(inConversation),
-      };
-    });
-  }, [activeThread?.id, activeThread?.workspacePath, currentProjectPath]);
   useEffect(() => {
     if (!currentProjectPath) {
       return undefined;
@@ -2556,22 +2498,6 @@ function App() {
     }
   }, [activeSubagentCards, taskPanelActiveTab, taskPanelPlan]);
 
-  const closeWorkspacePanelForCurrentProject = useCallback(() => {
-    if (!currentProjectPath) {
-      return;
-    }
-    setWorkspacePanelByProject((current) => {
-      const existing = current[currentProjectPath];
-      if (!existing?.open) {
-        return current;
-      }
-      return {
-        ...current,
-        [currentProjectPath]: { ...existing, open: false },
-      };
-    });
-  }, [currentProjectPath]);
-
   const toggleTaskPanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
       return;
@@ -2581,44 +2507,37 @@ function App() {
       setTaskPanelFullscreen(false);
       return;
     }
-    closeWorkspacePanelForCurrentProject();
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
-  }, [closeWorkspacePanelForCurrentProject, currentProjectPath, taskDrawerOpen]);
+  }, [currentProjectPath, taskDrawerOpen]);
 
   const openReviewTaskDrawer = useCallback(() => {
-    closeWorkspacePanelForCurrentProject();
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setOpenSubagentTabIds([]);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
-  }, [closeWorkspacePanelForCurrentProject]);
+  }, []);
 
   const openPlanTaskDrawer = useCallback(() => {
     if (!taskPanelPlan) {
       return;
     }
-    closeWorkspacePanelForCurrentProject();
     setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
-  }, [closeWorkspacePanelForCurrentProject, taskPanelPlan]);
+  }, [taskPanelPlan]);
 
-  const openSubagentTaskDrawer = useCallback(
-    (agentId: string) => {
-      closeWorkspacePanelForCurrentProject();
+  const openSubagentTaskDrawer = useCallback((agentId: string) => {
       setOpenSubagentTabIds((current) => (current.includes(agentId) ? current : [...current, agentId]));
       setTaskPanelActiveTab(agentId);
       setSelectedSubagentAgentId(agentId);
       setTaskPanelFullscreen(false);
       setTaskDrawerOpen(true);
-    },
-    [closeWorkspacePanelForCurrentProject],
-  );
+  }, []);
 
   const closeSubagentTaskTab = useCallback(
     (agentId: string) => {
@@ -2755,6 +2674,7 @@ function App() {
   const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
   const mainPaneRef = useRef<HTMLDivElement>(null);
+  const activityWorkspaceRef = useRef<HTMLDivElement>(null);
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLElement>(null);
   const workspaceCardsPanelRef = useRef<HTMLElement>(null);
@@ -2973,69 +2893,15 @@ function App() {
   );
 
   useLayoutEffect(() => {
-    if (!currentProjectPath || !activeThread || !currentWorkspacePanelState?.open || taskDrawerOpen) {
-      setWorkspaceCardsLayoutMode("floating");
+    if (!currentProjectPath || !activeThread) {
+      setActivityWorkspaceLayoutMode("feed-only");
       return undefined;
     }
 
-    const mainPane = mainPaneRef.current;
-    if (!mainPane) {
+    const activityWorkspace = activityWorkspaceRef.current;
+    if (!activityWorkspace) {
       return undefined;
     }
-
-    const readCssPixelValue = (value: string | undefined): number => {
-      const parsed = Number.parseFloat(value ?? "");
-      return Number.isFinite(parsed) ? parsed : 0;
-    };
-    const measureLayoutMode = (current: WorkspaceCardsLayoutMode): WorkspaceCardsLayoutMode => {
-      const scrollBody = scrollBodyRef.current;
-      const feed = scrollBody?.querySelector<HTMLElement>(".codex-feed-stack");
-      const paneRect = mainPane.getBoundingClientRect();
-      const paneWidth = paneRect.width;
-      if (!scrollBody || !feed || paneWidth <= 0) {
-        return "floating";
-      }
-
-      const scrollBodyRect = scrollBody.getBoundingClientRect();
-      const rootStyle = window.getComputedStyle(document.documentElement);
-      const scrollBodyStyle = window.getComputedStyle(scrollBody);
-      const baseLeftInset =
-        readCssPixelValue(rootStyle.getPropertyValue("--content-inline-start")) ||
-        readCssPixelValue(scrollBodyStyle.paddingLeft);
-      const baseRightInset =
-        readCssPixelValue(rootStyle.getPropertyValue("--content-inline-end")) ||
-        readCssPixelValue(scrollBodyStyle.paddingRight);
-      const centeredContentWidth = Math.max(0, scrollBodyRect.width - baseLeftInset - baseRightInset);
-      const feedWidth = Math.min(ACTIVITY_FEED_TARGET_WIDTH_PX, centeredContentWidth);
-      const centeredFeedLeft =
-        scrollBodyRect.left + baseLeftInset + Math.max(0, (centeredContentWidth - feedWidth) / 2);
-      const centeredFeedRight = centeredFeedLeft + feedWidth;
-
-      const workspacePanel = workspaceCardsPanelRef.current;
-      const panelStyle = workspacePanel ? window.getComputedStyle(workspacePanel) : undefined;
-      const panelWidth =
-        workspacePanel?.offsetWidth || readCssPixelValue(panelStyle?.width) || WORKSPACE_CARDS_PANEL_WIDTH_PX;
-      const panelRight =
-        readCssPixelValue(panelStyle?.right) ||
-        readCssPixelValue(rootStyle.getPropertyValue("--toolbar-edge-inset"));
-      const panelLeft = paneRect.right - panelRight - panelWidth;
-      const centeredClearance = panelLeft - centeredFeedRight;
-      const floatingClearanceRequired =
-        current === "floating"
-          ? WORKSPACE_CARDS_RESPONSIVE_GAP_PX
-          : WORKSPACE_CARDS_RESPONSIVE_GAP_PX + WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX;
-      if (centeredClearance >= floatingClearanceRequired) {
-        return "floating";
-      }
-
-      const dockedRequiredWidth =
-        baseLeftInset + feedWidth + WORKSPACE_CARDS_RESPONSIVE_GAP_PX + panelWidth + panelRight;
-      const dockedWidthRequired =
-        current === "docked"
-          ? dockedRequiredWidth - WORKSPACE_CARDS_RESPONSIVE_HYSTERESIS_PX
-          : dockedRequiredWidth;
-      return paneWidth >= dockedWidthRequired ? "docked" : "floating";
-    };
 
     let frame = 0;
     const update = () => {
@@ -3044,24 +2910,13 @@ function App() {
       }
       frame = requestAnimationFrame(() => {
         frame = 0;
-        setWorkspaceCardsLayoutMode((current) => measureLayoutMode(current));
+        const width = activityWorkspace.getBoundingClientRect().width;
+        setActivityWorkspaceLayoutMode((current) => resolveActivityWorkspaceLayoutMode(width, current));
       });
     };
 
     const observer = new ResizeObserver(update);
-    observer.observe(mainPane);
-    const scrollBody = scrollBodyRef.current;
-    if (scrollBody) {
-      observer.observe(scrollBody);
-      const feed = scrollBody.querySelector<HTMLElement>(".codex-feed-stack");
-      if (feed) {
-        observer.observe(feed);
-      }
-    }
-    const workspacePanel = workspaceCardsPanelRef.current;
-    if (workspacePanel) {
-      observer.observe(workspacePanel);
-    }
+    observer.observe(activityWorkspace);
     window.addEventListener("resize", update);
     update();
 
@@ -3072,72 +2927,7 @@ function App() {
       observer.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [activeThread?.id, currentProjectPath, currentWorkspacePanelState?.open, taskDrawerOpen]);
-
-  useLayoutEffect(() => {
-    if (!currentProjectPath || !activeThread || !taskDrawerOpen || taskPanelFullscreen) {
-      setActivityWorkspaceLayoutMode("full");
-      return undefined;
-    }
-
-    const mainPane = mainPaneRef.current;
-    if (!mainPane) {
-      return undefined;
-    }
-
-    const measureLayoutMode = (current: ActivityWorkspaceLayoutMode): ActivityWorkspaceLayoutMode => {
-      const paneWidth = mainPane.getBoundingClientRect().width;
-      const panelWidth = clampTaskPanelWidth(taskPanelWidth);
-      const fullThreshold =
-        ACTIVITY_FEED_TARGET_WIDTH_PX +
-        panelWidth +
-        ACTIVITY_USER_MESSAGE_NAV_RESERVE_PX +
-        ACTIVITY_TASK_PANEL_COLUMN_GAP_PX;
-      const fullRequired =
-        current === "full"
-          ? fullThreshold - ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX
-          : fullThreshold + ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX;
-      const panelThreshold =
-        ACTIVITY_FEED_WITH_PANEL_MIN_WIDTH_PX + MIN_TASK_PANEL_WIDTH + ACTIVITY_TASK_PANEL_COLUMN_GAP_PX;
-      const panelRequired =
-        current === "feed-panel" ? panelThreshold - ACTIVITY_WORKSPACE_LAYOUT_HYSTERESIS_PX : panelThreshold;
-
-      if (paneWidth >= fullRequired) {
-        return "full";
-      }
-      if (paneWidth >= panelRequired) {
-        return "feed-panel";
-      }
-      if (paneWidth >= ACTIVITY_FEED_WITH_NAV_MIN_WIDTH_PX) {
-        return "feed-nav";
-      }
-      return "feed-only";
-    };
-
-    let frame = 0;
-    const update = () => {
-      if (frame) {
-        cancelAnimationFrame(frame);
-      }
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        setActivityWorkspaceLayoutMode((current) => measureLayoutMode(current));
-      });
-    };
-
-    const observer = new ResizeObserver(update);
-    observer.observe(mainPane);
-    window.addEventListener("resize", update);
-    update();
-
-    return () => {
-      if (frame) {
-        cancelAnimationFrame(frame);
-      }
-      observer.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [activeThread?.id, currentProjectPath, taskDrawerOpen, taskPanelFullscreen, taskPanelWidth]);
+  }, [activeThread?.id, currentProjectPath]);
 
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
@@ -4869,36 +4659,22 @@ function App() {
 
   const showLanding = !activeThread;
   const showWorkspacePanel = Boolean(currentProjectPath);
-  const workspaceCardsPanelDesiredOpen = Boolean(
-    showWorkspacePanel && currentWorkspacePanelState?.open && !taskDrawerOpen,
-  );
-  const workspaceCardsPanelOpen = workspaceCardsPanelDesiredOpen;
+  const workspaceCardsLayoutMode = workspacePanelLayoutForMode(activityWorkspaceLayoutMode);
+  const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && workspacePanelResolvedOpen);
   const workspaceCardsDockedLayout = Boolean(
     workspaceCardsPanelOpen && !showLanding && workspaceCardsLayoutMode === "docked",
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
-  const taskPanelAutoHidden = Boolean(
-    taskPanelOpen &&
-      !taskPanelFullscreen &&
-      (activityWorkspaceLayoutMode === "feed-nav" || activityWorkspaceLayoutMode === "feed-only"),
-  );
-  const taskPanelLayoutOpen = Boolean(taskPanelOpen && !taskPanelAutoHidden);
+  const taskPanelLayoutOpen = taskPanelOpen;
   const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
-  const activityUserMessageNavHidden = Boolean(
-    workspaceCardsDockedLayout ||
-      (taskPanelOpen &&
-        !taskPanelFullscreen &&
-        (activityWorkspaceLayoutMode === "feed-panel" || activityWorkspaceLayoutMode === "feed-only")),
+  const activityUserMessageNavHidden = !shouldShowActivityMessageNav(
+    activityWorkspaceLayoutMode,
+    activityUserMessageNavItems.length,
   );
-  const activityFeedPanelLayout = Boolean(
-    taskPanelLayoutOpen && activityWorkspaceLayoutMode === "feed-panel" && !taskPanelFullscreen,
-  );
-  const activityFeedNavLayout = Boolean(
-    taskPanelOpen && activityWorkspaceLayoutMode === "feed-nav" && !taskPanelFullscreen,
-  );
-  const rightPanelOpen = taskPanelLayoutOpen;
+  const activityFeedPanelLayout = activityWorkspaceLayoutMode === "feed-panel";
+  const activityFeedNavLayout = activityWorkspaceLayoutMode === "feed-nav";
   const rightPanelStyle = {
-    "--workspace-panel-width": taskPanelOpen ? `${taskPanelWidth}px` : "300px",
+    "--workspace-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
     "--workspace-cards-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
     "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
@@ -4914,7 +4690,7 @@ function App() {
         title={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
         aria-label={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
         aria-expanded={workspaceCardsPanelOpen}
-        aria-controls="workspace-panel"
+        aria-controls="workspace-cards-panel"
       >
         <SlidersHorizontal size={15} aria-hidden />
       </button>
@@ -4948,6 +4724,65 @@ function App() {
       </button>
     </div>
   ) : null;
+  const taskPanelNode =
+    showWorkspacePanel && taskPanelLayoutOpen ? (
+      <aside
+        id="task-panel-container"
+        className={["workspace-panel", "is-task-panel-mode", taskPanelFullscreenOpen ? "is-fullscreen" : ""]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label={taskPanelFullscreenOpen ? "全屏任务面板" : "任务面板"}
+        aria-hidden={!taskPanelOpen}
+      >
+        <hr
+          className="task-panel-resize-handle"
+          aria-label="调整任务面板宽度"
+          aria-orientation="vertical"
+          tabIndex={0}
+          title="拖动调整宽度"
+          onMouseDown={handleTaskPanelResizeMouseDown}
+          onKeyDown={handleTaskPanelResizeKeyDown}
+        />
+        <SubagentTaskDrawer
+          open={taskPanelOpen}
+          fullscreen={taskPanelFullscreenOpen}
+          cards={activeSubagentCards}
+          {...(taskPanelPlan && { plan: taskPanelPlan })}
+          activeTab={taskPanelActiveTab}
+          openSubagentTabIds={openSubagentTabIds}
+          {...(runProjection && { projection: runProjection })}
+          {...(activeThread && { threadStatus: activeThread.status })}
+          agentDisplayNames={activeRuntimeAgentDisplayNames}
+          agentThemes={activeRuntimeAgentThemes}
+          backgroundTasks={backgroundTerminalTasks}
+          {...(reviewDiff && { reviewDiff })}
+          reviewLoading={reviewDiffLoading}
+          {...(reviewDiffError && { reviewError: reviewDiffError })}
+          {...(reviewSelectedPath && { reviewSelectedPath })}
+          onSelectAgent={(agentId) => {
+            setTaskPanelActiveTab(agentId);
+            setSelectedSubagentAgentId(agentId);
+          }}
+          onSelectPlan={() => {
+            setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onCloseAgent={closeSubagentTaskTab}
+          onSelectBackgroundTasks={() => {
+            setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onSelectReview={() => {
+            setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onToggleFullscreen={() => setTaskPanelFullscreen((current) => !current)}
+          onSelectReviewPath={setReviewSelectedPath}
+          onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
+          onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
+        />
+      </aside>
+    ) : null;
   const syncTopbarMode = useCallback(() => {
     const scrollBody = scrollBodyRef.current;
     const topbar = topbarRef.current;
@@ -4988,7 +4823,7 @@ function App() {
     showLanding,
     currentProjectPath,
     activeThread?.id,
-    currentWorkspacePanelState?.open,
+    workspaceCardsPanelOpen,
     workspaceCardsLayoutMode,
     taskDrawerOpen,
     syncTopbarMode,
@@ -5419,18 +5254,34 @@ function App() {
           .filter(Boolean)
           .join(" ")}
       >
-        <div ref={mainPaneRef} className="codex-main-pane" style={rightPanelStyle}>
+        <div
+          ref={mainPaneRef}
+          className={[
+            "codex-main-pane",
+            taskPanelLayoutOpen ? "is-task-panel-open" : "",
+            taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          style={rightPanelStyle}
+        >
+          <div
+            ref={activityWorkspaceRef}
+            className={[
+              "activity-workspace-shell",
+              `is-${activityWorkspaceLayoutMode}`,
+              workspaceCardsDockedLayout ? "has-docked-workspace-cards" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
           <div
             className={[
               "codex-main-scroll",
               showWorkspacePanel ? "has-workspace-panel" : "",
-              rightPanelOpen ? "is-workspace-panel-open" : "",
-              taskPanelLayoutOpen ? "is-task-panel-open" : "",
               workspaceCardsDockedLayout ? "is-workspace-cards-docked" : "",
               activityFeedPanelLayout ? "is-feed-panel-layout" : "",
               activityFeedNavLayout ? "is-feed-nav-layout" : "",
-              taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
-              currentProjectPath && showLanding && rightPanelOpen ? "is-topbar-solid" : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
               !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
             ]
@@ -5545,7 +5396,11 @@ function App() {
                 const workspaceLabel =
                   projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
                 return (
-                  <div key={workspacePath} className="codex-terminal-project-slot" hidden={!isCurrentProject}>
+                    <div
+                      key={workspacePath}
+                      className="codex-terminal-project-slot"
+                      hidden={!isCurrentProject}
+                    >
                     <TerminalPanel
                       workspacePath={workspacePath}
                       workspaceLabel={workspaceLabel}
@@ -5561,74 +5416,11 @@ function App() {
                 );
               })}
             </div>
-
-            {showWorkspacePanel && taskPanelLayoutOpen ? (
-              <aside
-                id="workspace-panel"
-                className={[
-                  "workspace-panel",
-                  "is-task-panel-mode",
-                  taskPanelFullscreenOpen ? "is-fullscreen" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label={taskPanelFullscreenOpen ? "全屏任务面板" : "任务面板"}
-                aria-hidden={!taskPanelOpen}
-              >
-                <hr
-                  className="task-panel-resize-handle"
-                  aria-label="调整任务面板宽度"
-                  aria-orientation="vertical"
-                  tabIndex={0}
-                  title="拖动调整宽度"
-                  onMouseDown={handleTaskPanelResizeMouseDown}
-                  onKeyDown={handleTaskPanelResizeKeyDown}
-                />
-                <SubagentTaskDrawer
-                  open={taskPanelOpen}
-                  fullscreen={taskPanelFullscreenOpen}
-                  cards={activeSubagentCards}
-                  {...(taskPanelPlan && { plan: taskPanelPlan })}
-                  activeTab={taskPanelActiveTab}
-                  openSubagentTabIds={openSubagentTabIds}
-                  {...(runProjection && { projection: runProjection })}
-                  {...(activeThread && { threadStatus: activeThread.status })}
-                  agentDisplayNames={activeRuntimeAgentDisplayNames}
-                  agentThemes={activeRuntimeAgentThemes}
-                  backgroundTasks={backgroundTerminalTasks}
-                  {...(reviewDiff && { reviewDiff })}
-                  reviewLoading={reviewDiffLoading}
-                  {...(reviewDiffError && { reviewError: reviewDiffError })}
-                  {...(reviewSelectedPath && { reviewSelectedPath })}
-                  onSelectAgent={(agentId) => {
-                    setTaskPanelActiveTab(agentId);
-                    setSelectedSubagentAgentId(agentId);
-                  }}
-                  onSelectPlan={() => {
-                    setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
-                    setSelectedSubagentAgentId(undefined);
-                  }}
-                  onCloseAgent={closeSubagentTaskTab}
-                  onSelectBackgroundTasks={() => {
-                    setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
-                    setSelectedSubagentAgentId(undefined);
-                  }}
-                  onSelectReview={() => {
-                    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
-                    setSelectedSubagentAgentId(undefined);
-                  }}
-                  onToggleFullscreen={() => setTaskPanelFullscreen((current) => !current)}
-                  onSelectReviewPath={setReviewSelectedPath}
-                  onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
-                  onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
-                />
-              </aside>
-            ) : null}
           </div>
-          {showWorkspacePanel && !taskPanelOpen ? (
+            {showWorkspacePanel ? (
             <aside
               ref={workspaceCardsPanelRef}
-              id="workspace-panel"
+                id="workspace-cards-panel"
               className={[
                 "workspace-panel",
                 "workspace-panel--floating-cards",
@@ -5667,7 +5459,9 @@ function App() {
                 {...(gitStatus && { gitStatus })}
                 gitBusy={gitStatusBusy || gitStatusLoading}
                 commitDisabled={
-                  activeThread ? activeThread.status === "running" || activeThread.status === "queued" : false
+                    activeThread
+                      ? activeThread.status === "running" || activeThread.status === "queued"
+                      : false
                 }
                 onCheckoutGitBranch={handleGitCheckoutBranch}
                 onCreateGitBranch={handleGitCreateBranch}
@@ -5696,6 +5490,8 @@ function App() {
               />
             </aside>
           ) : null}
+        </div>
+          {taskPanelNode}
         </div>
       </section>
 

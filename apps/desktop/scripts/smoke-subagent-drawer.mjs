@@ -40,12 +40,12 @@ await subagentCard.click();
 await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "visible", timeout: 10_000 });
 await page.locator(".subagent-task-detail-feed").waitFor({ state: "visible", timeout: 10_000 });
 await page.locator(".subagent-conversation").waitFor({ state: "visible", timeout: 10_000 });
-await page.locator(".subagent-conversation-prompt").waitFor({ state: "visible", timeout: 10_000 });
+await page.locator(".subagent-conversation-prompt").waitFor({ state: "visible", timeout: 30_000 });
 await waitForTaskPanelWidth(page, 360);
 await expectSubagentTaskPanel(page);
 
 const workspacePanelButton = page
-  .locator('.codex-main-toolbar-button[aria-controls="workspace-panel"]')
+  .locator('.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]')
   .first();
 const terminalPanelButton = page
   .locator('.codex-main-toolbar-button[aria-controls="terminal-panel"]')
@@ -58,12 +58,9 @@ await taskPanelButton.waitFor({ state: "visible", timeout: 10_000 });
 if (!(await taskPanelButton.evaluate((node) => node.classList.contains("is-active")))) {
   throw new Error("Expected the task panel toolbar button to be active after opening a subagent card.");
 }
-if (await workspacePanelButton.evaluate((node) => node.classList.contains("is-active"))) {
-  throw new Error("Workspace cards button should not stay active while the task panel is open.");
-}
-
+await expectWorkspaceToolbarRightReserve(page, false);
 const taskPanelWidthBefore = await page
-  .locator("#task-panel")
+  .locator("#task-panel-container")
   .evaluate((node) => node.getBoundingClientRect().width);
 if (taskPanelWidthBefore < 360) {
   throw new Error(
@@ -94,7 +91,7 @@ try {
   );
   await page.waitForFunction(
     (previousWidth) => {
-      const panel = document.querySelector("#task-panel");
+      const panel = document.querySelector("#task-panel-container");
       return (
         panel instanceof HTMLElement && Math.abs(panel.getBoundingClientRect().width - previousWidth) >= 40
       );
@@ -106,7 +103,7 @@ try {
   await page.mouse.up();
 }
 const taskPanelWidthAfter = await page
-  .locator("#task-panel")
+  .locator("#task-panel-container")
   .evaluate((node) => node.getBoundingClientRect().width);
 if (Math.abs(taskPanelWidthAfter - taskPanelWidthBefore) < 40) {
   throw new Error(
@@ -114,15 +111,17 @@ if (Math.abs(taskPanelWidthAfter - taskPanelWidthBefore) < 40) {
   );
 }
 
-await workspacePanelButton.click();
-await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "hidden", timeout: 10_000 });
+if (!(await workspacePanelButton.evaluate((node) => node.classList.contains("is-active")))) {
+  await workspacePanelButton.click();
+}
 await page.locator(".workspace-floating-cards").waitFor({ state: "visible", timeout: 10_000 });
 await page.locator(".workspace-subagent-runs-list").waitFor({ state: "visible", timeout: 10_000 });
+await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "visible", timeout: 10_000 });
 if (!(await workspacePanelButton.evaluate((node) => node.classList.contains("is-active")))) {
   throw new Error("Expected workspace cards button to become active after clicking it.");
 }
-if (await taskPanelButton.evaluate((node) => node.classList.contains("is-active"))) {
-  throw new Error("Task panel button should not stay active while workspace cards are open.");
+if (!(await taskPanelButton.evaluate((node) => node.classList.contains("is-active")))) {
+  throw new Error("Task panel should remain active while workspace cards are open.");
 }
 
 const changesButton = page
@@ -141,10 +140,6 @@ if (legacyDiffDrawerCount !== 0) {
 }
 
 await workspacePanelButton.click();
-await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "hidden", timeout: 10_000 });
-await page.locator(".workspace-floating-cards").waitFor({ state: "visible", timeout: 10_000 });
-
-await taskPanelButton.click();
 await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "visible", timeout: 10_000 });
 await page.locator(".workspace-floating-cards").waitFor({ state: "hidden", timeout: 10_000 });
 await waitForTaskPanelWidth(page, 360);
@@ -152,11 +147,15 @@ await expectReviewTaskPanel(page);
 
 await taskPanelButton.click();
 await expectMainFeedLayoutRestored(page);
+await expectWorkspaceToolbarRightReserve(page, true);
+
+await expectResponsiveWorkspaceModes(page);
 
 await taskPanelButton.click();
 await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "visible", timeout: 10_000 });
 await waitForTaskPanelWidth(page, 360);
 await expectReviewTaskPanel(page);
+await expectWorkspaceToolbarRightReserve(page, false);
 
 const terminalTask = await page.evaluate(async (taskMarker) => {
   if (!window.eco?.getCurrentWorkspace || !window.eco?.startBackgroundTerminalTask) {
@@ -296,16 +295,81 @@ async function expectMainFeedLayoutRestored(page) {
   await page.locator(".subagent-task-side-panel.is-open").waitFor({ state: "hidden", timeout: 10_000 });
   await page.waitForFunction(
     () => {
-      const main = document.querySelector(".codex-main-scroll");
+      const mainPane = document.querySelector(".codex-main-pane");
       return (
-        main instanceof HTMLElement &&
-        !main.classList.contains("has-workspace-panel") &&
-        !main.classList.contains("is-workspace-panel-open") &&
-        !main.classList.contains("is-task-panel-open") &&
-        !document.querySelector("#workspace-panel")
+        mainPane instanceof HTMLElement &&
+        !mainPane.classList.contains("is-task-panel-open") &&
+        !document.querySelector("#task-panel-container")
       );
     },
     undefined,
+    { timeout: 10_000 },
+  );
+}
+
+async function expectResponsiveWorkspaceModes(page) {
+  const originalViewport = page.viewportSize() ?? { width: 1440, height: 900 };
+  const scenarios = [
+    { width: 1800, mode: "is-full", panelOpen: true },
+    { width: 1450, mode: "is-feed-panel", panelOpen: true },
+    { width: 1150, mode: "is-feed-nav", panelOpen: false },
+    { width: 1000, mode: "is-feed-only", panelOpen: false },
+  ];
+  try {
+    for (const [index, scenario] of scenarios.entries()) {
+      await page.setViewportSize({ width: scenario.width, height: 900 });
+      await page.waitForFunction(
+        (expectedMode) =>
+          document.querySelector(".activity-workspace-shell")?.classList.contains(expectedMode),
+        scenario.mode,
+        { timeout: 10_000 },
+      );
+      await expectWorkspacePanelOpen(page, scenario.panelOpen);
+
+      if (index === 0) {
+        await page.locator('.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]').click();
+        await expectWorkspacePanelOpen(page, false);
+      }
+      if (index === 2) {
+        await page.locator('.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]').click();
+        await expectWorkspacePanelOpen(page, true);
+      }
+    }
+  } finally {
+    await page.setViewportSize(originalViewport);
+  }
+}
+
+async function expectWorkspacePanelOpen(page, expectedOpen) {
+  await page.waitForFunction(
+    (open) => {
+      const panel = document.querySelector("#workspace-cards-panel");
+      const button = document.querySelector(
+        '.codex-main-toolbar-button[aria-controls="workspace-cards-panel"]',
+      );
+      return (
+        panel instanceof HTMLElement &&
+        button instanceof HTMLButtonElement &&
+        panel.classList.contains("is-open") === open &&
+        button.getAttribute("aria-expanded") === String(open)
+      );
+    },
+    expectedOpen,
+    { timeout: 10_000 },
+  );
+}
+
+async function expectWorkspaceToolbarRightReserve(page, expectedReserved) {
+  await page.waitForFunction(
+    (reserved) => {
+      const toolbar = document.querySelector(".codex-main-toolbar--workspace");
+      if (!(toolbar instanceof HTMLElement)) {
+        return false;
+      }
+      const marginRight = Number.parseFloat(window.getComputedStyle(toolbar).marginRight);
+      return Number.isFinite(marginRight) && (reserved ? marginRight > 1 : marginRight <= 0.5);
+    },
+    expectedReserved,
     { timeout: 10_000 },
   );
 }
