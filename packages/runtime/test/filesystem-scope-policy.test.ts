@@ -4,6 +4,7 @@ import {
   expandHomeInPolicyPath,
   filesystemReadScopeAskReason,
   isPathInsidePolicyScope,
+  isSystemTemporaryPolicyPath,
   readFilesystemPath,
   resolveFilesystemScopeRoot,
   resolvePolicyPath,
@@ -36,12 +37,7 @@ test("resolvePolicySearchBase strips glob meta to static search root", () => {
 });
 
 test("resolveFilesystemScopeRoot expands to parent cwd for subdirectory workspaces", () => {
-  expect(
-    resolveFilesystemScopeRoot(
-      "/repo/apps/desktop",
-      "/repo",
-    ),
-  ).toBe("/repo");
+  expect(resolveFilesystemScopeRoot("/repo/apps/desktop", "/repo")).toBe("/repo");
 });
 
 test("filesystemReadScopeAskReason describes approval intent", () => {
@@ -51,4 +47,17 @@ test("filesystemReadScopeAskReason describes approval intent", () => {
 test("isPathInsidePolicyScope treats workspace descendants as inside", () => {
   expect(isPathInsidePolicyScope("/repo/apps/desktop/src", "/repo/apps/desktop")).toBe(true);
   expect(isPathInsidePolicyScope("/repo/other", "/repo/apps/desktop")).toBe(false);
+});
+
+test("isSystemTemporaryPolicyPath allows system temp descendants without path escapes", () => {
+  expect(isSystemTemporaryPolicyPath(resolvePolicyPath("/tmp/claude-501/tasks/result.output", "/repo"))).toBe(
+    true,
+  );
+  expect(isSystemTemporaryPolicyPath(resolvePolicyPath(`${os.tmpdir()}/eco/result.json`, "/repo"))).toBe(
+    true,
+  );
+  expect(isSystemTemporaryPolicyPath(resolvePolicyPath("/tmp/../etc/hosts", "/repo"))).toBe(false);
+  if (process.platform === "darwin") {
+    expect(isSystemTemporaryPolicyPath("/private/tmp/claude-501/tasks/result.output")).toBe(true);
+  }
 });

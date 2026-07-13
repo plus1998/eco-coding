@@ -216,6 +216,8 @@ Profile 结构化开关 (bash / filesystem / network)
 
 **产品原则**：禁止只通过 `disallowed`（及物化）表达；hook 不再对 `filesystem.write: "none"` 单独拒绝写工具（已由物化处理），但仍保留**路径 scope**（工作区外读写）和 **bash 命令 allowlist/denylist** 检查。
 
+系统临时目录是路径 scope 的显式例外：Unix `/tmp`、macOS `/private/tmp` 和运行时 `os.tmpdir()` 下的读写自动允许，不触发用户确认。路径会先规范化，不能通过 `/tmp/../` 逃逸到其他目录。
+
 ---
 
 ## 5. Eco Profile 工具策略映射

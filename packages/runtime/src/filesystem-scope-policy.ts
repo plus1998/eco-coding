@@ -116,6 +116,18 @@ export function isPathInsideAnyPolicyScope(candidatePath: string, roots: readonl
   return roots.some((root) => isPathInsidePolicyScope(candidatePath, root));
 }
 
+/** System temp is shared scratch space and does not require an external-path approval. */
+export function isSystemTemporaryPolicyPath(candidatePath: string): boolean {
+  const roots = [os.tmpdir()];
+  if (process.platform !== "win32") {
+    roots.push("/tmp");
+  }
+  if (process.platform === "darwin") {
+    roots.push("/private/tmp");
+  }
+  return isPathInsideAnyPolicyScope(candidatePath, roots);
+}
+
 export function filesystemReadScopeAskReason(toolName: string, filePath: string, scopeRoot: string): string {
   return `Filesystem read path "${filePath}" is outside Eco workspace "${scopeRoot}". Approve to allow this ${toolName} call.`;
 }

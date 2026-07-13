@@ -1254,7 +1254,7 @@ test("createToolPermissionPreToolHook asks before reading user skills that were 
   });
 });
 
-test("createToolPermissionPreToolHook asks for Glob patterns outside the workspace", async () => {
+test("createToolPermissionPreToolHook allows Glob patterns in system temp", async () => {
   const hook = createToolPermissionPreToolHook(
     {
       main: {
@@ -1282,10 +1282,7 @@ test("createToolPermissionPreToolHook asks for Glob patterns outside the workspa
     "tool_glob_external",
     { signal: new AbortController().signal },
   );
-  expect(glob.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "ask",
-  });
+  expect(glob.hookSpecificOutput).toBeUndefined();
 });
 
 test("createToolPermissionPreToolHook allows Glob from explore cwd when workspace is a subdirectory", async () => {
@@ -1448,7 +1445,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
     {
       hook_event_name: "PreToolUse",
       tool_name: "Read",
-      tool_input: { file_path: "/tmp/secret.txt" },
+      tool_input: { file_path: "/external/secret.txt" },
       tool_use_id: "tool_read_outside",
       session_id: "s1",
       cwd: "/repo",
@@ -1497,7 +1494,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
   expect(allowedFetch.hookSpecificOutput).toBeUndefined();
 });
 
-test("createToolPermissionPreToolHook asks before writing outside the workspace", async () => {
+test("createToolPermissionPreToolHook allows writes in system temp", async () => {
   const hook = createToolPermissionPreToolHook(
     {
       main: {
@@ -1523,11 +1520,7 @@ test("createToolPermissionPreToolHook asks before writing outside the workspace"
     { signal: new AbortController().signal },
   );
 
-  expect(outsideWrite.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "ask",
-  });
-  expect(outsideWrite.hookSpecificOutput?.permissionDecisionReason).toContain("/tmp/omni-proxy-verify.mjs");
+  expect(outsideWrite.hookSpecificOutput).toBeUndefined();
 });
 
 test("createToolPermissionPreToolHook passes risky bash through to canUseTool confirmation", async () => {

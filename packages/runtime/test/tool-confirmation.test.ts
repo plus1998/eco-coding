@@ -64,7 +64,7 @@ test("evaluateFilesystemReadConfirmation asks for external paths in auto mode", 
   expect(decision?.matchedRule).toBe("filesystem_external_read");
 });
 
-test("evaluateFilesystemWriteConfirmation asks for external paths in auto mode", () => {
+test("evaluateFilesystemWriteConfirmation allows system temp paths in auto mode", () => {
   const decision = evaluateFilesystemWriteConfirmation({
     toolName: "Write",
     toolInput: { file_path: "/tmp/omni-proxy-verify.mjs" },
@@ -73,13 +73,11 @@ test("evaluateFilesystemWriteConfirmation asks for external paths in auto mode",
     confirmationMode: "auto",
   });
   expect(decision).toMatchObject({
-    action: "ask",
-    matchedRule: "filesystem_external_write",
-    riskLevel: "high",
+    action: "allow",
   });
 });
 
-test("evaluateFilesystemHookGate asks before an external write", () => {
+test("evaluateFilesystemHookGate does not ask before a system temp write", () => {
   const decision = evaluateFilesystemHookGate({
     toolName: "Edit",
     toolInput: { file_path: "/tmp/outside.ts" },
@@ -89,7 +87,29 @@ test("evaluateFilesystemHookGate asks before an external write", () => {
     filesystemRead: "workspace",
     filesystemWrite: "workspace",
   });
-  expect(decision?.action).toBe("ask");
+  expect(decision).toBeUndefined();
+});
+
+test("evaluateFilesystemReadConfirmation allows macOS private temp paths", () => {
+  const decision = evaluateFilesystemReadConfirmation({
+    toolName: "Read",
+    toolInput: { file_path: "/private/tmp/claude-501/project/session/tasks/result.output" },
+    cwd: "/repo",
+    workspacePath: "/repo",
+    confirmationMode: "auto",
+  });
+  expect(decision?.action).toBe(process.platform === "darwin" ? "allow" : "ask");
+});
+
+test("evaluateFilesystemWriteConfirmation allows macOS private temp paths", () => {
+  const decision = evaluateFilesystemWriteConfirmation({
+    toolName: "Write",
+    toolInput: { file_path: "/private/tmp/claude-501/project/session/scratchpad/notes.md" },
+    cwd: "/repo",
+    workspacePath: "/repo",
+    confirmationMode: "auto",
+  });
+  expect(decision?.action).toBe(process.platform === "darwin" ? "allow" : "ask");
 });
 
 test("evaluateFilesystemWriteConfirmation allows external paths in allow_all mode", () => {

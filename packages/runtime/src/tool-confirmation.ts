@@ -1,14 +1,13 @@
 import {
-  evaluateBashHardDeny,
-  evaluateBashPolicy,
   type AgentBashPolicy,
   type BashPolicyDecision,
   type BashReviewMode,
+  evaluateBashHardDeny,
+  evaluateBashPolicy,
 } from "../../bash-policy/src";
 import type { ApprovalRiskLevel } from "../../shared/src";
 import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
 import { resolveEffectiveBashPolicy } from "./agent-orchestration.js";
-import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 import {
   filesystemReadScopeAskReason,
   isDiscoveryFilesystemTool,
@@ -16,6 +15,7 @@ import {
   isPathInsidePolicyScope,
   isReadFilesystemTool,
   isReviewableExternalReadPath,
+  isSystemTemporaryPolicyPath,
   isWriteFilesystemTool,
   pathContainsGlobMeta,
   readFilesystemPath,
@@ -23,6 +23,7 @@ import {
   resolvePolicyPath,
   resolvePolicySearchBase,
 } from "./filesystem-scope-policy.js";
+import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 
 /** Composer「执行确认」档位（持久化字段仍为 `bashReviewMode`）。 */
 export type ExecutionConfirmationMode = BashReviewMode;
@@ -195,8 +196,12 @@ export function evaluateFilesystemWriteConfirmation(
   const scopeRoot = resolveFilesystemScopeRoot(input.workspacePath, input.cwd);
   const filePath = readFilesystemPath(input.toolInput, input.toolName);
   const writeTarget = filePath ? resolvePolicyPath(filePath, input.cwd) : resolvePolicyPath(".", input.cwd);
-  if (isPathInsidePolicyScope(writeTarget, scopeRoot)) {
-    return { action: "allow", reason: "Path is inside workspace scope.", userMessage: "工作区内访问" };
+  if (isPathInsidePolicyScope(writeTarget, scopeRoot) || isSystemTemporaryPolicyPath(writeTarget)) {
+    return {
+      action: "allow",
+      reason: "Path is inside an allowed filesystem scope.",
+      userMessage: "允许访问",
+    };
   }
   if (input.confirmationMode === "allow_all") {
     return {
@@ -291,6 +296,10 @@ function resolveFilesystemReadCandidate(
     isDiscoveryFilesystemTool(toolName) && pathContainsGlobMeta(filePath)
       ? resolvePolicySearchBase(filePath, cwd)
       : absolutePath;
+
+  if (isSystemTemporaryPolicyPath(candidatePath)) {
+    return undefined;
+  }
 
   if (implicitRoots.length > 0 && isPathInsideAnyPolicyScope(candidatePath, implicitRoots)) {
     return undefined;
