@@ -7809,6 +7809,8 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -7820,6 +7822,9 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .run-log-narrative .run-log-narrative-body,
 .run-log-narrative .markdown-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
   color: #e5e5e5;
   font-size: 15px;
@@ -7838,11 +7843,15 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .markdown-content--streaming-wrap {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
 }
 
 .markdown-content--streaming-body {
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .markdown-content--streaming-tail {
@@ -7912,9 +7921,18 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .markdown-content table {
   display: block;
+  width: max-content;
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
+}
+
+.markdown-content img,
+.markdown-content video,
+.markdown-content svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .markdown-content th,
@@ -7994,6 +8012,7 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   color: #7eb8ff;
   text-decoration: underline;
   text-underline-offset: 2px;
+  overflow-wrap: anywhere;
 }
 
 .markdown-inline-code,
@@ -8007,13 +8026,21 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 }
 
 .markdown-pre {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 12px 14px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.35);
 }
 
 .markdown-pre code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
   padding: 0;
   background: transparent;
   font-size: 13px;
