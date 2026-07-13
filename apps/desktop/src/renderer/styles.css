@@ -924,6 +924,16 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   color: #a3a3a3;
 }
 
+.chat-item-unread-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #3b82f6 18%, transparent);
+}
+
 .project-expand {
   width: 100%;
   padding: 4px 12px 4px 36px;

@@ -96,6 +96,7 @@ import {
   type ThreadApprovePlanRequest,
   type ThreadCancelRequest,
   type ThreadCompactContextResult,
+  type ThreadCompletionNotificationResult,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadDeleteResult,
@@ -141,6 +142,9 @@ const api = {
     themeSource: "dark" | "light" | "system",
   ): Promise<{ themeSource: "dark" | "light" | "system" }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetThemeSource, themeSource);
+  },
+  showThreadCompletionNotification(threadId: string): Promise<ThreadCompletionNotificationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadCompletionNotification, threadId);
   },
   openWorkspace(): Promise<WorkspaceOpenResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpen);

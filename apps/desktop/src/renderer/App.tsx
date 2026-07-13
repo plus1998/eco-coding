@@ -286,6 +286,7 @@ const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
 const pinnedProjectsStorageKey = "eco.sidebar.pinned-projects";
 const pinnedThreadsStorageKey = "eco.sidebar.pinned-threads";
+const unreadThreadsStorageKey = "eco.sidebar.unread-threads";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
 const sidebarThreadsCollapsed = 5;
@@ -747,6 +748,7 @@ function App() {
   const [hiddenProjectPaths, setHiddenProjectPaths] = useState<Set<string>>(() => new Set());
   const [pinnedProjectPaths, setPinnedProjectPaths] = useState<Set<string>>(() => new Set());
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
+  const [unreadThreadIds, setUnreadThreadIds] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [homeProjectPath, setHomeProjectPath] = useState<string>();
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
@@ -1043,6 +1045,27 @@ function App() {
         }
       } else if (event.type === "thread.completed") {
         clearPendingPlanForThread(event.threadId);
+        if (selectedThreadIdRef.current !== event.threadId) {
+          setUnreadThreadIds((current) => {
+            if (current.has(event.threadId)) {
+              return current;
+            }
+            const next = new Set(current);
+            next.add(event.threadId);
+            window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
+            return next;
+          });
+          void window.eco!.showThreadCompletionNotification(event.threadId).then(
+            (result) => {
+              if (!result.shown) {
+                console.error(`[eco] task completion notification was not shown: ${result.reason}`);
+              }
+            },
+            (notificationError) => {
+              console.error("[eco] task completion notification request failed", notificationError);
+            },
+          );
+        }
       }
 
       if (event.plan && event.threadId) {
@@ -1421,6 +1444,19 @@ function App() {
       }
     } catch {
       window.localStorage.removeItem(pinnedThreadsStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(unreadThreadsStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        setUnreadThreadIds(new Set(parsed));
+      }
+    } catch {
+      window.localStorage.removeItem(unreadThreadsStorageKey);
     }
   }, []);
 
@@ -4328,6 +4364,7 @@ function App() {
       window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
       return next;
     });
+    selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     resetComposerDefaultConfig();
     setTodosByThread({});
@@ -4493,12 +4530,23 @@ function App() {
 
   function switchProject(nextPath: string) {
     setSelectedProjectPath(nextPath);
+    selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     setComposerRewindTarget(undefined);
     resetComposerDefaultConfig();
   }
 
   function selectThread(thread: ThreadSummary) {
+    setUnreadThreadIds((current) => {
+      if (!current.has(thread.id)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(thread.id);
+      window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+    selectedThreadIdRef.current = thread.id;
     setSelectedThreadId(thread.id);
     setSelectedProjectPath(thread.workspacePath);
     setComposerRewindTarget(undefined);
@@ -4521,6 +4569,15 @@ function App() {
   function clearThreadClientState(threadId: string) {
     clearComposerDraft(composerDraftsByKeyRef.current, `thread:${threadId}`);
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
+    setUnreadThreadIds((current) => {
+      if (!current.has(threadId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(threadId);
+      window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
     setSelectedThreadId((current) => (current === threadId ? undefined : current));
     if (selectedThreadId === threadId) {
       resetComposerDefaultConfig();
@@ -4602,6 +4659,7 @@ function App() {
       composerDraftsByKeyRef.current,
       composerContextKeyFromParts(undefined, currentProjectPath),
     );
+    selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     resetComposerDefaultConfig();
     setEditingFollowUpId(undefined);
@@ -5324,6 +5382,7 @@ function App() {
             projectTree={projectTree}
             currentProjectPath={currentProjectPath}
             activeThreadId={activeThread?.id}
+            unreadThreadIds={unreadThreadIds}
             pinnedThreadIds={pinnedThreadIds}
             onSwitchProject={switchProject}
             onSelectThread={selectThread}

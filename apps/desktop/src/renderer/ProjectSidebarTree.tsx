@@ -28,6 +28,7 @@ interface ProjectSidebarTreeProps {
   projectTree: ProjectTreeItem[];
   currentProjectPath: string | undefined;
   activeThreadId: string | undefined;
+  unreadThreadIds: ReadonlySet<string>;
   pinnedThreadIds: ReadonlySet<string>;
   onSwitchProject: (path: string) => void;
   onSelectThread: (thread: ThreadSummary) => void;
@@ -62,6 +63,7 @@ export function ProjectSidebarTree({
   projectTree,
   currentProjectPath,
   activeThreadId,
+  unreadThreadIds,
   pinnedThreadIds,
   onSwitchProject,
   onSelectThread,
@@ -376,11 +378,13 @@ export function ProjectSidebarTree({
               {visibleThreads.map((thread) => {
                 const isThreadBusy = thread.status === "running" || thread.status === "queued";
                 const isThreadAwaitingApproval = isThreadWaitingForApproval(thread);
+                const isThreadUnread = unreadThreadIds.has(thread.id);
                 const hasThreadStatusIndicator =
                   isThreadAwaitingApproval ||
                   isThreadBusy ||
                   thread.status === "failed" ||
-                  thread.status === "blocked";
+                  thread.status === "blocked" ||
+                  isThreadUnread;
                 const isThreadPinned = pinnedThreadIds.has(thread.id);
                 const rowClassName = [
                   "chat-item-row",
@@ -413,6 +417,13 @@ export function ProjectSidebarTree({
                             >
                               <LoaderCircle size={14} className="spinning" aria-hidden />
                             </span>
+                          ) : isThreadUnread ? (
+                            <span
+                              className="chat-item-unread-dot"
+                              title="任务已完成，尚未查看"
+                              role="status"
+                              aria-label="任务已完成，尚未查看"
+                            />
                           ) : (
                             <span className={`status-dot ${thread.status}`} title={thread.status} />
                           )}

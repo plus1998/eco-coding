@@ -52,6 +52,7 @@ import {
   type NativeImage,
   nativeImage,
   nativeTheme,
+  Notification,
   safeStorage,
   shell,
 } from "electron";
@@ -62,6 +63,7 @@ ensureDesktopPath();
 
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
+import { buildThreadCompletionNotificationContent } from "../shared/thread-completion-notification";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import {
   deriveBashApprovalRememberPrefix,
@@ -1351,6 +1353,48 @@ function registerIpcHandlers(): void {
     const themeSource = normalizeAppThemeSource(payload);
     nativeTheme.themeSource = themeSource;
     return { themeSource };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.appShowThreadCompletionNotification, async (payload: unknown) => {
+    if (!Notification.isSupported()) {
+      return { shown: false, reason: "unsupported" } as const;
+    }
+    if (typeof payload !== "string" || !payload.trim()) {
+      return { shown: false, reason: "thread_not_found" } as const;
+    }
+    const thread = conversationStore.getThread(payload);
+    if (!thread) {
+      return { shown: false, reason: "thread_not_found" } as const;
+    }
+    if (thread.status !== "completed") {
+      return { shown: false, reason: "thread_not_completed" } as const;
+    }
+    const content = buildThreadCompletionNotificationContent(
+      thread,
+      await listThreadActivityFromSdkSession(thread.id),
+    );
+    if (!content) {
+      return { shown: false, reason: "notification_content_unavailable" } as const;
+    }
+
+    const notification = new Notification({
+      title: content.title,
+      body: content.body,
+      ...(appIcon ? { icon: appIcon } : {}),
+    });
+    notification.on("click", () => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (!window) {
+        return;
+      }
+      if (window.isMinimized()) {
+        window.restore();
+      }
+      window.show();
+      window.focus();
+    });
+    notification.show();
+    return { shown: true } as const;
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspaceOpen, async () => {
@@ -3540,7 +3584,6 @@ async function runPlanThread(
 
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
-  emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
   if (isDirectWorkspacePlan(worktreePlan)) {
     return;
   }
