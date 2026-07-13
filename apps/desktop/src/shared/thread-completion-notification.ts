@@ -1,10 +1,36 @@
-import type { ThreadActivityLine, ThreadSummary } from "./ipc";
+import type {
+  BashApprovalRequest,
+  PlanApprovalRequest,
+  ThreadActivityLine,
+  ThreadApprovalNotificationKind,
+  ThreadSummary,
+} from "./ipc";
 
 const NOTIFICATION_BODY_MAX_LENGTH = 600;
 
 export interface ThreadCompletionNotificationContent {
   title: string;
   body: string;
+}
+
+export function buildThreadApprovalNotificationContent(
+  thread: Pick<ThreadSummary, "title">,
+  kind: ThreadApprovalNotificationKind,
+  approval: PlanApprovalRequest | BashApprovalRequest,
+): ThreadCompletionNotificationContent | undefined {
+  const title = thread.title.trim();
+  if (!title) {
+    return undefined;
+  }
+
+  const detail = kind === "plan" ? buildPlanApprovalDetail(approval) : buildBashApprovalDetail(approval);
+  if (!detail) {
+    return undefined;
+  }
+  const body = normalizeNotificationBody(
+    kind === "plan" ? `等待计划审批：${detail}` : `等待操作审批：${detail}`,
+  );
+  return body ? { title, body } : undefined;
 }
 
 export function buildThreadCompletionNotificationContent(
@@ -46,4 +72,20 @@ function normalizeNotificationBody(value: string): string {
     return normalized;
   }
   return `${normalized.slice(0, NOTIFICATION_BODY_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+function buildPlanApprovalDetail(approval: PlanApprovalRequest | BashApprovalRequest): string | undefined {
+  return "plan" in approval ? approval.plan.trim() || undefined : undefined;
+}
+
+function buildBashApprovalDetail(approval: PlanApprovalRequest | BashApprovalRequest): string | undefined {
+  if (!("command" in approval)) {
+    return undefined;
+  }
+  const filesystemTool = approval.filesystemTool?.trim();
+  const filesystemPath = approval.filesystemPath?.trim();
+  if (filesystemTool && filesystemPath) {
+    return `${filesystemTool} ${filesystemPath}`;
+  }
+  return approval.command.trim() || undefined;
 }

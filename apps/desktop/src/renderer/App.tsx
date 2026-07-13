@@ -225,7 +225,7 @@ import {
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
-import { subscribeToWindowFocus } from "./window-focus";
+import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
 import "./styles.css";
 import "./theme-overrides.css";
@@ -266,6 +266,22 @@ function saveTaskPanelWidth(width: number): void {
   } catch {
     // ignore quota and private-mode storage errors
   }
+}
+
+function reportDesktopNotification(
+  request: Promise<{ shown: boolean; reason?: string }>,
+  notificationLabel: string,
+): void {
+  void request.then(
+    (result) => {
+      if (!result.shown) {
+        console.error(`[eco] ${notificationLabel} notification was not shown: ${result.reason}`);
+      }
+    },
+    (notificationError) => {
+      console.error(`[eco] ${notificationLabel} notification request failed`, notificationError);
+    },
+  );
 }
 
 const emptySettings: ModelSettingsSnapshot = {
@@ -739,7 +755,6 @@ function App() {
     });
   }, [appTheme]);
 
-  useEffect(() => subscribeToWindowFocus(), []);
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
@@ -877,6 +892,29 @@ function App() {
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
+
+  useEffect(
+    () =>
+      subscribeToWindowFocus((focused) => {
+        if (!focused) {
+          return;
+        }
+        const activeThreadId = selectedThreadIdRef.current;
+        if (!activeThreadId) {
+          return;
+        }
+        setUnreadThreadIds((current) => {
+          if (!current.has(activeThreadId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(activeThreadId);
+          window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
+          return next;
+        });
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (!window.eco) {
@@ -1045,7 +1083,13 @@ function App() {
         }
       } else if (event.type === "thread.completed") {
         clearPendingPlanForThread(event.threadId);
-        if (selectedThreadIdRef.current !== event.threadId) {
+        if (
+          !isThreadActivelyViewed(
+            selectedThreadIdRef.current,
+            event.threadId,
+            document.hasFocus(),
+          )
+        ) {
           setUnreadThreadIds((current) => {
             if (current.has(event.threadId)) {
               return current;
@@ -1055,15 +1099,9 @@ function App() {
             window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
             return next;
           });
-          void window.eco!.showThreadCompletionNotification(event.threadId).then(
-            (result) => {
-              if (!result.shown) {
-                console.error(`[eco] task completion notification was not shown: ${result.reason}`);
-              }
-            },
-            (notificationError) => {
-              console.error("[eco] task completion notification request failed", notificationError);
-            },
+          reportDesktopNotification(
+            window.eco!.showThreadCompletionNotification(event.threadId),
+            "task completion",
           );
         }
       }
@@ -1117,6 +1155,29 @@ function App() {
           worktreePath: "",
           ...(event.plan.planFilePath ? { planFilePath: event.plan.planFilePath } : {}),
         });
+      }
+
+      const approvalNotificationKind =
+        event.type === "plan_approval.requested"
+          ? "plan"
+          : event.type === "bash_approval.requested"
+            ? "bash"
+            : undefined;
+      if (
+        approvalNotificationKind &&
+        !isThreadActivelyViewed(
+          selectedThreadIdRef.current,
+          event.threadId,
+          document.hasFocus(),
+        )
+      ) {
+        reportDesktopNotification(
+          window.eco!.showThreadApprovalNotification({
+            threadId: event.threadId,
+            kind: approvalNotificationKind,
+          }),
+          `${approvalNotificationKind} approval`,
+        );
       }
 
       if (event.followUp) {

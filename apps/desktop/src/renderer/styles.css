@@ -18354,8 +18354,10 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .package-scripts-item {
   display: flex;
+  position: relative;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   gap: 12px;
   padding: 9px 8px;
   border-radius: 10px;
@@ -18394,17 +18396,42 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .package-scripts-item-actions {
   display: flex;
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
-  opacity: 0.72;
-  transition: opacity 0.12s ease;
+  padding-left: 8px;
+  background: var(--popover-hover);
+  box-shadow: -10px 0 8px var(--popover-hover);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
 }
 
 .package-scripts-item:hover .package-scripts-item-actions,
 .package-scripts-item.is-running .package-scripts-item-actions,
 .package-scripts-item:focus-within .package-scripts-item-actions {
   opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+
+@media (hover: none) {
+  .package-scripts-item-actions {
+    position: static;
+    flex-shrink: 0;
+    padding-left: 0;
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
 }
 
 .package-scripts-action-btn {
@@ -18479,6 +18506,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 @media (prefers-reduced-motion: reduce) {
   .package-scripts-backdrop,
   .package-scripts-shell,
+  .package-scripts-item-actions,
   .terminal-panel,
   .codex-main-pane,
   .codex-main-scroll.has-workspace-panel,

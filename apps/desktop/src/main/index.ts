@@ -63,7 +63,10 @@ ensureDesktopPath();
 
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
-import { buildThreadCompletionNotificationContent } from "../shared/thread-completion-notification";
+import {
+  buildThreadApprovalNotificationContent,
+  buildThreadCompletionNotificationContent,
+} from "../shared/thread-completion-notification";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import {
   deriveBashApprovalRememberPrefix,
@@ -1348,6 +1351,26 @@ function normalizeAppThemeSource(value: unknown): AppThemeSource {
   return value === "dark" || value === "light" || value === "system" ? value : "system";
 }
 
+function showDesktopNotification(content: { title: string; body: string }): void {
+  const notification = new Notification({
+    title: content.title,
+    body: content.body,
+    ...(appIcon ? { icon: appIcon } : {}),
+  });
+  notification.on("click", () => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) {
+      return;
+    }
+    if (window.isMinimized()) {
+      window.restore();
+    }
+    window.show();
+    window.focus();
+  });
+  notification.show();
+}
+
 function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
     const themeSource = normalizeAppThemeSource(payload);
@@ -1377,23 +1400,41 @@ function registerIpcHandlers(): void {
       return { shown: false, reason: "notification_content_unavailable" } as const;
     }
 
-    const notification = new Notification({
-      title: content.title,
-      body: content.body,
-      ...(appIcon ? { icon: appIcon } : {}),
-    });
-    notification.on("click", () => {
-      const window = BrowserWindow.getAllWindows()[0];
-      if (!window) {
-        return;
-      }
-      if (window.isMinimized()) {
-        window.restore();
-      }
-      window.show();
-      window.focus();
-    });
-    notification.show();
+    showDesktopNotification(content);
+    return { shown: true } as const;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.appShowThreadApprovalNotification, async (payload: unknown) => {
+    if (!Notification.isSupported()) {
+      return { shown: false, reason: "unsupported" } as const;
+    }
+    if (
+      !isRecord(payload) ||
+      typeof payload.threadId !== "string" ||
+      (payload.kind !== "plan" && payload.kind !== "bash")
+    ) {
+      return { shown: false, reason: "invalid_request" } as const;
+    }
+    const thread = conversationStore.getThread(payload.threadId);
+    if (!thread) {
+      return { shown: false, reason: "thread_not_found" } as const;
+    }
+    const kind = payload.kind;
+    const approval =
+      kind === "plan"
+        ? getPendingPlanApprovalForThread(thread.id)
+        : kind === "bash"
+          ? getPendingBashApprovalForThread(thread.id)
+          : undefined;
+    if (!approval) {
+      return { shown: false, reason: "approval_not_pending" } as const;
+    }
+    const content = buildThreadApprovalNotificationContent(thread, kind, approval);
+    if (!content) {
+      return { shown: false, reason: "notification_content_unavailable" } as const;
+    }
+
+    showDesktopNotification(content);
     return { shown: true } as const;
   });
 

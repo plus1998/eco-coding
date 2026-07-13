@@ -5,6 +5,7 @@ import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 export const IPC_CHANNELS = {
   appSetThemeSource: "app:set-theme-source",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
+  appShowThreadApprovalNotification: "app:show-thread-approval-notification",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",
@@ -874,6 +875,23 @@ export interface ThreadCompletionNotificationResult {
     | "unsupported"
     | "thread_not_found"
     | "thread_not_completed"
+    | "notification_content_unavailable";
+}
+
+export type ThreadApprovalNotificationKind = "plan" | "bash";
+
+export interface ThreadApprovalNotificationRequest {
+  threadId: string;
+  kind: ThreadApprovalNotificationKind;
+}
+
+export interface ThreadApprovalNotificationResult {
+  shown: boolean;
+  reason?:
+    | "unsupported"
+    | "invalid_request"
+    | "thread_not_found"
+    | "approval_not_pending"
     | "notification_content_unavailable";
 }
 

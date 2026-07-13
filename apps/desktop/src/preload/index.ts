@@ -92,6 +92,8 @@ import {
   type TestRoleRoutesRequest,
   type TestRoleRoutesResult,
   type ThreadActivityLine,
+  type ThreadApprovalNotificationRequest,
+  type ThreadApprovalNotificationResult,
   type ThreadAppliedDiffResult,
   type ThreadApprovePlanRequest,
   type ThreadCancelRequest,
@@ -145,6 +147,11 @@ const api = {
   },
   showThreadCompletionNotification(threadId: string): Promise<ThreadCompletionNotificationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadCompletionNotification, threadId);
+  },
+  showThreadApprovalNotification(
+    request: ThreadApprovalNotificationRequest,
+  ): Promise<ThreadApprovalNotificationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadApprovalNotification, request);
   },
   openWorkspace(): Promise<WorkspaceOpenResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpen);

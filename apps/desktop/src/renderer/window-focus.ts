@@ -8,12 +8,23 @@ export function syncWindowFocusState(): void {
   }
 }
 
-export function subscribeToWindowFocus(): () => void {
+export function isThreadActivelyViewed(
+  selectedThreadId: string | undefined,
+  targetThreadId: string,
+  windowFocused: boolean,
+): boolean {
+  return windowFocused && selectedThreadId === targetThreadId;
+}
+
+export function subscribeToWindowFocus(onFocusChange?: (focused: boolean) => void): () => void {
   if (typeof window === "undefined") {
     return () => {};
   }
 
-  const sync = () => syncWindowFocusState();
+  const sync = () => {
+    syncWindowFocusState();
+    onFocusChange?.(document.hasFocus());
+  };
   sync();
   window.addEventListener("focus", sync);
   window.addEventListener("blur", sync);

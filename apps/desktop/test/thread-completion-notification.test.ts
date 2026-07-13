@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { ThreadActivityLine } from "../src/shared/ipc";
-import { buildThreadCompletionNotificationContent } from "../src/shared/thread-completion-notification";
+import {
+  buildThreadApprovalNotificationContent,
+  buildThreadCompletionNotificationContent,
+} from "../src/shared/thread-completion-notification";
 
 test("builds notification from the latest main assistant output", () => {
   const activity: ThreadActivityLine[] = [
@@ -40,4 +43,63 @@ test("limits notification body length", () => {
 
   expect(content?.body).toHaveLength(600);
   expect(content?.body.endsWith("…")).toBe(true);
+});
+
+test("builds plan approval notification from the pending plan", () => {
+  const content = buildThreadApprovalNotificationContent({ title: "实现通知" }, "plan", {
+    toolUseId: "plan-1",
+    threadId: "thread-1",
+    userPrompt: "增加通知",
+    analysis: "需要修改桌面端",
+    plan: "1. 增加 IPC\n2. 发送 Electron 通知",
+  });
+
+  expect(content).toEqual({
+    title: "实现通知",
+    body: "等待计划审批：1. 增加 IPC 2. 发送 Electron 通知",
+  });
+});
+
+test("builds operation approval notification from Bash and filesystem requests", () => {
+  const bashBase = {
+    toolUseId: "bash-1",
+    threadId: "thread-1",
+    cwd: "/repo",
+    reason: "运行测试",
+    riskScore: 50,
+    riskLevel: "medium" as const,
+    agentId: "planner",
+  };
+  expect(
+    buildThreadApprovalNotificationContent({ title: "运行测试" }, "bash", {
+      ...bashBase,
+      command: "bun test",
+    }),
+  ).toEqual({
+    title: "运行测试",
+    body: "等待操作审批：bun test",
+  });
+  expect(
+    buildThreadApprovalNotificationContent({ title: "读取配置" }, "bash", {
+      ...bashBase,
+      command: "Read /etc/hosts",
+      filesystemTool: "Read",
+      filesystemPath: "/etc/hosts",
+    }),
+  ).toEqual({
+    title: "读取配置",
+    body: "等待操作审批：Read /etc/hosts",
+  });
+});
+
+test("does not fabricate approval detail", () => {
+  expect(
+    buildThreadApprovalNotificationContent({ title: "空计划" }, "plan", {
+      toolUseId: "plan-1",
+      threadId: "thread-1",
+      userPrompt: "",
+      analysis: "",
+      plan: "",
+    }),
+  ).toBeUndefined();
 });
