@@ -82,28 +82,14 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("thread:follow-up-cancel", ["fup_1"])).toMatchObject({
     ok: false,
   });
+  expect(validateRemoteCommandArgs("thread:get", ["thr_1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:delete", ["thr_1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:run-projection-get", ["feed:thr_1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1", "feed"])).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("thread:get", ["thr_1"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:delete", ["thr_1"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:run-projection-get", ["feed:thr_1"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:run-projection-get", ["thr_1", "feed"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:run-projection-get", [
-      { threadId: "thr_1", mode: "feed" },
-    ]),
+    validateRemoteCommandArgs("thread:run-projection-get", [{ threadId: "thr_1", mode: "feed" }]),
   ).toMatchObject({ ok: false });
   expect(
     validateRemoteCommandArgs("thread:run-projection-detail-get", [
@@ -111,17 +97,11 @@ test("validates remote command args", () => {
     ]),
   ).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("thread:run-projection-detail-get", [
-      { threadId: "thr_1", kind: "agent" },
-    ]),
+    validateRemoteCommandArgs("thread:run-projection-detail-get", [{ threadId: "thr_1", kind: "agent" }]),
   ).toMatchObject({ ok: false });
+  expect(validateRemoteCommandArgs("thread:get-usage-snapshot", ["thr_1"])).toEqual({ ok: true });
   expect(
-    validateRemoteCommandArgs("thread:get-usage-snapshot", ["thr_1"]),
-  ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("thread:follow-up-escalate", [
-      { threadId: "thr_1", followUpId: "fup_1" },
-    ]),
+    validateRemoteCommandArgs("thread:follow-up-escalate", [{ threadId: "thr_1", followUpId: "fup_1" }]),
   ).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("thread:follow-up-update", [
@@ -134,6 +114,10 @@ test("validates remote command args", () => {
 test("registers workspace remote command definitions", () => {
   expect(isRemoteCommandChannel("workspace:get-home-path")).toBe(true);
   expect(validateRemoteCommandArgs("workspace:get-home-path", [])).toEqual({ ok: true });
+  expect(isRemoteCommandChannel("workspace:get-user-home-path")).toBe(true);
+  expect(validateRemoteCommandArgs("workspace:get-user-home-path", [])).toEqual({ ok: true });
+  expect(isRemoteCommandChannel("workspace:list-directories")).toBe(true);
+  expect(validateRemoteCommandArgs("workspace:list-directories", ["/Users/example"])).toEqual({ ok: true });
 });
 
 test("registers git remote command definitions", () => {

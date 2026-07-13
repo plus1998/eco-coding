@@ -37,9 +37,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:delete", "Delete thread", "write_safe", RPC_INVOKE, [stringArg()]),
   command("thread:activity-list", "List thread activity", "read", RPC_INVOKE, [stringArg()]),
-  command("thread:get-usage-snapshot", "Get thread usage snapshot", "read", RPC_INVOKE, [
-    stringArg(),
-  ]),
+  command("thread:get-usage-snapshot", "Get thread usage snapshot", "read", RPC_INVOKE, [stringArg()]),
   command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [
     stringArg(),
     optionalStringArg(),
@@ -86,6 +84,8 @@ export const REMOTE_COMMAND_DEFINITIONS = [
 
   command("workspace:get-current", "Get current workspace", "read", RPC_INVOKE, []),
   command("workspace:get-home-path", "Get home project path", "read", RPC_INVOKE, []),
+  command("workspace:get-user-home-path", "Get desktop user home path", "read", RPC_INVOKE, []),
+  command("workspace:list-directories", "List workspace directories", "read", RPC_INVOKE, [stringArg()]),
   command("workspace:open-path", "Open workspace by path", "write_safe", RPC_INVOKE, [stringArg()]),
   command("workspace:inspect", "Inspect workspace", "read", RPC_INVOKE, [stringArg()]),
   command("workspace:list-package-scripts", "List npm scripts", "read", RPC_INVOKE, [stringArg()]),
@@ -144,9 +144,7 @@ export function validateRemoteCommandArgs(
   const maxArgCount = definition.args.length;
   if (actualArgs.length < requiredArgCount || actualArgs.length > maxArgCount) {
     const expected =
-      requiredArgCount === maxArgCount
-        ? `${requiredArgCount}`
-        : `${requiredArgCount} to ${maxArgCount}`;
+      requiredArgCount === maxArgCount ? `${requiredArgCount}` : `${requiredArgCount} to ${maxArgCount}`;
     return {
       ok: false,
       message: `Remote command ${channel} expects ${expected} args, got ${actualArgs.length}.`,

@@ -151,7 +151,9 @@ class DesktopRpc {
     return ThreadRunProjectionDetailResult.fromJson(result);
   }
 
-  Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(String threadId) async {
+  Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(
+    String threadId,
+  ) async {
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
       'thread:get-usage-snapshot',
@@ -191,13 +193,9 @@ class DesktopRpc {
   }
 
   Future<void> approvePlan(String threadId) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'thread:approve-plan',
-      [
-        {'threadId': threadId},
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'thread:approve-plan', [
+      {'threadId': threadId},
+    ]);
   }
 
   Future<void> dismissPlan(String threadId) async {
@@ -219,18 +217,14 @@ class DesktopRpc {
     required String decision,
     String? feedback,
   }) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'bash-approval:resolve',
-      [
-        {
-          'toolUseId': toolUseId,
-          'decision': decision,
-          if (feedback != null && feedback.trim().isNotEmpty)
-            'feedback': feedback.trim(),
-        },
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'bash-approval:resolve', [
+      {
+        'toolUseId': toolUseId,
+        'decision': decision,
+        if (feedback != null && feedback.trim().isNotEmpty)
+          'feedback': feedback.trim(),
+      },
+    ]);
   }
 
   Future<ClarificationRequest?> getPendingClarification(String threadId) async {
@@ -247,21 +241,13 @@ class DesktopRpc {
     required String toolUseId,
     required List<List<String>> selections,
   }) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'clarification:submit',
-      [
-        {'toolUseId': toolUseId, 'selections': selections},
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'clarification:submit', [
+      {'toolUseId': toolUseId, 'selections': selections},
+    ]);
   }
 
   Future<void> dismissClarification(String toolUseId) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'clarification:dismiss',
-      [toolUseId],
-    );
+    await _client.invoke(desktopDeviceId, 'clarification:dismiss', [toolUseId]);
   }
 
   Future<List<ThreadPendingFollowUp>> followUpList(String threadId) async {
@@ -280,39 +266,27 @@ class DesktopRpc {
     required String threadId,
     required String prompt,
   }) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'thread:follow-up-enqueue',
-      [
-        {'threadId': threadId, 'prompt': prompt},
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-enqueue', [
+      {'threadId': threadId, 'prompt': prompt},
+    ]);
   }
 
   Future<void> followUpCancel({
     required String threadId,
     required String followUpId,
   }) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'thread:follow-up-cancel',
-      [
-        {'threadId': threadId, 'followUpId': followUpId},
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-cancel', [
+      {'threadId': threadId, 'followUpId': followUpId},
+    ]);
   }
 
   Future<void> followUpEscalate({
     required String threadId,
     required String followUpId,
   }) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'thread:follow-up-escalate',
-      [
-        {'threadId': threadId, 'followUpId': followUpId},
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-escalate', [
+      {'threadId': threadId, 'followUpId': followUpId},
+    ]);
   }
 
   Future<void> followUpUpdate({
@@ -320,17 +294,9 @@ class DesktopRpc {
     required String followUpId,
     required String prompt,
   }) async {
-    await _client.invoke(
-      desktopDeviceId,
-      'thread:follow-up-update',
-      [
-        {
-          'threadId': threadId,
-          'followUpId': followUpId,
-          'prompt': prompt,
-        },
-      ],
-    );
+    await _client.invoke(desktopDeviceId, 'thread:follow-up-update', [
+      {'threadId': threadId, 'followUpId': followUpId, 'prompt': prompt},
+    ]);
   }
 
   Future<ThreadSummary> updateRuntimeConfig({
@@ -341,10 +307,7 @@ class DesktopRpc {
       desktopDeviceId,
       'thread:update-runtime-config',
       [
-        {
-          'threadId': threadId,
-          'runtimeConfig': runtimeConfig.toJson(),
-        },
+        {'threadId': threadId, 'runtimeConfig': runtimeConfig.toJson()},
       ],
     );
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
@@ -375,6 +338,25 @@ class DesktopRpc {
       'workspace:get-home-path',
       [],
     );
+  }
+
+  Future<String> getUserHomePath() async {
+    return await _client.invoke<String>(
+      desktopDeviceId,
+      'workspace:get-user-home-path',
+      [],
+    );
+  }
+
+  Future<WorkspaceDirectoryListing> listWorkspaceDirectories(
+    String directoryPath,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'workspace:list-directories',
+      [directoryPath],
+    );
+    return WorkspaceDirectoryListing.fromJson(result);
   }
 
   Future<WorkspaceInfo> inspectWorkspace(String workspacePath) async {
@@ -449,9 +431,7 @@ class DesktopRpc {
       desktopDeviceId,
       'git:list-commit-model-options',
       [
-        {
-          'profileId': profileId,
-        },
+        {'profileId': profileId},
       ],
     );
     return GitListCommitModelOptionsResult.fromJson(result);
@@ -552,7 +532,9 @@ class DesktopRpc {
         .toList();
   }
 
-  Future<PackageScriptsListResult> listPackageScripts(String workspacePath) async {
+  Future<PackageScriptsListResult> listPackageScripts(
+    String workspacePath,
+  ) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'workspace:list-package-scripts',

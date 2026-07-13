@@ -1377,6 +1377,30 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.workspaceGetHomePath, async () => getHomeProjectPath());
 
+  registerDesktopCommand(IPC_CHANNELS.workspaceGetUserHomePath, async () => os.homedir());
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceListDirectories, async (directoryPath: unknown) => {
+    if (typeof directoryPath !== "string" || !directoryPath.trim()) {
+      throw new Error("Directory path is required.");
+    }
+    const resolvedPath = path.resolve(directoryPath.trim());
+    const stat = await fs.stat(resolvedPath);
+    if (!stat.isDirectory()) {
+      throw new Error("请选择文件夹，而不是文件。");
+    }
+    const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
+    const directories = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => ({ name: entry.name, path: path.join(resolvedPath, entry.name) }))
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+    const parentPath = path.dirname(resolvedPath);
+    return {
+      path: resolvedPath,
+      ...(parentPath !== resolvedPath ? { parentPath } : {}),
+      directories,
+    };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.workspaceInspect, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");

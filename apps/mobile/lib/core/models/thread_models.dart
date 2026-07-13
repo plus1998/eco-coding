@@ -745,6 +745,44 @@ class WorkspaceInfo {
   final int dirtyFileCount;
 }
 
+class WorkspaceDirectoryEntry {
+  const WorkspaceDirectoryEntry({required this.name, required this.path});
+
+  factory WorkspaceDirectoryEntry.fromJson(Map<String, dynamic> json) =>
+      WorkspaceDirectoryEntry(
+        name: json['name'] as String? ?? '',
+        path: json['path'] as String? ?? '',
+      );
+
+  final String name;
+  final String path;
+}
+
+class WorkspaceDirectoryListing {
+  const WorkspaceDirectoryListing({
+    required this.path,
+    required this.directories,
+    this.parentPath,
+  });
+
+  factory WorkspaceDirectoryListing.fromJson(
+    Map<String, dynamic> json,
+  ) => WorkspaceDirectoryListing(
+    path: json['path'] as String? ?? '',
+    parentPath: json['parentPath'] as String?,
+    directories: (json['directories'] as List<dynamic>? ?? const [])
+        .map(
+          (entry) =>
+              WorkspaceDirectoryEntry.fromJson(entry as Map<String, dynamic>),
+        )
+        .toList(),
+  );
+
+  final String path;
+  final String? parentPath;
+  final List<WorkspaceDirectoryEntry> directories;
+}
+
 class OrchestrationAgentInstance {
   const OrchestrationAgentInstance({
     required this.agentKey,

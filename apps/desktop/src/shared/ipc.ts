@@ -8,6 +8,8 @@ export const IPC_CHANNELS = {
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",
   workspaceGetHomePath: "workspace:get-home-path",
+  workspaceGetUserHomePath: "workspace:get-user-home-path",
+  workspaceListDirectories: "workspace:list-directories",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
   workspaceWatchPackageJson: "workspace:watch-package-json",
@@ -255,6 +257,17 @@ export interface WorkspaceInfo {
   branch?: string;
   dirtyFileCount: number;
   packageManager?: "bun" | "pnpm" | "yarn" | "npm";
+}
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+export interface WorkspaceDirectoryListing {
+  path: string;
+  parentPath?: string;
+  directories: WorkspaceDirectoryEntry[];
 }
 
 export type PackageManagerKind = "bun" | "pnpm" | "yarn" | "npm";

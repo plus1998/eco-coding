@@ -122,6 +122,7 @@ import {
   type ThreadUsageSnapshotResult,
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
+  type WorkspaceDirectoryListing,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
   type WorktreeApplyResult,
@@ -155,6 +156,12 @@ const api = {
   },
   getHomeProjectPath(): Promise<string> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetHomePath);
+  },
+  getUserHomePath(): Promise<string> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetUserHomePath);
+  },
+  listWorkspaceDirectories(directoryPath: string): Promise<WorkspaceDirectoryListing> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceListDirectories, directoryPath);
   },
   inspectWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceInspect, workspacePath);
