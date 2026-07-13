@@ -4100,6 +4100,12 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     message: statusMessage,
   });
   recordUserPrompt(input.threadId, input.displayPrompt?.trim() || prompt);
+  if (input.rewindTarget) {
+    // Publish the new history revision only after its replacement prompt exists.
+    // An empty rewind projection can otherwise race the renderer refresh and make
+    // a live continuation look as though it was never submitted.
+    emitThreadRunProjectionUpdated(input.threadId);
+  }
 
   const updated: ThreadSummary = {
     ...effectiveThread,
@@ -5041,10 +5047,7 @@ async function prepareThreadRewindForContinue(input: {
     );
   });
 
-  const rewindSummary = conversationStore.rewindThreadToActivityLine(
-    input.threadId,
-    storedTarget.activityLineId,
-  );
+  conversationStore.rewindThreadToActivityLine(input.threadId, storedTarget.activityLineId);
   bumpThreadRunProjectionHistoryRevision(input.threadId);
   conversationStore.clearThreadClaudePlanFilePath(input.threadId);
   if (!resumeSessionAt) {
@@ -5056,7 +5059,6 @@ async function prepareThreadRewindForContinue(input: {
   clearThreadRuntimeMemory(input.threadId);
   emitTodoList(input.threadId, []);
   emitSubagentTimingUpdated(input.threadId);
-  emitThreadRunProjectionUpdated(input.threadId);
 
   if (!resumeSessionAt) {
     return undefined;

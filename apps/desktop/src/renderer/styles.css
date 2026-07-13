@@ -10707,48 +10707,6 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   border: 1px solid color-mix(in srgb, #3b82f6 28%, transparent);
 }
 
-.composer-rewind-banner {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 8px;
-  max-width: 100%;
-  margin: 0 0 8px;
-  padding: 5px 8px;
-  border: 1px solid #3f3f46;
-  border-radius: 8px;
-  background: #27272a;
-  color: #e4e4e7;
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.composer-rewind-banner span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-rewind-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: #a1a1aa;
-  cursor: pointer;
-}
-
-.composer-rewind-clear:hover {
-  background: #3f3f46;
-  color: #ffffff;
-}
-
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;

@@ -15,9 +15,7 @@ import {
   Monitor,
   PanelBottom,
   PanelRight,
-  Pencil,
   Plug,
-  RotateCcw,
   Search,
   Settings2,
   SlidersHorizontal,
@@ -3422,7 +3420,10 @@ function App() {
     ]);
 
     if (projection) {
-      setRunProjectionByThread((current) => ({ ...current, [threadId]: projection }));
+      setRunProjectionByThread((current) => ({
+        ...current,
+        [threadId]: mergeThreadRunProjectionUpdate(current[threadId], projection),
+      }));
     } else {
       setRunProjectionByThread((current) => removeRecordKey(current, threadId));
     }
@@ -3602,7 +3603,17 @@ function App() {
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
         clearPendingPlanForThread(result.thread.id);
-        await refreshThreadState(result.thread.id);
+        clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
+        setPrompt("");
+        setComposerRewindTarget(undefined);
+        setComposerAttachments([]);
+        setComposerImageNotice(undefined);
+        requestActivityFeedForceScroll();
+        try {
+          await refreshThreadState(result.thread.id);
+        } catch (caught) {
+          setError(`消息已发送，但界面状态同步失败：${errorMessage(caught)}`);
+        }
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
         if (composerRuntimeConfig) {
           promptCacheBaselineByThreadRef.current[activeThread.id] = composerRuntimeConfig;
@@ -5191,36 +5202,6 @@ function App() {
         <p className="composer-prompt-cache-hint" role="status">
           {composerPromptCacheHint}
         </p>
-      ) : null}
-      {editingFollowUpId && composerFollowUpMode ? (
-        <div className="composer-rewind-banner">
-          <Pencil size={14} aria-hidden />
-          <span>正在重新编辑引导消息</span>
-          <button
-            type="button"
-            className="composer-rewind-clear"
-            onClick={cancelEditingFollowUp}
-            aria-label="取消编辑引导消息"
-            title="取消"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      ) : null}
-      {activeComposerRewindTarget && !composerFollowUpMode ? (
-        <div className="composer-rewind-banner">
-          <RotateCcw size={14} aria-hidden />
-          <span>从所选节点重写</span>
-          <button
-            type="button"
-            className="composer-rewind-clear"
-            onClick={() => setComposerRewindTarget(undefined)}
-            aria-label="取消回到节点"
-            title="取消"
-          >
-            <X size={13} />
-          </button>
-        </div>
       ) : null}
       {composerAttachments.length > 0 && (
         <ul className="composer-attachments" aria-label="已粘贴的图片">
