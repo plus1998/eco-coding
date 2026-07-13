@@ -14,6 +14,11 @@ export interface MergeThreadRunProjectionOptions {
   preserveHistory?: boolean;
 }
 
+function projectionHistoryRevision(snapshot: ThreadRunProjectionSnapshot): number {
+  const revision = snapshot.historyRevision;
+  return typeof revision === "number" && Number.isFinite(revision) ? revision : 0;
+}
+
 function compareTimelineItems(
   left: ThreadRunProjectionTimelineItem,
   right: ThreadRunProjectionTimelineItem,
@@ -306,6 +311,15 @@ export function mergeThreadRunProjectionUpdate(
   options?: MergeThreadRunProjectionOptions,
 ): ThreadRunProjectionSnapshot {
   if (!current) {
+    return incoming;
+  }
+
+  const currentHistoryRevision = projectionHistoryRevision(current);
+  const incomingHistoryRevision = projectionHistoryRevision(incoming);
+  if (incomingHistoryRevision < currentHistoryRevision) {
+    return current;
+  }
+  if (incomingHistoryRevision > currentHistoryRevision) {
     return incoming;
   }
 

@@ -5119,7 +5119,7 @@ function App() {
       {activeComposerRewindTarget && !composerFollowUpMode ? (
         <div className="composer-rewind-banner">
           <RotateCcw size={14} aria-hidden />
-          <span>从所选节点分叉</span>
+          <span>从所选节点重写</span>
           <button
             type="button"
             className="composer-rewind-clear"

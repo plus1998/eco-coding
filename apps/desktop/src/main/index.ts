@@ -191,6 +191,7 @@ import {
   type SdkSessionSkillsScope,
 } from "../shared/skills";
 import {
+  activityLinesBeforeRewindTarget,
   buildAgentPromptWithContext,
   continueStatusMessage,
   resolveThreadContinueAction,
@@ -591,6 +592,7 @@ const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastFeedProjectionSignatures = new Map<string, string>();
 const lastFeedProjectionTimelineSequences = new Map<string, number>();
+const threadRunProjectionHistoryRevisions = new Map<string, number>();
 const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 500;
 const RUN_PROJECTION_STREAMING_EMIT_MS = 250;
 const sdkStreamBridge = new SdkStreamActivityBridge();
@@ -1595,6 +1597,7 @@ function registerIpcHandlers(): void {
     await deleteThreadSdkSession(threadId);
     conversationStore.deleteThread(threadId);
     clearThreadRuntimeMemory(threadId);
+    threadRunProjectionHistoryRevisions.delete(threadId);
     emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
     return { ok: true as const };
   });
@@ -4031,18 +4034,6 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   } satisfies ThreadContinueResult;
 }
 
-function activityLinesBeforeRewindTarget(
-  activityLines: readonly ThreadActivityLine[],
-  rewindTarget: ThreadActivityRewindTarget,
-): ThreadActivityLine[] {
-  const index = activityLines.findIndex(
-    (line) =>
-      line.id === rewindTarget.activityLineId ||
-      line.rewindTarget?.userMessageId === rewindTarget.userMessageId,
-  );
-  return index >= 0 ? activityLines.slice(0, index) : [...activityLines];
-}
-
 function parseThreadFollowUpEnqueueRequest(payload: unknown): ThreadFollowUpEnqueueRequest {
   if (!isRecord(payload)) {
     throw new Error("Invalid follow-up payload.");
@@ -4906,6 +4897,12 @@ function clearThreadRuntimeMemory(threadId: string): void {
   lastFeedProjectionTimelineSequences.delete(threadId);
 }
 
+function bumpThreadRunProjectionHistoryRevision(threadId: string): number {
+  const next = (threadRunProjectionHistoryRevisions.get(threadId) ?? 0) + 1;
+  threadRunProjectionHistoryRevisions.set(threadId, next);
+  return next;
+}
+
 async function prepareThreadRewindForContinue(input: {
   threadId: string;
   prompt: string;
@@ -4956,6 +4953,7 @@ async function prepareThreadRewindForContinue(input: {
     input.threadId,
     storedTarget.activityLineId,
   );
+  bumpThreadRunProjectionHistoryRevision(input.threadId);
   conversationStore.clearThreadClaudePlanFilePath(input.threadId);
   if (!resumeSessionAt) {
     conversationStore.updateThreadPrompt(input.threadId, input.prompt);
@@ -6874,6 +6872,7 @@ function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionS
     ...(context && { context }),
     subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
   });
+  projection.historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   logThreadRunProjectionDiagnostics(projection);
   return projection;
 }

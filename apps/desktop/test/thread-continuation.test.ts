@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  activityLinesBeforeRewindTarget,
   buildActivityContextForPrompt,
   buildAgentPromptWithContext,
   buildThreadTurnPrompt,
@@ -58,6 +59,15 @@ test("rewind continuation prompt uses trimmed history instead of future activity
   expect(prompt).toContain("替换后的消息");
   expect(prompt).toContain("目标节点之前的回复");
   expect(prompt).not.toContain("目标节点之后的旧回复");
+});
+
+test("rewind history refuses to continue when the target boundary is missing", () => {
+  expect(() =>
+    activityLinesBeforeRewindTarget(
+      [{ id: "before", role: "user", message: "之前" }],
+      { activityLineId: "missing", userMessageId: "user-missing" },
+    ),
+  ).toThrow("无法定位历史边界");
 });
 
 test("legacy continuation uses full prompt injection without SDK session", () => {

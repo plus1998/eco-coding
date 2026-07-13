@@ -1,4 +1,4 @@
-import type { ThreadStatus } from "./ipc";
+import type { ThreadActivityLine, ThreadActivityRewindTarget, ThreadStatus } from "./ipc";
 import { stripSubagentBracketPrefix } from "./activity-display";
 
 export interface ActivityContextLine {
@@ -187,6 +187,22 @@ export function buildThreadTurnPrompt(threadPrompt: string, followUp: string): s
     return original;
   }
   return `${original}\n\n---\n\n后续消息：\n${next}`;
+}
+
+/** Return only the transcript before the selected user node. */
+export function activityLinesBeforeRewindTarget(
+  activityLines: readonly ThreadActivityLine[],
+  rewindTarget: ThreadActivityRewindTarget,
+): ThreadActivityLine[] {
+  const index = activityLines.findIndex(
+    (line) =>
+      line.id === rewindTarget.activityLineId ||
+      line.rewindTarget?.userMessageId === rewindTarget.userMessageId,
+  );
+  if (index < 0) {
+    throw new Error("回到节点后无法定位历史边界，已停止继续对话。");
+  }
+  return activityLines.slice(0, index);
 }
 
 export function shouldUseInterruptedWorktree(worktreeExists: boolean, hasPriorActivity: boolean): boolean {

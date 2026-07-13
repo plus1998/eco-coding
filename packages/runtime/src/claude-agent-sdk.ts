@@ -648,7 +648,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (!plannerRoute) {
       throw new Error("At least one model route is required to rewind files");
     }
-    const sessionCwd = input.workspacePath.trim() || input.worktreePath;
+    const sessionCwd = input.worktreePath.trim() || input.workspacePath.trim();
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
       model: plannerRoute.primary.modelId,

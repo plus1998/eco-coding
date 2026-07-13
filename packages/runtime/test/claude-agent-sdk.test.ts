@@ -1566,6 +1566,42 @@ test("resolveResumeSessionAtBeforeUserMessage returns undefined for first user m
   expect(resumeAt).toBeUndefined();
 });
 
+test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () => {
+  let capturedOptions: Record<string, unknown> | undefined;
+  let rewoundMessageId: string | undefined;
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions = options;
+        return {
+          async *[Symbol.asyncIterator]() {},
+          rewindFiles: async (userMessageId: string) => {
+            rewoundMessageId = userMessageId;
+          },
+        };
+      },
+    }),
+  });
+
+  await driver.rewindSessionFiles(
+    {
+      threadId: "thr_rewind",
+      prompt: "",
+      workspacePath: "/tmp/project",
+      worktreePath: "/tmp/session-worktree",
+      routes,
+      signal: new AbortController().signal,
+      resume: { resumeSessionId: "sess-rewind" },
+    },
+    "user-target",
+  );
+
+  expect(capturedOptions?.cwd).toBe("/tmp/session-worktree");
+  expect(rewoundMessageId).toBe("user-target");
+});
+
 test("applyClaudeJsonlSessionPersistence enables local JSONL checkpoints", () => {
   const options: Record<string, unknown> = {
     sessionStore: { append: async () => {}, load: async () => null },

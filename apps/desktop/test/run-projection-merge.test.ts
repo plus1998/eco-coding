@@ -61,6 +61,52 @@ test("mergeThreadRunProjectionUpdate keeps fuller timeline when event count matc
   expect(mergedFromTrimmed.timeline.some((item) => item.id === "evt_119")).toBe(true);
 });
 
+test("mergeThreadRunProjectionUpdate replaces history after a rewind and ignores stale updates", () => {
+  const beforeRewind = makeProjection({
+    sourceEventCount: 4,
+    historyRevision: 0,
+    timeline: [
+      {
+        id: "prompt_old",
+        sequence: 1,
+        eventType: "thread.status",
+        scope: "main",
+        text: "旧消息",
+        at: "2026-01-01T00:00:01.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "reply_old",
+        sequence: 2,
+        eventType: "message.final",
+        scope: "main",
+        text: "旧回复",
+        at: "2026-01-01T00:00:02.000Z",
+      },
+    ],
+  });
+  const afterRewind = makeProjection({
+    sourceEventCount: 1,
+    historyRevision: 1,
+    timeline: [
+      {
+        id: "prompt_new",
+        sequence: 1,
+        eventType: "thread.status",
+        scope: "main",
+        text: "新消息",
+        at: "2026-01-01T00:00:03.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+    ],
+  });
+
+  const replaced = mergeThreadRunProjectionUpdate(beforeRewind, afterRewind);
+  expect(replaced).toBe(afterRewind);
+  expect(replaced.timeline.map((item) => item.id)).toEqual(["prompt_new"]);
+  expect(mergeThreadRunProjectionUpdate(replaced, beforeRewind)).toBe(replaced);
+});
+
 test("mergeThreadRunProjectionUpdate merges trimmed newer feed without dropping history", () => {
   const full = makeProjection({ sourceEventCount: 100, timeline: Array.from({ length: 120 }, (_, i) => ({
     id: `evt_${i}`,

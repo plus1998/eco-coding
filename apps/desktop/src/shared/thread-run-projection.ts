@@ -122,6 +122,8 @@ export interface ThreadRunProjectionSnapshot {
   timeline: ThreadRunProjectionTimelineItem[];
   diagnostics: ThreadRunProjectionDiagnostic[];
   sourceEventCount: number;
+  /** Increments when the conversation history is intentionally rewound. */
+  historyRevision?: number;
 }
 
 export type ThreadRunProjectionDetailKind = "agent" | "tool";
