@@ -10,30 +10,6 @@ interface StreamingMarkdownContentProps {
   className?: string;
 }
 
-function StreamBlockLoading({ kind }: { kind?: string }) {
-  const label =
-    kind === "bash"
-      ? "等待 Bash 代码块"
-      : kind === "diff" || kind === "file"
-        ? "等待文件变更块"
-        : "等待代码块";
-  return (
-    <div
-      className="markdown-streaming-block-loading"
-      {...(kind && { "data-kind": kind })}
-      role="status"
-      aria-label={label}
-    >
-      <span className="run-log-projection-loading" aria-hidden>
-        <span />
-        <span />
-        <span />
-      </span>
-      <span className="markdown-streaming-block-loading-label">{label}</span>
-    </div>
-  );
-}
-
 export function StreamingMarkdownContent({
   text,
   streaming = false,
@@ -64,19 +40,18 @@ export function StreamingMarkdownContent({
           className ? `markdown-content--streaming-wrap ${className}` : "markdown-content--streaming-wrap"
         }
       >
-        {hasRenderableText ? (
-          <div className="markdown-content--streaming-body">
+        <div className="markdown-content--streaming-body">
+          {hasRenderableText ? (
             <MarkdownContent text={renderText} />
-            {!snapshot.pendingBlock ? (
-              <div className="markdown-content--streaming-tail" role="status" aria-label="正在输出">
-                <StreamingTypingIndicator />
-              </div>
-            ) : null}
+          ) : null}
+          <div
+            className={`markdown-content--streaming-tail${hasRenderableText ? "" : " is-pending-only"}`}
+            role="status"
+            aria-label="正在输出"
+          >
+            <StreamingTypingIndicator />
           </div>
-        ) : null}
-        {snapshot.pendingBlock ? (
-          <StreamBlockLoading {...(snapshot.pendingKind && { kind: snapshot.pendingKind })} />
-        ) : null}
+        </div>
       </div>
     );
   }

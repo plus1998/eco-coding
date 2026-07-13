@@ -1,8 +1,21 @@
-import { RotateCcw, X } from "lucide-react";
-import { useEffect } from "react";
+import { FileCode2, RotateCcw, X } from "lucide-react";
+import { lazy, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { WorkspaceDiffResult } from "../shared/ipc";
-import { GitDiffViewer } from "./GitDiffViewer";
+
+const GitDiffViewer = lazy(() =>
+  import("./GitDiffViewer").then((module) => ({ default: module.GitDiffViewer })),
+);
+
+function DiffViewerLoading() {
+  return (
+    <div className="workspace-diff-code-loading" role="status" aria-label="正在加载代码审查器">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
 
 interface WorkspaceDiffDrawerProps {
   open: boolean;
@@ -115,6 +128,7 @@ export function WorkspaceDiffPanel({
                         }
                         onClick={() => onSelectPath(file.path)}
                       >
+                        <FileCode2 className="workspace-diff-drawer-file-icon" size={13} aria-hidden />
                         <span className="workspace-diff-drawer-file-path" title={file.path}>
                           {file.path}
                         </span>
@@ -148,7 +162,9 @@ export function WorkspaceDiffPanel({
               </p>
             ) : null}
             {activePath && diff?.patch ? (
-              <GitDiffViewer patch={diff.patch} selectedPath={activePath} />
+              <Suspense fallback={<DiffViewerLoading />}>
+                <GitDiffViewer patch={diff.patch} selectedPath={activePath} />
+              </Suspense>
             ) : (
               <p className="workspace-diff-empty">选择文件查看 diff</p>
             )}

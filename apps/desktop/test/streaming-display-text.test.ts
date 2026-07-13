@@ -8,13 +8,12 @@ test("resolveStreamingDisplaySnapshot passes through completed text when not str
   });
 });
 
-test("resolveStreamingDisplaySnapshot holds incomplete fenced code blocks", () => {
+test("resolveStreamingDisplaySnapshot streams incomplete fenced code blocks immediately", () => {
   expect(
     resolveStreamingDisplaySnapshot("intro\n```bash\necho hi", true),
   ).toEqual({
-    displayText: "intro\n",
-    pendingBlock: true,
-    pendingKind: "bash",
+    displayText: "intro\n```bash\necho hi",
+    pendingBlock: false,
   });
 });
 
@@ -33,7 +32,6 @@ test("resolveStreamingDisplaySnapshot holds incomplete SEARCH/REPLACE blocks", (
   ).toEqual({
     displayText: "before\n",
     pendingBlock: true,
-    pendingKind: "file",
   });
 });
 

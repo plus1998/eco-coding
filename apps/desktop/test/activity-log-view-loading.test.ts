@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivityLogView, ProjectionSubagentDetailFeed } from "../src/renderer/ActivityLogView";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
+import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
   ThreadRunProjectionAgent,
@@ -81,6 +82,36 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
     ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
   };
 }
+
+test("StreamingMarkdownContent renders an incomplete code fence progressively without a waiting card", () => {
+  const html = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, {
+      text: "开始执行\n```bash\necho ready",
+      streaming: true,
+    }),
+  );
+
+  expect(html).toContain("markdown-pre");
+  expect(html).toContain("echo ready");
+  expect(html).toContain('aria-label="正在输出"');
+  expect(html).not.toContain("等待代码块");
+  expect(html).not.toContain("等待 Bash 代码块");
+  expect(html).not.toContain("markdown-streaming-block-loading");
+});
+
+test("StreamingMarkdownContent uses only a compact pulse for a held structured edit", () => {
+  const html = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, {
+      text: "<<<<<<< SEARCH\nold value",
+      streaming: true,
+    }),
+  );
+
+  expect(html).toContain("markdown-content--streaming-tail is-pending-only");
+  expect(html).toContain('aria-label="正在输出"');
+  expect(html).not.toContain("old value");
+  expect(html).not.toContain("等待");
+});
 
 test("ActivityLogView waits for thread stop before exposing final output copy", () => {
   const html = renderToStaticMarkup(
