@@ -15,6 +15,8 @@ import { type AgentTemplatePermissionChip, buildAgentTemplatePermissionChips } f
 export interface AgentProfileMainSummary {
   name: string;
   modelLabel: string;
+  modelId: string;
+  thinkingEffort?: ModelRef["thinkingEffort"];
   riskLabels: string[];
   permissionChips: AgentTemplatePermissionChip[];
 }
@@ -24,6 +26,8 @@ export interface AgentProfileAgentSummary {
   name: string;
   templateName?: string | undefined;
   modelLabel: string;
+  modelId: string;
+  thinkingEffort?: ModelRef["thinkingEffort"];
   enabled: boolean;
   riskLabels: string[];
   permissionChips: AgentTemplatePermissionChip[];
@@ -86,6 +90,8 @@ export function buildAgentProfileSummary(
   const main: AgentProfileMainSummary = {
     name: profile.mainAgent.name.trim() || "主 Agent",
     modelLabel: formatModelLabel(mainModelRef.providerId, mainModelRef.modelId, mainModelRef),
+    modelId: mainModelRef.modelId,
+    ...(mainModelRef.thinkingEffort ? { thinkingEffort: mainModelRef.thinkingEffort } : {}),
     riskLabels: mainRiskLabels,
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: profile.mainAgent.tools,
@@ -123,6 +129,8 @@ function buildExploreSummary(profile: OrchestrationProfile): AgentProfileAgentSu
     agentKey: "explore",
     name: "Explore",
     modelLabel: formatModelLabel(exploreRef.providerId, exploreRef.modelId, exploreRef),
+    modelId: exploreRef.modelId,
+    ...(exploreRef.thinkingEffort ? { thinkingEffort: exploreRef.thinkingEffort } : {}),
     enabled: true,
     riskLabels: summarizeToolRiskLabels(EXPLORE_TOOLS),
     permissionChips: buildAgentTemplatePermissionChips({
@@ -163,6 +171,8 @@ function buildAgentSummary(
     name: agent.displayName?.trim() || template?.name || agent.agentKey,
     ...(template?.name ? { templateName: template.name } : {}),
     modelLabel: formatModelLabel(agent.modelRef.providerId, agent.modelRef.modelId, agent.modelRef),
+    modelId: agent.modelRef.modelId,
+    ...(agent.modelRef.thinkingEffort ? { thinkingEffort: agent.modelRef.thinkingEffort } : {}),
     enabled,
     riskLabels: summarizeToolRiskLabels(agent.tools),
     permissionChips: buildAgentTemplatePermissionChips({

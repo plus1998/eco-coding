@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, LayoutTemplate, Save, Settings2 } from "lucide-react";
+import { Check, ChevronDown, LayoutTemplate, Settings2 } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -11,7 +11,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
+import {
+  type MainAgentSystemPromptPreset,
+  resolveMainAgentSystemPromptPreset,
+} from "../shared/thread-runtime-config";
 import { type AgentProfileSummary, listSelectableAgentProfileSummaries } from "./agent-profile-summary";
+import { ComposerModelLabel } from "./ComposerModelLabel";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 420;
@@ -48,7 +53,7 @@ interface ComposerRoutePopoverProps {
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onSelectProfile: (profileId: string) => void | Promise<void>;
-  onSaveCurrentProfile?: (() => void | Promise<void>) | undefined;
+  onSelectSystemPromptPreset: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
   onOpenFullSettings: () => void;
 }
 
@@ -61,17 +66,29 @@ export function ComposerRoutePopover({
   anchorRef,
   onClose,
   onSelectProfile,
-  onSaveCurrentProfile,
+  onSelectSystemPromptPreset,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const selectedOptionRef = useRef<HTMLButtonElement>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
   const [listMaxHeight, setListMaxHeight] = useState<number>();
   const profileSummaries = useMemo(
     () => listSelectableAgentProfileSummaries(settings, runtimeConfig),
     [settings, runtimeConfig],
   );
+  const selectedProfile = useMemo(
+    () =>
+      settings.orchestrationProfiles.find(
+        (profile) => profile.id === (runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId),
+      ),
+    [settings.orchestrationProfiles, runtimeConfig?.agentProfileId, runtimeConfig?.routeProfileId],
+  );
+  const selectedSystemPromptPreset =
+    selectedProfile && runtimeConfig
+      ? resolveMainAgentSystemPromptPreset(selectedProfile, runtimeConfig)
+      : undefined;
 
   const updateListMaxHeight = useCallback(() => {
     const list = listRef.current;
@@ -87,7 +104,10 @@ export function ComposerRoutePopover({
     const visibleCount = Math.min(2, items.length);
     let height = 0;
     for (let index = 0; index < visibleCount; index += 1) {
-      height += items[index]!.getBoundingClientRect().height;
+      const item = items[index];
+      if (item) {
+        height += item.getBoundingClientRect().height;
+      }
     }
     if (visibleCount > 1) {
       const styles = getComputedStyle(list);
@@ -123,8 +143,26 @@ export function ComposerRoutePopover({
     if (!open) {
       return;
     }
+    if (profileSummaries.length === 0) {
+      updateListMaxHeight();
+      return;
+    }
     updateListMaxHeight();
   }, [open, profileSummaries, updateListMaxHeight]);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const selected = selectedOptionRef.current;
+    if (!open || listMaxHeight === undefined || !list || !selected) {
+      return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const selectedRect = selected.getBoundingClientRect();
+    list.scrollTop = Math.max(
+      0,
+      list.scrollTop + selectedRect.top - listRect.top - (list.clientHeight - selectedRect.height) / 2,
+    );
+  }, [open, listMaxHeight]);
 
   useEffect(() => {
     if (open) {
@@ -169,7 +207,22 @@ export function ComposerRoutePopover({
       aria-label="切换智能体配置"
       style={panelStyle}
     >
-      <p className="composer-codex-popover-title">智能体配置</p>
+      <div className="composer-route-popover-header">
+        <p className="composer-codex-popover-title">智能体配置</p>
+        <button
+          type="button"
+          className="composer-route-builder-button"
+          disabled={busy}
+          title="打开智能体构建器"
+          aria-label="打开智能体构建器"
+          onClick={() => {
+            onClose();
+            onOpenFullSettings();
+          }}
+        >
+          <Settings2 size={15} aria-hidden />
+        </button>
+      </div>
       <ul
         ref={listRef}
         className="composer-route-popover-list"
@@ -180,6 +233,7 @@ export function ComposerRoutePopover({
             key={summary.selectionId}
             summary={summary}
             selected={summary.selectionId === selectedProfileId}
+            buttonRef={summary.selectionId === selectedProfileId ? selectedOptionRef : undefined}
             disabled={busy}
             onSelect={() => {
               if (summary.selectionId) {
@@ -192,33 +246,13 @@ export function ComposerRoutePopover({
       {profileSummaries.length === 0 ? (
         <p className="composer-route-popover-empty">尚未配置可运行的智能体配置</p>
       ) : null}
-      {onSaveCurrentProfile ? (
-        <button
-          type="button"
-          className="composer-route-popover-settings"
+      {selectedSystemPromptPreset ? (
+        <SystemPromptPresetControl
+          value={selectedSystemPromptPreset}
           disabled={busy}
-          onClick={() => {
-            void onSaveCurrentProfile();
-          }}
-        >
-          <Save size={14} />
-          保存当前为 Profile
-          <ChevronRight size={14} />
-        </button>
+          onChange={onSelectSystemPromptPreset}
+        />
       ) : null}
-      <button
-        type="button"
-        className="composer-route-popover-settings"
-        disabled={busy}
-        onClick={() => {
-          onClose();
-          onOpenFullSettings();
-        }}
-      >
-        <Settings2 size={14} />
-        打开智能体构建器
-        <ChevronRight size={14} />
-      </button>
     </div>,
     document.body,
   );
@@ -230,7 +264,7 @@ export function ComposerRouteCardBody({
   runtimeConfig,
   busy,
   onSelectProfile,
-  onSaveCurrentProfile,
+  onSelectSystemPromptPreset,
   onOpenFullSettings,
 }: {
   settings: ModelSettingsSnapshot;
@@ -238,10 +272,17 @@ export function ComposerRouteCardBody({
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
   onSelectProfile: (profileId: string) => void | Promise<void>;
-  onSaveCurrentProfile?: (() => void | Promise<void>) | undefined;
+  onSelectSystemPromptPreset: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
   onOpenFullSettings: () => void;
 }) {
   const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
+  const selectedProfile = settings.orchestrationProfiles.find(
+    (profile) => profile.id === (runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId),
+  );
+  const selectedSystemPromptPreset =
+    selectedProfile && runtimeConfig
+      ? resolveMainAgentSystemPromptPreset(selectedProfile, runtimeConfig)
+      : undefined;
 
   return (
     <div className="composer-route-card-body">
@@ -263,30 +304,63 @@ export function ComposerRouteCardBody({
       {profileSummaries.length === 0 ? (
         <p className="composer-route-popover-empty">尚未配置可运行的智能体配置</p>
       ) : null}
-      {onSaveCurrentProfile ? (
-        <button
-          type="button"
-          className="composer-route-popover-settings"
+      {selectedSystemPromptPreset ? (
+        <SystemPromptPresetControl
+          value={selectedSystemPromptPreset}
           disabled={busy}
-          onClick={() => {
-            void onSaveCurrentProfile();
-          }}
-        >
-          <Save size={14} />
-          保存当前为 Profile
-          <ChevronRight size={14} />
-        </button>
+          onChange={onSelectSystemPromptPreset}
+        />
       ) : null}
       <button
         type="button"
-        className="composer-route-popover-settings"
+        className="composer-route-builder-button"
         disabled={busy}
+        title="打开智能体构建器"
+        aria-label="打开智能体构建器"
         onClick={onOpenFullSettings}
       >
-        <Settings2 size={14} />
-        打开智能体构建器
-        <ChevronRight size={14} />
+        <Settings2 size={15} aria-hidden />
       </button>
+    </div>
+  );
+}
+
+function SystemPromptPresetControl({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: MainAgentSystemPromptPreset;
+  disabled?: boolean | undefined;
+  onChange: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
+}) {
+  return (
+    <div className="composer-route-prompt-control">
+      <span className="composer-route-prompt-label">主 Agent 提示词</span>
+      <div className="composer-route-prompt-segments" role="radiogroup" aria-label="主 Agent 提示词">
+        <label className={value === "claude_code" ? "active" : undefined} title="使用 Claude Code 内置提示词">
+          <input
+            type="radio"
+            name="composer-main-agent-system-prompt"
+            value="claude_code"
+            checked={value === "claude_code"}
+            disabled={disabled}
+            onChange={() => void onChange("claude_code")}
+          />
+          <span>内置</span>
+        </label>
+        <label className={value === "custom" ? "active" : undefined} title="使用当前智能体配置的自定义提示词">
+          <input
+            type="radio"
+            name="composer-main-agent-system-prompt"
+            value="custom"
+            checked={value === "custom"}
+            disabled={disabled}
+            onChange={() => void onChange("custom")}
+          />
+          <span>自定义</span>
+        </label>
+      </div>
     </div>
   );
 }
@@ -294,11 +368,13 @@ export function ComposerRouteCardBody({
 function AgentProfileOption({
   summary,
   selected,
+  buttonRef,
   disabled,
   onSelect,
 }: {
   summary: AgentProfileSummary;
   selected: boolean;
+  buttonRef?: RefObject<HTMLButtonElement | null> | undefined;
   disabled?: boolean | undefined;
   onSelect: () => void;
 }) {
@@ -307,17 +383,24 @@ function AgentProfileOption({
   const riskPreview = summary.highRiskLabels.slice(0, 2);
   const hiddenRiskCount = Math.max(0, summary.highRiskLabels.length - riskPreview.length);
   const modelRows = [
-    { key: "main", role: "主 Agent", model: summary.main.modelLabel },
+    {
+      key: "main",
+      role: "主 Agent",
+      modelId: summary.main.modelId,
+      thinkingEffort: summary.main.thinkingEffort,
+    },
     ...subagentPreview.map((agent) => ({
       key: agent.agentKey,
       role: agent.name,
-      model: agent.modelLabel,
+      modelId: agent.modelId,
+      thinkingEffort: agent.thinkingEffort,
     })),
   ];
 
   return (
     <li>
       <button
+        ref={buttonRef}
         type="button"
         className={selected ? "composer-codex-popover-item active" : "composer-codex-popover-item"}
         disabled={disabled || selected}
@@ -335,17 +418,19 @@ function AgentProfileOption({
             {modelRows.map((row) => (
               <span key={row.key} className="composer-route-profile-model-row">
                 <span className="composer-route-profile-model-role">{row.role}</span>
-                <span className="composer-route-profile-model-name" title={row.model}>
-                  {row.model}
+                <span className="composer-route-profile-model-name" title={row.modelId}>
+                  <ComposerModelLabel
+                    modelId={row.modelId}
+                    thinkingEffort={row.thinkingEffort}
+                    size="small"
+                  />
                 </span>
               </span>
             ))}
             {hiddenSubagentCount > 0 ? (
               <span className="composer-route-profile-model-row is-more">
                 <span className="composer-route-profile-model-role" aria-hidden />
-                <span className="composer-route-profile-model-name">
-                  +{hiddenSubagentCount} 个子代理
-                </span>
+                <span className="composer-route-profile-model-name">+{hiddenSubagentCount} 个子代理</span>
               </span>
             ) : null}
           </span>
@@ -364,11 +449,14 @@ function AgentProfileOption({
           ) : null}
         </span>
 
-        {selected ? (
-          <span className="composer-codex-popover-check" aria-hidden>
-            <Check size={14} />
-          </span>
-        ) : null}
+        <span
+          className={
+            selected ? "composer-codex-popover-check" : "composer-codex-popover-check is-placeholder"
+          }
+          aria-hidden
+        >
+          <Check size={14} />
+        </span>
       </button>
     </li>
   );
@@ -409,7 +497,12 @@ export function ComposerRoutePopoverTrigger({
       aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换智能体配置"}
       aria-expanded={open}
     >
-      <LayoutTemplate size={COMPOSER_TOOLBAR_ICON_PX} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden className="composer-context-trigger-icon" />
+      <LayoutTemplate
+        size={COMPOSER_TOOLBAR_ICON_PX}
+        strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
+        aria-hidden
+        className="composer-context-trigger-icon"
+      />
       <span
         className={
           profileName ? "composer-context-trigger-label" : "composer-context-trigger-label is-placeholder"

@@ -7,6 +7,7 @@ import type {
 } from "./ipc";
 import {
   resolveMainAgentModelOverrideForProvider,
+  resolveMainAgentSystemPromptPreset,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
@@ -18,11 +19,12 @@ export interface PromptCacheProfileLabel {
   profileName: string;
 }
 
-export type PromptCacheConfigDriftKind = "profile" | "main_model" | "mcp";
+export type PromptCacheConfigDriftKind = "profile" | "main_model" | "system_prompt" | "mcp";
 
 export interface PromptCacheRuntimeSignature {
   profileId: string;
   mainAgentModelKey: string;
+  mainAgentSystemPromptPreset: OrchestrationProfile["mainAgent"]["systemPromptPreset"] | "";
   mcpServerKeys: string[];
 }
 
@@ -63,6 +65,9 @@ export function resolvePromptCacheRuntimeSignature(input: {
   const mainAgentModelKey = buildMainAgentModelKey(
     resolveEffectiveMainAgentModel(profile, input.runtimeConfig),
   );
+  const mainAgentSystemPromptPreset = profile
+    ? resolveMainAgentSystemPromptPreset(profile, input.runtimeConfig)
+    : "";
   const mcpServerKeys = resolveThreadRuntimeMcpServerKeys({
     runtimeConfig: input.runtimeConfig,
     settings: input.settings,
@@ -70,7 +75,7 @@ export function resolvePromptCacheRuntimeSignature(input: {
   })
     .slice()
     .sort();
-  return { profileId, mainAgentModelKey, mcpServerKeys };
+  return { profileId, mainAgentModelKey, mainAgentSystemPromptPreset, mcpServerKeys };
 }
 
 function resolveEffectiveMainAgentModel(
@@ -97,6 +102,9 @@ export function diffPromptCacheRuntimeSignatures(
   }
   if (baseline.mainAgentModelKey !== current.mainAgentModelKey) {
     kinds.push("main_model");
+  }
+  if (baseline.mainAgentSystemPromptPreset !== current.mainAgentSystemPromptPreset) {
+    kinds.push("system_prompt");
   }
   if (!stringArraysEqual(baseline.mcpServerKeys, current.mcpServerKeys)) {
     kinds.push("mcp");
@@ -163,6 +171,9 @@ function formatPromptCacheDriftChangeParts(
   }
   if (kinds.includes("main_model")) {
     parts.push("主代理模型或思考强度已变更");
+  }
+  if (kinds.includes("system_prompt")) {
+    parts.push("主代理提示词已变更");
   }
   if (kinds.includes("mcp")) {
     parts.push("MCP 配置已变更");

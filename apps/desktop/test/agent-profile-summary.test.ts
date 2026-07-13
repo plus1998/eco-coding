@@ -92,4 +92,6 @@ test("buildAgentProfileSummary keeps unbound custom profile selectable by profil
 
   expect(summary.selectionId).toBe("custom-unbound");
   expect(summary.sourceLabel).toBe("用户");
+  expect(summary.main.modelId).toBe("gpt-5-codex");
+  expect(summary.enabledAgents.find((agent) => agent.agentKey === "explore")?.modelId).toBe("gpt-5-mini");
 });

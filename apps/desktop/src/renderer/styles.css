@@ -11670,9 +11670,48 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   z-index: 10000;
 }
 
-.composer-route-popover > .composer-codex-popover-title {
-  margin-bottom: 4px;
+.composer-route-popover-header {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
   border-bottom: 1px solid var(--popover-divider);
+}
+
+.composer-route-popover-header .composer-codex-popover-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+}
+
+.composer-route-builder-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--popover-muted);
+  cursor: pointer;
+}
+
+.composer-route-builder-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--popover-text) 7%, transparent);
+  color: var(--popover-text);
+}
+
+.composer-route-builder-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.composer-route-builder-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .composer-route-popover-list {
@@ -11705,6 +11744,14 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 .composer-route-popover .composer-codex-popover-item.active .composer-codex-popover-check {
   color: var(--accent);
+}
+
+.composer-route-popover .composer-codex-popover-check {
+  width: 14px;
+}
+
+.composer-route-popover .composer-codex-popover-check.is-placeholder {
+  visibility: hidden;
 }
 
 .composer-route-popover .composer-codex-popover-item {
@@ -11786,10 +11833,11 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 }
 
 .composer-route-profile-model-name {
+  display: flex;
+  justify-content: flex-end;
   overflow: hidden;
   color: color-mix(in srgb, var(--popover-text) 88%, var(--popover-muted));
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-family: inherit;
   line-height: 1.35;
   text-align: right;
   text-overflow: ellipsis;
@@ -11846,43 +11894,70 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   font-size: 12px;
 }
 
-.composer-route-popover-settings {
+.composer-route-prompt-control {
   display: flex;
-  width: 100%;
   align-items: center;
-  gap: 6px;
-  margin-top: 0;
-  padding: 8px 10px;
-  border: none;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 10px;
   border-top: 1px solid var(--popover-divider);
-  border-radius: 0;
+}
+
+.composer-route-prompt-label {
+  color: var(--popover-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.composer-route-prompt-segments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 128px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--popover-text) 7%, transparent);
+}
+
+.composer-route-prompt-segments label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
   color: var(--popover-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.35;
   cursor: pointer;
 }
 
-.composer-route-popover > .composer-route-popover-settings:first-of-type {
-  margin-top: 8px;
-}
-
-.composer-route-popover > .composer-route-popover-settings + .composer-route-popover-settings {
-  border-top-color: transparent;
-  padding-top: 4px;
-}
-
-.composer-route-popover-settings:hover:not(:disabled) {
+.composer-route-prompt-segments label.active {
+  background: var(--popover-bg);
   color: var(--popover-text);
+  box-shadow: 0 1px 3px color-mix(in srgb, black 18%, transparent);
 }
 
-.composer-route-popover > .composer-route-popover-settings svg:last-child {
-  margin-left: auto;
-  opacity: 0.45;
+.composer-route-prompt-segments input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
 
-.composer-route-popover-settings:hover:not(:disabled) svg:last-child {
-  opacity: 0.72;
+.composer-route-prompt-segments label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.composer-route-prompt-segments label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .models-settings-tabs {
@@ -19749,10 +19824,6 @@ body.is-resizing-task-panel {
   max-height: none;
 }
 
-.floating-workspace-card-body .composer-route-popover-settings {
-  margin-top: 6px;
-}
-
 .floating-workspace-card-body .thread-info-float-card,
 .floating-workspace-card-body .context-card {
   border: 0;
@@ -19796,19 +19867,6 @@ body.is-resizing-task-panel {
 .floating-workspace-card-body .context-card-main {
   border-bottom: 0;
   padding-bottom: 6px;
-}
-
-.floating-workspace-card-body .composer-route-popover-settings {
-  border-top: 0;
-  margin-top: 4px;
-  padding-top: 6px;
-}
-
-.floating-workspace-card-body
-  .composer-route-popover
-  > .composer-route-popover-settings
-  + .composer-route-popover-settings {
-  padding-top: 2px;
 }
 
 .floating-workspace-card-body .composer-agent-row {
@@ -19878,19 +19936,40 @@ body,
   cursor: not-allowed;
 }
 
-.composer-model-trigger-model {
+.composer-model-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.composer-model-label.is-medium {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.composer-model-label.is-small {
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.composer-model-label-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-model-trigger-effort {
+.composer-model-label-effort {
   flex-shrink: 0;
   color: var(--composer-toolbar-icon);
 }
 
-.composer-model-trigger.has-override .composer-model-trigger-effort {
+.composer-model-label-effort.is-accent {
   color: var(--accent);
 }
 

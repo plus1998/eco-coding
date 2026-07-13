@@ -16,6 +16,7 @@ import {
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
+  resolveMainAgentSystemPromptPreset,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromAgentProfile,
@@ -280,6 +281,30 @@ test("thread runtime config preserves and normalizes a main-agent model override
   expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(normalized);
 });
 
+test("thread runtime config preserves a temporary main-agent system prompt preset", () => {
+  const config = {
+    ...buildThreadRuntimeConfigFromDefaults({
+      settings: agentSettings,
+      workflowDefaults: { sessionMode: "agent" },
+    }),
+    mainAgentSystemPromptPresetOverride: "custom" as const,
+  };
+
+  const normalized = normalizeThreadRuntimeConfig(config);
+  expect(normalized.mainAgentSystemPromptPresetOverride).toBe("custom");
+  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(normalized);
+  expect(resolveMainAgentSystemPromptPreset(profileA, normalized)).toBe("custom");
+});
+
+test("main-agent system prompt preset falls back to the selected profile", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { sessionMode: "agent" },
+  });
+
+  expect(resolveMainAgentSystemPromptPreset(profileA, config)).toBe(profileA.mainAgent.systemPromptPreset);
+});
+
 test("thread runtime config accepts a main-agent model override without thinking effort", () => {
   const config = {
     ...buildThreadRuntimeConfigFromDefaults({
@@ -324,6 +349,14 @@ test("thread runtime config rejects malformed main-agent model overrides", () =>
       }),
     ),
   ).toBeUndefined();
+});
+
+test("thread runtime config rejects malformed system prompt preset overrides", () => {
+  const base = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { sessionMode: "agent" },
+  });
+  expect(isThreadRuntimeConfig({ ...base, mainAgentSystemPromptPresetOverride: "unknown" })).toBe(false);
 });
 
 test("runtime profile routes replace only the main agent with the temporary model", () => {
@@ -463,6 +496,12 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
         modelId: "gpt-5.6-sol",
         thinkingEffort: "high",
       },
+    }),
+  ).toBe(false);
+  expect(
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
+      ...base,
+      mainAgentSystemPromptPresetOverride: "custom",
     }),
   ).toBe(false);
 });

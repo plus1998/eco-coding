@@ -741,6 +741,7 @@ export {
 } from "./composer-mcp";
 export type {
   MainAgentModelOverride,
+  MainAgentSystemPromptPreset,
   McpServersEnabledSettings,
   ThreadRuntimeConfig,
   ThreadRuntimeConfigInput,
@@ -757,6 +758,7 @@ export {
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   resolveMainAgentModelOverrideForProvider,
+  resolveMainAgentSystemPromptPreset,
   resolveSessionMode,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,

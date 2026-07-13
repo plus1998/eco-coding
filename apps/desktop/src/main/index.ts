@@ -120,6 +120,7 @@ import {
   type RouteProfileInput,
   type RuntimeAgentRole,
   type RuntimeRoleRouteConfig,
+  resolveMainAgentSystemPromptPreset,
   resolveSessionMode,
   resolveThreadAgentProfile,
   resolveThreadRuntimeMcpServerKeys,
@@ -1275,9 +1276,16 @@ function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRunt
   if (!profile) {
     return undefined;
   }
+  const systemPromptPreset = resolveMainAgentSystemPromptPreset(profile, runtimeConfig);
   return {
     templates: settings.agentTemplates,
-    profile,
+    profile:
+      systemPromptPreset === profile.mainAgent.systemPromptPreset
+        ? profile
+        : {
+            ...profile,
+            mainAgent: { ...profile.mainAgent, systemPromptPreset },
+          },
   };
 }
 

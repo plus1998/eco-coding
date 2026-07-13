@@ -149,7 +149,6 @@ import {
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
-import { buildComposerSavedProfile } from "./composer-profile-save";
 import {
   applySlashSkillSelection,
   buildSkillMap,
@@ -4019,8 +4018,11 @@ function App() {
     const profile = findOrchestrationProfileBySelectionId(settings, profileId);
     const agentProfileId = profile?.id ?? profileId;
     const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
-    const { mainAgentModelOverride: _previousMainAgentOverride, ...baseRuntimeConfig } =
-      composerRuntimeConfig;
+    const {
+      mainAgentModelOverride: _previousMainAgentOverride,
+      mainAgentSystemPromptPresetOverride: _previousSystemPromptPresetOverride,
+      ...baseRuntimeConfig
+    } = composerRuntimeConfig;
     const next: ThreadRuntimeConfig = {
       ...baseRuntimeConfig,
       routeProfileId: agentProfileId,
@@ -4050,6 +4052,18 @@ function App() {
     setComposerRoutePopoverOpen(false);
   }
 
+  async function selectComposerSystemPromptPreset(
+    preset: ThreadRuntimeConfig["mainAgentSystemPromptPresetOverride"],
+  ) {
+    if (!composerRuntimeConfig || !preset || !canEditComposerConfig) {
+      return;
+    }
+    await persistComposerRuntimeConfig({
+      ...composerRuntimeConfig,
+      mainAgentSystemPromptPresetOverride: preset,
+    });
+  }
+
   async function selectComposerMainAgentModel(override: MainAgentModelOverride | undefined) {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
@@ -4067,46 +4081,6 @@ function App() {
       ...(override ? { mainAgentModelOverride: override } : {}),
     };
     await persistComposerRuntimeConfig(next);
-  }
-
-  async function saveComposerSelectionAsProfile() {
-    if (!window.eco?.saveOrchestrationProfile || !window.eco?.getModelSettings) {
-      setError("智能体配置保存接口不可用。");
-      return;
-    }
-    if (!composerRuntimeConfig || !selectedRuntimeProfile) {
-      return;
-    }
-    const defaultName = `${selectedRuntimeProfile.name} Copy`;
-    const name = window.prompt("保存为智能体配置", defaultName);
-    if (!name?.trim()) {
-      return;
-    }
-    setIsSavingSettings(true);
-    setError(undefined);
-    try {
-      const profile = buildComposerSavedProfile({
-        profile: selectedRuntimeProfile,
-        runtimeConfig: composerRuntimeConfig,
-        name,
-        existingIds: settings.orchestrationProfiles.map((entry) => entry.id),
-      });
-      const saved = await window.eco.saveOrchestrationProfile(profile);
-      const nextSettings = await window.eco.getModelSettings();
-      setSettings(nextSettings);
-      const { mainAgentModelOverride: _savedMainAgentOverride, ...baseRuntimeConfig } = composerRuntimeConfig;
-      const nextRuntimeConfig: ThreadRuntimeConfig = {
-        ...baseRuntimeConfig,
-        agentProfileId: saved.id,
-        routeProfileId: saved.id,
-      };
-      await persistComposerRuntimeConfig(nextRuntimeConfig);
-      setComposerRoutePopoverOpen(false);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingSettings(false);
-    }
   }
 
   async function toggleComposerSubagent(role: SubagentRole, enabled: boolean) {
@@ -5039,9 +5013,7 @@ function App() {
         runtimeConfig={composerRuntimeConfig ?? undefined}
         onClose={() => setComposerRoutePopoverOpen(false)}
         onSelectProfile={selectComposerRouteProfile}
-        onSaveCurrentProfile={
-          selectedRuntimeProfile && composerRuntimeConfig ? saveComposerSelectionAsProfile : undefined
-        }
+        onSelectSystemPromptPreset={selectComposerSystemPromptPreset}
         selectedProfileId={selectedRuntimeProfileId}
         onOpenFullSettings={() => openModelsSettings("routes")}
       />

@@ -27,6 +27,8 @@ import { isSessionMode, normalizeSessionMode, resolveSessionMode, type SessionMo
 
 export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
 
+export type MainAgentSystemPromptPreset = OrchestrationProfile["mainAgent"]["systemPromptPreset"];
+
 export interface MainAgentModelOverride {
   providerId: string;
   modelId: string;
@@ -38,6 +40,7 @@ export interface ThreadRuntimeConfig {
   routeProfileId: string;
   agentProfileId?: string;
   mainAgentModelOverride?: MainAgentModelOverride;
+  mainAgentSystemPromptPresetOverride?: MainAgentSystemPromptPreset;
   subagentEnabled: SubagentEnabledSettings;
   mcpServersEnabled?: McpServersEnabledSettings;
   sessionMode: SessionMode;
@@ -175,6 +178,12 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   ) {
     return false;
   }
+  if (
+    record.mainAgentSystemPromptPresetOverride !== undefined &&
+    !isMainAgentSystemPromptPreset(record.mainAgentSystemPromptPresetOverride)
+  ) {
+    return false;
+  }
   const subagents = record.subagentEnabled as Record<string, unknown>;
   if (!SUBAGENT_ROLES.every((role) => typeof subagents[role] === "boolean")) {
     return false;
@@ -226,6 +235,9 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
     ...(config.mainAgentModelOverride
       ? { mainAgentModelOverride: normalizeMainAgentModelOverride(config.mainAgentModelOverride) }
+      : {}),
+    ...(config.mainAgentSystemPromptPresetOverride
+      ? { mainAgentSystemPromptPresetOverride: config.mainAgentSystemPromptPresetOverride }
       : {}),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
     ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
@@ -351,9 +363,21 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
     left.routeProfileId === right.routeProfileId &&
     left.agentProfileId === right.agentProfileId &&
     mainAgentModelOverridesEqual(left.mainAgentModelOverride, right.mainAgentModelOverride) &&
+    left.mainAgentSystemPromptPresetOverride === right.mainAgentSystemPromptPresetOverride &&
     left.sessionMode === right.sessionMode &&
     SUBAGENT_ROLES.every((role) => left.subagentEnabled[role] === right.subagentEnabled[role])
   );
+}
+
+export function resolveMainAgentSystemPromptPreset(
+  profile: OrchestrationProfile,
+  config: ThreadRuntimeConfig,
+): MainAgentSystemPromptPreset {
+  return config.mainAgentSystemPromptPresetOverride ?? profile.mainAgent.systemPromptPreset;
+}
+
+function isMainAgentSystemPromptPreset(value: unknown): value is MainAgentSystemPromptPreset {
+  return value === "claude_code" || value === "custom";
 }
 
 function isMainAgentModelOverride(value: unknown): value is MainAgentModelOverride {

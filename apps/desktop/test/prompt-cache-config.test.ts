@@ -179,6 +179,18 @@ test("resolvePromptCacheConfigDrift detects main model or thinking changes withi
   ).toEqual([]);
 });
 
+test("resolvePromptCacheConfigDrift detects a temporary system prompt switch", () => {
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline: config({}),
+      current: config({ mainAgentSystemPromptPresetOverride: "custom" }),
+      settings,
+      mcpServers,
+    }),
+  ).toEqual(["system_prompt"]);
+  expect(formatPromptCacheConfigDriftHint(["system_prompt"])).toContain("主代理提示词已变更");
+});
+
 test("resolvePromptCacheConfigDrift uses inherited effort for a same-model override", () => {
   const profileWithEffort = structuredClone(profileA);
   profileWithEffort.mainAgent.modelRef.thinkingEffort = "high";
