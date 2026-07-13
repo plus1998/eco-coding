@@ -27,19 +27,9 @@ String stripEcoAgentKeyPrefix(String value) {
   return value.startsWith('eco_') ? value.substring(4) : value;
 }
 
-Color resolveSubagentThemeColor(
-  String role, {
-  OrchestrationProfile? profile,
-}) {
+Color resolveSubagentThemeColor(String role, {OrchestrationProfile? profile}) {
   final normalized = normalizeAgentDisplayRole(role) ?? role;
   final agentKey = stripEcoAgentKeyPrefix(normalized);
-
-  if (agentKey == 'explore') {
-    final exploreColor = profile?.builtinExploreThemeColor?.trim();
-    if (exploreColor != null && exploreColor.isNotEmpty) {
-      return parseSubagentThemeHex(exploreColor);
-    }
-  }
 
   if (profile != null) {
     for (final agent in profile.agents) {
@@ -53,13 +43,17 @@ Color resolveSubagentThemeColor(
     }
   }
 
+  if (agentKey == 'explore') {
+    final legacyExploreColor = profile?.builtinExploreThemeColor?.trim();
+    if (legacyExploreColor != null && legacyExploreColor.isNotEmpty) {
+      return parseSubagentThemeHex(legacyExploreColor);
+    }
+  }
+
   return subagentDefaultThemeColors[agentKey] ?? subagentUnknownThemeColor;
 }
 
-Color subagentMissionBorderColor(
-  String role, {
-  OrchestrationProfile? profile,
-}) {
+Color subagentMissionBorderColor(String role, {OrchestrationProfile? profile}) {
   final accent = resolveSubagentThemeColor(role, profile: profile);
   return accent.withValues(alpha: 0.28);
 }

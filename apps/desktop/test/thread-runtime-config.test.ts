@@ -206,12 +206,11 @@ test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => 
 
   expect(runtimeRoleRoutesFromAgentProfile(profile)).toEqual([
     { role: "planner", providerId: "main-provider", modelId: "main-model" },
-    { role: "explore", providerId: "p1", modelId: "m-generic" },
     { role: "coding lead", providerId: "agent-provider", modelId: "agent-model" },
   ]);
 });
 
-test("runtimeRoleRoutesFromAgentProfile includes fixed built-in Explore route", () => {
+test("runtimeRoleRoutesFromAgentProfile includes Explore only while its profile node exists", () => {
   const codingPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
   if (!codingPreset) {
     throw new Error("Missing built-in coding preset.");
@@ -222,10 +221,14 @@ test("runtimeRoleRoutesFromAgentProfile includes fixed built-in Explore route", 
     modelRef: { providerId: "main-provider", modelId: "main-model" },
     updatedAt: "2026-06-07T00:00:00.000Z",
   });
-  profile.builtinAgents.explore.modelRef = {
-    providerId: "explore-provider",
-    modelId: "gpt-5.4-mini",
-  };
+  profile.agents = profile.agents.map((agent) =>
+    agent.agentKey === "explore"
+      ? {
+          ...agent,
+          modelRef: { providerId: "explore-provider", modelId: "gpt-5.4-mini" },
+        }
+      : agent,
+  );
 
   const routes = runtimeRoleRoutesFromAgentProfile(profile);
   expect(routes).toContainEqual({
@@ -233,7 +236,8 @@ test("runtimeRoleRoutesFromAgentProfile includes fixed built-in Explore route", 
     providerId: "explore-provider",
     modelId: "gpt-5.4-mini",
   });
-  expect(profile.agents.map((agent) => agent.agentKey)).not.toContain("explore");
+  profile.agents = profile.agents.filter((agent) => agent.agentKey !== "explore");
+  expect(runtimeRoleRoutesFromAgentProfile(profile).map((route) => route.role)).not.toContain("explore");
 });
 
 test("deriveSubagentEnabledFromProfile disables roles missing from the profile", () => {

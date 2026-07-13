@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import {
-  buildCodingOrchestrationProfileFromRouteProfile,
-  createBuiltInAgentTemplates,
-} from "../src/shared/agent-orchestration";
-import type { ModelSettingsSnapshot, RouteProfileView } from "../src/shared/ipc";
-import {
   buildRuntimeAgentThemes,
   resolveRuntimeAgentThemeColor,
   resolveSubagentRowThemeStyle,
 } from "../src/renderer/runtime-agent-theme";
+import {
+  buildCodingOrchestrationProfileFromRouteProfile,
+  createBuiltInAgentTemplates,
+} from "../src/shared/agent-orchestration";
+import type { ModelSettingsSnapshot, RouteProfileView } from "../src/shared/ipc";
 import { SUBAGENT_UNKNOWN_THEME_COLOR } from "../src/shared/subagent-theme";
 
 const routeProfile: RouteProfileView = {
@@ -48,9 +48,12 @@ test("resolveRuntimeAgentThemeColor falls back to unknown blue for external agen
 
 test("buildRuntimeAgentThemes maps profile overrides and eco_ aliases", () => {
   const profile = structuredClone(settings.orchestrationProfiles[0]!);
-  profile.builtinAgents.explore.themeColor = "#112233";
   profile.agents = profile.agents.map((agent) =>
-    agent.agentKey === "coder" ? { ...agent, themeColor: "#445566" } : agent,
+    agent.agentKey === "explore"
+      ? { ...agent, themeColor: "#112233" }
+      : agent.agentKey === "coder"
+        ? { ...agent, themeColor: "#445566" }
+        : agent,
   );
   const themedSettings: ModelSettingsSnapshot = {
     ...settings,

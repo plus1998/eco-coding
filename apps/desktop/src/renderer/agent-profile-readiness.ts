@@ -1,10 +1,10 @@
+import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type {
   MainAgentModelOverride,
   ModelSettingsSnapshot,
   OrchestrationProfile,
   RuntimeRoleRouteConfig,
 } from "../shared/ipc";
-import { AGENT_ROLES } from "../shared/ipc";
 import { resolveMainAgentModelOverrideForProvider } from "../shared/thread-runtime-config";
 
 type ProviderView = ModelSettingsSnapshot["providers"][number];
@@ -27,8 +27,7 @@ export function isAgentProfileReady(
     profile.mainAgent.modelRef;
   return (
     isModelRefReady(effectiveMainModel, providersById) &&
-    isModelRefReady(profile.builtinAgents.explore.modelRef, providersById) &&
-    profile.agents
+    listOrchestrationProfileAgents(profile)
       .filter((agent) => agent.enabled)
       .every((agent) => isModelRefReady(agent.modelRef, providersById))
   );
@@ -38,8 +37,10 @@ export function areCodingRoutesReady(
   routes: readonly RuntimeRoleRouteConfig[],
   providersById: ReadonlyMap<string, ProviderView>,
 ): boolean {
-  return AGENT_ROLES.every((role) => {
-    const route = routes.find((candidate) => candidate.role === role);
+  if (!routes.some((route) => route.role === "planner")) {
+    return false;
+  }
+  return routes.every((route) => {
     const provider = route ? providersById.get(route.providerId) : undefined;
     return Boolean(route?.modelId.trim() && provider?.enabled);
   });

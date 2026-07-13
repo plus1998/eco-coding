@@ -29,13 +29,6 @@ Map<String, bool> deriveSubagentEnabledFromProfile(
 }) {
   final subagentEnabled = defaultSubagentAvailability();
   for (final role in subagentRoles) {
-    if (role == 'explore') {
-      final existingValue = existing?[role];
-      if (existingValue is bool) {
-        subagentEnabled[role] = existingValue;
-      }
-      continue;
-    }
     OrchestrationAgentInstance? agent;
     for (final candidate in profile.agents) {
       if (candidate.agentKey == role) {
@@ -145,7 +138,9 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
   }
   profile ??= profiles.first;
 
-  final availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpServers ?? []);
+  final availableMcpServerKeys = listEnabledGlobalMcpServerKeys(
+    mcpServers ?? [],
+  );
   final mcpServersEnabled = availableMcpServerKeys.isEmpty
       ? null
       : deriveMcpServersEnabled(
@@ -164,11 +159,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
   );
 }
 
-bool isSubagentConfiguredInProfile(
-  OrchestrationProfile? profile,
-  String role,
-) {
-  if (role == 'explore') return true;
+bool isSubagentConfiguredInProfile(OrchestrationProfile? profile, String role) {
   if (profile == null) return false;
   for (final agent in profile.agents) {
     if (agent.agentKey == role) {
@@ -184,24 +175,16 @@ Map<String, bool> normalizedRuntimeSubagentEnabled(
   return normalizeSubagentAvailability(subagentEnabled);
 }
 
-bool isRuntimeSubagentEnabled(
-  Map<String, bool> subagentEnabled,
-  String role,
-) {
+bool isRuntimeSubagentEnabled(Map<String, bool> subagentEnabled, String role) {
   return normalizedRuntimeSubagentEnabled(subagentEnabled)[role] ?? true;
 }
 
-bool isSubagentToggleable(
-  OrchestrationProfile? profile,
-  String role,
-) {
+bool isSubagentToggleable(OrchestrationProfile? profile, String role) {
   return isSubagentConfiguredInProfile(profile, role);
 }
 
 int countEnabledSubagents(Map<String, bool> subagentEnabled) {
-  return subagentRoles
-      .where((role) => subagentEnabled[role] ?? false)
-      .length;
+  return subagentRoles.where((role) => subagentEnabled[role] ?? false).length;
 }
 
 int countConfiguredSubagents(OrchestrationProfile? profile) {
@@ -213,8 +196,6 @@ List<String> configuredOrchestrationSubagentRoles(
   OrchestrationProfile? profile,
 ) {
   return subagentRoles
-      .where(
-        (role) => role == 'explore' || isSubagentConfiguredInProfile(profile, role),
-      )
+      .where((role) => isSubagentConfiguredInProfile(profile, role))
       .toList(growable: false);
 }

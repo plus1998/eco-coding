@@ -1,4 +1,4 @@
-import type { ModelRef } from "../shared/agent-orchestration";
+import { listOrchestrationProfileAgents, type ModelRef } from "../shared/agent-orchestration";
 import type {
   AgentDomain,
   AgentInstanceConfig,
@@ -47,13 +47,6 @@ export interface AgentProfileSummary {
 }
 
 const SUBAGENT_ROLE_SET = new Set<string>(SUBAGENT_ROLES);
-const EXPLORE_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
-  disallowed: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"],
-  filesystem: { read: "workspace", write: "none" },
-  network: { webSearch: false, webFetch: false },
-};
-
 export function listSelectableAgentProfileSummaries(
   settings: ModelSettingsSnapshot,
   runtimeConfig?: ThreadRuntimeConfig | undefined,
@@ -99,12 +92,9 @@ export function buildAgentProfileSummary(
       allowDelegation: false,
     }),
   };
-  const agents = [
-    buildExploreSummary(profile),
-    ...profile.agents.map((agent) =>
-      buildAgentSummary(agent, templatesById.get(agent.templateId), runtimeConfig),
-    ),
-  ];
+  const agents = listOrchestrationProfileAgents(profile).map((agent) =>
+    buildAgentSummary(agent, templatesById.get(agent.templateId), runtimeConfig),
+  );
   const enabledAgents = agents.filter((agent) => agent.enabled);
   return {
     profile,
@@ -120,24 +110,6 @@ export function buildAgentProfileSummary(
       ...mainRiskLabels,
       ...enabledAgents.flatMap((agent) => agent.riskLabels),
     ]),
-  };
-}
-
-function buildExploreSummary(profile: OrchestrationProfile): AgentProfileAgentSummary {
-  const exploreRef = profile.builtinAgents.explore.modelRef;
-  return {
-    agentKey: "explore",
-    name: "Explore",
-    modelLabel: formatModelLabel(exploreRef.providerId, exploreRef.modelId, exploreRef),
-    modelId: exploreRef.modelId,
-    ...(exploreRef.thinkingEffort ? { thinkingEffort: exploreRef.thinkingEffort } : {}),
-    enabled: true,
-    riskLabels: summarizeToolRiskLabels(EXPLORE_TOOLS),
-    permissionChips: buildAgentTemplatePermissionChips({
-      defaultTools: EXPLORE_TOOLS,
-      mcpServers: [],
-      allowDelegation: false,
-    }),
   };
 }
 

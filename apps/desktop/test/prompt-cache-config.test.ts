@@ -236,7 +236,9 @@ test("resolvePromptCacheProfileLabel builds provider stack and profile name", ()
     modelRef: { providerId: "p1", modelId: "m1" },
     updatedAt: "2026-06-07T00:00:00.000Z",
   });
-  profile.builtinAgents.explore.modelRef = { providerId: "p2", modelId: "m2" };
+  profile.agents = profile.agents.map((agent) =>
+    agent.agentKey === "explore" ? { ...agent, modelRef: { providerId: "p2", modelId: "m2" } } : agent,
+  );
   const stackSettings: ModelSettingsSnapshot = {
     ...settings,
     orchestrationProfiles: [profile],

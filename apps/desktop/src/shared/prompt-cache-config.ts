@@ -1,3 +1,4 @@
+import { listOrchestrationProfileAgents } from "./agent-orchestration";
 import { listEnabledGlobalMcpServerKeys } from "./composer-mcp";
 import type {
   McpServerConfigView,
@@ -147,8 +148,7 @@ export function formatProfileModelStack(
   };
 
   addProvider(profile.mainAgent.modelRef.providerId);
-  addProvider(profile.builtinAgents.explore.modelRef.providerId);
-  for (const agent of profile.agents) {
+  for (const agent of listOrchestrationProfileAgents(profile)) {
     if (agent.enabled) {
       addProvider(agent.modelRef.providerId);
     }

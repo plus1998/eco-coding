@@ -5,6 +5,7 @@ import {
   SUBAGENT_ROLES,
 } from "@eco/runtime";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
+import { listOrchestrationProfileAgents } from "./agent-orchestration";
 import {
   deriveMcpServersEnabled,
   listEnabledGlobalMcpServerKeys,
@@ -78,8 +79,7 @@ export function runtimeRoleRoutesFromAgentProfile(
 ): RuntimeRoleRouteConfig[] {
   const routes = new Map<RuntimeAgentRole, RuntimeRoleRouteConfig>();
   routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
-  routes.set("explore", routeFromAgentProfileModelRef("explore", profile.builtinAgents.explore.modelRef));
-  for (const agent of profile.agents) {
+  for (const agent of listOrchestrationProfileAgents(profile)) {
     const role = agent.agentKey;
     if (agent.enabled && role !== "planner" && !routes.has(role)) {
       routes.set(role, routeFromAgentProfileModelRef(role, agent.modelRef));
@@ -252,14 +252,9 @@ export function deriveSubagentEnabledFromProfile(
   existing?: Partial<SubagentEnabledSettings>,
 ): SubagentEnabledSettings {
   const subagentEnabled = defaultSubagentAvailability();
+  const profileAgents = listOrchestrationProfileAgents(profile);
   for (const role of SUBAGENT_ROLES) {
-    if (role === "explore") {
-      if (typeof existing?.explore === "boolean") {
-        subagentEnabled.explore = existing.explore;
-      }
-      continue;
-    }
-    const agent = profile.agents.find((candidate) => candidate.agentKey === role);
+    const agent = profileAgents.find((candidate) => candidate.agentKey === role);
     if (!agent?.enabled) {
       subagentEnabled[role] = false;
       continue;

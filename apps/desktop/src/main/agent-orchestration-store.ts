@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { AgentTemplate, OrchestrationProfile } from "../shared/agent-orchestration";
+import {
+  type AgentTemplate,
+  listOrchestrationProfileAgents,
+  type OrchestrationProfile,
+} from "../shared/agent-orchestration";
 
 interface StoredConfigRow {
   id: string;
@@ -78,9 +82,7 @@ export class AgentOrchestrationStore {
         profiles.push(parsed.profile);
         continue;
       }
-      console.warn(
-        `[agent-profile] skipped invalid stored profile ${parsed.id}: ${parsed.error.message}`,
-      );
+      console.warn(`[agent-profile] skipped invalid stored profile ${parsed.id}: ${parsed.error.message}`);
     }
     return profiles;
   }
@@ -148,18 +150,17 @@ export function normalizeStoredOrchestrationProfile(profile: OrchestrationProfil
   if (!profile.name.trim()) {
     throw new Error("编排配置名称不能为空。");
   }
-  if (
-    !profile.builtinAgents?.explore?.modelRef?.providerId?.trim() ||
-    !profile.builtinAgents.explore.modelRef.modelId?.trim()
-  ) {
-    throw new Error("Agent Profile 必须配置 Explore 的 provider 和模型。");
-  }
   const now = new Date().toISOString();
-  const { version: _version, ...rest } = profile as OrchestrationProfile & { version?: number };
+  const {
+    version: _version,
+    builtinAgents: _legacyBuiltinAgents,
+    ...rest
+  } = profile as OrchestrationProfile & { version?: number };
   return {
     ...rest,
     id: profile.id.trim(),
     name: profile.name.trim(),
+    agents: listOrchestrationProfileAgents(profile),
     source: profile.source === "project" ? "project" : "user",
     updatedAt: profile.updatedAt || now,
   };

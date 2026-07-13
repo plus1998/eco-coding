@@ -22,12 +22,17 @@ function profile(): OrchestrationProfile {
       tools: { allowed: ["Agent", "Read"], disallowed: ["Bash"] },
       skills: [],
     },
-    builtinAgents: {
-      explore: {
-        modelRef: { providerId: "p1", modelId: "m-explore" },
-      },
-    },
     agents: [
+      {
+        agentKey: "explore",
+        templateId: "builtin.coding.explore",
+        displayName: "Explore",
+        modelRef: { providerId: "p1", modelId: "m-explore" },
+        tools: { allowed: ["Read", "Glob", "Grep"], disallowed: ["Bash", "Write"] },
+        mcpServers: [],
+        skills: [],
+        enabled: true,
+      },
       {
         agentKey: "researcher",
         templateId: "user.researcher",
@@ -65,8 +70,8 @@ function template(): AgentTemplate {
 
 test("agent profile archive round-trips schema and profiles", () => {
   const themed = profile();
-  themed.builtinAgents.explore.themeColor = "#AABBCC";
-  themed.agents[0]!.themeColor = "#112233";
+  themed.agents[0]!.themeColor = "#AABBCC";
+  themed.agents[1]!.themeColor = "#112233";
   const archive = buildAgentProfileArchive([themed], "2026-06-07T01:00:00.000Z", {
     templates: [template()],
   });

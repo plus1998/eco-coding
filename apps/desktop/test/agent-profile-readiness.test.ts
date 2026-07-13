@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
 import { areCodingRoutesReady, isAgentProfileReady } from "../src/renderer/agent-profile-readiness";
+import { CODING_AGENT_TEMPLATE_IDS, createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, OrchestrationProfile, ToolPolicy } from "../src/shared/ipc";
 
 const tools: ToolPolicy = { allowed: [], disallowed: [] };
+const exploreTools = createBuiltInAgentTemplates().find(
+  (template) => template.id === CODING_AGENT_TEMPLATE_IDS.explore,
+)!.defaultTools;
 
 const provider: ModelSettingsSnapshot["providers"][number] = {
   id: "p1",
@@ -33,12 +37,16 @@ function profile(agentEnabled: boolean): OrchestrationProfile {
       tools,
       skills: [],
     },
-    builtinAgents: {
-      explore: {
-        modelRef: { providerId: "p1", modelId: "explore-model" },
-      },
-    },
     agents: [
+      {
+        agentKey: "explore",
+        templateId: CODING_AGENT_TEMPLATE_IDS.explore,
+        modelRef: { providerId: "p1", modelId: "explore-model" },
+        tools: exploreTools,
+        mcpServers: [],
+        skills: [],
+        enabled: true,
+      },
       {
         agentKey: "draft",
         templateId: "draft",
@@ -62,12 +70,14 @@ test("isAgentProfileReady ignores disabled agent model refs", () => {
   expect(isAgentProfileReady(profile(true), providers)).toBe(false);
 });
 
-test("isAgentProfileReady requires the built-in Explore model", () => {
+test("isAgentProfileReady validates Explore when its node exists", () => {
   const providers = new Map([[provider.id, provider]]);
   const draft = profile(false);
-  draft.builtinAgents.explore.modelRef = { providerId: "missing", modelId: "explore-model" };
+  draft.agents[0]!.modelRef = { providerId: "missing", modelId: "explore-model" };
 
   expect(isAgentProfileReady(draft, providers)).toBe(false);
+  draft.agents = draft.agents.filter((agent) => agent.agentKey !== "explore");
+  expect(isAgentProfileReady(draft, providers)).toBe(true);
 });
 
 test("isAgentProfileReady evaluates the temporary main model override", () => {
@@ -96,7 +106,7 @@ test("isAgentProfileReady evaluates the temporary main model override", () => {
   ).toBe(false);
 });
 
-test("areCodingRoutesReady requires all required coding routes", () => {
+test("areCodingRoutesReady accepts the actual configured coding roster", () => {
   const providers = new Map([[provider.id, provider]]);
 
   expect(
@@ -107,5 +117,5 @@ test("areCodingRoutesReady requires all required coding routes", () => {
       ],
       providers,
     ),
-  ).toBe(false);
+  ).toBe(true);
 });

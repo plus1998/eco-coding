@@ -607,7 +607,6 @@ export function ModelsSettingsPanel({
     const routes = runtimeRoleRoutesFromAgentProfile(profile);
     const displayNames = new Map<string, string>([
       ["planner", profile.mainAgent.name || "主 Agent"],
-      ["explore", "Explore"],
       ...profile.agents.map((agent) => [agent.agentKey, agent.displayName || agent.agentKey] as const),
     ]);
     setTestingAgentProfileId(profile.id);
@@ -1002,10 +1001,9 @@ const AGENT_TEMPLATE_DRAG_TYPE = "application/x-eco-agent-template";
 
 type AgentProfileSelectedNode =
   | { kind: "main" }
-  | { kind: "builtinExplore" }
   | { kind: "agent"; agentKey: string };
 
-function AgentProfileEditorModal({
+export function AgentProfileEditorModal({
   form,
   setForm,
   providers,
@@ -1039,7 +1037,6 @@ function AgentProfileEditorModal({
         : "创建新的 Profile，并选择需要的子代理节点。";
   const saveLabel = mode === "edit" ? "保存修改" : mode === "copy" ? "创建副本" : "创建";
   const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
-  const builtinExploreProvider = providers.find((provider) => provider.id === form.builtinExploreProviderId);
   const selectedTemplateIds = useMemo(
     () => new Set(form.agents.map((agent) => agent.templateId)),
     [form.agents],
@@ -1208,15 +1205,15 @@ function AgentProfileEditorModal({
 
           <section className="models-agent-profile-form-section">
             <div className="models-agent-profile-visual-builder">
-              <aside className="models-agent-profile-palette" aria-label="子代理库">
+              <aside className="models-agent-profile-palette" aria-label="智能体库">
                 <div className="models-agent-profile-builder-head">
-                  <h3 className="models-route-profile-section-title">子代理库</h3>
+                  <h3 className="models-route-profile-section-title">智能体库</h3>
                   <span className="models-agent-source-badge">{selectableTemplates.length} 可选</span>
                 </div>
                 {templates.length === 0 ? (
-                  <p className="mcp-list-empty">子代理库暂无模板。</p>
+                  <p className="mcp-list-empty">智能体库暂无模板。</p>
                 ) : selectableTemplates.length === 0 ? (
-                  <p className="mcp-list-empty">子代理库中的模板都已加入当前 Profile。</p>
+                  <p className="mcp-list-empty">智能体库中的模板都已加入当前 Profile。</p>
                 ) : (
                   <div className="models-agent-profile-palette-list">
                     {selectableTemplates.map((template) => (
@@ -1256,7 +1253,7 @@ function AgentProfileEditorModal({
                   <div>
                     <h3 className="models-route-profile-section-title">智能体配置画布</h3>
                     <p className="models-agent-profile-builder-subtitle">
-                      主 Agent、Explore 和 {form.agents.length} 个子代理节点
+                      主 Agent 和 {form.agents.length} 个子代理节点
                     </p>
                   </div>
                   <span className="models-agent-source-badge">
@@ -1286,26 +1283,6 @@ function AgentProfileEditorModal({
                   <div className="models-agent-profile-node-rail" aria-hidden />
 
                   <div className="models-agent-profile-node-column">
-                    <article className="models-agent-profile-node-shell">
-                      <button
-                        type="button"
-                        className="models-agent-profile-node models-agent-profile-node-builtin"
-                        disabled={busy}
-                        onClick={() => setSelectedNode({ kind: "builtinExplore" })}
-                      >
-                        <span className="models-agent-profile-node-type">内置代理</span>
-                        <span className="models-agent-profile-node-title">Explore</span>
-                        <span className="models-agent-profile-node-model">
-                          {(builtinExploreProvider?.name ?? form.builtinExploreProviderId) || "未选模型服务商"}{" "}
-                          / {form.builtinExploreModelId || "未选模型"}
-                        </span>
-                        <span className="models-agent-profile-node-footer">
-                          <Settings2 size={14} />
-                          模型
-                        </span>
-                      </button>
-                    </article>
-
                     {form.agents.length === 0 ? (
                       <div className="models-agent-profile-empty-drop">
                         <span>拖入子代理节点</span>
@@ -1616,24 +1593,13 @@ function AgentProfileNodeConfigModal({
   onPatchMainToolPolicy: (patch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) => void;
 }) {
   const isMainNode = node.kind === "main";
-  const isBuiltinExploreNode = node.kind === "builtinExplore";
-  const nodeProviderId = isMainNode
-    ? form.mainProviderId
-    : isBuiltinExploreNode
-      ? form.builtinExploreProviderId
-      : (agent?.providerId ?? "");
+  const nodeProviderId = isMainNode ? form.mainProviderId : (agent?.providerId ?? "");
   const { candidates: nodeCandidates, loading: nodeCandidatesLoading } = useCandidateModels(nodeProviderId);
-  const selectedCandidateId = isMainNode
-    ? form.mainCandidateModelId
-    : isBuiltinExploreNode
-      ? form.builtinExploreCandidateModelId
-      : (agent?.candidateModelId ?? "");
+  const selectedCandidateId = isMainNode ? form.mainCandidateModelId : (agent?.candidateModelId ?? "");
   const selectedCandidate = nodeCandidates.find((candidate) => candidate.id === selectedCandidateId);
   const nodeTitle = isMainNode
     ? "主 Agent 配置"
-    : isBuiltinExploreNode
-      ? "Explore 配置"
-      : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
+    : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
   const mainCapabilityOptions = useMemo(
     () =>
       buildAgentTemplateCapabilityOptions({
@@ -1663,7 +1629,7 @@ function AgentProfileNodeConfigModal({
     [agent, templates, mcpServers],
   );
 
-  if (!isMainNode && !isBuiltinExploreNode && (!agent || agentIndex < 0)) {
+  if (!isMainNode && (!agent || agentIndex < 0)) {
     return null;
   }
 
@@ -1796,54 +1762,6 @@ function AgentProfileNodeConfigModal({
                 capabilityOptions={mainCapabilityOptions}
                 showPresets
                 onChange={(patch) => onPatchMainToolPolicy(patch)}
-              />
-            </>
-          ) : isBuiltinExploreNode ? (
-            <>
-              <div className="models-agent-profile-template-summary">
-                <div className="models-agent-profile-title-row">
-                  <span className="models-route-role">Explore</span>
-                  <span className="models-agent-source-badge">内置</span>
-                </div>
-                <p className="models-subagent-card-desc">
-                  内置只读探索代理，用于代码库上下文发现，可绑定当前 Profile 的专用模型。
-                </p>
-              </div>
-
-              <ProfileNodeCandidateModelFields
-                providerId={form.builtinExploreProviderId}
-                candidateModelId={form.builtinExploreCandidateModelId}
-                thinkingEffort={form.builtinExploreThinkingEffort}
-                apiCompat={form.builtinExploreApiCompat}
-                providers={providers}
-                candidates={nodeCandidates}
-                candidatesLoading={nodeCandidatesLoading}
-                {...(selectedCandidate ? { selectedCandidate } : {})}
-                {...(busy !== undefined ? { busy } : {})}
-                onProviderChange={(nextProviderId) => {
-                  const provider = providers.find((entry) => entry.id === nextProviderId);
-                  onPatchProfile({
-                    builtinExploreProviderId: nextProviderId,
-                    builtinExploreModelId: provider?.defaultModel || form.builtinExploreModelId,
-                    builtinExploreCandidateModelId: "",
-                  });
-                }}
-                onCandidateChange={(candidateId, modelId) =>
-                  onPatchProfile({
-                    builtinExploreCandidateModelId: candidateId,
-                    builtinExploreModelId: modelId,
-                  })
-                }
-                onThinkingEffortChange={(value) => onPatchProfile({ builtinExploreThinkingEffort: value })}
-                onApiCompatChange={(value) => onPatchProfile({ builtinExploreApiCompat: value })}
-              />
-
-              <AgentThemeColorField
-                label="主题色"
-                agentKey="explore"
-                value={form.builtinExploreThemeColor}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                onChange={(value) => onPatchProfile({ builtinExploreThemeColor: value })}
               />
             </>
           ) : (

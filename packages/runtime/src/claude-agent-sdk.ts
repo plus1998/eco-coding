@@ -859,7 +859,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             phase.dynamicAgentKeys,
           )
         : undefined;
-    const dynamicDefinitions = mergeBuiltinExploreAgentDefinition(dynamicProfileDefinitions, phase.agents);
+    const dynamicDefinitions = input.agentRegistry ? dynamicProfileDefinitions : phase.agents;
     const dynamicAgentKeys = dynamicDefinitions ? Object.keys(dynamicDefinitions) : undefined;
     const mainAllowedTools = phase.askPhase
       ? phase.allowedTools
@@ -1408,24 +1408,6 @@ function createExploreAgentDefinition(
   };
 }
 
-function mergeBuiltinExploreAgentDefinition(
-  dynamicDefinitions: Record<string, unknown> | undefined,
-  phaseDefinitions: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  if (!dynamicDefinitions) {
-    return undefined;
-  }
-  const exploreKey = ecoSubagentKeyForRole("explore");
-  const exploreDefinition = phaseDefinitions?.[exploreKey];
-  if (!exploreDefinition || dynamicDefinitions[exploreKey]) {
-    return dynamicDefinitions;
-  }
-  return {
-    [exploreKey]: exploreDefinition,
-    ...dynamicDefinitions,
-  };
-}
-
 export function createPlanningAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
@@ -1453,11 +1435,13 @@ export function createAskAgentDefinitions(
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
-  const definitions = {
+  const effective = effectiveSubagentAvailability(availability, routes);
+  if (!isSubagentEnabled(effective, "explore")) {
+    return {};
+  }
+  return {
     [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
   };
-
-  return filterAgentDefinitions(definitions, availability);
 }
 
 /** @deprecated Import from ./prompts/execution-agents.js */

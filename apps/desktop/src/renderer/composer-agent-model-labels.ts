@@ -1,4 +1,5 @@
 import { formatRoleModelLabel } from "@eco/runtime";
+import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type {
   AgentRole,
   ModelSettingsSnapshot,
@@ -99,8 +100,7 @@ function profileDisplayNames(
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const names = new Map<string, string>();
   names.set("planner", profile.mainAgent.name.trim() || "主 Agent");
-  names.set("explore", "Explore");
-  for (const agent of profile.agents) {
+  for (const agent of listOrchestrationProfileAgents(profile)) {
     const template = templateById.get(agent.templateId);
     names.set(agent.agentKey, agent.displayName?.trim() || template?.name || agent.agentKey);
   }

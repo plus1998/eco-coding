@@ -20,7 +20,7 @@ void main() {
       agents: [OrchestrationAgentInstance(agentKey: 'coder', enabled: true)],
     );
 
-    expect(configuredOrchestrationSubagentRoles(profile), ['explore', 'coder']);
+    expect(configuredOrchestrationSubagentRoles(profile), ['coder']);
   });
 
   test('buildActivityFeed returns empty without projection', () {

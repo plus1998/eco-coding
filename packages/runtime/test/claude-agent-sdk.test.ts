@@ -135,6 +135,22 @@ function universalToolPolicy(allowed: string[], disallowed: string[] = []): EcoT
 const universalAgentRegistry: EcoAgentRuntimeConfig = {
   templates: [
     {
+      id: "builtin.coding.explore",
+      name: "Explore",
+      description: "Read-only codebase discovery agent.",
+      domain: "coding",
+      prompt: "Explore the codebase read-only and report relevant paths and symbols.",
+      whenToUse: "Use when codebase context is needed.",
+      outputContract: "Return relevant paths, symbols, and context gaps.",
+      defaultTools: universalToolPolicy(["Read", "Glob", "Grep"], ["Bash", "Write"]),
+      mcpServers: [],
+      skills: [],
+      allowDelegation: false,
+      builtIn: true,
+      source: "built_in",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    },
+    {
       id: "user.researcher",
       name: "Researcher",
       description: "Finds credible external evidence.",
@@ -168,12 +184,17 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       },
       skills: [],
     },
-    builtinAgents: {
-      explore: {
-        modelRef: { providerId: "anthropic", modelId: "research-explore-model" },
-      },
-    },
     agents: [
+      {
+        agentKey: "explore",
+        templateId: "builtin.coding.explore",
+        displayName: "Explore",
+        modelRef: { providerId: "anthropic", modelId: "research-explore-model" },
+        tools: universalToolPolicy(["Read", "Glob", "Grep"], ["Bash", "Write"]),
+        mcpServers: [],
+        skills: [],
+        enabled: true,
+      },
       {
         agentKey: "researcher",
         templateId: "user.researcher",
@@ -1831,7 +1852,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(Object.keys(agents)).toEqual(["eco_explore", "eco_researcher"]);
   expect(agents.eco_explore).toMatchObject({
     model: "claude-haiku-explore",
-    tools: ["Read", "Glob", "Grep"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
   });
   expect(agents.eco_researcher).toMatchObject({
     // Without a researcher route in test `routes`, resolveSdkModelId falls back to planner.
@@ -1884,6 +1905,27 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
 
   const disabledExploreAgents = capturedQueries[1]?.options.agents as Record<string, Record<string, unknown>>;
   expect(Object.keys(disabledExploreAgents)).toEqual(["eco_researcher"]);
+
+  const profileWithoutExplore: EcoAgentRuntimeConfig = {
+    ...universalAgentRegistry,
+    profile: {
+      ...universalAgentRegistry.profile,
+      agents: universalAgentRegistry.profile.agents.filter((agent) => agent.agentKey !== "explore"),
+    },
+  };
+  for await (const _event of driver.runAsk({
+    threadId: "thr_universal_deleted_explore",
+    prompt: "Summarize with the configured roster.",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes: routes.filter((route) => route.role !== "explore"),
+    signal: new AbortController().signal,
+    agentRegistry: profileWithoutExplore,
+  })) {
+    // drain
+  }
+  const deletedExploreAgents = capturedQueries[2]?.options.agents as Record<string, Record<string, unknown>>;
+  expect(Object.keys(deletedExploreAgents)).toEqual(["eco_researcher"]);
 });
 
 test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic permissions", async () => {

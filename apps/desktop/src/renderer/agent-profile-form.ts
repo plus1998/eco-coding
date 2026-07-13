@@ -1,4 +1,9 @@
-import type { AgentConfigSource } from "../shared/agent-orchestration";
+import {
+  type AgentConfigSource,
+  CODING_AGENT_TEMPLATE_IDS,
+  createBuiltInAgentTemplates,
+  listOrchestrationProfileAgents,
+} from "../shared/agent-orchestration";
 import type {
   AgentDomain,
   AgentTemplate,
@@ -9,8 +14,8 @@ import type {
   ThinkingEffort,
   UpstreamApiCompat,
 } from "../shared/ipc";
-import { parseList } from "./agent-template-form-utils";
 import { defaultThemeColorForAgentKey, normalizeThemeColorHex } from "../shared/subagent-theme";
+import { parseList } from "./agent-template-form-utils";
 import {
   capabilityFieldsToToolPolicy,
   createDefaultToolCapabilityFields,
@@ -60,12 +65,6 @@ export interface AgentProfileFormState {
   mainAdvancedDisallowedTools: string;
   mainMcpServers: string;
   mainMcpTools: string;
-  builtinExploreProviderId: string;
-  builtinExploreModelId: string;
-  builtinExploreThinkingEffort: string;
-  builtinExploreApiCompat: string;
-  builtinExploreCandidateModelId: string;
-  builtinExploreThemeColor: string;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -162,6 +161,8 @@ export function agentCapabilityPatchToAgentForm(
 
 export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): AgentProfileFormState {
   const provider = selectDefaultProvider(options.providers ?? []);
+  const templates = [...(options.templates ?? []), ...createBuiltInAgentTemplates()];
+  const exploreTemplate = templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.explore);
   const mainCapability = createDefaultToolCapabilityFields({
     writeCodebase: true,
     bash: true,
@@ -185,14 +186,10 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
     ...mainCapabilityToProfileFormFields(mainCapability),
-    builtinExploreProviderId: provider?.id ?? "",
-    builtinExploreModelId: provider?.defaultModel ?? "",
-    builtinExploreThinkingEffort: "",
-    builtinExploreApiCompat: "",
-    builtinExploreCandidateModelId: "",
-    builtinExploreThemeColor: defaultThemeColorForAgentKey("explore"),
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
-    agents: [],
+    agents: exploreTemplate
+      ? [createProfileAgentFormFromTemplate(exploreTemplate, { ...(provider && { provider }) })]
+      : [],
   };
 }
 
@@ -217,15 +214,8 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
     ...mainCapabilityToProfileFormFields(mainCapability),
-    builtinExploreProviderId: profile.builtinAgents.explore.modelRef.providerId,
-    builtinExploreModelId: profile.builtinAgents.explore.modelRef.modelId,
-    builtinExploreThinkingEffort: profile.builtinAgents.explore.modelRef.thinkingEffort ?? "",
-    builtinExploreApiCompat: profile.builtinAgents.explore.modelRef.apiCompat ?? "",
-    builtinExploreCandidateModelId: profile.builtinAgents.explore.modelRef.candidateModelId ?? "",
-    builtinExploreThemeColor:
-      profile.builtinAgents.explore.themeColor ?? defaultThemeColorForAgentKey("explore"),
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
-    agents: profile.agents.map((agent) => ({
+    agents: listOrchestrationProfileAgents(profile).map((agent) => ({
       agentKey: agent.agentKey,
       templateId: agent.templateId,
       displayName: agent.displayName ?? "",
@@ -303,32 +293,21 @@ export function buildOrchestrationProfileFromForm(
     throw new Error("智能体配置名称不能为空。");
   }
   assertCandidateModelSelected("主 Agent", form.mainCandidateModelId);
-  assertCandidateModelSelected("Explore", form.builtinExploreCandidateModelId);
-  const builtinExploreThemeColor = resolveStoredThemeColor(
-    "Explore",
-    form.builtinExploreThemeColor,
-    defaultThemeColorForAgentKey("explore"),
-  );
-
   const mainModelRef = buildModelRef(form.mainProviderId, form.mainModelId, {
     thinkingEffort: form.mainThinkingEffort,
     apiCompat: form.mainApiCompat,
     candidateModelId: form.mainCandidateModelId,
   });
-  const builtinExploreModelRef = buildModelRef(
-    form.builtinExploreProviderId,
-    form.builtinExploreModelId,
-    {
-      thinkingEffort: form.builtinExploreThinkingEffort,
-      apiCompat: form.builtinExploreApiCompat,
-      candidateModelId: form.builtinExploreCandidateModelId,
-    },
+  const templateById = new Map(
+    [...options.templates, ...createBuiltInAgentTemplates()].map((template) => [template.id, template]),
   );
-  const templateById = new Map(options.templates.map((template) => [template.id, template]));
   const existingAgentByKey = new Map(options.existing?.agents.map((agent) => [agent.agentKey, agent]));
   const agentKeys = new Set<string>();
   const agents = form.agents.map((agentForm) => {
-    const agentKey = normalizeAgentKey(agentForm.agentKey);
+    const agentKey = normalizeAgentKey(
+      agentForm.agentKey,
+      agentForm.templateId === CODING_AGENT_TEMPLATE_IDS.explore,
+    );
     if (agentKeys.has(agentKey)) {
       throw new Error(`Agent key 重复：${agentKey}`);
     }
@@ -381,12 +360,6 @@ export function buildOrchestrationProfileFromForm(
       modelRef: mainModelRef,
       tools: capabilityFieldsToToolPolicy(mainCapabilityFromProfileForm(form)),
       skills: [],
-    },
-    builtinAgents: {
-      explore: {
-        modelRef: builtinExploreModelRef,
-        ...(builtinExploreThemeColor && { themeColor: builtinExploreThemeColor }),
-      },
     },
     agents,
     strategy: buildStrategyFromForm(form),
@@ -472,11 +445,7 @@ function assertCandidateModelSelected(label: string, candidateModelId: string): 
   }
 }
 
-function resolveStoredThemeColor(
-  label: string,
-  value: string,
-  defaultColor: string,
-): string | undefined {
+function resolveStoredThemeColor(label: string, value: string, defaultColor: string): string | undefined {
   const trimmed = value.trim();
   if (!trimmed || trimmed.toUpperCase() === defaultColor.toUpperCase()) {
     return undefined;
@@ -524,7 +493,7 @@ function buildModelRef(
 
 export { tryFormToManualSpec } from "./agent-profile-manual-spec-form";
 
-function normalizeAgentKey(raw: string): string {
+function normalizeAgentKey(raw: string, allowExplore = false): string {
   const agentKey = raw.trim();
   if (!agentKey) {
     throw new Error("Agent key 不能为空。");
@@ -532,7 +501,7 @@ function normalizeAgentKey(raw: string): string {
   if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(agentKey)) {
     throw new Error("Agent key 只能包含字母、数字、下划线和短横线，并且必须以字母开头。");
   }
-  if (RESERVED_AGENT_KEYS.has(agentKey.toLowerCase())) {
+  if (RESERVED_AGENT_KEYS.has(agentKey.toLowerCase()) && !(allowExplore && agentKey === "explore")) {
     throw new Error(`Agent key ${agentKey} 是系统保留名称。`);
   }
   return agentKey;

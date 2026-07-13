@@ -5,11 +5,7 @@ import {
   SDK_SKILL_TOOL_NAME,
   SDK_TASK_PROGRESS_TOOL_NAMES,
 } from "./sdk-tool-names.js";
-import {
-  ecoSubagentKeyForRole,
-  SDK_GENERAL_PURPOSE_AGENT_KEY,
-  SDK_PLAN_AGENT_KEY,
-} from "./subagent-availability.js";
+import { SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "./subagent-availability.js";
 import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import {
   capEcoToolPolicyForPhase,
@@ -122,7 +118,8 @@ export interface EcoOrchestrationProfileConfig {
   name: string;
   preset: EcoAgentDomain;
   mainAgent: EcoMainAgentConfig;
-  builtinAgents: EcoBuiltinAgentsConfig;
+  /** @deprecated Legacy desktop profiles stored Explore outside agents. */
+  builtinAgents?: EcoBuiltinAgentsConfig;
   agents: EcoAgentInstanceConfig[];
   strategy: EcoOrchestrationStrategy;
   updatedAt: string;
@@ -233,28 +230,6 @@ export interface EcoRuntimeToolPermissionPolicy {
   main: EcoRuntimeToolPermissionEntry;
   agents: Record<string, EcoRuntimeToolPermissionEntry>;
 }
-
-const EXPLORE_DISALLOWED_TOOLS = [
-  "Agent",
-  "Task",
-  "TaskList",
-  "TaskOutput",
-  "Skill",
-  "Bash",
-  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
-  "WebSearch",
-  "WebFetch",
-  "AskUserQuestion",
-  ...SDK_TASK_PROGRESS_TOOL_NAMES,
-] as const;
-
-const BUILTIN_EXPLORE_TOOL_POLICY: EcoToolPolicy = {
-  allowed: [],
-  disallowed: [...EXPLORE_DISALLOWED_TOOLS],
-  bash: { enabled: false },
-  filesystem: { read: "workspace", write: "none" },
-  network: { webSearch: false, webFetch: false },
-};
 
 /** Read-only policy for Claude SDK built-in Plan subagent during native Plan Mode. */
 export const BUILTIN_PLAN_TOOL_POLICY: EcoToolPolicy = {
@@ -397,10 +372,6 @@ export function buildToolPermissionPolicyFromProfile(
   const phaseCapTools =
     options.phaseAllowedTools && options.phaseAllowedTools.length > 0 ? options.phaseAllowedTools : undefined;
   const agents: Record<string, EcoRuntimeToolPermissionEntry> = {};
-  const builtinExploreKey = ecoSubagentKeyForRole("explore");
-  if (!explicitAgentKeys || explicitAgentKeys.has(builtinExploreKey)) {
-    agents[builtinExploreKey] = normalizeToolPermissionEntry(BUILTIN_EXPLORE_TOOL_POLICY);
-  }
   for (const agent of profile.agents) {
     if (!agent.enabled) {
       continue;
@@ -575,7 +546,9 @@ function resolveAgentToolPermission(
   const childPhaseAllowedTools = phaseAllowedTools
     ? phaseAllowedTools.filter((tool) => !isReadOnlyChildAgentBlockedTool(tool))
     : undefined;
-  const effectiveTools = childPhaseAllowedTools ? capEcoToolPolicyForPhase(tools, childPhaseAllowedTools) : tools;
+  const effectiveTools = childPhaseAllowedTools
+    ? capEcoToolPolicyForPhase(tools, childPhaseAllowedTools)
+    : tools;
   const skillExtraAllowed = childPhaseAllowedTools
     ? [SDK_SKILL_TOOL_NAME].filter((tool) => childPhaseAllowedTools.includes(tool))
     : [SDK_SKILL_TOOL_NAME];

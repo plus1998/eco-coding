@@ -109,7 +109,8 @@ export interface OrchestrationProfile {
   name: string;
   preset: AgentDomain;
   mainAgent: MainAgentConfig;
-  builtinAgents: BuiltinAgentsConfig;
+  /** @deprecated Legacy profiles stored Explore outside the editable agent roster. */
+  builtinAgents?: BuiltinAgentsConfig;
   agents: AgentInstanceConfig[];
   strategy: OrchestrationStrategy;
   updatedAt: string;
@@ -118,6 +119,7 @@ export interface OrchestrationProfile {
 }
 
 export const CODING_AGENT_TEMPLATE_IDS = {
+  explore: "builtin.coding.explore",
   architect: "builtin.coding.architect",
   coder: "builtin.coding.coder",
   reviewer: "builtin.coding.reviewer",
@@ -126,6 +128,7 @@ export const CODING_AGENT_TEMPLATE_IDS = {
 
 export const CODING_AGENT_KEYS = {
   main: "main",
+  explore: "explore",
   architect: "architect",
   coder: "coder",
   reviewer: "reviewer",
@@ -142,6 +145,14 @@ const ARCHITECT_TOOLS: ToolPolicy = {
   disallowed: [...CLAUDE_WRITE_TOOLS, "Bash", ...CLAUDE_TASK_PROGRESS_TOOLS],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
+};
+
+const EXPLORE_TOOLS: ToolPolicy = {
+  allowed: ["Read", "Glob", "Grep"],
+  disallowed: [...CLAUDE_WRITE_TOOLS, "Bash", ...CLAUDE_TASK_PROGRESS_TOOLS],
+  bash: { enabled: false },
+  filesystem: { read: "workspace", write: "none" },
+  network: { webSearch: false, webFetch: false },
 };
 
 const CODER_TOOLS: ToolPolicy = {
@@ -213,6 +224,23 @@ export interface BuiltInPresetDefinition {
 export function createBuiltInAgentTemplates(): AgentTemplate[] {
   return [
     {
+      id: CODING_AGENT_TEMPLATE_IDS.explore,
+      name: "Explore",
+      description: "Read-only codebase discovery agent for locating files, symbols, and relevant context.",
+      domain: "coding",
+      prompt:
+        "Explore the codebase read-only. Locate relevant files and symbols, trace relationships, and return concise findings with paths. Do not edit files or run commands.",
+      whenToUse: "Use when the main agent needs codebase context before answering, planning, or editing.",
+      outputContract: "Return relevant paths, symbols, relationships, and remaining context gaps.",
+      defaultTools: cloneToolPolicy(EXPLORE_TOOLS),
+      mcpServers: [],
+      skills: [],
+      allowDelegation: false,
+      builtIn: true,
+      source: "built_in",
+      updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
+    },
+    {
       id: CODING_AGENT_TEMPLATE_IDS.architect,
       name: "Architect",
       description: "Structure and task breakdown agent for coding work.",
@@ -272,8 +300,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       prompt:
         "Run the narrowest useful verification for the completed work, map each plan gate to evidence, and report failures clearly.",
       whenToUse: "Use after implementation and review when automated verification is useful.",
-      outputContract:
-        "Return commands run, requirement coverage, and a PASS or FAIL verdict.",
+      outputContract: "Return commands run, requirement coverage, and a PASS or FAIL verdict.",
       defaultTools: cloneToolPolicy(TESTER_TOOLS),
       mcpServers: [],
       skills: [],
@@ -295,6 +322,7 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         "Coordinate software engineering work. Clarify scope, inspect the repository, delegate specialized work when useful, keep edits focused, and finish with verification evidence.",
       mainAgentTools: cloneToolPolicy(MAIN_CODING_TOOLS),
       defaultAgents: [
+        presetAgent(CODING_AGENT_KEYS.explore, CODING_AGENT_TEMPLATE_IDS.explore, "Explore"),
         presetAgent(CODING_AGENT_KEYS.architect, CODING_AGENT_TEMPLATE_IDS.architect, "Architect"),
         presetAgent(CODING_AGENT_KEYS.coder, CODING_AGENT_TEMPLATE_IDS.coder, "Coder"),
         presetAgent(CODING_AGENT_KEYS.reviewer, CODING_AGENT_TEMPLATE_IDS.reviewer, "Reviewer"),
@@ -384,7 +412,6 @@ export function buildOrchestrationProfileFromPreset(
       tools: cloneToolPolicy(preset.mainAgentTools),
       skills: [],
     },
-    builtinAgents: createBuiltinAgents(modelRef),
     agents: preset.defaultAgents.map((agent) => {
       const template = templateById.get(agent.templateId);
       if (!template) {
@@ -431,8 +458,13 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
       tools: cloneToolPolicy(MAIN_CODING_TOOLS),
       skills: [],
     },
-    builtinAgents: createBuiltinAgents(routeToModelRef(exploreRoute)),
     agents: [
+      buildCodingAgentInstance(
+        CODING_AGENT_KEYS.explore,
+        CODING_AGENT_TEMPLATE_IDS.explore,
+        exploreRoute,
+        subagentEnabledFor("explore", options.subagentEnabled),
+      ),
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.architect,
         CODING_AGENT_TEMPLATE_IDS.architect,
@@ -496,12 +528,34 @@ function buildCodingAgentInstance(
   };
 }
 
-function createBuiltinAgents(modelRef: ModelRef): BuiltinAgentsConfig {
-  return {
-    explore: {
-      modelRef: cloneModelRef(modelRef),
+export function listOrchestrationProfileAgents(profile: OrchestrationProfile): AgentInstanceConfig[] {
+  if (profile.agents.some((agent) => agent.agentKey === CODING_AGENT_KEYS.explore)) {
+    return profile.agents;
+  }
+  const legacyExplore = profile.builtinAgents?.explore;
+  if (!legacyExplore) {
+    return profile.agents;
+  }
+  const template = createBuiltInAgentTemplates().find(
+    (candidate) => candidate.id === CODING_AGENT_TEMPLATE_IDS.explore,
+  );
+  if (!template) {
+    throw new Error("Missing built-in Explore template.");
+  }
+  return [
+    {
+      agentKey: CODING_AGENT_KEYS.explore,
+      templateId: template.id,
+      displayName: template.name,
+      ...(legacyExplore.themeColor && { themeColor: legacyExplore.themeColor }),
+      modelRef: cloneModelRef(legacyExplore.modelRef),
+      tools: cloneToolPolicy(template.defaultTools),
+      mcpServers: [],
+      skills: [],
+      enabled: true,
     },
-  };
+    ...profile.agents,
+  ];
 }
 
 function subagentEnabledFor(
@@ -514,7 +568,8 @@ function subagentEnabledFor(
 function codingDefaultStrategy(): OrchestrationStrategy {
   return {
     kind: "autonomous",
-    guidancePrompt: "Choose coding subagents only when their specialization materially improves correctness or speed.",
+    guidancePrompt:
+      "Choose coding subagents only when their specialization materially improves correctness or speed.",
   };
 }
 
@@ -545,9 +600,7 @@ function presetAgent(agentKey: string, templateId: string, displayName: string):
   return { agentKey, templateId, displayName };
 }
 
-function presetStrategies(input: {
-  autonomousGuidance: string;
-}): BuiltInPresetStrategyRecommendation {
+function presetStrategies(input: { autonomousGuidance: string }): BuiltInPresetStrategyRecommendation {
   return {
     autonomous: { kind: "autonomous", guidancePrompt: input.autonomousGuidance },
   };

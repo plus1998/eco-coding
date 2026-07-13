@@ -1,3 +1,4 @@
+import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
 import {
   defaultThemeColorForAgentKey,
@@ -21,11 +22,7 @@ export function buildRuntimeAgentThemes(
     return {};
   }
   const themes: RuntimeAgentThemes = {};
-  const exploreColor = summary.profile.builtinAgents.explore.themeColor?.trim();
-  if (exploreColor) {
-    addAgentThemeColor(themes, "explore", exploreColor);
-  }
-  for (const agent of summary.profile.agents) {
+  for (const agent of listOrchestrationProfileAgents(summary.profile)) {
     const color = agent.themeColor?.trim();
     if (color) {
       addAgentThemeColor(themes, agent.agentKey, color);
@@ -43,9 +40,7 @@ export function resolveRuntimeAgentThemeColor(
   }
   const key = role.trim();
   const configured =
-    themes?.[key] ??
-    themes?.[stripEcoAgentKeyPrefix(key)] ??
-    themes?.[`eco_${stripEcoAgentKeyPrefix(key)}`];
+    themes?.[key] ?? themes?.[stripEcoAgentKeyPrefix(key)] ?? themes?.[`eco_${stripEcoAgentKeyPrefix(key)}`];
   if (configured) {
     return configured;
   }
