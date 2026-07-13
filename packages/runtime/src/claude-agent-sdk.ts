@@ -846,10 +846,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           resolveModelId: resolveSdkModel,
         })
       : undefined;
+    const availableDynamicDefinitions =
+      dynamicAgents && phase.availability
+        ? filterAgentDefinitions(dynamicAgents.definitions, phase.availability)
+        : dynamicAgents?.definitions;
     const dynamicProfileDefinitions =
       dynamicAgents && input.agentRegistry
         ? filterDynamicDefinitionsForPhase(
-            dynamicAgents.definitions,
+            availableDynamicDefinitions ?? {},
             phase.agents,
             input.agentRegistry.profile.preset,
             phase.dynamicAgentKeys,
@@ -1429,9 +1433,10 @@ export function createPlanningAgentDefinitions(
 ): Record<string, unknown> {
   const effective = effectiveSubagentAvailability(availability, routes);
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const definitions: Record<string, unknown> = {
-    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-  };
+  const definitions: Record<string, unknown> = {};
+  if (isSubagentEnabled(effective, "explore")) {
+    definitions[ecoSubagentKeyForRole("explore")] = createExploreAgentDefinition(routes, agentSkills);
+  }
   if (isSubagentEnabled(effective, "architect")) {
     definitions[ecoSubagentKeyForRole("architect")] = {
       description: planningArchitectDescription,
@@ -1471,9 +1476,10 @@ export function createAutonomousAgentDefinitions(
 ): Record<string, unknown> {
   const effective = effectiveSubagentAvailability(availability, routes);
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const definitions: Record<string, unknown> = {
-    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-  };
+  const definitions: Record<string, unknown> = {};
+  if (isSubagentEnabled(effective, "explore")) {
+    definitions[ecoSubagentKeyForRole("explore")] = createExploreAgentDefinition(routes, agentSkills);
+  }
   if (isSubagentEnabled(effective, "architect")) {
     definitions[ecoSubagentKeyForRole("architect")] = {
       description: executionArchitectDescription,

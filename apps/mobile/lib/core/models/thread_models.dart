@@ -15,10 +15,6 @@ Map<String, bool> normalizeSubagentAvailability(Map<String, bool>? input) {
   final availability = defaultSubagentAvailability();
   if (input == null) return availability;
   for (final role in subagentRoles) {
-    if (role == 'explore') {
-      availability[role] = true;
-      continue;
-    }
     if (input.containsKey(role)) {
       availability[role] = input[role] ?? true;
     }

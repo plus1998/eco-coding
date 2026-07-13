@@ -52,9 +52,10 @@ void main() {
 
       final derived = deriveSubagentEnabledFromProfile(
         profile,
-        existing: const {'coder': false, 'reviewer': true},
+        existing: const {'explore': false, 'coder': false, 'reviewer': true},
       );
 
+      expect(derived['explore'], isFalse);
       expect(derived['coder'], isFalse);
       expect(derived['reviewer'], isTrue);
     },
@@ -67,6 +68,25 @@ void main() {
     );
     expect(isRuntimeSubagentEnabled(const {'coder': false}, 'coder'), isFalse);
     expect(isRuntimeSubagentEnabled(const {}, 'explore'), isTrue);
+    expect(
+      isRuntimeSubagentEnabled(const {'explore': false}, 'explore'),
+      isFalse,
+    );
+  });
+
+  test('Explore is toggleable and included in subagent counts', () {
+    expect(isSubagentToggleable(null, 'explore'), isTrue);
+    expect(
+      countEnabledSubagents(const {
+        'explore': true,
+        'architect': false,
+        'coder': false,
+        'reviewer': false,
+        'tester': false,
+      }),
+      1,
+    );
+    expect(countConfiguredSubagents(null), 1);
   });
 
   test('main agent model override JSON round-trips without losing fields', () {

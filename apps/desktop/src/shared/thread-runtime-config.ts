@@ -254,7 +254,9 @@ export function deriveSubagentEnabledFromProfile(
   const subagentEnabled = defaultSubagentAvailability();
   for (const role of SUBAGENT_ROLES) {
     if (role === "explore") {
-      subagentEnabled.explore = true;
+      if (typeof existing?.explore === "boolean") {
+        subagentEnabled.explore = existing.explore;
+      }
       continue;
     }
     const agent = profile.agents.find((candidate) => candidate.agentKey === role);

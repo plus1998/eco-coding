@@ -4195,9 +4195,6 @@ function App() {
     if (!composerRuntimeConfig) {
       return;
     }
-    if (role === "explore") {
-      return;
-    }
     const next: ThreadRuntimeConfig = {
       ...composerRuntimeConfig,
       subagentEnabled: { ...composerRuntimeConfig.subagentEnabled, [role]: enabled },

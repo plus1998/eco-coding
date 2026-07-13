@@ -245,6 +245,10 @@ test("deriveSubagentEnabledFromProfile disables roles missing from the profile",
   expect(deriveSubagentEnabledFromProfile(profile).coder).toBe(true);
 });
 
+test("deriveSubagentEnabledFromProfile preserves a disabled Explore", () => {
+  expect(deriveSubagentEnabledFromProfile(genericProfile, { explore: false }).explore).toBe(false);
+});
+
 test("serialize and parse thread runtime config round-trip", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,

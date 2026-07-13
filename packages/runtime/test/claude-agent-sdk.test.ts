@@ -353,6 +353,25 @@ test("createAutonomousAgentDefinitions filters disabled subagent roles", () => {
   ]);
 });
 
+test("agent definitions omit Explore when it is disabled in every session mode", () => {
+  const availability = {
+    explore: false,
+    architect: true,
+    coder: true,
+    reviewer: true,
+    tester: true,
+  };
+  expect(createAskAgentDefinitions(routes, undefined, availability)).not.toHaveProperty(
+    ecoSubagentKeyForRole("explore"),
+  );
+  expect(createPlanningAgentDefinitions(routes, undefined, availability)).not.toHaveProperty(
+    ecoSubagentKeyForRole("explore"),
+  );
+  expect(createAutonomousAgentDefinitions(routes, undefined, availability)).not.toHaveProperty(
+    ecoSubagentKeyForRole("explore"),
+  );
+});
+
 test("maps Claude family model ids to SDK subagent aliases", () => {
   expect(toSdkAgentModel("claude-opus-4")).toBe("claude-opus-4");
   expect(toSdkAgentModel("claude-sonnet")).toBe("claude-sonnet");
@@ -1845,6 +1864,26 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(systemPrompt).not.toContain("File edits apply directly");
   expect(systemPrompt).not.toContain("Eco universal orchestration.");
   expect(Object.keys(agents)).toEqual(["eco_explore", "eco_researcher"]);
+
+  for await (const _event of driver.runAsk({
+    threadId: "thr_universal_without_explore",
+    prompt: "Summarize without delegating exploration.",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+    sdkSession: {
+      enabledSubagents: {
+        explore: false,
+      },
+    },
+    agentRegistry: universalAgentRegistry,
+  })) {
+    // drain
+  }
+
+  const disabledExploreAgents = capturedQueries[1]?.options.agents as Record<string, Record<string, unknown>>;
+  expect(Object.keys(disabledExploreAgents)).toEqual(["eco_researcher"]);
 });
 
 test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic permissions", async () => {

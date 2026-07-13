@@ -89,21 +89,18 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
           runtimeConfig.subagentEnabled,
           role,
         );
-        final isExplore = role == 'explore';
         final toggleable = canEdit && isSubagentToggleable(profile, role);
         final configured = isSubagentConfiguredInProfile(profile, role);
         return SwitchListTile(
           title: Text(_subagentRoleLabels[role] ?? role),
           subtitle: Text(
-            isExplore
-                ? '始终启用'
-                : !configured
+            !configured
                 ? 'Profile 未配置'
                 : enabled
                 ? '已启用'
                 : '已停用',
           ),
-          value: isExplore ? true : enabled,
+          value: enabled,
           onChanged: !toggleable
               ? null
               : (value) {

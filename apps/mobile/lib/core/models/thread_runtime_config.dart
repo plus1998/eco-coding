@@ -30,7 +30,10 @@ Map<String, bool> deriveSubagentEnabledFromProfile(
   final subagentEnabled = defaultSubagentAvailability();
   for (final role in subagentRoles) {
     if (role == 'explore') {
-      subagentEnabled[role] = true;
+      final existingValue = existing?[role];
+      if (existingValue is bool) {
+        subagentEnabled[role] = existingValue;
+      }
       continue;
     }
     OrchestrationAgentInstance? agent;
@@ -185,9 +188,6 @@ bool isRuntimeSubagentEnabled(
   Map<String, bool> subagentEnabled,
   String role,
 ) {
-  if (role == 'explore') {
-    return true;
-  }
   return normalizedRuntimeSubagentEnabled(subagentEnabled)[role] ?? true;
 }
 
@@ -195,20 +195,17 @@ bool isSubagentToggleable(
   OrchestrationProfile? profile,
   String role,
 ) {
-  return role != 'explore' && isSubagentConfiguredInProfile(profile, role);
+  return isSubagentConfiguredInProfile(profile, role);
 }
 
 int countEnabledSubagents(Map<String, bool> subagentEnabled) {
   return subagentRoles
-      .where((role) => role != 'explore')
       .where((role) => subagentEnabled[role] ?? false)
       .length;
 }
 
 int countConfiguredSubagents(OrchestrationProfile? profile) {
-  return configuredOrchestrationSubagentRoles(profile)
-      .where((role) => role != 'explore')
-      .length;
+  return configuredOrchestrationSubagentRoles(profile).length;
 }
 
 /// Sub-agent roles shown in orchestration UI (aligned with desktop profile routes).

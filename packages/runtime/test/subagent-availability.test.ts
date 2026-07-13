@@ -8,7 +8,7 @@ import {
   sdkBuiltinSubagentDenyRules,
 } from "../src/subagent-availability";
 
-test("normalizeSubagentAvailability keeps Explore enabled and respects disabled coder", () => {
+test("normalizeSubagentAvailability respects disabled Explore and coder", () => {
   const availability = normalizeSubagentAvailability({
     explore: false,
     architect: false,
@@ -17,7 +17,7 @@ test("normalizeSubagentAvailability keeps Explore enabled and respects disabled 
     tester: true,
   });
   expect(availability.coder).toBe(false);
-  expect(availability.explore).toBe(true);
+  expect(availability.explore).toBe(false);
 });
 
 test("filterAgentDefinitions always omits SDK built-in Explore definitions", () => {
@@ -25,11 +25,13 @@ test("filterAgentDefinitions always omits SDK built-in Explore definitions", () 
   const filtered = filterAgentDefinitions(
     {
       [SDK_EXPLORE_AGENT_KEY]: { model: "eco-explore-1" },
+      [ecoSubagentKeyForRole("explore")]: { model: "eco-explore-1" },
       [ecoSubagentKeyForRole("architect")]: { model: "eco-architect-1" },
     },
     availability,
   );
   expect(filtered).not.toHaveProperty(SDK_EXPLORE_AGENT_KEY);
+  expect(filtered).not.toHaveProperty(ecoSubagentKeyForRole("explore"));
   expect(filtered[ecoSubagentKeyForRole("architect")]).toBeDefined();
 });
 
@@ -79,4 +81,12 @@ test("effectiveSubagentAvailability disables optional roles without model routes
   expect(effective.reviewer).toBe(false);
   expect(effective.tester).toBe(false);
   expect(effective.coder).toBe(true);
+  expect(effective.explore).toBe(true);
+});
+
+test("effectiveSubagentAvailability disables Explore without a model route", () => {
+  const effective = effectiveSubagentAvailability(normalizeSubagentAvailability(), [
+    { role: "coder", primary: { modelId: "coder-model" } },
+  ]);
+  expect(effective.explore).toBe(false);
 });
