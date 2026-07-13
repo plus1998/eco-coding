@@ -9,12 +9,16 @@ import {
 } from "@eco/runtime";
 import {
   AlertCircle,
+  ArrowDownToLine,
   ArrowRight,
   Bot,
   ChevronDown,
+  CircleDollarSign,
   Copy,
+  Database,
   FileSearch,
   FileText,
+  Gauge,
   Pencil,
   RefreshCw,
   Reply,
@@ -981,13 +985,16 @@ function areProjectionSubagentDetailFeedEntryPropsEqual(
   prev: {
     entry: SubagentDetailFeedEntry;
     requestSpansById: ProjectionRequestSpansById;
+    finalResultItemId?: string;
   },
   next: {
     entry: SubagentDetailFeedEntry;
     requestSpansById: ProjectionRequestSpansById;
+    finalResultItemId?: string;
   },
 ): boolean {
   return (
+    prev.finalResultItemId === next.finalResultItemId &&
     projectionSubagentDetailEntrySignature(prev.entry) ===
       projectionSubagentDetailEntrySignature(next.entry) &&
     projectionSubagentDetailEntryRequestSpanSignature(prev.entry, prev.requestSpansById) ===
@@ -998,23 +1005,23 @@ function areProjectionSubagentDetailFeedEntryPropsEqual(
 const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetailFeedEntry({
   entry,
   requestSpansById,
+  finalResultItemId,
 }: {
   entry: SubagentDetailFeedEntry;
   requestSpansById: ProjectionRequestSpansById;
+  finalResultItemId?: string;
 }) {
-  const block = projectionItemToDetailBlock(entry.item);
-  const isFinalResult =
-    entry.item.eventType === "message.final" &&
-    block?.kind === "narrative" &&
-    !block.streaming &&
-    Boolean(block.text.trim());
+  const isFinalResult = entry.item.id === finalResultItemId;
 
   if (isFinalResult) {
     return (
       <section className="subagent-conversation-result" aria-label="子代理执行结果">
         <header className="subagent-conversation-result-header">
-          <ShieldCheck size={14} aria-hidden />
-          <span>执行结果</span>
+          <span className="subagent-conversation-result-icon">
+            <ShieldCheck size={14} aria-hidden />
+          </span>
+          <span className="subagent-conversation-result-title">执行结果</span>
+          <span className="subagent-conversation-result-note">最终汇总</span>
         </header>
         <div className="subagent-conversation-result-body">
           <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />
@@ -1126,6 +1133,44 @@ function useLatchedAgentText(agentId: string, text: string): string {
     latchRef.current.text = text;
   }
   return text || latchRef.current.text;
+}
+
+function normalizeSubagentResultText(text: string): string {
+  return text.trim().replace(/\s+/gu, " ");
+}
+
+function resolveSubagentFinalResultItem(
+  agent: ThreadRunProjectionAgent,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem | undefined {
+  if (agent.status === "active" || agent.status === "launching") {
+    return undefined;
+  }
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (item?.eventType !== "message.final") {
+      continue;
+    }
+    const block = projectionItemToDetailBlock(item);
+    if (block?.kind === "narrative" && !block.streaming && block.text.trim()) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+function isDuplicateFinalResultPhase(
+  item: ThreadRunProjectionTimelineItem,
+  finalResult: ThreadRunProjectionTimelineItem | undefined,
+): boolean {
+  if (!finalResult || item.id === finalResult.id) {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(item);
+  return (
+    block?.kind === "phase" &&
+    normalizeSubagentResultText(item.text) === normalizeSubagentResultText(finalResult.text)
+  );
 }
 
 function ProjectionSubagentRunRow({
@@ -1263,10 +1308,18 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   );
   const running = agent.status === "active" || agent.status === "launching";
   const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
-  const filteredTimeline = useMemo(
+  const visibleTimeline = useMemo(
     () =>
       agent.timeline.filter((item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText))),
     [agent.timeline, missionText],
+  );
+  const finalResultItem = useMemo(
+    () => resolveSubagentFinalResultItem(agent, visibleTimeline),
+    [agent, visibleTimeline],
+  );
+  const filteredTimeline = useMemo(
+    () => visibleTimeline.filter((item) => !isDuplicateFinalResultPhase(item, finalResultItem)),
+    [finalResultItem, visibleTimeline],
   );
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, filteredTimeline);
   const detailDisplayEntries = useMemo(
@@ -1365,7 +1418,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
 
   useEffect(() => {
     const feed = feedRef.current;
-    const content = feed?.querySelector(".subagent-conversation-log");
+    const content = feed?.querySelector(".subagent-conversation-log-content");
     if (!feed || !(content instanceof HTMLElement)) {
       return;
     }
@@ -1380,7 +1433,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   const durationLabel = liveDurationMs > 0 ? formatDuration(liveDurationMs) : undefined;
 
   return (
-    <div ref={feedRef} className="subagent-task-detail-feed subagent-conversation">
+    <div className="subagent-task-detail-feed subagent-conversation">
       {missionDisplay ? (
         <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" />
       ) : null}
@@ -1390,22 +1443,29 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
           {durationLabel ? ` ${durationLabel}` : ""}
         </span>
       </div>
-      <div className="subagent-conversation-log">
-        {detailDisplayEntries.length > 0 ? (
-          detailDisplayEntries.map((entry) =>
-            entry.kind === "tool-group" ? (
-              <ProjectionToolGroupEntry key={entry.key} entry={entry} requestSpansById={requestSpansById} />
-            ) : (
-              <ProjectionSubagentDetailFeedEntry
-                key={entry.key}
-                entry={entry}
-                requestSpansById={requestSpansById}
-              />
-            ),
-          )
-        ) : (
-          <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
-        )}
+      <div ref={feedRef} className="subagent-conversation-log">
+        <div className="subagent-conversation-log-content">
+          {detailDisplayEntries.length > 0 ? (
+            detailDisplayEntries.map((entry) =>
+              entry.kind === "tool-group" ? (
+                <ProjectionToolGroupEntry
+                  key={entry.key}
+                  entry={entry}
+                  requestSpansById={requestSpansById}
+                />
+              ) : (
+                <ProjectionSubagentDetailFeedEntry
+                  key={entry.key}
+                  entry={entry}
+                  requestSpansById={requestSpansById}
+                  {...(finalResultItem && { finalResultItemId: finalResultItem.id })}
+                />
+              ),
+            )
+          ) : (
+            <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
+          )}
+        </div>
       </div>
       <ProjectionSubagentRunInstanceStrip agent={agent} />
     </div>
@@ -1431,69 +1491,89 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
   }
 
   return (
-    <div className="subagent-run-instance-strip">
+    <section className="subagent-run-instance-strip" aria-label="子代理运行指标">
       {usage ? (
         <>
-          <span
+          <div
             className="subagent-run-instance-metric subagent-run-instance-metric--io"
             title={`输入 ${formatTokenCount(usage.inputTokens)} / 输出 ${formatTokenCount(
               usage.outputTokens,
             )}`}
           >
-            <span className="subagent-run-instance-label">输入/输出</span>
-            <span className="subagent-run-instance-lines">
-              <span className="subagent-run-instance-line">↑ {formatTokenCount(usage.inputTokens)}</span>
-              <span className="subagent-run-instance-line">↓ {formatTokenCount(usage.outputTokens)}</span>
+            <span className="subagent-run-instance-heading">
+              <ArrowDownToLine size={13} aria-hidden />
+              <span className="subagent-run-instance-label">输入输出</span>
             </span>
-          </span>
-          <span
+            <span className="subagent-run-instance-split-values">
+              <span>
+                <small>IN</small>
+                {formatTokenCount(usage.inputTokens)}
+              </span>
+              <span>
+                <small>OUT</small>
+                {formatTokenCount(usage.outputTokens)}
+              </span>
+            </span>
+          </div>
+          <div
             className="subagent-run-instance-metric subagent-run-instance-metric--cache"
             title={`缓存读 ${formatTokenCount(usage.cacheReadTokens)} / 缓存写 ${formatTokenCount(
               usage.cacheCreationTokens,
             )}`}
           >
-            <span className="subagent-run-instance-label">缓存</span>
-            <span className="subagent-run-instance-lines">
-              <span className="subagent-run-instance-line">读 {formatTokenCount(usage.cacheReadTokens)}</span>
-              <span className="subagent-run-instance-line">
-                写 {formatTokenCount(usage.cacheCreationTokens)}
+            <span className="subagent-run-instance-heading">
+              <Database size={13} aria-hidden />
+              <span className="subagent-run-instance-label">缓存</span>
+            </span>
+            <span className="subagent-run-instance-split-values">
+              <span>
+                <small>READ</small>
+                {formatTokenCount(usage.cacheReadTokens)}
+              </span>
+              <span>
+                <small>WRITE</small>
+                {formatTokenCount(usage.cacheCreationTokens)}
               </span>
             </span>
-          </span>
+          </div>
         </>
       ) : null}
-      {contextLabel || costLabel ? (
-        <span
-          className="subagent-run-instance-metric subagent-run-instance-metric--context-cost"
-          title={[
-            contextLabel ? `上下文 ${contextLabel}${contextDetail ? ` (${contextDetail})` : ""}` : "",
-            costLabel ? `计费 ${costLabel}` : "",
-          ]
+      {contextLabel ? (
+        <div
+          className="subagent-run-instance-metric subagent-run-instance-metric--context"
+          title={`上下文 ${contextLabel}${contextDetail ? ` (${contextDetail})` : ""}`}
+        >
+          <span className="subagent-run-instance-heading">
+            <Gauge size={13} aria-hidden />
+            <span className="subagent-run-instance-label">上下文</span>
+          </span>
+          <span className="subagent-run-instance-context-value">
+            <strong>{contextLabel}</strong>
+            <small>{contextDetail}</small>
+          </span>
+          <span className="subagent-run-instance-progress-track" aria-hidden="true">
+            <span className="subagent-run-instance-progress-fill" style={{ width: contextProgressWidth }} />
+          </span>
+        </div>
+      ) : null}
+      {costLabel || modelLabel ? (
+        <div
+          className="subagent-run-instance-metric subagent-run-instance-metric--billing-model"
+          title={[costLabel ? `计费 ${costLabel}` : "", modelId ? `模型 ${modelId}` : ""]
             .filter(Boolean)
             .join(" / ")}
         >
-          <span className="subagent-run-instance-label">上下文/计费</span>
-          <span className="subagent-run-instance-lines">
-            <span className="subagent-run-instance-progress-row">
-              <span className="subagent-run-instance-progress-track" aria-hidden="true">
-                <span
-                  className="subagent-run-instance-progress-fill"
-                  style={{ width: contextProgressWidth }}
-                />
-              </span>
-              <span className="subagent-run-instance-progress-label">{contextLabel ?? "0%"}</span>
-            </span>
-            <span className="subagent-run-instance-line">计费 {costLabel ?? "-"}</span>
+          <span className="subagent-run-instance-heading">
+            <CircleDollarSign size={13} aria-hidden />
+            <span className="subagent-run-instance-label">计费 / 模型</span>
           </span>
-        </span>
+          <span className="subagent-run-instance-billing-model-values">
+            <strong>{costLabel ?? "-"}</strong>
+            <small>{modelLabel ?? "-"}</small>
+          </span>
+        </div>
       ) : null}
-      {modelLabel ? (
-        <span className="subagent-run-instance-metric subagent-run-instance-metric--model" title={modelId}>
-          <span className="subagent-run-instance-label">模型</span>
-          <span className="subagent-run-instance-model-value">{modelLabel}</span>
-        </span>
-      ) : null}
-    </div>
+    </section>
   );
 }
 

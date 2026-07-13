@@ -74,6 +74,9 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
     startedAt: input.startedAt ?? "2026-01-01T00:00:00.000Z",
     durationMs: input.durationMs ?? 0,
     timeline: input.timeline ?? [],
+    ...(input.endedAt && { endedAt: input.endedAt }),
+    ...(input.usage && { usage: input.usage }),
+    ...(input.context && { context: input.context }),
     ...(input.delegationPrompt && { delegationPrompt: input.delegationPrompt }),
     ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
   };
@@ -294,6 +297,116 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("检查完成，问题在 role fallback。");
   expect(html).toContain("subagent-conversation-result");
   expect(html).toContain("执行结果");
+});
+
+test("ProjectionSubagentDetailFeed marks only the last completed summary as result and removes its phase echo", () => {
+  const completedAgent = agent({
+    agentId: "agent_coder_final",
+    status: "completed",
+    timeline: [
+      item({
+        id: "intermediate-message",
+        sequence: 1,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "我先检查了事件投影。",
+      }),
+      item({
+        id: "final-phase-echo",
+        sequence: 2,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "修复完成，重复结果已移除。",
+        metadata: { activityOrigin: "sdk.upstream_error" },
+      }),
+      item({
+        id: "final-summary",
+        sequence: 3,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "修复完成，重复结果已移除。",
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: completedAgent,
+      missionText: "修复子代理结果展示",
+      requestSpansById: new Map(),
+      threadActive: false,
+    }),
+  );
+
+  expect(html.match(/subagent-conversation-result"/g)?.length ?? 0).toBe(1);
+  expect(html.match(/修复完成，重复结果已移除。/g)?.length ?? 0).toBe(1);
+  expect(html).toContain("我先检查了事件投影。");
+  expect(html).not.toContain("run-log-phase");
+});
+
+test("ProjectionSubagentDetailFeed does not expose a result before the subagent ends", () => {
+  const runningAgent = agent({
+    agentId: "agent_coder_running",
+    status: "active",
+    timeline: [
+      item({
+        id: "running-message",
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "当前只是执行过程中的正文。",
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: runningAgent,
+      missionText: "继续执行",
+      requestSpansById: new Map(),
+      threadActive: true,
+    }),
+  );
+
+  expect(html).toContain("当前只是执行过程中的正文。");
+  expect(html).not.toContain("subagent-conversation-result");
+  expect(html).not.toContain("执行结果");
+});
+
+test("ProjectionSubagentDetailFeed renders four runtime metric cards with billing and model combined", () => {
+  const measuredAgent = agent({
+    agentId: "agent_coder_metrics",
+    status: "completed",
+    usage: {
+      inputTokens: 1200,
+      outputTokens: 340,
+      cacheReadTokens: 900,
+      cacheCreationTokens: 80,
+      ecoCostUsd: 0.0123,
+      modelId: "claude-sonnet-4-5",
+    },
+    context: {
+      occupied: 24000,
+      limit: 200000,
+      occupancyPct: 12,
+      modelId: "claude-sonnet-4-5",
+    },
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: measuredAgent,
+      missionText: "统计运行指标",
+      requestSpansById: new Map(),
+      threadActive: false,
+    }),
+  );
+
+  for (const label of ["输入输出", "缓存", "上下文", "计费 / 模型"]) {
+    expect(html).toContain(label);
+  }
+  expect(html).toContain("subagent-run-instance-metric--billing-model");
+  expect(html.match(/subagent-run-instance-metric /g)?.length ?? 0).toBe(4);
 });
 
 test("ActivityLogView renders Bash directly without an outer tool group", () => {

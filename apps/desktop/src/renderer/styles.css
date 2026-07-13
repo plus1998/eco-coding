@@ -19039,8 +19039,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   pointer-events: auto;
 }
 
-.codex-main-pane.is-task-panel-open.is-task-panel-fullscreen
-  > .workspace-panel.is-task-panel-mode {
+.codex-main-pane.is-task-panel-open.is-task-panel-fullscreen > .workspace-panel.is-task-panel-mode {
   position: absolute;
   inset: 0;
   grid-column: 1 / -1;
@@ -19402,9 +19401,7 @@ body.is-resizing-task-panel {
   flex: 1 1 auto;
   min-height: 0;
   padding: 14px 18px 0;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
+  overflow: hidden;
 }
 
 .subagent-conversation {
@@ -19450,16 +19447,28 @@ body.is-resizing-task-panel {
 .subagent-conversation-log {
   display: flex;
   min-width: 0;
-  flex: 1 0 auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding-bottom: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
+}
+
+.subagent-conversation-log-content {
+  display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 10px;
-  padding-bottom: 12px;
 }
 
 .subagent-conversation .subagent-run-instance-strip {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 2;
+  flex: 0 0 auto;
   margin: 0 -18px;
   padding: 10px 18px 12px;
   border-top: 1px solid color-mix(in srgb, var(--border-sidebar) 70%, transparent);
@@ -19481,6 +19490,209 @@ body.is-resizing-task-panel {
     rgba(248, 250, 252, 0.94) 28%,
     rgba(248, 250, 252, 0.98)
   );
+}
+
+/* Subagent result and runtime telemetry use a compact, scan-first workbench layout. */
+.subagent-conversation-result {
+  overflow: visible;
+  padding: 12px 0 4px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-sidebar) 78%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.subagent-conversation-result-header {
+  min-height: 26px;
+  margin: 0;
+  padding: 0 2px;
+  border-bottom: 0;
+  color: var(--terminal-fg);
+}
+
+.subagent-conversation-result-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  background: transparent;
+  color: #62c98e;
+}
+
+.subagent-conversation-result-title {
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.subagent-conversation-result-note {
+  margin-left: auto;
+  color: var(--terminal-muted);
+  font-size: 10px;
+  font-weight: 560;
+}
+
+.subagent-conversation-result-body {
+  padding: 7px 2px 0;
+}
+
+.subagent-conversation .subagent-run-instance-strip {
+  --subagent-metric-detail: color-mix(in srgb, var(--terminal-muted) 88%, transparent);
+  --subagent-metric-label: var(--terminal-muted);
+  --subagent-metric-progress-bg: color-mix(in srgb, var(--terminal-fg) 10%, transparent);
+  --subagent-metric-progress-fill: #62c98e;
+  --subagent-metric-value: var(--terminal-fg);
+  display: grid;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  width: 100%;
+  max-width: 100%;
+  grid-template-columns: repeat(4, minmax(148px, 1fr));
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 10px 0 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid color-mix(in srgb, var(--border-sidebar) 82%, transparent);
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--codex-log-bg, #181818) 96%, transparent);
+  backdrop-filter: blur(16px) saturate(1.15);
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
+}
+
+[data-theme="light"] .subagent-conversation .subagent-run-instance-strip {
+  --subagent-metric-progress-bg: rgba(17, 24, 39, 0.09);
+  --subagent-metric-progress-fill: #238a58;
+  border-top-color: rgba(17, 24, 39, 0.11);
+  background: rgba(248, 250, 252, 0.96);
+}
+
+.subagent-conversation .subagent-run-instance-metric {
+  display: flex;
+  min-width: 0;
+  min-height: 78px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--border-sidebar) 76%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--terminal-fg) 3.5%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, white 3%, transparent) inset;
+}
+
+.subagent-conversation .subagent-run-instance-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--subagent-metric-label);
+}
+
+.subagent-conversation .subagent-run-instance-heading svg {
+  flex: 0 0 auto;
+}
+
+.subagent-conversation .subagent-run-instance-metric--io .subagent-run-instance-heading svg {
+  color: #58b7d9;
+}
+
+.subagent-conversation .subagent-run-instance-metric--cache .subagent-run-instance-heading svg {
+  color: #d8a84e;
+}
+
+.subagent-conversation .subagent-run-instance-metric--context .subagent-run-instance-heading svg {
+  color: #62c98e;
+}
+
+.subagent-conversation .subagent-run-instance-metric--billing-model .subagent-run-instance-heading svg {
+  color: #db8293;
+}
+
+.subagent-conversation .subagent-run-instance-label {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.subagent-run-instance-split-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.subagent-run-instance-split-values > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  color: var(--subagent-metric-value);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-run-instance-split-values small,
+.subagent-run-instance-context-value small {
+  overflow: hidden;
+  color: var(--subagent-metric-detail);
+  font-size: 8px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-run-instance-context-value {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.subagent-run-instance-context-value strong,
+.subagent-run-instance-primary-value,
+.subagent-run-instance-billing-model-values strong {
+  color: var(--subagent-metric-value);
+  font-size: 15px;
+  font-weight: 680;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-conversation .subagent-run-instance-progress-track {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.subagent-run-instance-billing-model-values {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: auto auto;
+  gap: 3px;
+}
+
+.subagent-run-instance-billing-model-values small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subagent-metric-detail);
+  font-size: 10px;
+  font-weight: 560;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subagent-conversation .run-log-narrative.compact .run-log-narrative-body,
