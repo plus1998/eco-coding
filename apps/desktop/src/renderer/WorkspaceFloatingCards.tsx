@@ -108,6 +108,7 @@ function WorkspacePanelSection({
   summary,
   children,
   defaultExpanded = true,
+  persistExpanded = true,
   maxBodyHeight = 360,
 }: {
   id: string;
@@ -115,15 +116,20 @@ function WorkspacePanelSection({
   summary: ReactNode;
   children: ReactNode;
   defaultExpanded?: boolean;
+  persistExpanded?: boolean;
   maxBodyHeight?: number;
 }) {
-  const [expanded, setExpanded] = useState(() => readCardExpanded(id, defaultExpanded));
+  const [expanded, setExpanded] = useState(() =>
+    persistExpanded ? readCardExpanded(id, defaultExpanded) : defaultExpanded,
+  );
   const bodyId = `${id}-body`;
 
   function toggleExpanded() {
     setExpanded((current) => {
       const next = !current;
-      persistCardExpanded(id, next);
+      if (persistExpanded) {
+        persistCardExpanded(id, next);
+      }
       return next;
     });
   }
@@ -152,6 +158,14 @@ function WorkspacePanelSection({
       ) : null}
     </section>
   );
+}
+
+export function isExploreOnlyEnabled(
+  labels: readonly ComposerAgentModelLabel[],
+  settings: SubagentEnabledSettings | null | undefined,
+): boolean {
+  const enabled = labels.filter(({ subagentRole }) => !subagentRole || !settings || settings[subagentRole]);
+  return enabled.length === 1 && enabled[0]?.role === "explore";
 }
 
 function SubagentRunsCardBody({
@@ -281,6 +295,7 @@ export function WorkspaceFloatingCards({
   const enabledSubagents = subagentLabels.filter(
     ({ subagentRole }) => !subagentRole || !subagentSettings || subagentSettings[subagentRole],
   ).length;
+  const exploreOnlyEnabled = isExploreOnlyEnabled(subagentLabels, subagentSettings);
 
   async function handleCommitSuccess() {
     setCommitsRefreshKey((current) => current + 1);
@@ -395,7 +410,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-agents"
             title="智能体编排"
-            defaultExpanded
+            defaultExpanded={!exploreOnlyEnabled}
             summary={
               <>
                 <Users size={14} aria-hidden />
@@ -423,7 +438,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-mcp"
             title="MCP"
-            defaultExpanded={false}
+            defaultExpanded={enabledMcpCount > 0}
             summary={
               <>
                 <Plug size={14} aria-hidden />
@@ -449,6 +464,7 @@ export function WorkspaceFloatingCards({
             id="workspace-git-graph"
             title="Git 图形"
             defaultExpanded={false}
+            persistExpanded={false}
             summary={
               <>
                 <GitCommitHorizontal size={14} aria-hidden />
