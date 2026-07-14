@@ -5413,7 +5413,7 @@ function App() {
         </button>
         <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
           {isOpening ? <Loader2 size={18} className="spinning" aria-hidden /> : <FolderOpen size={18} />}
-          {isOpening ? "打开中…" : "打开项目…"}
+          {isOpening ? "打开中" : "打开项目"}
         </button>
 
         <div className="sidebar-section sidebar-section-grow">

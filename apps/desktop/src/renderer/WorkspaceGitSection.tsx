@@ -581,7 +581,7 @@ export function WorkspaceGitSection({
               onClick={onOpenScriptsDialog}
             >
               <Play size={16} aria-hidden />
-              <span>npm scripts</span>
+              <span>脚本</span>
             </button>
           </li>
         ) : null}

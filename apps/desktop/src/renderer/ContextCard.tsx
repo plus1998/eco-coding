@@ -46,27 +46,38 @@ function formatContextK(value: number): string {
   return `${(value / 1_000_000).toFixed(1)}M`;
 }
 
-function pctClass(pct: number): string {
+function occupancyTone(pct: number): "ok" | "warn" | "critical" {
   if (pct >= 95) {
-    return "context-card-pct context-card-pct-critical";
+    return "critical";
   }
   if (pct >= 85) {
+    return "warn";
+  }
+  return "ok";
+}
+
+function pctClass(pct: number): string {
+  const tone = occupancyTone(pct);
+  if (tone === "critical") {
+    return "context-card-pct context-card-pct-critical";
+  }
+  if (tone === "warn") {
     return "context-card-pct context-card-pct-warn";
   }
   return "context-card-pct";
 }
 
-function formatOccupancyLabel(pct: number): string {
+function formatOccupancyStatus(pct: number): string {
   if (pct >= 100) {
-    return "100% 已满";
+    return "已满";
   }
   if (pct >= 95) {
-    return `${pct}% 接近上限`;
+    return "接近上限";
   }
   if (pct >= 85) {
-    return `${pct}% 即将触顶`;
+    return "即将触顶";
   }
-  return `${pct}% 已用`;
+  return "已用";
 }
 
 function contextRoles(context: ThreadContextSnapshot): ThreadRoleContextSnapshot[] {
@@ -175,18 +186,16 @@ function SubagentContextRow({
   const accent = resolveRuntimeAgentThemeColor(row.role, agentThemes);
 
   return (
-    <article
-      className="context-card-subagent-row"
-      style={{ borderLeftColor: accent }}
-      aria-label={`${row.title} 上下文`}
-    >
+    <article className="context-card-subagent-row" aria-label={`${row.title} 上下文`}>
       <div className="context-card-subagent-row-head">
         <span className="context-card-subagent-row-dot" style={{ backgroundColor: accent }} aria-hidden />
-        <span className="context-card-subagent-row-title">{row.title}</span>
-        <span className={pctClass(role.occupancyPct)}>{formatOccupancyLabel(role.occupancyPct)}</span>
-        <span className="context-card-subagent-row-tokens">
-          ~{formatContextK(occupied)}/{formatContextK(limit)}
-        </span>
+        <div className="context-card-subagent-row-copy">
+          <span className="context-card-subagent-row-title">{row.title}</span>
+          <span className="context-card-subagent-row-tokens">
+            ~{formatContextK(occupied)} / {formatContextK(limit)}
+          </span>
+        </div>
+        <span className={pctClass(role.occupancyPct)}>{role.occupancyPct}%</span>
       </div>
       <div
         className="context-card-bar context-card-bar-subagent"
@@ -233,13 +242,24 @@ function ContextRoleBody({
   const detailed = hasDetailedBreakdown(role);
   const roleLabel = formatRuntimeRoleModelLabel(role.role, role.modelId, agentDisplayNames);
 
+  const tone = occupancyTone(role.occupancyPct);
+
   return (
     <div className="context-card-role-body context-card-role-body-main">
-      <div className="context-card-summary">
-        <span className={pctClass(role.occupancyPct)}>{formatOccupancyLabel(role.occupancyPct)}</span>
-        <span className="context-card-tokens">
-          ~{formatContextK(occupied)} / {formatContextK(limit)} Tokens
-        </span>
+      <div className="context-card-hero">
+        <div className={`context-card-hero-figure context-card-hero-figure-${tone}`}>
+          <span className="context-card-hero-num">{role.occupancyPct}</span>
+          <span className="context-card-hero-sign">%</span>
+        </div>
+        <div className="context-card-hero-copy">
+          <span className={`context-card-hero-status ${pctClass(role.occupancyPct)}`}>
+            {formatOccupancyStatus(role.occupancyPct)}
+          </span>
+          <span className="context-card-tokens">
+            ~{formatContextK(occupied)} / {formatContextK(limit)}
+          </span>
+          <span className="context-card-main-model">{roleLabel}</span>
+        </div>
       </div>
 
       <div
@@ -354,7 +374,7 @@ export function ContextCard({
     <div className={hasSubagents ? "context-card context-card-has-subagents" : "context-card"}>
       <div className="context-card-header">
         <div className="context-card-title-group">
-          <h4 className="context-card-title">Context</h4>
+          <h4 className="context-card-title">上下文</h4>
         </div>
         <div className="context-card-header-actions">
           {context ? (
@@ -398,7 +418,7 @@ export function ContextCard({
               type="button"
               className="context-card-dismiss"
               onClick={onDismiss}
-              aria-label="关闭 Context"
+              aria-label="关闭上下文"
             >
               <X size={14} aria-hidden />
             </button>
@@ -425,11 +445,6 @@ export function ContextCard({
       ) : null}
 
       <section className="context-card-main" aria-label="主 Agent 上下文">
-        <div className="context-card-main-head">
-          <span className="context-card-main-model">
-            {formatRuntimeRoleModelLabel(planner.role, planner.modelId, agentDisplayNames)}
-          </span>
-        </div>
         <ContextRoleBody
           role={planner}
           detailsOpen={plannerDetailsOpen}
@@ -439,9 +454,12 @@ export function ContextCard({
 
       {hasSubagents ? (
         <div className="context-card-scroll" aria-label="子代理上下文">
-          {flatSubagents.map((row) => (
-            <SubagentContextRow key={row.key} row={row} {...(agentThemes && { agentThemes })} />
-          ))}
+          <p className="context-card-section-label">子代理</p>
+          <div className="context-card-subagent-group">
+            {flatSubagents.map((row) => (
+              <SubagentContextRow key={row.key} row={row} {...(agentThemes && { agentThemes })} />
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

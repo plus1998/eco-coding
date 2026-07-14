@@ -291,7 +291,7 @@ export function WorkspaceFloatingCards({
   const enabledMcpServers = mcpServers.filter((server) => server.enabled && server.name.trim());
   const subagentLabels = agentModelLabels.filter((label) => !label.main);
   const subagentSettings = composerRuntimeConfig?.subagentEnabled ?? subagentEnabled;
-  const composerConfigEditableInWorkspace = Boolean(canEditComposerConfig && !hasActiveThread);
+  const composerConfigEditableInWorkspace = Boolean(canEditComposerConfig);
   const enabledSubagents = subagentLabels.filter(
     ({ subagentRole }) => !subagentRole || !subagentSettings || subagentSettings[subagentRole],
   ).length;

@@ -189,6 +189,7 @@ function ComposerSessionModePopover({
                   : "composer-codex-popover-item"
               }
               disabled={disabled}
+              aria-pressed={option.value === sessionMode}
               onClick={() => onSelect(option.value)}
             >
               <span className="composer-plan-mode-popover-icon" aria-hidden>
@@ -198,11 +199,16 @@ function ComposerSessionModePopover({
                 <span className="composer-codex-popover-item-title">{option.title}</span>
                 <span className="composer-codex-popover-item-desc">{option.description}</span>
               </span>
-              {option.value === sessionMode ? (
-                <span className="composer-codex-popover-check" aria-hidden>
-                  <Check size={14} strokeWidth={2.25} />
-                </span>
-              ) : null}
+              <span
+                className={
+                  option.value === sessionMode
+                    ? "composer-codex-popover-check"
+                    : "composer-codex-popover-check is-placeholder"
+                }
+                aria-hidden
+              >
+                <Check size={14} strokeWidth={2.25} />
+              </span>
             </button>
           </li>
         ))}

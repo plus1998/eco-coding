@@ -207,7 +207,7 @@ export function ComposerRoutePopover({
       aria-label="切换智能体配置"
       style={panelStyle}
     >
-      <div className="composer-route-popover-header">
+      <header className="composer-route-popover-header">
         <p className="composer-codex-popover-title">智能体配置</p>
         <button
           type="button"
@@ -220,9 +220,9 @@ export function ComposerRoutePopover({
             onOpenFullSettings();
           }}
         >
-          <Settings2 size={15} aria-hidden />
+          <Settings2 size={15} strokeWidth={1.75} aria-hidden />
         </button>
-      </div>
+      </header>
       <ul
         ref={listRef}
         className="composer-route-popover-list"
@@ -311,16 +311,19 @@ export function ComposerRouteCardBody({
           onChange={onSelectSystemPromptPreset}
         />
       ) : null}
-      <button
-        type="button"
-        className="composer-route-builder-button"
-        disabled={busy}
-        title="打开智能体构建器"
-        aria-label="打开智能体构建器"
-        onClick={onOpenFullSettings}
-      >
-        <Settings2 size={15} aria-hidden />
-      </button>
+      <div className="composer-route-card-footer">
+        <button
+          type="button"
+          className="composer-route-builder-button"
+          disabled={busy}
+          title="打开智能体构建器"
+          aria-label="打开智能体构建器"
+          onClick={onOpenFullSettings}
+        >
+          <Settings2 size={15} strokeWidth={1.75} aria-hidden />
+          <span>智能体构建器</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -396,6 +399,10 @@ function AgentProfileOption({
       thinkingEffort: agent.thinkingEffort,
     })),
   ];
+  const riskText =
+    riskPreview.length > 0
+      ? `高风险 · ${riskPreview.join("、")}${hiddenRiskCount > 0 ? ` 等 ${riskPreview.length + hiddenRiskCount} 项` : ""}`
+      : null;
 
   return (
     <li>
@@ -404,6 +411,7 @@ function AgentProfileOption({
         type="button"
         className={selected ? "composer-codex-popover-item active" : "composer-codex-popover-item"}
         disabled={disabled || selected}
+        aria-pressed={selected}
         onClick={onSelect}
       >
         <span className="composer-route-profile-card">
@@ -435,18 +443,7 @@ function AgentProfileOption({
             ) : null}
           </span>
 
-          {riskPreview.length > 0 ? (
-            <span className="composer-route-profile-risks">
-              {riskPreview.map((label) => (
-                <span key={label} className="composer-route-profile-risk">
-                  {label}
-                </span>
-              ))}
-              {hiddenRiskCount > 0 ? (
-                <span className="composer-route-profile-risk is-more">+{hiddenRiskCount}</span>
-              ) : null}
-            </span>
-          ) : null}
+          {riskText ? <span className="composer-route-profile-risks">{riskText}</span> : null}
         </span>
 
         <span
@@ -455,7 +452,7 @@ function AgentProfileOption({
           }
           aria-hidden
         >
-          <Check size={14} />
+          <Check size={14} strokeWidth={2.25} />
         </span>
       </button>
     </li>

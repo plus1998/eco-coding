@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { ComposerAgentModelLabel } from "../src/renderer/composer-agent-model-labels";
-import { isExploreOnlyEnabled } from "../src/renderer/WorkspaceFloatingCards";
+import { isExploreOnlyEnabled, WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type { SubagentEnabledSettings } from "../src/shared/ipc";
 
 const settings: SubagentEnabledSettings = {
@@ -42,4 +44,21 @@ test("agent orchestration does not treat a lone custom agent as Explore", () => 
     main: false,
   } satisfies ComposerAgentModelLabel;
   expect(isExploreOnlyEnabled([custom], settings)).toBe(false);
+});
+
+test("agent orchestration switches remain editable for an editable active thread", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      agentModelLabels: [label("explore"), label("coder"), label("reviewer")],
+      subagentEnabled: { ...settings, coder: true },
+      canEditComposerConfig: true,
+      onToggleComposerSubagent: () => {},
+    }),
+  );
+
+  expect(markup).toContain('aria-label="explore 已启用"');
+  expect(markup).toContain('aria-label="coder 已启用"');
+  expect(markup).toContain('aria-label="reviewer 已停用"');
+  expect(markup).not.toContain('type="checkbox" disabled=""');
 });

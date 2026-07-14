@@ -184,33 +184,40 @@ function ComposerBashReviewPopover({
         <p className="composer-codex-popover-title">应如何批准 Bash 操作？</p>
       </header>
       <ul className="composer-codex-popover-list">
-        {BASH_REVIEW_UI.map((option) => (
-          <li key={option.value}>
-            <button
-              type="button"
-              className={
-                option.value === bashReviewMode
-                  ? "composer-codex-popover-item active"
-                  : "composer-codex-popover-item"
-              }
-              disabled={disabled}
-              onClick={() => onSelect(option.value)}
-            >
-              <span className="composer-bash-review-popover-icon" aria-hidden>
-                <BashReviewModeIcon mode={option.value} />
-              </span>
-              <span className="composer-codex-popover-body">
-                <span className="composer-codex-popover-item-title">{option.title}</span>
-                <span className="composer-codex-popover-item-desc">{option.description}</span>
-              </span>
-              {option.value === bashReviewMode ? (
-                <span className="composer-codex-popover-check" aria-hidden>
+        {BASH_REVIEW_UI.map((option) => {
+          const selected = option.value === bashReviewMode;
+          return (
+            <li key={option.value}>
+              <button
+                type="button"
+                className={selected ? "composer-codex-popover-item active" : "composer-codex-popover-item"}
+                disabled={disabled}
+                aria-pressed={selected}
+                onClick={() => onSelect(option.value)}
+              >
+                <span
+                  className="composer-bash-review-popover-icon"
+                  data-mode={option.value}
+                  aria-hidden
+                >
+                  <BashReviewModeIcon mode={option.value} />
+                </span>
+                <span className="composer-codex-popover-body">
+                  <span className="composer-codex-popover-item-title">{option.title}</span>
+                  <span className="composer-codex-popover-item-desc">{option.description}</span>
+                </span>
+                <span
+                  className={
+                    selected ? "composer-codex-popover-check" : "composer-codex-popover-check is-placeholder"
+                  }
+                  aria-hidden
+                >
                   <Check size={14} strokeWidth={2.25} />
                 </span>
-              ) : null}
-            </button>
-          </li>
-        ))}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>,
     document.body,

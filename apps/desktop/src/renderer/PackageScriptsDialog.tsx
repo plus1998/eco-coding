@@ -54,6 +54,7 @@ export function PackageScriptsDialog({
   const [present, setPresent] = useState(open);
   const [entered, setEntered] = useState(false);
   const argsInputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -77,6 +78,8 @@ export function PackageScriptsDialog({
       return;
     }
     setScriptArgsByName(readWorkspaceScriptArgs(workspacePath));
+    const focusTimer = window.setTimeout(() => searchRef.current?.focus(), 40);
+    return () => window.clearTimeout(focusTimer);
   }, [open, workspacePath]);
 
   useEffect(() => {
@@ -86,6 +89,26 @@ export function PackageScriptsDialog({
     argsInputRef.current?.focus();
     argsInputRef.current?.select();
   }, [editingScript]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      if (editingScript) {
+        setEditingScript(null);
+        setDraftArgs("");
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editingScript, onClose, open]);
 
   const commitScriptArgs = useCallback(
     (scriptName: string, nextArgs: string) => {
@@ -142,6 +165,13 @@ export function PackageScriptsDialog({
     return null;
   }
 
+  const managerLabel = PACKAGE_MANAGER_LABELS[packageManager];
+  const subtitleParts = [
+    packageName,
+    managerLabel,
+    scripts.length > 0 ? `${scripts.length} 个脚本` : null,
+  ].filter(Boolean);
+
   return createPortal(
     <div
       className={["package-scripts-backdrop", entered ? "is-open" : ""].filter(Boolean).join(" ")}
@@ -151,15 +181,14 @@ export function PackageScriptsDialog({
         <div
           className="package-scripts-dialog"
           role="dialog"
-          aria-label="npm scripts"
+          aria-label="脚本"
           aria-modal="true"
         >
           <header className="package-scripts-header">
             <div className="package-scripts-header-text">
-              <h2 className="package-scripts-title">npm scripts</h2>
+              <h2 className="package-scripts-title">脚本</h2>
               <p className="package-scripts-subtitle">
-                {packageName ? `${packageName} · ` : ""}
-                {PACKAGE_MANAGER_LABELS[packageManager]}
+                {subtitleParts.join(" · ")}
               </p>
             </div>
             <div className="package-scripts-header-actions">
@@ -181,10 +210,11 @@ export function PackageScriptsDialog({
           {scripts.length > 0 ? (
             <div className="package-scripts-toolbar">
               <input
+                ref={searchRef}
                 type="search"
                 className="package-scripts-search"
                 value={query}
-                placeholder="搜索脚本…"
+                placeholder="搜索"
                 aria-label="搜索脚本"
                 disabled={busy}
                 onChange={(event) => setQuery(event.target.value)}
@@ -194,7 +224,7 @@ export function PackageScriptsDialog({
 
           <div className="package-scripts-body">
             {scripts.length === 0 ? (
-              <p className="package-scripts-empty">当前工作区没有可运行的 package.json scripts。</p>
+              <p className="package-scripts-empty">当前工作区没有可运行的 package.json 脚本。</p>
             ) : filteredScripts.length === 0 ? (
               <p className="package-scripts-empty">没有匹配的脚本。</p>
             ) : (
@@ -209,18 +239,78 @@ export function PackageScriptsDialog({
                   );
                   const isCopied = copiedScript === entry.name;
                   return (
-                    <li key={entry.name} className="package-scripts-item">
-                      <div className="package-scripts-item-main">
-                        <span className="package-scripts-item-name">{entry.name}</span>
-                        <span
-                          className="package-scripts-item-command"
-                          title={savedArgs ? runCommand : entry.command}
-                        >
-                          {savedArgs ? runCommand : entry.command}
-                        </span>
+                    <li
+                      key={entry.name}
+                      className={[
+                        "package-scripts-item",
+                        isEditingArgs ? "is-editing" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      <div className="package-scripts-item-row">
+                        <div className="package-scripts-item-main">
+                          <span className="package-scripts-item-name">{entry.name}</span>
+                          <span
+                            className="package-scripts-item-command"
+                            title={savedArgs ? runCommand : entry.command}
+                          >
+                            {savedArgs ? runCommand : entry.command}
+                          </span>
+                        </div>
+                        <div className="package-scripts-item-actions">
+                          <button
+                            type="button"
+                            className={[
+                              "package-scripts-action-btn",
+                              savedArgs ? "is-active" : "",
+                              isEditingArgs ? "is-editing" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            aria-label={`${entry.name} 附加参数`}
+                            title={savedArgs ? `附加参数：${savedArgs}` : "附加参数"}
+                            disabled={busy}
+                            onClick={() => {
+                              if (isEditingArgs) {
+                                commitScriptArgs(entry.name, draftArgs);
+                                return;
+                              }
+                              openArgsEditor(entry.name);
+                            }}
+                          >
+                            <TextCursorInput size={14} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            className={["package-scripts-action-btn", isCopied ? "is-active" : ""]
+                              .filter(Boolean)
+                              .join(" ")}
+                            aria-label={isCopied ? `已复制 ${entry.name} 命令` : `复制 ${entry.name} 命令`}
+                            title={isCopied ? "已复制" : `复制 ${runCommand}`}
+                            disabled={busy}
+                            onClick={() => void copyScriptCommand(entry.name, savedArgs || undefined)}
+                          >
+                            <Copy size={14} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            className="package-scripts-run-btn"
+                            aria-label={`${entry.name} 在终端中运行`}
+                            title="在终端中运行"
+                            disabled={busy}
+                            onClick={() => void onRun(entry.name, savedArgs || undefined)}
+                          >
+                            {busy ? (
+                              <Loader2 size={14} className="spinning" aria-hidden />
+                            ) : (
+                              <Play size={14} aria-hidden />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <div className="package-scripts-item-actions">
-                        {isEditingArgs ? (
+                      {isEditingArgs ? (
+                        <div className="package-scripts-args-row">
                           <input
                             ref={argsInputRef}
                             type="text"
@@ -238,61 +328,14 @@ export function PackageScriptsDialog({
                               }
                               if (event.key === "Escape") {
                                 event.preventDefault();
+                                event.stopPropagation();
                                 setEditingScript(null);
                                 setDraftArgs("");
                               }
                             }}
                           />
-                        ) : null}
-                        <button
-                          type="button"
-                          className={[
-                            "package-scripts-action-btn",
-                            savedArgs ? "is-active" : "",
-                            isEditingArgs ? "is-editing" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                          aria-label={`${entry.name} 附加参数`}
-                          title={savedArgs ? `附加参数：${savedArgs}` : "附加参数"}
-                          disabled={busy}
-                          onClick={() => {
-                            if (isEditingArgs) {
-                              commitScriptArgs(entry.name, draftArgs);
-                              return;
-                            }
-                            openArgsEditor(entry.name);
-                          }}
-                        >
-                          <TextCursorInput size={14} aria-hidden />
-                        </button>
-                        <button
-                          type="button"
-                          className={["package-scripts-action-btn", isCopied ? "is-active" : ""]
-                            .filter(Boolean)
-                            .join(" ")}
-                          aria-label={isCopied ? `已复制 ${entry.name} 命令` : `复制 ${entry.name} 命令`}
-                          title={isCopied ? "已复制" : `复制 ${runCommand}`}
-                          disabled={busy}
-                          onClick={() => void copyScriptCommand(entry.name, savedArgs || undefined)}
-                        >
-                          <Copy size={14} aria-hidden />
-                        </button>
-                        <button
-                          type="button"
-                          className="package-scripts-action-btn"
-                          aria-label={`${entry.name} 在终端中运行`}
-                          title="在终端中运行"
-                          disabled={busy}
-                          onClick={() => void onRun(entry.name, savedArgs || undefined)}
-                        >
-                          {busy ? (
-                            <Loader2 size={14} className="spinning" aria-hidden />
-                          ) : (
-                            <Play size={14} aria-hidden />
-                          )}
-                        </button>
-                      </div>
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
