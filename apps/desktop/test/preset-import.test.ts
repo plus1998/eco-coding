@@ -6,16 +6,16 @@ import {
   createBuiltInPresetCatalog,
 } from "../src/shared/agent-orchestration";
 
-function requireResearchPreset() {
-  const preset = createBuiltInPresetCatalog().find((candidate) => candidate.id === "research");
+function requireCodingPreset() {
+  const preset = createBuiltInPresetCatalog().find((candidate) => candidate.id === "coding");
   if (!preset) {
-    throw new Error("Missing research preset.");
+    throw new Error("Missing coding preset.");
   }
   return preset;
 }
 
 test("preset import copies library templates and rewrites profile agent template references", () => {
-  const preset = requireResearchPreset();
+  const preset = requireCodingPreset();
   const templates = createBuiltInAgentTemplates();
   const plan = buildPresetTemplateImportPlan(preset, templates, {
     nowIso: "2026-06-08T00:00:00.000Z",
@@ -35,8 +35,8 @@ test("preset import copies library templates and rewrites profile agent template
   );
 
   const profile = buildOrchestrationProfileFromPreset(plan.presetForProfile, {
-    id: "user.research.profile",
-    name: "Research Profile",
+    id: "user.coding.profile",
+    name: "Coding Profile",
     modelRef: { providerId: "p1", modelId: "model-1" },
     templates: plan.templatesForProfile,
   });
@@ -46,11 +46,11 @@ test("preset import copies library templates and rewrites profile agent template
 });
 
 test("preset import reuses existing user template copies", () => {
-  const preset = requireResearchPreset();
+  const preset = requireCodingPreset();
   const templates = createBuiltInAgentTemplates();
   const firstPresetAgent = preset.defaultAgents[0];
   if (!firstPresetAgent) {
-    throw new Error("Research preset must contain at least one agent.");
+    throw new Error("Coding preset must contain at least one agent.");
   }
   const sourceTemplate = templates.find((template) => template.id === firstPresetAgent.templateId);
   if (!sourceTemplate) {
@@ -76,11 +76,11 @@ test("preset import reuses existing user template copies", () => {
 });
 
 test("preset import reuses numbered user copies after base id conflicts", () => {
-  const preset = requireResearchPreset();
+  const preset = requireCodingPreset();
   const templates = createBuiltInAgentTemplates();
   const firstPresetAgent = preset.defaultAgents[0];
   if (!firstPresetAgent) {
-    throw new Error("Research preset must contain at least one agent.");
+    throw new Error("Coding preset must contain at least one agent.");
   }
   const sourceTemplate = templates.find((template) => template.id === firstPresetAgent.templateId);
   if (!sourceTemplate) {

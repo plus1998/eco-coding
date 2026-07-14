@@ -146,9 +146,9 @@ test("Agent profile tool permission red-team suite covers main and subagent acto
       expected: "allow",
     },
     {
-      name: "main cannot read outside workspace",
+      name: "main asks before reading outside workspace",
       input: preTool("Read", { file_path: "/workspace/secrets.env" }),
-      expected: "deny",
+      expected: "ask",
       reasonIncludes: "outside",
     },
     {
@@ -223,20 +223,17 @@ test("Agent profile tool permission red-team suite covers main and subagent acto
       signal: new AbortController().signal,
     });
     const actual =
-      result.hookSpecificOutput?.permissionDecision ??
-      (result.hookSpecificOutput ? "allow" : "allow");
+      result.hookSpecificOutput?.permissionDecision ?? (result.hookSpecificOutput ? "allow" : "allow");
     expect(actual, testCase.name).toBe(testCase.expected);
     if (testCase.reasonIncludes) {
-      expect(
-        result.hookSpecificOutput?.permissionDecisionReason ?? "",
-        testCase.name,
-      ).toContain(testCase.reasonIncludes);
+      expect(result.hookSpecificOutput?.permissionDecisionReason ?? "", testCase.name).toContain(
+        testCase.reasonIncludes,
+      );
     }
   }
 
   expect(decisions).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ actor: "main", toolName: "Read" }),
       expect.objectContaining({ actor: "main", toolName: "mcp__slack__post" }),
       expect.objectContaining({ actor: "eco_researcher", toolName: "Bash" }),
       expect.objectContaining({ actor: "researcher", toolName: "Read" }),

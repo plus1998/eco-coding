@@ -485,8 +485,18 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
     expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit"]),
   );
   expect(policy.agents.eco_researcher).toMatchObject({
-    allowed: ["Read", "WebSearch", "Skill", "LS", "NotebookRead"],
-    disallowed: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
+    allowed: ["Skill"],
+    disallowed: expect.arrayContaining([
+      "Bash",
+      "Agent",
+      "Task",
+      "TaskList",
+      "TaskOutput",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+    ]),
     mcpServers: ["sources", "browser"],
   });
 });

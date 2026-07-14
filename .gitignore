@@ -15,6 +15,7 @@ coverage/
 
 # Runtime state
 .eco/
+.eco-dev/
 worktrees/
 
 # Workspace package git integration fixtures
