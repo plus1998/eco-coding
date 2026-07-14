@@ -105,18 +105,18 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.composerContextBg,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: colors.composerPillBorder),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              width: 0.5,
+              color: isDark
+                  ? colors.borderSubtle.withValues(alpha: 0.45)
+                  : const Color(0x143C3C43),
+            ),
             boxShadow: [
               BoxShadow(
-                color: colors.shadowScrim.withValues(alpha: isDark ? 0.22 : 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: colors.shadowScrim.withValues(alpha: isDark ? 0.12 : 0.04),
-                blurRadius: 2,
-                offset: const Offset(0, 1),
+                color: colors.shadowScrim.withValues(alpha: isDark ? 0.28 : 0.04),
+                blurRadius: isDark ? 20 : 14,
+                offset: const Offset(0, 6),
               ),
             ],
           ),

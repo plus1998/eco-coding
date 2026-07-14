@@ -44,7 +44,7 @@ class ThreadsScreen extends ConsumerWidget {
             onRefresh: () => refreshProjectsAndThreads(ref),
             child: ListView.builder(
               padding: EdgeInsets.only(
-                top: 8,
+                top: 4,
                 bottom: adaptiveNavOverlayInset(context),
               ),
               itemCount: projects.length,
@@ -92,7 +92,9 @@ class ThreadsScreen extends ConsumerWidget {
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
         error: (error, _) => Center(child: Text(error.toString())),
       ),
     );

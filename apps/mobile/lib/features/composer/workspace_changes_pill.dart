@@ -43,7 +43,8 @@ class WorkspaceChangesPill extends StatelessWidget {
     return Padding(
       padding: composerStackOuterPadding,
       child: Center(
-        child: PlatformInfo.isIOS
+        child: PlatformInfo.isIOS &&
+                Theme.of(context).brightness == Brightness.dark
             ? AdaptiveButton.child(
                 onPressed: onTap ?? () {},
                 style: AdaptiveButtonStyle.glass,

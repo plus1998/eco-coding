@@ -199,32 +199,30 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         child: DecoratedBox(
               decoration: BoxDecoration(
                 color: ecoColors(context).composerContextBg,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  width: 0.5,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? ecoColors(context).borderSubtle.withValues(alpha: 0.45)
+                      : const Color(0x143C3C43), // ~8% — hairline only
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: ecoColors(context).shadowScrim.withValues(
                       alpha:
                           Theme.of(context).brightness == Brightness.dark
-                              ? 0.22
-                              : 0.05,
-                    ),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                  BoxShadow(
-                    color: ecoColors(context).shadowScrim.withValues(
-                      alpha:
-                          Theme.of(context).brightness == Brightness.dark
-                              ? 0.12
+                              ? 0.35
                               : 0.04,
                     ),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
+                    blurRadius: Theme.of(context).brightness == Brightness.dark
+                        ? 24
+                        : 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -270,11 +268,16 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         focusedErrorBorder: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
-                        hintStyle: TextStyle(color: ecoColors(context).textMuted),
+                        hintStyle: TextStyle(
+                          color: ecoColors(context).textMuted,
+                          fontSize: 17,
+                          letterSpacing: -0.2,
+                        ),
                       ),
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         height: 1.35,
+                        letterSpacing: -0.2,
                         color: ecoColors(context).textHeading,
                         backgroundColor: Colors.transparent,
                       ),

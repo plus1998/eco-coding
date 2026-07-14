@@ -1,11 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
-import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
-import '../../core/widgets/eco_modal_sheet.dart';
+import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_grouped_list.dart';
+import '../../core/widgets/eco_pressable.dart';
 import '../../core/utils/thread_usage_display.dart';
 
 Future<void> showThreadBillingSheet({
@@ -13,22 +16,111 @@ Future<void> showThreadBillingSheet({
   required ThreadBillingSnapshot? billing,
   required String? threadStatus,
 }) {
-  return showEcoModalBottomSheet<void>(
+  return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: ecoColors(context).bgMenu,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (context) => DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.55,
-      minChildSize: 0.35,
-      maxChildSize: 0.85,
-      builder: (context, scrollController) => _BillingSheet(
-        billing: billing,
-        threadStatus: threadStatus,
-        scrollController: scrollController,
+    builder: (context) => EcoSheetScaffold(
+      title: '计费',
+      subtitle: billing == null
+          ? null
+          : '本会话累计 · Eco 编排后费用',
+      maxHeightFactor: 0.82,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          if (billing == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
+              child: Text(
+                billingEmptyHint(threadStatus),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: ecoColors(context).textMuted,
+                      height: 1.4,
+                    ),
+              ),
+            )
+          else ...[
+            _BillingHero(billing: billing),
+            EcoGroupedSection(
+              label: '费用对比',
+              topSpacing: 20,
+              child: Column(
+                children: [
+                  _InsetMetricTile(
+                    label: '未编排',
+                    subtitle: billing.plannerModelLabel?.trim().isNotEmpty == true
+                        ? '按 ${billing.plannerModelLabel} 单价估算'
+                        : '按主模型单价估算',
+                    value: formatCostUsd(billing.plannerTokenCostUsd),
+                  ),
+                  const EcoGroupedDivider(indent: 16),
+                  _InsetMetricTile(
+                    label: '经济编程',
+                    subtitle: 'Eco 编排后的实际费用',
+                    value: formatCostUsd(billing.ecoCostUsd),
+                    emphasized: true,
+                  ),
+                  const EcoGroupedDivider(indent: 16),
+                  _InsetMetricTile(
+                    label: '节省',
+                    value: formatSavingsLine(billing.savedUsd, billing.savedPct),
+                    valueColor: billing.savedUsd >= 0
+                        ? ecoColors(context).success
+                        : ecoColors(context).danger,
+                  ),
+                ],
+              ),
+            ),
+            EcoGroupedSection(
+              label: 'Token 用量',
+              topSpacing: 20,
+              child: Column(
+                children: [
+                  _InsetMetricTile(
+                    label: '输入',
+                    value: _formatTokenCount(billing.inputTokens),
+                  ),
+                  const EcoGroupedDivider(indent: 16),
+                  _InsetMetricTile(
+                    label: '输出',
+                    value: _formatTokenCount(billing.outputTokens),
+                  ),
+                  if (billing.cacheReadTokens > 0) ...[
+                    const EcoGroupedDivider(indent: 16),
+                    _InsetMetricTile(
+                      label: '缓存读取',
+                      value: _formatTokenCount(billing.cacheReadTokens),
+                    ),
+                  ],
+                  if (billing.cacheCreationTokens > 0) ...[
+                    const EcoGroupedDivider(indent: 16),
+                    _InsetMetricTile(
+                      label: '缓存写入',
+                      value: _formatTokenCount(billing.cacheCreationTokens),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (billing.byModel.isNotEmpty)
+              EcoGroupedSection(
+                label: '按模型',
+                topSpacing: 20,
+                child: Column(
+                  children: [
+                    for (var i = 0; i < billing.byModel.length; i++) ...[
+                      if (i > 0) const EcoGroupedDivider(indent: 16),
+                      _InsetMetricTile(
+                        label: formatBillingModelLabel(billing.byModel[i]),
+                        value: formatCostUsd(billing.byModel[i].ecoCostUsd),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ],
       ),
     ),
   );
@@ -40,30 +132,87 @@ Future<void> showThreadContextSheet({
   required String? threadStatus,
   OrchestrationProfile? agentProfile,
 }) {
-  return showEcoModalBottomSheet<void>(
+  return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: ecoColors(context).bgMenu,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (context) {
-      final maxHeight = MediaQuery.sizeOf(context).height * 0.9;
-      return Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxHeight),
-          child: _ContextSheet(
-            contextSnapshot: contextSnapshot,
-            threadStatus: threadStatus,
-            agentProfile: agentProfile,
-          ),
+      final planner = contextSnapshot == null
+          ? null
+          : resolvePlannerContext(contextSnapshot);
+      return EcoSheetScaffold(
+        title: '上下文',
+        subtitle: planner == null
+            ? null
+            : formatRoleModelLabel(planner.role, planner.modelId),
+        maxHeightFactor: 0.88,
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 8),
+          children: [
+            if (contextSnapshot == null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
+                child: Text(
+                  contextCardPlaceholder(threadStatus),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: ecoColors(context).textMuted,
+                        height: 1.4,
+                      ),
+                ),
+              )
+            else ...[
+              _ContextHero(role: planner!),
+              EcoGroupedSection(
+                label: '构成',
+                topSpacing: 20,
+                child: _ContextSegmentList(role: planner),
+              ),
+              ..._buildSubagentSections(
+                contextSnapshot,
+                agentProfile: agentProfile,
+              ),
+            ],
+          ],
         ),
       );
     },
   );
+}
+
+List<Widget> _buildSubagentSections(
+  ThreadContextSnapshot snapshot, {
+  OrchestrationProfile? agentProfile,
+}) {
+  final rows = buildFlatSubagentContextRows(
+    snapshot,
+    profile: agentProfile,
+  );
+  if (rows.isEmpty) return const [];
+
+  return [
+    for (final row in rows)
+      EcoGroupedSection(
+        label: row.title,
+        topSpacing: 20,
+        child: Column(
+          children: [
+            _ContextOccupancyTile(
+              role: row.snapshot,
+              accentColor: row.accentColor,
+            ),
+            if (row.snapshot.segments.any((s) => s.tokens > 0)) ...[
+              const EcoGroupedDivider(indent: 16),
+              _ContextSegmentList(role: row.snapshot),
+            ],
+          ],
+        ),
+      ),
+  ];
+}
+
+String _formatTokenCount(int value) {
+  if (value < 1000) return '$value';
+  return formatContextK(value);
 }
 
 class ThreadUsageFloatButtons extends StatelessWidget {
@@ -79,17 +228,20 @@ class ThreadUsageFloatButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final costLabel = formatBillingPillCost(billing);
     final costColor = (billing?.ecoCostUsd ?? 0) > 0
         ? eco.success
         : eco.textSecondary;
     final costStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: costColor,
-      fontSize: 10,
-      height: 1.1,
-      fontFeatures: const [FontFeature.tabularFigures()],
-      fontWeight: FontWeight.w600,
-    );
+          color: costColor,
+          fontSize: 12,
+          height: 1.1,
+          letterSpacing: -0.1,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          fontWeight: FontWeight.w600,
+        );
+
     void openBillingSheet() {
       showThreadBillingSheet(
         context: context,
@@ -98,38 +250,43 @@ class ThreadUsageFloatButtons extends StatelessWidget {
       );
     }
 
-    if (PlatformInfo.isIOS) {
+    final label = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Text(costLabel, style: costStyle),
+    );
+
+    if (PlatformInfo.isIOS && isDark) {
       return Tooltip(
         message: '计费',
         child: AdaptiveButton.child(
           onPressed: openBillingSheet,
           style: AdaptiveButtonStyle.glass,
           size: AdaptiveButtonSize.small,
-          minSize: Size(_billingPillWidth(context, costLabel, costStyle), 28),
+          minSize: Size(_billingPillWidth(context, costLabel, costStyle), 30),
           enabled: true,
           useSmoothRectangleBorder: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-            child: Text(costLabel, style: costStyle),
-          ),
+          child: label,
         ),
       );
     }
 
-    return Material(
-      color: eco.bgElevated.withValues(alpha: 0.5),
-      elevation: 2,
-      shadowColor: eco.shadowScrim.withValues(alpha: 0.35),
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: eco.borderSubtle),
-        ),
-        child: _FloatMetricSegment(
-          tooltip: '计费',
-          onTap: openBillingSheet,
-          child: Text(costLabel, style: costStyle),
+    return Tooltip(
+      message: '计费',
+      child: EcoPressable(
+        onTap: openBillingSheet,
+        borderRadius: BorderRadius.circular(999),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: eco.composerPillBg,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              width: 0.5,
+              color: isDark
+                  ? eco.composerPillBorder.withValues(alpha: 0.35)
+                  : const Color(0x123C3C43),
+            ),
+          ),
+          child: label,
         ),
       ),
     );
@@ -143,208 +300,118 @@ double _billingPillWidth(BuildContext context, String label, TextStyle? style) {
     textScaler: MediaQuery.textScalerOf(context),
     maxLines: 1,
   )..layout();
-  return painter.width + 14.0 + 16.0;
+  return painter.width + 20.0 + 16.0;
 }
 
-class _FloatMetricSegment extends StatelessWidget {
-  const _FloatMetricSegment({
-    required this.tooltip,
-    required this.onTap,
-    required this.child,
-  });
+class _BillingHero extends StatelessWidget {
+  const _BillingHero({required this.billing});
 
-  final String tooltip;
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _BillingSheet extends StatelessWidget {
-  const _BillingSheet({
-    required this.billing,
-    required this.threadStatus,
-    required this.scrollController,
-  });
-
-  final ThreadBillingSnapshot? billing;
-  final String? threadStatus;
-  final ScrollController scrollController;
+  final ThreadBillingSnapshot billing;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final plannerLabel = billing?.plannerModelLabel?.trim().isNotEmpty == true
-        ? billing!.plannerModelLabel!
-        : '主模型';
-    return SafeArea(
-      child: ListView(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+    final savedPositive = billing.savedUsd > 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+      child: Column(
         children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: eco.borderSubtle,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Icon(EcoIcons.usageCost, size: 18),
-              const SizedBox(width: 8),
-              Text('计费', style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (billing == null)
-            Text(
-              billingEmptyHint(threadStatus),
-              style: TextStyle(color: eco.textMuted),
-            )
-          else ...[
-            _MetricRow(
-              label: '① 未编排',
-              subtitle: '按 $plannerLabel 单价估算',
-              value: formatCostUsd(billing!.plannerTokenCostUsd),
-            ),
-            const SizedBox(height: 12),
-            _MetricRow(
-              label: '② 经济编程',
-              subtitle: 'Eco 编排后的实际费用',
-              value: formatCostUsd(billing!.ecoCostUsd),
-              emphasized: true,
-            ),
-            const SizedBox(height: 12),
-            _MetricRow(
-              label: '节省',
-              value: formatSavingsLine(billing!.savedUsd, billing!.savedPct),
-              valueColor: billing!.savedUsd >= 0 ? eco.success : eco.danger,
-            ),
-            const SizedBox(height: 20),
-            Text('Token 用量', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            _MetricRow(label: '输入', value: '${billing!.inputTokens}'),
-            _MetricRow(label: '输出', value: '${billing!.outputTokens}'),
-            if (billing!.cacheReadTokens > 0)
-              _MetricRow(label: '缓存读取', value: '${billing!.cacheReadTokens}'),
-            if (billing!.cacheCreationTokens > 0)
-              _MetricRow(
-                label: '缓存写入',
-                value: '${billing!.cacheCreationTokens}',
-              ),
-            if (billing!.byModel.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Text('按模型', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              ...billing!.byModel.map(
-                (entry) => _MetricRow(
-                  label: formatBillingModelLabel(entry),
-                  value: formatCostUsd(entry.ecoCostUsd),
+          Text(
+            formatCostUsd(billing.ecoCostUsd),
+            style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  fontSize: 40,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -1.2,
+                  height: 1.05,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
-              ),
-            ],
-          ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            savedPositive
+                ? formatSavingsLine(billing.savedUsd, billing.savedPct)
+                : '相对未编排估算',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: savedPositive ? eco.success : eco.textMuted,
+                  fontWeight: savedPositive ? FontWeight.w500 : FontWeight.w400,
+                ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _ContextSheet extends StatelessWidget {
-  const _ContextSheet({
-    required this.contextSnapshot,
-    required this.threadStatus,
-    this.agentProfile,
-  });
+class _ContextHero extends StatelessWidget {
+  const _ContextHero({required this.role});
 
-  final ThreadContextSnapshot? contextSnapshot;
-  final String? threadStatus;
-  final OrchestrationProfile? agentProfile;
+  final ThreadRoleContextSnapshot role;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return SafeArea(
+    final pctColor = _occupancyColor(eco, role.occupancyPct);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: eco.borderSubtle,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const Icon(EcoIcons.contextMemory, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        '上下文',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (contextSnapshot == null)
+          SizedBox(
+            width: 112,
+            height: 112,
+            child: CustomPaint(
+              painter: _ContextRingPainter(
+                progress: role.limit > 0
+                    ? (role.occupied / role.limit).clamp(0.0, 1.0)
+                    : 0,
+                trackColor: eco.borderSubtle.withValues(
+                  alpha: Theme.of(context).brightness == Brightness.dark
+                      ? 0.45
+                      : 0.2,
+                ),
+                progressColor: pctColor,
+                strokeWidth: 8,
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      contextCardPlaceholder(threadStatus),
-                      style: TextStyle(color: eco.textMuted),
-                    )
-                  else ...[
-                    _ContextRoleSection(
-                      title: formatRoleModelLabel(
-                        resolvePlannerContext(contextSnapshot!).role,
-                        resolvePlannerContext(contextSnapshot!).modelId,
-                      ),
-                      role: resolvePlannerContext(contextSnapshot!),
+                      '${role.occupancyPct}',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.8,
+                            height: 1,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
                     ),
-                    ...buildFlatSubagentContextRows(
-                      contextSnapshot!,
-                      profile: agentProfile,
-                    ).map(
-                      (row) => Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: _ContextRoleSection(
-                          title: row.title,
-                          role: row.snapshot,
-                          accentColor: row.accentColor,
-                        ),
-                      ),
+                    Text(
+                      '%',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: eco.textMuted,
+                          ),
                     ),
                   ],
-                ],
+                ),
               ),
             ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            formatOccupancyLabel(role.occupancyPct),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: pctColor,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)} tokens',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: eco.textMuted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
           ),
         ],
       ),
@@ -352,121 +419,138 @@ class _ContextSheet extends StatelessWidget {
   }
 }
 
-class _ContextRoleSection extends StatelessWidget {
-  const _ContextRoleSection({
-    required this.title,
+class _ContextOccupancyTile extends StatelessWidget {
+  const _ContextOccupancyTile({
     required this.role,
     this.accentColor,
   });
 
-  final String title;
   final ThreadRoleContextSnapshot role;
   final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final accent = accentColor;
-    final pctColor = role.occupancyPct >= 95
-        ? eco.danger
-        : (role.occupancyPct >= 85
-              ? eco.warnAccent
-              : (accent ?? eco.accentText));
-    final visibleSegments = role.segments
-        .where((segment) => segment.tokens > 0)
-        .toList();
+    final pctColor = _occupancyColor(eco, role.occupancyPct, accent: accentColor);
+    final ratio = role.limit > 0
+        ? (role.occupied / role.limit).clamp(0.0, 1.0)
+        : 0.0;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: eco.bgElevated,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: eco.borderSubtle),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (accent != null) ...[
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: accent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.labelLarge,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (accentColor != null) ...[
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    shape: BoxShape.circle,
                   ),
                 ),
-                Text(
-                  formatOccupancyLabel(role.occupancyPct),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(color: pctColor),
-                ),
+                const SizedBox(width: 8),
               ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)} tokens',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: role.limit > 0
-                    ? (role.occupied / role.limit).clamp(0.0, 1.0)
-                    : 0,
-                minHeight: 6,
-                backgroundColor: eco.borderSubtle,
-                color: pctColor,
-              ),
-            ),
-            if (visibleSegments.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              ...visibleSegments.map(
-                (segment) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          segment.label,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+              Expanded(
+                child: Text(
+                  formatOccupancyLabel(role.occupancyPct),
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 17,
+                        letterSpacing: -0.2,
+                        color: pctColor,
+                        fontWeight: FontWeight.w600,
                       ),
-                      Text(
-                        formatContextK(segment.tokens),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: eco.textMuted,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
+              ),
+              Text(
+                '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: eco.textMuted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
               ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 5,
+              backgroundColor: eco.borderSubtle.withValues(
+                alpha: Theme.of(context).brightness == Brightness.dark
+                    ? 0.4
+                    : 0.18,
+              ),
+              color: pctColor,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _MetricRow extends StatelessWidget {
-  const _MetricRow({
+class _ContextSegmentList extends StatelessWidget {
+  const _ContextSegmentList({required this.role});
+
+  final ThreadRoleContextSnapshot role;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final segments =
+        role.segments.where((segment) => segment.tokens > 0).toList();
+    if (segments.isEmpty) {
+      return EcoGroupedTile(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Text(
+          '暂无构成明细',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: eco.textMuted,
+              ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (var i = 0; i < segments.length; i++) ...[
+          if (i > 0) const EcoGroupedDivider(indent: 16),
+          EcoGroupedTile(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    segments[i].label,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: 17,
+                          letterSpacing: -0.2,
+                        ),
+                  ),
+                ),
+                Text(
+                  formatContextK(segments[i].tokens),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: eco.textMuted,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _InsetMetricTile extends StatelessWidget {
+  const _InsetMetricTile({
     required this.label,
     required this.value,
     this.subtitle,
@@ -483,10 +567,10 @@ class _MetricRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return EcoGroupedTile(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
@@ -494,32 +578,96 @@ class _MetricRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: emphasized ? FontWeight.w600 : null,
-                  ),
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 17,
+                        letterSpacing: -0.2,
+                        fontWeight:
+                            emphasized ? FontWeight.w600 : FontWeight.w400,
+                      ),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                        ),
                   ),
                 ],
               ],
             ),
           ),
+          const SizedBox(width: 12),
           Text(
             value,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: valueColor ?? (emphasized ? eco.success : eco.textHeading),
-              fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontSize: 17,
+                  letterSpacing: -0.2,
+                  color: valueColor ??
+                      (emphasized ? eco.success : eco.textPrimary),
+                  fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
           ),
         ],
       ),
     );
+  }
+}
+
+Color _occupancyColor(
+  EcoColors eco,
+  int pct, {
+  Color? accent,
+}) {
+  if (pct >= 95) return eco.danger;
+  if (pct >= 85) return eco.warnAccent;
+  return accent ?? eco.accent;
+}
+
+class _ContextRingPainter extends CustomPainter {
+  _ContextRingPainter({
+    required this.progress,
+    required this.trackColor,
+    required this.progressColor,
+    required this.strokeWidth,
+  });
+
+  final double progress;
+  final Color trackColor;
+  final Color progressColor;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
+    final track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..color = trackColor;
+    final arc = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..color = progressColor;
+
+    canvas.drawCircle(center, radius, track);
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2,
+        2 * math.pi * progress,
+        false,
+        arc,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ContextRingPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.progressColor != progressColor ||
+        oldDelegate.trackColor != trackColor;
   }
 }

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,14 +10,13 @@ import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_session.dart';
 import '../../core/theme/eco_icons.dart';
-import '../../core/theme/eco_adaptive_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
 import '../../core/widgets/adaptive_glass_action_button.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart';
 import '../../core/widgets/eco_android_glass.dart';
-import '../../core/widgets/ios26_liquid_glass_action_button.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
@@ -802,6 +800,7 @@ class _SelectPcStep extends ConsumerWidget {
     required this.busy,
     required this.onSelect,
     this.compact = false,
+    this.embedded = false,
   });
 
   final SetupOverview overview;
@@ -809,6 +808,9 @@ class _SelectPcStep extends ConsumerWidget {
   final Future<void> Function(String desktopId, String name, bool online)
   onSelect;
   final bool compact;
+
+  /// When true, skip outer [EcoGroupedSurface] (parent already provides one).
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -843,33 +845,46 @@ class _SelectPcStep extends ConsumerWidget {
             .map((d) => d.id)
             .toSet();
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: uniqueBindings.map((binding) {
-            final desktopId = binding.desktopDeviceId;
-            final stableOnline = ref.watch(
-              stableDesktopOnlineProvider(desktopId),
-            );
-            final online = presenceLoading
-                ? stableOnline
-                : stableOnline ?? onlineIds.contains(desktopId);
-            final device = presence.where((d) => d.id == desktopId).firstOrNull;
-            final name = formatDesktopLabel(device, desktopId);
-            final detail = formatDeviceDetail(device);
-            final selected = selectedDesktop == desktopId;
-            return Padding(
-              padding: EdgeInsets.only(bottom: compact ? 6 : 8),
-              child: _PcDeviceTile(
-                name: name,
-                detail: detail,
-                online: online,
-                selected: selected,
-                onTap: busy
-                    ? null
-                    : () => onSelect(desktopId, name, online ?? false),
+        final list = Column(
+          children: [
+            for (var i = 0; i < uniqueBindings.length; i++) ...[
+              if (i > 0) const EcoGroupedDivider(indent: 52),
+              Builder(
+                builder: (context) {
+                  final binding = uniqueBindings[i];
+                  final desktopId = binding.desktopDeviceId;
+                  final stableOnline = ref.watch(
+                    stableDesktopOnlineProvider(desktopId),
+                  );
+                  final online = presenceLoading
+                      ? stableOnline
+                      : stableOnline ?? onlineIds.contains(desktopId);
+                  final device =
+                      presence.where((d) => d.id == desktopId).firstOrNull;
+                  final name = formatDesktopLabel(device, desktopId);
+                  final detail = formatDeviceDetail(device);
+                  final selected = selectedDesktop == desktopId;
+                  return _PcDeviceTile(
+                    name: name,
+                    detail: detail,
+                    online: online,
+                    selected: selected,
+                    dense: compact,
+                    onTap: busy
+                        ? null
+                        : () => onSelect(desktopId, name, online ?? false),
+                  );
+                },
               ),
-            );
-          }).toList(),
+            ],
+          ],
+        );
+
+        if (embedded) return list;
+
+        return EcoGroupedSurface(
+          margin: EdgeInsets.zero,
+          child: list,
         );
       },
       loading: () => const Padding(
@@ -887,6 +902,7 @@ class _PcDeviceTile extends StatelessWidget {
     this.detail,
     required this.online,
     required this.selected,
+    this.dense = false,
     this.onTap,
   });
 
@@ -894,87 +910,71 @@ class _PcDeviceTile extends StatelessWidget {
   final String? detail;
   final bool? online;
   final bool selected;
+  final bool dense;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected
-          ? ecoColors(context).accentSoft
-          : ecoColors(context).cardSurface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? ecoColors(context).accent.withValues(alpha: 0.45)
-                  : ecoColors(context).cardBorder,
+    final eco = ecoColors(context);
+    return EcoGroupedTile(
+      onTap: onTap,
+      highlighted: selected,
+      padding: EdgeInsets.fromLTRB(16, dense ? 10 : 12, 14, dense ? 10 : 12),
+      child: Row(
+        children: [
+          Icon(
+            EcoIcons.desktop,
+            size: 22,
+            color: selected ? eco.accent : eco.textSecondary,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400,
+                        fontSize: 17,
+                      ),
+                ),
+                if (detail != null)
+                  Text(
+                    detail!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                        ),
+                  ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              Icon(
-                EcoIcons.desktop,
-                size: 20,
-                color: selected
-                    ? ecoColors(context).accentText
-                    : ecoColors(context).textSecondary,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                      ),
-                    ),
-                    if (detail != null)
-                      Text(
-                        detail!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: ecoColors(context).textMuted,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: switch (online) {
-                    null => ecoColors(
-                      context,
-                    ).textMuted.withValues(alpha: 0.55),
-                    true => ecoColors(context).online,
-                    false => ecoColors(context).offline,
-                  },
-                ),
-              ),
-              if (selected) ...[
-                const SizedBox(width: 10),
-                Icon(
-                  EcoIcons.check,
-                  size: 18,
-                  color: ecoColors(context).accentText,
-                ),
-              ],
-            ],
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: switch (online) {
+                null => eco.textMuted.withValues(alpha: 0.45),
+                true => eco.online,
+                false => eco.offline,
+              },
+            ),
           ),
-        ),
+          if (selected) ...[
+            const SizedBox(width: 10),
+            Icon(
+              EcoIcons.check,
+              size: 18,
+              color: eco.accent,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -988,29 +988,29 @@ class _AccountStatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final eco = ecoColors(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: ecoColors(context).bgElevated,
+        color: eco.cardSurface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ecoColors(context).borderSubtle),
       ),
       child: Row(
         children: [
           Icon(
             connected ? EcoIcons.checkCircle : EcoIcons.user,
-            size: 18,
-            color: connected
-                ? ecoColors(context).statusAllowText
-                : ecoColors(context).textSecondary,
+            size: 20,
+            color: connected ? eco.success : eco.textSecondary,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               email,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontSize: 17,
+                  ),
             ),
           ),
         ],
@@ -1034,44 +1034,31 @@ class _ScanFirstView extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Spacer(flex: 2),
             Center(
-              child: Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: ecoColors(context).accentSoft,
-                  border: Border.all(
-                    color: ecoColors(context).accent.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Icon(
-                  EcoIcons.qrScan,
-                  size: 32,
-                  color: ecoColors(context).accentText,
-                ),
+              child: Icon(
+                EcoIcons.qrScan,
+                size: 56,
+                color: ecoColors(context).accent,
               ),
             ),
             const SizedBox(height: 28),
             Text(
               '扫描 PC 端配对码',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0,
-              ),
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 10),
             Text(
               '在 Desktop「连接」页生成二维码',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: ecoColors(context).textMuted,
+                fontSize: 16,
               ),
             ),
             const Spacer(flex: 3),
@@ -1080,7 +1067,7 @@ class _ScanFirstView extends StatelessWidget {
               icon: EcoIcons.qrScan,
               onPressed: busy ? null : onScan,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             TextButton(
               onPressed: busy ? null : onManualSetup,
               child: const Text('手动配置'),
@@ -1110,6 +1097,7 @@ class _ReadyConnectionView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final eco = ecoColors(context);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
     final stableOnline = selectedDesktop == null
         ? null
@@ -1129,62 +1117,192 @@ class _ReadyConnectionView extends ConsumerWidget {
         }
       }
       selectedOnline ??= presenceLoading ? null : false;
+      selectedName ??= formatDesktopLabel(null, selectedDesktop);
     }
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (selectedName != null) ...[
-              Row(
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: switch (selectedOnline) {
-                        null => ecoColors(
-                          context,
-                        ).textMuted.withValues(alpha: 0.55),
-                        true => ecoColors(context).online,
-                        false => ecoColors(context).offline,
-                      },
-                    ),
+    final statusLabel = switch (selectedOnline) {
+      true => '在线',
+      false => '离线',
+      null => selectedName == null ? '未选择' : '检测中',
+    };
+    final statusColor = switch (selectedOnline) {
+      true => eco.online,
+      false => eco.offline,
+      null => eco.textMuted.withValues(alpha: 0.55),
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SafeArea(
+            bottom: false,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '选择 PC',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '选中一台 Desktop 进入应用，或扫码绑定新设备。',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: eco.textMuted,
+                              height: 1.4,
+                            ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      selectedName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                ),
+                if (selectedName != null)
+                  EcoGroupedSection(
+                    label: '当前',
+                    topSpacing: 28,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                      child: Row(
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: eco.composerPillBg,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: Icon(
+                                EcoIcons.desktop,
+                                size: 24,
+                                color: eco.accent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selectedName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      statusLabel,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(color: eco.textMuted),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ],
+                EcoGroupedSection(
+                  label: '已绑定',
+                  topSpacing: selectedName == null ? 28 : 20,
+                  footer: overview.canEnterApp
+                      ? null
+                      : '请选择一台在线 PC 后再进入应用',
+                  child: _SelectPcStep(
+                    overview: overview,
+                    busy: busy,
+                    compact: true,
+                    embedded: true,
+                    onSelect: onSelectPc,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        _ReadyConnectionActions(
+          busy: busy,
+          canEnterApp: overview.canEnterApp,
+          onEnterApp: onEnterApp,
+          onBindNewPc: onScan,
+        ),
+      ],
+    );
+  }
+}
+
+class _ReadyConnectionActions extends StatelessWidget {
+  const _ReadyConnectionActions({
+    required this.busy,
+    required this.canEnterApp,
+    required this.onEnterApp,
+    required this.onBindNewPc,
+  });
+
+  final bool busy;
+  final bool canEnterApp;
+  final VoidCallback onEnterApp;
+  final VoidCallback onBindNewPc;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.bgMain,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AdaptiveGlassActionButton(
+                label: '进入应用',
+                icon: EcoIcons.goForward,
+                onPressed: busy || !canEnterApp ? null : onEnterApp,
+                height: 54,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 4),
+              TextButton.icon(
+                onPressed: busy ? null : onBindNewPc,
+                icon: Icon(EcoIcons.qrScan, size: 18, color: eco.accent),
+                label: Text(
+                  '绑定新 PC',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: -0.2,
+                    color: eco.accent,
+                  ),
+                ),
+              ),
             ],
-            Expanded(
-              child: _SelectPcStep(
-                overview: overview,
-                busy: busy,
-                compact: true,
-                onSelect: onSelectPc,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _ConnectionActionStrip(
-              busy: busy,
-              onEnterApp: onEnterApp,
-              onScan: onScan,
-              canEnterApp: overview.canEnterApp,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1199,168 +1317,13 @@ class _StepBlockedHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       child: Text(
         text,
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(color: ecoColors(context).textMuted),
-      ),
-    );
-  }
-}
-
-class _ConnectionActionStrip extends StatelessWidget {
-  const _ConnectionActionStrip({
-    required this.busy,
-    required this.onEnterApp,
-    required this.onScan,
-    required this.canEnterApp,
-  });
-
-  final bool busy;
-  final VoidCallback onEnterApp;
-  final VoidCallback onScan;
-  final bool canEnterApp;
-
-  static const actionWidth = 112.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: actionWidth,
-          child: _ConnectionActionButton(
-            label: '进入应用',
-            icon: EcoIcons.goForward,
-            onPressed: busy || !canEnterApp ? null : onEnterApp,
-            isPrimary: true,
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: actionWidth,
-          child: _ConnectionActionButton(
-            label: '绑定新 PC',
-            icon: EcoIcons.qrScan,
-            onPressed: busy ? null : onScan,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ConnectionActionButton extends StatelessWidget {
-  const _ConnectionActionButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-    this.isPrimary = false,
-  });
-
-  static const height = 64.0;
-
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final bool isPrimary;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    final enabled = onPressed != null;
-    final foreground = enabled
-        ? isPrimary
-              ? eco.accentText
-              : eco.textHeading
-        : eco.textHeading.withValues(alpha: 0.38);
-    final radius = BorderRadius.circular(height / 2);
-    final content = Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 22, color: foreground),
-        const SizedBox(height: 3),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: foreground,
-            fontSize: 8,
-            fontWeight: FontWeight.w400,
-            letterSpacing: 0,
-          ),
-        ),
-      ],
-    );
-
-    if (PlatformInfo.isIOS) {
-      return Semantics(
-        button: true,
-        enabled: enabled,
-        label: label,
-        child: SizedBox(
-          height: height,
-          child: PlatformInfo.isIOS26OrHigher()
-              ? IOS26LiquidGlassActionButton(
-                  label: label,
-                  sfSymbol: ecoIconSfSymbol(icon) ?? 'circle',
-                  foregroundColor: foreground,
-                  onPressed: onPressed,
-                  height: height,
-                )
-              : CupertinoButton(
-                  onPressed: onPressed,
-                  padding: EdgeInsets.zero,
-                  borderRadius: radius,
-                  color: CupertinoColors.tertiarySystemFill,
-                  child: content,
-                ),
-        ),
-      );
-    }
-
-    if (PlatformInfo.isAndroid) {
-      return Semantics(
-        button: true,
-        enabled: enabled,
-        label: label,
-        child: EcoAndroidGlassSurface(
-          height: height,
-          borderRadius: radius,
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: onPressed,
-              customBorder: RoundedRectangleBorder(borderRadius: radius),
-              child: SizedBox(
-                height: height,
-                child: Center(child: content),
-              ),
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: ecoColors(context).textMuted,
             ),
-          ),
-        ),
-      );
-    }
-
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: label,
-      child: SizedBox(
-        height: height,
-        child: FilledButton.tonal(
-          onPressed: onPressed,
-          style: FilledButton.styleFrom(
-            shape: const StadiumBorder(),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-          ),
-          child: content,
-        ),
       ),
     );
   }

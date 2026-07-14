@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/widgets/eco_markdown.dart';
 
@@ -18,58 +20,54 @@ Future<void> showPlanApprovalSheet({
     useSafeArea: true,
     isDismissible: false,
     enableDrag: false,
+    backgroundColor: ecoColors(context).bgMain,
     builder: (context) {
       return PopScope(
         canPop: false,
         child: _ScrollableSheetFrame(
-        maxHeightFactor: 0.92,
-        footer: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      await onDismiss();
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('驳回'),
-                  ),
+          maxHeightFactor: 0.92,
+          footer: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    await onDismiss();
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  child: const Text('驳回'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () async {
-                      await onApprove();
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('批准执行'),
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () async {
+                    await onApprove();
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  child: const Text('批准执行'),
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '计划审批',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 20),
+              _ApprovalField(label: '用户请求', body: Text(plan.userPrompt)),
+              const SizedBox(height: 16),
+              _ApprovalField(label: '分析', body: Text(plan.analysis)),
+              const SizedBox(height: 16),
+              _ApprovalField(label: '计划', body: EcoMarkdown(text: plan.plan)),
+            ],
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('计划审批', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text('用户请求', style: Theme.of(context).textTheme.labelLarge),
-            Text(plan.userPrompt),
-            const SizedBox(height: 12),
-            Text('分析', style: Theme.of(context).textTheme.labelLarge),
-            Text(plan.analysis),
-            const SizedBox(height: 12),
-            Text('计划', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 4),
-            EcoMarkdown(text: plan.plan),
-          ],
-        ),
-      ),
       );
     },
   );
@@ -95,35 +93,30 @@ Future<void> showBashApprovalSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    backgroundColor: ecoColors(context).bgMain,
     builder: (context) {
       return _ScrollableSheetFrame(
         maxHeightFactor: 0.85,
-        footer: Column(
-          mainAxisSize: MainAxisSize.min,
+        footer: Row(
           children: [
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      await onResolve('denied');
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('拒绝'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () async {
-                      await onResolve('approved');
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('批准'),
-                  ),
-                ),
-              ],
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () async {
+                  await onResolve('denied');
+                  if (context.mounted) Navigator.pop(context);
+                },
+                child: const Text('拒绝'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                onPressed: () async {
+                  await onResolve('approved');
+                  if (context.mounted) Navigator.pop(context);
+                },
+                child: const Text('批准'),
+              ),
             ),
           ],
         ),
@@ -131,7 +124,13 @@ Future<void> showBashApprovalSheet({
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(panelLabel, style: Theme.of(context).textTheme.labelLarge),
+            Text(
+              panelLabel,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: ecoColors(context).textMuted,
+                    letterSpacing: 0.2,
+                  ),
+            ),
             const SizedBox(height: 8),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,11 +138,11 @@ Future<void> showBashApprovalSheet({
                 Expanded(
                   child: Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
-                          height: 1.4,
+                          height: 1.3,
                         ),
                   ),
                 ),
@@ -156,17 +155,18 @@ Future<void> showBashApprovalSheet({
                 ],
               ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: ecoColors(context).codeBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: ecoColors(context).borderSubtle),
-              ),
+            const SizedBox(height: 16),
+            EcoGroupedSurface(
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.all(14),
               child: SelectableText(
                 detail,
-                style: const TextStyle(fontFamily: 'monospace'),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  height: 1.4,
+                  color: ecoColors(context).textPrimary,
+                ),
               ),
             ),
           ],
@@ -174,6 +174,42 @@ Future<void> showBashApprovalSheet({
       );
     },
   );
+}
+
+class _ApprovalField extends StatelessWidget {
+  const _ApprovalField({required this.label, required this.body});
+
+  final String label;
+  final Widget body;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: eco.textMuted,
+                letterSpacing: 0.2,
+              ),
+        ),
+        const SizedBox(height: 8),
+        EcoGroupedSurface(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(14),
+          child: DefaultTextStyle.merge(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  height: 1.4,
+                  letterSpacing: -0.15,
+                ),
+            child: body,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _BashRiskBadge extends StatelessWidget {
@@ -201,33 +237,34 @@ class _BashRiskBadge extends StatelessWidget {
       _ => '中',
     };
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '$score',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$score',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -247,42 +284,37 @@ Future<void> showClarificationSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    backgroundColor: ecoColors(context).bgMain,
     builder: (context) {
       var submitting = false;
       return StatefulBuilder(
         builder: (context, setState) {
           return _ScrollableSheetFrame(
             maxHeightFactor: 0.92,
-            footer: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: submitting || !selections.every((s) => s.isNotEmpty)
-                      ? null
-                      : () async {
-                          setState(() => submitting = true);
-                          try {
-                            await onSubmit(selections);
-                            if (context.mounted) Navigator.pop(context);
-                          } finally {
-                            if (context.mounted) {
-                              setState(() => submitting = false);
-                            }
-                          }
-                        },
-                  child: submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('提交'),
-                ),
-              ],
+            footer: FilledButton(
+              onPressed: submitting || !selections.every((s) => s.isNotEmpty)
+                  ? null
+                  : () async {
+                      setState(() => submitting = true);
+                      try {
+                        await onSubmit(selections);
+                        if (context.mounted) Navigator.pop(context);
+                      } finally {
+                        if (context.mounted) {
+                          setState(() => submitting = false);
+                        }
+                      }
+                    },
+              child: submitting
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: ecoColors(context).onAccent,
+                      ),
+                    )
+                  : const Text('提交'),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -290,10 +322,13 @@ Future<void> showClarificationSheet({
               children: [
                 Text(
                   '需要澄清',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
-                const SizedBox(height: 8),
-                for (var i = 0; i < request.questions.length; i++)
+                const SizedBox(height: 16),
+                for (var i = 0; i < request.questions.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 12),
                   _ClarificationQuestionCard(
                     question: request.questions[i],
                     selected: selections[i],
@@ -311,6 +346,7 @@ Future<void> showClarificationSheet({
                       });
                     },
                   ),
+                ],
               ],
             ),
           );
@@ -339,19 +375,31 @@ class _ScrollableSheetFrame extends StatelessWidget {
       padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: SingleChildScrollView(
-                  child: child,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const EcoSheetGrabber(),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  ecoGroupedHorizontalInset,
+                  4,
+                  ecoGroupedHorizontalInset,
+                  12,
                 ),
+                child: child,
               ),
-              footer,
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                ecoGroupedHorizontalInset,
+                0,
+                ecoGroupedHorizontalInset,
+                16,
+              ),
+              child: footer,
+            ),
+          ],
         ),
       ),
     );
@@ -371,29 +419,40 @@ class _ClarificationQuestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (question.header != null) Text(question.header!),
-            Text(question.question, style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: question.options.map((option) {
-                final isSelected = selected.contains(option.label);
-                return FilterChip(
-                  label: Text(option.label),
-                  selected: isSelected,
-                  onSelected: (_) => onChanged(option.label),
-                );
-              }).toList(),
+    final eco = ecoColors(context);
+    return EcoGroupedSurface(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (question.header != null) ...[
+            Text(
+              question.header!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: eco.textMuted,
+                  ),
             ),
+            const SizedBox(height: 6),
           ],
-        ),
+          Text(
+            question.question,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: question.options.map((option) {
+              final isSelected = selected.contains(option.label);
+              return FilterChip(
+                label: Text(option.label),
+                selected: isSelected,
+                onSelected: (_) => onChanged(option.label),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

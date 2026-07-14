@@ -41,11 +41,12 @@ class AdaptiveGlassActionButton extends StatelessWidget {
           Icon(icon, size: 20, color: color),
           const SizedBox(width: 8),
         ],
-        Text(
+          Text(
           label,
           style: TextStyle(
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: FontWeight.w600,
+            letterSpacing: -0.2,
             color: color,
           ),
         ),

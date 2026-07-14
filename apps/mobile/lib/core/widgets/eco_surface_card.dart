@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Bordered surface with anti-aliased clipping so inner content cannot paint
-/// over the rounded border (a common issue with InkWell + diff backgrounds).
+/// Soft surface with anti-aliased clipping so inner content cannot paint
+/// over the rounded corners (a common issue with InkWell + diff backgrounds).
 class EcoSurfaceCard extends StatelessWidget {
   const EcoSurfaceCard({
     super.key,
@@ -10,6 +10,7 @@ class EcoSurfaceCard extends StatelessWidget {
     this.borderRadius = const BorderRadius.all(Radius.circular(12)),
     required this.borderColor,
     this.backgroundColor,
+    this.showBorder = true,
   });
 
   final Widget child;
@@ -17,21 +18,26 @@ class EcoSurfaceCard extends StatelessWidget {
   final BorderRadius borderRadius;
   final Color borderColor;
   final Color? backgroundColor;
+  final bool showBorder;
 
   @override
   Widget build(BuildContext context) {
     final shape = RoundedRectangleBorder(
       borderRadius: borderRadius,
-      side: BorderSide(color: borderColor),
+      side: showBorder
+          ? BorderSide(color: borderColor.withValues(alpha: 0.45), width: 0.5)
+          : BorderSide.none,
     );
     return Material(
       color: backgroundColor ?? Colors.transparent,
       shape: shape,
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: child,
-      ),
+      child: onTap == null
+          ? child
+          : InkWell(
+              onTap: onTap,
+              child: child,
+            ),
     );
   }
 }
@@ -77,7 +83,10 @@ class EcoDiffGutterLine extends StatelessWidget {
   }
 }
 
-/// Clips overflowing preview content and optionally draws a bottom fade.
+/// Clips overflowing preview content and optionally fades the bottom edge.
+///
+/// Uses [ShaderMask] + [BlendMode.dstIn] so content alpha falls off — avoids
+/// painting an opaque color band that reads as a bright white block.
 class EcoClippedFadeBody extends StatelessWidget {
   const EcoClippedFadeBody({
     super.key,
@@ -85,7 +94,6 @@ class EcoClippedFadeBody extends StatelessWidget {
     required this.child,
     this.collapsedMaxHeight = 132,
     this.showFade = false,
-    this.fadeColor,
     this.fadeHeight = 44,
   });
 
@@ -93,13 +101,10 @@ class EcoClippedFadeBody extends StatelessWidget {
   final Widget child;
   final double collapsedMaxHeight;
   final bool showFade;
-  final Color? fadeColor;
   final double fadeHeight;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedFadeColor = fadeColor ?? Theme.of(context).cardColor;
-
     Widget body = child;
     if (!expanded) {
       body = ClipRect(
@@ -112,35 +117,28 @@ class EcoClippedFadeBody extends StatelessWidget {
           ),
         ),
       );
-    }
 
-    if (!expanded && showFade) {
-      return Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          body,
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: fadeHeight,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      resolvedFadeColor.withValues(alpha: 0),
-                      resolvedFadeColor,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
+      if (showFade && fadeHeight > 0 && collapsedMaxHeight > 0) {
+        final fadeStart =
+            ((collapsedMaxHeight - fadeHeight) / collapsedMaxHeight)
+                .clamp(0.0, 0.92);
+        body = ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: const [
+                Color(0xFF000000),
+                Color(0xFF000000),
+                Color(0x00000000),
+              ],
+              stops: [0, fadeStart, 1],
+            ).createShader(bounds);
+          },
+          child: body,
+        );
+      }
     }
 
     return body;

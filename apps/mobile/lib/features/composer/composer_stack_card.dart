@@ -29,16 +29,25 @@ class ComposerStackCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final borderColor = eco.composerPillBorder.withValues(alpha: 0.38);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    // Light: rely on fill contrast; avoid opaque stroke replacing token alpha.
+    final borderColor = isLight
+        ? const Color(0x123C3C43) // ~7%
+        : eco.composerPillBorder.withValues(alpha: 0.35);
     final shape = stadium
-        ? StadiumBorder(side: BorderSide(color: borderColor))
+        ? StadiumBorder(
+            side: BorderSide(color: borderColor, width: 0.5),
+          )
         : RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: borderColor),
+            side: BorderSide(color: borderColor, width: 0.5),
           );
 
     return Material(
       color: eco.composerPillBg,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(

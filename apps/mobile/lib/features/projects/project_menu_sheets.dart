@@ -5,6 +5,8 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../threads/thread_providers.dart';
 import 'project_providers.dart';
@@ -22,77 +24,50 @@ Future<void> showProjectActionSheet({
     (path) => normalizeProjectPath(path) == normalizedPath,
   );
 
-  return showEcoModalBottomSheet<void>(
+  return showEcoActionSheet<void>(
     context: context,
-    backgroundColor: ecoColors(context).bgMenu,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (sheetContext) {
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    project.name,
-                    style: Theme.of(sheetContext).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    project.path,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textMuted,
-                    ),
-                  ),
-                ],
-              ),
+            const EcoSheetGrabber(),
+            EcoSheetHeader(
+              title: project.name,
+              subtitle: project.path,
+              maxTitleLines: 1,
             ),
-            ListTile(
-              leading: Icon(
-                isPinned ? EcoIcons.pin : EcoIcons.pin,
-                size: 20,
-                color: ecoColors(context).textSecondary,
-              ),
-              title: Text(isPinned ? '取消置顶' : '置顶'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                if (isPinned) {
-                  await ref
-                      .read(pinnedProjectPathsProvider.notifier)
-                      .unpin(project.path);
-                } else {
-                  await ref
-                      .read(pinnedProjectPathsProvider.notifier)
-                      .pin(project.path);
-                }
-              },
+            EcoActionSheetActions(
+              items: [
+                EcoActionSheetItem(
+                  icon: EcoIcons.pin,
+                  label: isPinned ? '取消置顶' : '置顶',
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    if (isPinned) {
+                      await ref
+                          .read(pinnedProjectPathsProvider.notifier)
+                          .unpin(project.path);
+                    } else {
+                      await ref
+                          .read(pinnedProjectPathsProvider.notifier)
+                          .pin(project.path);
+                    }
+                  },
+                ),
+                EcoActionSheetItem(
+                  icon: EcoIcons.delete,
+                  label: '移除项目',
+                  destructive: true,
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await ref
+                        .read(hiddenProjectPathsProvider.notifier)
+                        .removeProject(project);
+                  },
+                ),
+              ],
             ),
-            ListTile(
-              leading: Icon(
-                EcoIcons.delete,
-                size: 20,
-                color: ecoColors(context).statusDenyText,
-              ),
-              title: Text(
-                '移除项目',
-                style: TextStyle(color: ecoColors(context).statusDenyText),
-              ),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                await ref
-                    .read(hiddenProjectPathsProvider.notifier)
-                    .removeProject(project);
-              },
-            ),
-            const SizedBox(height: 8),
           ],
         ),
       );
@@ -109,6 +84,7 @@ Future<void> showOpenProjectSheet({
   await showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    backgroundColor: ecoColors(context).bgMain,
     builder: (sheetContext) {
       final rpc = ref.read(desktopRpcProvider);
       return _OpenProjectSheet(
@@ -212,105 +188,197 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Padding(
-      padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('打开项目', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: eco.bgInput,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              _listing?.path ?? '正在读取 Desktop 文件夹…',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: eco.textSecondary),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 320,
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: eco.statusDenyText),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _loadInitialDirectory,
-                            icon: const Icon(EcoIcons.refresh, size: 18),
-                            label: const Text('重试'),
-                          ),
-                        ],
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(0, 0, 0, 16 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const EcoSheetGrabber(),
+            const EcoSheetHeader(title: '打开项目'),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: ecoGroupedHorizontalInset,
+              ),
+              child: EcoGroupedSurface(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Text(
+                  _listing?.path ?? '正在读取 Desktop 文件夹…',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: eco.textSecondary,
+                        letterSpacing: -0.15,
                       ),
-                    ),
-                  )
-                : ListView(
-                    children: [
-                      if (_listing?.parentPath != null)
-                        ListTile(
-                          leading: const Icon(EcoIcons.back, size: 20),
-                          title: const Text('上一级'),
-                          onTap: _opening
-                              ? null
-                              : () => _loadDirectory(_listing!.parentPath!),
-                        ),
-                      for (final directory in _listing?.directories ?? const [])
-                        ListTile(
-                          leading: const Icon(EcoIcons.folder, size: 20),
-                          title: Text(
-                            directory.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 320,
+              child: _loading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: eco.accent,
+                      ),
+                    )
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: eco.danger),
+                                ),
+                                const SizedBox(height: 16),
+                                TextButton(
+                                  onPressed: _loadInitialDirectory,
+                                  child: const Text('重试'),
+                                ),
+                              ],
+                            ),
                           ),
-                          trailing: const Icon(EcoIcons.chevronRight, size: 18),
-                          onTap: _opening
-                              ? null
-                              : () => _loadDirectory(directory.path),
+                        )
+                      : EcoGroupedSurface(
+                          child: _OpenProjectDirectoryList(
+                            listing: _listing!,
+                            opening: _opening,
+                            onOpenParent: (path) => _loadDirectory(path),
+                            onOpenDirectory: (path) => _loadDirectory(path),
+                          ),
                         ),
-                      if (_listing?.directories.isEmpty ?? false)
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(child: Text('此文件夹没有子文件夹')),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: ecoGroupedHorizontalInset,
+              ),
+              child: FilledButton(
+                onPressed: _listing == null || _loading || _opening
+                    ? null
+                    : _openCurrentDirectory,
+                child: _opening
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: eco.onAccent,
                         ),
-                    ],
-                  ),
+                      )
+                    : const Text('打开当前文件夹'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OpenProjectDirectoryList extends StatelessWidget {
+  const _OpenProjectDirectoryList({
+    required this.listing,
+    required this.opening,
+    required this.onOpenParent,
+    required this.onOpenDirectory,
+  });
+
+  final WorkspaceDirectoryListing listing;
+  final bool opening;
+  final ValueChanged<String> onOpenParent;
+  final ValueChanged<String> onOpenDirectory;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final directories = listing.directories;
+    final hasParent = listing.parentPath != null;
+
+    if (directories.isEmpty && !hasParent) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Text(
+            '此文件夹没有子文件夹',
+            style: TextStyle(color: eco.textMuted),
           ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _listing == null || _loading || _opening
+        ),
+      );
+    }
+
+    return ListView(
+      children: [
+        if (hasParent)
+          EcoGroupedTile(
+            onTap: opening ? null : () => onOpenParent(listing.parentPath!),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            child: Row(
+              children: [
+                Icon(EcoIcons.back, size: 20, color: eco.accent),
+                const SizedBox(width: 14),
+                Text(
+                  '上一级',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 17,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        for (var i = 0; i < directories.length; i++) ...[
+          if (i > 0 || hasParent) const EcoGroupedDivider(indent: 50),
+          EcoGroupedTile(
+            onTap: opening
                 ? null
-                : _openCurrentDirectory,
-            child: _opening
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('打开当前文件夹'),
+                : () => onOpenDirectory(directories[i].path),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            child: Row(
+              children: [
+                Icon(EcoIcons.folder, size: 20, color: eco.accent),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    directories[i].name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: 17,
+                        ),
+                  ),
+                ),
+                Icon(
+                  EcoIcons.chevronRight,
+                  size: 18,
+                  color: eco.textMuted.withValues(alpha: 0.45),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
+        if (directories.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: Text(
+                '此文件夹没有子文件夹',
+                style: TextStyle(color: eco.textMuted),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

@@ -13,9 +13,11 @@ import '../../core/utils/agent_mission.dart';
 import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/subagent_session_timing.dart';
+import '../../core/widgets/activity_feed_block.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
 import '../../core/widgets/shimmer_text.dart';
+import '../../core/theme/subagent_theme.dart';
 import 'activity_feed_scroll_coordinator.dart';
 import 'projection_activity_feed.dart';
 import 'thread_session_layout.dart';
@@ -745,45 +747,36 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Stack(
-                      children: [
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 150),
-                          curve: Curves.easeOut,
-                          alignment: Alignment.topRight,
-                          child: Text(
-                            widget.text,
-                            maxLines: showCollapsed ? _collapsedMaxLines : null,
-                            overflow: showCollapsed
-                                ? TextOverflow.ellipsis
-                                : null,
-                            style: textStyle,
-                          ),
-                        ),
-                        if (showCollapsed)
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            height: 40,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: const BorderRadius.vertical(
-                                  bottom: Radius.circular(8),
-                                ),
-                                gradient: LinearGradient(
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.topRight,
+                      child: showCollapsed
+                          ? ShaderMask(
+                              blendMode: BlendMode.dstIn,
+                              shaderCallback: (bounds) {
+                                return const LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    eco.userBubble.withValues(alpha: 0),
-                                    eco.userBubble,
+                                    Color(0xFF000000),
+                                    Color(0xFF000000),
+                                    Color(0x00000000),
                                   ],
-                                  stops: const [0, 0.72],
-                                ),
+                                  stops: [0, 0.45, 1],
+                                ).createShader(bounds);
+                              },
+                              child: Text(
+                                widget.text,
+                                maxLines: _collapsedMaxLines,
+                                overflow: TextOverflow.clip,
+                                style: textStyle,
                               ),
+                            )
+                          : Text(
+                              widget.text,
+                              style: textStyle,
                             ),
-                          ),
-                      ],
                     ),
                     if (canExpand)
                       Align(
@@ -987,114 +980,52 @@ class _ThinkingTileState extends State<_ThinkingTile> {
       );
     }
 
+    final eco = ecoColors(context);
     final preview = _hasBody ? thinkingPreviewLine(widget.text) : '';
     final showPreview = _hasBody && _collapsed && !widget.streaming;
-    final collapsedHeader = _hasBody && _collapsed && !widget.streaming;
-    final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
-      color: ecoColors(context).textMuted,
-      fontWeight: FontWeight.w500,
-      letterSpacing: 0.2,
-    );
+    final canToggle = _hasBody && !widget.streaming;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        2,
-        collapsedHeader ? 3 : 6,
-        2,
-        collapsedHeader ? 2 : 6,
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: ecoColors(context).cardSurface.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: ecoColors(context).borderSubtle.withValues(alpha: 0.8),
+    return ActivityFeedBlock(
+      onTap: canToggle
+          ? () {
+              setState(() {
+                _collapsed = !_collapsed;
+                _collapseSuppressed = true;
+              });
+            }
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ActivityFeedBlockHeader(
+            icon: EcoIcons.sparkles,
+            title: '思考',
+            preview: showPreview ? preview : null,
+            iconColor: widget.streaming ? eco.accent : eco.textMuted,
+            dense: showPreview,
+            expanded: canToggle ? _expanded : null,
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: widget.streaming && !_hasBody
-                    ? null
-                    : () {
-                        if (widget.streaming || !_hasBody) return;
-                        setState(() {
-                          _collapsed = !_collapsed;
-                          _collapseSuppressed = true;
-                        });
-                      },
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: collapsedHeader ? 8 : 10,
-                  ),
-                  child: Row(
-                    children: [
-                      if (widget.streaming && !_hasBody)
-                        ShimmerText(
-                          text: '正在思考',
-                          style: labelStyle,
-                          baseColor: ecoColors(context).textMuted,
-                          highlightColor: ecoColors(context).textSecondary,
-                        )
-                      else
-                        Text('思考', style: labelStyle),
-                      if (showPreview) ...[
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            preview,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: ecoColors(
-                                    context,
-                                  ).textMuted.withValues(alpha: 0.85),
-                                  height: 1.3,
-                                ),
+          if (_hasBody && _expanded) ...[
+            const ActivityFeedBlockDivider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: widget.streaming
+                  ? Text(
+                      widget.text,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textMuted.withValues(alpha: 0.9),
+                            height: 1.45,
                           ),
-                        ),
-                      ],
-                      if (_hasBody && !widget.streaming) ...[
-                        const Spacer(),
-                        Icon(
-                          _expanded ? EcoIcons.expandUp : EcoIcons.expandDown,
-                          size: 18,
-                          color: ecoColors(context).textMuted,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
+                    )
+                  : EcoMarkdown(
+                      text: widget.text,
+                      compact: true,
+                      muted: true,
+                      selectable: false,
+                    ),
             ),
-            if (_hasBody && _expanded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: widget.streaming
-                    ? Text(
-                        widget.text,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: ecoColors(
-                            context,
-                          ).textMuted.withValues(alpha: 0.85),
-                          height: 1.45,
-                        ),
-                      )
-                    : EcoMarkdown(
-                        text: widget.text,
-                        compact: true,
-                        muted: true,
-                        selectable: false,
-                      ),
-              ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1485,20 +1416,16 @@ class _BashRunCardState extends State<_BashRunCard> {
   @override
   Widget build(BuildContext context) {
     final display = widget.display;
-    final lifecycle = widget.lifecycle;
-    final running = lifecycle == ToolActionLifecycle.running;
-    final failed = lifecycle == ToolActionLifecycle.failed;
-    final borderColor = failed
-        ? ecoColors(context).danger.withValues(alpha: 0.45)
-        : running
-        ? ecoColors(context).accent.withValues(alpha: 0.45)
-        : ecoColors(context).borderSubtle;
+    // Bash cards only surface failure — not a live "running" state (unlike
+    // subagent missions). Lifecycle often stays `running` in projection data.
+    final failed = widget.lifecycle == ToolActionLifecycle.failed;
+    final eco = ecoColors(context);
     final body = display.body?.trim() ?? '';
     final bodyStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: ecoColors(context).textSecondary,
-      fontFamily: 'Menlo',
-      height: 1.45,
-    );
+          color: eco.textSecondary,
+          fontFamily: 'Menlo',
+          height: 1.45,
+        );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1513,70 +1440,33 @@ class _BashRunCardState extends State<_BashRunCard> {
               textDirection: Directionality.of(context),
             );
 
-        return EcoSurfaceCard(
+        return ActivityFeedBlock(
           onTap: canExpand
               ? () => setState(() => _bodyExpanded = !_bodyExpanded)
               : null,
-          borderRadius: BorderRadius.circular(10),
-          borderColor: borderColor,
-          backgroundColor: ecoColors(context).cardSurface,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                child: Row(
-                  children: [
-                    Icon(
-                      EcoIcons.terminal,
-                      size: 16,
-                      color: running
-                          ? ecoColors(context).accentText
-                          : ecoColors(context).textMuted,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        display.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: ecoColors(context).textHeading,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ),
-                    if (display.meta != null && display.meta!.isNotEmpty)
-                      Text(
-                        display.meta!,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: ecoColors(context).textMuted,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    if (canExpand) ...[
-                      const SizedBox(width: 4),
-                      AnimatedRotation(
-                        turns: _bodyExpanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 150),
-                        child: Icon(
-                          EcoIcons.expandDown,
-                          size: 16,
-                          color: ecoColors(context).textMuted,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+              ActivityFeedBlockHeader(
+                icon: EcoIcons.terminal,
+                title: display.title,
+                meta: display.meta,
+                iconColor: failed ? eco.danger : eco.textMuted,
+                titleColor: failed ? eco.danger : null,
+                expanded: canExpand ? _bodyExpanded : null,
+                trailing: failed
+                    ? const ActivityFeedStatusChip(
+                        label: '失败',
+                        danger: true,
+                      )
+                    : null,
               ),
               if (body.isNotEmpty) ...[
-                Divider(height: 1, color: ecoColors(context).borderSubtle),
+                const ActivityFeedBlockDivider(),
                 EcoClippedFadeBody(
                   expanded: _bodyExpanded || !canExpand,
                   collapsedMaxHeight: 60,
                   showFade: canExpand && !_bodyExpanded,
-                  fadeColor: ecoColors(context).cardSurface,
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
                       12,
@@ -1641,91 +1531,55 @@ class _FileChangeCardState extends State<_FileChangeCard> {
   Widget build(BuildContext context) {
     final display = widget.display;
     final lifecycle = widget.lifecycle;
+    final eco = ecoColors(context);
     final running = lifecycle == ToolActionLifecycle.running;
     final failed = lifecycle == ToolActionLifecycle.failed;
-    final borderColor = failed
-        ? ecoColors(context).danger.withValues(alpha: 0.45)
-        : running
-        ? ecoColors(context).accent.withValues(alpha: 0.45)
-        : ecoColors(context).borderSubtle;
     final previewLines = _expanded
         ? display.previewLines
         : display.previewLines.take(_collapsedLineLimit).toList();
     final hasMore = display.previewLines.length > _collapsedLineLimit;
 
     final lineStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      fontFamily: 'Menlo',
-      height: 1.45,
-      color: ecoColors(context).textSecondary,
-    );
-    final diffPalette = FileChangeDiffPalette.of(ecoColors(context));
+          fontFamily: 'Menlo',
+          height: 1.45,
+          color: eco.textSecondary,
+        );
+    final diffPalette = FileChangeDiffPalette.of(eco);
 
-    return EcoSurfaceCard(
+    String? diffMeta;
+    if (display.additions > 0 || display.deletions > 0) {
+      final parts = <String>[];
+      if (display.additions > 0) parts.add('+${display.additions}');
+      if (display.deletions > 0) parts.add('-${display.deletions}');
+      diffMeta = parts.join(' ');
+    }
+
+    return ActivityFeedBlock(
       onTap: () => setState(() => _expanded = !_expanded),
-      borderRadius: BorderRadius.circular(12),
-      borderColor: borderColor,
-      backgroundColor: ecoColors(context).cardSurface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Row(
-              children: [
-                Icon(
-                  EcoIcons.file,
-                  size: 16,
-                  color: ecoColors(context).accentText,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    display.fileName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: ecoColors(context).textHeading,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (display.additions > 0)
-                      Text(
-                        '+${display.additions}',
-                        style: TextStyle(
-                          color: diffPalette.addStat,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    if (display.additions > 0 && display.deletions > 0)
-                      const SizedBox(width: 8),
-                    if (display.deletions > 0)
-                      Text(
-                        '-${display.deletions}',
-                        style: TextStyle(
-                          color: diffPalette.removeStat,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+          ActivityFeedBlockHeader(
+            icon: EcoIcons.file,
+            title: display.fileName,
+            meta: diffMeta,
+            iconColor: failed
+                ? eco.danger
+                : running
+                    ? eco.accent
+                    : eco.textMuted,
+            expanded: _expanded,
+            trailing: failed
+                ? const ActivityFeedStatusChip(label: '失败', danger: true)
+                : running
+                    ? const ActivityFeedStatusChip(label: '运行中', active: true)
+                    : null,
           ),
-          Divider(height: 1, color: ecoColors(context).borderSubtle),
+          const ActivityFeedBlockDivider(),
           EcoClippedFadeBody(
             expanded: _expanded,
             collapsedMaxHeight: 148,
             showFade: !_expanded && hasMore,
-            fadeColor: ecoColors(context).cardSurface,
             child: Padding(
               padding: EdgeInsets.only(top: 6, bottom: _expanded ? 10 : 6),
               child: Column(
@@ -1999,11 +1853,12 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
 
   @override
   Widget build(BuildContext context) {
+    final eco = ecoColors(context);
     final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
     final fullText = _resolvedMissionText();
     final previewText = thinkingPreviewLine(fullText);
     final hasTimeline = widget.timeline.isNotEmpty || _latchedHasTimeline;
-    final borderColor = subagentMissionBorderColor(
+    final roleColor = resolveSubagentThemeColor(
       role,
       profile: widget.agentProfile,
     );
@@ -2015,193 +1870,109 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
       running: widget.running,
     );
 
-    final resolvedBorderColor = Color.alphaBlend(
-      borderColor.withValues(alpha: widget.running ? 0.55 : 0.45),
-      ecoColors(context).borderSubtle,
-    );
-    final resolvedBackground = widget.running
-        ? Color.alphaBlend(
-            borderColor.withValues(alpha: 0.08),
-            ecoColors(context).cardSurface,
-          )
-        : Colors.transparent;
-
     final onTap =
         widget.onOpenDetail ?? () => setState(() => _expanded = !_expanded);
     final expanded = widget.onOpenDetail == null && _expanded;
+    final title = resolveSubagentRunDisplayTitle(role);
+    final titleWithId = widget.agentId == null
+        ? title
+        : '$title · #${shortSubagentAgentId(widget.agentId!)}';
 
     return Semantics(
       button: true,
       expanded: expanded,
-      label: '${resolveSubagentRunDisplayTitle(role)} 子代理任务',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: EcoSurfaceCard(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          borderColor: resolvedBorderColor,
-          backgroundColor: resolvedBackground,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text(
-                            resolveSubagentRunDisplayTitle(role),
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: ecoColors(context).accentText,
-                                  fontWeight: FontWeight.w600,
-                                ),
+      label: '$title 子代理任务',
+      child: ActivityFeedBlock(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ActivityFeedBlockHeader(
+              leading: ActivityFeedRoleDot(color: roleColor),
+              title: titleWithId,
+              meta: durationLabel.isEmpty ? null : durationLabel,
+              expanded: widget.onOpenDetail == null ? expanded : false,
+            ),
+            const ActivityFeedBlockDivider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (showStatus) ...[
+                    Text(
+                      statusText,
+                      maxLines: expanded ? null : 1,
+                      overflow: expanded ? null : TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textSecondary,
+                            height: 1.35,
                           ),
-                          if (widget.agentId != null) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              '#${shortSubagentAgentId(widget.agentId!)}',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: ecoColors(context).textMuted,
-                                    fontSize: 10,
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
                     ),
-                    if (durationLabel.isNotEmpty) ...[
-                      Text(
-                        durationLabel,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: widget.running
-                              ? ecoColors(context).accentText
-                              : ecoColors(context).textMuted,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+                    const SizedBox(height: 8),
+                  ],
+                  Text(
+                    '任务目标',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: eco.textMuted,
+                          fontSize: 11,
+                          letterSpacing: 0.2,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: widget.running
-                            ? ecoColors(context).accentSoft
-                            : ecoColors(context).cardSurface,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: widget.running
-                              ? ecoColors(
-                                  context,
-                                ).accent.withValues(alpha: 0.45)
-                              : ecoColors(context).borderSubtle,
-                        ),
-                      ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (fullText.isEmpty)
+                    Text(
+                      '等待任务说明…',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textMuted,
+                            fontStyle: FontStyle.italic,
+                            height: 1.4,
+                          ),
+                    )
+                  else if (expanded)
+                    Text(
+                      fullText,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textSecondary,
+                            height: 1.45,
+                          ),
+                    )
+                  else
+                    EcoClippedFadeBody(
+                      expanded: false,
+                      collapsedMaxHeight: 48,
+                      showFade: fullText.length > 80,
                       child: Text(
-                        widget.running ? '运行中' : '已完成',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: widget.running
-                              ? ecoColors(context).accentText
-                              : ecoColors(context).textMuted,
-                          fontSize: 10,
-                        ),
+                        previewText,
+                        maxLines: 2,
+                        overflow: TextOverflow.clip,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: eco.textSecondary,
+                              height: 1.45,
+                            ),
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    AnimatedRotation(
-                      turns: expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 150),
-                      child: Icon(
-                        EcoIcons.expandDown,
-                        size: 18,
-                        color: ecoColors(context).textMuted,
-                      ),
+                  if (expanded && hasTimeline) ...[
+                    const SizedBox(height: 10),
+                    const ActivityFeedBlockDivider(),
+                    const SizedBox(height: 8),
+                    ...widget.timeline.map(
+                      (item) => _SubagentTimelineRow(entry: item),
+                    ),
+                  ] else if (expanded && widget.running) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '等待执行事件…',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textMuted,
+                            fontStyle: FontStyle.italic,
+                          ),
                     ),
                   ],
-                ),
-                if (showStatus) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    statusText,
-                    maxLines: expanded ? null : 1,
-                    overflow: expanded ? null : TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textSecondary,
-                      height: 1.35,
-                    ),
-                  ),
                 ],
-                const SizedBox(height: 6),
-                Text(
-                  '任务目标',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: ecoColors(context).textMuted,
-                    fontSize: 11,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (fullText.isEmpty)
-                  Text(
-                    '等待任务说明…',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textMuted,
-                      fontStyle: FontStyle.italic,
-                      height: 1.4,
-                    ),
-                  )
-                else if (expanded)
-                  Text(
-                    fullText,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textSecondary,
-                      height: 1.45,
-                    ),
-                  )
-                else
-                  EcoClippedFadeBody(
-                    expanded: false,
-                    collapsedMaxHeight: 48,
-                    showFade: fullText.length > 80,
-                    fadeColor: resolvedBackground == Colors.transparent
-                        ? ecoColors(context).cardSurface
-                        : resolvedBackground,
-                    child: Text(
-                      previewText,
-                      maxLines: 2,
-                      overflow: TextOverflow.clip,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: ecoColors(context).textSecondary,
-                        height: 1.45,
-                      ),
-                    ),
-                  ),
-                if (expanded && hasTimeline) ...[
-                  const SizedBox(height: 10),
-                  Divider(height: 1, color: ecoColors(context).borderSubtle),
-                  const SizedBox(height: 8),
-                  ...widget.timeline.map(
-                    (item) => _SubagentTimelineRow(entry: item),
-                  ),
-                ] else if (expanded && widget.running) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    '等待执行事件…',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textMuted,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

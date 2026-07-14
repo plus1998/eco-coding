@@ -11,27 +11,9 @@ import '../../core/theme/app_theme_preference.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/adaptive_nav_bar.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/shell_toolbar_actions.dart';
 import '../threads/thread_providers.dart';
-
-const settingsFontScale = 1.2;
-
-TextStyle? _scaledSettingsTextStyle(TextStyle? style) {
-  if (style == null) return null;
-  final fontSize = style.fontSize;
-  if (fontSize == null) return style;
-  return style.copyWith(fontSize: fontSize * settingsFontScale);
-}
-
-ThemeData _settingsTheme(BuildContext context) {
-  final base = Theme.of(context);
-  return base.copyWith(
-    textTheme: base.textTheme.apply(fontSizeFactor: settingsFontScale),
-    appBarTheme: base.appBarTheme.copyWith(
-      titleTextStyle: _scaledSettingsTextStyle(base.appBarTheme.titleTextStyle),
-    ),
-  );
-}
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -86,10 +68,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final credentials = ref.watch(credentialsProvider);
 
-    return Theme(
-      data: _settingsTheme(context),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
+    return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('设置'),
         actions: const [
@@ -103,13 +83,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 final signedIn =
                     creds.hasUserSession || creds.isProvisioned;
                 return ListView(
-                  padding: EdgeInsets.fromLTRB(
-                    20,
-                    8,
-                    20,
-                    adaptiveNavOverlayInset(context),
+                  padding: EdgeInsets.only(
+                    bottom: adaptiveNavOverlayInset(context) + 24,
                   ),
                   children: [
+                    const SizedBox(height: 8),
                     _AccountHeader(
                       email: creds.userEmail ?? '未登录',
                       subtitle: creds.userDisplayName ??
@@ -117,9 +95,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           (signedIn ? null : '请先完成 PC 连接'),
                       signedIn: signedIn,
                     ),
-                    const SizedBox(height: 32),
-                    _SettingsSection(
+                    EcoGroupedSection(
                       label: '外观',
+                      topSpacing: 28,
                       child: _ThemePreferenceSelector(
                         selected: ref.watch(appThemePreferenceProvider),
                         onChanged: (preference) {
@@ -129,18 +107,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 32),
-                    _SettingsSection(
+                    EcoGroupedSection(
                       label: '默认模式',
                       caption: '新建会话时的 Composer 模式',
+                      topSpacing: 28,
                       child: Column(
                         children: [
-                          for (var i = 0; i < sessionModeUiOptions.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 4),
+                          for (var i = 0;
+                              i < sessionModeUiOptions.length;
+                              i++) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 52),
                             _SessionModeOption(
                               option: sessionModeUiOptions[i],
-                              selected:
-                                  _sessionMode == sessionModeUiOptions[i].value,
+                              selected: _sessionMode ==
+                                  sessionModeUiOptions[i].value,
                               onTap: () => _saveSessionMode(
                                 sessionModeUiOptions[i].value,
                               ),
@@ -149,10 +129,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ],
                       ),
                     ),
-                    if (signedIn) ...[
-                      const SizedBox(height: 32),
-                      _SettingsSection(
+                    if (signedIn)
+                      EcoGroupedSection(
                         label: '账户',
+                        topSpacing: 28,
                         child: Column(
                           children: [
                             _SettingsActionRow(
@@ -161,7 +141,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               subtitle: '选择或绑定其他 Desktop 设备',
                               onTap: () => context.push('/connect'),
                             ),
-                            _SettingsDivider(),
+                            const EcoGroupedDivider(indent: 52),
                             _SettingsActionRow(
                               icon: EcoIcons.logout,
                               title: '退出登录',
@@ -189,7 +169,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ],
                         ),
                       ),
-                    ],
                   ],
                 );
               },
@@ -198,7 +177,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               error: (error, _) => Center(child: Text(error.toString())),
             ),
-    ),
     );
   }
 }
@@ -228,110 +206,65 @@ class _AccountHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Row(
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: eco.composerPillBg,
-            border: Border.all(
-              color: eco.borderSubtle.withValues(alpha: 0.7),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: eco.composerPillBg,
             ),
-          ),
-          child: SizedBox(
-            width: 48,
-            height: 48,
-            child: Center(
-              child: Text(
-                _initials(),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: eco.textSecondary,
-                      letterSpacing: -0.2,
-                    ),
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: Center(
+                child: Text(
+                  _initials(),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: eco.textSecondary,
+                        letterSpacing: -0.3,
+                      ),
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                email,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.2,
-                    ),
-              ),
-              if (subtitle != null && subtitle!.isNotEmpty) ...[
-                const SizedBox(height: 3),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  subtitle!,
+                  email,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textMuted.withValues(alpha: 0.85),
-                      ),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-              ] else if (!signedIn) ...[
-                const SizedBox(height: 3),
-                Text(
-                  '请先完成 PC 连接',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textMuted.withValues(alpha: 0.85),
-                      ),
-                ),
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                        ),
+                  ),
+                ] else if (!signedIn) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '请先完成 PC 连接',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                        ),
+                  ),
+                ],
               ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SettingsSection extends StatelessWidget {
-  const _SettingsSection({
-    required this.label,
-    this.caption,
-    required this.child,
-  });
-
-  final String label;
-  final String? caption;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: eco.textMuted.withValues(alpha: 0.9),
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w500,
-              ),
-        ),
-        if (caption != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            caption!,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: eco.textMuted.withValues(alpha: 0.75),
-                  height: 1.4,
-                ),
+            ),
           ),
         ],
-        const SizedBox(height: 12),
-        child,
-      ],
+      ),
     );
   }
 }
@@ -347,25 +280,36 @@ class _ThemePreferenceSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (var i = 0; i < AppThemePreference.values.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
-          Expanded(
-            child: _ThemePill(
-              label: AppThemePreference.values[i].label,
-              selected: selected == AppThemePreference.values[i],
-              onTap: () => onChanged(AppThemePreference.values[i]),
-            ),
+    final eco = ecoColors(context);
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: eco.composerPillBg,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: Row(
+            children: [
+              for (final preference in AppThemePreference.values)
+                Expanded(
+                  child: _ThemeSegment(
+                    label: preference.label,
+                    selected: selected == preference,
+                    onTap: () => onChanged(preference),
+                  ),
+                ),
+            ],
           ),
-        ],
-      ],
+        ),
+      ),
     );
   }
 }
 
-class _ThemePill extends StatelessWidget {
-  const _ThemePill({
+class _ThemeSegment extends StatelessWidget {
+  const _ThemeSegment({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -378,35 +322,34 @@ class _ThemePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        splashColor: eco.navHover,
-        highlightColor: eco.navHover,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: selected ? eco.navActive : Colors.transparent,
-            border: Border.all(
-              color: selected
-                  ? eco.borderStrong.withValues(alpha: 0.8)
-                  : eco.borderSubtle.withValues(alpha: 0.65),
-            ),
-          ),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-                  color: selected ? eco.textPrimary : eco.textMuted,
-                  letterSpacing: -0.1,
-                ),
-          ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: selected ? eco.cardSurface : Colors.transparent,
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: eco.shadowScrim.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? eco.textPrimary : eco.textMuted,
+                letterSpacing: -0.1,
+              ),
         ),
       ),
     );
@@ -435,95 +378,50 @@ class _SessionModeOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        splashColor: eco.navHover,
-        highlightColor: eco.navHover,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: selected ? eco.navActive : Colors.transparent,
+    return EcoGroupedTile(
+      onTap: onTap,
+      highlighted: selected,
+      padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+      child: Row(
+        children: [
+          Icon(
+            _iconForMode(option.value),
+            size: 22,
+            color: selected ? eco.accent : eco.textMuted,
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(
-                _iconForMode(option.value),
-                size: 17,
-                color: selected
-                    ? eco.textSecondary
-                    : eco.textMuted.withValues(alpha: 0.75),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      option.title,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight:
-                                selected ? FontWeight.w500 : FontWeight.w400,
-                            letterSpacing: -0.1,
-                          ),
-                    ),
-                    const SizedBox(height: 2),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          option.description,
-                          maxLines: 1,
-                          softWrap: false,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(
-                                color:
-                                    eco.textMuted.withValues(alpha: 0.85),
-                                fontSize: 11,
-                                height: 1.2,
-                                letterSpacing: -0.1,
-                              ),
-                        ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  option.title,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400,
+                        fontSize: 17,
                       ),
-                    ),
-                  ],
                 ),
-              ),
-              if (selected) ...[
-                const SizedBox(width: 8),
-                Icon(
-                  EcoIcons.check,
-                  size: 16,
-                  color: eco.textSecondary,
+                const SizedBox(height: 2),
+                Text(
+                  option.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: eco.textMuted,
+                        fontSize: 13,
+                      ),
                 ),
               ],
-            ],
+            ),
           ),
-        ),
+          if (selected) ...[
+            const SizedBox(width: 8),
+            Icon(EcoIcons.check, size: 18, color: eco.accent),
+          ],
+        ],
       ),
-    );
-  }
-}
-
-class _SettingsDivider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      thickness: 1,
-      color: ecoColors(context).borderSubtle.withValues(alpha: 0.45),
     );
   }
 }
@@ -548,57 +446,47 @@ class _SettingsActionRow extends StatelessWidget {
     final eco = ecoColors(context);
     final color = destructive ? eco.danger : eco.textPrimary;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        splashColor: eco.navHover,
-        highlightColor: eco.navHover,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 18,
-                color: destructive
-                    ? eco.danger.withValues(alpha: 0.85)
-                    : eco.textMuted.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: color,
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: -0.1,
-                          ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: eco.textMuted.withValues(alpha: 0.85),
-                            ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(
-                EcoIcons.chevronRight,
-                size: 15,
-                color: eco.textMuted.withValues(alpha: 0.5),
-              ),
-            ],
+    return EcoGroupedTile(
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 22,
+            color: destructive ? eco.danger : eco.accent,
           ),
-        ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: color,
+                        fontSize: 17,
+                      ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!destructive)
+            Icon(
+              EcoIcons.chevronRight,
+              size: 18,
+              color: eco.textMuted.withValues(alpha: 0.45),
+            ),
+        ],
       ),
     );
   }

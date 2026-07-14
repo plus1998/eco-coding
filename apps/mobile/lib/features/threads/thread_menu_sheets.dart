@@ -6,6 +6,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../projects/project_providers.dart';
@@ -160,16 +161,7 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
       child: Column(
         children: [
           const SizedBox(height: 12),
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: eco.borderSubtle,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
+          const EcoSheetGrabber(),
           _SheetHeader(title: '任务进度'),
           Expanded(
             child: FutureBuilder<List<CoderTodoItem>>(
@@ -230,12 +222,11 @@ class _TodoRow extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: eco.bgElevated,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: eco.borderSubtle),
+        color: eco.cardSurface,
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -247,7 +238,11 @@ class _TodoRow extends StatelessWidget {
                 children: [
                   Text(
                     '#${todo.position + 1} $displayTitle',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          letterSpacing: -0.15,
+                        ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -350,27 +345,19 @@ class _WorkspaceDiffReviewSheetState
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     return SafeArea(
       child: Column(
         children: [
           const SizedBox(height: 12),
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: eco.borderSubtle,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
+          const EcoSheetGrabber(),
           Expanded(
             child: FutureBuilder<WorkspaceDiffResult>(
               future: _future,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  );
                 }
                 if (snapshot.hasError) {
                   return Center(child: Text(snapshot.error.toString()));
@@ -502,16 +489,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
       child: Column(
         children: [
           const SizedBox(height: 12),
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: eco.borderSubtle,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
+          const EcoSheetGrabber(),
           Expanded(
             child: FutureBuilder<PackageScriptsListResult>(
               future: _future,
@@ -566,18 +544,15 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                     padding: const EdgeInsets.only(bottom: 8),
                                     child: DecoratedBox(
                                       decoration: BoxDecoration(
-                                        color: eco.bgElevated,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: eco.borderSubtle,
-                                        ),
+                                        color: eco.cardSurface,
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.fromLTRB(
+                                          14,
                                           12,
-                                          10,
                                           8,
-                                          10,
+                                          12,
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
@@ -602,7 +577,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                     size: 18,
                                                     color: savedArgs.isNotEmpty ||
                                                             isEditingArgs
-                                                        ? eco.accentText
+                                                        ? eco.accent
                                                         : eco.textMuted,
                                                   ),
                                                   onPressed: isRunning
@@ -623,9 +598,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                 ),
                                                 IconButton(
                                                   tooltip: '运行',
-                                                  icon: const Icon(
+                                                  icon: Icon(
                                                     Icons.play_arrow_rounded,
                                                     size: 22,
+                                                    color: eco.accent,
                                                   ),
                                                   onPressed: isRunning
                                                       ? null
@@ -654,7 +630,6 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                       const InputDecoration(
                                                     isDense: true,
                                                     hintText: '附加参数',
-                                                    border: OutlineInputBorder(),
                                                   ),
                                                   enabled: !isRunning,
                                                   onSubmitted: (value) =>
@@ -706,109 +681,95 @@ Future<void> showThreadActionSheet({
 }) {
   final isPinned = ref.read(pinnedThreadIdsProvider.notifier).isPinned(thread.id);
 
-  return showEcoModalBottomSheet<void>(
+  return showEcoActionSheet<void>(
     context: context,
-    backgroundColor: ecoColors(context).bgMenu,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (sheetContext) {
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                thread.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-              ),
-            ),
-            ListTile(
-              leading: Icon(
-                EcoIcons.pin,
-                size: 20,
-                color: ecoColors(context).textSecondary,
-              ),
-              title: Text(isPinned ? '取消置顶' : '置顶'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                if (isPinned) {
-                  await ref
-                      .read(pinnedThreadIdsProvider.notifier)
-                      .unpin(thread.id);
-                } else {
-                  await ref.read(pinnedThreadIdsProvider.notifier).pin(thread.id);
-                }
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                EcoIcons.delete,
-                size: 20,
-                color: ecoColors(context).statusDenyText,
-              ),
-              title: Text(
-                '删除会话',
-                style: TextStyle(color: ecoColors(context).statusDenyText),
-              ),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) {
-                    return AlertDialog(
-                      title: const Text('删除会话'),
-                      content: Text('确定删除「${thread.title}」？此操作不可撤销。'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('取消'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: Text(
-                            '删除',
-                            style: TextStyle(
-                              color: ecoColors(context).statusDenyText,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
+            const EcoSheetGrabber(),
+            EcoSheetHeader(title: thread.title),
+            EcoActionSheetActions(
+              items: [
+                EcoActionSheetItem(
+                  icon: EcoIcons.pin,
+                  label: isPinned ? '取消置顶' : '置顶',
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    if (isPinned) {
+                      await ref
+                          .read(pinnedThreadIdsProvider.notifier)
+                          .unpin(thread.id);
+                    } else {
+                      await ref
+                          .read(pinnedThreadIdsProvider.notifier)
+                          .pin(thread.id);
+                    }
                   },
-                );
-                if (confirmed != true || !context.mounted) return;
+                ),
+                EcoActionSheetItem(
+                  icon: EcoIcons.delete,
+                  label: '删除会话',
+                  destructive: true,
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) {
+                        return AlertDialog(
+                          title: const Text('删除会话'),
+                          content: Text('确定删除「${thread.title}」？此操作不可撤销。'),
+                          actions: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, true),
+                              child: Text(
+                                '删除',
+                                style: TextStyle(
+                                  color: ecoColors(context).danger,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                    if (confirmed != true || !context.mounted) return;
 
-                final messenger = ScaffoldMessenger.of(context);
-                try {
-                  final rpc = ref.read(desktopRpcProvider);
-                  if (rpc == null) {
-                    throw StateError('未选择 PC');
-                  }
-                  await rpc.deleteThread(thread.id);
-                  await ref
-                      .read(pinnedThreadIdsProvider.notifier)
-                      .remove(thread.id);
-                  await ref.read(threadListProvider.notifier).refresh();
-                  if (context.mounted) {
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('会话已删除')),
-                    );
-                  }
-                } catch (error) {
-                  if (context.mounted) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text(error.toString())),
-                    );
-                  }
-                }
-              },
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      final rpc = ref.read(desktopRpcProvider);
+                      if (rpc == null) {
+                        throw StateError('未选择 PC');
+                      }
+                      await rpc.deleteThread(thread.id);
+                      await ref
+                          .read(pinnedThreadIdsProvider.notifier)
+                          .remove(thread.id);
+                      await ref.read(threadListProvider.notifier).refresh();
+                      if (context.mounted) {
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('会话已删除')),
+                        );
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(content: Text(error.toString())),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
           ],
         ),
       );

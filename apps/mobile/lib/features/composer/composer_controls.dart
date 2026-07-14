@@ -12,7 +12,8 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
-import '../../core/widgets/eco_modal_sheet.dart';
+import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
 import 'composer_context_ring.dart';
@@ -80,45 +81,65 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final runtimeConfig = watchedComposerRuntimeConfig(ref, fallbackConfig);
+    final roles = configuredOrchestrationSubagentRoles(profile);
+    if (roles.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Text(
+          '当前方案未配置子代理',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: ecoColors(context).textMuted,
+              ),
+        ),
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: configuredOrchestrationSubagentRoles(profile).map((role) {
-        final enabled = isRuntimeSubagentEnabled(
-          runtimeConfig.subagentEnabled,
-          role,
-        );
-        final toggleable = canEdit && isSubagentToggleable(profile, role);
-        final configured = isSubagentConfiguredInProfile(profile, role);
-        return SwitchListTile(
-          title: Text(_subagentRoleLabels[role] ?? role),
-          subtitle: Text(
-            !configured
-                ? 'Profile 未配置'
-                : enabled
-                ? '已启用'
-                : '已停用',
+      children: [
+        for (var i = 0; i < roles.length; i++) ...[
+          if (i > 0) const EcoGroupedDivider(indent: 16),
+          Builder(
+            builder: (context) {
+              final role = roles[i];
+              final enabled = isRuntimeSubagentEnabled(
+                runtimeConfig.subagentEnabled,
+                role,
+              );
+              final toggleable = canEdit && isSubagentToggleable(profile, role);
+              final configured = isSubagentConfiguredInProfile(profile, role);
+              return EcoSheetSwitchTile(
+                title: _subagentRoleLabels[role] ?? role,
+                subtitle: !configured
+                    ? 'Profile 未配置'
+                    : enabled
+                        ? '已启用'
+                        : '已停用',
+                value: enabled,
+                enabled: toggleable,
+                onChanged: !toggleable
+                    ? null
+                    : (value) {
+                        final next = Map<String, bool>.from(
+                          normalizedRuntimeSubagentEnabled(
+                            runtimeConfig.subagentEnabled,
+                          ),
+                        );
+                        next[role] = value;
+                        persistRuntimeConfig(
+                          ref,
+                          threadId: threadId,
+                          config:
+                              runtimeConfig.copyWith(subagentEnabled: next),
+                          onChanged: onChanged,
+                        );
+                      },
+              );
+            },
           ),
-          value: enabled,
-          onChanged: !toggleable
-              ? null
-              : (value) {
-                  final next = Map<String, bool>.from(
-                    normalizedRuntimeSubagentEnabled(
-                      runtimeConfig.subagentEnabled,
-                    ),
-                  );
-                  next[role] = value;
-                  persistRuntimeConfig(
-                    ref,
-                    threadId: threadId,
-                    config: runtimeConfig.copyWith(subagentEnabled: next),
-                    onChanged: onChanged,
-                  );
-                },
-        );
-      }).toList(),
+        ],
+      ],
     );
   }
 }
@@ -142,34 +163,32 @@ class ComposerRouteSheet extends ConsumerWidget {
     final runtimeConfig = watchedComposerRuntimeConfig(ref, fallbackConfig);
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
-    final mcpServers = ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
+    final mcpServers =
+        ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final profiles = modelSettings?.orchestrationProfiles ?? [];
     final selectedId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
     final profile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SheetHeader(title: '方案与编排'),
-            if (profiles.isNotEmpty)
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: profiles.length,
-                  itemBuilder: (context, index) {
-                    final entry = profiles[index];
-                    final isActive = entry.id == selectedId;
-                    return ListTile(
-                      title: Text(entry.name),
-                      trailing: isActive
-                          ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
-                          : null,
-                      selected: isActive,
+    return EcoSheetScaffold(
+      title: '方案与编排',
+      subtitle: '选择智能体方案，并按需启停子代理',
+      maxHeightFactor: 0.82,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          if (profiles.isNotEmpty)
+            EcoGroupedSection(
+              label: '方案',
+              topSpacing: 4,
+              child: Column(
+                children: [
+                  for (var i = 0; i < profiles.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 16),
+                    EcoSheetOptionTile(
+                      title: profiles[i].name,
+                      selected: profiles[i].id == selectedId,
                       enabled: canEdit,
                       onTap: !canEdit
                           ? null
@@ -178,7 +197,7 @@ class ComposerRouteSheet extends ConsumerWidget {
                                 ref,
                                 threadId: threadId,
                                 config: buildRuntimeConfigForProfile(
-                                  profile: entry,
+                                  profile: profiles[i],
                                   runtimeConfig: runtimeConfig,
                                   servers: mcpServers,
                                   remembered: workflow?.mcpServersEnabled,
@@ -187,20 +206,83 @@ class ComposerRouteSheet extends ConsumerWidget {
                               );
                               Navigator.pop(context);
                             },
-                    );
-                  },
-                ),
+                    ),
+                  ],
+                ],
               ),
-            const Divider(height: 1),
-            _ComposerSubagentSwitchList(
-              fallbackConfig: fallbackConfig,
-              threadId: threadId,
-              profile: profile,
-              canEdit: canEdit,
-              onChanged: onChanged,
             ),
-          ],
-        ),
+          EcoGroupedSection(
+            label: '子代理',
+            topSpacing: profiles.isEmpty ? 4 : 20,
+            footer: canEdit ? null : '当前会话不可编辑编排',
+            child: Column(
+              children: [
+                EcoGroupedTile(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '主 Agent',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
+                                    fontSize: 17,
+                                    letterSpacing: -0.2,
+                                  ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '始终启用',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: ecoColors(context).textMuted,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: ecoColors(context).statusAllowBg,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            '启用',
+                            style: TextStyle(
+                              color: ecoColors(context).statusAllowText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const EcoGroupedDivider(indent: 16),
+                _ComposerSubagentSwitchList(
+                  fallbackConfig: fallbackConfig,
+                  threadId: threadId,
+                  profile: profile,
+                  canEdit: canEdit,
+                  onChanged: onChanged,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -268,7 +350,10 @@ class ComposerContextTrigger extends StatelessWidget {
       decoration: BoxDecoration(
         color: ecoColors(context).composerPillBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ecoColors(context).composerPillBorder),
+        border: Border.all(
+          width: 0.5,
+          color: ecoColors(context).composerPillBorder,
+        ),
       ),
       child: child,
     );
@@ -392,47 +477,43 @@ class ComposerProfileControl extends ConsumerWidget {
     final selectedId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
 
-    await showEcoModalBottomSheet<void>(
+    await showEcoActionSheet<void>(
       context: context,
-      backgroundColor: ecoColors(context).bgMenu,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      isScrollControlled: true,
+      builder: (context) => EcoSheetScaffold(
+        title: '选择智能体配置',
+        maxHeightFactor: 0.7,
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 8),
           children: [
-            _SheetHeader(title: '选择智能体配置'),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: profiles.length,
-                itemBuilder: (context, index) {
-                  final profile = profiles[index];
-                  final isActive = profile.id == selectedId;
-                  return ListTile(
-                    title: Text(profile.name),
-                    trailing: isActive
-                        ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
-                        : null,
-                    selected: isActive,
-                    onTap: () {
-                      persistRuntimeConfig(
-                        ref,
-                        threadId: threadId,
-                        config: buildRuntimeConfigForProfile(
-                          profile: profile,
-                          runtimeConfig: runtimeConfig,
-                          servers: mcpServers?.servers ?? const [],
-                          remembered: workflow?.mcpServersEnabled,
-                        ),
-                        onChanged: onChanged,
-                      );
-                      Navigator.pop(context);
-                    },
-                  );
-                },
+            EcoGroupedSection(
+              label: '方案',
+              topSpacing: 4,
+              child: Column(
+                children: [
+                  for (var i = 0; i < profiles.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 16),
+                    EcoSheetOptionTile(
+                      title: profiles[i].name,
+                      selected: profiles[i].id == selectedId,
+                      onTap: () {
+                        persistRuntimeConfig(
+                          ref,
+                          threadId: threadId,
+                          config: buildRuntimeConfigForProfile(
+                            profile: profiles[i],
+                            runtimeConfig: runtimeConfig,
+                            servers: mcpServers?.servers ?? const [],
+                            remembered: workflow?.mcpServersEnabled,
+                          ),
+                          onChanged: onChanged,
+                        );
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -494,52 +575,88 @@ class ComposerOrchestrationControl extends ConsumerWidget {
     required OrchestrationProfile? profile,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
-    await showEcoModalBottomSheet<void>(
+    await showEcoActionSheet<void>(
       context: context,
-      backgroundColor: ecoColors(context).bgMenu,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _SheetHeader(title: '子代理编排'),
-              ListTile(
-                title: const Text('主 Agent'),
-                subtitle: const Text('始终启用'),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: ecoColors(context).statusAllowBg,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: ecoColors(context).statusAllowBorder),
-                  ),
-                  child: Text(
-                    '启用',
-                    style: TextStyle(
-                      color: ecoColors(context).statusAllowText,
-                      fontSize: 11,
+      builder: (context) => EcoSheetScaffold(
+        title: '子代理编排',
+        subtitle: '控制当前会话可调用的子代理',
+        maxHeightFactor: 0.7,
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 8),
+          children: [
+            EcoGroupedSection(
+              label: '代理',
+              topSpacing: 4,
+              child: Column(
+                children: [
+                  EcoGroupedTile(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '主 Agent',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      fontSize: 17,
+                                      letterSpacing: -0.2,
+                                    ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '始终启用',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: ecoColors(context).textMuted,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: ecoColors(context).statusAllowBg,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            child: Text(
+                              '启用',
+                              style: TextStyle(
+                                color: ecoColors(context).statusAllowText,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                  const EcoGroupedDivider(indent: 16),
+                  _ComposerSubagentSwitchList(
+                    fallbackConfig: runtimeConfig,
+                    threadId: threadId,
+                    profile: profile,
+                    canEdit: canEdit,
+                    onChanged: onChanged,
+                  ),
+                ],
               ),
-              _ComposerSubagentSwitchList(
-                fallbackConfig: runtimeConfig,
-                threadId: threadId,
-                profile: profile,
-                canEdit: canEdit,
-                onChanged: onChanged,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -590,42 +707,52 @@ Future<void> showComposerSessionModeSheet(
   required String threadId,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
 }) async {
-  await showEcoModalBottomSheet<void>(
+  await showEcoActionSheet<void>(
     context: context,
-    backgroundColor: ecoColors(context).bgMenu,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    builder: (context) => EcoSheetScaffold(
+      title: '工作模式',
+      subtitle: '选择当前会话的运行方式',
+      maxHeightFactor: 0.55,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
         children: [
-          const _SheetHeader(title: '想以何种方式工作？'),
-          ...sessionModeUiOptions.map((option) {
-            final isActive = option.value == runtimeConfig.sessionMode;
-            return ListTile(
-              leading: SessionModeIcon(
-                mode: option.value,
-                color: ecoColors(context).textSecondary,
-              ),
-              title: Text(option.title),
-              subtitle: Text(option.description),
-              trailing: isActive
-                  ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
-                  : null,
-              selected: isActive,
-              onTap: () {
-                persistRuntimeConfig(
-                  ref,
-                  threadId: threadId,
-                  config: runtimeConfig.copyWith(sessionMode: option.value),
-                  onChanged: onChanged,
-                );
-                Navigator.pop(context);
-              },
-            );
-          }),
+          EcoGroupedSection(
+            label: '模式',
+            topSpacing: 4,
+            child: Column(
+              children: [
+                for (var i = 0; i < sessionModeUiOptions.length; i++) ...[
+                  if (i > 0) const EcoGroupedDivider(indent: 52),
+                  EcoSheetOptionTile(
+                    leading: SessionModeIcon(
+                      mode: sessionModeUiOptions[i].value,
+                      size: 22,
+                      color: sessionModeUiOptions[i].value ==
+                              runtimeConfig.sessionMode
+                          ? ecoColors(context).accent
+                          : ecoColors(context).textMuted,
+                    ),
+                    title: sessionModeUiOptions[i].title,
+                    subtitle: sessionModeUiOptions[i].description,
+                    selected: sessionModeUiOptions[i].value ==
+                        runtimeConfig.sessionMode,
+                    onTap: () {
+                      persistRuntimeConfig(
+                        ref,
+                        threadId: threadId,
+                        config: runtimeConfig.copyWith(
+                          sessionMode: sessionModeUiOptions[i].value,
+                        ),
+                        onChanged: onChanged,
+                      );
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     ),
@@ -702,68 +829,71 @@ Future<void> showComposerMcpSheet(
   var currentConfig = runtimeConfig;
   var currentSettings = Map<String, bool>.from(enabledSettings);
 
-  await showEcoModalBottomSheet<void>(
+  await showEcoActionSheet<void>(
     context: context,
-    backgroundColor: ecoColors(context).bgMenu,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (sheetContext) => SafeArea(
-      child: StatefulBuilder(
-        builder: (context, setSheetState) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _SheetHeader(
-                  title: 'MCP 服务器 · '
-                      '${countEnabledMcpServers(currentSettings)}/${servers.length}',
-                ),
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: servers.length,
-                    itemBuilder: (context, index) {
-                      final server = servers[index];
-                      final serverKey = sanitizeMcpServerName(server.name);
-                      final enabled = currentSettings[serverKey] ?? false;
-                      return SwitchListTile(
-                        title: Text(server.name),
-                        subtitle: Text(server.transport),
-                        value: enabled,
-                        onChanged: (value) async {
-                          final nextSettings = Map<String, bool>.from(
-                            currentSettings,
-                          )..[serverKey] = value;
-                          final nextConfig = currentConfig.copyWith(
-                            mcpServersEnabled: nextSettings,
-                          );
-                          currentConfig = nextConfig;
-                          currentSettings = nextSettings;
-                          setSheetState(() {});
-                          persistRuntimeConfig(
-                            ref,
-                            threadId: threadId,
-                            config: nextConfig,
-                            onChanged: onChanged,
-                          );
-                          await persistComposerMcpWorkflowDefaults(
-                            ref,
-                            mcpServersEnabled: nextSettings,
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (context, setSheetState) {
+        final enabledCount = countEnabledMcpServers(currentSettings);
+        return EcoSheetScaffold(
+          title: 'MCP 工具',
+          subtitle: '已启用 $enabledCount / ${servers.length}',
+          maxHeightFactor: 0.72,
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.only(bottom: 8),
+            children: [
+              EcoGroupedSection(
+                label: '服务器',
+                topSpacing: 4,
+                footer: '关闭后当前会话不再调用该服务器工具',
+                child: Column(
+                  children: [
+                    for (var i = 0; i < servers.length; i++) ...[
+                      if (i > 0) const EcoGroupedDivider(indent: 16),
+                      Builder(
+                        builder: (context) {
+                          final server = servers[i];
+                          final serverKey =
+                              sanitizeMcpServerName(server.name);
+                          final enabled =
+                              currentSettings[serverKey] ?? false;
+                          return EcoSheetSwitchTile(
+                            title: server.name,
+                            subtitle: server.transport,
+                            value: enabled,
+                            onChanged: (value) async {
+                              final nextSettings =
+                                  Map<String, bool>.from(currentSettings)
+                                    ..[serverKey] = value;
+                              final nextConfig = currentConfig.copyWith(
+                                mcpServersEnabled: nextSettings,
+                              );
+                              currentConfig = nextConfig;
+                              currentSettings = nextSettings;
+                              setSheetState(() {});
+                              persistRuntimeConfig(
+                                ref,
+                                threadId: threadId,
+                                config: nextConfig,
+                                onChanged: onChanged,
+                              );
+                              await persistComposerMcpWorkflowDefaults(
+                                ref,
+                                mcpServersEnabled: nextSettings,
+                              );
+                            },
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+            ],
+          ),
+        );
+      },
     ),
   );
 }
@@ -858,13 +988,9 @@ class ComposerRouteSummary extends ConsumerWidget {
     required bool canEdit,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
-    await showEcoModalBottomSheet<void>(
+    await showEcoActionSheet<void>(
       context: context,
-      backgroundColor: ecoColors(context).bgMenu,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
       builder: (context) => ComposerRouteSheet(
         fallbackConfig: runtimeConfig,
         threadId: threadId,
@@ -873,6 +999,65 @@ class ComposerRouteSummary extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> showComposerBashReviewSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  required ThreadRuntimeConfigInput runtimeConfig,
+  required String threadId,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+}) {
+  return showEcoActionSheet<void>(
+    context: context,
+    builder: (context) => EcoSheetScaffold(
+      title: 'Bash 审批',
+      subtitle: '控制命令执行前的确认方式',
+      maxHeightFactor: 0.55,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          EcoGroupedSection(
+            label: '模式',
+            topSpacing: 4,
+            child: Column(
+              children: [
+                for (var i = 0; i < bashReviewUiOptions.length; i++) ...[
+                  if (i > 0) const EcoGroupedDivider(indent: 52),
+                  EcoSheetOptionTile(
+                    leading: ComposerBashReviewToolbarIcon(
+                      mode: bashReviewUiOptions[i].value,
+                      size: 22,
+                      color: bashReviewUiOptions[i].value ==
+                              runtimeConfig.bashReviewMode
+                          ? ecoColors(context).accent
+                          : ecoColors(context).textMuted,
+                    ),
+                    title: bashReviewUiOptions[i].title,
+                    subtitle: bashReviewUiOptions[i].description,
+                    selected: bashReviewUiOptions[i].value ==
+                        runtimeConfig.bashReviewMode,
+                    onTap: () {
+                      persistRuntimeConfig(
+                        ref,
+                        threadId: threadId,
+                        config: runtimeConfig.copyWith(
+                          bashReviewMode: bashReviewUiOptions[i].value,
+                        ),
+                        onChanged: onChanged,
+                      );
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class ComposerBashReviewIconButton extends ConsumerWidget {
@@ -893,7 +1078,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
     final accent = mode == 'auto';
 
     return ComposerToolbarIconButton(
-      onPressed: () => _showBashReviewSheet(
+      onPressed: () => showComposerBashReviewSheet(
         context,
         ref,
         runtimeConfig: runtimeConfig,
@@ -903,58 +1088,9 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
       tooltip: bashReviewUi(mode).title,
       icon: ComposerBashReviewToolbarIcon(
         mode: mode,
-        color: accent ? ecoColors(context).accent : ecoColors(context).textSecondary,
-      ),
-    );
-  }
-
-  Future<void> _showBashReviewSheet(
-    BuildContext context,
-    WidgetRef ref, {
-    required ThreadRuntimeConfigInput runtimeConfig,
-    required String threadId,
-    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-  }) async {
-    await showEcoModalBottomSheet<void>(
-      context: context,
-      backgroundColor: ecoColors(context).bgMenu,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SheetHeader(title: 'Bash 审批模式'),
-            ...bashReviewUiOptions.map((option) {
-              final isActive = option.value == runtimeConfig.bashReviewMode;
-              return ListTile(
-                leading: ComposerBashReviewToolbarIcon(
-                  mode: option.value,
-                  color: ecoColors(context).textSecondary,
-                ),
-                title: Text(option.title),
-                subtitle: Text(option.description),
-                trailing: isActive
-                    ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
-                    : null,
-                selected: isActive,
-                onTap: () {
-                  persistRuntimeConfig(
-                    ref,
-                    threadId: threadId,
-                    config: runtimeConfig.copyWith(
-                      bashReviewMode: option.value,
-                    ),
-                    onChanged: onChanged,
-                  );
-                  Navigator.pop(context);
-                },
-              );
-            }),
-          ],
-        ),
+        color: accent
+            ? ecoColors(context).accent
+            : ecoColors(context).textSecondary,
       ),
     );
   }
@@ -984,89 +1120,12 @@ class ComposerBashReviewControl extends ConsumerWidget {
     return ComposerToolbarTrigger(
       icon: icon,
       label: current.title,
-      onTap: () => _showBashReviewSheet(
+      onTap: () => showComposerBashReviewSheet(
         context,
         ref,
         runtimeConfig: runtimeConfig,
         threadId: threadId,
         onChanged: onChanged,
-      ),
-    );
-  }
-
-  Future<void> _showBashReviewSheet(
-    BuildContext context,
-    WidgetRef ref, {
-    required ThreadRuntimeConfigInput runtimeConfig,
-    required String threadId,
-    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-  }) async {
-    await showEcoModalBottomSheet<void>(
-      context: context,
-      backgroundColor: ecoColors(context).bgMenu,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SheetHeader(title: 'Bash 审批模式'),
-            ...bashReviewUiOptions.map((option) {
-              final isActive = option.value == runtimeConfig.bashReviewMode;
-              return ListTile(
-                title: Text(option.title),
-                subtitle: Text(option.description),
-                trailing: isActive
-                    ? Icon(EcoIcons.check, color: ecoColors(context).accentText)
-                    : null,
-                selected: isActive,
-                onTap: () {
-                  persistRuntimeConfig(
-                    ref,
-                    threadId: threadId,
-                    config: runtimeConfig.copyWith(
-                      bashReviewMode: option.value,
-                    ),
-                    onChanged: onChanged,
-                  );
-                  Navigator.pop(context);
-                },
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SheetHeader extends StatelessWidget {
-  const _SheetHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Column(
-        children: [
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: ecoColors(context).borderSubtle,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-          ),
-        ],
       ),
     );
   }
