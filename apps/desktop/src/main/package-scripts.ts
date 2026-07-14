@@ -83,6 +83,7 @@ export async function listPackageScripts(workspacePath: string): Promise<Package
     ...(packageName && { packageName }),
     packageManager,
     scripts,
+    scriptArgs: {},
   };
 }
 

@@ -1,13 +1,13 @@
-const STORAGE_KEY = "eco.package-script-args";
+const LEGACY_STORAGE_KEY = "eco.package-script-args";
 
 export type PackageScriptArgsByWorkspace = Record<string, Record<string, string>>;
 
-function readStore(): PackageScriptArgsByWorkspace {
+function readLegacyStore(): PackageScriptArgsByWorkspace {
   if (typeof window === "undefined") {
     return {};
   }
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) {
       return {};
     }
@@ -23,7 +23,7 @@ function readStore(): PackageScriptArgsByWorkspace {
       const scriptArgs: Record<string, string> = {};
       for (const [scriptName, args] of Object.entries(scripts as Record<string, unknown>)) {
         if (typeof args === "string" && args.trim()) {
-          scriptArgs[scriptName] = args;
+          scriptArgs[scriptName] = args.trim();
         }
       }
       if (Object.keys(scriptArgs).length > 0) {
@@ -36,52 +36,66 @@ function readStore(): PackageScriptArgsByWorkspace {
   }
 }
 
-function writeStore(store: PackageScriptArgsByWorkspace): void {
+function clearLegacyWorkspaceArgs(workspacePath: string): void {
   if (typeof window === "undefined") {
     return;
   }
-  const normalized: PackageScriptArgsByWorkspace = {};
-  for (const [workspacePath, scripts] of Object.entries(store)) {
-    const scriptArgs: Record<string, string> = {};
-    for (const [scriptName, args] of Object.entries(scripts)) {
-      const trimmed = args.trim();
-      if (trimmed) {
-        scriptArgs[scriptName] = trimmed;
-      }
-    }
-    if (Object.keys(scriptArgs).length > 0) {
-      normalized[workspacePath] = scriptArgs;
-    }
-  }
-  if (Object.keys(normalized).length === 0) {
-    window.localStorage.removeItem(STORAGE_KEY);
+  const store = readLegacyStore();
+  if (!(workspacePath in store)) {
     return;
   }
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-}
-
-export function readWorkspaceScriptArgs(workspacePath: string): Record<string, string> {
-  return { ...readStore()[workspacePath] };
-}
-
-export function readScriptArgs(workspacePath: string, scriptName: string): string {
-  return readStore()[workspacePath]?.[scriptName] ?? "";
-}
-
-export function saveScriptArgs(workspacePath: string, scriptName: string, args: string): Record<string, string> {
-  const store = readStore();
-  const workspaceArgs = { ...store[workspacePath] };
-  const trimmed = args.trim();
-  if (trimmed) {
-    workspaceArgs[scriptName] = trimmed;
-  } else {
-    delete workspaceArgs[scriptName];
+  delete store[workspacePath];
+  if (Object.keys(store).length === 0) {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return;
   }
-  if (Object.keys(workspaceArgs).length > 0) {
-    store[workspacePath] = workspaceArgs;
-  } else {
-    delete store[workspacePath];
+  window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(store));
+}
+
+async function migrateLegacyWorkspaceArgs(workspacePath: string): Promise<Record<string, string>> {
+  const legacy = readLegacyStore()[workspacePath];
+  if (!legacy || Object.keys(legacy).length === 0 || !window.eco?.savePackageScriptArgs) {
+    return {};
   }
-  writeStore(store);
-  return workspaceArgs;
+  let merged: Record<string, string> = {};
+  for (const [scriptName, args] of Object.entries(legacy)) {
+    const result = await window.eco.savePackageScriptArgs({
+      workspacePath,
+      script: scriptName,
+      args,
+    });
+    merged = result.scriptArgs;
+  }
+  clearLegacyWorkspaceArgs(workspacePath);
+  return merged;
+}
+
+export async function readWorkspaceScriptArgs(workspacePath: string): Promise<Record<string, string>> {
+  if (!window.eco?.listPackageScripts) {
+    return { ...(readLegacyStore()[workspacePath] ?? {}) };
+  }
+  const listing = await window.eco.listPackageScripts(workspacePath);
+  const fromMain = listing.scriptArgs ?? {};
+  if (Object.keys(fromMain).length > 0) {
+    clearLegacyWorkspaceArgs(workspacePath);
+    return { ...fromMain };
+  }
+  return migrateLegacyWorkspaceArgs(workspacePath);
+}
+
+export async function saveScriptArgs(
+  workspacePath: string,
+  scriptName: string,
+  args: string,
+): Promise<Record<string, string>> {
+  if (!window.eco?.savePackageScriptArgs) {
+    throw new Error("Desktop API unavailable.");
+  }
+  const result = await window.eco.savePackageScriptArgs({
+    workspacePath,
+    script: scriptName,
+    args,
+  });
+  clearLegacyWorkspaceArgs(workspacePath);
+  return { ...result.scriptArgs };
 }

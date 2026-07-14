@@ -77,9 +77,17 @@ export function PackageScriptsDialog({
       setCopiedScript(null);
       return;
     }
-    setScriptArgsByName(readWorkspaceScriptArgs(workspacePath));
+    let cancelled = false;
+    void readWorkspaceScriptArgs(workspacePath).then((args) => {
+      if (!cancelled) {
+        setScriptArgsByName(args);
+      }
+    });
     const focusTimer = window.setTimeout(() => searchRef.current?.focus(), 40);
-    return () => window.clearTimeout(focusTimer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(focusTimer);
+    };
   }, [open, workspacePath]);
 
   useEffect(() => {
@@ -111,8 +119,8 @@ export function PackageScriptsDialog({
   }, [editingScript, onClose, open]);
 
   const commitScriptArgs = useCallback(
-    (scriptName: string, nextArgs: string) => {
-      const saved = saveScriptArgs(workspacePath, scriptName, nextArgs);
+    async (scriptName: string, nextArgs: string) => {
+      const saved = await saveScriptArgs(workspacePath, scriptName, nextArgs);
       setScriptArgsByName(saved);
       setEditingScript(null);
       setDraftArgs("");
@@ -273,7 +281,7 @@ export function PackageScriptsDialog({
                             disabled={busy}
                             onClick={() => {
                               if (isEditingArgs) {
-                                commitScriptArgs(entry.name, draftArgs);
+                                void commitScriptArgs(entry.name, draftArgs);
                                 return;
                               }
                               openArgsEditor(entry.name);
@@ -320,11 +328,11 @@ export function PackageScriptsDialog({
                             aria-label={`${entry.name} 附加参数`}
                             disabled={busy}
                             onChange={(event) => setDraftArgs(event.target.value)}
-                            onBlur={() => commitScriptArgs(entry.name, draftArgs)}
+                            onBlur={() => void commitScriptArgs(entry.name, draftArgs)}
                             onKeyDown={(event) => {
                               if (event.key === "Enter") {
                                 event.preventDefault();
-                                commitScriptArgs(entry.name, draftArgs);
+                                void commitScriptArgs(entry.name, draftArgs);
                               }
                               if (event.key === "Escape") {
                                 event.preventDefault();

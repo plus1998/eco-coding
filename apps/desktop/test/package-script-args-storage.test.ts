@@ -1,25 +1,48 @@
-import { expect, test } from "bun:test";
-import { readScriptArgs, readWorkspaceScriptArgs, saveScriptArgs } from "../src/renderer/package-script-args-storage";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import {
+  createPackageScriptArgsStore,
+  normalizePackageScriptArgsStore,
+} from "../src/main/package-script-args-store";
 
-const workspace = "/tmp/demo-repo";
+let tempDir = "";
 
-test("saveScriptArgs persists and reads per workspace script", () => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.clear();
-  saveScriptArgs(workspace, "publish", "root@xxx");
-  expect(readScriptArgs(workspace, "publish")).toBe("root@xxx");
-  expect(readWorkspaceScriptArgs(workspace)).toEqual({ publish: "root@xxx" });
+beforeEach(async () => {
+  tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-package-script-args-"));
 });
 
-test("saveScriptArgs removes empty args", () => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.clear();
-  saveScriptArgs(workspace, "dev", "--watch");
-  saveScriptArgs(workspace, "dev", "   ");
-  expect(readScriptArgs(workspace, "dev")).toBe("");
-  expect(readWorkspaceScriptArgs(workspace)).toEqual({});
+afterEach(async () => {
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("normalizePackageScriptArgsStore drops empty values", () => {
+  expect(
+    normalizePackageScriptArgsStore({
+      "/repo": {
+        publish: " root@xxx ",
+        blank: "   ",
+        notString: 1,
+      },
+    }),
+  ).toEqual({
+    "/repo": {
+      publish: "root@xxx",
+    },
+  });
+});
+
+test("PackageScriptArgsStore persists and reads per workspace script", async () => {
+  const store = createPackageScriptArgsStore(path.join(tempDir, "args.json"));
+  const workspace = path.join(tempDir, "repo");
+  await store.saveScriptArgs(workspace, "publish", "root@xxx");
+  expect(await store.getWorkspaceArgs(workspace)).toEqual({ publish: "root@xxx" });
+  await store.saveScriptArgs(workspace, "dev", "--watch");
+  expect(await store.getWorkspaceArgs(workspace)).toEqual({
+    publish: "root@xxx",
+    dev: "--watch",
+  });
+  await store.saveScriptArgs(workspace, "dev", "   ");
+  expect(await store.getWorkspaceArgs(workspace)).toEqual({ publish: "root@xxx" });
 });

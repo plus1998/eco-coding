@@ -89,6 +89,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("workspace:open-path", "Open workspace by path", "write_safe", RPC_INVOKE, [stringArg()]),
   command("workspace:inspect", "Inspect workspace", "read", RPC_INVOKE, [stringArg()]),
   command("workspace:list-package-scripts", "List npm scripts", "read", RPC_INVOKE, [stringArg()]),
+  command("workspace:save-package-script-args", "Save npm script extra args", "write_safe", RPC_INVOKE, [
+    objectArg(["workspacePath", "script", "args"]),
+  ]),
   command("workspace:start-package-script", "Start npm script", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "script"]),
   ]),

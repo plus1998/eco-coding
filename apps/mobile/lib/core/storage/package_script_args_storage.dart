@@ -93,3 +93,12 @@ Future<Map<String, String>> saveScriptArgs(
   await _writeStore(store);
   return workspaceArgs;
 }
+
+Future<void> clearWorkspaceScriptArgs(String workspacePath) async {
+  final store = await _readStore();
+  if (!store.containsKey(workspacePath)) {
+    return;
+  }
+  store.remove(workspacePath);
+  await _writeStore(store);
+}

@@ -327,24 +327,38 @@ class PackageScriptsListResult {
     required this.packageManager,
     required this.scripts,
     this.packageName,
+    this.scriptArgs = const {},
   });
 
-  factory PackageScriptsListResult.fromJson(Map<String, dynamic> json) =>
-      PackageScriptsListResult(
-        workspacePath: json['workspacePath'] as String? ?? '',
-        hasPackageJson: json['hasPackageJson'] as bool? ?? false,
-        packageName: json['packageName'] as String?,
-        packageManager: json['packageManager'] as String? ?? 'npm',
-        scripts: (json['scripts'] as List<dynamic>? ?? [])
-            .map((entry) => PackageScriptInfo.fromJson(entry as Map<String, dynamic>))
-            .toList(),
-      );
+  factory PackageScriptsListResult.fromJson(Map<String, dynamic> json) {
+    final rawArgs = json['scriptArgs'];
+    final scriptArgs = <String, String>{};
+    if (rawArgs is Map) {
+      for (final entry in rawArgs.entries) {
+        final value = entry.value;
+        if (value is String && value.trim().isNotEmpty) {
+          scriptArgs[entry.key.toString()] = value.trim();
+        }
+      }
+    }
+    return PackageScriptsListResult(
+      workspacePath: json['workspacePath'] as String? ?? '',
+      hasPackageJson: json['hasPackageJson'] as bool? ?? false,
+      packageName: json['packageName'] as String?,
+      packageManager: json['packageManager'] as String? ?? 'npm',
+      scripts: (json['scripts'] as List<dynamic>? ?? [])
+          .map((entry) => PackageScriptInfo.fromJson(entry as Map<String, dynamic>))
+          .toList(),
+      scriptArgs: scriptArgs,
+    );
+  }
 
   final String workspacePath;
   final bool hasPackageJson;
   final String? packageName;
   final String packageManager;
   final List<PackageScriptInfo> scripts;
+  final Map<String, String> scriptArgs;
 }
 
 class StartPackageScriptResult {

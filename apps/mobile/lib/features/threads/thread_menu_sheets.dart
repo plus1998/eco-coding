@@ -403,20 +403,17 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   void initState() {
     super.initState();
     _future = _loadScripts();
-    _loadScriptArgs();
-  }
-
-  Future<void> _loadScriptArgs() async {
-    final args = await readWorkspaceScriptArgs(widget.workspacePath);
-    if (!mounted) return;
-    setState(() => _scriptArgsByName = args);
   }
 
   Future<void> _commitScriptArgs(String scriptName, String nextArgs) async {
-    final saved = await saveScriptArgs(
-      widget.workspacePath,
-      scriptName,
-      nextArgs,
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      return;
+    }
+    final saved = await rpc.savePackageScriptArgs(
+      workspacePath: widget.workspacePath,
+      script: scriptName,
+      args: nextArgs,
     );
     if (!mounted) return;
     setState(() {
@@ -442,7 +439,23 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     if (rpc == null) {
       throw StateError('未连接 Desktop');
     }
-    return rpc.listPackageScripts(widget.workspacePath);
+    final listing = await rpc.listPackageScripts(widget.workspacePath);
+    var scriptArgs = Map<String, String>.from(listing.scriptArgs);
+    if (scriptArgs.isEmpty) {
+      final legacy = await readWorkspaceScriptArgs(widget.workspacePath);
+      if (legacy.isNotEmpty) {
+        for (final entry in legacy.entries) {
+          scriptArgs = await rpc.savePackageScriptArgs(
+            workspacePath: widget.workspacePath,
+            script: entry.key,
+            args: entry.value,
+          );
+        }
+        await clearWorkspaceScriptArgs(widget.workspacePath);
+      }
+    }
+    _scriptArgsByName = scriptArgs;
+    return listing;
   }
 
   Future<void> _refresh() async {

@@ -134,6 +134,7 @@ test("registers git remote command definitions", () => {
   expect(validateRemoteCommandArgs("git:pull", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
   expect(isRemoteCommandChannel("thread:todo-list")).toBe(true);
   expect(isRemoteCommandChannel("workspace:list-package-scripts")).toBe(true);
+  expect(isRemoteCommandChannel("workspace:save-package-script-args")).toBe(true);
 });
 
 test("validates eco.invoke params with desktop target", () => {

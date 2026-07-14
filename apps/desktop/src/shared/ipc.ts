@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
   workspaceListDirectories: "workspace:list-directories",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
+  workspaceSavePackageScriptArgs: "workspace:save-package-script-args",
   workspaceWatchPackageJson: "workspace:watch-package-json",
   workspacePackageJsonChanged: "workspace:package-json-changed",
   workspaceStartPackageScript: "workspace:start-package-script",
@@ -285,6 +286,14 @@ export interface PackageScriptsListResult {
   packageName?: string;
   packageManager: PackageManagerKind;
   scripts: PackageScriptInfo[];
+  /** Per-script extra args saved on Desktop; synced to Mobile via list RPC. */
+  scriptArgs: Record<string, string>;
+}
+
+export interface SavePackageScriptArgsRequest {
+  workspacePath: string;
+  script: string;
+  args: string;
 }
 
 export interface RunPackageScriptRequest {
@@ -1584,6 +1593,18 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
     typeof record.script === "string" &&
     (record.args === undefined || typeof record.args === "string") &&
     (record.threadId === undefined || typeof record.threadId === "string")
+  );
+}
+
+export function isSavePackageScriptArgsRequest(value: unknown): value is SavePackageScriptArgsRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    typeof record.script === "string" &&
+    typeof record.args === "string"
   );
 }
 

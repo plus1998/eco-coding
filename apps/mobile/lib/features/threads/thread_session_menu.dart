@@ -234,11 +234,15 @@ Future<void> openCommitPushFromMenu({
     branch: branch,
   );
 
-  if (committed == true && context.mounted) {
+  if (committed != null && context.mounted) {
     refreshWorkspaceChanges(ref, workspacePath);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已提交并推送到远程')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          committed == 'commit-push' ? '已提交并推送到远程' : '已提交',
+        ),
+      ),
+    );
   }
 }
 

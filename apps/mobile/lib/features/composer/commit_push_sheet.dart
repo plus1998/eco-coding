@@ -8,7 +8,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../threads/thread_providers.dart';
 
-Future<bool?> showCommitPushSheet({
+Future<String?> showCommitPushSheet({
   required BuildContext context,
   required WidgetRef ref,
   required String workspacePath,
@@ -16,7 +16,7 @@ Future<bool?> showCommitPushSheet({
   required WorkspaceDiffResult diff,
   String? branch,
 }) {
-  return showEcoModalBottomSheet<bool>(
+  return showEcoModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ecoColors(context).bgMenu,
@@ -59,14 +59,21 @@ class CommitPushSheet extends ConsumerStatefulWidget {
   ConsumerState<CommitPushSheet> createState() => _CommitPushSheetState();
 }
 
+enum _CommitPushAction { commit, commitPush }
+
+enum _CommitPushPhase { committing, pushing }
+
 class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
   final _messageController = TextEditingController();
   bool _generating = false;
-  bool _committing = false;
+  _CommitPushAction? _activeAction;
+  _CommitPushPhase? _phase;
   bool _loadingModels = false;
   String? _error;
   List<CommitModelOptionView> _modelOptions = [];
   String? _selectedCandidateModelId;
+
+  bool get _busy => _activeAction != null;
 
   @override
   void initState() {
@@ -144,9 +151,10 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   Future<void> _commitAndPush() async {
     final rpc = _rpc;
-    if (rpc == null || _committing) return;
+    if (rpc == null || _busy) return;
     setState(() {
-      _committing = true;
+      _activeAction = _CommitPushAction.commitPush;
+      _phase = _CommitPushPhase.committing;
       _error = null;
     });
     try {
@@ -157,24 +165,32 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
         message: message.isEmpty ? null : message,
         candidateModelId: message.isEmpty ? _selectedCandidateModelId : null,
       );
+      if (!mounted) return;
+      setState(() => _phase = _CommitPushPhase.pushing);
       await rpc.pushChanges(
         workspacePath: widget.workspacePath,
         branch: widget.branch,
       );
       refreshWorkspaceChanges(ref, widget.workspacePath);
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop('commit-push');
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {
-      if (mounted) setState(() => _committing = false);
+      if (mounted) {
+        setState(() {
+          _activeAction = null;
+          _phase = null;
+        });
+      }
     }
   }
 
   Future<void> _commitOnly() async {
     final rpc = _rpc;
-    if (rpc == null || _committing) return;
+    if (rpc == null || _busy) return;
     setState(() {
-      _committing = true;
+      _activeAction = _CommitPushAction.commit;
+      _phase = _CommitPushPhase.committing;
       _error = null;
     });
     try {
@@ -186,11 +202,16 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
         candidateModelId: message.isEmpty ? _selectedCandidateModelId : null,
       );
       refreshWorkspaceChanges(ref, widget.workspacePath);
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop('commit');
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {
-      if (mounted) setState(() => _committing = false);
+      if (mounted) {
+        setState(() {
+          _activeAction = null;
+          _phase = null;
+        });
+      }
     }
   }
 
@@ -402,8 +423,8 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: _committing ? null : _commitAndPush,
-                    icon: _committing
+                    onPressed: _busy ? null : _commitAndPush,
+                    icon: _activeAction == _CommitPushAction.commitPush
                         ? SizedBox(
                             width: 16,
                             height: 16,
@@ -413,15 +434,21 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                             ),
                           )
                         : const Icon(EcoIcons.cloudUpload),
-                    label: Text(_committing ? '处理中…' : '提交并推送'),
+                    label: Text(
+                      _activeAction == _CommitPushAction.commitPush
+                          ? (_phase == _CommitPushPhase.pushing ? '推送中…' : '提交中…')
+                          : '提交并推送',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: _committing ? null : _commitOnly,
-                    child: const Text('仅提交'),
+                    onPressed: _busy ? null : _commitOnly,
+                    child: Text(
+                      _activeAction == _CommitPushAction.commit ? '提交中…' : '仅提交',
+                    ),
                   ),
                 ),
               ],

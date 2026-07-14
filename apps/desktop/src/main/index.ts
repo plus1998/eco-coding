@@ -106,6 +106,7 @@ import {
   isGitPushRequest,
   isKnownIpcChannel,
   isRunPackageScriptRequest,
+  isSavePackageScriptArgsRequest,
   isTerminalInputRequest,
   isTerminalKillRequest,
   isTerminalListRequest,
@@ -319,6 +320,7 @@ import {
   preparePackageScriptRun,
   runPreparedPackageScriptAsBackgroundTask,
 } from "./package-scripts";
+import { createPackageScriptArgsStore, type PackageScriptArgsStore } from "./package-script-args-store";
 import {
   cancelPlanApprovalsForThread,
   getPendingPlanApprovalForThread,
@@ -564,6 +566,7 @@ let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let workflowSettingsStore: WorkflowSettingsStore;
 let gitSettingsStore: GitSettingsStore;
+let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let centerServerClient: CenterServerDesktopClient;
 
@@ -793,6 +796,9 @@ app.whenReady().then(async () => {
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
+  packageScriptArgsStore = createPackageScriptArgsStore(
+    path.join(app.getPath("userData"), "package-script-args.json"),
+  );
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
   centerServerClient = new CenterServerDesktopClient({
@@ -1507,7 +1513,22 @@ function registerIpcHandlers(): void {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
-    return listPackageScripts(workspacePath.trim());
+    const trimmed = workspacePath.trim();
+    const listing = await listPackageScripts(trimmed);
+    const scriptArgs = await packageScriptArgsStore.getWorkspaceArgs(trimmed);
+    return { ...listing, scriptArgs };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceSavePackageScriptArgs, async (payload: unknown) => {
+    if (!isSavePackageScriptArgsRequest(payload)) {
+      throw new Error("Invalid save package script args request.");
+    }
+    const scriptArgs = await packageScriptArgsStore.saveScriptArgs(
+      payload.workspacePath,
+      payload.script,
+      payload.args,
+    );
+    return { workspacePath: path.resolve(payload.workspacePath), scriptArgs };
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspaceWatchPackageJson, async (workspacePath: unknown) => {

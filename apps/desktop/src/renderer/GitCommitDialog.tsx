@@ -58,9 +58,11 @@ export function GitCommitDialog({
   const [newBranchName, setNewBranchName] = useState("");
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchError, setBranchError] = useState<string | undefined>();
-  const [submitting, setSubmitting] = useState(false);
+  const [activeAction, setActiveAction] = useState<CommitDialogAction | null>(null);
+  const [actionPhase, setActionPhase] = useState<"committing" | "pushing" | null>(null);
   const [generatingMessage, setGeneratingMessage] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const submitting = activeAction !== null;
 
   const selectedOption = useMemo(
     () => findCommitModelOptionForCandidateId(modelOptions, selectedCandidateModelId),
@@ -214,18 +216,20 @@ export function GitCommitDialog({
 
   const runAction = useCallback(
     async (action: CommitDialogAction) => {
-      if (!window.eco || submitting || disabled) {
+      if (!window.eco || activeAction || disabled) {
         return;
       }
-      setSubmitting(true);
+      setActiveAction(action);
       setError(undefined);
       try {
         if (action === "push") {
+          setActionPhase("pushing");
           await window.eco.pushGitChanges({
             workspacePath,
             ...(gitStatus?.branch && { branch: gitStatus.branch }),
           });
         } else {
+          setActionPhase("committing");
           const trimmed = message.trim();
           const result = await window.eco.commitGitChanges({
             workspacePath,
@@ -238,6 +242,7 @@ export function GitCommitDialog({
             setMessage(result.message);
           }
           if (action === "commit-push") {
+            setActionPhase("pushing");
             await window.eco.pushGitChanges({
               workspacePath,
               ...(gitStatus?.branch && { branch: gitStatus.branch }),
@@ -249,11 +254,12 @@ export function GitCommitDialog({
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
       } finally {
-        setSubmitting(false);
+        setActiveAction(null);
+        setActionPhase(null);
       }
     },
     [
-      submitting,
+      activeAction,
       disabled,
       selectedCandidateModelId,
       message,
@@ -569,7 +575,9 @@ export function GitCommitDialog({
               onClick={() => void runAction("commit")}
             >
               <GitCommitHorizontal size={16} strokeWidth={1.75} aria-hidden />
-              <span>{submitting ? "提交中…" : "提交"}</span>
+              <span>
+                {activeAction === "commit" && actionPhase === "committing" ? "提交中…" : "提交"}
+              </span>
             </button>
           </li>
           <li>
@@ -580,7 +588,13 @@ export function GitCommitDialog({
               onClick={() => void runAction("commit-push")}
             >
               <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
-              <span>{submitting ? "处理中…" : "提交并推送"}</span>
+              <span>
+                {activeAction === "commit-push"
+                  ? actionPhase === "pushing"
+                    ? "推送中…"
+                    : "提交中…"
+                  : "提交并推送"}
+              </span>
             </button>
           </li>
           {canPushOnly ? (
@@ -592,7 +606,9 @@ export function GitCommitDialog({
                 onClick={() => void runAction("push")}
               >
                 <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
-                <span>{submitting ? "推送中…" : "仅推送"}</span>
+                <span>
+                  {activeAction === "push" && actionPhase === "pushing" ? "推送中…" : "仅推送"}
+                </span>
               </button>
             </li>
           ) : null}

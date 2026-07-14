@@ -77,6 +77,7 @@ import {
   type RouteProfileInput,
   type RouteProfileView,
   type RunPackageScriptRequest,
+  type SavePackageScriptArgsRequest,
   type RuntimeRoleRouteConfig,
   type SkillsListResult,
   type StartPackageScriptResult,
@@ -182,6 +183,11 @@ const api = {
   },
   listPackageScripts(workspacePath: string): Promise<PackageScriptsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceListPackageScripts, workspacePath);
+  },
+  savePackageScriptArgs(
+    request: SavePackageScriptArgsRequest,
+  ): Promise<{ workspacePath: string; scriptArgs: Record<string, string> }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceSavePackageScriptArgs, request);
   },
   watchPackageJson(workspacePath: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceWatchPackageJson, workspacePath);
