@@ -870,6 +870,10 @@ export interface ThreadSummary {
   createdAt: string;
   updatedAt: string;
   message: string;
+  /** Runtime Core permanently selected for this thread after first run. */
+  coreKind?: import("@eco/runtime").CoreKind;
+  /** ISO timestamp marking the point after which coreKind cannot change. */
+  coreLockedAt?: string;
   /** Claude Agent SDK session ID when resume is available. */
   sdkSessionId?: string;
   /** Worktree path used as SDK cwd when the session was created. */
@@ -880,11 +884,7 @@ export interface ThreadSummary {
 
 export interface ThreadCompletionNotificationResult {
   shown: boolean;
-  reason?:
-    | "unsupported"
-    | "thread_not_found"
-    | "thread_not_completed"
-    | "notification_content_unavailable";
+  reason?: "unsupported" | "thread_not_found" | "thread_not_completed" | "notification_content_unavailable";
 }
 
 export type ThreadApprovalNotificationKind = "plan" | "bash";

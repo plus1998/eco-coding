@@ -38,8 +38,8 @@
 |---|---|---|
 | Frozen install | 通过 | 实际 SDK 已校准为 `0.3.205` |
 | TypeScript typecheck | 通过 | `bun run typecheck` |
-| Claude regression gate | 通过 | 327 pass / 0 fail / 16 SQLite skip |
-| Node SQLite contract | 通过 | 2 pass / 0 fail；真实建库、持久化和 legacy schema migration |
+| Claude regression gate | 通过 | 333 pass / 0 fail / 16 SQLite skip |
+| Node SQLite contract | 通过 | 5 pass / 0 fail；含 Core migration、跨 Core 拒绝和 compact binding 一致性 |
 | Desktop build | 通过 | renderer、main、preload 均完成；存在 chunk size warning |
 | 全量 Bun tests | 未通过 | 1908 pass / 24 fail / 46 skip；失败均来自未认证的 server MongoDB 测试 |
 | Biome lint | 未通过 | 当前配置扫描 Flutter pub cache，产生大量仓库外诊断，不能作为有效门禁 |
@@ -50,7 +50,7 @@
 
 ### SQLite 测试被跳过
 
-当前 Bun `1.3.14` 不提供 `node:sqlite`，导致 conversation store 等 46 个持久化测试在全量测试中跳过。系统 Node `v24.5.0` 可以加载 `node:sqlite`，但现有用例依赖 `bun:test`，不能直接切换运行器。仓库因此新增独立的 `node:test` 入口，先覆盖建库、Thread/Claude session 持久化和 legacy activity migration；Phase 1 的 Core schema migration 必须继续加入该入口。Bun 中的 skip 仍不能视为通过。
+当前 Bun `1.3.14` 不提供 `node:sqlite`，导致 conversation store 等 46 个持久化测试在全量测试中跳过。系统 Node `v24.5.0` 可以加载 `node:sqlite`，但现有用例依赖 `bun:test`，不能直接切换运行器。仓库因此新增独立的 `node:test` 入口，覆盖建库、Thread/Claude session 持久化、legacy activity migration、Core 归属迁移、跨 Core 拒绝和 compact binding 一致性。Bun 中的其他 skip 仍不能视为通过。
 
 ### Server 测试依赖本机 MongoDB 凭据
 

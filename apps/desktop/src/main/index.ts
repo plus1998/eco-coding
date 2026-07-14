@@ -382,6 +382,7 @@ import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconci
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
+import { requireThreadCore } from "./thread-core-routing";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   flushThreadMetrics,
@@ -2578,6 +2579,8 @@ function registerIpcHandlers(): void {
       status,
       createdAt: now,
       updatedAt: now,
+      coreKind: "claude",
+      coreLockedAt: now,
       message: runtimeConfig.ok
         ? routeAsk
           ? "正在回答…"
@@ -2752,6 +2755,11 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.threadApprovePlan, async (payload: unknown) => {
     const request = parseThreadApprovePlanPayload(payload);
     const { threadId } = request;
+    const approvalThread = conversationStore.getThread(threadId);
+    if (!approvalThread) {
+      throw new Error("Thread was not found.");
+    }
+    requireThreadCore(approvalThread, "claude", "approve a Claude plan");
     const pendingBridge = getPendingPlanApprovalForThread(threadId);
     const pendingRuntimeConfig = request.runtimeConfig
       ? parseThreadRuntimeConfigInput(request.runtimeConfig)
@@ -4016,6 +4024,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   if (!thread) {
     throw new Error("Thread was not found.");
   }
+  requireThreadCore(thread, "claude", "continue with Claude");
   if (thread.status === "running" || thread.status === "queued") {
     throw new Error("Wait for the current run to finish.");
   }
@@ -4486,6 +4495,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
   if (!thread?.workspacePath) {
     throw new Error("找不到该对话的工作区。");
   }
+  requireThreadCore(thread, "claude", "rewind a Claude session");
   const resume = resolveResumeOptions(threadId, thread.workspacePath);
   if (!resume?.resumeSessionId) {
     throw new Error("没有可恢复的 SDK 会话，无法回滚文件。");
@@ -4850,6 +4860,11 @@ async function withThreadSdkDriver(
   ) => Promise<void>,
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
 ): Promise<void> {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  requireThreadCore(thread, "claude", "create a Claude SDK driver");
   const roleRoutes = resolveRoleRoutesForThread(threadId);
   const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
   if (!runtimeConfig.ok) {
@@ -5916,6 +5931,11 @@ async function ensureContextHeadroom(
 }
 
 async function compactThreadContextManual(threadId: string): Promise<ThreadCompactContextResult> {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return { ok: false, message: "找不到该对话。" };
+  }
+  requireThreadCore(thread, "claude", "compact a Claude session");
   const worktreePath = resolveThreadWorktreePath(threadId);
   if (!worktreePath) {
     return { ok: false, message: "工作区未就绪，无法压缩上下文。" };

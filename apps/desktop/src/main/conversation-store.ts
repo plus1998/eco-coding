@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { isFreshSubagentRequest, mergeStreamText } from "@eco/runtime";
+import { type CoreKind, isCoreKind, isFreshSubagentRequest, mergeStreamText } from "@eco/runtime";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import type { CompactConversationMessage } from "../shared/eco-compact-handoff";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
@@ -62,6 +62,8 @@ interface ThreadRow {
   message: string;
   created_at: string;
   updated_at: string;
+  core_kind: string | null;
+  core_locked_at: string | null;
   sdk_session_id: string | null;
   sdk_cwd: string | null;
   routes_fingerprint: string | null;
@@ -71,6 +73,16 @@ interface ThreadRow {
 export interface ThreadSdkSession {
   sessionId: string;
   cwd: string;
+}
+
+export interface ThreadCoreSession {
+  threadId: string;
+  coreKind: CoreKind;
+  externalSessionId: string;
+  cwd: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FileCheckpointRecord {
@@ -414,6 +426,7 @@ interface ThreadPendingFollowUpRow {
 }
 
 const threadOwnedTables = [
+  "thread_core_sessions",
   "thread_activity",
   "thread_pending_followups",
   "thread_pending_plans",
@@ -452,11 +465,24 @@ export class ConversationStore {
         status TEXT NOT NULL,
         message TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        core_kind TEXT NOT NULL DEFAULT 'claude',
+        core_locked_at TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_threads_workspace_updated
         ON threads(workspace_path, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS thread_core_sessions (
+        thread_id TEXT PRIMARY KEY,
+        core_kind TEXT NOT NULL,
+        external_session_id TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
 
       CREATE TABLE IF NOT EXISTS thread_activity (
         id TEXT PRIMARY KEY,
@@ -725,6 +751,79 @@ export class ConversationStore {
     if (!names.has("runtime_config_json")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN runtime_config_json TEXT`);
     }
+    if (!names.has("core_kind")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN core_kind TEXT`);
+    }
+    if (!names.has("core_locked_at")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN core_locked_at TEXT`);
+    }
+    const hasCodexThreadMap = Boolean(
+      this.db
+        .prepare(
+          `SELECT 1
+           FROM sqlite_master
+           WHERE type = 'table' AND name = 'eco_thread_codex_map'`,
+        )
+        .get(),
+    );
+    if (hasCodexThreadMap) {
+      this.db.exec(`
+        UPDATE threads
+        SET core_kind = 'codex'
+        WHERE (core_kind IS NULL OR TRIM(core_kind) = '')
+          AND (sdk_session_id IS NULL OR sdk_cwd IS NULL)
+          AND EXISTS (
+            SELECT 1
+            FROM eco_thread_codex_map
+            WHERE eco_thread_id = threads.id
+          )
+      `);
+      this.db.exec(`
+        UPDATE threads
+        SET core_kind = 'claude'
+        WHERE (core_kind IS NULL OR TRIM(core_kind) = '')
+          AND sdk_session_id IS NOT NULL
+          AND sdk_cwd IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM eco_thread_codex_map
+            WHERE eco_thread_id = threads.id
+          )
+      `);
+    } else {
+      this.db.exec(`
+        UPDATE threads
+        SET core_kind = 'claude'
+        WHERE core_kind IS NULL OR TRIM(core_kind) = ''
+      `);
+    }
+    this.db.exec(`
+      UPDATE threads
+      SET core_locked_at = created_at
+      WHERE core_kind IN ('claude', 'codex') AND core_locked_at IS NULL
+    `);
+    this.db.exec(`
+      INSERT INTO thread_core_sessions (
+        thread_id,
+        core_kind,
+        external_session_id,
+        cwd,
+        metadata_json,
+        created_at,
+        updated_at
+      )
+      SELECT id, 'claude', sdk_session_id, sdk_cwd, NULL, created_at, updated_at
+      FROM threads
+      WHERE core_kind = 'claude'
+        AND sdk_session_id IS NOT NULL
+        AND sdk_cwd IS NOT NULL
+      ON CONFLICT(thread_id) DO UPDATE SET
+        core_kind = excluded.core_kind,
+        external_session_id = excluded.external_session_id,
+        cwd = excluded.cwd,
+        updated_at = excluded.updated_at
+      WHERE thread_core_sessions.core_kind = excluded.core_kind
+    `);
 
     const compactHandoffColumns = this.db
       .prepare(`PRAGMA table_info(thread_compact_handoff)`)
@@ -1215,6 +1314,12 @@ export class ConversationStore {
       if (Number(sessionUpdate.changes ?? 0) !== 1) {
         throw new Error(`源 SDK session 已变化，拒绝提交旧压缩摘要（${threadId}）。`);
       }
+      this.db
+        .prepare(
+          `DELETE FROM thread_core_sessions
+           WHERE thread_id = ? AND core_kind = 'claude' AND external_session_id = ?`,
+        )
+        .run(threadId, sourceSessionId);
 
       this.writeCompactHandoffRow(threadId, {
         summaryId,
@@ -1417,13 +1522,30 @@ export class ConversationStore {
 
   saveThread(thread: ThreadSummary): void {
     const now = new Date().toISOString();
+    const coreKind = thread.coreKind ?? "claude";
+    if (!isCoreKind(coreKind)) {
+      throw new Error(`Unsupported thread Core: ${String(coreKind)}`);
+    }
+    const coreLockedAt = thread.coreLockedAt ?? now;
     const runtimeConfigJson = thread.runtimeConfig
       ? serializeThreadRuntimeConfig(thread.runtimeConfig)
       : null;
     this.db
       .prepare(
-        `INSERT INTO threads (id, title, prompt, workspace_path, status, message, created_at, updated_at, runtime_config_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO threads (
+           id,
+           title,
+           prompt,
+           workspace_path,
+           status,
+           message,
+           created_at,
+           updated_at,
+           core_kind,
+           core_locked_at,
+           runtime_config_json
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            prompt = excluded.prompt,
@@ -1442,8 +1564,136 @@ export class ConversationStore {
         thread.message,
         thread.createdAt,
         now,
+        coreKind,
+        coreLockedAt,
         runtimeConfigJson,
       );
+  }
+
+  setThreadCoreForDraft(threadId: string, coreKind: CoreKind): void {
+    const existing = this.db
+      .prepare(`SELECT core_kind, core_locked_at FROM threads WHERE id = ?`)
+      .get(threadId) as { core_kind: string | null; core_locked_at: string | null } | undefined;
+    if (!existing) {
+      throw new Error(`Thread not found: ${threadId}`);
+    }
+    if (existing.core_locked_at) {
+      throw new Error(`Thread Core is locked: ${threadId}`);
+    }
+    const session = this.getThreadCoreSession(threadId);
+    if (session) {
+      throw new Error(`Unlocked thread has an existing Core session: ${threadId}`);
+    }
+    const update = this.db
+      .prepare(`UPDATE threads SET core_kind = ?, updated_at = ? WHERE id = ? AND core_locked_at IS NULL`)
+      .run(coreKind, new Date().toISOString(), threadId);
+    if (Number(update.changes ?? 0) !== 1) {
+      throw new Error(`Thread Core lock changed while updating: ${threadId}`);
+    }
+  }
+
+  lockThreadCore(threadId: string, coreKind: CoreKind, lockedAt = new Date().toISOString()): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = this.db
+        .prepare(`SELECT core_kind, core_locked_at FROM threads WHERE id = ?`)
+        .get(threadId) as { core_kind: string | null; core_locked_at: string | null } | undefined;
+      if (!existing) {
+        throw new Error(`Thread not found: ${threadId}`);
+      }
+      if (existing.core_kind !== coreKind) {
+        throw new Error(
+          `Thread Core mismatch: ${threadId} is ${existing.core_kind ?? "unknown"}, requested ${coreKind}`,
+        );
+      }
+      if (!existing.core_locked_at) {
+        this.db
+          .prepare(
+            `UPDATE threads
+             SET core_locked_at = ?, updated_at = ?
+             WHERE id = ? AND core_kind = ? AND core_locked_at IS NULL`,
+          )
+          .run(lockedAt, lockedAt, threadId, coreKind);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  saveThreadCoreSession(input: {
+    threadId: string;
+    coreKind: CoreKind;
+    externalSessionId: string;
+    cwd: string;
+    metadata?: Record<string, unknown>;
+  }): void {
+    const externalSessionId = input.externalSessionId.trim();
+    const cwd = input.cwd.trim();
+    if (!externalSessionId || !cwd) {
+      throw new Error(`Core session requires a session id and cwd: ${input.threadId}`);
+    }
+    const now = new Date().toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.assertThreadCore(input.threadId, input.coreKind);
+      this.writeThreadCoreSessionRow({ ...input, externalSessionId, cwd }, now);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  getThreadCoreSession(threadId: string): ThreadCoreSession | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT sessions.thread_id,
+                sessions.core_kind,
+                sessions.external_session_id,
+                sessions.cwd,
+                sessions.metadata_json,
+                sessions.created_at,
+                sessions.updated_at,
+                threads.core_kind AS thread_core_kind
+         FROM thread_core_sessions AS sessions
+         INNER JOIN threads ON threads.id = sessions.thread_id
+         WHERE sessions.thread_id = ?`,
+      )
+      .get(threadId) as
+      | {
+          thread_id: string;
+          core_kind: string;
+          external_session_id: string;
+          cwd: string;
+          metadata_json: string | null;
+          created_at: string;
+          updated_at: string;
+          thread_core_kind: string | null;
+        }
+      | undefined;
+    if (!row) {
+      return undefined;
+    }
+    if (!isCoreKind(row.core_kind)) {
+      throw new Error(`Unsupported persisted Core: ${row.core_kind}`);
+    }
+    if (row.thread_core_kind !== row.core_kind) {
+      throw new Error(
+        `Core session mismatch: ${row.thread_id} is ${row.thread_core_kind ?? "unknown"}, binding is ${row.core_kind}`,
+      );
+    }
+    const metadata = parseCoreSessionMetadata(row.metadata_json, row.thread_id);
+    return {
+      threadId: row.thread_id,
+      coreKind: row.core_kind,
+      externalSessionId: row.external_session_id,
+      cwd: row.cwd,
+      ...(metadata ? { metadata } : {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
   deleteThread(threadId: string): boolean {
@@ -1742,14 +1992,108 @@ export class ConversationStore {
       .run(patch.status, patch.message, new Date().toISOString(), threadId);
   }
 
-  saveSdkSession(threadId: string, sessionId: string, cwd: string): void {
+  private assertThreadCore(threadId: string, coreKind: CoreKind): void {
+    const row = this.db.prepare(`SELECT core_kind, core_locked_at FROM threads WHERE id = ?`).get(threadId) as
+      | { core_kind: string | null; core_locked_at: string | null }
+      | undefined;
+    if (!row) {
+      throw new Error(`Thread not found: ${threadId}`);
+    }
+    if (row.core_kind !== coreKind) {
+      throw new Error(
+        `Thread Core mismatch: ${threadId} is ${row.core_kind ?? "unknown"}, requested ${coreKind}`,
+      );
+    }
+    if (!row.core_locked_at) {
+      const lockedAt = new Date().toISOString();
+      this.db
+        .prepare(`UPDATE threads SET core_locked_at = ?, updated_at = ? WHERE id = ?`)
+        .run(lockedAt, lockedAt, threadId);
+    }
+  }
+
+  private writeThreadCoreSessionRow(
+    input: {
+      threadId: string;
+      coreKind: CoreKind;
+      externalSessionId: string;
+      cwd: string;
+      metadata?: Record<string, unknown>;
+    },
+    updatedAt: string,
+  ): void {
+    const existing = this.db
+      .prepare(`SELECT core_kind FROM thread_core_sessions WHERE thread_id = ?`)
+      .get(input.threadId) as { core_kind: string } | undefined;
+    if (existing && existing.core_kind !== input.coreKind) {
+      throw new Error(
+        `Core session mismatch: ${input.threadId} has ${existing.core_kind}, requested ${input.coreKind}`,
+      );
+    }
     this.db
       .prepare(
-        `UPDATE threads
-         SET sdk_session_id = ?, sdk_cwd = ?, updated_at = ?
-         WHERE id = ?`,
+        `INSERT INTO thread_core_sessions (
+           thread_id,
+           core_kind,
+           external_session_id,
+           cwd,
+           metadata_json,
+           created_at,
+           updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           core_kind = excluded.core_kind,
+           external_session_id = excluded.external_session_id,
+           cwd = excluded.cwd,
+           metadata_json = excluded.metadata_json,
+           updated_at = excluded.updated_at`,
       )
-      .run(sessionId, cwd, new Date().toISOString(), threadId);
+      .run(
+        input.threadId,
+        input.coreKind,
+        input.externalSessionId,
+        input.cwd,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        updatedAt,
+        updatedAt,
+      );
+  }
+
+  saveSdkSession(threadId: string, sessionId: string, cwd: string): void {
+    const normalizedSessionId = sessionId.trim();
+    const normalizedCwd = cwd.trim();
+    if (!normalizedSessionId || !normalizedCwd) {
+      throw new Error(`Claude session requires a session id and cwd: ${threadId}`);
+    }
+    const updatedAt = new Date().toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.assertThreadCore(threadId, "claude");
+      const update = this.db
+        .prepare(
+          `UPDATE threads
+           SET sdk_session_id = ?, sdk_cwd = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(normalizedSessionId, normalizedCwd, updatedAt, threadId);
+      if (Number(update.changes ?? 0) !== 1) {
+        throw new Error(`Claude session thread not found: ${threadId}`);
+      }
+      this.writeThreadCoreSessionRow(
+        {
+          threadId,
+          coreKind: "claude",
+          externalSessionId: normalizedSessionId,
+          cwd: normalizedCwd,
+        },
+        updatedAt,
+      );
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   /**
@@ -1786,6 +2130,16 @@ export class ConversationStore {
       if (Number(sessionUpdate.changes ?? 0) !== 1) {
         throw new Error(`SDK session capture 找不到线程记录（${threadId}）。`);
       }
+      this.assertThreadCore(threadId, "claude");
+      this.writeThreadCoreSessionRow(
+        {
+          threadId,
+          coreKind: "claude",
+          externalSessionId: targetSessionId,
+          cwd: targetCwd,
+        },
+        capturedAt,
+      );
 
       if (pendingHandoff) {
         const consumed = this.db
@@ -1819,13 +2173,24 @@ export class ConversationStore {
   }
 
   clearSdkSession(threadId: string): void {
-    this.db
-      .prepare(
-        `UPDATE threads
-         SET sdk_session_id = NULL, sdk_cwd = NULL, updated_at = ?
-         WHERE id = ?`,
-      )
-      .run(new Date().toISOString(), threadId);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.assertThreadCore(threadId, "claude");
+      this.db
+        .prepare(
+          `UPDATE threads
+           SET sdk_session_id = NULL, sdk_cwd = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(new Date().toISOString(), threadId);
+      this.db
+        .prepare(`DELETE FROM thread_core_sessions WHERE thread_id = ? AND core_kind = 'claude'`)
+        .run(threadId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
     this.clearSubagentSessions(threadId);
   }
 
@@ -2968,7 +3333,8 @@ export class ConversationStore {
   listThreads(): ThreadSummary[] {
     const rows = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd, runtime_config_json
+        `SELECT id, title, prompt, workspace_path, status, message, created_at, updated_at,
+                core_kind, core_locked_at, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
          ORDER BY created_at DESC`,
       )
@@ -2980,7 +3346,8 @@ export class ConversationStore {
   getThread(threadId: string): ThreadSummary | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd, runtime_config_json
+        `SELECT id, title, prompt, workspace_path, status, message, created_at, updated_at,
+                core_kind, core_locked_at, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
          WHERE id = ?`,
       )
@@ -3886,6 +4253,7 @@ function isThreadFollowUpBoundary(value: unknown): value is ThreadFollowUpBounda
 
 function rowToThread(row: ThreadRow): ThreadSummary {
   const runtimeConfig = parseThreadRuntimeConfigJson(row.runtime_config_json);
+  const coreKind = isCoreKind(row.core_kind) ? row.core_kind : undefined;
   return {
     id: row.id,
     title: row.title,
@@ -3895,7 +4263,28 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     message: row.message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ...(coreKind ? { coreKind } : {}),
+    ...(row.core_locked_at ? { coreLockedAt: row.core_locked_at } : {}),
     ...(row.sdk_session_id && row.sdk_cwd ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),
   };
+}
+
+function parseCoreSessionMetadata(
+  value: string | null,
+  threadId: string,
+): Record<string, unknown> | undefined {
+  if (!value) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`Core session metadata JSON is invalid: ${threadId}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Core session metadata must be an object: ${threadId}`);
+  }
+  return parsed as Record<string, unknown>;
 }

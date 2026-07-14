@@ -5,7 +5,7 @@
 > 首要约束：先保证现有 Claude 主路径可用，再逐步开放 Codex；任何能力缺口必须显式暴露，不允许静默降级。  
 > 文档状态：架构与推进基线，实施过程中按决策记录和验收结果持续更新。
 
-当前进度（2026-07-14）：Phase 0 进行中。已建立本地 Claude regression 脚本，类型检查、Claude gate、Node SQLite contract、Desktop build 通过；Claude live smoke 尚未完成。详见 [claude-core-baseline.md](./claude-core-baseline.md)。
+当前进度（2026-07-14）：Phase 0 本地自动门禁已建立，Claude live smoke 尚未完成；Phase 1 已开始，完成 Core 标识/注册/能力契约、`core_kind/core_locked_at`、统一 session binding、main/Codex provenance 迁移和 Claude session 双写。完整 `CoreAdapter` 生命周期与协调层尚未实现。详见 [claude-core-baseline.md](./claude-core-baseline.md)。
 
 ## 1. 结论与实施策略
 
