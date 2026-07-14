@@ -3,6 +3,14 @@ export interface UpstreamModelOption {
   displayName?: string;
 }
 
+export interface CodexModelCatalogEntryView {
+  id: string;
+  model: string;
+  displayName: string;
+  defaultReasoningEffort: string;
+  supportedReasoningEfforts: string[];
+}
+
 import type { UpstreamApiCompat } from "./api-compat";
 
 export interface ListUpstreamModelsRequest {

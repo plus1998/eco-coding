@@ -14,17 +14,35 @@ export function optionRequiresCustomExplanation(label: string): boolean {
 export function resolveClarificationQuestionAnswer(
   selectedLabels: string[],
   customText: string,
+  preserveCustomText = false,
+  allowCustom = true,
 ): string[] {
+  if (!allowCustom) {
+    return selectedLabels;
+  }
   const trimmed = customText.trim();
-  if (selectedLabels.includes(CLARIFICATION_CUSTOM_OPTION_LABEL) && trimmed) {
-    return [trimmed];
+  if (selectedLabels.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
+    if (preserveCustomText && customText.length > 0) {
+      return [customText];
+    }
+    if (trimmed) {
+      return [trimmed];
+    }
   }
   return selectedLabels.filter((label) => label !== CLARIFICATION_CUSTOM_OPTION_LABEL);
 }
 
-export function isClarificationQuestionReady(selectedLabels: string[], customText: string): boolean {
+export function isClarificationQuestionReady(
+  selectedLabels: string[],
+  customText: string,
+  preserveCustomText = false,
+  allowCustom = true,
+): boolean {
+  if (!allowCustom) {
+    return selectedLabels.length > 0;
+  }
   if (selectedLabels.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
-    return customText.trim().length > 0;
+    return preserveCustomText ? customText.length > 0 : customText.trim().length > 0;
   }
   if (selectedLabels.length === 0) {
     return false;

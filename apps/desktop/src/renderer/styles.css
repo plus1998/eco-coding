@@ -888,6 +888,30 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   min-width: 0;
 }
 
+.chat-item-title-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chat-item-core {
+  flex-shrink: 0;
+  padding: 2px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.chat-item-core-codex {
+  border-color: rgba(45, 146, 105, 0.38);
+  color: #4fae87;
+}
+
 .chat-item-meta {
   display: flex;
   flex-shrink: 0;
@@ -11541,6 +11565,41 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.composer-core-segmented {
+  display: inline-grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(2, minmax(54px, 1fr));
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--composer-toolbar-hover-bg);
+}
+
+.composer-core-segmented button {
+  min-width: 0;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--composer-toolbar-icon);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-core-segmented button.is-active {
+  background: var(--surface-elevated);
+  color: var(--composer-toolbar-hover-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+}
+
+.composer-core-segmented button:disabled {
+  cursor: default;
 }
 
 .composer-toolbar-trigger {

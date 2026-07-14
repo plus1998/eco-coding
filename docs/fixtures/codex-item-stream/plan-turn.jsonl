@@ -1,0 +1,10 @@
+# Desensitized Codex app-server notification capture — single Agent turn ("read README + summarize").
+# Shapes match codex-app-server-protocol v2 (camelCase): turn nested under `turn`, item id on `item.id`.
+{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr_codex_fixture_001","turn":{"id":"turn_fixture_001","items":[],"status":"inProgress"}}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_001","turnId":"turn_fixture_001","item":{"type":"userMessage","id":"item_user_fixture_001","content":[{"type":"text","text":"Read README.md and summarize the project."}]},"startedAtMs":0}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_001","turnId":"turn_fixture_001","item":{"type":"userMessage","id":"item_user_fixture_001","clientId":"msg_eco_optimistic_fixture_001","content":[{"type":"text","text":"Read README.md and summarize the project."}]},"completedAtMs":1}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_001","turnId":"turn_fixture_001","item":{"type":"agentMessage","id":"item_agent_fixture_001","text":""},"startedAtMs":2}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thr_codex_fixture_001","turnId":"turn_fixture_001","itemId":"item_agent_fixture_001","delta":"I'll read "}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thr_codex_fixture_001","turnId":"turn_fixture_001","itemId":"item_agent_fixture_001","delta":"README.md and summarize."}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_001","turnId":"turn_fixture_001","item":{"type":"agentMessage","id":"item_agent_fixture_001","text":"I'll read README.md and summarize.\n\nEco Coding is an agent command center for multi-model coding workflows."},"completedAtMs":3}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thr_codex_fixture_001","turn":{"id":"turn_fixture_001","items":[],"status":"completed"}}}

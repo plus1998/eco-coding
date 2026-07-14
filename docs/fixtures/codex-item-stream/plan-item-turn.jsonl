@@ -1,0 +1,13 @@
+# Desensitized Codex app-server notification capture — plan mode turn with plan item.
+# Shapes match codex-app-server-protocol v2 (camelCase).
+{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr_codex_fixture_003","turn":{"id":"turn_plan_fixture_001","items":[],"status":"inProgress"}}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","item":{"type":"userMessage","id":"item_user_plan_001","content":[{"type":"text","text":"Plan how to add Codex feed projection tests."}]},"startedAtMs":0}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","item":{"type":"userMessage","id":"item_user_plan_001","clientId":"msg_eco_plan_fixture_001","content":[{"type":"text","text":"Plan how to add Codex feed projection tests."}]},"completedAtMs":1}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","item":{"type":"agentMessage","id":"item_agent_plan_001","text":""},"startedAtMs":2}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","itemId":"item_agent_plan_001","delta":"I'll draft a plan."}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","item":{"type":"agentMessage","id":"item_agent_plan_001","text":"I'll draft a plan."},"completedAtMs":3}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","item":{"type":"plan","id":"item_plan_fixture_001","text":""},"startedAtMs":4}}
+{"jsonrpc":"2.0","method":"item/plan/delta","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","itemId":"item_plan_fixture_001","delta":"# Codex Feed projection\n"}}
+{"jsonrpc":"2.0","method":"item/plan/delta","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","itemId":"item_plan_fixture_001","delta":"- Expand fixtures\n- Add regression test\n"}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_003","turnId":"turn_plan_fixture_001","item":{"type":"plan","id":"item_plan_fixture_001","text":"# Codex Feed projection\n- Expand fixtures\n- Add regression test\n","planFilePath":".codex/plan.md"},"completedAtMs":5}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thr_codex_fixture_003","turn":{"id":"turn_plan_fixture_001","items":[],"status":"completed"}}}

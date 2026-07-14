@@ -31,6 +31,7 @@ import {
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
+  type CoreAvailabilitySnapshot,
   type FileCheckpointRecord,
   type GitCheckoutBranchRequest,
   type GitCommitRequest,
@@ -153,6 +154,9 @@ const api = {
     request: ThreadApprovalNotificationRequest,
   ): Promise<ThreadApprovalNotificationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadApprovalNotification, request);
+  },
+  getCoreAvailability(): Promise<CoreAvailabilitySnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.coreAvailabilityGet);
   },
   openWorkspace(): Promise<WorkspaceOpenResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpen);

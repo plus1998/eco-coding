@@ -74,14 +74,26 @@ export {
 } from './responses-to-chat-completions.js';
 
 export {
+  buildCodexToolContextFromRequest,
   chatCompletionsChunkToResponsesEvents,
   chatCompletionsResponseToResponses,
+  chatErrorToResponseError,
   chatUsageToResponsesUsage,
+  failChatCompletionsResponsesStream,
   finalizeChatCompletionsResponsesStream,
   newChatCompletionsToResponsesStreamState,
   responsesToChatCompletionsRequest,
   type ChatCompletionsToResponsesStreamState,
+  type CodexToolContext,
 } from './chat-completions-responses-bridge.js';
+
+export {
+  canonicalizeToolArgumentsStr,
+  extractReasoningFieldText,
+  flattenNamespaceToolName,
+  isOpenAIOseries,
+  splitLeadingThinkBlock,
+} from './codex-chat-common.js';
 
 // Wire / SSE
 export { responsesStreamEventToJSON } from './responses-stream-event-wire.js';
@@ -99,4 +111,11 @@ export {
 } from './retry.js';
 
 // JSON helpers
-export { cloneJson, jsonMarshal, jsonParse, type JsonValue } from './json.js';
+export {
+  canonicalJsonString,
+  canonicalizeJsonValue,
+  cloneJson,
+  jsonMarshal,
+  jsonParse,
+  type JsonValue,
+} from './json.js';

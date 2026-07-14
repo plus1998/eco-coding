@@ -1,5 +1,6 @@
 export type AgentRole = "planner" | "explore" | "architect" | "coder" | "reviewer" | "tester";
 export type RuntimeAgentRole = string;
+export * from "./codex-gateway-model-alias";
 export type ModelCapability =
   | "messages_api"
   | "streaming"

@@ -131,6 +131,7 @@ function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBilli
 const billingSourceLabels: Record<BillingUsageSource, string> = {
   proxy: "Proxy",
   sdk: "SDK",
+  codex: "Codex",
 };
 
 function visibleBillingDiagnostics(
@@ -194,7 +195,7 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
   if (!sources) {
     return null;
   }
-  const rows = (["proxy", "sdk"] as BillingUsageSource[])
+  const rows = (["codex", "proxy", "sdk"] as BillingUsageSource[])
     .map((source) => sources[source])
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   if (rows.length === 0) {

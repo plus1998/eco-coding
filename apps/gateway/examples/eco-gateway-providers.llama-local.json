@@ -1,0 +1,15 @@
+[
+  {
+    "id": "llama-local",
+    "name": "Local llama.cpp (192.168.110.78)",
+    "upstreamKind": "openai-chat",
+    "baseUrl": "http://192.168.110.78:8080",
+    "apiKey": "local-unused",
+    "upstreamModelId": "Qwopus3.6-35B-A3B-Coder-MTP-Q5_K_M.gguf",
+    "models": [
+      "llama-local",
+      "Qwopus3.6-35B-A3B-Coder-MTP-Q5_K_M.gguf",
+      "eco_llama-local"
+    ]
+  }
+]

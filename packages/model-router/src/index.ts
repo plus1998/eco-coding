@@ -1,6 +1,7 @@
 import {
   type AgentRole,
   type AgentRoleRoute,
+  type CodexGatewayApiCompat,
   hasCapabilities,
   type ModelCapability,
   type ModelProfile,
@@ -13,6 +14,10 @@ export interface ResolvedModelRoute {
   role: RuntimeAgentRole;
   /** Upstream provider model id; SDK must use primary.modelId (eco alias) instead. */
   upstreamModelId?: string;
+  /** Eco ProviderStore id, used as the Codex model_provider identity. */
+  providerId?: string;
+  /** Explicit route-level wire override; absent uses the provider default. */
+  apiCompat?: CodexGatewayApiCompat;
   primary: ModelProfile;
   fallbacks: ModelProfile[];
   thinkingEffort?: RouteThinkingEffort;

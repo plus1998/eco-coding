@@ -10,6 +10,10 @@
     ".": "./src/index.ts",
     "./sdk": "./src/claude-agent-sdk.ts",
     "./anthropic-content-normalize": "./src/anthropic-content-normalize.ts",
-    "./tool-target": "./src/tool-target.ts"
+    "./tool-target": "./src/tool-target.ts",
+    "./codex-app-server-client": "./src/codex-app-server-client.ts",
+    "./codex-config-sync": "./src/codex-config-sync.ts",
+    "./codex-app-server-driver": "./src/codex-app-server-driver.ts",
+    "./codex-rollback": "./src/codex-rollback.ts"
   }
 }

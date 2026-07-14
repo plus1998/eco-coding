@@ -90,6 +90,9 @@ export function responsesStreamEventToJSON(evt: ResponsesStreamEvent): string {
       if (evt.name !== undefined && evt.name !== '') {
         m.name = evt.name;
       }
+      if (evt.namespace !== undefined && evt.namespace !== '') {
+        m.namespace = evt.namespace;
+      }
       if (evt.type === 'response.function_call_arguments.done') {
         m.arguments = evt.arguments ?? '';
       } else {
@@ -166,6 +169,9 @@ function responsesItemWire(item: ResponsesOutput | undefined): Record<string, un
     case 'function_call':
       m.call_id = item.call_id ?? '';
       m.name = item.name ?? '';
+      if (item.namespace !== undefined && item.namespace !== '') {
+        m.namespace = item.namespace;
+      }
       m.arguments = item.arguments ?? '';
       break;
   }

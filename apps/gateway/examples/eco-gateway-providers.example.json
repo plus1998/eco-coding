@@ -1,0 +1,15 @@
+[
+  {
+    "id": "anthropic-main",
+    "name": "Anthropic (live E2E)",
+    "upstreamKind": "anthropic-messages",
+    "baseUrl": "https://api.anthropic.com",
+    "apiKey": "${ANTHROPIC_API_KEY}",
+    "upstreamModelId": "claude-sonnet-4-20250514",
+    "models": [
+      "claude-sonnet-4",
+      "claude-sonnet-4-20250514",
+      "eco_anthropic-main"
+    ]
+  }
+]

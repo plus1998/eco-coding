@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
+  type CoreKind,
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
@@ -19,6 +20,7 @@ import {
   evaluateFilesystemWriteConfirmation,
   isReadFilesystemTool,
   isWriteFilesystemTool,
+  isCoreKind,
   normalizeSdkSubagentType,
   type PlanReadyPayload,
   readFilesystemPath,
@@ -285,6 +287,24 @@ import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
+import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
+import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
+import {
+  CodexGatewayUsageDeduplicator,
+  resolveCodexGatewayUsageBilling,
+} from "./codex-gateway-usage-billing";
+import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
+import {
+  configureCodexApprovalBridge,
+  configureCodexRuntimeRun,
+  compactCodexThreadForEcoThread,
+  createCodexRuntimeDriver,
+  isCodexCliAvailable,
+  registerResolvedCodexGatewayTurnRoute,
+  runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
+} from "./codex-runtime-run";
+import { stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
+import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
@@ -383,6 +403,7 @@ import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
 import { requireThreadCore } from "./thread-core-routing";
+import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   flushThreadMetrics,
@@ -565,6 +586,7 @@ let providerStore: ProviderStore;
 let agentOrchestrationStore: AgentOrchestrationStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
+let codexThreadMap: CodexThreadMap;
 let workflowSettingsStore: WorkflowSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
@@ -595,6 +617,14 @@ const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const proxyBillingStampRegistry = new ProxyBillingStampRegistry();
+const codexGatewayUsageDeduplicator = new CodexGatewayUsageDeduplicator();
+const codexGatewayUsagePending = new CodexGatewayUsagePendingBuffer({
+  onDrop: (drop) => {
+    process.stderr.write(
+      `[eco-codex] dropping pending gateway usage reason=${drop.reason} codexThread=${drop.codexThreadId} turn=${drop.turnId}\n`,
+    );
+  },
+});
 let agentLifecycle: AgentLifecycleService;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
@@ -619,6 +649,45 @@ let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
 let ecoCompactService: EcoCompactService;
 let subagentHandoffService: SubagentHandoffService;
+
+interface ThreadCoreStartRunInput {
+  thread: ThreadSummary;
+  workspace: WorkspaceInfo;
+  runtimeConfig: RuntimeConfig;
+  prompt: string;
+  attachments?: PromptImageAttachment[];
+  roleRoutes: readonly RuntimeRoleRouteConfig[];
+}
+
+const threadRuntimeCoordinator = new ThreadRuntimeCoordinator<
+  ThreadCoreStartRunInput,
+  StartThreadContinuationInput,
+  string,
+  void,
+  ThreadContinueResult,
+  void
+>();
+
+threadRuntimeCoordinator.register({
+  kind: "claude",
+  start: dispatchClaudeThreadStart,
+  continue: startClaudeThreadContinuation,
+  cancel: (threadId) => {
+    cancelClarificationsForThread(threadId, "cancelled by user");
+    cancelBashApprovalsForThread(threadId, "cancelled by user");
+    cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
+  },
+});
+threadRuntimeCoordinator.register({
+  kind: "codex",
+  start: (input) => startCodexThreadRun({ ...input, continuation: false }),
+  continue: startCodexThreadContinuation,
+  cancel: (threadId) => {
+    cancelClarificationsForThread(threadId, "cancelled by user");
+    cancelBashApprovalsForThread(threadId, "cancelled by user");
+    cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
+  },
+});
 
 type SubagentDelegationLinker = (input: {
   agentId: string;
@@ -811,6 +880,89 @@ app.whenReady().then(async () => {
     onStatusChange: emitCenterServerStatus,
   });
   agentLifecycle = new AgentLifecycleService(conversationStore);
+  codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
+  configureEcoGatewayLifecycle({
+    ecoDataDir: app.getPath("userData"),
+    listProviders: () => {
+      const routeModels = new Map<string, string[]>();
+      for (const profile of providerStore.listRouteProfiles()) {
+        for (const route of profile.routes) {
+          const models = routeModels.get(route.providerId) ?? [];
+          models.push(route.modelId);
+          routeModels.set(route.providerId, models);
+        }
+      }
+      return providerStore.listProvidersWithSecrets().map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        enabled: provider.enabled,
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        apiCompat: provider.apiCompat,
+        defaultModel: provider.defaultModel,
+        modelIds: [
+          ...providerStore.listCandidateModels(provider.id).map((model) => model.modelId),
+          ...(routeModels.get(provider.id) ?? []),
+        ],
+      }));
+    },
+    onUsage: handleCodexGatewayUsage,
+    onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
+  });
+  configureCodexRuntimeRun({
+    ecoDataDir: app.getPath("userData"),
+    listProviders: () =>
+      providerStore.listProviders().map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        enabled: provider.enabled,
+        apiCompat: provider.apiCompat,
+      })),
+    threadMap: codexThreadMap,
+    resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
+    appendThreadRunEvent: (event) => {
+      if (!conversationStore.getThread(event.threadId)) {
+        throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
+      }
+      conversationStore.appendThreadRunEvent(event);
+    },
+    scheduleThreadRunProjectionUpdated,
+    onCodexThreadMapped: flushPendingCodexGatewayUsage,
+    onCodexThreadAttributionRecorded: flushPendingCodexGatewayUsage,
+    onCodexContextUpdated: (resolution) => {
+      void contextMonitor
+        .updateOccupied(
+          resolution.ecoThreadId,
+          resolution.billingRole,
+          resolution.contextOccupied,
+          { limit: resolution.context.limit },
+        )
+        .then(() => contextScheduler.emitLiveFromMonitor(resolution.ecoThreadId))
+        .catch((error) => {
+          process.stderr.write(
+            `[eco-codex] context update failed thread=${resolution.ecoThreadId}: ${errorMessage(error)}\n`,
+          );
+        });
+    },
+    onStderr: (message) => process.stderr.write(`${message}\n`),
+  });
+  configureCodexApprovalBridge({
+    resolveEcoThreadId: (codexThreadId) => codexThreadMap.getEcoThreadId(codexThreadId) ?? codexThreadId,
+    getThread: (threadId) => {
+      const thread = conversationStore.getThread(threadId);
+      return thread ? { prompt: thread.prompt, workspacePath: thread.workspacePath } : undefined;
+    },
+    getWorktreePath: (threadId) => activeRunRuntimeState.worktreePlan(threadId)?.worktreePath,
+    getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
+    getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
+    savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
+    emitThreadLive: (event) => desktopEventCenter.publishThreadLiveEvent(event),
+    updateThreadStatus: (threadId, patch) =>
+      updateThread(threadId, {
+        status: patch.status as ThreadSummary["status"],
+        message: patch.message,
+      }),
+  });
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
   });
@@ -953,8 +1105,12 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   flushAllThreadMetrics();
+  codexGatewayUsagePending.dispose();
+  codexGatewayUsageDeduplicator.clear();
   gitAutoFetcher?.dispose();
   centerServerClient?.dispose();
+  void stopGlobalCodexRuntimeLifecycle();
+  void stopGlobalEcoGateway();
 });
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
@@ -1379,6 +1535,19 @@ function showDesktopNotification(content: { title: string; body: string }): void
 }
 
 function registerIpcHandlers(): void {
+  registerDesktopCommand(IPC_CHANNELS.coreAvailabilityGet, async () => {
+    const codexAvailable = isCodexCliAvailable();
+    return {
+      claude: { available: true as const },
+      codex: {
+        available: codexAvailable,
+        ...(!codexAvailable && {
+          reason: "未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
+        }),
+      },
+    };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
     const themeSource = normalizeAppThemeSource(payload);
     nativeTheme.themeSource = themeSource;
@@ -2560,9 +2729,22 @@ function registerIpcHandlers(): void {
     if (!prompt && !hasAttachments) {
       throw new Error("Task prompt is required.");
     }
+    const coreKind = payload.coreKind ?? "claude";
+    if (!isCoreKind(coreKind)) {
+      throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
+    }
+    if (coreKind === "codex" && hasAttachments) {
+      throw new Error("Codex Core image attachments are not supported in this release.");
+    }
+    if (coreKind === "codex" && !isCodexCliAvailable()) {
+      throw new Error("Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。");
+    }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
     const threadRuntime = parseThreadRuntimeConfigInput(payload.runtimeConfig);
+    if (coreKind === "codex") {
+      assertCodexRuntimeConfigSupported(threadRuntime);
+    }
     const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
@@ -2579,14 +2761,16 @@ function registerIpcHandlers(): void {
       status,
       createdAt: now,
       updatedAt: now,
-      coreKind: "claude",
+      coreKind,
       coreLockedAt: now,
       message: runtimeConfig.ok
         ? routeAsk
           ? "正在回答…"
           : routePlan
             ? "正在分析并制定计划…"
-            : "正在启动 Claude Agent SDK…"
+            : coreKind === "codex"
+              ? "正在启动 Codex…"
+              : "正在启动 Claude Agent SDK…"
         : runtimeConfig.reason,
       runtimeConfig: threadRuntime,
     };
@@ -2597,41 +2781,14 @@ function registerIpcHandlers(): void {
 
     if (runtimeConfig.ok) {
       scheduleThreadTitleSummary(thread.id, runtimeConfig);
-      const attachments = payload.attachments;
-      if (routeAsk) {
-        void runAskThread(
-          thread,
-          workspace,
-          runtimeConfig,
-          prompt,
-          undefined,
-          undefined,
-          attachments,
-          roleRoutes,
-        );
-      } else if (routePlan) {
-        void runPlanThread(
-          thread,
-          workspace,
-          runtimeConfig,
-          prompt,
-          undefined,
-          undefined,
-          attachments,
-          roleRoutes,
-        );
-      } else {
-        void runCodingThreadAutonomous(
-          thread,
-          workspace,
-          runtimeConfig,
-          prompt,
-          undefined,
-          undefined,
-          attachments,
-          roleRoutes,
-        );
-      }
+      void threadRuntimeCoordinator.start(coreKind, {
+        thread,
+        workspace,
+        runtimeConfig,
+        prompt,
+        ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
+        roleRoutes,
+      });
     }
 
     return { thread };
@@ -2939,6 +3096,10 @@ function registerIpcHandlers(): void {
       return;
     }
     const { threadId, worktreeDisposition } = request;
+    const owner = conversationStore.getThread(threadId)?.coreKind;
+    if (owner) {
+      await threadRuntimeCoordinator.cancel(owner, threadId);
+    }
     if (worktreeDisposition) {
       pendingCancelDisposition.set(threadId, worktreeDisposition);
     }
@@ -3396,6 +3557,220 @@ function applyMainThreadRunDecisionEffects(
       updateThread: (threadId, patch) => updateThread(threadId, patch),
     },
   });
+}
+
+function dispatchClaudeThreadStart(input: ThreadCoreStartRunInput): void {
+  requireThreadCore(input.thread, "claude", "start a Claude thread");
+  const sessionMode = resolveSessionMode(input.thread.runtimeConfig);
+  if (sessionMode === "ask") {
+    void runAskThread(
+      input.thread,
+      input.workspace,
+      input.runtimeConfig,
+      input.prompt,
+      undefined,
+      undefined,
+      input.attachments,
+      input.roleRoutes,
+    );
+    return;
+  }
+  if (sessionMode === "plan") {
+    void runPlanThread(
+      input.thread,
+      input.workspace,
+      input.runtimeConfig,
+      input.prompt,
+      undefined,
+      undefined,
+      input.attachments,
+      input.roleRoutes,
+    );
+    return;
+  }
+  void runCodingThreadAutonomous(
+    input.thread,
+    input.workspace,
+    input.runtimeConfig,
+    input.prompt,
+    undefined,
+    undefined,
+    input.attachments,
+    input.roleRoutes,
+  );
+}
+
+async function startCodexThreadContinuation(
+  input: StartThreadContinuationInput,
+): Promise<ThreadContinueResult> {
+  const prompt = input.prompt.trim();
+  if (!prompt && !input.attachments?.length) {
+    throw new Error("Message is required.");
+  }
+  if (input.attachments?.length) {
+    throw new Error("Codex Core image attachments are not supported in this release.");
+  }
+  if (input.rewindTarget) {
+    throw new Error("Codex Core activity rewind is not supported in this release.");
+  }
+  const thread = conversationStore.getThread(input.threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  requireThreadCore(thread, "codex", "continue with Codex");
+  if (thread.status === "running" || thread.status === "queued") {
+    throw new Error("Wait for the current run to finish.");
+  }
+  const binding = conversationStore.getThreadCoreSession(thread.id);
+  if (binding?.coreKind !== "codex" || !binding.externalSessionId.trim()) {
+    throw new Error("Codex thread binding is missing; continuing would create a different conversation.");
+  }
+
+  const settings = getModelSettingsSnapshot();
+  if (input.runtimeConfigInput) {
+    const next = parseThreadRuntimeConfigInput(input.runtimeConfigInput);
+    roleRoutesForThreadConfig(settings, next);
+    conversationStore.saveThreadRuntimeConfig(thread.id, next);
+  }
+  const activeThread = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? thread);
+  const threadConfig = activeThread.runtimeConfig;
+  if (!threadConfig) {
+    throw new Error("Thread runtime configuration is missing.");
+  }
+  assertCodexRuntimeConfigSupported(threadConfig);
+  const roleRoutes = roleRoutesForThreadConfig(settings, threadConfig);
+  const runtime = resolveRuntimeConfigForThreadConfig(settings, threadConfig, roleRoutes);
+  if (!runtime.ok) {
+    throw new Error(runtime.reason);
+  }
+
+  updateThread(thread.id, { status: "running", message: "正在继续 Codex 会话…" });
+  recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt);
+  const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
+  void startCodexThreadRun({
+    thread: updated,
+    workspace: await ensureWorkspace(thread.workspacePath),
+    runtimeConfig: { routes: runtime.routes },
+    prompt,
+    roleRoutes,
+    continuation: true,
+  });
+  return { thread: updated };
+}
+
+async function startCodexThreadRun(
+  input: ThreadCoreStartRunInput & { continuation: boolean },
+): Promise<void> {
+  requireThreadCore(input.thread, "codex", input.continuation ? "continue with Codex" : "start Codex");
+  const mode = resolveSessionMode(input.thread.runtimeConfig);
+  const controller = new AbortController();
+  startActiveRun(input.thread.id, {
+    controller,
+    worktreePlan: createSessionPlan(input.workspace.path, input.thread.id),
+  });
+
+  let worktreePlan = createSessionPlan(input.workspace.path, input.thread.id);
+  let cwd = input.workspace.path;
+  try {
+    if (mode !== "ask") {
+      const resolved = await resolveThreadWorktree(input.workspace, input.thread.id);
+      worktreePlan = resolved.worktreePlan;
+      cwd = resolved.cwd;
+      activeRunRuntimeState.setWorktreePlan(input.thread.id, worktreePlan);
+    }
+
+    const outcome = await runThreadRequestOnce(
+      input.thread.id,
+      runAttemptPhaseFromThreadMode(mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution"),
+      controller.signal,
+      () =>
+        runCodexThreadRequest({
+          threadId: input.thread.id,
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(input.thread.id, input.roleRoutes),
+          resolveAgentRegistry: () => resolveAgentRuntimeConfigForThreadId(input.thread.id),
+          resolveExecutionConfirmationMode: () =>
+            ensureThreadRuntimeConfig(
+              conversationStore.getThread(input.thread.id) ?? input.thread,
+            ).runtimeConfig?.bashReviewMode ?? "always",
+          enableSubagents: false,
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          onProxyReady: ({ plannerRoute }) => {
+            updateThread(input.thread.id, {
+              status: "running",
+              message: `Codex 已连接 · ${plannerRoute?.modelId ?? "model unknown"}`,
+            });
+          },
+          run: async ({ routes }) => {
+            const driver = createCodexRuntimeDriver(input.thread.id, mode);
+            try {
+              const runInput = {
+                threadId: input.thread.id,
+                prompt: input.prompt,
+                workspacePath: input.workspace.path,
+                worktreePath: cwd,
+                routes,
+                signal: controller.signal,
+              };
+              const events = input.continuation && driver.runContinuation
+                ? driver.runContinuation(
+                    runInput,
+                    mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution",
+                  )
+                : mode === "plan" && driver.runPlan
+                  ? driver.runPlan(runInput)
+                  : mode === "ask" && driver.runAsk
+                    ? driver.runAsk(runInput)
+                    : driver.run(runInput);
+              for await (const event of events) {
+                if (event.type === "agent.started" || event.type === "agent.completed") {
+                  process.stderr.write(`[eco-codex] ${event.type} thread=${input.thread.id}\n`);
+                }
+              }
+              return controller.signal.aborted
+                ? { ok: false, reason: "cancelled by user", aborted: true }
+                : { ok: true };
+            } catch (error) {
+              return controller.signal.aborted
+                ? { ok: false, reason: "cancelled by user", aborted: true }
+                : { ok: false, reason: errorMessage(error) };
+            } finally {
+              driver.dispose();
+            }
+          },
+        }),
+    );
+
+    if (!outcome.ok) {
+      if (outcome.aborted) {
+        await handleRunCancelled(input.thread.id, worktreePlan);
+      } else {
+        markThreadInterrupted(input.thread.id, outcome.reason);
+      }
+      return;
+    }
+
+    if (mode === "agent") {
+      await completeCodingThreadRun(input.thread.id, worktreePlan);
+    } else if (mode === "ask") {
+      updateThread(input.thread.id, { status: "completed", message: "回答完成。" });
+    } else if (conversationStore.getThread(input.thread.id)?.status !== "awaiting_plan") {
+      updateThread(input.thread.id, { status: "idle", message: "计划会话已结束。" });
+    }
+  } catch (error) {
+    markThreadInterrupted(input.thread.id, errorMessage(error));
+  } finally {
+    await finalizeMainThreadRunCleanup({
+      threadId: input.thread.id,
+      worktreePath: cwd,
+      idleFallbackMessage: "Codex 运行已结束。",
+    });
+  }
+}
+
+function assertCodexRuntimeConfigSupported(runtimeConfig: ThreadRuntimeConfig): void {
+  if (Object.values(runtimeConfig.mcpServersEnabled ?? {}).some(Boolean)) {
+    throw new Error("Codex Core 首版暂不支持 MCP，请关闭已选择的 MCP Server 后再运行。");
+  }
 }
 
 async function runAskThread(
@@ -4015,6 +4390,17 @@ interface StartThreadContinuationInput {
 }
 
 async function startThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
+  const thread = conversationStore.getThread(input.threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  if (!thread.coreKind) {
+    throw new Error(`Thread ${thread.id} has unknown Core ownership.`);
+  }
+  return threadRuntimeCoordinator.continue(thread.coreKind, input);
+}
+
+async function startClaudeThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
   const prompt = input.prompt.trim();
   const hasAttachments = Boolean(input.attachments?.length);
   if (!prompt && !hasAttachments) {
@@ -5734,6 +6120,99 @@ function noteUsageBillingObservation(threadId: string, observation: UsageBilling
   activeRunBillingState.appendObservation(threadId, observation);
 }
 
+async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsageEvent): Promise<void> {
+  const resolved = resolveCodexGatewayUsageBilling({
+    event,
+    resolveThreadAttribution: (codexThreadId) =>
+      resolveCodexThreadAttribution(codexThreadMap, codexThreadId),
+    resolveParentCodexThreadId: (codexThreadId) =>
+      codexThreadMap.getThreadAttribution(codexThreadId)?.parentThreadId,
+    resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
+    runAttemptId: (threadId) => agentLifecycle.usageRunAttemptId(threadId),
+    plannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
+  });
+
+  if (resolved.status === "rejected") {
+    if (resolved.reason === "thread_attribution_not_found" && event.codexTurnMetadata) {
+      const queued = codexGatewayUsagePending.enqueue(event);
+      if (queued.status === "queued") {
+        logEcoDiag("codex.gateway_usage_pending", {
+          codexThreadId: queued.entry.codexThreadId,
+          turnId: queued.entry.turnId,
+          pendingCount: queued.pendingCount,
+        });
+        return;
+      }
+    }
+    throw new Error(
+      `Codex Gateway usage rejected: ${resolved.reason}` +
+        (resolved.codexThreadId ? ` (thread=${resolved.codexThreadId})` : ""),
+    );
+  }
+
+  const routeRegistration = registerResolvedCodexGatewayTurnRoute({
+    billingResult: resolved,
+    requestedModel: event.requestedModel,
+    providerId: event.providerId,
+    upstreamModelId: event.upstreamModelId,
+  });
+  if (routeRegistration.status === "rejected" || routeRegistration.status === "conflict") {
+    throw new Error(
+      routeRegistration.status === "conflict"
+        ? `Codex Gateway route conflict: ${errorMessage(routeRegistration.error)}`
+        : `Codex Gateway route rejected: ${routeRegistration.reason}`,
+    );
+  }
+
+  const deduplication = codexGatewayUsageDeduplicator.observe({
+    requestKey: resolved.requestKey,
+    usage: resolved.usage,
+    ...(event.providerRequestId && { providerRequestId: event.providerRequestId }),
+    ...(event.usage.totalCostUsd !== undefined && {
+      sourceReportedCostUsd: event.usage.totalCostUsd,
+    }),
+  });
+  if (deduplication.status === "duplicate") {
+    return;
+  }
+  if (deduplication.status === "conflict") {
+    throw new Error(`Codex Gateway usage conflict for request ${resolved.requestKey}.`);
+  }
+
+  noteUsageBillingObservation(resolved.threadId, resolved.observation);
+  logEcoDiag("codex.gateway_usage", {
+    threadId: shortThreadId(resolved.threadId),
+    codexThreadId: resolved.codexThreadId,
+    turnId: resolved.turnId,
+    requestKind: resolved.requestKind,
+    role: resolved.billingRole,
+    modelId: resolved.usage.modelId ?? null,
+    inputTokens: resolved.usage.inputTokens,
+    outputTokens: resolved.usage.outputTokens,
+    cacheReadTokens: resolved.usage.cacheReadTokens,
+    cacheCreationTokens: resolved.usage.cacheCreationTokens,
+  });
+  const billingTask = processUsageBilling(resolved.billingInput).then(
+    () => undefined,
+    (error) => {
+      codexGatewayUsageDeduplicator.forget(resolved.requestKey);
+      throw error;
+    },
+  );
+  usageLedgerCoordinator.trackUsageUpdate(resolved.threadId, billingTask);
+  await billingTask;
+}
+
+function flushPendingCodexGatewayUsage(codexThreadId: string): void {
+  for (const pending of codexGatewayUsagePending.drain(codexThreadId)) {
+    void handleCodexGatewayUsage(pending.event).catch((error) => {
+      process.stderr.write(
+        `[eco-codex] pending gateway usage failed codexThread=${codexThreadId}: ${errorMessage(error)}\n`,
+      );
+    });
+  }
+}
+
 function resolveProxyUsageApiCompat(
   threadId: string,
   role: RuntimeAgentRole,
@@ -5934,6 +6413,26 @@ async function compactThreadContextManual(threadId: string): Promise<ThreadCompa
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
     return { ok: false, message: "找不到该对话。" };
+  }
+  if (thread.coreKind === "codex") {
+    if (thread.status === "running" || thread.status === "queued") {
+      return { ok: false, message: "线程正在运行，请结束后再压缩上下文。" };
+    }
+    try {
+      const compacted = await compactCodexThreadForEcoThread({ ecoThreadId: threadId });
+      await contextMonitor.updateOccupied(threadId, "planner", compacted.postTokens);
+      contextScheduler.emitLiveFromMonitor(threadId);
+      return { ok: true, message: `Codex 上下文已压缩至 ${compacted.postTokens} tokens` };
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
+    } finally {
+      const hasActiveCodexRun = conversationStore
+        .listThreads()
+        .some((candidate) => candidate.coreKind === "codex" && activeRunRuntimeState.hasRun(candidate.id));
+      if (!hasActiveCodexRun) {
+        await stopGlobalCodexRuntimeLifecycle();
+      }
+    }
   }
   requireThreadCore(thread, "claude", "compact a Claude session");
   const worktreePath = resolveThreadWorktreePath(threadId);

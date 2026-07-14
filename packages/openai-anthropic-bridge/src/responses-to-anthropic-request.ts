@@ -57,13 +57,18 @@ export function responsesToAnthropicRequest(
   }
 
   if (req.reasoning !== undefined && req.reasoning.effort !== '') {
-    const effort = mapResponsesEffortToAnthropic(req.reasoning.effort);
-    out.output_config = { effort } satisfies AnthropicOutputConfig;
-    if (effort !== 'low') {
-      out.thinking = {
-        type: 'enabled',
-        budget_tokens: defaultThinkingBudget(effort),
-      } satisfies AnthropicThinking;
+    const requestedEffort = req.reasoning.effort.trim().toLowerCase();
+    if (['none', 'off', 'disabled'].includes(requestedEffort)) {
+      out.thinking = { type: 'disabled' } satisfies AnthropicThinking;
+    } else {
+      const effort = mapResponsesEffortToAnthropic(requestedEffort);
+      out.output_config = { effort } satisfies AnthropicOutputConfig;
+      if (effort !== 'low') {
+        out.thinking = {
+          type: 'enabled',
+          budget_tokens: defaultThinkingBudget(effort),
+        } satisfies AnthropicThinking;
+      }
     }
   }
 

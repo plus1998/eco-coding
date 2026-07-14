@@ -129,6 +129,8 @@ export function buildDriverRoutesFromRuntime(
     return {
       role: route.role,
       upstreamModelId: route.modelId,
+      providerId: route.provider.id,
+      apiCompat: route.apiCompat,
       primary: {
         id: `${route.role}:${route.provider.id}`,
         provider: "custom",

@@ -1,0 +1,9 @@
+{"method":"turn/started","params":{"threadId":"thr_codex_fixture_reason","turn":{"id":"turn_reason_001","status":"inProgress"}}}
+{"method":"item/completed","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","item":{"id":"item_user_reason_001","type":"userMessage","content":[{"type":"text","text":"think about this"}]}}}
+{"method":"item/started","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","item":{"id":"item_reason_001","type":"reasoning","summary":[],"content":[]}}}
+{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","itemId":"item_reason_001","delta":"First I should ","summaryIndex":0}}
+{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","itemId":"item_reason_001","delta":"inspect the repo.","summaryIndex":0}}
+{"method":"item/completed","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","item":{"id":"item_reason_001","type":"reasoning","summary":["First I should inspect the repo."],"content":[]}}}
+{"method":"item/agentMessage/delta","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","itemId":"item_msg_reason_001","delta":"Done."}}
+{"method":"item/completed","params":{"threadId":"thr_codex_fixture_reason","turnId":"turn_reason_001","item":{"id":"item_msg_reason_001","type":"agentMessage","text":"Done."}}}
+{"method":"turn/completed","params":{"threadId":"thr_codex_fixture_reason","turn":{"id":"turn_reason_001","status":"completed"}}}

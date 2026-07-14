@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
-const rendererUrl = "http://127.0.0.1:5173/";
+const rendererPort = readPort(process.env.ECO_RENDERER_PORT ?? "5173", "renderer");
+const rendererUrl = `http://127.0.0.1:${rendererPort}/`;
 const children = new Set();
 const remoteDebuggingPort = readRemoteDebuggingPort();
 
@@ -11,7 +12,9 @@ console.error("[eco] 主进程仅在 dev 启动时编译一次；修改 apps/des
 
 const rendererAlreadyRunning = await isRendererReady();
 if (!rendererAlreadyRunning) {
-  start("bun", ["run", "dev:renderer"], { name: "renderer" });
+  start("./node_modules/.bin/vite", ["--host", "127.0.0.1", "--strictPort", "--port", String(rendererPort)], {
+    name: "renderer",
+  });
   await waitForRenderer();
 }
 
@@ -82,9 +85,13 @@ function readRemoteDebuggingPort() {
   if (!raw) {
     return undefined;
   }
+  return readPort(raw, "remote debugging");
+}
+
+function readPort(raw, label) {
   const port = Number.parseInt(raw, 10);
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
-    throw new Error(`Invalid remote debugging port: ${raw}`);
+    throw new Error(`Invalid ${label} port: ${raw}`);
   }
   return port;
 }

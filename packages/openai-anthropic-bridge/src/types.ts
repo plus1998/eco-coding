@@ -133,6 +133,20 @@ export interface ResponsesRequest {
   context_management?: unknown | undefined;
   session_id?: string | undefined;
   previous_response_id?: string | undefined;
+  max_tokens?: number | undefined;
+  max_completion_tokens?: number | undefined;
+  frequency_penalty?: number | undefined;
+  logit_bias?: unknown | undefined;
+  logprobs?: boolean | undefined;
+  metadata?: unknown | undefined;
+  n?: number | undefined;
+  presence_penalty?: number | undefined;
+  response_format?: unknown | undefined;
+  seed?: number | undefined;
+  stop?: unknown | undefined;
+  stream_options?: unknown | undefined;
+  top_logprobs?: number | undefined;
+  user?: string | undefined;
 }
 
 export interface ResponsesReasoning {
@@ -163,6 +177,8 @@ export interface ResponsesContentPart {
   text?: string | undefined;
   image_url?: string | undefined;
   detail?: string | undefined;
+  refusal?: string | undefined;
+  annotations?: unknown[] | undefined;
 }
 
 export interface ResponsesWebSearchFilters {
@@ -177,6 +193,7 @@ export interface ResponsesTool {
   parameters?: unknown | undefined;
   strict?: boolean | undefined;
   filters?: ResponsesWebSearchFilters | undefined;
+  tools?: ResponsesTool[] | undefined;
 }
 
 export interface ResponsesResponse {
@@ -188,11 +205,14 @@ export interface ResponsesResponse {
   usage?: ResponsesUsage | undefined;
   incomplete_details?: ResponsesIncompleteDetails | undefined;
   error?: ResponsesError | undefined;
+  created_at?: number | undefined;
 }
 
 export interface ResponsesError {
-  code: string;
+  code?: string | number | null | undefined;
   message: string;
+  type?: string | undefined;
+  param?: unknown;
 }
 
 export interface ResponsesIncompleteDetails {
@@ -211,6 +231,10 @@ export interface ResponsesOutput {
   name?: string | undefined;
   arguments?: string | undefined;
   action?: WebSearchAction | undefined;
+  namespace?: string | undefined;
+  reasoning_content?: string | undefined;
+  input?: string | undefined;
+  execution?: string | undefined;
 }
 
 export interface WebSearchAction {
@@ -229,11 +253,14 @@ export interface ResponsesUsage {
   total_tokens: number;
   input_tokens_details?: ResponsesInputTokensDetails | undefined;
   output_tokens_details?: ResponsesOutputTokensDetails | undefined;
+  cache_read_input_tokens?: number | undefined;
+  cache_creation_input_tokens?: number | undefined;
 }
 
 export interface ResponsesInputTokensDetails {
   cached_tokens?: number | undefined;
   audio_tokens?: number | undefined;
+  cache_write_tokens?: number | undefined;
 }
 
 export interface ResponsesOutputTokensDetails {
@@ -255,7 +282,9 @@ export interface ResponsesStreamEvent {
   item_id?: string | undefined;
   call_id?: string | undefined;
   name?: string | undefined;
+  namespace?: string | undefined;
   arguments?: string | undefined;
+  input?: string | undefined;
   summary_index?: number | undefined;
   part?: ResponsesContentPart | undefined;
   code?: string | undefined;
@@ -282,6 +311,21 @@ export interface ChatCompletionsRequest {
   stop?: unknown | undefined;
   functions?: ChatFunction[] | undefined;
   function_call?: unknown | undefined;
+  reasoning?: { effort: string } | undefined;
+  thinking?: unknown | undefined;
+  enable_thinking?: boolean | undefined;
+  reasoning_split?: boolean | undefined;
+  frequency_penalty?: number | undefined;
+  logit_bias?: unknown | undefined;
+  logprobs?: boolean | undefined;
+  metadata?: unknown | undefined;
+  n?: number | undefined;
+  parallel_tool_calls?: boolean | undefined;
+  presence_penalty?: number | undefined;
+  response_format?: unknown | undefined;
+  seed?: number | undefined;
+  top_logprobs?: number | undefined;
+  user?: string | undefined;
 }
 
 export interface ChatStreamOptions {
@@ -373,6 +417,11 @@ export interface ChatUsage {
   total_tokens: number;
   prompt_tokens_details?: ChatTokenDetails | undefined;
   completion_tokens_details?: ChatTokenDetails | undefined;
+  input_tokens?: number | undefined;
+  output_tokens?: number | undefined;
+  input_tokens_details?: ChatTokenDetails | undefined;
+  cache_read_input_tokens?: number | undefined;
+  cache_creation_input_tokens?: number | undefined;
 }
 
 export interface ChatTokenDetails {
@@ -381,6 +430,7 @@ export interface ChatTokenDetails {
   reasoning_tokens?: number | undefined;
   accepted_prediction_tokens?: number | undefined;
   rejected_prediction_tokens?: number | undefined;
+  cache_write_tokens?: number | undefined;
 }
 
 export interface ChatCompletionsChunk {

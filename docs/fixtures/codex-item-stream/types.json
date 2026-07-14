@@ -1,0 +1,30 @@
+{
+  "description": "Codex app-server item notification types for golden replay and adapter coverage.",
+  "phase": 2,
+  "pocMethods": [
+    "turn/started",
+    "turn/completed",
+    "item/started",
+    "item/completed",
+    "item/agentMessage/delta",
+    "item/plan/delta"
+  ],
+  "itemTypes": {
+    "userMessage": { "mapped": true, "threadRunEvent": "message.final (liveType message.user)" },
+    "agentMessage": { "mapped": true, "threadRunEvent": "message.delta | message.final" },
+    "commandExecution": { "mapped": true, "threadRunEvent": "tool.started | tool.completed | tool.failed" },
+    "plan": { "mapped": true, "threadRunEvent": "thread.status (liveType plan.ready)" },
+    "collabAgentToolCall": { "mapped": true, "threadRunEvent": "agent.started | agent.stopped | agent.abandoned" }
+  },
+  "fixtures": [
+    "plan-turn.jsonl",
+    "bash-turn.jsonl",
+    "plan-item-turn.jsonl"
+  ],
+  "deferredToPhase2": [
+    "reasoning",
+    "fileChange",
+    "mcpToolCall",
+    "dynamicToolCall"
+  ]
+}

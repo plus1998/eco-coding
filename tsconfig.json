@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/shared" },
     { "path": "packages/model-router" },
+    { "path": "packages/persistence" },
     { "path": "packages/bash-policy" },
     { "path": "packages/workspace" },
     { "path": "packages/approval" },
@@ -11,6 +12,7 @@
     { "path": "packages/agent" },
     { "path": "packages/openai-anthropic-bridge" },
     { "path": "apps/desktop" },
-    { "path": "apps/server" }
+    { "path": "apps/server" },
+    { "path": "apps/gateway" }
   ]
 }

@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   appSetThemeSource: "app:set-theme-source",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
   appShowThreadApprovalNotification: "app:show-thread-approval-notification",
+  coreAvailabilityGet: "core:availability-get",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",
@@ -162,6 +163,11 @@ export type {
   CenterServerTestConnectionRequest,
   CenterServerTestConnectionResult,
 } from "./center-server";
+
+export interface CoreAvailabilitySnapshot {
+  claude: { available: true };
+  codex: { available: boolean; reason?: string };
+}
 export type {
   EventCenterEnvelope,
   EventCenterEventKind,
@@ -907,6 +913,7 @@ export interface ThreadApprovalNotificationResult {
 export interface ThreadStartRequest {
   workspacePath: string;
   prompt: string;
+  coreKind?: import("@eco/runtime").CoreKind;
   attachments?: PromptImageAttachment[];
   runtimeConfig: ThreadRuntimeConfigInput;
 }
@@ -932,6 +939,18 @@ export interface ThreadContinueRequest {
 
 export interface ThreadContinueResult {
   thread: ThreadSummary;
+}
+
+export interface ThreadResumeSubagentRequest {
+  threadId: string;
+  agentId: string;
+  followupTask?: string;
+}
+
+export interface ThreadResumeSubagentResult {
+  thread: ThreadSummary;
+  agentId: string;
+  codexThreadId: string;
 }
 
 export type ThreadFollowUpStatus = "queued" | "delivered" | "applied" | "superseded" | "cancelled" | "failed";
@@ -1094,6 +1113,8 @@ export interface ClarificationQuestion {
   header?: string;
   options: ClarificationQuestionOption[];
   multiSelect?: boolean;
+  allowCustom?: boolean;
+  preserveCustomText?: boolean;
 }
 
 export interface ClarificationRequest {
@@ -1106,11 +1127,20 @@ export interface ClarificationRequest {
 export interface ClarificationAnswers {
   toolUseId: string;
   selections: string[][];
+  customInputIndices?: number[];
 }
 
 export interface ClarificationSubmitPayload {
   toolUseId: string;
   selections: string[][];
+  customInputIndices?: number[];
+}
+
+export type BashApprovalKind = "command" | "file_change" | "network";
+
+export interface BashApprovalNetworkPolicyAmendment {
+  host: string;
+  action: "allow" | "deny";
 }
 
 export interface BashApprovalRequest {
@@ -1124,12 +1154,22 @@ export interface BashApprovalRequest {
   agentId: string;
   agentType?: string;
   description?: string;
+  kind?: BashApprovalKind;
   /** When set, this approval is for a filesystem tool outside the workspace. */
   filesystemTool?: string;
   filesystemPath?: string;
+  proposedExecpolicyAmendment?: string[];
+  proposedNetworkPolicyAmendments?: BashApprovalNetworkPolicyAmendment[];
 }
 
-export type BashApprovalDecision = "approved" | "approved_remember_prefix" | "denied";
+export type BashApprovalDecision =
+  | "approved"
+  | "approved_remember_prefix"
+  | "approved_for_session"
+  | "approved_execpolicy_amendment"
+  | "approved_network_policy_amendment"
+  | "denied"
+  | "cancelled";
 
 export interface BashApprovalResolvePayload {
   toolUseId: string;
@@ -1224,7 +1264,7 @@ export interface ThreadModelUsageEntry {
   costUsd?: number;
 }
 
-export type BillingUsageSource = "proxy" | "sdk";
+export type BillingUsageSource = "proxy" | "sdk" | "codex";
 
 export interface TokenCostBreakdown {
   inputUsd: number;

@@ -3,6 +3,7 @@ import type { EventStore, ThreadRecord } from "../../shared/src";
 import { type AgentEvent, createAgentEvent, type RuntimeAgentRole } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
 import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
+import type { PlanHandoffChoice } from "./codex-plan-handoff.js";
 import type { SubagentRole } from "./subagent-availability.js";
 
 export interface ThreadStartRequest {
@@ -47,6 +48,16 @@ export interface ResumableSubagentRef {
   agentId: string;
 }
 
+export interface CodexSkillInput {
+  type: "skill";
+  name: string;
+  path: string;
+}
+
+export interface CodexSessionOptions {
+  skillInputs?: CodexSkillInput[];
+}
+
 export interface AgentRuntimeRunInput {
   threadId: string;
   prompt: string;
@@ -55,6 +66,7 @@ export interface AgentRuntimeRunInput {
   routes: ResolvedModelRoute[];
   signal: AbortSignal;
   sdkSession?: EcoSdkSessionOptions;
+  codexSession?: CodexSessionOptions;
   resume?: EcoSdkResumeOptions;
   /** Stopped subagent sessions Eco may auto-Resume via PreToolUse. */
   resumableSubagents?: readonly ResumableSubagentRef[];
@@ -70,6 +82,10 @@ export interface EcoPlanningContext {
   planFilePath?: string;
   /** User edited plan/analysis in Eco UI before approving execution. */
   planUserEdited?: boolean;
+  /** Codex plan approval handoff; Claude ignores this field. */
+  handoffChoice?: PlanHandoffChoice;
+  /** Optional plan-refinement follow-up for Codex. */
+  userFollowUp?: string;
   /** Exact deferred ExitPlanMode tool use approved with this plan, when fallback resume is required. */
   deferredExitPlanToolUseId?: string;
 }
@@ -265,6 +281,48 @@ export {
 } from "./api-error";
 export * from "./ask-user-question";
 export * from "./core-runtime";
+export * from "./codex-app-server-client.js";
+export * from "./codex-app-server-driver.js";
+export * from "./codex-compact.js";
+export * from "./codex-config-sync.js";
+export * from "./codex-context-snapshot.js";
+export * from "./codex-event-adapter.js";
+export * from "./codex-external-agent-config.js";
+export * from "./codex-model-list.js";
+export * from "./codex-plan-handoff.js";
+export * from "./codex-prompt-materializer.js";
+export * from "./codex-role-sync.js";
+export * from "./codex-rollback.js";
+export * from "./codex-skills-extra-roots.js";
+export * from "./codex-skills-list.js";
+export * from "./codex-spawn-agent-hook.js";
+export * from "./codex-spawn-role-queue.js";
+export * from "./codex-thread-attribution.js";
+export * from "./codex-thread-resume.js";
+export {
+  CODEX_APPROVAL_POLICIES,
+  CODEX_SANDBOX_MODES,
+  CODEX_WEB_SEARCH_MODES,
+  DEFAULT_CODEX_TOOL_POLICY,
+  applyCodexExecutionConfirmation,
+  cloneEcoToolPolicy as cloneCodexToolPolicy,
+  ecoSandboxModeToTurnPolicy,
+  ecoToolPolicyToRoleTomlFields,
+  isCodexApprovalPolicy,
+  isCodexSandboxMode,
+  isCodexWebSearchMode,
+  normalizeEcoToolPolicy as normalizeCodexToolPolicy,
+  resolveEffectiveTurnSandbox,
+  resolveMainAgentHandsOnFromCodexPolicy,
+  toCodexAppServerSandboxPolicyWire,
+  type CodexApprovalPolicy,
+  type CodexExecutionConfirmationMode,
+  type CodexSandboxMode,
+  type CodexWebSearchMode,
+  type EcoToolPolicy as CodexToolPolicy,
+} from "./codex-tool-policy.js";
+export * from "./codex-turn-interrupt.js";
+export * from "./codex-turn-route-registry.js";
 export {
   computeRequestBilling,
   computeSavings,

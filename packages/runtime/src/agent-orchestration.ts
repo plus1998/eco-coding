@@ -431,6 +431,14 @@ export function buildMainAgentProfileAppend(
   ].join("\n\n");
 }
 
+export function buildCodexMainAgentProfileAppend(
+  profile: EcoOrchestrationProfileConfig,
+  _templates: readonly EcoAgentTemplateConfig[],
+  _options?: { subagentAvailability?: Partial<Record<string, boolean>> },
+): string {
+  return profile.mainAgent.systemPromptPreset === "custom" ? profile.mainAgent.prompt.trim() : "";
+}
+
 export function buildMainAgentSystemPrompt(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],

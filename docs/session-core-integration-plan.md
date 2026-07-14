@@ -3,9 +3,19 @@
 > 基线分支：`session-core-integration`（从 `origin/main@b05d308` 创建）  
 > 当前范围：Claude Code Core + Codex Core  
 > 首要约束：先保证现有 Claude 主路径可用，再逐步开放 Codex；任何能力缺口必须显式暴露，不允许静默降级。  
-> 文档状态：架构与推进基线，实施过程中按决策记录和验收结果持续更新。
+> 文档状态：架构基线 + 当前实施验收记录。
 
-当前进度（2026-07-14）：Phase 0 本地自动门禁已建立，Claude live smoke 尚未完成；Phase 1 已开始，完成 Core 标识/注册/能力契约、`core_kind/core_locked_at`、统一 session binding、main/Codex provenance 迁移和 Claude session 双写。完整 `CoreAdapter` 生命周期与协调层尚未实现。详见 [claude-core-baseline.md](./claude-core-baseline.md)。
+当前进度（2026-07-15）：Phase 0-3 主路径和 Phase 5 会话级选择已实现；Phase 4 已完成 Codex approval、compact、context、Responses gateway、精确 usage/计费，Ask/Plan 仍只有自动测试覆盖。MCP、Skills、图片、rewind、子代理和 Mobile Codex 路径尚未完成，不能按正式发布完成处理。详见 [claude-core-baseline.md](./claude-core-baseline.md)。
+
+当前实现事实：
+
+- `ThreadRuntimeCoordinator` 按 Thread 的不可变 Core 绑定路由 start/continue/cancel；Claude 与 Codex 可在不同 Thread 并发，无需重启。
+- `thread_core_sessions` 是 Codex external thread binding 的唯一真相；start、continue、重启恢复和 compact 已用真实 app-server 验证。
+- Codex CLI probe 同时在 UI 和 main admission 生效；CLI 不可用时不回落 Claude。
+- Gateway usage 进入统一 ledger、billing 和 context 管线；根 turn、continue 与 compaction 均使用持久化 attribution，首次 binding 竞态会缓冲后再结算。
+- Codex 主代理 Profile prompt/tool sandbox 已接入；Codex 子代理保持关闭，未注册任何 agent role。
+- Composer 执行确认映射为 `always -> untrusted`、`auto -> on-request`、`allow_all -> never`。Codex 没有“每条命令强制弹窗”的原生策略，`untrusted` 仍可能自动执行 Codex 判定为可信的命令，这一语义差异不能写成完全等价。
+- 当前显式 unsupported：Codex 图片附件、activity rewind、子代理、MCP、Skills。UI/handler 必须阻止或明确展示，不允许静默忽略。
 
 ## 1. 结论与实施策略
 
@@ -301,24 +311,27 @@ interface CorePreferences {
 | 能力 | Claude 目标 | Codex 首版目标 | 缺口处理 |
 |---|---|---|---|
 | Agent 模式 | 保持现状 | 必须 | 未通过则不开放 Codex |
-| Ask 模式 | 保持现状 | 必须验证只读边界 | 禁用入口并显示原因 |
-| Plan 模式 | 保持 ExitPlanMode 流程 | Eco handoff 或 Codex 原生语义 | 独立标注语义，不伪装等价 |
-| 继续/重启恢复 | 必须 | 必须 | 不能恢复则首版不发布 |
-| 取消 | 必须 | 必须 | 需要验证 turn/thread 粒度 |
-| 工具审批 | 必须 | 必须 | 不支持的审批类型显式禁止 |
-| MCP | 必须 | 必须 | 展示 Core 侧加载错误 |
-| Skills | 必须 | 必须 | 展示发现来源和不兼容项 |
-| Compact | 保持现状 | 原生 compact | 不用摘要续写冒充原生成功 |
-| 文件回退 | 保持现状 | 原生或 Eco checkpoint | UI 明确实现类型 |
-| 子代理 | 保持现状 | 第二阶段，可先 unsupported | 不阻塞 Codex 单代理预览版 |
-| 精确 usage | 必须 | 必须 | 不能精确归因时明确未结算 |
-| Mobile feed/审批 | 必须 | 必须 | Codex 正式发布前门禁 |
+| Ask 模式 | 保持现状 | 已实现，live 未验收 | 正式发布前补只读 live 验收 |
+| Plan 模式 | 保持 ExitPlanMode 流程 | 已实现 Eco handoff，live 未验收 | 独立标注语义，不伪装等价 |
+| 继续/重启恢复 | 必须 | 已真实验收 | binding 缺失时阻止继续 |
+| 取消 | 必须 | 已接入，自动测试覆盖 | 正式发布前补 live 取消 |
+| 工具审批 | 必须 | 已真实验收 command approval | `always` 仅能映射为 Codex `untrusted` |
+| MCP | 必须 | 当前 unsupported | 不向 Codex 声称已加载 |
+| Skills | 必须 | 当前 unsupported | 不向 Codex 声称已加载 |
+| Compact | 保持现状 | 原生 compact，已真实验收 | 不用摘要续写冒充原生成功 |
+| 文件回退 | 保持现状 | 当前 unsupported | Codex UI/IPC 明确阻止 |
+| 图片输入 | 保持现状 | 当前 unsupported | Codex 发送前明确阻止 |
+| 子代理 | 保持现状 | 当前 unsupported | UI 全关闭且不可编辑 |
+| 精确 usage | 必须 | 已真实验收 | attribution/route 不完整时拒绝结算 |
+| Mobile feed/审批 | 必须 | 未实现/未验收 | Codex 正式发布前门禁 |
 
 能力判断可依赖 Core 版本、当前 session mode、provider 和平台。UI 必须使用运行时 capability 结果，不能只按 `coreKind` 写死。
 
 ## 8. 分阶段推进
 
 ### Phase 0：基线与保护网
+
+状态：本地自动门禁已建立；Claude 自动回归已通过，最终提交前重跑。Claude live smoke 仍需在正式发布记录中单列。
 
 任务：
 
@@ -332,6 +345,8 @@ interface CorePreferences {
 
 ### Phase 1：数据模型与 Core 契约
 
+状态：完成。
+
 任务：
 
 - 增加 `CoreKind`、descriptor、capabilities 和 registry；
@@ -344,6 +359,8 @@ interface CorePreferences {
 
 ### Phase 2：Claude 收口到协调层
 
+状态：start/continue/cancel 已由协调层路由；Claude 其余能力继续沿现有专用 handler，未为了接口整齐重写稳定路径。
+
 任务：
 
 - 实现 `ThreadRuntimeCoordinator` 和 `ClaudeCoreAdapter`；
@@ -355,6 +372,8 @@ interface CorePreferences {
 出口条件：Claude 功能矩阵与 Phase 0 一致，live smoke 通过；未达到时不开始 UI 双 Core 开关。
 
 ### Phase 3：Codex 单会话主路径
+
+状态：完成主路径；真实验证 start、同 binding continue、重启后 resume、Claude/Codex 混合并发。cancel 有自动测试，仍需正式发布 live 记录。
 
 任务：
 
@@ -369,6 +388,8 @@ interface CorePreferences {
 
 ### Phase 4：Codex 产品能力补齐
 
+状态：部分完成。approval、compact、context、gateway、usage/billing 已接入并真实验证；Ask/Plan 只有自动测试；MCP、Skills、rollback/rewind、子代理和 Mobile 尚未完成。
+
 任务：
 
 - 审批、Plan/Ask、compact、rollback；
@@ -380,6 +401,8 @@ interface CorePreferences {
 出口条件：能力矩阵逐项签字；所有 unsupported 能力在 capability 和 UI 中一致呈现。
 
 ### Phase 5：开放会话级选择
+
+状态：Desktop 完成。新会话可选 Claude/Codex，首次运行后锁定，历史列表展示 Core，Codex 不可用时 probe 禁用入口；应用级 `defaultCore` 设置仍未实现。
 
 任务：
 
@@ -450,6 +473,20 @@ interface CorePreferences {
 - migration dry-run 和 usage 对账。
 
 任何 live E2E 因缺少凭据未执行时，发布记录必须写“未验证”，不能用 mock 测试替代其结论。
+
+### 9.5 2026-07-15 本地真实验收记录
+
+目标 Eco Thread：`thr_1784033330912`；持久 Codex Thread：`019f60ac-48b0-7ed2-b07c-962aa161cbe6`。
+
+- start 返回 `CODEX_BILLING_OK`；usage 为 input `475`、output `10`、cache read `10112`、cache creation `768`，UI 成本 `$0.0063`，context `11365 / 258400`。
+- continue 保持同一 Codex Thread ID，返回 `CODEX_CONTINUE_BILLING_OK`；两轮累计 input `985`、output `22`、cache read `19840`、cache creation `1920`，UI 累计成本 `$0.0138`，SQLite ledger 为两笔独立事件。
+- 重启应用后按需执行 `thread/read -> thread/resume`，随后原生 compact 成功；最新一次压缩到 `5900 tokens`，新增 ledger event `ule_e619ccb3846b4ef732412882` 为 `source=codex`、`role=planner`、`attributionStatus=attributed`。
+- command approval live smoke 产生 pending approval `call_QnRqAW6ns5AZFjqL7UfFYqI5`，批准 `/bin/zsh -lc 'sleep 2 && printf CODEX_APPROVAL_LIVE_OK'` 后同一会话完成并返回 marker。
+- 主 Profile 已应用（`profileAppendChars=2099`），同时 `multi-agent roles=(none)`，符合 Codex 首版子代理 unsupported 的声明。
+- Electron CDP capability smoke 验证 Codex 新会话 MCP 为 `0/1` 且开关 disabled，子代理为 `0/3` 且全部 disabled，项目 Skills 条带不渲染。
+- 历史测试库仍保留修复前的 unattributed event `ule_27702e1343dade7435d393b3`。新代码不再产生同类事件，但本次不隐式改写历史 ledger。
+
+最终本地自动门禁：Claude regression 通过；Node SQLite `5/5`；Desktop `1375 pass / 46 skip / 0 fail`；Runtime/Gateway/Bridge/Persistence/Shared/Router `814 pass / 2 skip / 0 fail`；TypeScript、Desktop build、`git diff --check` 均通过。所有 SQLite 执行均走 Node 专用门禁，不把 `node:sqlite` 测试交给 Bun。
 
 ## 10. 可观测性与错误模型
 

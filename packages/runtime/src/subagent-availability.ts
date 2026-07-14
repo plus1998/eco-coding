@@ -1,5 +1,8 @@
 export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
+/** Codex spawn without a Profile agent_type uses the main-agent configuration. */
+export const CODEX_GENERAL_SPAWN_ROLE = "general";
+
 /** Claude SDK built-in Explore key. Eco blocks this and registers its own configured Explore agent. */
 export const SDK_EXPLORE_AGENT_KEY = "Explore";
 
@@ -100,6 +103,19 @@ export function normalizeSubagentAvailability(
 
 export function isSubagentEnabled(availability: SubagentAvailability, role: SubagentRole): boolean {
   return availability[role];
+}
+
+export function isThreadSubagentRoleEnabledForCodex(
+  role: string,
+  availability?: Partial<Record<SubagentRole, boolean>>,
+): boolean {
+  if (!availability || !isSubagentRole(role)) {
+    return true;
+  }
+  if (role === "explore") {
+    return availability.explore !== false;
+  }
+  return availability[role] === true;
 }
 
 export interface SubagentRouteLike {

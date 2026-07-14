@@ -1,0 +1,11 @@
+# Desensitized Codex app-server notification capture — bash commandExecution turn.
+# Shapes match codex-app-server-protocol v2 (camelCase).
+{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr_codex_fixture_002","turn":{"id":"turn_bash_fixture_001","items":[],"status":"inProgress"}}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","item":{"type":"userMessage","id":"item_user_bash_001","content":[{"type":"text","text":"Run git status in the repo."}]},"startedAtMs":0}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","item":{"type":"userMessage","id":"item_user_bash_001","clientId":"msg_eco_bash_fixture_001","content":[{"type":"text","text":"Run git status in the repo."}]},"completedAtMs":1}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","item":{"type":"commandExecution","id":"item_bash_fixture_001","command":"git status","cwd":"/repo/worktree","status":"inProgress","source":"agent","commandActions":[]},"startedAtMs":2}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","item":{"type":"commandExecution","id":"item_bash_fixture_001","command":"git status","cwd":"/repo/worktree","status":"completed","source":"agent","commandActions":[],"aggregatedOutput":"On branch main\nnothing to commit, working tree clean\n","exitCode":0,"durationMs":42},"completedAtMs":3}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","item":{"type":"agentMessage","id":"item_agent_bash_001","text":""},"startedAtMs":4}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","itemId":"item_agent_bash_001","delta":"Working tree is clean."}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_codex_fixture_002","turnId":"turn_bash_fixture_001","item":{"type":"agentMessage","id":"item_agent_bash_001","text":"Working tree is clean."},"completedAtMs":5}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thr_codex_fixture_002","turn":{"id":"turn_bash_fixture_001","items":[],"status":"completed"}}}

@@ -484,6 +484,9 @@ export class ConversationStore {
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
 
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_core_sessions_external
+        ON thread_core_sessions(core_kind, external_session_id);
+
       CREATE TABLE IF NOT EXISTS thread_activity (
         id TEXT PRIMARY KEY,
         thread_id TEXT NOT NULL,
@@ -1694,6 +1697,23 @@ export class ConversationStore {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  getThreadIdByCoreSession(coreKind: CoreKind, externalSessionId: string): string | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT thread_id
+         FROM thread_core_sessions
+         WHERE core_kind = ? AND external_session_id = ?`,
+      )
+      .get(coreKind, externalSessionId.trim()) as { thread_id: string } | undefined;
+    return row?.thread_id;
+  }
+
+  deleteThreadCoreSession(threadId: string, coreKind: CoreKind): void {
+    this.db
+      .prepare(`DELETE FROM thread_core_sessions WHERE thread_id = ? AND core_kind = ?`)
+      .run(threadId.trim(), coreKind);
   }
 
   deleteThread(threadId: string): boolean {

@@ -1,4 +1,8 @@
-import { collectProfileAssignedMcpServers, defaultSubagentAvailability } from "@eco/runtime";
+import {
+  collectProfileAssignedMcpServers,
+  type CoreKind,
+  defaultSubagentAvailability,
+} from "@eco/runtime";
 import {
   Activity,
   AlertCircle,
@@ -54,6 +58,7 @@ import {
   type CandidateModelView,
   type ClarificationRequest,
   type CoderTodoItem,
+  type CoreAvailabilitySnapshot,
   deriveSubagentEnabledFromProfile,
   deriveMcpServersEnabled,
   getDefaultAgentProfileId,
@@ -362,6 +367,15 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
 };
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
+
+const CODEX_DISABLED_SUBAGENTS = {
+  explore: false,
+  architect: false,
+  coder: false,
+  reviewer: false,
+  tester: false,
+} as const;
+const EMPTY_COMPOSER_SKILLS_BY_NAME = new Map<string, SkillInfo>();
 
 const emptyGitSettings: GitSettingsSnapshot = {
   commitMessageRoleByProfileId: {},
@@ -849,6 +863,8 @@ function App() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
+  const [newThreadCoreKind, setNewThreadCoreKind] = useState<CoreKind>("claude");
+  const [coreAvailability, setCoreAvailability] = useState<CoreAvailabilitySnapshot>();
   const [composerCandidateModels, setComposerCandidateModels] = useState<CandidateModelView[]>([]);
   const [composerModelsLoading, setComposerModelsLoading] = useState(false);
   const [composerModelsError, setComposerModelsError] = useState<string>();
@@ -886,6 +902,21 @@ function App() {
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
   const [terminalLifecycleEpoch, setTerminalLifecycleEpoch] = useState(0);
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
+
+  useEffect(() => {
+    if (!window.eco?.getCoreAvailability) {
+      return;
+    }
+    void window.eco.getCoreAvailability().then(setCoreAvailability).catch((error) => {
+      console.error("Failed to probe Core availability", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (newThreadCoreKind === "codex" && coreAvailability?.codex.available === false) {
+      setNewThreadCoreKind("claude");
+    }
+  }, [coreAvailability?.codex.available, newThreadCoreKind]);
 
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
@@ -2248,6 +2279,8 @@ function App() {
     () => dedupeSkillsByName([...userSkills, ...projectSdkReadySkills]),
     [userSkills, projectSdkReadySkills],
   );
+  const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
+  const composerSupportsSkills = composerCoreKind !== "codex";
   const projectAgentsOnly = useMemo(
     () => (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project"),
     [skillsSnapshot?.agentsOnlySkills],
@@ -2263,7 +2296,8 @@ function App() {
     }
     return filterSkillsForSlash(composerSkillSlash.query, slashPickerSkills, referencedSkillNames);
   }, [composerSkillSlash, slashPickerSkills, referencedSkillNames]);
-  const composerSkillPopoverOpen = Boolean(composerSkillSlash) && slashPickerSkills.length > 0;
+  const composerSkillPopoverOpen =
+    composerSupportsSkills && Boolean(composerSkillSlash) && slashPickerSkills.length > 0;
 
   useEffect(() => {
     setComposerSkillActiveIndex(Math.max(0, composerSkillMatches.length - 1));
@@ -2357,6 +2391,18 @@ function App() {
     settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
   ]);
+  const effectiveComposerRuntimeConfig = useMemo(() => {
+    if (!composerRuntimeConfig || composerCoreKind !== "codex") {
+      return composerRuntimeConfig;
+    }
+    return {
+      ...composerRuntimeConfig,
+      subagentEnabled: CODEX_DISABLED_SUBAGENTS,
+      mcpServersEnabled: Object.fromEntries(
+        Object.keys(composerMcpSettings).map((serverKey) => [serverKey, false]),
+      ),
+    };
+  }, [composerCoreKind, composerMcpSettings, composerRuntimeConfig]);
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
     if (!selectedRuntimeProfile) {
       return undefined;
@@ -2473,7 +2519,7 @@ function App() {
   const showBashApproval = Boolean(pendingBashApproval);
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
-  const canPasteComposerImages = plannerSupportsImages;
+  const canPasteComposerImages = plannerSupportsImages && composerCoreKind !== "codex";
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
   const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
@@ -3584,6 +3630,11 @@ function App() {
       setIsStarting(false);
       return;
     }
+    if (composerCoreKind === "codex" && referencedSkillNames.size > 0) {
+      setError("Codex Core 首版暂不支持 Skills，请移除 Skill 引用后再发送。");
+      setIsStarting(false);
+      return;
+    }
     try {
       if (activeThread && isContinuableThreadStatus(activeThread.status)) {
         const rewindTarget = activeComposerRewindTarget
@@ -3595,7 +3646,7 @@ function App() {
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt: messagePrompt,
-          runtimeConfig: composerRuntimeConfig,
+          runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
           ...(rewindTarget && { rewindTarget }),
           ...(attachments && { attachments }),
         });
@@ -3623,7 +3674,8 @@ function App() {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
           prompt: messagePrompt,
-          runtimeConfig: composerRuntimeConfig,
+          coreKind: newThreadCoreKind,
+          runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
           ...(attachments && { attachments }),
         });
         setThreads((current) => [
@@ -4056,7 +4108,7 @@ function App() {
           const result = await window.eco.continueThread({
             threadId: activeThread.id,
             prompt,
-            runtimeConfig: composerRuntimeConfig,
+            runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
           });
           setThreads((current) =>
             current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
@@ -4076,7 +4128,8 @@ function App() {
       const result = await window.eco.startThread({
         workspacePath: currentProjectPath,
         prompt,
-        runtimeConfig: composerRuntimeConfig,
+        coreKind: newThreadCoreKind,
+        runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
       });
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
       setSelectedThreadId(result.thread.id);
@@ -5148,25 +5201,33 @@ function App() {
   );
 
   const composerAgentModelsControl = (
-    <ComposerAgentModels
-      labels={agentModelLabels}
-      subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
-      canEditSubagents={canEditComposerConfig}
-      subagentSaving={isSavingSettings}
-      compact={composerCompact}
-      onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-    />
+    <div title={composerCoreKind === "codex" ? "Codex Core 首版暂不支持子代理" : undefined}>
+      <ComposerAgentModels
+        labels={agentModelLabels}
+        subagentSettings={
+          composerCoreKind === "codex"
+            ? CODEX_DISABLED_SUBAGENTS
+            : composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()
+        }
+        canEditSubagents={composerCoreKind !== "codex" && canEditComposerConfig}
+        subagentSaving={isSavingSettings}
+        compact={composerCompact}
+        onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+      />
+    </div>
   );
 
   const composerMcpControl = (
-    <ComposerMcpServers
-      servers={mcpSettings.servers}
-      enabledSettings={composerMcpSettings}
-      canEdit={canEditComposerConfig}
-      saving={isSavingSettings}
-      compact={composerCompact}
-      onToggleServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
-    />
+    <div title={composerCoreKind === "codex" ? "Codex Core 首版暂不支持 MCP" : undefined}>
+      <ComposerMcpServers
+        servers={mcpSettings.servers}
+        enabledSettings={composerCoreKind === "codex" ? {} : composerMcpSettings}
+        canEdit={composerCoreKind !== "codex" && canEditComposerConfig}
+        saving={isSavingSettings}
+        compact={composerCompact}
+        onToggleServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
+      />
+    </div>
   );
 
   const composerModelControl = templateMainModel ? (
@@ -5181,6 +5242,44 @@ function App() {
       onChange={(override) => void selectComposerMainAgentModel(override)}
     />
   ) : null;
+
+  const composerCoreControl = (
+    <div className="composer-core-segmented" role="group" aria-label="会话 Core">
+      {(["claude", "codex"] as const).map((kind) => {
+        const selected = composerCoreKind === kind;
+        const unavailable = kind === "codex" && coreAvailability?.codex.available === false;
+        return (
+          <button
+            key={kind}
+            type="button"
+            className={selected ? "is-active" : ""}
+            aria-pressed={selected}
+            disabled={Boolean(activeThread) || isStarting || unavailable}
+            title={
+              kind === "claude"
+                ? "Claude Code Core"
+                : unavailable
+                  ? coreAvailability.codex.reason
+                  : "Codex Core"
+            }
+            onClick={() => {
+              if (kind === "codex" && composerAttachments.length > 0) {
+                setError("Codex Core 暂不支持图片附件，请先移除已粘贴的图片。");
+                return;
+              }
+              if (kind === "codex" && referencedSkillNames.size > 0) {
+                setError("Codex Core 首版暂不支持 Skills，请先移除 Skill 引用。");
+                return;
+              }
+              setNewThreadCoreKind(kind);
+            }}
+          >
+            {kind === "claude" ? "Claude" : "Codex"}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   const composer = (
     <div className="codex-composer-wrap">
@@ -5267,7 +5366,7 @@ function App() {
                     setComposerRoutePopoverOpen(false);
                   }
                 }}
-                skillsByName={composerSkillsByName}
+                skillsByName={composerSupportsSkills ? composerSkillsByName : EMPTY_COMPOSER_SKILLS_BY_NAME}
                 onCursorChange={setComposerCursor}
                 onKeyDown={handleComposerKeyDown}
                 maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
@@ -5281,6 +5380,7 @@ function App() {
                     <div className="composer-footer-row composer-footer-compact-row">
                       {composerRouteControl}
                       <div className="composer-footer-row composer-footer-config-row">
+                        {composerCoreControl}
                         {composerRuntimeConfig ? (
                           <ComposerPlanModeToggle
                             sessionMode={composerRuntimeConfig.sessionMode}
@@ -5301,6 +5401,7 @@ function App() {
                     </div>
                   ) : (
                     <div className="composer-footer-row composer-footer-config-row">
+                      {composerCoreControl}
                       {composerRuntimeConfig ? (
                         <ComposerPlanModeToggle
                           sessionMode={composerRuntimeConfig.sessionMode}
@@ -5383,7 +5484,7 @@ function App() {
           </div>
         }
       />
-      {showLanding && showProjectSkillsPanel ? (
+      {showLanding && showProjectSkillsPanel && composerSupportsSkills ? (
         <ComposerSkillsBar
           sdkReadySkills={projectSdkReadySkills}
           agentsOnlySkills={projectAgentsOnly}

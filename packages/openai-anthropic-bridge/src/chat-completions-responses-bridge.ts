@@ -1,4 +1,16 @@
 import { generateItemId, generateResponsesId } from './anthropic-to-responses-response.js';
+import {
+  CUSTOM_TOOL_INPUT_FIELD,
+  chatErrorToResponseError,
+  customToolInputFromChatArguments,
+  responseIdFromChatId,
+  TOOL_SEARCH_PROXY_NAME,
+} from './codex-chat-common.js';
+import {
+  buildCodexToolContextFromRequest,
+  lookupChatName,
+  type CodexToolContext,
+} from './codex-tool-context.js';
 import { bytesTrimSpace, jsonMarshal, jsonParse } from './json.js';
 import type {
   ChatCompletionsChunk,
@@ -24,6 +36,12 @@ import type {
   ResponsesUsage,
 } from './types.js';
 
+export {
+  buildCodexToolContextFromRequest,
+  chatErrorToResponseError,
+  type CodexToolContext,
+};
+
 // ---------------------------------------------------------------------------
 // ResponsesRequest → ChatCompletionsRequest
 // ---------------------------------------------------------------------------
@@ -35,6 +53,7 @@ export function responsesToChatCompletionsRequest(
     throw new Error('responses request is nil');
   }
 
+  const toolContext = buildCodexToolContextFromRequest(req);
   const messages = responsesInputToChatMessages(
     req.instructions ?? '',
     req.input,
@@ -68,8 +87,8 @@ export function responsesToChatCompletionsRequest(
   if (req.reasoning !== undefined) {
     out.reasoning_effort = req.reasoning.effort;
   }
-  if ((req.tools?.length ?? 0) > 0) {
-    out.tools = responsesToolsToChatTools(req.tools ?? []);
+  if (toolContext.chatTools.length > 0) {
+    out.tools = toolContext.chatTools;
   }
   if (req.tool_choice !== undefined && req.tool_choice !== null) {
     out.tool_choice = responsesToolChoiceToChatToolChoice(req.tool_choice);
@@ -701,6 +720,8 @@ function responsesToolChoiceToChatToolChoice(raw: unknown): unknown {
 export function chatCompletionsResponseToResponses(
   resp: ChatCompletionsResponse | null | undefined,
   model: string,
+  toolContext = buildCodexToolContextFromRequest(undefined),
+  normalizeResponseId = false,
 ): ResponsesResponse {
   let id = '';
   if (resp !== null && resp !== undefined) {
@@ -711,7 +732,7 @@ export function chatCompletionsResponseToResponses(
   }
 
   const out: ResponsesResponse = {
-    id,
+    id: normalizeResponseId ? responseIdFromChatId(id) : id,
     object: 'response',
     model,
     status: 'completed',
@@ -727,7 +748,7 @@ export function chatCompletionsResponseToResponses(
 
   if (resp.choices.length > 0) {
     const choice = resp.choices[0]!;
-    out.output = chatMessageToResponsesOutput(choice.message);
+    out.output = chatMessageToResponsesOutput(choice.message, toolContext);
     if (choice.finish_reason === 'length') {
       out.status = 'incomplete';
       out.incomplete_details = {
@@ -762,7 +783,10 @@ function chatMessageReasoningText(message: ChatMessage): string {
   return parts.join('\n\n');
 }
 
-function chatMessageToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
+function chatMessageToResponsesOutput(
+  message: ChatMessage,
+  toolContext: CodexToolContext,
+): ResponsesOutput[] {
   const outputs: ResponsesOutput[] = [];
   const reasoningItems = chatReasoningItemsToResponsesOutput(message);
   if (reasoningItems.length > 0) {
@@ -799,14 +823,7 @@ function chatMessageToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
     if (bytesTrimSpace(arguments_) === '') {
       arguments_ = '{}';
     }
-    outputs.push({
-      type: 'function_call',
-      id: generateItemId(),
-      call_id: toolCall.id ?? '',
-      name: toolCall.function.name,
-      arguments: arguments_,
-      status: 'completed',
-    });
+    outputs.push(chatToolCallToResponsesOutput(toolCall, arguments_, toolContext));
   }
 
   return outputs;
@@ -827,6 +844,44 @@ function chatReasoningItemsToResponsesOutput(message: ChatMessage): ResponsesOut
     });
   }
   return out;
+}
+
+function chatToolCallToResponsesOutput(
+  toolCall: ChatToolCall,
+  arguments_: string,
+  toolContext: CodexToolContext,
+  id = generateItemId(),
+): ResponsesOutput {
+  const chatName = toolCall.function.name;
+  const spec = lookupChatName(toolContext, chatName);
+  const common = {
+    id,
+    call_id: toolCall.id ?? '',
+    status: 'completed',
+  };
+  if (spec?.kind === 'custom') {
+    return {
+      ...common,
+      type: 'custom_tool_call',
+      name: spec.name,
+      input: customToolInputFromChatArguments(arguments_),
+    };
+  }
+  if (spec?.kind === 'tool_search' || chatName === TOOL_SEARCH_PROXY_NAME) {
+    return {
+      ...common,
+      type: 'tool_search_call',
+      execution: 'client',
+      arguments: arguments_,
+    };
+  }
+  return {
+    ...common,
+    type: 'function_call',
+    name: spec?.name ?? chatName,
+    ...(spec?.namespace ? { namespace: spec.namespace } : {}),
+    arguments: arguments_,
+  };
 }
 
 function emptyResponsesMessageOutput(): ResponsesOutput {
@@ -927,6 +982,7 @@ export interface ChatCompletionsToResponsesStreamState {
   sequenceNumber: number;
   createdSent: boolean;
   completedSent: boolean;
+  failedSent: boolean;
   nextOutputIndex: number;
   reasoningItemId: string;
   reasoningIndex: number;
@@ -942,10 +998,14 @@ export interface ChatCompletionsToResponsesStreamState {
   toolOutputIndex: Map<number, number>;
   finishReason: string;
   usage: ResponsesUsage | undefined;
+  toolContext: CodexToolContext;
+  normalizeResponseId: boolean;
 }
 
 export function newChatCompletionsToResponsesStreamState(
   model: string,
+  toolContext = buildCodexToolContextFromRequest(undefined),
+  normalizeResponseId = false,
 ): ChatCompletionsToResponsesStreamState {
   return {
     responseId: generateResponsesId(),
@@ -954,6 +1014,7 @@ export function newChatCompletionsToResponsesStreamState(
     sequenceNumber: 0,
     createdSent: false,
     completedSent: false,
+    failedSent: false,
     nextOutputIndex: 0,
     reasoningItemId: '',
     reasoningIndex: 0,
@@ -969,6 +1030,8 @@ export function newChatCompletionsToResponsesStreamState(
     toolOutputIndex: new Map(),
     finishReason: '',
     usage: undefined,
+    toolContext,
+    normalizeResponseId,
   };
 }
 
@@ -994,7 +1057,7 @@ export function chatCompletionsChunkToResponsesEvents(
     return [];
   }
   if (chunk.id !== '') {
-    state.responseId = chunk.id;
+    state.responseId = state.normalizeResponseId ? responseIdFromChatId(chunk.id) : chunk.id;
   }
   if (state.model === '' && chunk.model !== '') {
     state.model = chunk.model;
@@ -1065,16 +1128,17 @@ export function chatCompletionsChunkToResponsesEvents(
         state.toolItemIds.set(idx, itemID);
         state.toolOutputIndex.set(idx, allocOutputIndex(state));
         const outputIndex = state.toolOutputIndex.get(idx)!;
+        const responseItem = chatToolCallToResponsesOutput(
+          copyCall,
+          '',
+          state.toolContext,
+          itemID,
+        );
+        responseItem.status = 'in_progress';
         events.push(
           chatToResponsesEvent(state, 'response.output_item.added', {
             output_index: outputIndex,
-            item: {
-              type: 'function_call',
-              id: itemID,
-              call_id: stored.id ?? '',
-              name: stored.function.name,
-              status: 'in_progress',
-            },
+            item: responseItem,
           }),
         );
       } else {
@@ -1113,7 +1177,7 @@ export function chatCompletionsChunkToResponsesEvents(
 export function finalizeChatCompletionsResponsesStream(
   state: ChatCompletionsToResponsesStreamState | null | undefined,
 ): ResponsesStreamEvent[] {
-  if (state === null || state === undefined || state.completedSent) {
+  if (state === null || state === undefined || state.completedSent || state.failedSent) {
     return [];
   }
 
@@ -1178,6 +1242,35 @@ export function finalizeChatCompletionsResponsesStream(
   events.push(
     chatToResponsesEvent(state, 'response.completed', {
       response: completedResponse,
+    }),
+  );
+  return events;
+}
+
+export function failChatCompletionsResponsesStream(
+  state: ChatCompletionsToResponsesStreamState | null | undefined,
+  message: string,
+  errorType?: string,
+): ResponsesStreamEvent[] {
+  if (state === null || state === undefined || state.completedSent || state.failedSent) {
+    return [];
+  }
+  const events = ensureChatToResponsesCreated(state);
+  state.failedSent = true;
+  state.completedSent = true;
+  events.push(
+    chatToResponsesEvent(state, 'response.failed', {
+      response: {
+        id: state.responseId,
+        object: 'response',
+        model: state.model,
+        status: 'failed',
+        output: chatStreamOutput(state),
+        error: {
+          message,
+          ...(errorType ? { type: errorType } : {}),
+        },
+      },
     }),
   );
   return events;
@@ -1324,6 +1417,12 @@ function closeChatToolItems(
       arguments_ = '{}';
     }
     const outputIndex = state.toolOutputIndex.get(i)!;
+    const item = chatToolCallToResponsesOutput(
+      toolCall,
+      arguments_,
+      state.toolContext,
+      itemID,
+    );
     events.push(
       chatToResponsesEvent(state, 'response.function_call_arguments.done', {
         output_index: outputIndex,
@@ -1334,14 +1433,7 @@ function closeChatToolItems(
       }),
       chatToResponsesEvent(state, 'response.output_item.done', {
         output_index: outputIndex,
-        item: {
-          type: 'function_call',
-          id: itemID,
-          call_id: toolCall.id ?? '',
-          name: toolCall.function.name,
-          arguments: arguments_,
-          status: 'completed',
-        },
+        item,
       }),
     );
   }
@@ -1377,14 +1469,7 @@ function chatStreamOutput(
     if (bytesTrimSpace(arguments_) === '') {
       arguments_ = '{}';
     }
-    outputs.push({
-      type: 'function_call',
-      id: generateItemId(),
-      call_id: toolCall.id ?? '',
-      name: toolCall.function.name,
-      arguments: arguments_,
-      status: 'completed',
-    });
+    outputs.push(chatToolCallToResponsesOutput(toolCall, arguments_, state.toolContext));
   }
   return outputs;
 }
