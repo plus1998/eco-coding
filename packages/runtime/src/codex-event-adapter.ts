@@ -997,21 +997,29 @@ function readLifecycleStatus(item: Record<string, unknown>): CodexCommandExecuti
 }
 
 function readReasoningItemText(item: Record<string, unknown>): string {
-  const summary = readStringArray(item, "summary");
+  const summary = readTextArray(item, "summary");
   if (summary.length > 0) {
     return summary.join("\n");
   }
-  const content = readStringArray(item, "content");
+  const content = readTextArray(item, "content");
   return content.join("\n");
 }
 
-function readStringArray(record: Record<string, unknown>, key: string): string[] {
+function readTextArray(record: Record<string, unknown>, key: string): string[] {
   const value = record[key];
   if (!Array.isArray(value)) {
     return [];
   }
   return value
-    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return entry.trim();
+      }
+      if (isRecord(entry) && typeof entry.text === "string") {
+        return entry.text.trim();
+      }
+      return "";
+    })
     .filter((entry) => entry.length > 0);
 }
 

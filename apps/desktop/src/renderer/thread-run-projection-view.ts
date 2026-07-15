@@ -1614,7 +1614,11 @@ function projectionStreamDisplayKey(
   const requestId = resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
   const streamKey = item.streamKey?.trim();
   const hasExplicitStreamBlockKey = Boolean(streamKey?.includes(":block:"));
-  if (streamKey && hasExplicitStreamBlockKey) {
+  const hasExplicitLogicalItemKey = Boolean(
+    streamKey &&
+      (item.metadata?.logicalEntityId === streamKey || item.metadata?.itemId === streamKey),
+  );
+  if (streamKey && (hasExplicitStreamBlockKey || hasExplicitLogicalItemKey)) {
     return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
   }
   if (requestId && requestSpansById) {

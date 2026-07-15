@@ -2330,6 +2330,62 @@ test("projectionMainFeedEntryKey scopes message stream by requestId when present
   expect(projectionMainFeedEntryKey(withRequest)).toBe("main:stream:message:role:planner:req:req_planner");
 });
 
+test("buildThreadRunProjectionViewModel preserves separate Codex message items after request completion", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "turn_codex",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:00:05.000Z",
+          role: "planner",
+        },
+      ],
+      timeline: [
+        item({
+          id: "codex-message-a",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "turn_codex",
+          streamKey: "msg_codex_a",
+          text: "先检查项目结构。",
+          sequence: 1,
+          metadata: {
+            codexMethod: "item/completed",
+            logicalEntityId: "msg_codex_a",
+            itemId: "msg_codex_a",
+            itemType: "agentMessage",
+          },
+        }),
+        item({
+          id: "codex-message-b",
+          eventType: "message.final",
+          role: "planner",
+          requestId: "turn_codex",
+          streamKey: "msg_codex_b",
+          text: "结构确认后继续修改。",
+          sequence: 2,
+          metadata: {
+            codexMethod: "item/completed",
+            logicalEntityId: "msg_codex_b",
+            itemId: "msg_codex_b",
+            itemType: "agentMessage",
+          },
+        }),
+      ],
+    }),
+  );
+
+  const messages = view.mainFeedEntries.filter(
+    (entry) => entry.kind === "timeline" && entry.item.eventType === "message.final",
+  );
+  expect(messages.map((entry) => (entry.kind === "timeline" ? entry.item.text : ""))).toEqual([
+    "先检查项目结构。",
+    "结构确认后继续修改。",
+  ]);
+});
+
 test("buildThreadRunProjectionViewModel keeps active thinking below bash cards", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

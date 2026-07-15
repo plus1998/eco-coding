@@ -1452,6 +1452,32 @@ test("ignores self-parent subAgentActivity so planner thinking stays on main sco
   expect(events[0]?.agentId).toBeUndefined();
 });
 
+test("dispatch reads structured reasoning summary text on item completion", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_reasoning_summary",
+      item: {
+        type: "reasoning",
+        id: "item_reasoning_summary",
+        summary: [
+          { type: "summary_text", text: "先定位事件合并。" },
+          { type: "summary_text", text: "再检查 Feed 投影。" },
+        ],
+        encryptedContent: "opaque",
+      },
+    });
+  });
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    eventType: "thinking.final",
+    message: "先定位事件合并。\n再检查 Feed 投影。",
+    streamKey: "item_reasoning_summary",
+  });
+});
+
 test("buffers child events until parent eco mapping is known then flushes", () => {
   const parentMapped = { value: false };
   const attributions = new Map<string, { parentThreadId: string; agentRole?: string }>();
