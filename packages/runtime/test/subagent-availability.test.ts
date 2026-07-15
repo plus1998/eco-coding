@@ -48,9 +48,9 @@ test("filterAgentDefinitions maps eco keys to availability roles", () => {
   expect(filtered).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
 });
 
-test("sdkBuiltinSubagentDenyRules leaves general-purpose open", () => {
+test("sdkBuiltinSubagentDenyRules blocks unregistered general-purpose", () => {
   const deny = sdkBuiltinSubagentDenyRules();
-  expect(deny).not.toContain("Agent(general-purpose)");
+  expect(deny).toContain("Agent(general-purpose)");
   expect(deny).toContain("Agent(Explore)");
   expect(deny).toContain("Agent(Plan)");
   expect(deny).toContain("Agent(Bash)");
@@ -59,11 +59,16 @@ test("sdkBuiltinSubagentDenyRules leaves general-purpose open", () => {
 
 test("sdkBuiltinSubagentDenyRules can open Plan for plan mode", () => {
   const deny = sdkBuiltinSubagentDenyRules(["Plan"]);
-  expect(deny).not.toContain("Agent(general-purpose)");
+  expect(deny).toContain("Agent(general-purpose)");
   expect(deny).not.toContain("Agent(Plan)");
   expect(deny).toContain("Agent(Explore)");
   expect(deny).toContain("Agent(Bash)");
   expect(deny).toContain("Agent(statusline-setup)");
+});
+
+test("sdkBuiltinSubagentDenyRules only opens general-purpose explicitly", () => {
+  const deny = sdkBuiltinSubagentDenyRules(["general-purpose"]);
+  expect(deny).not.toContain("Agent(general-purpose)");
 });
 
 test("effectiveSubagentAvailability disables optional roles without model routes", () => {

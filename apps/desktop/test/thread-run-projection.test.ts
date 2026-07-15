@@ -858,6 +858,64 @@ test("buildThreadRunProjection ignores duplicate request.started after streaming
   expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(false);
 });
 
+test("buildThreadRunProjection suppresses persisted SDK message replay after finalization", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_sdk_replay",
+    status: "idle",
+    attempts: [],
+    agents: [],
+    events: [
+      event({
+        id: "first-placeholder",
+        sequence: 1,
+        scope: "main",
+        role: "planner",
+        eventType: "message.delta",
+        streamState: "placeholder",
+        streamKey: "thr_sdk_replay:planner:block:text:1",
+        message: "",
+        metadata: { sdkMessageId: "msg_same", sdkStreamBlockKey: "text:1" },
+      }),
+      event({
+        id: "first-final",
+        sequence: 2,
+        scope: "main",
+        role: "planner",
+        eventType: "message.final",
+        streamState: "finalized",
+        streamKey: "thr_sdk_replay:planner:block:text:1",
+        message: "只显示一次。",
+        metadata: { sdkMessageId: "msg_same", sdkStreamBlockKey: "text:1" },
+      }),
+      event({
+        id: "replayed-placeholder",
+        sequence: 3,
+        scope: "main",
+        role: "planner",
+        eventType: "message.delta",
+        streamState: "placeholder",
+        streamKey: "thr_sdk_replay:planner:block:text:2",
+        message: "",
+        metadata: { sdkMessageId: "msg_same", sdkStreamBlockKey: "text:2" },
+      }),
+      event({
+        id: "replayed-final",
+        sequence: 4,
+        scope: "main",
+        role: "planner",
+        eventType: "message.final",
+        streamState: "finalized",
+        streamKey: "thr_sdk_replay:planner:block:text:2",
+        message: "只显示一次。",
+        metadata: { sdkMessageId: "msg_same", sdkStreamBlockKey: "text:2" },
+      }),
+    ],
+  });
+
+  expect(projection.sourceEventCount).toBe(4);
+  expect(projection.timeline.map((item) => item.id)).toEqual(["first-placeholder", "first-final"]);
+});
+
 test("buildThreadRunProjection ignores persisted metrics-only usage events", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",

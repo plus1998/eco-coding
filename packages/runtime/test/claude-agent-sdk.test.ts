@@ -323,8 +323,13 @@ test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in su
   const deny = settings.permissions?.deny ?? [];
   expect(settings.disableWorkflows).toBe(true);
   expect(settings.autoCompactEnabled).toBe(false);
-  expect(deny).toEqual(["Agent(statusline-setup)", "Agent(Explore)", "Agent(Plan)", "Agent(Bash)"]);
-  expect(deny.includes("Agent(general-purpose)")).toBe(false);
+  expect(deny).toEqual([
+    "Agent(general-purpose)",
+    "Agent(statusline-setup)",
+    "Agent(Explore)",
+    "Agent(Plan)",
+    "Agent(Bash)",
+  ]);
   expect(settings.env).toEqual({
     ANTHROPIC_API_KEY: "router-key",
     ANTHROPIC_BASE_URL: "http://127.0.0.1:36037",
@@ -341,9 +346,13 @@ test("applyEcoSdkSettings opens Plan when plan mode allows it", () => {
     permissions?: { deny?: string[] };
   };
   const deny = settings.permissions?.deny ?? [];
-  expect(deny).toEqual(["Agent(statusline-setup)", "Agent(Explore)", "Agent(Bash)"]);
+  expect(deny).toEqual([
+    "Agent(general-purpose)",
+    "Agent(statusline-setup)",
+    "Agent(Explore)",
+    "Agent(Bash)",
+  ]);
   expect(deny.includes("Agent(Plan)")).toBe(false);
-  expect(deny.includes("Agent(general-purpose)")).toBe(false);
 });
 
 test("createAutonomousAgentDefinitions registers all subagent roles", () => {

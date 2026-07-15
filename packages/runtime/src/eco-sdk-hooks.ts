@@ -681,7 +681,7 @@ export function createNonEcoSubagentDenyPreToolHook(
   allowedSdkBuiltinAgentKeys: readonly string[] = [],
 ): HookCallback {
   const allowed = new Set(allowedAgentKeys);
-  const allowedSdkBuiltins = new Set([SDK_GENERAL_PURPOSE_AGENT_KEY, ...allowedSdkBuiltinAgentKeys]);
+  const allowedSdkBuiltins = new Set(allowedSdkBuiltinAgentKeys);
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") {
       return {};

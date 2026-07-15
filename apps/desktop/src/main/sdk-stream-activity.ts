@@ -41,6 +41,7 @@ const STREAM_THROTTLE_MS = 50;
 export class SdkStreamActivityBridge {
   private readonly pendingDeltas = new Map<string, PendingStreamDelta>();
   private readonly lastStreamLine = new Map<string, { role: string; message: string; agentId?: string }>();
+  private readonly finalizedSdkMessageBlocks = new Set<string>();
 
   resetThread(threadId: string): void {
     for (const key of [...this.lastStreamLine.keys()]) {
@@ -55,6 +56,11 @@ export class SdkStreamActivityBridge {
           clearTimeout(pending.timer);
         }
         this.pendingDeltas.delete(key);
+      }
+    }
+    for (const key of [...this.finalizedSdkMessageBlocks]) {
+      if (key.startsWith(`${threadId}:`)) {
+        this.finalizedSdkMessageBlocks.delete(key);
       }
     }
   }
@@ -119,7 +125,7 @@ export class SdkStreamActivityBridge {
     const role = String(display?.role ?? event.role);
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
-    const sdkStreamBlockKey = readSdkStreamBlockKey(event.payload);
+    const sdkStreamBlockKey = readSdkStreamIdentityKey(event.payload);
     const streamKey = activityStreamKey(
       threadId,
       activityAgentId,
@@ -127,6 +133,10 @@ export class SdkStreamActivityBridge {
       options?.parentToolUseId,
       sdkStreamBlockKey,
     );
+    const stableSdkMessageBlock = readSdkMessageId(event.payload) ? streamKey : undefined;
+    if (stableSdkMessageBlock && this.finalizedSdkMessageBlocks.has(stableSdkMessageBlock)) {
+      return;
+    }
 
     if (event.payload && isEcoStreamFinalize(event.payload)) {
       this.flushPending(threadId, emit);
@@ -142,6 +152,9 @@ export class SdkStreamActivityBridge {
         mergeSdkActivityEmitExtras(finalizedMessage, undefined, event.payload),
       );
       this.lastStreamLine.delete(streamKey);
+      if (stableSdkMessageBlock) {
+        this.finalizedSdkMessageBlocks.add(stableSdkMessageBlock);
+      }
       return;
     }
 
@@ -268,6 +281,17 @@ function readSdkStreamBlockKey(payload: unknown): string | undefined {
   }
   const value = (payload as { stream_block_key?: unknown }).stream_block_key;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readSdkStreamIdentityKey(payload: unknown): string | undefined {
+  const messageId = readSdkMessageId(payload);
+  if (messageId && payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const blockKind = (payload as { blockKind?: unknown }).blockKind;
+    if (blockKind === "text" || blockKind === "thinking") {
+      return `${blockKind}:message:${messageId}`;
+    }
+  }
+  return readSdkStreamBlockKey(payload);
 }
 
 function readSdkMessageId(payload: unknown): string | undefined {
@@ -613,7 +637,7 @@ function mergeSdkActivityEmitExtras(
   payload?: unknown,
 ): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
   const activityOrigin = classifySdkStreamMessageOrigin(message);
-  const sdkStreamBlockKey = readSdkStreamBlockKey(payload);
+  const sdkStreamBlockKey = readSdkStreamIdentityKey(payload);
   const sdkMessageId = readSdkMessageId(payload);
   const taskMetadata = readSdkTaskReconciliationMetadata(payload);
   const metadata =

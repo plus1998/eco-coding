@@ -318,9 +318,12 @@ test("buildBuiltinPlanToolPermissionEntry keeps plan agent read-only with networ
   expect(entry.network).toEqual({ webSearch: true, webFetch: true });
 });
 
-test("resolveToolPermissionEntryForActor maps SDK general-purpose to main policy", () => {
+test("resolveToolPermissionEntryForActor prevents SDK general-purpose recursive delegation", () => {
   const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
-  expect(resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY)).toBe(policy.main);
+  const entry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
+  expect(entry).not.toBe(policy.main);
+  expect(entry?.disallowed).toEqual(expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput"]));
+  expect(entry?.allowed).not.toContain("Agent");
 });
 
 test("resolveToolPermissionEntryForActor maps SDK Plan to read-only policy", () => {
@@ -350,9 +353,16 @@ test("resolveToolPermissionEntryForActor inherits planning phase cap for general
     phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
   const generalPurposeEntry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
-  expect(generalPurposeEntry).toBe(policy.main);
   expect(generalPurposeEntry?.disallowed).toEqual(
-    expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit"]),
+    expect.arrayContaining([
+      "Write",
+      "Bash",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "Agent",
+      "Task",
+    ]),
   );
 });
 

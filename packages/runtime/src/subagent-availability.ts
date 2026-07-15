@@ -6,7 +6,7 @@ export const CODEX_GENERAL_SPAWN_ROLE = "general";
 /** Claude SDK built-in Explore key. Eco blocks this and registers its own configured Explore agent. */
 export const SDK_EXPLORE_AGENT_KEY = "Explore";
 
-/** Official Claude SDK built-in agent Eco allows through unchanged. */
+/** Official Claude SDK built-in agent. Eco blocks it unless a session explicitly opts in. */
 export const SDK_GENERAL_PURPOSE_AGENT_KEY = "general-purpose";
 
 /** Official Claude SDK built-in research agent available during Plan Mode. */
@@ -26,6 +26,7 @@ export const SDK_BUILTIN_SUBAGENT_NAMES = [
 
 /** SDK built-ins that remain blocked because Eco does not expose them as user-selectable agents. */
 export const SDK_BLOCKED_BUILTIN_SUBAGENT_NAMES = [
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
   "statusline-setup",
   "Explore",
   SDK_PLAN_AGENT_KEY,
@@ -33,7 +34,7 @@ export const SDK_BLOCKED_BUILTIN_SUBAGENT_NAMES = [
 ] as const;
 
 export function sdkBuiltinSubagentDenyRules(allowedBuiltins: readonly string[] = []): readonly string[] {
-  const allowed = new Set([SDK_GENERAL_PURPOSE_AGENT_KEY, ...allowedBuiltins]);
+  const allowed = new Set(allowedBuiltins);
   return SDK_BLOCKED_BUILTIN_SUBAGENT_NAMES.filter((name) => !allowed.has(name)).map(
     (name) => `Agent(${name})`,
   );

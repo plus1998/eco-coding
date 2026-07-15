@@ -635,7 +635,7 @@ test("createSubagentToolAttributionPreToolHook forwards Plan role", async () => 
   expect(calls).toEqual([{ toolUseId: "tool_plan", role: "Plan" }]);
 });
 
-test("createNonEcoSubagentDenyPreToolHook allows Agent(general-purpose)", async () => {
+test("createNonEcoSubagentDenyPreToolHook denies unregistered Agent(general-purpose)", async () => {
   const hook = createNonEcoSubagentDenyPreToolHook();
   const result = await hook(
     {
@@ -647,6 +647,28 @@ test("createNonEcoSubagentDenyPreToolHook allows Agent(general-purpose)", async 
       cwd: "/tmp",
     } satisfies PreToolUseHookInput,
     "tool_gp",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("general-purpose");
+});
+
+test("createNonEcoSubagentDenyPreToolHook allows explicitly opened Agent(general-purpose)", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook([], ["general-purpose"]);
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "general-purpose", prompt: "Research codebase" },
+      tool_use_id: "tool_gp_explicit",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_gp_explicit",
     { signal: new AbortController().signal },
   );
 
@@ -967,6 +989,25 @@ test("createToolPermissionPreToolHook applies main policy to SDK general-purpose
     { signal: new AbortController().signal },
   );
   expect(generalPurposeRead.hookSpecificOutput).toBeUndefined();
+
+  const nestedDelegation = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "general-purpose", prompt: "Inspect the diff again" },
+      tool_use_id: "tool_gp_nested_agent",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_gp",
+      agent_type: SDK_GENERAL_PURPOSE_AGENT_KEY,
+    } satisfies PreToolUseHookInput,
+    "tool_gp_nested_agent",
+    { signal: new AbortController().signal },
+  );
+  expect(nestedDelegation.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
 
   const generalPurposeBash = await hook(
     {

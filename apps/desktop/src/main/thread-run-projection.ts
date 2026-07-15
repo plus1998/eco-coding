@@ -50,10 +50,11 @@ export function buildThreadRunProjection(
   input: BuildThreadRunProjectionInput,
 ): ThreadRunProjectionSnapshot {
   const nowMs = input.nowMs ?? Date.now();
-  const events = [...input.events].sort((left, right) => {
+  const sortedEvents = [...input.events].sort((left, right) => {
     const sequenceDiff = left.sequence - right.sequence;
     return sequenceDiff !== 0 ? sequenceDiff : left.observedAt.localeCompare(right.observedAt);
   });
+  const events = dedupeFinalizedSdkMessageBlocks(sortedEvents);
   const attempts = input.attempts
     .map(mapAttempt)
     .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.retryIndex - right.retryIndex);
@@ -227,8 +228,47 @@ export function buildThreadRunProjection(
     requestSpans,
     timeline: mainTimeline,
     diagnostics,
-    sourceEventCount: events.length,
+    sourceEventCount: input.events.length,
   };
+}
+
+function dedupeFinalizedSdkMessageBlocks(events: readonly ThreadRunEvent[]): ThreadRunEvent[] {
+  const finalized = new Set<string>();
+  return events.filter((event) => {
+    const key = sdkMessageBlockIdentity(event);
+    if (!key) {
+      return true;
+    }
+    if (finalized.has(key)) {
+      return false;
+    }
+    if (
+      event.eventType === "message.final" ||
+      event.eventType === "thinking.final" ||
+      event.streamState === "finalized"
+    ) {
+      finalized.add(key);
+    }
+    return true;
+  });
+}
+
+function sdkMessageBlockIdentity(event: ThreadRunEvent): string | undefined {
+  if (
+    event.eventType !== "message.delta" &&
+    event.eventType !== "message.final" &&
+    event.eventType !== "thinking.delta" &&
+    event.eventType !== "thinking.final"
+  ) {
+    return undefined;
+  }
+  const sdkMessageId = event.metadata?.sdkMessageId;
+  if (typeof sdkMessageId !== "string" || !sdkMessageId.trim()) {
+    return undefined;
+  }
+  const channel = event.eventType.startsWith("thinking.") ? "thinking" : "message";
+  const owner = event.agentId?.trim() || event.parentToolUseId?.trim() || event.role?.trim() || "main";
+  return `${owner}:${channel}:${sdkMessageId.trim()}`;
 }
 
 function mapAttempt(attempt: RunAttemptRecord): ThreadRunProjectionAttempt {

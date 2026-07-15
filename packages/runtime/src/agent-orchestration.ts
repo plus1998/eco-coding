@@ -258,11 +258,11 @@ export function buildBuiltinPlanToolPermissionEntry(): EcoRuntimeToolPermissionE
   return normalizeToolPermissionEntry(BUILTIN_PLAN_TOOL_POLICY);
 }
 
-type SdkBuiltinToolPolicyRule = "inherit_main" | "plan_readonly";
+type SdkBuiltinToolPolicyRule = "inherit_main_without_delegation" | "plan_readonly";
 
 /** Allowed SDK built-in subagents that need explicit tool policy resolution (not Profile-generated). */
 const SDK_BUILTIN_TOOL_POLICY_RULES: Record<string, SdkBuiltinToolPolicyRule> = {
-  [SDK_GENERAL_PURPOSE_AGENT_KEY]: "inherit_main",
+  [SDK_GENERAL_PURPOSE_AGENT_KEY]: "inherit_main_without_delegation",
   [SDK_PLAN_AGENT_KEY]: "plan_readonly",
 };
 
@@ -298,8 +298,17 @@ export function resolveToolPermissionEntryForActor(
   }
 
   const rule = SDK_BUILTIN_TOOL_POLICY_RULES[actor];
-  if (rule === "inherit_main") {
-    return policy.main;
+  if (rule === "inherit_main_without_delegation") {
+    return {
+      ...policy.main,
+      allowed: policy.main.allowed.filter((tool) => !isDelegationToolPattern(tool)),
+      disallowed: uniqueToolPatterns([
+        ...policy.main.disallowed,
+        "Agent",
+        "Task",
+        ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+      ]),
+    };
   }
   if (rule === "plan_readonly") {
     return buildBuiltinPlanToolPermissionEntry();

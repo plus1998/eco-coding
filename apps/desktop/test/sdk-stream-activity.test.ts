@@ -689,8 +689,64 @@ test("persists exact SDK message id in activity metadata", () => {
   expect(metadata).toEqual([
     {
       sdkMessageId: "msg_feed_exact",
-      sdkStreamBlockKey: "text:0",
+      sdkStreamBlockKey: "text:message:msg_feed_exact",
     },
+  ]);
+});
+
+test("suppresses replayed SDK text blocks by message id when block indexes differ", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ message: string; stream: boolean }> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    message: string,
+    _role: string,
+    stream: boolean,
+  ) => emitted.push({ message, stream });
+
+  for (const payload of [
+    {
+      type: "eco_stream",
+      blockKind: "text",
+      streamPlaceholder: true,
+      stream_block_key: "text:1",
+      messageId: "msg_replayed",
+    },
+    {
+      type: "eco_stream",
+      blockKind: "text",
+      text: "只显示一次。",
+      streamFinalize: true,
+      stream_block_key: "text:1",
+      messageId: "msg_replayed",
+    },
+    {
+      type: "eco_stream",
+      blockKind: "text",
+      streamPlaceholder: true,
+      stream_block_key: "text:2",
+      messageId: "msg_replayed",
+    },
+    {
+      type: "eco_stream",
+      blockKind: "text",
+      text: "只显示一次。",
+      streamFinalize: true,
+      stream_block_key: "text:2",
+      messageId: "msg_replayed",
+    },
+  ]) {
+    bridge.handleEvent(
+      "thr_replayed",
+      { type: "message.delta", role: "planner", payload },
+      emit,
+    );
+  }
+
+  expect(emitted).toEqual([
+    { message: "", stream: true },
+    { message: "只显示一次。", stream: false },
   ]);
 });
 
