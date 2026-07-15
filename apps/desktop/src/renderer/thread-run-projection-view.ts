@@ -676,6 +676,7 @@ function isProjectionInternalMessageText(text: string): boolean {
 
 function isProjectionApprovalTransitionStatus(text: string): boolean {
   return (
+    text === "等待工具权限确认…" ||
     text === "等待工具读取确认…" ||
     text === "等待 Bash 执行确认…" ||
     text === "读取已确认，继续执行…" ||

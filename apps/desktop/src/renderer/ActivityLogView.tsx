@@ -1752,7 +1752,7 @@ function SubagentRunCardButton({
   return (
     <button
       type="button"
-      className={`subagent-run-row${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
+      className={`subagent-run-row run-log-feed-surface${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
       onClick={onOpen}
       aria-pressed={selected}
     >
@@ -1791,7 +1791,6 @@ function SubagentRunCardButton({
             <ArrowRight size={16} className="subagent-run-chevron" aria-hidden />
           </span>
         </div>
-        <p className="subagent-run-mission-tag">任务目标</p>
         {resolvedMissionText ? (
           <ExpandableMissionText
             text={resolvedMissionText}
@@ -2131,14 +2130,15 @@ function WaitingThinkingBlock({
       return null;
     }
     return (
-      <div className="run-log-thinking is-collapsed">
+      <div className="run-log-thinking run-log-feed-surface is-collapsed">
         <button
           type="button"
-          className="run-log-thinking-header"
+          className="run-log-thinking-header run-log-feed-surface-header"
           onClick={() => setShowDuration((value) => !value)}
           aria-expanded={showDuration}
         >
-          <span className="run-log-thinking-label">
+          <Sparkles size={14} className="run-log-feed-surface-icon" aria-hidden />
+          <span className="run-log-thinking-label run-log-feed-surface-title">
             思考
             {showDuration ? (
               <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
@@ -2150,9 +2150,12 @@ function WaitingThinkingBlock({
   }
 
   return (
-    <div className="run-log-thinking streaming empty">
-      <div className="run-log-thinking-header">
-        <ShimmerText>正在思考</ShimmerText>
+    <div className="run-log-thinking run-log-feed-surface streaming empty">
+      <div className="run-log-thinking-header run-log-feed-surface-header">
+        <Sparkles size={14} className="run-log-feed-surface-icon" aria-hidden />
+        <span className="run-log-thinking-label run-log-feed-surface-title">
+          <ShimmerText>正在思考</ShimmerText>
+        </span>
       </div>
     </div>
   );
@@ -2327,6 +2330,7 @@ function ThinkingBlock({
     <div
       className={[
         "run-log-thinking",
+        "run-log-feed-surface",
         streaming ? "streaming" : "",
         waitingEmpty ? "empty" : "",
         streaming && hasBody ? "is-streaming-capped" : "",
@@ -2339,7 +2343,7 @@ function ThinkingBlock({
     >
       <button
         type="button"
-        className="run-log-thinking-header"
+        className="run-log-thinking-header run-log-feed-surface-header"
         onClick={() => {
           if (streaming || isCollapsing) {
             return;
@@ -2366,7 +2370,8 @@ function ThinkingBlock({
         aria-expanded={bodyOpen || Boolean(streaming) || showDuration}
         disabled={waitingEmpty}
       >
-        <span className="run-log-thinking-label">
+        <Sparkles size={14} className="run-log-feed-surface-icon" aria-hidden />
+        <span className="run-log-thinking-label run-log-feed-surface-title">
           {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : "思考"}
           {!waitingEmpty && showDuration && durationMs !== undefined ? (
             <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
@@ -2379,7 +2384,15 @@ function ThinkingBlock({
         ) : null}
       </button>
       {hasBody && (bodyOpen || isCollapsing) ? (
-        <div className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}>
+        <div
+          className={[
+            "run-log-thinking-body-shell",
+            "run-log-feed-surface-body",
+            bodyOpen ? "open" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <div className="run-log-thinking-body-inner" ref={thinkingBodyInnerRef}>
             <div className="run-log-thinking-body">
               {streaming ? (
@@ -2773,11 +2786,11 @@ function RunLogAction({
         {roleLabel ? (
           <span className="run-log-action-role run-log-action--bash-card-role">{roleLabel}</span>
         ) : null}
-        <div className="run-log-action-main">
+        <div className="run-log-action-main run-log-feed-surface">
           {canToggleDetails ? (
             <button
               type="button"
-              className={triggerClassName}
+              className={`${triggerClassName} run-log-feed-surface-header`}
               onClick={() => setExpanded((value) => !value)}
               aria-expanded={detailsExpanded}
               title={detailsExpanded ? undefined : bashRun.title}
@@ -2785,13 +2798,12 @@ function RunLogAction({
               {row}
             </button>
           ) : (
-            <div className={triggerClassName}>{row}</div>
+            <div className={`${triggerClassName} run-log-feed-surface-header`}>{row}</div>
           )}
           {detailsExpanded ? (
-            <div className="run-log-action-card-detail">
+            <div className="run-log-action-card-detail run-log-feed-surface-body">
               <RunLogBashCard
                 display={bashRun}
-                showInlineLoading={showInlineLoading}
                 {...(lifecycle && { lifecycle })}
               />
             </div>
@@ -3012,11 +3024,9 @@ function RunLogFileChangeCard({
 function RunLogBashCard({
   display,
   lifecycle,
-  showInlineLoading = false,
 }: {
   display: import("../shared/activity-display").BashRunCardDisplay;
   lifecycle?: ToolActionLifecycle;
-  showInlineLoading?: boolean;
 }) {
   return (
     <div
@@ -3028,17 +3038,8 @@ function RunLogBashCard({
         .filter(Boolean)
         .join(" ")}
     >
-      <div className="run-log-bash-card-header">
-        <Terminal size={16} className="run-log-bash-card-icon" aria-hidden />
-        <span className="run-log-bash-card-title">{display.title}</span>
-        {showInlineLoading ? <RunLogInlineLoading label="正在运行命令" /> : null}
-        {display.meta ? <span className="run-log-bash-card-meta">{display.meta}</span> : null}
-      </div>
       {display.body ? (
-        <>
-          <div className="run-log-bash-card-divider" aria-hidden />
-          <pre className="run-log-bash-card-output">{display.body}</pre>
-        </>
+        <pre className="run-log-bash-card-output">{display.body}</pre>
       ) : null}
     </div>
   );

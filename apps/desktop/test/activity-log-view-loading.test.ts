@@ -152,6 +152,28 @@ test("ActivityLogView exposes final output copy after thread stops", () => {
   expect(html).toContain("会话停止后的最终输出。");
 });
 
+test("ActivityLogView uses the shared feed surface for thinking content", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "thinking-final",
+            eventType: "thinking.final",
+            role: "thinking",
+            text: "先检查事件投影，再统一渲染结构。",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-thinking run-log-feed-surface");
+  expect(html).toContain("run-log-thinking-header run-log-feed-surface-header");
+  expect(html).toContain("run-log-feed-surface-icon");
+});
+
 test("ActivityLogView shows inline loading for a running file write action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -254,6 +276,7 @@ test("ActivityLogView renders subagent card without mounting subagent detail tim
   );
 
   expect(html).toContain("subagent-run-row");
+  expect(html).toContain("subagent-run-row run-log-feed-surface");
   expect(html).toContain("实现抽屉");
   expect(html).not.toContain("这段正文只应该在右侧详情里出现");
   expect(html).not.toContain("work-session-details-compact");
@@ -481,6 +504,8 @@ test("ActivityLogView renders Bash directly without an outer tool group", () => 
   );
 
   expect(html).toContain("run-log-action--bash-card");
+  expect(html).toContain("run-log-action-main run-log-feed-surface");
+  expect(html).toContain("run-log-feed-surface-header");
   expect(html).not.toContain("run-log-tool-group");
 });
 

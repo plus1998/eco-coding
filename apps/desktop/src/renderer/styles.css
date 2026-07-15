@@ -17873,6 +17873,128 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: var(--codex-log-text);
 }
 
+/* Shared visual grammar for interactive runtime entries in the main feed. */
+.codex-main:not(.codex-main-landing) .run-log-feed-surface {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--codex-log-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
+  color: var(--codex-log-text);
+  box-shadow: none;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-surface-header {
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 8px 10px;
+  gap: 8px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-surface-icon {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-surface-title {
+  color: var(--codex-log-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-surface-body {
+  border-top: 1px solid var(--codex-log-line-subtle);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking.run-log-feed-surface {
+  margin: 0;
+  border: 1px solid var(--codex-log-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking .run-log-thinking-header {
+  padding: 8px 10px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking .run-log-thinking-body {
+  margin-top: 0;
+  padding: 9px 10px 10px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card {
+  align-items: flex-start;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-action-main {
+  overflow: hidden;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-action-trigger {
+  width: 100%;
+  padding: 8px 10px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-action-card-detail {
+  margin-top: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-card-output {
+  max-height: 180px;
+  padding: 9px 10px 10px;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row-wrap {
+  margin: 0;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row.run-log-feed-surface {
+  gap: 8px;
+  padding: 9px 10px;
+  border-color: var(--codex-log-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row-wrap.is-running .subagent-run-row,
+.codex-main:not(.codex-main-landing) .subagent-run-row.run-log-feed-surface:hover {
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 42%, var(--codex-log-line));
+  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-leading {
+  width: 14px;
+  padding-top: 2px;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-kind-badge {
+  display: none;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-title-role {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-status,
+.codex-main:not(.codex-main-landing) .subagent-run-mission-preview.run-log-expandable-text,
+.codex-main:not(.codex-main-landing) .subagent-run-mission-placeholder {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-content {
   --run-log-user-prompt-bg: var(--codex-log-chip);
   --run-log-user-prompt-fg: var(--codex-log-chip-text);

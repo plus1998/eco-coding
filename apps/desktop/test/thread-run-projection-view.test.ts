@@ -309,6 +309,14 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
           sequence: 2,
         }),
         item({
+          id: "generic-permission-wait",
+          eventType: "thread.status",
+          role: "system",
+          text: "等待工具权限确认…",
+          metadata: { liveType: "thread.running" },
+          sequence: 2.5,
+        }),
+        item({
           id: "approval-wait",
           eventType: "message.final",
           role: "tool",
