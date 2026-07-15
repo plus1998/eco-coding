@@ -178,12 +178,14 @@ export function resolveWorktreePathHint(input: {
   activeWorktreePath?: string;
   pendingWorktreePath?: string;
   sdkSessionCwd?: string;
+  coreSessionCwd?: string;
 }): string {
   const defaultPath = createWorktreePlan(input.workspacePath, input.threadId).worktreePath;
   return (
     input.activeWorktreePath?.trim() ||
     input.pendingWorktreePath?.trim() ||
     input.sdkSessionCwd?.trim() ||
+    input.coreSessionCwd?.trim() ||
     defaultPath
   );
 }

@@ -104,7 +104,7 @@ await browser.close();
 
 async function findEcoPage(browserInstance) {
   const pages = browserInstance.contexts().flatMap((context) => context.pages());
-  const page = pages.find((candidate) => candidate.url().startsWith("http://127.0.0.1:5174/"));
+  const page = pages.find((candidate) => candidate.url().startsWith("http://127.0.0.1:"));
   if (!page) {
     throw new Error("No Eco Electron page is available through CDP.");
   }

@@ -56,6 +56,8 @@ export interface CodexSkillInput {
 
 export interface CodexSessionOptions {
   skillInputs?: CodexSkillInput[];
+  /** Absolute paths to validated, locally materialized image attachments. */
+  localImagePaths?: string[];
 }
 
 export interface AgentRuntimeRunInput {

@@ -368,14 +368,6 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
-const CODEX_DISABLED_SUBAGENTS = {
-  explore: false,
-  architect: false,
-  coder: false,
-  reviewer: false,
-  tester: false,
-} as const;
-const EMPTY_COMPOSER_SKILLS_BY_NAME = new Map<string, SkillInfo>();
 
 const emptyGitSettings: GitSettingsSnapshot = {
   commitMessageRoleByProfileId: {},
@@ -2267,6 +2259,7 @@ function App() {
     }
   }, [activeThread?.id]);
 
+  const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
   const userSkills = useMemo(
     () => dedupeSkillsByName((skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady)),
     [skillsSnapshot?.userSkills],
@@ -2276,11 +2269,14 @@ function App() {
     [skillsSnapshot?.projectSkills],
   );
   const slashPickerSkills = useMemo(
-    () => dedupeSkillsByName([...userSkills, ...projectSdkReadySkills]),
-    [userSkills, projectSdkReadySkills],
+    () => dedupeSkillsByName([
+      ...userSkills,
+      ...projectSdkReadySkills,
+      ...(composerCoreKind === "codex" ? skillsSnapshot?.agentsOnlySkills ?? [] : []),
+    ]),
+    [composerCoreKind, projectSdkReadySkills, skillsSnapshot?.agentsOnlySkills, userSkills],
   );
-  const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
-  const composerSupportsSkills = composerCoreKind !== "codex";
+  const composerSupportsSkills = true;
   const projectAgentsOnly = useMemo(
     () => (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project"),
     [skillsSnapshot?.agentsOnlySkills],
@@ -2391,18 +2387,7 @@ function App() {
     settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
   ]);
-  const effectiveComposerRuntimeConfig = useMemo(() => {
-    if (!composerRuntimeConfig || composerCoreKind !== "codex") {
-      return composerRuntimeConfig;
-    }
-    return {
-      ...composerRuntimeConfig,
-      subagentEnabled: CODEX_DISABLED_SUBAGENTS,
-      mcpServersEnabled: Object.fromEntries(
-        Object.keys(composerMcpSettings).map((serverKey) => [serverKey, false]),
-      ),
-    };
-  }, [composerCoreKind, composerMcpSettings, composerRuntimeConfig]);
+  const effectiveComposerRuntimeConfig = composerRuntimeConfig;
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
     if (!selectedRuntimeProfile) {
       return undefined;
@@ -2519,7 +2504,7 @@ function App() {
   const showBashApproval = Boolean(pendingBashApproval);
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
-  const canPasteComposerImages = plannerSupportsImages && composerCoreKind !== "codex";
+  const canPasteComposerImages = plannerSupportsImages;
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
   const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
@@ -2947,8 +2932,8 @@ function App() {
   }, [runProjection]);
 
   const composerSkillsByName = useMemo(
-    () => buildSkillMap([...userSkills, ...projectSdkReadySkills]),
-    [userSkills, projectSdkReadySkills],
+    () => buildSkillMap(slashPickerSkills),
+    [slashPickerSkills],
   );
 
   const distanceFromActivityFeedBottom = useCallback((container: HTMLElement) => {
@@ -3627,11 +3612,6 @@ function App() {
     setIsStarting(true);
     if (!composerRuntimeConfig) {
       setError("请先配置子代理编排方案。");
-      setIsStarting(false);
-      return;
-    }
-    if (composerCoreKind === "codex" && referencedSkillNames.size > 0) {
-      setError("Codex Core 首版暂不支持 Skills，请移除 Skill 引用后再发送。");
       setIsStarting(false);
       return;
     }
@@ -5201,15 +5181,11 @@ function App() {
   );
 
   const composerAgentModelsControl = (
-    <div title={composerCoreKind === "codex" ? "Codex Core 首版暂不支持子代理" : undefined}>
+    <div>
       <ComposerAgentModels
         labels={agentModelLabels}
-        subagentSettings={
-          composerCoreKind === "codex"
-            ? CODEX_DISABLED_SUBAGENTS
-            : composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()
-        }
-        canEditSubagents={composerCoreKind !== "codex" && canEditComposerConfig}
+        subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
+        canEditSubagents={canEditComposerConfig}
         subagentSaving={isSavingSettings}
         compact={composerCompact}
         onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
@@ -5218,11 +5194,11 @@ function App() {
   );
 
   const composerMcpControl = (
-    <div title={composerCoreKind === "codex" ? "Codex Core 首版暂不支持 MCP" : undefined}>
+    <div>
       <ComposerMcpServers
         servers={mcpSettings.servers}
-        enabledSettings={composerCoreKind === "codex" ? {} : composerMcpSettings}
-        canEdit={composerCoreKind !== "codex" && canEditComposerConfig}
+        enabledSettings={composerMcpSettings}
+        canEdit={canEditComposerConfig}
         saving={isSavingSettings}
         compact={composerCompact}
         onToggleServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
@@ -5263,14 +5239,6 @@ function App() {
                   : "Codex Core"
             }
             onClick={() => {
-              if (kind === "codex" && composerAttachments.length > 0) {
-                setError("Codex Core 暂不支持图片附件，请先移除已粘贴的图片。");
-                return;
-              }
-              if (kind === "codex" && referencedSkillNames.size > 0) {
-                setError("Codex Core 首版暂不支持 Skills，请先移除 Skill 引用。");
-                return;
-              }
               setNewThreadCoreKind(kind);
             }}
           >
@@ -5366,7 +5334,7 @@ function App() {
                     setComposerRoutePopoverOpen(false);
                   }
                 }}
-                skillsByName={composerSupportsSkills ? composerSkillsByName : EMPTY_COMPOSER_SKILLS_BY_NAME}
+                skillsByName={composerSkillsByName}
                 onCursorChange={setComposerCursor}
                 onKeyDown={handleComposerKeyDown}
                 maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}

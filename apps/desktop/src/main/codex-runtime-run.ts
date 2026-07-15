@@ -88,6 +88,8 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   resolveEnabledMcpServerKeys?: () => readonly string[];
   /** Wait for thread-selected MCP servers to leave `starting` before the turn. */
   ensureMcpReady?: () => Promise<void>;
+  /** Runs after the exact thread config is bound, before the driver starts the turn. */
+  onPrepared?: (prepared: PreparedCodexRuntime) => void | Promise<void>;
   recordRouteFingerprint: (threadId: string, routes: readonly RuntimeRoute[]) => void;
   startRuntimeProxy?: unknown;
   onProxyReady?: (attempt: CodexRuntimeAttempt) => void | Promise<void>;
@@ -117,6 +119,10 @@ export interface CodexRuntimeRunDeps {
   bindLatestUserPromptToCodexItem?: (threadId: string, itemId: string) => boolean;
   /** Local prune after a successful app-server `thread/rollback`. */
   pruneThreadAfterCodexRollback?: (ecoThreadId: string, itemId: string) => void;
+  /** Restore the exact local worktree checkpoint before local history is pruned. */
+  restoreFilesAfterCodexRollback?: (ecoThreadId: string, itemId: string) => Promise<void>;
+  /** Map Eco's persisted user-message UUID to its zero-based Codex turn ordinal. */
+  resolveCodexRollbackTurnIndex?: (ecoThreadId: string, itemId: string) => number | undefined;
   /** @deprecated Prefer built-in `threadMap` attribution via `resolveCodexThreadAttribution`. */
   resolveCodexThreadAttribution?: (codexThreadId: string) => CodexThreadAttribution | undefined;
   /** Runs only after a child attribution record has been persisted successfully. */
@@ -156,6 +162,7 @@ export interface PreparedCodexRuntime {
 
 /** Prepared configs are scoped by Eco thread; concurrent Profiles never share mutable state. */
 const preparedRuntimeByThread = new Map<string, PreparedCodexRuntime>();
+const controlPlaneAppliedConfigByClient = new WeakMap<object, Map<string, object>>();
 /** Used only for Feed role labels when no thread attribution is available yet. */
 let lastPreparedRoleIds: readonly string[] = [];
 /** Serializes writes/reloads of the process-global CODEX_HOME config. */
@@ -481,21 +488,46 @@ export async function rollbackCodexThreadForEcoThread(input: {
     );
   }
 
-  const client = getGlobalCodexRuntimeLifecycle()?.getClient();
-  if (!client) {
+  const client = await ensureCodexControlPlaneClient();
+  const status = await readCodexThreadStatus(client, codexThreadId);
+  if (status === "notLoaded") {
+    const prepared = preparedRuntimeByThread.get(ecoThreadId);
+    if (!prepared) {
+      throw new CodexRollbackNotAvailable(
+        "Codex rollback cannot load the thread before its session configuration is prepared.",
+        { nextAction: "Prepare the current Agent Profile and MCP selection, then retry rewind." },
+      );
+    }
+    await resumeCodexThread(client, {
+      threadId: codexThreadId,
+      config: prepared.threadConfig,
+    });
+    const appliedByThread = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
+    appliedByThread.set(codexThreadId, prepared.threadConfig);
+    controlPlaneAppliedConfigByClient.set(client, appliedByThread);
+  } else if (status !== "idle") {
     throw new CodexRollbackNotAvailable(
-      "Codex rollback is not available because the Codex app-server client is not running.",
+      `Codex rollback requires an idle thread; current status is ${status}.`,
       {
-        nextAction:
-          "Start a Codex-backed turn to bring the app-server online, then retry rollback against the same thread.",
+        nextAction: "Wait for the active turn to finish, then retry rewind.",
       },
     );
   }
 
+  const targetTurnIndex = runtimeDeps.resolveCodexRollbackTurnIndex?.(ecoThreadId, targetItemId);
   await rollbackCodexThread(client, {
     threadId: codexThreadId,
     itemId: targetItemId,
+    ...(targetTurnIndex !== undefined ? { targetTurnIndex } : {}),
   });
+
+  if (!runtimeDeps.restoreFilesAfterCodexRollback) {
+    throw new CodexRollbackNotAvailable(
+      "Codex rollback succeeded but local file checkpoint restore is not configured.",
+      { nextAction: "Configure the Codex file checkpoint store before using rewind." },
+    );
+  }
+  await runtimeDeps.restoreFilesAfterCodexRollback(ecoThreadId, targetItemId);
 
   // Remote rollback succeeded — keep local run-event / activity / projection consistent.
   if (!runtimeDeps.pruneThreadAfterCodexRollback) {
@@ -897,6 +929,7 @@ export async function runThreadRequestWithRuntimeProxy(
     // Commit only after the whole admission succeeds. A failed readiness check
     // must not replace the last known-good policy for this Eco thread.
     bindPreparedCodexRuntimeToThread(input.threadId, prepared);
+    await input.onPrepared?.(prepared);
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   }
@@ -934,6 +967,15 @@ export function createCodexRuntimeDriver(
   const profileToolPolicy = options?.profileToolPolicy ?? prepared?.profileToolPolicy;
   const existingCodexThreadId =
     options?.existingCodexThreadId?.trim() || runtimeDeps.threadMap.getCodexThreadId(threadId);
+  const preparedThreadConfig = options?.threadConfig ?? prepared?.threadConfig;
+  const controlPlaneConfigApplied = Boolean(
+    existingCodexThreadId &&
+      preparedThreadConfig &&
+      controlPlaneAppliedConfigByClient.get(client)?.get(existingCodexThreadId) === preparedThreadConfig
+  );
+  if (controlPlaneConfigApplied && existingCodexThreadId) {
+    controlPlaneAppliedConfigByClient.get(client)?.delete(existingCodexThreadId);
+  }
   // Feed + approval notifications are owned by the global lifecycle handler in
   // prepareCodexRuntime. Drivers must not register another dispatch path — each
   // extra handler appends the same incremental delta again (N× stutter).
@@ -942,13 +984,13 @@ export function createCodexRuntimeDriver(
     turnRouteRegistry,
     sessionMode,
     ...(existingCodexThreadId ? { existingCodexThreadId } : {}),
-    ...(options?.threadConfigAlreadyApplied ? { threadConfigAlreadyApplied: true } : {}),
+    ...(options?.threadConfigAlreadyApplied || controlPlaneConfigApplied
+      ? { threadConfigAlreadyApplied: true }
+      : {}),
     ...(profileAppend ? { profileAppend } : {}),
     ...(profileToolPolicy ? { profileToolPolicy } : {}),
-    ...(options?.threadConfig
-      ? { threadConfig: options.threadConfig }
-      : prepared?.threadConfig
-        ? { threadConfig: prepared.threadConfig }
+    ...(preparedThreadConfig
+      ? { threadConfig: preparedThreadConfig }
         : {}),
     onThreadMapped: (ecoThreadId, codexThreadId) => {
       // Subagent resume passes parent eco id + child Codex id — never remap parent → child.

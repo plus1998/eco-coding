@@ -209,6 +209,7 @@ async function findEcoPage(browser) {
   const existing =
     pages.find((candidate) => candidate.url().startsWith("http://127.0.0.1:5173/")) ??
     pages.find((candidate) => candidate.url().startsWith("http://localhost:5173/")) ??
+    pages.find((candidate) => candidate.url().startsWith("http://127.0.0.1:")) ??
     pages[0];
   if (!existing) {
     throw new Error("No Electron page is available through CDP.");

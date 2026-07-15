@@ -459,9 +459,9 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
     profile,
     templates: [researchTemplate],
     mcpServers: [
-      { name: "browser", enabledTools: ["search", "open"] },
-      { name: "github", enabledTools: ["read", "write"] },
-      { name: "sources" },
+      { name: "browser", transport: "stdio", command: "node", enabledTools: ["search", "open"] },
+      { name: "github", transport: "stdio", command: "node", enabledTools: ["read", "write"] },
+      { name: "sources", transport: "stdio", command: "node" },
     ],
     threadEnabledMcpServers: ["browser", "github", "sources"],
   });
@@ -484,7 +484,7 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
   );
   expect(researcherToml).toContain("[mcp_servers.browser]");
   expect(researcherToml).toContain('enabled_tools = ["search"]');
-  expect(researcherToml).toContain("[mcp_servers.github]\nenabled = false");
+  expect(researcherToml).toMatch(/\[mcp_servers\.github\][\s\S]*?enabled = false/);
   expect(researcherToml).not.toContain("Eco MCP allowlist");
 });
 
@@ -495,7 +495,10 @@ test("content-addressed role bundles survive a concurrent Profile preparation", 
     codexHomeDir,
     profile: buildProfile({ agents: [firstProfileAgent()] }),
     templates: [researchTemplate],
-    mcpServers: [{ name: "browser" }, { name: "sources" }],
+    mcpServers: [
+      { name: "browser", transport: "stdio", command: "node" },
+      { name: "sources", transport: "stdio", command: "node" },
+    ],
     threadEnabledMcpServers: ["browser"],
   });
   const firstRole = first.roles.find((role) => role.roleId === "researcher");
@@ -515,7 +518,10 @@ test("content-addressed role bundles survive a concurrent Profile preparation", 
       ],
     }),
     templates: [researchTemplate],
-    mcpServers: [{ name: "browser" }, { name: "sources" }],
+    mcpServers: [
+      { name: "browser", transport: "stdio", command: "node" },
+      { name: "sources", transport: "stdio", command: "node" },
+    ],
     threadEnabledMcpServers: ["sources"],
   });
 
@@ -541,7 +547,7 @@ test("role sync rejects an unenumerated child MCP widening over the main actor",
         agents: [firstProfileAgent()],
       }),
       templates: [researchTemplate],
-      mcpServers: [{ name: "browser" }],
+      mcpServers: [{ name: "browser", transport: "stdio", command: "node" }],
       threadEnabledMcpServers: ["browser"],
     }),
   ).rejects.toThrow("cannot remove that inherited list");

@@ -434,9 +434,27 @@ export function buildMainAgentProfileAppend(
 export function buildCodexMainAgentProfileAppend(
   profile: EcoOrchestrationProfileConfig,
   _templates: readonly EcoAgentTemplateConfig[],
-  _options?: { subagentAvailability?: Partial<Record<string, boolean>> },
+  options?: { subagentAvailability?: Partial<Record<string, boolean>> },
 ): string {
-  return profile.mainAgent.systemPromptPreset === "custom" ? profile.mainAgent.prompt.trim() : "";
+  const availableRoles = profile.agents
+    .filter((agent) => {
+      if (!agent.enabled) return false;
+      const role = agent.agentKey.trim().toLowerCase();
+      return options?.subagentAvailability?.[role] !== false;
+    })
+    .map((agent) => agent.agentKey.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase())
+    .filter(Boolean);
+  if (profile.builtinAgents?.explore && options?.subagentAvailability?.explore !== false) {
+    availableRoles.unshift("explore");
+  }
+  const customPrompt = profile.mainAgent.systemPromptPreset === "custom" ? profile.mainAgent.prompt.trim() : "";
+  const subagentProtocol = availableRoles.length > 0
+    ? [
+        `Available Codex subagent types: ${[...new Set(availableRoles)].join(", ")}.`,
+        'When calling spawn_agent with agent_type, always set fork_turns to "none" so the selected custom agent configuration is applied.',
+      ].join("\n")
+    : "";
+  return [customPrompt, subagentProtocol].filter(Boolean).join("\n\n");
 }
 
 export function buildMainAgentSystemPrompt(

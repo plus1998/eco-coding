@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 const cdpUrl = process.env.ECO_CDP_URL ?? "http://127.0.0.1:9222";
 const browser = await chromium.connectOverCDP(cdpUrl);
 const pages = browser.contexts().flatMap((context) => context.pages());
-const page = pages.find((candidate) => candidate.url().startsWith("http://127.0.0.1:5174/"));
+const page = pages.find((candidate) => candidate.url().startsWith("http://127.0.0.1:"));
 if (!page) {
   throw new Error("No Eco Electron page is available through CDP.");
 }
@@ -20,13 +20,10 @@ if ((await codexCore.count()) !== 1) {
 }
 await codexCore.click();
 
-const mcpUnsupported = page.locator('div[title="Codex Core 首版暂不支持 MCP"]');
-await mcpUnsupported.waitFor({ state: "visible", timeout: 10_000 });
-const mcpTrigger = mcpUnsupported.locator("button.composer-agents-trigger");
+const mcpControl = page.locator('.composer-context-bar').locator('button.composer-agents-trigger[aria-label*="MCP"]');
+const mcpTrigger = mcpControl;
 const mcpLabel = await mcpTrigger.getAttribute("aria-label");
-if (!mcpLabel?.includes("已启用 0/")) {
-  throw new Error(`Codex MCP summary is not disabled: ${mcpLabel ?? "missing"}`);
-}
+if (!mcpLabel?.includes("MCP")) throw new Error(`Codex MCP summary is missing: ${mcpLabel ?? "missing"}`);
 await mcpTrigger.click();
 const mcpSwitches = page.locator('.composer-agents-popover[aria-label="MCP 服务器"] input[type="checkbox"]');
 const mcpSwitchCount = await mcpSwitches.count();
@@ -35,18 +32,13 @@ for (let index = 0; index < mcpSwitchCount; index += 1) {
     checked: input.checked,
     disabled: input.disabled,
   }));
-  if (state.checked || !state.disabled) {
-    throw new Error(`Codex MCP switch ${index} is not disabled: ${JSON.stringify(state)}`);
-  }
+  if (state.disabled) throw new Error(`Codex MCP switch ${index} is disabled.`);
 }
 await mcpTrigger.click();
 
-const subagentUnsupported = page.locator('div[title="Codex Core 首版暂不支持子代理"]');
-const subagentTrigger = subagentUnsupported.locator("button.composer-agents-trigger");
+const subagentTrigger = page.locator('.composer-context-bar').locator('button.composer-agents-trigger[aria-label*="子代理"]');
 const subagentLabel = await subagentTrigger.getAttribute("aria-label");
-if (!subagentLabel?.includes("已启用 0/")) {
-  throw new Error(`Codex subagent summary is not disabled: ${subagentLabel ?? "missing"}`);
-}
+if (!subagentLabel?.includes("子代理")) throw new Error(`Codex subagent summary is missing: ${subagentLabel ?? "missing"}`);
 await subagentTrigger.click();
 const subagentSwitches = page.locator(
   '.composer-agents-popover[aria-label="子代理详情"] input[type="checkbox"]',
@@ -57,27 +49,16 @@ for (let index = 0; index < subagentSwitchCount; index += 1) {
     checked: input.checked,
     disabled: input.disabled,
   }));
-  if (state.checked || !state.disabled) {
-    throw new Error(`Codex subagent switch ${index} is not disabled: ${JSON.stringify(state)}`);
-  }
-}
-const disabledSubagentRows = await page
-  .locator('.composer-agents-popover[aria-label="子代理详情"] .composer-agent-row.is-disabled')
-  .count();
-if (disabledSubagentRows === 0) {
-  throw new Error("Codex subagent popover has no explicitly disabled rows.");
+  if (state.disabled) throw new Error(`Codex subagent switch ${index} is disabled.`);
 }
 const clickableSubagentRows = await page
   .locator('.composer-agents-popover[aria-label="子代理详情"] .composer-agent-row.is-clickable')
   .count();
-if (clickableSubagentRows !== 0) {
-  throw new Error(`Codex subagent popover has ${clickableSubagentRows} clickable rows.`);
-}
+if (clickableSubagentRows === 0) throw new Error("Codex subagent popover has no editable rows.");
 
 const skillsBarCount = await page.locator(".composer-skills-bar").count();
-if (skillsBarCount !== 0) {
-  throw new Error(`Codex should hide the project Skills bar, found ${skillsBarCount}.`);
-}
+const composerInput = page.locator('.composer-primary [contenteditable="true"]');
+if ((await composerInput.count()) !== 1) throw new Error("Codex composer input is missing.");
 
 console.log(
   JSON.stringify(
@@ -88,7 +69,7 @@ console.log(
       mcpSwitchCount,
       subagentLabel,
       subagentSwitchCount,
-      disabledSubagentRows,
+      clickableSubagentRows,
       skillsBarCount,
     },
     null,

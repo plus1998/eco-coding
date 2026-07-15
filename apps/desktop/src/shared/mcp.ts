@@ -92,6 +92,65 @@ export function filterMcpSdkConfigByAssignedServers(
   return { mcpServers, allowedTools: [...new Set(allowedTools)] };
 }
 
+export function buildCodexMcpServersForConfigSync(
+  servers: readonly McpServerConfigView[],
+  assignedServerKeys: readonly string[],
+): CodexMcpServerForConfigSync[] {
+  const assigned = new Set(assignedServerKeys.map(sanitizeMcpServerName));
+  const result: CodexMcpServerForConfigSync[] = [];
+  for (const server of servers) {
+    const key = sanitizeMcpServerName(server.name);
+    if (!server.enabled || !server.name.trim() || !assigned.has(key)) continue;
+    if (server.transport === "sse") {
+      throw new Error(`MCP server "${server.name}" uses SSE, which Codex does not support. Use HTTP or stdio.`);
+    }
+    const entry = buildMcpServerEntry(server);
+    if (!entry) throw new Error(`MCP server "${server.name}" is incomplete.`);
+    const enabledTools = resolveCodexEnabledToolsFromPatterns(
+      key,
+      parseAllowedToolPatterns(server.allowedTools, key),
+    );
+    if (server.transport === "stdio") {
+      result.push({
+        name: key,
+        transport: "stdio",
+        command: typeof entry.command === "string" ? entry.command : "",
+        args: Array.isArray(entry.args) ? entry.args.filter((v): v is string => typeof v === "string") : [],
+        env: entry.env && typeof entry.env === "object" && !Array.isArray(entry.env)
+          ? Object.fromEntries(Object.entries(entry.env).filter(([, v]) => typeof v === "string") as Array<[string, string]>)
+          : {},
+        ...(enabledTools ? { enabledTools } : {}),
+      });
+    } else {
+      const headers = entry.headers && typeof entry.headers === "object" && !Array.isArray(entry.headers)
+        ? Object.fromEntries(Object.entries(entry.headers).filter(([, v]) => typeof v === "string") as Array<[string, string]>)
+        : {};
+      result.push({
+        name: key,
+        transport: "http",
+        url: typeof entry.url === "string" ? entry.url : "",
+        ...(Object.keys(headers).length ? { httpHeaders: headers } : {}),
+        ...(enabledTools ? { enabledTools } : {}),
+      });
+    }
+  }
+  return result;
+}
+
+export function resolveCodexEnabledToolsFromPatterns(
+  serverKey: string,
+  patterns: readonly string[],
+): string[] | undefined {
+  const key = sanitizeMcpServerName(serverKey);
+  const tools: string[] = [];
+  for (const pattern of patterns.filter((value) => mcpPatternMatchesServer(value, key))) {
+    const tool = pattern.slice(pattern.indexOf("__", 5) + 2);
+    if (!tool || tool === "*") return undefined;
+    tools.push(tool);
+  }
+  return tools.length ? [...new Set(tools)] : undefined;
+}
+
 function mcpPatternMatchesServer(pattern: string, serverKey: string): boolean {
   if (!pattern.startsWith("mcp__")) {
     return false;
@@ -294,3 +353,4 @@ export function validateMcpServerInput(input: McpServerConfigInput): void {
     throw new Error(`${input.transport} transport requires a URL.`);
   }
 }
+import type { CodexMcpServerForConfigSync } from "@eco/runtime";

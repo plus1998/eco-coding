@@ -96,6 +96,23 @@ export function promptIncludesSkillName(prompt: string | undefined, skillName: s
   return parseExplicitSkillNames(prompt).includes(skillName);
 }
 
+export interface StructuredCodexSkillInput {
+  type: "skill";
+  name: string;
+  path: string;
+}
+
+export function resolveExplicitCodexSkillInputs(
+  prompt: string | undefined,
+  skills: readonly SkillInfo[],
+): StructuredCodexSkillInput[] {
+  const byName = new Map(dedupeSkillsByName(skills).map((skill) => [skill.name, skill]));
+  return parseExplicitSkillNames(prompt).flatMap((name) => {
+    const skill = byName.get(name);
+    return skill ? [{ type: "skill" as const, name: skill.name, path: skill.directory }] : [];
+  });
+}
+
 /** `$name` tokens that match discovered user-level skills (sdk-ready only). */
 export function filterExplicitUserSkillNames(
   prompt: string | undefined,

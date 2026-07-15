@@ -1,4 +1,5 @@
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
+import path from "node:path";
 import {
   type CodexAppServerClient,
   type CodexAppServerNotificationHandler,
@@ -64,7 +65,11 @@ export interface CodexThreadStartResult {
 
 export interface CodexTurnStartParams {
   threadId: string;
-  input: Array<{ type: "text"; text: string } | CodexSkillInput>;
+  input: Array<
+    | { type: "text"; text: string }
+    | CodexSkillInput
+    | { type: "localImage"; path: string; detail?: "low" | "high" }
+  >;
   cwd?: string;
   /** Top-level model override; must match collaborationMode.settings.model. */
   model: string;
@@ -268,7 +273,11 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
     const prompt = overrides.prompt?.trim() || input.prompt;
     const effort = toCodexTurnReasoningEffort(route.thinkingEffort);
     const collaborationMode = applyCodexTurnModel(turnOptions.collaborationMode, codexGatewayModel, effort);
-    const turnInput = buildCodexTurnInput(prompt, input.codexSession?.skillInputs);
+    const turnInput = buildCodexTurnInput(
+      prompt,
+      input.codexSession?.skillInputs,
+      input.codexSession?.localImagePaths,
+    );
 
     let codexThreadId = overrides.forkThread
       ? undefined
@@ -465,6 +474,7 @@ function stableConfigFingerprint(value: unknown): string {
 export function buildCodexTurnInput(
   prompt: string,
   skillInputs: readonly CodexSkillInput[] | undefined,
+  localImagePaths: readonly string[] | undefined = undefined,
 ): CodexTurnStartParams["input"] {
   const input: CodexTurnStartParams["input"] = [{ type: "text", text: prompt }];
   const seenPaths = new Set<string>();
@@ -479,6 +489,16 @@ export function buildCodexTurnInput(
     }
     seenPaths.add(skillPath);
     input.push({ type: "skill", name, path: skillPath });
+  }
+  const seenImages = new Set<string>();
+  for (const [index, rawPath] of (localImagePaths ?? []).entries()) {
+    const imagePath = rawPath.trim();
+    if (!imagePath || !path.isAbsolute(imagePath)) {
+      throw new Error(`Codex localImagePaths[${index}] must be an absolute path.`);
+    }
+    if (seenImages.has(imagePath)) continue;
+    seenImages.add(imagePath);
+    input.push({ type: "localImage", path: imagePath });
   }
   return input;
 }

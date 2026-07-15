@@ -69,6 +69,20 @@ test("buildCodexTurnInput validates and deduplicates structured skills by exact 
   );
 });
 
+test("buildCodexTurnInput includes deduplicated local image paths", () => {
+  expect(buildCodexTurnInput("inspect", undefined, ["/tmp/a.png", "/tmp/a.png", "/tmp/b.jpg"])).toEqual([
+    { type: "text", text: "inspect" },
+    { type: "localImage", path: "/tmp/a.png" },
+    { type: "localImage", path: "/tmp/b.jpg" },
+  ]);
+});
+
+test("buildCodexTurnInput rejects relative local image paths", () => {
+  expect(() => buildCodexTurnInput("inspect", undefined, ["images/example.png"])).toThrow(
+    "must be an absolute path",
+  );
+});
+
 function readRpcMessages(stdin: PassThrough): Array<{ method?: string; params?: Record<string, unknown> }> {
   return (stdin.read()?.toString() ?? "")
     .split("\n")

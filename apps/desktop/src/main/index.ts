@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -180,7 +181,7 @@ import {
   type WorktreeStatusResult,
   withAgentSessionMode,
 } from "../shared/ipc";
-import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
+import { buildCodexMcpServersForConfigSync, filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
   buildMainAgentModelKey,
@@ -195,6 +196,7 @@ import {
   filterExplicitUserSkillNames,
   type LinkAgentsSkillsRequest,
   listSdkReadyProjectSkills,
+  resolveExplicitCodexSkillInputs,
   resolveImplicitSkillReadRoots,
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
@@ -294,6 +296,7 @@ import {
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
+import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
 import {
   configureCodexApprovalBridge,
   configureCodexRuntimeRun,
@@ -301,6 +304,7 @@ import {
   createCodexRuntimeDriver,
   isCodexCliAvailable,
   registerResolvedCodexGatewayTurnRoute,
+  rollbackCodexThreadForEcoThread,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
 } from "./codex-runtime-run";
 import { stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
@@ -331,7 +335,7 @@ import {
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { checkMcpServerConnection } from "./mcp-checker";
-import { prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
+import { prepareCodexMcpServersForRuntime, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { PackageJsonWatcher } from "./package-json-watcher";
@@ -375,6 +379,7 @@ import {
   listSdkSessionCompactionActivityLines,
   listSdkSubagentActivityLines,
 } from "./sdk-session-activity.js";
+import { sdkActivityLineId } from "./sdk-session-activity.js";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import {
   resolveSdkStreamPartialBillingOrchestration,
@@ -649,6 +654,7 @@ let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
 let ecoCompactService: EcoCompactService;
 let subagentHandoffService: SubagentHandoffService;
+let codexFileCheckpointStore: CodexFileCheckpointStore;
 
 interface ThreadCoreStartRunInput {
   thread: ThreadSummary;
@@ -841,6 +847,9 @@ app.whenReady().then(async () => {
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
+  codexFileCheckpointStore = new CodexFileCheckpointStore(
+    path.join(app.getPath("userData"), "codex-file-checkpoints"),
+  );
   subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
   usageLedgerCoordinator = new UsageLedgerCoordinator({
     store: conversationStore,
@@ -925,6 +934,29 @@ app.whenReady().then(async () => {
         throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
       }
       conversationStore.appendThreadRunEvent(event);
+    },
+    bindLatestUserPromptToCodexItem: (threadId, itemId) => {
+      const bound = conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId);
+      if (!bound) return false;
+      void codexFileCheckpointStore.bindPending(threadId, itemId).catch((error) => {
+        process.stderr.write(`[eco-codex] file checkpoint bind failed: ${errorMessage(error)}\n`);
+      });
+      return true;
+    },
+    restoreFilesAfterCodexRollback: async (threadId, itemId) => {
+      const worktreePath = resolveThreadWorktreePath(threadId);
+      if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path.");
+      await codexFileCheckpointStore.restore(threadId, itemId, worktreePath);
+    },
+    resolveCodexRollbackTurnIndex: (threadId, itemId) => {
+      const index = conversationStore
+        .listFileCheckpoints(threadId)
+        .findIndex((checkpoint) => checkpoint.userMessageId === itemId);
+      return index >= 0 ? index : undefined;
+    },
+    pruneThreadAfterCodexRollback: (threadId, itemId) => {
+      conversationStore.rewindThreadToActivityLine(threadId, sdkActivityLineId(itemId));
+      scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
     },
     scheduleThreadRunProjectionUpdated,
     onCodexThreadMapped: flushPendingCodexGatewayUsage,
@@ -2733,9 +2765,6 @@ function registerIpcHandlers(): void {
     if (!isCoreKind(coreKind)) {
       throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
     }
-    if (coreKind === "codex" && hasAttachments) {
-      throw new Error("Codex Core image attachments are not supported in this release.");
-    }
     if (coreKind === "codex" && !isCodexCliAvailable()) {
       throw new Error("Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。");
     }
@@ -3607,12 +3636,6 @@ async function startCodexThreadContinuation(
   if (!prompt && !input.attachments?.length) {
     throw new Error("Message is required.");
   }
-  if (input.attachments?.length) {
-    throw new Error("Codex Core image attachments are not supported in this release.");
-  }
-  if (input.rewindTarget) {
-    throw new Error("Codex Core activity rewind is not supported in this release.");
-  }
   const thread = conversationStore.getThread(input.threadId);
   if (!thread) {
     throw new Error("Thread was not found.");
@@ -3625,7 +3648,6 @@ async function startCodexThreadContinuation(
   if (binding?.coreKind !== "codex" || !binding.externalSessionId.trim()) {
     throw new Error("Codex thread binding is missing; continuing would create a different conversation.");
   }
-
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
     const next = parseThreadRuntimeConfigInput(input.runtimeConfigInput);
@@ -3645,21 +3667,30 @@ async function startCodexThreadContinuation(
   }
 
   updateThread(thread.id, { status: "running", message: "正在继续 Codex 会话…" });
-  recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt);
+  if (!input.rewindTarget) {
+    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt);
+  }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
   void startCodexThreadRun({
     thread: updated,
     workspace: await ensureWorkspace(thread.workspacePath),
     runtimeConfig: { routes: runtime.routes },
     prompt,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     roleRoutes,
     continuation: true,
+    ...(input.rewindTarget ? { rewindTarget: input.rewindTarget } : {}),
+    ...(input.displayPrompt?.trim() ? { displayPrompt: input.displayPrompt.trim() } : {}),
   });
   return { thread: updated };
 }
 
 async function startCodexThreadRun(
-  input: ThreadCoreStartRunInput & { continuation: boolean },
+  input: ThreadCoreStartRunInput & {
+    continuation: boolean;
+    rewindTarget?: ThreadActivityRewindTarget;
+    displayPrompt?: string;
+  },
 ): Promise<void> {
   requireThreadCore(input.thread, "codex", input.continuation ? "continue with Codex" : "start Codex");
   const mode = resolveSessionMode(input.thread.runtimeConfig);
@@ -3671,6 +3702,7 @@ async function startCodexThreadRun(
 
   let worktreePlan = createSessionPlan(input.workspace.path, input.thread.id);
   let cwd = input.workspace.path;
+  let codexAttachmentDir: string | undefined;
   try {
     if (mode !== "ask") {
       const resolved = await resolveThreadWorktree(input.workspace, input.thread.id);
@@ -3679,6 +3711,11 @@ async function startCodexThreadRun(
       activeRunRuntimeState.setWorktreePlan(input.thread.id, worktreePlan);
     }
 
+    const materializedAttachments = await materializeCodexImageAttachments(
+      input.thread.id,
+      input.attachments ?? [],
+    );
+    codexAttachmentDir = materializedAttachments.directory;
     const outcome = await runThreadRequestOnce(
       input.thread.id,
       runAttemptPhaseFromThreadMode(mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution"),
@@ -3692,7 +3729,27 @@ async function startCodexThreadRun(
             ensureThreadRuntimeConfig(
               conversationStore.getThread(input.thread.id) ?? input.thread,
             ).runtimeConfig?.bashReviewMode ?? "always",
-          enableSubagents: false,
+          resolveSubagentAvailability: () =>
+            ensureThreadRuntimeConfig(
+              conversationStore.getThread(input.thread.id) ?? input.thread,
+            ).runtimeConfig?.subagentEnabled,
+          resolveMcpServers: () => {
+            const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
+            return prepareCodexMcpServersForRuntime(
+              buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
+            );
+          },
+          resolveEnabledMcpServerKeys: () => resolveCodexThreadMcpServerKeys(input.thread.id),
+          onPrepared: async () => {
+            if (input.rewindTarget) {
+              await rollbackCodexThreadForEcoThread({
+                ecoThreadId: input.thread.id,
+                targetItemId: input.rewindTarget.userMessageId,
+              });
+              recordUserPrompt(input.thread.id, input.displayPrompt?.trim() || input.prompt);
+            }
+            await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
+          },
           recordRouteFingerprint: recordThreadRouteFingerprint,
           onProxyReady: ({ plannerRoute }) => {
             updateThread(input.thread.id, {
@@ -3703,6 +3760,7 @@ async function startCodexThreadRun(
           run: async ({ routes }) => {
             const driver = createCodexRuntimeDriver(input.thread.id, mode);
             try {
+              const agentRegistry = resolveAgentRuntimeConfigForThreadId(input.thread.id);
               const runInput = {
                 threadId: input.thread.id,
                 prompt: input.prompt,
@@ -3710,6 +3768,13 @@ async function startCodexThreadRun(
                 worktreePath: cwd,
                 routes,
                 signal: controller.signal,
+                codexSession: {
+                  ...(await buildCodexSessionOptions(input.thread.id, input.prompt)),
+                  ...(materializedAttachments.paths.length > 0
+                    ? { localImagePaths: materializedAttachments.paths }
+                    : {}),
+                },
+                ...(agentRegistry ? { agentRegistry } : {}),
               };
               const events = input.continuation && driver.runContinuation
                 ? driver.runContinuation(
@@ -3759,6 +3824,9 @@ async function startCodexThreadRun(
   } catch (error) {
     markThreadInterrupted(input.thread.id, errorMessage(error));
   } finally {
+    if (codexAttachmentDir) {
+      await fs.rm(codexAttachmentDir, { recursive: true, force: true });
+    }
     await finalizeMainThreadRunCleanup({
       threadId: input.thread.id,
       worktreePath: cwd,
@@ -3767,9 +3835,75 @@ async function startCodexThreadRun(
   }
 }
 
-function assertCodexRuntimeConfigSupported(runtimeConfig: ThreadRuntimeConfig): void {
-  if (Object.values(runtimeConfig.mcpServersEnabled ?? {}).some(Boolean)) {
-    throw new Error("Codex Core 首版暂不支持 MCP，请关闭已选择的 MCP Server 后再运行。");
+function assertCodexRuntimeConfigSupported(_runtimeConfig: ThreadRuntimeConfig): void {
+  // Codex-specific admission is performed by prepareCodexRuntime so errors identify the exact server/profile.
+}
+
+function resolveCodexThreadMcpServerKeys(threadId: string): string[] {
+  const thread = conversationStore.getThread(threadId);
+  const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
+  return resolveThreadRuntimeMcpServerKeys({
+    ...(hydrated?.runtimeConfig ? { runtimeConfig: hydrated.runtimeConfig } : {}),
+    settings: getModelSettingsSnapshot(),
+    availableMcpServerKeys: listEnabledGlobalMcpServerKeys(mcpStore.listServers()),
+  });
+}
+
+async function buildCodexSessionOptions(threadId: string, prompt: string) {
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = thread?.workspacePath ?? currentWorkspace?.path;
+  const discovered = await listDiscoveredSkills(workspacePath);
+  const skillInputs = resolveExplicitCodexSkillInputs(prompt, [
+    ...discovered.userSkills,
+    ...discovered.projectSkills,
+  ]);
+  return skillInputs.length > 0 ? { skillInputs } : {};
+}
+
+const CODEX_IMAGE_LIMIT = 10;
+const CODEX_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+const CODEX_IMAGE_EXTENSIONS: Record<PromptImageAttachment["mediaType"], string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+async function materializeCodexImageAttachments(
+  threadId: string,
+  attachments: readonly PromptImageAttachment[],
+): Promise<{ paths: string[]; directory?: string }> {
+  if (attachments.length === 0) return { paths: [] };
+  if (attachments.length > CODEX_IMAGE_LIMIT) {
+    throw new Error(`Codex image input supports at most ${CODEX_IMAGE_LIMIT} images per turn.`);
+  }
+  const directory = path.join(
+    app.getPath("userData"),
+    "codex-images",
+    `${threadId}-${Date.now()}-${randomUUID()}`,
+  );
+  await fs.mkdir(directory, { recursive: true });
+  try {
+    const paths: string[] = [];
+    for (const [index, attachment] of attachments.entries()) {
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(attachment.data) || attachment.data.length % 4 !== 0) {
+        throw new Error(`Image attachment ${index + 1} is not valid base64.`);
+      }
+      const bytes = Buffer.from(attachment.data, "base64");
+      if (bytes.length === 0 || bytes.length > CODEX_IMAGE_MAX_BYTES) {
+        throw new Error(`Image attachment ${index + 1} must be between 1 byte and 20 MB.`);
+      }
+      if (nativeImage.createFromBuffer(bytes).isEmpty()) {
+        throw new Error(`Image attachment ${index + 1} cannot be decoded as ${attachment.mediaType}.`);
+      }
+      const imagePath = path.join(directory, `${index + 1}.${CODEX_IMAGE_EXTENSIONS[attachment.mediaType]}`);
+      await fs.writeFile(imagePath, bytes, { mode: 0o600 });
+      paths.push(imagePath);
+    }
+    return { paths, directory };
+  } catch (error) {
+    await fs.rm(directory, { recursive: true, force: true });
+    throw error;
   }
 }
 
@@ -4860,6 +4994,10 @@ function resolveWorktreeContextForThread(threadId: string): {
   const sessionCwd = conversationStore.getSdkSession(threadId)?.cwd;
   if (sessionCwd?.trim()) {
     hintInput.sdkSessionCwd = sessionCwd.trim();
+  }
+  const coreSessionCwd = conversationStore.getThreadCoreSession(threadId)?.cwd;
+  if (coreSessionCwd?.trim()) {
+    hintInput.coreSessionCwd = coreSessionCwd.trim();
   }
   return {
     workspacePath,

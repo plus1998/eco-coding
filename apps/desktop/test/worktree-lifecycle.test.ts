@@ -63,4 +63,14 @@ describe("resolveWorktreePathHint", () => {
       }),
     ).toBe("/repo/.eco/worktrees/thr_2");
   });
+
+  test("uses the persisted Core session cwd when no active or SDK path exists", () => {
+    expect(
+      resolveWorktreePathHint({
+        threadId: "thr_codex",
+        workspacePath: "/repo",
+        coreSessionCwd: "/repo/codex-session",
+      }),
+    ).toBe("/repo/codex-session");
+  });
 });

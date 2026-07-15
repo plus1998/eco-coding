@@ -8,8 +8,10 @@ import type {
 } from "./agent-orchestration.js";
 import {
   buildCodexGatewayModelAlias,
+  buildCodexMcpServerTomlLines,
   buildCodexModelProviderSlug,
   type CodexAgentRoleForConfigSync,
+  type CodexMcpServerForConfigSync,
   type EcoProviderForCodexConfig,
 } from "./codex-config-sync.js";
 import type { CodexSandboxMode, EcoToolPolicy } from "./codex-tool-policy.js";
@@ -39,10 +41,7 @@ export interface SyncProfileAgentsToCodexRolesInput {
   profile: EcoOrchestrationProfileConfig;
   templates: readonly EcoAgentTemplateConfig[];
   /** Global MCP definitions inherited by the thread before actor-specific policy is applied. */
-  mcpServers?: readonly {
-    name: string;
-    enabledTools?: readonly string[];
-  }[];
+  mcpServers?: readonly CodexMcpServerForConfigSync[];
   /** Composer-selected MCP servers. Missing entries are denied for every actor. */
   threadEnabledMcpServers?: readonly string[];
   /** Known secrets that must be removed if a user-authored prompt accidentally contains them. */
@@ -175,6 +174,7 @@ export async function syncProfileAgentsToCodexRoles(
         exploreAgent?.modelRef ?? input.profile.builtinAgents!.explore.modelRef,
         secretsToRedact,
         mcpVisibility,
+        input.mcpServers ?? [],
       ),
     });
   }
@@ -208,7 +208,7 @@ export async function syncProfileAgentsToCodexRoles(
       agentKey: agent.agentKey,
       roleId,
       mcpVisibility,
-      ...buildCodexRole(agent, template, roleId, secretsToRedact, mcpVisibility),
+      ...buildCodexRole(agent, template, roleId, secretsToRedact, mcpVisibility, input.mcpServers ?? []),
     });
   }
 
@@ -533,6 +533,7 @@ export function buildCodexRoleToml(input: {
   reasoningEffort?: string;
   toolPolicy: EcoToolPolicy;
   mcpVisibility?: Readonly<Record<string, CodexMcpServerVisibilityOverride>>;
+  mcpServers?: readonly CodexMcpServerForConfigSync[];
 }): string {
   const permission = ecoToolPolicyToRoleTomlFields(input.toolPolicy);
   const lines = [
@@ -558,13 +559,15 @@ export function buildCodexRoleToml(input: {
       `network_access = ${permission.sandbox_workspace_write.network_access ? "true" : "false"}`,
     );
   }
-  for (const [serverName, visibility] of Object.entries(input.mcpVisibility ?? {}).sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
-    lines.push("", `[mcp_servers.${serverName}]`, `enabled = ${visibility.enabled ? "true" : "false"}`);
-    if (visibility.enabled_tools !== undefined) {
-      lines.push(`enabled_tools = ${tomlStringArray(visibility.enabled_tools)}`);
-    }
+  const serverByName = new Map((input.mcpServers ?? []).map((server) => [sanitizeMcpServerName(server.name), server]));
+  for (const [serverName, visibility] of Object.entries(input.mcpVisibility ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
+    const server = serverByName.get(serverName);
+    if (!server) throw new Error(`Missing MCP definition for Codex role server '${serverName}'.`);
+    const serverLines = buildCodexMcpServerTomlLines({
+      ...server,
+      ...(visibility.enabled_tools !== undefined ? { enabledTools: visibility.enabled_tools } : {}),
+    }).map((line) => line === "enabled = true" ? `enabled = ${visibility.enabled ? "true" : "false"}` : line);
+    lines.push("", ...serverLines);
   }
   if (input.toolPolicy.allowSpawn === false) {
     lines.push("# Eco allowSpawn: false (role must not nest spawn_agent)");
@@ -603,6 +606,7 @@ function buildCodexRole(
   roleId: string,
   secretsToRedact: readonly string[],
   mcpVisibility: Readonly<Record<string, CodexMcpServerVisibilityOverride>>,
+  mcpServers: readonly CodexMcpServerForConfigSync[],
 ): BuiltCodexRole {
   const description = redactKnownSecrets(buildRoleDescription(agent, template), secretsToRedact);
   const developerInstructions = redactKnownSecrets(
@@ -630,6 +634,7 @@ function buildCodexRole(
       ...withCodexReasoningEffort(agent.modelRef.thinkingEffort),
       toolPolicy,
       mcpVisibility,
+      mcpServers,
     }),
   };
 }
@@ -638,6 +643,7 @@ function buildExploreCodexRole(
   modelRef: EcoAgentInstanceConfig["modelRef"],
   secretsToRedact: readonly string[],
   mcpVisibility: Readonly<Record<string, CodexMcpServerVisibilityOverride>>,
+  mcpServers: readonly CodexMcpServerForConfigSync[],
 ): BuiltCodexRole {
   const modelId = requireModelId(modelRef.modelId, CODEX_EXPLORE_ROLE_ID);
   const providerId = requireProviderId(modelRef.providerId, CODEX_EXPLORE_ROLE_ID);
@@ -661,6 +667,7 @@ function buildExploreCodexRole(
       ...withCodexReasoningEffort(modelRef.thinkingEffort),
       toolPolicy: BUILTIN_EXPLORE_TOOL_POLICY,
       mcpVisibility,
+      mcpServers,
     }),
   };
 }

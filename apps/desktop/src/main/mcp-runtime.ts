@@ -1,7 +1,9 @@
+import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import type { McpSdkConfig } from "../shared/mcp";
 import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 
 const DEFAULT_MCP_CONNECT_TIMEOUT_MS = 60_000;
+const DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC = 60;
 
 export function prepareMcpSdkConfigForRuntime(config: McpSdkConfig): McpSdkConfig {
   const mcpServers: Record<string, unknown> = {};
@@ -12,6 +14,27 @@ export function prepareMcpSdkConfigForRuntime(config: McpSdkConfig): McpSdkConfi
     mcpServers[key] = prepareMcpServerEntryForRuntime(entry as Record<string, unknown>);
   }
   return { ...config, mcpServers };
+}
+
+export function prepareCodexMcpServersForRuntime(
+  servers: readonly CodexMcpServerForConfigSync[],
+): CodexMcpServerForConfigSync[] {
+  return servers.map((server) => {
+    if (server.transport !== "stdio") {
+      return { ...server, startupTimeoutSec: server.startupTimeoutSec ?? DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC };
+    }
+    const spawnEnv = toSpawnEnv();
+    return {
+      ...server,
+      ...(server.command?.trim() ? { command: resolveCommandExecutable(server.command.trim()) } : {}),
+      env: {
+        PATH: spawnEnv.PATH ?? spawnEnv.Path ?? "",
+        ...(spawnEnv.HOME ? { HOME: spawnEnv.HOME } : {}),
+        ...(server.env ?? {}),
+      },
+      startupTimeoutSec: server.startupTimeoutSec ?? DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC,
+    };
+  });
 }
 
 function prepareMcpServerEntryForRuntime(entry: Record<string, unknown>): Record<string, unknown> {
