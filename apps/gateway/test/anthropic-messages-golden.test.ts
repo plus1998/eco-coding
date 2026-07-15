@@ -415,6 +415,49 @@ describe("anthropic-messages golden SSE", () => {
     await response.text();
   });
 
+  test("null reasoning is accepted for an Anthropic upstream request", async () => {
+    const provider: GatewayProvider = {
+      id: "anthropic",
+      name: "Anthropic mock",
+      upstreamKind: "anthropic-messages",
+      baseUrl: "https://mock.anthropic.test",
+      apiKey: "test-key",
+      upstreamModelId: "claude-sonnet-4-20250514",
+      models: ["claude-sonnet-4-20250514"],
+    };
+    const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
+
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        thinking?: unknown;
+        output_config?: unknown;
+      };
+      expect(body.thinking).toBeUndefined();
+      expect(body.output_config).toBeUndefined();
+      return new Response(FIXTURE, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const handler = createGatewayFetchHandler(config, mockFetch);
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          stream: true,
+          input: JSON.stringify("Hi"),
+          reasoning: null,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await response.text();
+  });
+
   test("golden wire: fixture SSE lines match expected Responses event types", () => {
     const expectedTypes = anthropicFixtureToResponsesEventTypes();
     const sseLines = expectedTypes.map((type) => {

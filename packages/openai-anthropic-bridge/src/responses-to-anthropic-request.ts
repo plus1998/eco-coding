@@ -56,7 +56,7 @@ export function responsesToAnthropicRequest(
     }
   }
 
-  if (req.reasoning !== undefined && req.reasoning.effort !== '') {
+  if (req.reasoning != null && req.reasoning.effort !== '') {
     const requestedEffort = req.reasoning.effort.trim().toLowerCase();
     if (['none', 'off', 'disabled'].includes(requestedEffort)) {
       out.thinking = { type: 'disabled' } satisfies AnthropicThinking;

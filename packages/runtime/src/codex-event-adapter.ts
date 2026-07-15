@@ -1377,7 +1377,7 @@ function handleCollabToolCallLifecycle(
   }
 
   const status = readString(item, "status")?.toLowerCase();
-  const eventType = status === "failed" ? "agent.abandoned" : "agent.stopped";
+  const eventType = status === "failed" ? "agent.abandoned" : "agent.started";
   emitAgentLifecycle(ctx, {
     eventType,
     codexThreadId,
@@ -1386,7 +1386,7 @@ function handleCollabToolCallLifecycle(
     agentId: newThreadId,
     parentToolUseId: itemId,
     role: displayRole,
-    message: status === "failed" ? `Subagent ${displayRole} failed` : `Subagent ${displayRole} completed`,
+    message: status === "failed" ? `Subagent ${displayRole} failed` : `Subagent ${displayRole} started`,
     metadata: {
       codexMethod: "item/completed",
       liveType: eventType,

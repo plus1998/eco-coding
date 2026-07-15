@@ -84,7 +84,7 @@ export function responsesToChatCompletionsRequest(
     out.service_tier = req.service_tier;
   }
 
-  if (req.reasoning !== undefined) {
+  if (req.reasoning != null) {
     out.reasoning_effort = req.reasoning.effort;
   }
   if (toolContext.chatTools.length > 0) {

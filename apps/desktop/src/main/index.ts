@@ -162,6 +162,7 @@ import {
   type ThreadRollbackResult,
   type ThreadRunBashApprovalMetadata,
   type ThreadRunBashApprovalPhase,
+  type ThreadRunEvent,
   type ThreadRunEventScope,
   type ThreadRunProjectionSnapshot,
   type ThreadRunToolMetadata,
@@ -297,6 +298,7 @@ import {
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
 import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
+import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import {
   configureCodexApprovalBridge,
   configureCodexRuntimeRun,
@@ -933,7 +935,29 @@ app.whenReady().then(async () => {
       if (!conversationStore.getThread(event.threadId)) {
         throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
       }
-      conversationStore.appendThreadRunEvent(event);
+      const persisted = conversationStore.appendThreadRunEvent(event);
+      applyCodexSubagentLifecycleEvent(persisted, {
+        getAgentStatus: (threadId, agentId) =>
+          conversationStore
+            .listAgentInstances(threadId)
+            .find((candidate) => candidate.agentId === agentId)?.status,
+        resolvePhase: (threadId) => {
+          const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
+          return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
+        },
+        startSession: (input) => conversationStore.upsertSubagentSessionActive(input),
+        stopSession: (threadId, agentId) =>
+          conversationStore.markSubagentSessionStopped(threadId, agentId),
+        startMetrics: (threadId, input) =>
+          subagentMetricsRegistry.onSubagentStart(threadId, input),
+        stopMetrics: (threadId, input) =>
+          subagentMetricsRegistry.onSubagentStop(threadId, input),
+        startAgent: (input) => {
+          agentLifecycle.startSubagent(input);
+        },
+        stopAgent: (input) => agentLifecycle.stopSubagent(input),
+        abandonAgent: (input) => agentLifecycle.abandonSubagent(input),
+      });
     },
     bindLatestUserPromptToCodexItem: (threadId, itemId) => {
       const bound = conversationStore.bindLatestUserRunEventToSdkMessage(threadId, itemId);

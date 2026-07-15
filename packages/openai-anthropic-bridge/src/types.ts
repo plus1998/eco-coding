@@ -124,7 +124,7 @@ export interface ResponsesRequest {
   include?: string[] | undefined;
   store?: boolean | undefined;
   parallel_tool_calls?: boolean | undefined;
-  reasoning?: ResponsesReasoning | undefined;
+  reasoning?: ResponsesReasoning | null | undefined;
   text?: ResponsesText | undefined;
   tool_choice?: unknown | undefined;
   service_tier?: string | undefined;

@@ -193,6 +193,26 @@ test("AgentLifecycleService stops subagents explicitly before run finalizer", ()
   expect(store.getAgent("thr_lifecycle", "agent_coder")?.status).toBe("stopped");
 });
 
+test("AgentLifecycleService abandons a failed subagent before run finalizer", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_lifecycle", phase: "execution", retryIndex: 0 });
+  service.startSubagent({
+    threadId: "thr_lifecycle",
+    agentId: "agent_tester",
+    role: "tester",
+  });
+
+  service.abandonSubagent({
+    threadId: "thr_lifecycle",
+    agentId: "agent_tester",
+    role: "tester",
+  });
+  service.finishRunAttempt("thr_lifecycle", "completed");
+
+  expect(store.getAgent("thr_lifecycle", "agent_tester")?.status).toBe("abandoned");
+});
+
 test("AgentLifecycleService settles recovered running attempts and active agents", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);

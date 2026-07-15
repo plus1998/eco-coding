@@ -1,11 +1,30 @@
 import { describe, expect, test } from "bun:test";
 import {
   extractUsageFromResponsesStreamEvent,
+  normalizeAnthropicUsage,
   normalizeChatCompletionsUsage,
   normalizeResponsesUsage,
 } from "../src/usage-normalize.js";
 
 describe("usage-normalize", () => {
+  test("Anthropic usage without cache counters bills full input without a cache discount", () => {
+    expect(
+      normalizeAnthropicUsage(
+        {
+          input_tokens: 11088,
+          output_tokens: 37,
+        },
+        "deepseek-v4-flash",
+      ),
+    ).toEqual({
+      inputTokens: 11088,
+      outputTokens: 37,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      modelId: "deepseek-v4-flash",
+    });
+  });
+
   test("normalizeResponsesUsage maps Responses usage to ParsedUsage", () => {
     const parsed = normalizeResponsesUsage(
       {

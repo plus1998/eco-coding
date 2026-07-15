@@ -254,6 +254,17 @@ describe('roundtrip', () => {
     expect(responses.reasoning).toEqual({ effort: 'high', summary: 'auto' });
   });
 
+  test('treats null Responses reasoning as unset', () => {
+    const anthropic = responsesToAnthropicRequest({
+      model: 'claude-sonnet-4-20250514',
+      input: JSON.stringify('Hi'),
+      reasoning: null,
+    });
+
+    expect(anthropic.thinking).toBeUndefined();
+    expect(anthropic.output_config).toBeUndefined();
+  });
+
   test('anthropic user text survives anthropic → responses → chat completions', () => {
     const responsesReq = anthropicToResponses({
       model: 'glm-5.1',

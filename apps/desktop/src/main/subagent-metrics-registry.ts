@@ -224,6 +224,14 @@ export class SubagentMetricsRegistry {
     return state.metrics.listEntries();
   }
 
+  persistProjectedEntries(threadId: string, entries: readonly SubagentMetricsEntry[]): void {
+    const state = this.getOrCreateThread(threadId);
+    for (const entry of entries) {
+      state.metrics.restore(entry);
+      this.persistEntry(threadId, entry);
+    }
+  }
+
   restoreFromStore(threadId: string): void {
     const restoredEntries = this.persistence.restoreThread(threadId);
     if (restoredEntries.length === 0) {

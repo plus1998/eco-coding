@@ -502,7 +502,7 @@ test("dispatch maps collabAgentToolCall spawn_agent item/started to agent.starte
   expect(events[0]?.metadata?.delegationPrompt).toBe("Explore the auth module and list key entry points.");
 });
 
-test("dispatch maps collabAgentToolCall spawn_agent item/completed to agent.stopped", () => {
+test("dispatch maps completed spawnAgent item to agent.started until the child turn completes", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
     adapter.dispatch("item/completed", {
@@ -520,7 +520,7 @@ test("dispatch maps collabAgentToolCall spawn_agent item/completed to agent.stop
   });
 
   expect(events).toHaveLength(1);
-  expect(events[0]?.eventType).toBe("agent.stopped");
+  expect(events[0]?.eventType).toBe("agent.started");
   expect(events[0]?.scope).toBe("agent");
   expect(events[0]?.agentId).toBe("thr_codex_child_001");
 });
@@ -559,7 +559,7 @@ test("collabAgentToolCall completed consumes queued Profile role when completed 
 
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
-    eventType: "agent.stopped",
+    eventType: "agent.started",
     scope: "agent",
     agentId: "thr_codex_child_completed_only",
     role: "coder",
@@ -618,7 +618,7 @@ test("collabAgentToolCall completed ignores non-schema item role and uses queued
 
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
-    eventType: "agent.stopped",
+    eventType: "agent.started",
     agentId: "thr_codex_child_inherited_role",
     role: "coder",
     metadata: {
@@ -697,7 +697,7 @@ test("collabAgentToolCall completed matches queued payload over stale attributio
   ]);
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
-    eventType: "agent.stopped",
+    eventType: "agent.started",
     agentId: childThreadId,
     role: "coder",
     metadata: {
@@ -1726,11 +1726,10 @@ test("spawn-turn.jsonl fixture replays to expected agent lifecycle sequence", ()
     now: () => "2026-07-03T12:00:00.000Z",
   });
 
-  // PreToolUse queue + thread/started carry the role; agent.started is deduped.
+  // The spawn RPC only confirms child creation. Child turn/completed owns the terminal lifecycle.
   expect(events.map((event) => event.eventType)).toEqual([
     "run.attempt.started",
     "agent.started",
-    "agent.stopped",
     "run.attempt.completed",
   ]);
 
@@ -1741,9 +1740,6 @@ test("spawn-turn.jsonl fixture replays to expected agent lifecycle sequence", ()
   expect(started?.parentToolUseId).toBe("item_spawn_001");
   expect(started?.metadata?.delegationPrompt).toBe("Explore the auth module and list key entry points.");
   expect(started?.metadata?.delegationSummary).toBeTruthy();
-
-  const stopped = events.find((event) => event.eventType === "agent.stopped");
-  expect(stopped?.agentId).toBe("thr_codex_child_explore_001");
 });
 
 test("dispatch maps commandExecution lifecycle to tool.started and tool.completed", () => {

@@ -486,9 +486,17 @@ interface CorePreferences {
 - Electron CDP capability smoke 验证 Codex 新会话 MCP 为 `0/1` 且配置可编辑，子代理为 `3/3` 且三个角色可编辑；另用显式 `$Bun` 完成结构化 Skill 输入实测。
 - Ask live smoke：Eco Thread `thr_1784087228184` 使用 `sessionMode=ask`，返回 marker `CODEX_ASK_LIVE_OK_1784087227339`，终态 `completed`，投影含原生 app-server 事件且无工具调用。
 - Plan live smoke：Eco Thread `thr_1784087232512` 使用 `sessionMode=plan`，原生 `itemType=plan` 返回 marker `CODEX_PLAN_LIVE_OK_1784087227339`；Desktop 持久化 pending plan 并停在 `awaiting_plan`，无工具调用、未批准执行。
+- Responses-native 三代理对照：Eco Thread `thr_1784089827238` 的 `explore/coder/tester` 均产生独立 session、ledger 和 context instance；`contextOccupied` 分别为 `10005/10493/10493`，用于确认 Codex 原生多代理归因链路本身可工作。
+- 实际 Profile 三代理验收：Eco Thread `thr_1784090586107` 使用 `user.custom.profile` 的 Anthropic-compatible `deepseek-v4-flash` 子代理；三个角色均包含 `agent.started -> child events -> agent.stopped`，并返回各自唯一 marker。
+- `explore`：input `54`、output `45`、cache read `11008`、context `11062 / 258000`、成本 `$0.00009104`。
+- `coder`：input `92`、output `44`、cache read `10880`、context `10972 / 258000`、成本 `$0.0000994`。
+- `tester`：input `92`、output `42`、cache read `10880`、context `10972 / 258000`、成本 `$0.0000984`。
+- Node SQLite 强校验确认 `thread_agent_instances`、`thread_subagent_sessions`、`thread_subagent_metrics` 各有 3 行，agentId、角色、stopped 终态、非零 context 与成本均一致。可用 `bun run --cwd apps/desktop smoke:codex-multi-agent` 重复执行；该脚本只用于本地门禁，不提交 CI 配置。
 - 历史测试库仍保留修复前的 unattributed event `ule_27702e1343dade7435d393b3`。新代码不再产生同类事件，但本次不隐式改写历史 ledger。
 
 最终本地自动门禁：Claude regression 通过；Node SQLite `5/5`；Desktop `1375 pass / 46 skip / 0 fail`；Runtime/Gateway/Bridge/Persistence/Shared/Router `814 pass / 2 skip / 0 fail`；TypeScript、Desktop build、`git diff --check` 均通过。所有 SQLite 执行均走 Node 专用门禁，不把 `node:sqlite` 测试交给 Bun。
+
+本轮多代理修复门禁：相关 Desktop/Runtime/Gateway/Bridge 定向测试 `104 pass / 2 skip / 0 fail`；Claude regression `333 pass / 16 skip / 0 fail`；Node SQLite `5/5`；TypeScript 与 Desktop build 通过。带本地 Mongo/Redis 凭据执行全仓测试时得到 `2280 pass / 48 skip`，但 server 测试共享 Mongo 连接在并行套件中出现一次 `MongoNotConnectedError`，汇总仍有 `2 fail / 1 error`；同一失败用例单独重跑为 `1 pass / 0 fail`，因此不能把本轮全仓并行测试记录为全绿。
 
 ## 10. 可观测性与错误模型
 

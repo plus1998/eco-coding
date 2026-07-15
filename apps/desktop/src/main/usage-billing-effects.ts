@@ -43,7 +43,7 @@ export interface UsageBillingEffectsServices {
   usageLedger: Pick<
     UsageLedgerCoordinator,
     "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow" | "registerProxyPendingAttribution"
-  >;
+  > & Partial<Pick<UsageLedgerCoordinator, "persistSubagentBillingEntries">>;
   accumulator: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordContextObservation" | "recordSdkUsage">;
   billingSnapshotSelection?: BillingSnapshotSelectionPolicy;
@@ -139,6 +139,7 @@ export async function applySingleUsageBillingEffects(
       }),
     );
   }
+  services.usageLedger.persistSubagentBillingEntries?.(input.threadId);
 
   const legacyBilling = recordLegacySingleUsageBilling(services.accumulator, {
     threadId: input.threadId,
@@ -248,6 +249,7 @@ export async function applySdkRunBillingEffects(
       }),
     );
   }
+  services.usageLedger.persistSubagentBillingEntries?.(input.threadId);
 
   const legacyBilling = recordLegacySdkRunBilling(services.accumulator, {
     threadId: input.threadId,

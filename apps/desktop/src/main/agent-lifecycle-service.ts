@@ -182,6 +182,17 @@ export class AgentLifecycleService {
   }
 
   stopSubagent(input: { threadId: string; agentId: string; role: RuntimeAgentRole }): void {
+    this.finishSubagent(input, "stopped");
+  }
+
+  abandonSubagent(input: { threadId: string; agentId: string; role: RuntimeAgentRole }): void {
+    this.finishSubagent(input, "abandoned");
+  }
+
+  private finishSubagent(
+    input: { threadId: string; agentId: string; role: RuntimeAgentRole },
+    status: "stopped" | "abandoned",
+  ): void {
     const state = this.threads.get(input.threadId);
     const existing = state?.activeAgents.get(input.agentId);
     if (!state || !existing) {
@@ -190,7 +201,7 @@ export class AgentLifecycleService {
     const now = this.now();
     this.upsertAgent(input.threadId, {
       ...existing,
-      status: "stopped",
+      status,
       endedAt: now,
       updatedAt: now,
     });

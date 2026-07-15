@@ -549,6 +549,85 @@ test("applySingleUsageBillingEffects does not backfill legacy subagent metrics w
   expect(billing.subagents?.[0]?.inputTokens ?? 0).toBe(0);
 });
 
+test("applySingleUsageBillingEffects persists authoritative ledger subagent metrics", async () => {
+  const persistedRows: Array<{
+    inputTokens: number;
+    contextOccupied: number;
+    ecoCostUsd: number;
+  }> = [];
+  const registry = new SubagentMetricsRegistry({
+    listSubagentMetrics: () => [],
+    upsertSubagentMetrics: (_threadId, input) => {
+      persistedRows.push({
+        inputTokens: input.inputTokens,
+        contextOccupied: input.contextOccupied,
+        ecoCostUsd: input.ecoCostUsd,
+      });
+    },
+    clearSubagentMetrics: () => undefined,
+  });
+  const threadId = "thr_effects_projected_persistence";
+  registry.onSubagentStart(threadId, { agentId: "agent_coder", role: "coder" });
+  const ledger = new InMemoryUsageLedger();
+  ledger.upsertAgentInstance({
+    threadId,
+    agentId: "agent_coder",
+    role: "coder",
+    kind: "subagent",
+    status: "active",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const coordinator = new UsageLedgerCoordinator({
+    store: {
+      appendUsageLedgerEvent: (event) => ledger.appendUsageEvent(event).inserted,
+      listUsageLedgerEvents: (id) => ledger.listUsageEvents(id),
+      listAgentInstances: (id) => ledger.listAgentInstances(id),
+    },
+    metrics: registry,
+  });
+  const services: UsageBillingEffectsServices = {
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage() {
+          return undefined;
+        },
+        getSnapshot: () => undefined,
+      },
+      emitLiveContext: () => undefined,
+    }),
+    usageLedger: coordinator,
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics: registry,
+    emitUsageUpdated: () => undefined,
+    schedulePersistThreadMetrics: () => undefined,
+  };
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId,
+    role: "coder",
+    source: "proxy",
+    usage: usage(),
+    runtimeRoutes: routes,
+    lookupPricing,
+    agentId: "agent_coder",
+    modelId: "haiku",
+    requestKey: "proxy:coder:projected-persistence",
+  });
+
+  await applySingleUsageBillingEffects(services, {
+    threadId,
+    artifacts,
+    updateContext: true,
+    agentId: "agent_coder",
+  });
+
+  expect(persistedRows.at(-1)).toMatchObject({
+    inputTokens: 10_000,
+    contextOccupied: 10_000,
+  });
+  expect(persistedRows.at(-1)?.ecoCostUsd).toBeGreaterThan(0);
+});
+
 test("applySdkRunBillingEffects does not backfill legacy subagent metrics when ledger projection is unavailable", async () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const legacySubagentUsageCalls: Array<

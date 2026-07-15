@@ -269,7 +269,22 @@ export async function forwardAnthropicMessages(
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
 ): Promise<Response> {
-  const anthropicBody = responsesToAnthropicRequest(responsesBody);
+  let anthropicBody: AnthropicRequest;
+  try {
+    anthropicBody = responsesToAnthropicRequest(responsesBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    onLog(`responses → anthropic conversion failed: ${message}`);
+    return Response.json(
+      {
+        error: {
+          message: `Unable to convert Responses request for Anthropic upstream: ${message}`,
+          type: "invalid_request_error",
+        },
+      },
+      { status: 400 },
+    );
+  }
   anthropicBody.model = route.upstreamModelId;
   return forwardAnthropicMessagesBody(
     route,

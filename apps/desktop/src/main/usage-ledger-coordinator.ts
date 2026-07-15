@@ -50,6 +50,7 @@ export interface UsageLedgerCoordinatorStore {
 
 export interface UsageLedgerCoordinatorMetrics {
   listEntries(threadId: string): SubagentMetricsEntry[];
+  persistProjectedEntries?(threadId: string, entries: readonly SubagentMetricsEntry[]): void;
   resolveAgentId?(
     threadId: string,
     input: { role: RuntimeAgentRole; parentToolUseId?: string },
@@ -587,6 +588,12 @@ export class UsageLedgerCoordinator {
       this.writeError(`[eco] subagent ledger projection failed: ${errorMessage(error)}\n`);
       return existingEntries;
     }
+  }
+
+  persistSubagentBillingEntries(threadId: string): SubagentMetricsEntry[] {
+    const entries = this.listSubagentBillingEntries(threadId);
+    this.metrics.persistProjectedEntries?.(threadId, entries);
+    return entries;
   }
 
   private projectBilling(

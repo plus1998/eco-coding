@@ -15,9 +15,9 @@ export interface ParsedUsage {
 }
 
 /**
- * Anthropic Messages usage is authoritative only when the full response counters
- * are present. Cache counters are nullable in the official schema; null means no
- * cache tokens for that counter.
+ * Anthropic-compatible providers do not consistently include cache counters.
+ * Missing or null cache counters are treated as zero so the full input_tokens
+ * amount remains billable without applying an unreported cache discount.
  */
 export function normalizeAnthropicUsage(
   usage: unknown,
@@ -28,10 +28,11 @@ export function normalizeAnthropicUsage(
   }
   const inputTokens = readExactTokenCount(usage, "input_tokens", false);
   const outputTokens = readExactTokenCount(usage, "output_tokens", false);
-  const cacheReadTokens = readExactTokenCount(usage, "cache_read_input_tokens", true);
+  const cacheReadTokens = readExactTokenCount(usage, "cache_read_input_tokens", true, true);
   const cacheCreationTokens = readExactTokenCount(
     usage,
     "cache_creation_input_tokens",
+    true,
     true,
   );
   if (
@@ -58,9 +59,10 @@ function readExactTokenCount(
   usage: Record<string, unknown>,
   key: string,
   nullable: boolean,
+  optional = false,
 ): number | undefined {
   if (!Object.hasOwn(usage, key)) {
-    return undefined;
+    return optional ? 0 : undefined;
   }
   const value = usage[key];
   if (nullable && value === null) {
