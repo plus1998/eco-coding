@@ -133,6 +133,11 @@ test("getDefaultAgentProfileId returns first orchestration profile", () => {
   expect(getDefaultAgentProfileId(genericSettings)).toBe("generic-copy");
 });
 
+test("getDefaultAgentProfileId returns a valid preferred profile", () => {
+  expect(getDefaultAgentProfileId(agentSettings, "profile-b")).toBe("profile-b");
+  expect(getDefaultAgentProfileId(agentSettings, "missing-profile")).toBe("profile-a");
+});
+
 test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
@@ -154,6 +159,15 @@ test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan sess
   expect(config.agentProfileId).toBe("profile-a");
   expect(config.sessionMode).toBe("plan");
   expect(config.subagentEnabled.reviewer).toBe(true);
+});
+
+test("buildThreadRuntimeConfigFromDefaults uses the saved default Agent profile", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: agentSettings,
+    workflowDefaults: { sessionMode: "agent", defaultAgentProfileId: "profile-b" },
+  });
+  expect(config.agentProfileId).toBe("profile-b");
+  expect(config.routeProfileId).toBe("profile-b");
 });
 
 test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile without routes", () => {

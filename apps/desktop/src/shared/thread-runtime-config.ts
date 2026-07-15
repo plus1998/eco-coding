@@ -64,7 +64,14 @@ export function getDefaultRouteProfileId(settings: ModelSettingsSnapshot): strin
   return settings.routeProfiles[0]?.id;
 }
 
-export function getDefaultAgentProfileId(settings: ModelSettingsSnapshot): string | undefined {
+export function getDefaultAgentProfileId(
+  settings: ModelSettingsSnapshot,
+  preferredProfileId?: string,
+): string | undefined {
+  const preferredId = preferredProfileId?.trim();
+  if (preferredId && settings.orchestrationProfiles.some((profile) => profile.id === preferredId)) {
+    return preferredId;
+  }
   return settings.orchestrationProfiles[0]?.id;
 }
 
@@ -307,7 +314,10 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   const requestedProfileId = input.agentProfileId?.trim() || input.routeProfileId?.trim();
   const agentProfile =
     getAgentProfileById(input.settings, requestedProfileId) ??
-    getAgentProfileById(input.settings, getDefaultAgentProfileId(input.settings));
+    getAgentProfileById(
+      input.settings,
+      getDefaultAgentProfileId(input.settings, input.workflowDefaults.defaultAgentProfileId),
+    );
   if (!agentProfile) {
     throw new Error("至少添加一套智能体配置。");
   }

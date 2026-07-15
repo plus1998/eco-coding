@@ -6360,6 +6360,116 @@ button.sidebar-core-heading {
   font-size: 12px;
 }
 
+.default-agent-options {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.default-agent-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 66px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.default-agent-option > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.default-agent-option + .default-agent-option {
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+}
+
+.default-agent-option:hover:not(:has(input:disabled)) {
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.default-agent-option.is-selected {
+  background: var(--accent-soft);
+}
+
+.default-agent-option:has(input:focus-visible) {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -2px;
+}
+
+.default-agent-option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.default-agent-option-icon,
+.default-agent-option-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.default-agent-option-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+}
+
+.default-agent-option.is-selected .default-agent-option-icon {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.default-agent-option-body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.default-agent-option-body strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.default-agent-option-body small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.default-agent-option-state {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  color: transparent;
+}
+
+.default-agent-option.is-selected .default-agent-option-state {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
 .git-settings-section-head {
   align-items: flex-start;
 }
@@ -14689,6 +14799,16 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .models-agent-source-badge {
   background: var(--code-bg);
   color: var(--text-muted);
+}
+
+.models-agent-default-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .models-agent-profile-row {

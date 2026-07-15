@@ -1,13 +1,14 @@
 import {
   ArrowUp,
+  ChevronRight,
   Copy,
   Download,
-  ChevronRight,
   LinkIcon,
   Pencil,
   Plus,
   RefreshCw,
   Settings2,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -66,8 +67,8 @@ import {
   formatAgentDomainLabel,
   listSelectableAgentProfileSummaries,
 } from "./agent-profile-summary";
-import { AgentThemeColorField } from "./agent-theme-color-field";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
+import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
@@ -111,6 +112,8 @@ interface ModelsSettingsPanelProps {
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
+  defaultAgentProfileId?: string | undefined;
+  onDefaultAgentProfileChange?: ((profileId: string | undefined) => void | Promise<void>) | undefined;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
@@ -130,6 +133,8 @@ export function ModelsSettingsPanel({
   initialTab = "subagents",
   mode = "agentBuilder",
   onSettingsChange,
+  defaultAgentProfileId,
+  onDefaultAgentProfileChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
@@ -516,6 +521,12 @@ export function ModelsSettingsPanel({
     try {
       await window.eco.deleteOrchestrationProfile(profile.id);
       await refreshSettings();
+      if (profile.id === defaultAgentProfileId) {
+        const replacementProfileId = settings.orchestrationProfiles.find(
+          (candidate) => candidate.id !== profile.id,
+        )?.id;
+        await onDefaultAgentProfileChange?.(replacementProfileId);
+      }
     } catch (caught) {
       setPanelError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -876,10 +887,21 @@ export function ModelsSettingsPanel({
               {selectableProfileSummaries.map((summary) => {
                 const editableProfile = canEditStoredAgentProfile(summary.profile);
                 const testingProfile = testingAgentProfileId === summary.profile.id;
+                const defaultProfile = summary.profile.id === defaultAgentProfileId;
                 return (
                   <li key={summary.profile.id} className="mcp-server-row models-agent-profile-row">
-                    <AgentProfileSummaryBlock summary={summary} />
+                    <AgentProfileSummaryBlock summary={summary} isDefault={defaultProfile} />
                     <div className="mcp-server-actions">
+                      <button
+                        type="button"
+                        className={defaultProfile ? "mcp-icon-button is-active" : "mcp-icon-button"}
+                        disabled={busy || defaultProfile}
+                        onClick={() => void onDefaultAgentProfileChange?.(summary.profile.id)}
+                        aria-label={defaultProfile ? `${summary.name} 已是默认配置` : `设 ${summary.name} 为默认配置`}
+                        title={defaultProfile ? "已是默认配置" : "设为默认配置"}
+                      >
+                        <Star size={18} fill={defaultProfile ? "currentColor" : "none"} />
+                      </button>
                       <button
                         type="button"
                         className="mcp-icon-button"
@@ -2222,7 +2244,13 @@ function ProviderEditorModal({
   );
 }
 
-function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary }) {
+function AgentProfileSummaryBlock({
+  summary,
+  isDefault,
+}: {
+  summary: AgentProfileSummary;
+  isDefault: boolean;
+}) {
   const visibleAgents = summary.enabledAgents.slice(0, 5);
   const hiddenCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
   return (
@@ -2231,6 +2259,7 @@ function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary })
         <span className="mcp-server-name">{summary.name}</span>
         <span className="models-agent-domain-badge">{summary.presetLabel}</span>
         <span className="models-agent-source-badge">{summary.sourceLabel}</span>
+        {isDefault ? <span className="models-agent-default-badge">默认</span> : null}
       </div>
       <div className="models-agent-profile-meta">
         <span>主 Agent：{summary.main.modelLabel}</span>

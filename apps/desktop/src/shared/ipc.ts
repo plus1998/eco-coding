@@ -431,6 +431,8 @@ export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
   sessionMode: import("./session-mode").SessionMode;
+  defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
+  defaultAgentProfileId?: string;
   mcpServersEnabled?: Record<string, boolean>;
 }
 

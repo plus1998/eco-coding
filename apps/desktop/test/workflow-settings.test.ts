@@ -23,7 +23,7 @@ const sqliteAvailable = await (async () => {
 })();
 
 test("session mode defaults to agent", () => {
-  expect(defaultWorkflowSettings()).toEqual({ sessionMode: "agent" });
+  expect(defaultWorkflowSettings()).toEqual({ sessionMode: "agent", defaultCoreKind: "claude" });
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
 });
@@ -31,20 +31,28 @@ test("session mode defaults to agent", () => {
 test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
   expect(isWorkflowSettingsSnapshot({ sessionMode: "plan" })).toBe(true);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "ask" })).toBe(true);
+  expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "codex" })).toBe(true);
+  expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toBe(false);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "invalid" })).toBe(false);
 });
 
 test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "plan" })).toEqual({
     sessionMode: "plan",
+    defaultCoreKind: "claude",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
     sessionMode: "agent",
+    defaultCoreKind: "claude",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
     sessionMode: "ask",
+    defaultCoreKind: "claude",
   });
-  expect(normalizeWorkflowSettingsSnapshot({})).toEqual({ sessionMode: "agent" });
+  expect(normalizeWorkflowSettingsSnapshot({})).toEqual({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+  });
 });
 
 test("orchestrationModeFromSnapshot maps session mode to runtime mode", () => {
@@ -66,7 +74,32 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
     }),
   ).toEqual({
     sessionMode: "agent",
+    defaultCoreKind: "claude",
     mcpServersEnabled: { mongo: true, browser: false },
+  });
+});
+
+test("normalizeWorkflowSettingsSnapshot preserves a trimmed default Agent profile", () => {
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultAgentProfileId: "  profile-b  ",
+    }),
+  ).toEqual({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+    defaultAgentProfileId: "profile-b",
+  });
+});
+
+test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "codex" })).toEqual({
+    sessionMode: "agent",
+    defaultCoreKind: "codex",
+  });
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
   });
 });
 
@@ -75,10 +108,14 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
   const store = await createWorkflowSettingsStore(dbPath);
   const saved = store.save({
     sessionMode: "plan",
+    defaultCoreKind: "codex",
+    defaultAgentProfileId: "profile-b",
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(saved).toEqual({
     sessionMode: "plan",
+    defaultCoreKind: "codex",
+    defaultAgentProfileId: "profile-b",
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(store.get()).toEqual(saved);

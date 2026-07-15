@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronUp,
   Cloud,
+  Cpu,
   CornerDownRight,
   FolderOpen,
   GitBranch,
@@ -44,6 +45,7 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { GitSettingsPanel } from "./GitSettingsPanel";
@@ -320,7 +322,15 @@ interface RecentProject {
   importedAt: string;
 }
 
-type SettingsSectionId = "general" | "providers" | "mcp" | "centerServer" | "models" | "skills" | "git";
+type SettingsSectionId =
+  | "general"
+  | "providers"
+  | "mcp"
+  | "centerServer"
+  | "defaultAgent"
+  | "models"
+  | "skills"
+  | "git";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -349,6 +359,7 @@ const settingsNavGroups: SettingsNavGroup[] = [
   {
     label: "编码",
     sections: [
+      { id: "defaultAgent", label: "默认 Agent", icon: Cpu },
       { id: "models", label: "智能体构建器", icon: SlidersHorizontal },
       { id: "skills", label: "Skills", icon: Sparkles },
       { id: "git", label: "Git", icon: GitBranch },
@@ -783,6 +794,7 @@ function App() {
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
     sessionMode: "agent",
+    defaultCoreKind: "claude",
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
@@ -908,12 +920,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (newThreadCoreKind === "codex" && coreAvailability?.codex.available === false) {
-      setNewThreadCoreKind("claude");
-    }
-  }, [coreAvailability?.codex.available, newThreadCoreKind]);
-
-  useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
 
@@ -982,6 +988,7 @@ function App() {
         setSettings(modelSettings);
         setMcpSettings(mcp);
         setWorkflowSettings(workflow);
+        setNewThreadCoreKind(workflow.defaultCoreKind ?? "claude");
         setCenterServerSettings(centerServer);
         setProxyBridgeSettings(proxyBridge);
       },
@@ -2263,6 +2270,10 @@ function App() {
   }, [activeThread?.id]);
 
   const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
+  const effectiveDefaultAgentProfileId = getDefaultAgentProfileId(
+    settings,
+    workflowSettings.defaultAgentProfileId,
+  );
   const userSkills = useMemo(
     () => dedupeSkillsByName((skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady)),
     [skillsSnapshot?.userSkills],
@@ -2303,22 +2314,28 @@ function App() {
   }, [composerSkillSlash?.query, composerSkillSlash?.start, composerSkillMatches.length]);
 
   const buildComposerDefaultConfig = useCallback(
-    (planModeOverride?: boolean): ThreadRuntimeConfig | undefined => {
+    (options?: {
+      planModeOverride?: boolean;
+      preserveCurrentProfile?: boolean;
+      workflowDefaults?: WorkflowSettingsSnapshot;
+    }): ThreadRuntimeConfig | undefined => {
       if (settings.orchestrationProfiles.length === 0) {
         return undefined;
       }
       try {
+        const defaults = options?.workflowDefaults ?? workflowSettings;
+        const preserveCurrentProfile = options?.preserveCurrentProfile !== false;
         const agentProfileId =
-          composerRuntimeConfig?.agentProfileId ??
-          composerRuntimeConfig?.routeProfileId ??
-          getDefaultAgentProfileId(settings);
-        const routeProfileId = composerRuntimeConfig?.routeProfileId;
+          (preserveCurrentProfile
+            ? composerRuntimeConfig?.agentProfileId ?? composerRuntimeConfig?.routeProfileId
+            : undefined) ?? getDefaultAgentProfileId(settings, defaults.defaultAgentProfileId);
+        const routeProfileId = preserveCurrentProfile ? composerRuntimeConfig?.routeProfileId : undefined;
         const workflowDefaults =
-          planModeOverride === undefined
-            ? workflowSettings
+          options?.planModeOverride === undefined
+            ? defaults
             : {
-                ...workflowSettings,
-                sessionMode: planModeOverride ? ("plan" as const) : ("agent" as const),
+                ...defaults,
+                sessionMode: options.planModeOverride ? ("plan" as const) : ("agent" as const),
               };
         return buildThreadRuntimeConfigFromDefaults({
           settings,
@@ -2341,7 +2358,9 @@ function App() {
   );
 
   const resetComposerDefaultConfig = useCallback(() => {
-    setComposerRuntimeConfig(buildComposerDefaultConfig(false) ?? null);
+    setComposerRuntimeConfig(
+      buildComposerDefaultConfig({ planModeOverride: false, preserveCurrentProfile: false }) ?? null,
+    );
   }, [buildComposerDefaultConfig]);
 
   useEffect(() => {
@@ -4304,6 +4323,62 @@ function App() {
     }
   }
 
+  async function saveDefaultConfigProfile(profileId: string | undefined) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const nextWorkflowSettings: WorkflowSettingsSnapshot = {
+        ...workflowSettings,
+      };
+      if (profileId) {
+        nextWorkflowSettings.defaultAgentProfileId = profileId;
+      } else {
+        delete nextWorkflowSettings.defaultAgentProfileId;
+      }
+      const saved = await window.eco.saveWorkflowSettings(nextWorkflowSettings);
+      setWorkflowSettings(saved);
+      if (!activeThread) {
+        setComposerRuntimeConfig(
+          profileId
+            ? (buildComposerDefaultConfig({
+                preserveCurrentProfile: false,
+                workflowDefaults: saved,
+              }) ?? null)
+            : null,
+        );
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function saveDefaultCoreKind(coreKind: CoreKind) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        defaultCoreKind: coreKind,
+      });
+      setWorkflowSettings(saved);
+      if (!activeThread) {
+        setNewThreadCoreKind(saved.defaultCoreKind ?? "claude");
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   async function saveMcpServer(input: McpServerConfigInput) {
     if (!window.eco) return;
     setIsSavingSettings(true);
@@ -4766,6 +4841,7 @@ function App() {
     );
     selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
+    setNewThreadCoreKind(workflowSettings.defaultCoreKind ?? "claude");
     resetComposerDefaultConfig();
     setEditingFollowUpId(undefined);
     setPrompt("");
@@ -5852,6 +5928,18 @@ function App() {
                 />
               )}
 
+              {settingsSection === "defaultAgent" && (
+                <DefaultAgentSettingsPanel
+                  defaultCoreKind={workflowSettings.defaultCoreKind ?? "claude"}
+                  codexAvailable={coreAvailability?.codex.available !== false}
+                  {...(coreAvailability?.codex.reason && {
+                    codexUnavailableReason: coreAvailability.codex.reason,
+                  })}
+                  busy={isSavingSettings}
+                  onChange={(coreKind) => void saveDefaultCoreKind(coreKind)}
+                />
+              )}
+
               {settingsSection === "mcp" && (
                 <McpSettingsPanel
                   servers={mcpSettings.servers}
@@ -5907,8 +5995,12 @@ function App() {
                     initialTab={modelsSettingsTab}
                     mode="agentBuilder"
                     busy={isSavingSettings}
+                    {...(effectiveDefaultAgentProfileId && {
+                      defaultAgentProfileId: effectiveDefaultAgentProfileId,
+                    })}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
+                    onDefaultAgentProfileChange={(profileId) => saveDefaultConfigProfile(profileId)}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />
                 ) : (
