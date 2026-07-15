@@ -12288,6 +12288,15 @@ button.sidebar-core-heading {
   gap: 1px;
 }
 
+.composer-bash-review-popover .composer-codex-popover-list {
+  display: grid;
+  grid-auto-rows: 1fr;
+}
+
+.composer-bash-review-popover .composer-codex-popover-item {
+  height: 100%;
+}
+
 .composer-codex-popover-item {
   display: flex;
   width: 100%;

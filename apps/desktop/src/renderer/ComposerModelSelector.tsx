@@ -289,7 +289,7 @@ export function ComposerModelSelector({
   const effortButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const focusedModelKeyRef = useRef<string | undefined>(undefined);
   const [open, setOpen] = useState(false);
-  const [activeMenu, setActiveMenu] = useState<CascadeMenu | undefined>("models");
+  const [activeMenu, setActiveMenu] = useState<CascadeMenu | undefined>(undefined);
   const [focusSurface, setFocusSurface] = useState<FocusSurface>("root");
   const [focusedRootIndex, setFocusedRootIndex] = useState(ROOT_MODEL_INDEX);
   const [focusedModelIndex, setFocusedModelIndex] = useState(0);
@@ -388,7 +388,7 @@ export function ComposerModelSelector({
 
   const closePanel = useCallback((restoreFocus: boolean) => {
     setOpen(false);
-    setActiveMenu("models");
+    setActiveMenu(undefined);
     setFocusSurface("root");
     if (restoreFocus) {
       requestAnimationFrame(() => triggerRef.current?.focus());
@@ -464,7 +464,7 @@ export function ComposerModelSelector({
       ? modelOptionKey(options[selectedModelIndex])
       : undefined;
     setFocusedEffortIndex(selectedEffortIndex);
-    setActiveMenu("models");
+    setActiveMenu(undefined);
     setFocusSurface("root");
     setSubmenuLayout({ style: { visibility: "hidden" }, overlay: false });
     updateRootPanelPosition();
