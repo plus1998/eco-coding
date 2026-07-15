@@ -23,10 +23,11 @@ export async function finalizeCancelledRun(
   _worktreePlan: WorktreePlan,
   _explicitDisposition: WorktreeCancelDisposition | undefined,
   deps: FinalizeCancelledRunDeps,
+  message = "已停止。可继续对话；文件可通过检查点回滚。",
 ): Promise<void> {
   deps.updateThread(threadId, {
     status: "idle",
-    message: "已停止。可继续对话；文件可通过检查点回滚。",
+    message,
   });
 }
 

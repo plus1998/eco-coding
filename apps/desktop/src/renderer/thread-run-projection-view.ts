@@ -295,7 +295,33 @@ function filterMainTimelineForFeed(
 ): ThreadRunProjectionTimelineItem[] {
   const displayTimeline = filterProjectionTimelineForDetailFeed(timeline, requestSpansById);
   const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item));
-  return filterCompactionTimelineForFeed(requestFiltered);
+  return filterCompactionTimelineForFeed(normalizePlanDismissalTimeline(requestFiltered));
+}
+
+function normalizePlanDismissalTimeline(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const normalized: ThreadRunProjectionTimelineItem[] = [];
+  for (const item of timeline) {
+    if (!isPlanDismissalText(item.text)) {
+      normalized.push(item);
+      continue;
+    }
+    if (normalized.at(-1)?.text === "计划忽略") {
+      continue;
+    }
+    normalized.push({ ...item, text: "计划忽略" });
+  }
+  return normalized;
+}
+
+function isPlanDismissalText(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed === "计划忽略" ||
+    trimmed === "已忽略计划。" ||
+    trimmed.startsWith("已忽略计划。可在下方继续对话说明修改意见")
+  );
 }
 
 function filterAbsorbedSubagentDelegations(

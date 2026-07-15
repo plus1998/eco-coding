@@ -3068,10 +3068,7 @@ function registerIpcHandlers(): void {
       resolvePendingPlanApproval(pendingBridge.toolUseId, "denied");
       return { thread: conversationStore.getThread(threadId) };
     }
-    await dismissPendingPlan(
-      threadId,
-      "已忽略计划。可在下方继续对话说明修改意见，Planner 将重新输出完整计划。",
-    );
+    await dismissPendingPlan(threadId, "计划忽略");
     return { thread: conversationStore.getThread(threadId) };
   });
 
@@ -5025,11 +5022,10 @@ async function dismissPendingPlan(threadId: string, message: string): Promise<vo
   });
   conversationStore.clearPendingPlan(threadId);
   if (dismissal.kind === "cancel_worktree") {
-    await handleRunCancelled(threadId, dismissal.worktreePlan);
+    await handleRunCancelled(threadId, dismissal.worktreePlan, message);
     return;
   }
   updateThread(threadId, { status: "idle", message: dismissal.message });
-  emitThreadEvent(threadId, "thread.idle", dismissal.message, "system");
 }
 
 function resolveWorktreePlan(workspacePath: string, threadId: string, _worktreePath?: string): WorktreePlan {
@@ -5324,9 +5320,19 @@ async function listSubagentActivityFromSdkSession(
   });
 }
 
-async function handleRunCancelled(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
+async function handleRunCancelled(
+  threadId: string,
+  worktreePlan: WorktreePlan,
+  message?: string,
+): Promise<void> {
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
-  await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps());
+  await finalizeCancelledRun(
+    threadId,
+    worktreePlan,
+    explicit,
+    createFinalizeCancelledRunDeps(),
+    message,
+  );
 }
 
 function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
@@ -7930,7 +7936,7 @@ function createThreadHookContext(threadId: string): EcoHookContext {
         return "approved";
       }
       conversationStore.clearPendingPlan(threadId);
-      emitThreadEvent(threadId, "plan_approval.denied", "已忽略计划。", "user", false, {
+      emitThreadEvent(threadId, "plan_approval.denied", "计划忽略", "user", false, {
         planApproval: approvalRequest,
       });
       void retryDeferredRunCleanupIfNeeded(threadId);

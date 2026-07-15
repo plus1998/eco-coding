@@ -40,7 +40,11 @@ test("takePendingCancelDisposition consumes map entry once", () => {
 test("finalizeCancelledRun sets idle and preserves session checkpoint", async () => {
   const { deps, calls } = createDeps();
   await finalizeCancelledRun("t1", sessionPlan, undefined, deps);
-  expect(calls.updates).toEqual([
-    { status: "idle", message: "已停止。可继续对话；文件可通过检查点回滚。" },
-  ]);
+  expect(calls.updates).toEqual([{ status: "idle", message: "已停止。可继续对话；文件可通过检查点回滚。" }]);
+});
+
+test("finalizeCancelledRun uses a specific dismissal message", async () => {
+  const { deps, calls } = createDeps();
+  await finalizeCancelledRun("t1", sessionPlan, undefined, deps, "计划忽略");
+  expect(calls.updates).toEqual([{ status: "idle", message: "计划忽略" }]);
 });

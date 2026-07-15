@@ -832,6 +832,52 @@ test("buildThreadRunProjectionViewModel hides plan-ready statuses already repres
   ).toEqual(["制定计划"]);
 });
 
+test("buildThreadRunProjectionViewModel collapses legacy duplicate plan dismissals", () => {
+  const legacyMessage = "已忽略计划。可在下方继续对话说明修改意见，Planner 将重新输出完整计划。";
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_plan",
+        status: "idle",
+        generatedAt: "2026-01-01T00:00:05.000Z",
+      },
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "制定计划",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({
+          id: "dismissed-1",
+          eventType: "thread.status",
+          role: "system",
+          text: legacyMessage,
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: { liveType: "thread.idle" },
+        }),
+        item({
+          id: "dismissed-2",
+          eventType: "thread.status",
+          role: "system",
+          text: legacyMessage,
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+          metadata: { liveType: "thread.idle" },
+        }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.text),
+  ).toEqual(["制定计划", "计划忽略"]);
+});
+
 test("buildThreadRunProjectionViewModel collapses superseded stream deltas after final output", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
