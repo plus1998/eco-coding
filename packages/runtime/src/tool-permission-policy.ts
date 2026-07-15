@@ -75,8 +75,6 @@ export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
   }
 
   const bashAllowed = !disallowed.has("Bash") && policy.bash?.enabled !== false;
-  const commandAllowlist = policy.bash?.commandAllowlist;
-  const commandDenylist = policy.bash?.commandDenylist;
 
   const materialized: EcoToolPolicy = {
     ...policy,
@@ -84,8 +82,6 @@ export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
     disallowed: uniqueToolPatterns([...disallowed]),
     bash: {
       enabled: bashAllowed,
-      ...(bashAllowed && commandAllowlist?.length ? { commandAllowlist: [...commandAllowlist] } : {}),
-      ...(bashAllowed && commandDenylist?.length ? { commandDenylist: [...commandDenylist] } : {}),
     },
     ...(policy.filesystem ? { filesystem: { ...policy.filesystem } } : {}),
     ...(policy.network ? { network: { ...policy.network } } : {}),

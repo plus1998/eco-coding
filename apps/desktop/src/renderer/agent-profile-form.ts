@@ -55,8 +55,6 @@ export interface AgentProfileFormState {
   mainReadScope: ToolCapabilityFieldValues["readScope"];
   mainWriteCodebase: boolean;
   mainBash: boolean;
-  mainBashCommandAllowlist: string;
-  mainBashCommandDenylist: string;
   mainNetwork: boolean;
   mainSkill: boolean;
   mainAskUser: boolean;
@@ -100,8 +98,6 @@ export function mainCapabilityFromProfileForm(form: AgentProfileFormState): Tool
     readScope: form.mainReadScope,
     writeCodebase: form.mainWriteCodebase,
     bash: form.mainBash,
-    bashCommandAllowlist: form.mainBashCommandAllowlist,
-    bashCommandDenylist: form.mainBashCommandDenylist,
     network: form.mainNetwork,
     skill: form.mainSkill,
     askUser: form.mainAskUser,
@@ -124,8 +120,6 @@ export function agentCapabilityFromAgentForm(
     readScope: agent.readScope,
     writeCodebase: agent.writeCodebase,
     bash: agent.bash,
-    bashCommandAllowlist: agent.bashCommandAllowlist,
-    bashCommandDenylist: agent.bashCommandDenylist,
     network: agent.network,
     skill: agent.skill,
     askUser: agent.askUser,
@@ -147,8 +141,6 @@ export function mainCapabilityPatchToProfileForm(
   if (patch.readScope !== undefined) result.mainReadScope = patch.readScope;
   if (patch.writeCodebase !== undefined) result.mainWriteCodebase = patch.writeCodebase;
   if (patch.bash !== undefined) result.mainBash = patch.bash;
-  if (patch.bashCommandAllowlist !== undefined) result.mainBashCommandAllowlist = patch.bashCommandAllowlist;
-  if (patch.bashCommandDenylist !== undefined) result.mainBashCommandDenylist = patch.bashCommandDenylist;
   if (patch.network !== undefined) result.mainNetwork = patch.network;
   if (patch.skill !== undefined) result.mainSkill = patch.skill;
   if (patch.askUser !== undefined) result.mainAskUser = patch.askUser;
@@ -406,8 +398,6 @@ function agentCapabilityToAgentForm(
     readScope: capability.readScope,
     writeCodebase: capability.writeCodebase,
     bash: capability.bash,
-    bashCommandAllowlist: capability.bashCommandAllowlist,
-    bashCommandDenylist: capability.bashCommandDenylist,
     network: capability.network,
     skill: capability.skill,
     askUser: capability.askUser,
@@ -429,8 +419,6 @@ function mainCapabilityToProfileFormFields(
   | "mainReadScope"
   | "mainWriteCodebase"
   | "mainBash"
-  | "mainBashCommandAllowlist"
-  | "mainBashCommandDenylist"
   | "mainNetwork"
   | "mainSkill"
   | "mainAskUser"
@@ -448,8 +436,6 @@ function mainCapabilityToProfileFormFields(
     mainReadScope: capability.readScope,
     mainWriteCodebase: capability.writeCodebase,
     mainBash: capability.bash,
-    mainBashCommandAllowlist: capability.bashCommandAllowlist,
-    mainBashCommandDenylist: capability.bashCommandDenylist,
     mainNetwork: capability.network,
     mainSkill: capability.skill,
     mainAskUser: capability.askUser,

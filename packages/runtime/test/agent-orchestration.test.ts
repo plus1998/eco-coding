@@ -510,7 +510,7 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
       ...profile.mainAgent,
       tools: {
         ...profile.mainAgent.tools,
-        bash: { enabled: true, commandAllowlist: ["bun test"] },
+        bash: { enabled: true },
         filesystem: { read: "workspace", write: "none" },
         network: { webSearch: false, webFetch: true },
       },
@@ -521,7 +521,7 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
         tools: {
           ...firstAgent.tools,
           disallowed: firstAgent.tools.disallowed.filter((tool) => tool !== "Bash"),
-          bash: { enabled: true, commandDenylist: ["rm*"] },
+          bash: { enabled: true },
           filesystem: { read: "workspace", write: "none" },
           network: { webSearch: true, webFetch: false },
         },
@@ -532,12 +532,12 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
   const policy = buildToolPermissionPolicyFromProfile(structuredProfile, [researchTemplate]);
 
   expect(policy.main).toMatchObject({
-    bash: { enabled: true, commandAllowlist: ["bun test"] },
+    bash: { enabled: true },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: false, webFetch: true },
   });
   expect(policy.agents.eco_researcher).toMatchObject({
-    bash: { enabled: true, commandDenylist: ["rm*"] },
+    bash: { enabled: true },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: true, webFetch: false },
   });

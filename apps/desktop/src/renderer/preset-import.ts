@@ -113,15 +113,7 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
     disallowed: [...policy.disallowed],
   };
   if (policy.bash) {
-    cloned.bash = {
-      enabled: policy.bash.enabled,
-    };
-    if (policy.bash.commandAllowlist) {
-      cloned.bash.commandAllowlist = [...policy.bash.commandAllowlist];
-    }
-    if (policy.bash.commandDenylist) {
-      cloned.bash.commandDenylist = [...policy.bash.commandDenylist];
-    }
+    cloned.bash = { enabled: policy.bash.enabled };
   }
   if (policy.mcp) {
     cloned.mcp = {

@@ -1,5 +1,4 @@
 import { collectCommandSegments, parseShellCommand } from "./parser";
-import { matchesAnyCommandPattern } from "./pattern-match";
 import { isInsidePath } from "./path-utils";
 import { matchBashAntiBypass } from "./anti-bypass";
 import { DEFAULT_BASH_POLICY_RULES } from "./rules/default";
@@ -24,15 +23,6 @@ function evaluateBashHardDenyCore(
   const agentBash = input.agentBash;
   if (agentBash?.enabled === false) {
     return denyDecision(100, "Bash is disabled for this Eco agent.", "bash_disabled");
-  }
-
-  if (agentBash?.commandDenylist?.length && matchesAnyCommandPattern(command, agentBash.commandDenylist)) {
-    return denyDecision(100, "Bash command is denied by this Eco agent command denylist.", "agent_denylist");
-  }
-
-  const commandAllowlist = agentBash?.commandAllowlist ?? [];
-  if (commandAllowlist.length > 0 && !matchesAnyCommandPattern(command, commandAllowlist)) {
-    return denyDecision(100, "Bash command is outside this Eco agent command allowlist.", "agent_allowlist");
   }
 
   if (rules.workspace.denyOutsideCwd && !isInsidePath(input.cwd, input.workspacePath)) {

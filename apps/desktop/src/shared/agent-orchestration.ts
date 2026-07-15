@@ -35,8 +35,6 @@ export interface ToolPolicy {
   disallowed: string[];
   bash?: {
     enabled: boolean;
-    commandAllowlist?: string[];
-    commandDenylist?: string[];
   };
   mcp?: {
     allowedServers: string[];
@@ -669,11 +667,7 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
     allowed: [...policy.allowed],
     disallowed: [...policy.disallowed],
     ...(policy.bash && {
-      bash: {
-        ...policy.bash,
-        ...(policy.bash.commandAllowlist && { commandAllowlist: [...policy.bash.commandAllowlist] }),
-        ...(policy.bash.commandDenylist && { commandDenylist: [...policy.bash.commandDenylist] }),
-      },
+      bash: { enabled: policy.bash.enabled },
     }),
     ...(policy.mcp && {
       mcp: {

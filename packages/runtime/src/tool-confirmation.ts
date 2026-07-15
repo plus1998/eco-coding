@@ -82,8 +82,6 @@ export function resolveAgentBashPolicyForConfirmation(
   }
   return {
     enabled: bash.enabled,
-    ...(bash.commandAllowlist ? { commandAllowlist: bash.commandAllowlist } : {}),
-    ...(bash.commandDenylist ? { commandDenylist: bash.commandDenylist } : {}),
   };
 }
 

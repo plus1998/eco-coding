@@ -61,8 +61,6 @@ export interface BashPolicyRules {
 
 export interface AgentBashPolicy {
   enabled?: boolean;
-  commandAllowlist?: string[];
-  commandDenylist?: string[];
 }
 
 export interface BashPolicyInput {

@@ -105,3 +105,20 @@ test("stores Core-specific policy only as tightening overrides", () => {
     codex: { sandboxMode: "read-only", approvalPolicy: "untrusted" },
   });
 });
+
+test("re-saving a legacy policy removes command allow and deny lists", () => {
+  const legacyPolicy = {
+    allowed: [],
+    disallowed: [],
+    bash: {
+      enabled: true,
+      commandAllowlist: ["bun test"],
+      commandDenylist: ["rm*"],
+    },
+  } as unknown as Parameters<typeof toolPolicyToCapabilityFields>[0];
+
+  const saved = capabilityFieldsToToolPolicy(toolPolicyToCapabilityFields(legacyPolicy));
+  expect(saved.bash).toEqual({ enabled: true });
+  expect(saved.bash).not.toHaveProperty("commandAllowlist");
+  expect(saved.bash).not.toHaveProperty("commandDenylist");
+});

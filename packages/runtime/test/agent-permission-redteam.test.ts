@@ -59,10 +59,7 @@ const registry: EcoAgentRuntimeConfig = {
       tools: {
         allowed: ["Agent", "Read", "Bash"],
         disallowed: [],
-        bash: {
-          enabled: true,
-          commandDenylist: ["rm*"],
-        },
+        bash: { enabled: true },
         mcp: { allowedServers: ["docs"], allowedTools: [] },
         filesystem: { read: "workspace", write: "none" },
         network: { webSearch: false, webFetch: false },
@@ -160,12 +157,6 @@ test("Agent profile tool permission red-team suite covers main and subagent acto
       name: "main allows low-risk bun command in auto review mode",
       input: preTool("Bash", { command: "bun --version" }),
       expected: "allow",
-    },
-    {
-      name: "main denylist blocks destructive shell",
-      input: preTool("Bash", { command: "rm -rf src" }),
-      expected: "deny",
-      reasonIncludes: "denylist",
     },
     {
       name: "main can call allowed MCP server",

@@ -1379,7 +1379,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
       main: {
         allowed: ["Bash", "Read", "Write", "WebSearch", "WebFetch"],
         disallowed: [],
-        bash: { enabled: true, commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
+        bash: { enabled: true },
         filesystem: { read: "workspace", write: "none" },
         network: { webSearch: false, webFetch: true },
       },
@@ -1402,24 +1402,6 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
     { signal: new AbortController().signal },
   );
   expect(safeBash.hookSpecificOutput).toBeUndefined();
-
-  const deniedBash = await hook!(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "Bash",
-      tool_input: { command: "rm -rf src" },
-      tool_use_id: "tool_bash_deny",
-      session_id: "s1",
-      cwd: "/repo",
-    } satisfies PreToolUseHookInput,
-    "tool_bash_deny",
-    { signal: new AbortController().signal },
-  );
-  expect(deniedBash.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "deny",
-  });
-  expect(deniedBash.hookSpecificOutput?.permissionDecisionReason).toContain("denylist");
 
   const deniedWrite = await hook!(
     {

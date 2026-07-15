@@ -179,11 +179,7 @@ test("buildAgentTemplatePermissionChips summarizes capability policy", () => {
     defaultTools: {
       allowed: [],
       disallowed: ["Write", "Edit", "WebSearch"],
-      bash: {
-        enabled: true,
-        commandAllowlist: ["bun test"],
-        commandDenylist: ["rm*"],
-      },
+      bash: { enabled: true },
       filesystem: { read: "workspace", write: "none" },
       network: { webSearch: false, webFetch: true },
       mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
@@ -201,8 +197,6 @@ test("buildAgentTemplatePermissionChips summarizes capability policy", () => {
     { label: "委派关闭", tone: "deny" },
     { label: "Skill", tone: "allow" },
     { label: "询问用户", tone: "allow" },
-    { label: "命令白名单 1", tone: "allow" },
-    { label: "命令黑名单 1", tone: "deny" },
   ]);
 });
 

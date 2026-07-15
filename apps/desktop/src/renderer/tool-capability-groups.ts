@@ -24,8 +24,6 @@ export interface ToolCapabilityFieldValues {
   readScope: "workspace" | "extra_dirs";
   writeCodebase: boolean;
   bash: boolean;
-  bashCommandAllowlist: string;
-  bashCommandDenylist: string;
   network: boolean;
   skill: boolean;
   askUser: boolean;
@@ -45,7 +43,7 @@ export interface ToolCapabilityPreset {
   hint: string;
   values: Omit<
     ToolCapabilityFieldValues,
-    "bashCommandAllowlist" | "bashCommandDenylist" | "confirmation" | "advancedDisallowedTools" | "codexSandboxOverride" | "codexApprovalOverride" | "mcpServers" | "mcpTools" | "allowDelegation"
+    "confirmation" | "advancedDisallowedTools" | "codexSandboxOverride" | "codexApprovalOverride" | "mcpServers" | "mcpTools" | "allowDelegation"
   >;
 }
 
@@ -71,10 +69,6 @@ export function diagnoseCoreCapabilities(
     if (values.readCodebase && values.readScope === "extra_dirs") {
       if (codexSupport === "native") codexSupport = "adapted";
       codexMessages.push("扩展目录读取由 Codex 审批桥处理。");
-    }
-    if (values.bash && (parseList(values.bashCommandAllowlist).length || parseList(values.bashCommandDenylist).length)) {
-      codexSupport = "unsupported";
-      codexMessages.push("命令白名单和黑名单当前只对 Claude Code 生效，Codex 审批桥尚未接入。");
     }
     if (values.taskProgress) {
       if (codexSupport === "native") codexSupport = "adapted";
@@ -224,8 +218,6 @@ export function toolPolicyToCapabilityFields(
     readScope: readScope === "extra_dirs" ? "extra_dirs" : "workspace",
     writeCodebase,
     bash,
-    bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
-    bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     network,
     skill,
     askUser,
@@ -292,19 +284,13 @@ export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues):
 
   const disallowedList = uniqueValues([...disallowed]);
   const bashAllowed = values.bash;
-  const commandAllowlist = parseList(values.bashCommandAllowlist);
-  const commandDenylist = parseList(values.bashCommandDenylist);
   const mcpServers = parseList(values.mcpServers);
   const mcpTools = parseList(values.mcpTools);
 
   return {
     allowed: [],
     disallowed: disallowedList,
-    bash: {
-      enabled: bashAllowed,
-      ...(bashAllowed && commandAllowlist.length > 0 ? { commandAllowlist } : {}),
-      ...(bashAllowed && commandDenylist.length > 0 ? { commandDenylist } : {}),
-    },
+    bash: { enabled: bashAllowed },
     ...(mcpServers.length > 0 || mcpTools.length > 0
       ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
       : {}),
@@ -355,8 +341,6 @@ export function createDefaultToolCapabilityFields(
     readScope: "workspace",
     writeCodebase: false,
     bash: false,
-    bashCommandAllowlist: "",
-    bashCommandDenylist: "",
     network: true,
     skill: true,
     askUser: false,
@@ -434,12 +418,6 @@ export function buildCapabilityPermissionChips(
   }
   if (values.askUser) {
     chips.push({ label: "询问用户", tone: "allow" });
-  }
-  if (parseList(values.bashCommandAllowlist).length > 0) {
-    chips.push({ label: `命令白名单 ${parseList(values.bashCommandAllowlist).length}`, tone: "allow" });
-  }
-  if (parseList(values.bashCommandDenylist).length > 0) {
-    chips.push({ label: `命令黑名单 ${parseList(values.bashCommandDenylist).length}`, tone: "deny" });
   }
   const advanced = parseList(values.advancedDisallowedTools);
   if (advanced.length > 0) {

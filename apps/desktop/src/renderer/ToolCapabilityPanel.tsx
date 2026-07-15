@@ -45,8 +45,6 @@ export function ToolCapabilityPanel({
   function applyPreset(preset: (typeof TOOL_CAPABILITY_PRESETS)[number]) {
     onChange({
       ...preset.values,
-      bashCommandAllowlist: values.bashCommandAllowlist,
-      bashCommandDenylist: values.bashCommandDenylist,
       advancedDisallowedTools: values.advancedDisallowedTools,
       mcpServers: values.mcpServers,
       mcpTools: values.mcpTools,
@@ -156,29 +154,6 @@ export function ToolCapabilityPanel({
           disabled={disabled}
           onChange={(bash) => onChange({ bash })}
         />
-        {values.bash ? (
-          <>
-            <label className="mcp-field models-tool-capability-subfield">
-              <span className="mcp-field-label">命令白名单</span>
-              <input
-                className="mcp-field-input"
-                value={values.bashCommandAllowlist}
-                disabled={disabled}
-                onChange={(event) => onChange({ bashCommandAllowlist: event.target.value })}
-              />
-            </label>
-            <label className="mcp-field models-tool-capability-subfield">
-              <span className="mcp-field-label">命令黑名单</span>
-              <input
-                className="mcp-field-input"
-                value={values.bashCommandDenylist}
-                disabled={disabled}
-                onChange={(event) => onChange({ bashCommandDenylist: event.target.value })}
-              />
-            </label>
-          </>
-        ) : null}
-
         <CapabilityToggle
           label="联网检索"
           description="Web 搜索与网页抓取。"

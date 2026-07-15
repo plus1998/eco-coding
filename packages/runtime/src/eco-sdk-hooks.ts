@@ -877,7 +877,6 @@ function evaluateBashToolPolicy(
     actor?: "main" | string;
   },
 ): HookJSONOutput | undefined {
-  const bash = entry.bash;
   const command = readBashCommand(input.tool_input);
   if (!command) {
     return undefined;
@@ -891,8 +890,6 @@ function evaluateBashToolPolicy(
     confirmationMode,
     agentBash: {
       enabled: true,
-      ...(bash?.commandAllowlist ? { commandAllowlist: bash.commandAllowlist } : {}),
-      ...(bash?.commandDenylist ? { commandDenylist: bash.commandDenylist } : {}),
     },
   });
   if (!gate || gate.action !== "deny") {

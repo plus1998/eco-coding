@@ -44,8 +44,6 @@ export interface EcoToolPolicy {
   disallowed: string[];
   bash?: {
     enabled: boolean;
-    commandAllowlist?: string[];
-    commandDenylist?: string[];
   };
   mcp?: {
     allowedServers: string[];
@@ -197,16 +195,12 @@ export function resolveAssignedMcpServers(
 
 export function resolveEffectiveBashPolicy(policy: EcoToolPolicy): NonNullable<EcoToolPolicy["bash"]> {
   const disallowed = new Set(policyDisallowedTools(policy).map((entry) => entry.trim()));
-  const bashLists = {
-    ...(policy.bash?.commandAllowlist && { commandAllowlist: [...policy.bash.commandAllowlist] }),
-    ...(policy.bash?.commandDenylist && { commandDenylist: [...policy.bash.commandDenylist] }),
-  };
 
   if (disallowed.has("Bash") || policy.bash?.enabled === false) {
-    return { enabled: false, ...bashLists };
+    return { enabled: false };
   }
 
-  return { enabled: true, ...bashLists };
+  return { enabled: true };
 }
 
 export function collectProfileAssignedMcpServers(
@@ -617,15 +611,7 @@ function normalizeToolPermissionEntry(
     allowed: allowedToolPatternsFromPolicy(materialized, extraAllowed),
     disallowed: uniqueToolPatterns(materialized.disallowed),
     mcpServers: resolveAssignedMcpServers(policy, assignedMcpServers),
-    bash: {
-      ...effectiveBash,
-      ...(effectiveBash.commandAllowlist && {
-        commandAllowlist: uniqueToolPatterns(effectiveBash.commandAllowlist),
-      }),
-      ...(effectiveBash.commandDenylist && {
-        commandDenylist: uniqueToolPatterns(effectiveBash.commandDenylist),
-      }),
-    },
+    bash: effectiveBash,
     ...(materialized.filesystem && { filesystem: { ...materialized.filesystem } }),
     ...(materialized.network && { network: { ...materialized.network } }),
   };

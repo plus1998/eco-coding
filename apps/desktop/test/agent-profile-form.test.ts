@@ -246,8 +246,6 @@ test("buildOrchestrationProfileFromForm saves main and subagent capability polic
   form.mainNetwork = false;
   form.mainMcpServers = "docs";
   form.mainMcpTools = "mcp__docs__search";
-  form.mainBashCommandAllowlist = "bun test";
-  form.mainBashCommandDenylist = "rm*";
   form.agents[0]!.bash = false;
 
   const built = buildOrchestrationProfileFromForm(form, {
@@ -258,7 +256,7 @@ test("buildOrchestrationProfileFromForm saves main and subagent capability polic
   expect(built.mainAgent.tools).toMatchObject({
     allowed: [],
     disallowed: expect.arrayContaining(["Write", "WebSearch", "WebFetch"]),
-    bash: { enabled: true, commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
+    bash: { enabled: true },
     mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: false, webFetch: false },
