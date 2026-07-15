@@ -403,11 +403,6 @@ export function ProjectSidebarTree({
                     >
                       <span className="chat-item-title-row">
                         <span className="chat-item-title">{thread.title}</span>
-                        {thread.coreKind ? (
-                          <span className={`chat-item-core chat-item-core-${thread.coreKind}`}>
-                            {thread.coreKind === "claude" ? "Claude" : "Codex"}
-                          </span>
-                        ) : null}
                       </span>
                       {hasThreadStatusIndicator ? (
                         <span className="chat-item-meta">

@@ -180,6 +180,7 @@ import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { SidebarCoreSelector } from "./SidebarCoreSelector";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   SubagentTaskDrawer,
@@ -5221,36 +5222,6 @@ function App() {
     />
   ) : null;
 
-  const composerCoreControl = (
-    <div className="composer-core-segmented" role="group" aria-label="会话 Core">
-      {(["claude", "codex"] as const).map((kind) => {
-        const selected = composerCoreKind === kind;
-        const unavailable = kind === "codex" && coreAvailability?.codex.available === false;
-        return (
-          <button
-            key={kind}
-            type="button"
-            className={selected ? "is-active" : ""}
-            aria-pressed={selected}
-            disabled={Boolean(activeThread) || isStarting || unavailable}
-            title={
-              kind === "claude"
-                ? "Claude Code Core"
-                : unavailable
-                  ? coreAvailability.codex.reason
-                  : "Codex Core"
-            }
-            onClick={() => {
-              setNewThreadCoreKind(kind);
-            }}
-          >
-            {kind === "claude" ? "Claude" : "Codex"}
-          </button>
-        );
-      })}
-    </div>
-  );
-
   const composer = (
     <div className="codex-composer-wrap">
       {displayedQueuedFollowUps.length > 0 ? (
@@ -5350,7 +5321,6 @@ function App() {
                     <div className="composer-footer-row composer-footer-compact-row">
                       {composerRouteControl}
                       <div className="composer-footer-row composer-footer-config-row">
-                        {composerCoreControl}
                         {composerRuntimeConfig ? (
                           <ComposerPlanModeToggle
                             sessionMode={composerRuntimeConfig.sessionMode}
@@ -5371,7 +5341,6 @@ function App() {
                     </div>
                   ) : (
                     <div className="composer-footer-row composer-footer-config-row">
-                      {composerCoreControl}
                       {composerRuntimeConfig ? (
                         <ComposerPlanModeToggle
                           sessionMode={composerRuntimeConfig.sessionMode}
@@ -5478,6 +5447,16 @@ function App() {
         />
       ) : null}
       <aside className="codex-sidebar">
+        <SidebarCoreSelector
+          coreKind={activeThread ? activeThread.coreKind : newThreadCoreKind}
+          locked={Boolean(activeThread)}
+          busy={isStarting}
+          codexAvailable={coreAvailability?.codex.available !== false}
+          {...(coreAvailability?.codex.reason && {
+            codexUnavailableReason: coreAvailability.codex.reason,
+          })}
+          onChange={setNewThreadCoreKind}
+        />
         <button type="button" className="sidebar-action" onClick={startNewChat}>
           <MessageSquarePlus size={18} />
           新对话
