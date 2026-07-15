@@ -599,6 +599,9 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   ) {
     return true;
   }
+  if (item.eventType === "run.attempt.started" || item.eventType === "run.attempt.completed") {
+    return true;
+  }
   if (item.eventType !== "thread.status") {
     return false;
   }
@@ -627,10 +630,13 @@ function isProjectionInternalMessageText(text: string): boolean {
   const trimmed = text.trim();
   return (
     trimmed.startsWith("__eco_worktree_merge__") ||
+    trimmed === "回答完成。" ||
     trimmed === "执行完成。" ||
     trimmed === "执行完成，变更已写入项目目录。" ||
     trimmed === "执行完成，工作树内无相对基线的文件变更。" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||
+    /^正在启动 Codex/u.test(trimmed) ||
+    /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||
     /^Working in project directory:/u.test(trimmed) ||
     /^Local model router ready:/u.test(trimmed) ||
     isProjectionApprovalTransitionStatus(trimmed)

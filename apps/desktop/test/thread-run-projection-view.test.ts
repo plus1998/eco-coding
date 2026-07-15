@@ -745,6 +745,48 @@ test("buildThreadRunProjectionViewModel hides empty streaming placeholder withou
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:request-start"]);
 });
 
+test("buildThreadRunProjectionViewModel hides legacy Codex lifecycle noise", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_view",
+        status: "completed",
+        generatedAt: "2026-01-01T00:00:05.000Z",
+      },
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "你好",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({ id: "starting", eventType: "thread.status", role: "system", text: "正在启动 Codex…" }),
+        item({
+          id: "connected",
+          eventType: "thread.status",
+          role: "system",
+          text: "Codex 已连接 · gpt-5.6-sol",
+        }),
+        item({ id: "turn-start", eventType: "run.attempt.started", text: "Turn started" }),
+        item({ id: "answer", eventType: "message.final", role: "assistant", text: "你好！" }),
+        item({ id: "turn-end", eventType: "run.attempt.completed", text: "Turn completed" }),
+        item({
+          id: "completed",
+          eventType: "thread.status",
+          role: "system",
+          text: "回答完成。",
+          metadata: { liveType: "thread.completed" },
+        }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.text),
+  ).toEqual(["你好", "你好！"]);
+});
+
 test("buildThreadRunProjectionViewModel collapses superseded stream deltas after final output", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

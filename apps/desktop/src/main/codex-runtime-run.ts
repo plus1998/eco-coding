@@ -56,6 +56,7 @@ import {
 } from "./codex-runtime-lifecycle";
 import type { CodexThreadMap } from "./codex-thread-map";
 import { resolveCodexThreadAttribution } from "./codex-thread-map";
+import { normalizeCodexThreadRunEventForProjection } from "./codex-thread-run-event-normalizer";
 import { ensureGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutesFromRuntime, type RuntimeConfigResolution } from "./thread-runtime-routes";
@@ -236,26 +237,29 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
         !config.isContextCompactionInFlight?.(resolveEcoThreadId(codexThreadId)),
     }),
     recordThreadRunEvent: (event) => {
+      const projectionEvent = normalizeCodexThreadRunEventForProjection(event as ThreadRunEventInput);
       const itemId =
-        typeof event.metadata?.itemId === "string" ? event.metadata.itemId.trim() : event.streamKey?.trim();
+        typeof projectionEvent.metadata?.itemId === "string"
+          ? projectionEvent.metadata.itemId.trim()
+          : projectionEvent.streamKey?.trim();
       if (
-        event.role === "user" &&
-        event.metadata?.itemType === "userMessage" &&
+        projectionEvent.role === "user" &&
+        projectionEvent.metadata?.itemType === "userMessage" &&
         itemId &&
-        config.bindLatestUserPromptToCodexItem?.(event.threadId, itemId)
+        config.bindLatestUserPromptToCodexItem?.(projectionEvent.threadId, itemId)
       ) {
         // Projection-only: local user prompt already carries the Codex item id / rewindTarget.
-        config.scheduleThreadRunProjectionUpdated(event.threadId, { streaming: false });
+        config.scheduleThreadRunProjectionUpdated(projectionEvent.threadId, { streaming: false });
         return;
       }
       config.appendThreadRunEvent(
         bindCodexThreadRunEventAttempt(
-          event as ThreadRunEventInput,
-          config.resolveRunAttemptId?.(event.threadId),
+          projectionEvent,
+          config.resolveRunAttemptId?.(projectionEvent.threadId),
         ),
       );
-      config.scheduleThreadRunProjectionUpdated(event.threadId, {
-        streaming: isCodexStreamingProjectionEvent(event),
+      config.scheduleThreadRunProjectionUpdated(projectionEvent.threadId, {
+        streaming: isCodexStreamingProjectionEvent(projectionEvent),
       });
     },
     resolveThreadAttribution: resolveAttribution,
