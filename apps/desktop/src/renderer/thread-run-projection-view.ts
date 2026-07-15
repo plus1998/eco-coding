@@ -588,6 +588,9 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
     return true;
   }
   const liveType = projectionLiveType(item);
+  if (liveType === "plan.ready" || liveType === "thread.awaiting_plan") {
+    return true;
+  }
   if (liveType && isThreadFollowUpLiveEvent(liveType)) {
     return true;
   }
@@ -634,6 +637,8 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "执行完成。" ||
     trimmed === "执行完成，变更已写入项目目录。" ||
     trimmed === "执行完成，工作树内无相对基线的文件变更。" ||
+    trimmed === "计划已生成，等待确认。" ||
+    trimmed === "计划已生成，请确认是否执行。" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||
     /^正在启动 Codex/u.test(trimmed) ||
     /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||

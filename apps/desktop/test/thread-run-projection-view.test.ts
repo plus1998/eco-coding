@@ -787,6 +787,51 @@ test("buildThreadRunProjectionViewModel hides legacy Codex lifecycle noise", () 
   ).toEqual(["你好", "你好！"]);
 });
 
+test("buildThreadRunProjectionViewModel hides plan-ready statuses already represented by Composer", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_plan",
+        status: "awaiting_plan",
+        generatedAt: "2026-01-01T00:00:05.000Z",
+      },
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "制定计划",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({
+          id: "plan-ready",
+          eventType: "thread.status",
+          role: "planner",
+          text: "计划已生成，等待确认。",
+          metadata: { liveType: "plan.ready" },
+        }),
+        item({
+          id: "awaiting-plan",
+          eventType: "thread.status",
+          role: "system",
+          text: "计划已生成，请确认是否执行。",
+          metadata: { liveType: "thread.awaiting_plan" },
+        }),
+        item({
+          id: "legacy-plan-ready",
+          eventType: "thread.status",
+          role: "planner",
+          text: "计划已生成，等待确认。",
+        }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.text),
+  ).toEqual(["制定计划"]);
+});
+
 test("buildThreadRunProjectionViewModel collapses superseded stream deltas after final output", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
