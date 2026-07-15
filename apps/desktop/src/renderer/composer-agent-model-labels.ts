@@ -1,4 +1,4 @@
-import { formatRoleModelLabel } from "@eco/runtime";
+import { formatRoleModelLabel } from "@eco/runtime/usage";
 import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type {
   AgentRole,

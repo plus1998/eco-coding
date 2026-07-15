@@ -1,5 +1,5 @@
 import type { ToolPolicy } from "../shared/ipc";
-import { materializeEcoToolPolicy } from "@eco/runtime";
+import { materializeEcoToolPolicy } from "@eco/runtime/tool-permission-policy";
 import { parseList, uniqueValues } from "./agent-template-form-utils";
 
 export const DELEGATION_TOOL_NAMES = ["Agent", "Task", "TaskList", "TaskOutput"] as const;

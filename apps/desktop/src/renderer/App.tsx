@@ -1,8 +1,10 @@
 import {
   collectProfileAssignedMcpServers,
-  type CoreKind,
+} from "@eco/runtime/agent-orchestration";
+import type { CoreKind } from "@eco/runtime/core-runtime";
+import {
   defaultSubagentAvailability,
-} from "@eco/runtime";
+} from "@eco/runtime/subagent-availability";
 import {
   Activity,
   AlertCircle,

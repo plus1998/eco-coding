@@ -2,7 +2,7 @@ import {
   isSubagentMissionEnvelope,
   parseSubagentMissionMessage,
   resolveMissionDisplayText,
-} from "@eco/runtime";
+} from "@eco/runtime/agent-mission";
 import {
   bashApprovalPhaseToLifecycle,
   clampActivityPreviewLine,

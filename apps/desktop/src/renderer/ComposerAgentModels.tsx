@@ -1,4 +1,4 @@
-import { shortenModelId } from "@eco/runtime";
+import { shortenModelId } from "@eco/runtime/usage";
 import { ChevronDown, Users } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";

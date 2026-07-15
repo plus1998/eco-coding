@@ -1,4 +1,4 @@
-import { computeThreadBillingTotals } from "@eco/runtime";
+import { computeThreadBillingTotals } from "@eco/runtime/billing";
 import type {
   BillingUsageSource,
   ThreadBillingSnapshot,

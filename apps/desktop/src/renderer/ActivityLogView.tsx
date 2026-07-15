@@ -1,12 +1,14 @@
 import {
+  isSubagentMissionEnvelope,
+  resolveMissionDisplayText,
+} from "@eco/runtime/agent-mission";
+import {
   formatCostUsd,
   formatRoleModelLabel,
   formatTokenCount,
   formatUsageBadge,
-  isSubagentMissionEnvelope,
-  resolveMissionDisplayText,
   shortenModelId,
-} from "@eco/runtime";
+} from "@eco/runtime/usage";
 import {
   AlertCircle,
   ArrowDownToLine,

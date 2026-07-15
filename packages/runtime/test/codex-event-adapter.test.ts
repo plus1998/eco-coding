@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import { buildCodexGatewayModelAlias } from "../src/codex-config-sync.js";
@@ -1795,8 +1795,13 @@ test("dispatch maps commandExecution lifecycle to tool.started and tool.complete
 });
 
 test("dispatch maps plan item completed to thread.status plan.ready", () => {
+  const planReady = mock();
   const events = collectEvents((record) => {
-    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    const adapter = new CodexEventAdapter({
+      resolveEcoThreadId,
+      recordThreadRunEvent: record,
+      onPlanReady: planReady,
+    });
     adapter.dispatch("item/completed", {
       threadId: CODEX_THREAD,
       turnId: "turn_plan_001",
@@ -1815,6 +1820,14 @@ test("dispatch maps plan item completed to thread.status plan.ready", () => {
   expect(events[0]?.message).toBe("计划已生成，等待确认。");
   expect(events[0]?.metadata?.liveType).toBe("plan.ready");
   expect(events[0]?.metadata?.plan).toEqual({
+    plan: "## Plan\n\nShip it.",
+    planFilePath: ".codex/plan.md",
+  });
+  expect(planReady).toHaveBeenCalledWith({
+    ecoThreadId: ECO_THREAD,
+    codexThreadId: CODEX_THREAD,
+    turnId: "turn_plan_001",
+    itemId: "item_plan_001",
     plan: "## Plan\n\nShip it.",
     planFilePath: ".codex/plan.md",
   });

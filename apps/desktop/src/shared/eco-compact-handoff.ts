@@ -1,4 +1,4 @@
-import { structuredCompactInstructionSuffix } from "@eco/runtime";
+import { structuredCompactInstructionSuffix } from "@eco/runtime/structured-compact-summary";
 import type { ActivityContextLine } from "./thread-continuation";
 import { estimateTextTokens } from "./token-estimate";
 

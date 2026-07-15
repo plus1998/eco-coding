@@ -1,4 +1,4 @@
-import { shortenModelId } from "@eco/runtime";
+import { shortenModelId } from "@eco/runtime/usage";
 import {
   Bot,
   Circle,

@@ -130,6 +130,7 @@ export interface CodexRuntimeRunDeps {
   /** Runs only after the root Eco -> Codex thread mapping has been persisted successfully. */
   onCodexThreadMapped?: (codexThreadId: string) => void;
   onCodexContextUpdated?: (resolution: CodexContextSnapshotResolution) => void;
+  onCodexPlanReady?: NonNullable<ConstructorParameters<typeof CodexEventAdapter>[0]["onPlanReady"]>;
   onStderr?: (message: string) => void;
 }
 
@@ -275,6 +276,7 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
     ...(config.onCodexContextUpdated && {
       onTokenUsageUpdated: config.onCodexContextUpdated,
     }),
+    ...(config.onCodexPlanReady && { onPlanReady: config.onCodexPlanReady }),
   });
 }
 

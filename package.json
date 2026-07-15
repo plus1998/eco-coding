@@ -31,6 +31,7 @@
     "dev:desktop:cdp": "bun run --cwd apps/desktop dev:cdp",
     "smoke:desktop-feed-loading": "bun run --cwd apps/desktop smoke:feed-loading",
     "smoke:desktop-subagent-drawer": "bun run --cwd apps/desktop smoke:subagent-drawer",
+    "smoke:codex-session-modes": "bun run --cwd apps/desktop smoke:codex-session-modes",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write ."

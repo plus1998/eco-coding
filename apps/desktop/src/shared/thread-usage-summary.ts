@@ -1,4 +1,4 @@
-import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "@eco/runtime";
+import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "@eco/runtime/models-dev-limits";
 import type {
   RuntimeAgentRole,
   ThreadBillingSnapshot,

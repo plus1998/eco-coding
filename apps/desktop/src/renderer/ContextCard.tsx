@@ -1,4 +1,5 @@
-import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel, formatTokenCount } from "@eco/runtime";
+import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel } from "@eco/runtime/context-breakdown";
+import { formatTokenCount } from "@eco/runtime/usage";
 import { FoldVertical, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot, ThreadStatus } from "../shared/ipc";

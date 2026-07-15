@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { resolveImplicitSkillReadRoots } from "../src/shared/skill-paths";
 import {
   buildRuntimeAgentSkillAssignments,
   dedupeSkillsByName,
@@ -6,7 +7,6 @@ import {
   listSdkReadyProjectSkills,
   mergeSkillNames,
   parseExplicitSkillNames,
-  resolveImplicitSkillReadRoots,
   resolveSdkSessionSkillConfig,
   promptIncludesSkillName,
   type SkillInfo,

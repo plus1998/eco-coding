@@ -191,13 +191,13 @@ import {
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
+import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
   buildRuntimeAgentSkillAssignments,
   filterExplicitUserSkillNames,
   type LinkAgentsSkillsRequest,
   listSdkReadyProjectSkills,
   resolveExplicitCodexSkillInputs,
-  resolveImplicitSkillReadRoots,
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
 } from "../shared/skills";
@@ -975,6 +975,48 @@ app.whenReady().then(async () => {
             `[eco-codex] context update failed thread=${resolution.ecoThreadId}: ${errorMessage(error)}\n`,
           );
         });
+    },
+    onCodexPlanReady: ({ ecoThreadId, plan, planFilePath }) => {
+      const thread = conversationStore.getThread(ecoThreadId);
+      const worktreePath = resolveThreadWorktreePath(ecoThreadId);
+      const runtime = resolveRuntimeConfigForThreadId(ecoThreadId);
+      if (!thread) {
+        markThreadInterrupted(ecoThreadId, "Codex Plan completed for an unknown Eco thread.");
+        return;
+      }
+      if (!worktreePath) {
+        markThreadInterrupted(
+          ecoThreadId,
+          "Codex Plan completed without a persisted worktree path.",
+        );
+        return;
+      }
+      if (!runtime.ok) {
+        markThreadInterrupted(ecoThreadId, runtime.reason);
+        return;
+      }
+      const activityLines = conversationStore.listActivityLines(ecoThreadId);
+      const latestUserPrompt = [...activityLines]
+        .reverse()
+        .find((line) => line.role === "user" && line.message.trim())
+        ?.message.trim();
+      captureThreadPlanReady({
+        threadId: ecoThreadId,
+        workspacePath: thread.workspacePath,
+        worktreePath,
+        routesJson: JSON.stringify(runtime.routes),
+        payload: {
+          userPrompt: latestUserPrompt || thread.prompt,
+          analysis: "",
+          plan,
+          ...(planFilePath ? { planFilePath } : {}),
+        },
+        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+      });
+      updateThread(ecoThreadId, {
+        status: "awaiting_plan",
+        message: "计划已生成，请确认是否执行。",
+      });
     },
     onStderr: (message) => process.stderr.write(`${message}\n`),
   });

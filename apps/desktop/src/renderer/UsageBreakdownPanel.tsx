@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { formatCostUsd, formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
+import { formatCostUsd, formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime/usage";
 import { buildAgentViewRows, buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
 import {
   ledgerEventRouteRoleDiffers,

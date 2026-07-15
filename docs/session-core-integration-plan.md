@@ -5,7 +5,7 @@
 > 首要约束：先保证现有 Claude 主路径可用，再逐步开放 Codex；任何能力缺口必须显式暴露，不允许静默降级。  
 > 文档状态：架构基线 + 当前实施验收记录。
 
-当前进度（2026-07-15）：Phase 0-3 主路径和 Phase 5 会话级选择已实现；Phase 4 已完成 Codex approval、compact、context、Responses gateway、精确 usage/计费，以及 MCP、Skills、图片、rewind 和子代理接入。五项新增能力已完成 Electron/CDP 实测；Ask/Plan 仍只有自动测试覆盖，Mobile Codex 路径尚未完成，因此不能按整体正式发布完成处理。详见 [claude-core-baseline.md](./claude-core-baseline.md)。
+当前进度（2026-07-15）：Phase 0-3 主路径和 Phase 5 会话级选择已实现；Phase 4 已完成 Codex approval、Ask/Plan、compact、context、Responses gateway、精确 usage/计费，以及 MCP、Skills、图片、rewind 和子代理接入，上述能力已完成 Electron/CDP 实测。Mobile Codex 路径尚未完成，因此不能按整体正式发布完成处理。详见 [claude-core-baseline.md](./claude-core-baseline.md)。
 
 当前实现事实：
 
@@ -311,8 +311,8 @@ interface CorePreferences {
 | 能力 | Claude 目标 | Codex 首版目标 | 缺口处理 |
 |---|---|---|---|
 | Agent 模式 | 保持现状 | 必须 | 未通过则不开放 Codex |
-| Ask 模式 | 保持现状 | 已实现，live 未验收 | 正式发布前补只读 live 验收 |
-| Plan 模式 | 保持 ExitPlanMode 流程 | 已实现 Eco handoff，live 未验收 | 独立标注语义，不伪装等价 |
+| Ask 模式 | 保持现状 | 已实现并完成只读 live 验收 | 无工具调用，completed 后保留 app-server 事件证据 |
+| Plan 模式 | 保持 ExitPlanMode 流程 | 已实现 Eco handoff 并完成 live 验收 | 原生 plan item 必须持久化 pending plan，不伪装为 Claude ExitPlanMode |
 | 继续/重启恢复 | 必须 | 已真实验收 | binding 缺失时阻止继续 |
 | 取消 | 必须 | 已接入，自动测试覆盖 | 正式发布前补 live 取消 |
 | 工具审批 | 必须 | 已真实验收 command approval | `always` 仅能映射为 Codex `untrusted` |
@@ -388,7 +388,7 @@ interface CorePreferences {
 
 ### Phase 4：Codex 产品能力补齐
 
-状态：部分完成。approval、compact、context、gateway、usage/billing、MCP、Skills、图片、rollback/rewind 和子代理已接入并真实验证；Ask/Plan 只有自动测试，Mobile 尚未完成。
+状态：部分完成。approval、Ask/Plan、compact、context、gateway、usage/billing、MCP、Skills、图片、rollback/rewind 和子代理已接入并真实验证；Mobile 尚未完成。
 
 任务：
 
@@ -484,6 +484,8 @@ interface CorePreferences {
 - command approval live smoke 产生 pending approval `call_QnRqAW6ns5AZFjqL7UfFYqI5`，批准 `/bin/zsh -lc 'sleep 2 && printf CODEX_APPROVAL_LIVE_OK'` 后同一会话完成并返回 marker。
 - 主 Profile 与 Profile agent roles 已应用；真实 smoke 已创建 `explore` child thread，并在父 Thread Feed 中完成归因。
 - Electron CDP capability smoke 验证 Codex 新会话 MCP 为 `0/1` 且配置可编辑，子代理为 `3/3` 且三个角色可编辑；另用显式 `$Bun` 完成结构化 Skill 输入实测。
+- Ask live smoke：Eco Thread `thr_1784087228184` 使用 `sessionMode=ask`，返回 marker `CODEX_ASK_LIVE_OK_1784087227339`，终态 `completed`，投影含原生 app-server 事件且无工具调用。
+- Plan live smoke：Eco Thread `thr_1784087232512` 使用 `sessionMode=plan`，原生 `itemType=plan` 返回 marker `CODEX_PLAN_LIVE_OK_1784087227339`；Desktop 持久化 pending plan 并停在 `awaiting_plan`，无工具调用、未批准执行。
 - 历史测试库仍保留修复前的 unattributed event `ule_27702e1343dade7435d393b3`。新代码不再产生同类事件，但本次不隐式改写历史 ledger。
 
 最终本地自动门禁：Claude regression 通过；Node SQLite `5/5`；Desktop `1375 pass / 46 skip / 0 fail`；Runtime/Gateway/Bridge/Persistence/Shared/Router `814 pass / 2 skip / 0 fail`；TypeScript、Desktop build、`git diff --check` 均通过。所有 SQLite 执行均走 Node 专用门禁，不把 `node:sqlite` 测试交给 Bun。

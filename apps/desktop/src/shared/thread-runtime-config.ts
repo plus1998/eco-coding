@@ -1,9 +1,11 @@
 import {
   collectProfileAssignedMcpServers,
+} from "@eco/runtime/agent-orchestration";
+import {
   defaultSubagentAvailability,
   normalizeSubagentAvailability,
   SUBAGENT_ROLES,
-} from "@eco/runtime";
+} from "@eco/runtime/subagent-availability";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import { listOrchestrationProfileAgents } from "./agent-orchestration";
 import {

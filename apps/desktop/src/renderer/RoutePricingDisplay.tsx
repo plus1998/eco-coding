@@ -1,4 +1,4 @@
-import { formatRatePerMillion } from "@eco/runtime";
+import { formatRatePerMillion } from "@eco/runtime/models-dev-pricing";
 import type { RoutePricingRates } from "../shared/ipc";
 
 interface RoutePricingDisplayProps {

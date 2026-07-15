@@ -1,4 +1,4 @@
-import { formatCostUsd, formatTokenCount, formatUsageBadge } from "@eco/runtime";
+import { formatCostUsd, formatTokenCount, formatUsageBadge } from "@eco/runtime/usage";
 import type { ThreadBillingSnapshot, ThreadContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {
   billingEmptyHint,

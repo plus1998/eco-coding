@@ -1,4 +1,4 @@
-import { STRUCTURED_COMPACT_HEADINGS } from "@eco/runtime";
+import { STRUCTURED_COMPACT_HEADINGS } from "@eco/runtime/structured-compact-summary";
 
 export type CompactSummaryRequiredFactCategory =
   | "filePaths"

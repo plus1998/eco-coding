@@ -1,4 +1,4 @@
-import { resolveMissionDisplayText } from "@eco/runtime";
+import { resolveMissionDisplayText } from "@eco/runtime/agent-mission";
 import {
   Bot,
   ChevronDown,

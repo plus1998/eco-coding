@@ -1,4 +1,4 @@
-import { formatRoleModelLabel } from "@eco/runtime";
+import { formatRoleModelLabel } from "@eco/runtime/usage";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 

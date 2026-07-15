@@ -111,6 +111,15 @@ export interface CodexEventAdapterOptions {
   resolveProfileRoleIds?: () => readonly string[] | undefined;
   /** Called when `thread/tokenUsage/updated` yields context occupancy (§4.4). */
   onTokenUsageUpdated?: (resolution: CodexContextSnapshotResolution) => void;
+  /** Called when app-server completes a native Plan item. */
+  onPlanReady?: (input: {
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId?: string;
+    itemId: string;
+    plan: string;
+    planFilePath?: string;
+  }) => void;
   now?: () => string;
 }
 
@@ -748,6 +757,14 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
           ...(planFilePath ? { planFilePath } : {}),
         },
       },
+    });
+    ctx.onPlanReady?.({
+      ecoThreadId: ctx.resolveEcoThreadId(codexThreadId),
+      codexThreadId,
+      ...(turnId ? { turnId } : {}),
+      itemId,
+      plan: text,
+      ...(planFilePath ? { planFilePath } : {}),
     });
     return;
   }

@@ -1,4 +1,4 @@
-import { formatRatePerMillion } from "@eco/runtime";
+import { formatRatePerMillion } from "@eco/runtime/models-dev-pricing";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { CommitModelPricingHint, RoutePricingHint } from "../shared/ipc";
 

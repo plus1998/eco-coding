@@ -1,4 +1,4 @@
-import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
+import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime/usage";
 import {
   AGENT_ROLES,
   type RuntimeAgentRole,

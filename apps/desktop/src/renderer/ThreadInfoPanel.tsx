@@ -12,7 +12,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
-import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
+import { formatSavingsLine } from "@eco/runtime/billing";
+import { formatCostUsd, formatTokenCount, formatUsageBadge } from "@eco/runtime/usage";
 import type {
   BillingUsageSource,
   CoderTodoItem,

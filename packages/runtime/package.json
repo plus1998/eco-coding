@@ -14,6 +14,18 @@
     "./codex-app-server-client": "./src/codex-app-server-client.ts",
     "./codex-config-sync": "./src/codex-config-sync.ts",
     "./codex-app-server-driver": "./src/codex-app-server-driver.ts",
-    "./codex-rollback": "./src/codex-rollback.ts"
+    "./codex-rollback": "./src/codex-rollback.ts",
+    "./agent-mission": "./src/agent-mission.ts",
+    "./agent-orchestration": "./src/agent-orchestration.ts",
+    "./billing": "./src/billing.ts",
+    "./context-breakdown": "./src/context-breakdown.ts",
+    "./core-runtime": "./src/core-runtime.ts",
+    "./models-dev-limits": "./src/models-dev-limits.ts",
+    "./models-dev-pricing": "./src/models-dev-pricing.ts",
+    "./structured-compact-summary": "./src/structured-compact-summary.ts",
+    "./subagent-availability": "./src/subagent-availability.ts",
+    "./subagent-resume": "./src/subagent-resume.ts",
+    "./tool-permission-policy": "./src/tool-permission-policy.ts",
+    "./usage": "./src/usage.ts"
   }
 }

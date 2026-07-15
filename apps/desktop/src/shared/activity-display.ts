@@ -1,7 +1,8 @@
 export type { FileChangeCardDisplay, FileChangePreviewLine } from "./file-change";
 export { resolveFileChangeCardDisplay } from "./file-change";
 
-import { isSubagentMissionEnvelope, parseSubagentMissionMessage, shortenModelId } from "@eco/runtime";
+import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/runtime/agent-mission";
+import { shortenModelId } from "@eco/runtime/usage";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;

@@ -1,9 +1,9 @@
 import {
   isSubagentRole,
-  normalizeSdkSubagentType,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
-} from "@eco/runtime";
+} from "@eco/runtime/subagent-availability";
+import { normalizeSdkSubagentType } from "@eco/runtime/subagent-resume";
 
 /** Fixed Chinese labels for sub-agent roles in activity cards and context UI. */
 export const SUBAGENT_ROLE_SHORT: Record<string, string> = {
