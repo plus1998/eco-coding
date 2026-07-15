@@ -53,7 +53,7 @@ const registry: EcoAgentRuntimeConfig = {
       agentKey: "main",
       name: "Research Lead",
       domain: "research",
-      systemPromptPreset: "custom",
+      systemPromptPreset: "custom_append",
       prompt: "Coordinate safely.",
       modelRef: { providerId: "p1", modelId: "m1" },
       tools: {

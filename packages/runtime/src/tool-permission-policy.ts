@@ -55,6 +55,24 @@ export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
   if (policy.network?.webFetch === false) {
     disallowed.add("WebFetch");
   }
+  if (policy.skills?.enabled === false) {
+    disallowed.add("Skill");
+  }
+  if (policy.interaction?.askUser === false) {
+    disallowed.add("AskUserQuestion");
+  }
+  if (policy.taskProgress?.enabled === false) {
+    for (const tool of SDK_TASK_PROGRESS_TOOL_NAMES) disallowed.add(tool);
+  }
+  if (policy.delegation?.enabled === false) {
+    disallowed.add("Agent");
+    disallowed.add("Task");
+    for (const tool of SDK_DELEGATION_SUPPORT_TOOL_NAMES) disallowed.add(tool);
+  }
+  for (const tool of policy.coreOverrides?.claude?.disallowedTools ?? []) {
+    const trimmed = tool.trim();
+    if (trimmed) disallowed.add(trimmed);
+  }
 
   const bashAllowed = !disallowed.has("Bash") && policy.bash?.enabled !== false;
   const commandAllowlist = policy.bash?.commandAllowlist;
@@ -72,6 +90,18 @@ export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
     ...(policy.filesystem ? { filesystem: { ...policy.filesystem } } : {}),
     ...(policy.network ? { network: { ...policy.network } } : {}),
     ...(policy.mcp ? { mcp: { ...policy.mcp } } : {}),
+    ...(policy.skills ? { skills: { ...policy.skills } } : {}),
+    ...(policy.interaction ? { interaction: { ...policy.interaction } } : {}),
+    ...(policy.taskProgress ? { taskProgress: { ...policy.taskProgress } } : {}),
+    ...(policy.delegation ? { delegation: { ...policy.delegation } } : {}),
+    ...(policy.coreOverrides ? {
+      coreOverrides: {
+        ...(policy.coreOverrides.claude ? {
+          claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] },
+        } : {}),
+        ...(policy.coreOverrides.codex ? { codex: { ...policy.coreOverrides.codex } } : {}),
+      },
+    } : {}),
   };
   return materialized;
 }

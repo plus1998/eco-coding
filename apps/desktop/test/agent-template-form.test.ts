@@ -122,7 +122,8 @@ test("buildAgentTemplateFromForm syncs delegation tools with allowDelegation", (
       advancedDisallowedTools: "CustomOnly",
     }),
   );
-  expect(allowed.defaultTools.disallowed).toEqual(["CustomOnly"]);
+  expect(allowed.defaultTools.disallowed).toEqual([]);
+  expect(allowed.defaultTools.coreOverrides?.claude?.disallowedTools).toEqual(["CustomOnly"]);
 });
 
 test("normalizeDisallowedTools merges legacy bash and network flags into disallowed list", () => {

@@ -1279,7 +1279,7 @@ export function AgentProfileEditorModal({
                     </p>
                   </div>
                   <span className="models-agent-source-badge">
-                    {form.mainSystemPromptPreset === "claude_code" ? "Claude Code 预设" : "自定义预设"}
+                    {form.mainSystemPromptPreset === "core_native" ? "跟随 Agent" : "自定义指令"}
                   </span>
                 </div>
 
@@ -1702,7 +1702,7 @@ function AgentProfileNodeConfigModal({
                 <div className="models-agent-profile-title-row">
                   <span className="models-route-role">{form.mainName}</span>
                   <span className="models-agent-source-badge">
-                    {form.mainSystemPromptPreset === "claude_code" ? "Claude Code 预设" : "自定义预设"}
+                    {form.mainSystemPromptPreset === "core_native" ? "跟随 Agent" : "自定义指令"}
                   </span>
                 </div>
                 <p className="models-subagent-card-desc">
@@ -1733,8 +1733,8 @@ function AgentProfileNodeConfigModal({
                       })
                     }
                   >
-                    <option value="custom">自定义</option>
-                    <option value="claude_code">Claude Code 预设</option>
+                    <option value="core_native">跟随 Agent</option>
+                    <option value="custom_append">自定义指令</option>
                   </select>
                 </label>
               </div>
@@ -1767,7 +1767,7 @@ function AgentProfileNodeConfigModal({
                 onApiCompatChange={(value) => onPatchProfile({ mainApiCompat: value })}
               />
 
-              {form.mainSystemPromptPreset === "custom" ? (
+              {form.mainSystemPromptPreset === "custom_append" ? (
                 <label className="mcp-field">
                   <span className="mcp-field-label">主 Agent 提示词</span>
                   <textarea

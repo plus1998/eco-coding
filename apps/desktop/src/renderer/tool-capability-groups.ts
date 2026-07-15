@@ -31,7 +31,10 @@ export interface ToolCapabilityFieldValues {
   askUser: boolean;
   taskProgress: boolean;
   allowDelegation: boolean;
+  confirmation: "always" | "on_risk" | "never";
   advancedDisallowedTools: string;
+  codexSandboxOverride: "" | "read-only";
+  codexApprovalOverride: "" | "untrusted";
   mcpServers: string;
   mcpTools: string;
 }
@@ -42,8 +45,50 @@ export interface ToolCapabilityPreset {
   hint: string;
   values: Omit<
     ToolCapabilityFieldValues,
-    "bashCommandAllowlist" | "bashCommandDenylist" | "advancedDisallowedTools" | "mcpServers" | "mcpTools" | "allowDelegation"
+    "bashCommandAllowlist" | "bashCommandDenylist" | "confirmation" | "advancedDisallowedTools" | "codexSandboxOverride" | "codexApprovalOverride" | "mcpServers" | "mcpTools" | "allowDelegation"
   >;
+}
+
+export type CoreCapabilitySupport = "native" | "adapted" | "unsupported";
+
+export interface CoreCapabilityDiagnostic {
+  core: "claude" | "codex";
+  support: CoreCapabilitySupport;
+  messages: string[];
+}
+
+export function diagnoseCoreCapabilities(
+  values: ToolCapabilityFieldValues,
+): CoreCapabilityDiagnostic[] {
+  const claudeMessages: string[] = [];
+  const codexMessages: string[] = [];
+  let codexSupport: CoreCapabilitySupport = "native";
+
+  if (values.writeCodebase && !values.bash) {
+    codexSupport = "unsupported";
+    codexMessages.push("Codex 无法在允许写入时单独禁用 shell。请启用运行命令或关闭修改代码库。");
+  } else {
+    if (values.readCodebase && values.readScope === "extra_dirs") {
+      if (codexSupport === "native") codexSupport = "adapted";
+      codexMessages.push("扩展目录读取由 Codex 审批桥处理。");
+    }
+    if (values.bash && (parseList(values.bashCommandAllowlist).length || parseList(values.bashCommandDenylist).length)) {
+      codexSupport = "unsupported";
+      codexMessages.push("命令白名单和黑名单当前只对 Claude Code 生效，Codex 审批桥尚未接入。");
+    }
+    if (values.taskProgress) {
+      if (codexSupport === "native") codexSupport = "adapted";
+      codexMessages.push("执行进度映射到 Codex plan 事件。");
+    }
+  }
+
+  if (parseList(values.advancedDisallowedTools).length > 0) {
+    claudeMessages.push("已应用 Claude Code 专属工具禁用项。");
+  }
+  return [
+    { core: "claude", support: "native", messages: claudeMessages },
+    { core: "codex", support: codexSupport, messages: codexMessages },
+  ];
 }
 
 export const TOOL_CAPABILITY_PRESETS: ToolCapabilityPreset[] = [
@@ -186,9 +231,15 @@ export function toolPolicyToCapabilityFields(
     askUser,
     taskProgress,
     allowDelegation,
+    confirmation: policy.confirmation ?? "on_risk",
     advancedDisallowedTools: formatList(
-      [...disallowed].filter((tool) => !isGroupedCapabilityToolName(tool)),
+      uniqueValues([
+        ...[...disallowed].filter((tool) => !isGroupedCapabilityToolName(tool)),
+        ...(policy.coreOverrides?.claude?.disallowedTools ?? []),
+      ]),
     ),
+    codexSandboxOverride: policy.coreOverrides?.codex?.sandboxMode ?? "",
+    codexApprovalOverride: policy.coreOverrides?.codex?.approvalPolicy ?? "",
     mcpServers: formatList(
       options.mcpServers && options.mcpServers.length > 0
         ? options.mcpServers
@@ -199,13 +250,10 @@ export function toolPolicyToCapabilityFields(
 }
 
 export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues): ToolPolicy {
-  const disallowed = new Set<string>();
-
-  for (const tool of parseList(values.advancedDisallowedTools)) {
-    if (!isGroupedCapabilityToolName(tool)) {
-      disallowed.add(tool);
-    }
+  if (values.writeCodebase && !values.bash) {
+    throw new Error("Codex 无法表达“允许修改代码库但禁用命令”。请同时启用运行命令，或关闭修改代码库。");
   }
+  const disallowed = new Set<string>();
 
   if (!values.readCodebase) {
     for (const tool of FILESYSTEM_READ_TOOL_NAMES) {
@@ -268,6 +316,34 @@ export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues):
       webSearch: values.network,
       webFetch: values.network,
     },
+    confirmation: values.confirmation,
+    skills: { enabled: values.skill },
+    interaction: { askUser: values.askUser },
+    taskProgress: { enabled: values.taskProgress },
+    delegation: { enabled: values.allowDelegation },
+    ...((parseList(values.advancedDisallowedTools).length > 0 ||
+      values.codexSandboxOverride ||
+      values.codexApprovalOverride)
+      ? {
+          coreOverrides: {
+            ...(parseList(values.advancedDisallowedTools).length > 0
+              ? { claude: { disallowedTools: parseList(values.advancedDisallowedTools) } }
+              : {}),
+            ...(values.codexSandboxOverride || values.codexApprovalOverride
+              ? {
+                  codex: {
+                    ...(values.codexSandboxOverride
+                      ? { sandboxMode: values.codexSandboxOverride }
+                      : {}),
+                    ...(values.codexApprovalOverride
+                      ? { approvalPolicy: values.codexApprovalOverride }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -286,7 +362,10 @@ export function createDefaultToolCapabilityFields(
     askUser: false,
     taskProgress: false,
     allowDelegation: false,
+    confirmation: "on_risk",
     advancedDisallowedTools: "",
+    codexSandboxOverride: "",
+    codexApprovalOverride: "",
     mcpServers: "",
     mcpTools: "",
     ...overrides,

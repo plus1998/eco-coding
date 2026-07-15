@@ -93,7 +93,7 @@ test("built-in preset can be copied into a runnable user orchestration profile",
     source: "user",
     updatedAt: "2026-06-07T08:00:00.000Z",
     mainAgent: {
-      systemPromptPreset: "claude_code",
+      systemPromptPreset: "core_native",
       modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
     },
     strategy: { kind: "autonomous" },
@@ -123,7 +123,7 @@ test("route profile migrates to a coding orchestration profile", () => {
     source: "derived",
     mainAgent: {
       agentKey: "main",
-      systemPromptPreset: "claude_code",
+      systemPromptPreset: "core_native",
       modelRef: { providerId: "p1", modelId: "planner-model", thinkingEffort: "high" },
     },
     strategy: { kind: "autonomous" },

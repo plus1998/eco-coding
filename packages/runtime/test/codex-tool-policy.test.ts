@@ -20,6 +20,14 @@ test("maps Eco execution-confirmation modes to Codex approval policies", () => {
   expect(DEFAULT_CODEX_TOOL_POLICY.approvalPolicy).toBe("on-request");
 });
 
+test("execution confirmation cannot widen an explicit Codex strict override", () => {
+  expect(
+    applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all", {
+      minimumApprovalPolicy: "untrusted",
+    }).approvalPolicy,
+  ).toBe("untrusted");
+});
+
 test("default policy is workspace-write + on-request", () => {
   expect(DEFAULT_CODEX_TOOL_POLICY.sandboxMode).toBe("workspace-write");
   expect(DEFAULT_CODEX_TOOL_POLICY.approvalPolicy).toBe("on-request");
@@ -69,6 +77,33 @@ test("legacy Claude workspace write maps to workspace-write", () => {
   });
   expect(policy.sandboxMode).toBe("workspace-write");
   expect(policy.webSearch).toBe("disabled");
+});
+
+test("semantic confirmation and Codex overrides only tighten the migrated policy", () => {
+  const policy = normalizeEcoToolPolicy({
+    allowed: [],
+    disallowed: [],
+    bash: { enabled: true },
+    filesystem: { read: "workspace", write: "workspace" },
+    confirmation: "never",
+    coreOverrides: {
+      claude: { disallowedTools: ["Bash"] },
+      codex: { sandboxMode: "read-only", approvalPolicy: "untrusted" },
+    },
+  });
+  expect(policy.sandboxMode).toBe("read-only");
+  expect(policy.approvalPolicy).toBe("untrusted");
+});
+
+test("rejects widening Codex overrides", () => {
+  expect(() =>
+    normalizeEcoToolPolicy({
+      allowed: [],
+      disallowed: [],
+      filesystem: { read: "workspace", write: "none" },
+      coreOverrides: { codex: { sandboxMode: "workspace-write" } },
+    }),
+  ).toThrow(/only tighten/);
 });
 
 test("legacy bash disabled with writes fails closed", () => {

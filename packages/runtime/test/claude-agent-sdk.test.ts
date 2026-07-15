@@ -175,7 +175,7 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       agentKey: "main",
       name: "Research Coordinator",
       domain: "research",
-      systemPromptPreset: "custom",
+      systemPromptPreset: "custom_append",
       prompt: "Coordinate a research answer without assuming a coding task.",
       modelRef: { providerId: "anthropic", modelId: "research-main-model" },
       tools: {
@@ -1876,14 +1876,18 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     skills: ["workspace-research"],
   });
 
-  const systemPrompt = options.systemPrompt as string;
-  expect(systemPrompt).toContain("Coordinate a research answer without assuming a coding task.");
-  expect(systemPrompt).toContain("Session mode: ask (read-only).");
-  expect(systemPrompt).toContain("Do not draft implementation plans");
-  expect(systemPrompt).toContain("Research Desk");
-  expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
-  expect(systemPrompt).not.toContain("File edits apply directly");
-  expect(systemPrompt).not.toContain("Eco universal orchestration.");
+  const systemPrompt = options.systemPrompt as Record<string, unknown>;
+  expect(systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" });
+  expect(String(systemPrompt.append)).toContain(
+    "Coordinate a research answer without assuming a coding task.",
+  );
+  const systemPromptAppend = String(systemPrompt.append);
+  expect(systemPromptAppend).toContain("Session mode: ask (read-only).");
+  expect(systemPromptAppend).toContain("Do not draft implementation plans");
+  expect(systemPromptAppend).toContain("Research Desk");
+  expect(systemPromptAppend).not.toContain("CHILD SECRET PROMPT");
+  expect(systemPromptAppend).not.toContain("File edits apply directly");
+  expect(systemPromptAppend).not.toContain("Eco universal orchestration.");
   expect(Object.keys(agents)).toEqual(["eco_explore", "eco_researcher"]);
 
   for await (const _event of driver.runAsk({

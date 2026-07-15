@@ -31,9 +31,9 @@ test("toolPolicyToCapabilityFields and capabilityFieldsToToolPolicy round-trip",
       "WebFetch",
       "TaskCreate",
       "Agent",
-      "CustomTool",
     ]),
   );
+  expect(roundTrip.coreOverrides?.claude?.disallowedTools).toContain("CustomTool");
   expect(roundTrip.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(roundTrip.bash).toEqual({ enabled: false });
   expect(roundTrip.network).toEqual({ webSearch: false, webFetch: false });
@@ -54,7 +54,8 @@ test("capability save strips grouped tools from advanced overrides", () => {
     }),
   );
 
-  expect(policy.disallowed).toEqual(["CustomOnly"]);
+  expect(policy.disallowed).toEqual([]);
+  expect(policy.coreOverrides?.claude?.disallowedTools).toEqual(["Agent", "Read", "CustomOnly"]);
   expect(policy.disallowed).not.toContain("Agent");
   expect(policy.disallowed).not.toContain("Read");
 });
@@ -81,4 +82,26 @@ test("grouped tool filter helpers", () => {
   expect(isGroupedCapabilityToolName("TaskCreate")).toBe(true);
   expect(isGroupedCapabilityToolName("CustomTool")).toBe(false);
   expect(stripGroupedToolsFromDisallowed("Agent, CustomTool, Bash")).toBe("CustomTool");
+});
+
+test("rejects write access without shell because Codex cannot express it", () => {
+  expect(() =>
+    capabilityFieldsToToolPolicy(
+      createDefaultToolCapabilityFields({ writeCodebase: true, bash: false }),
+    ),
+  ).toThrow("Codex 无法表达");
+});
+
+test("stores Core-specific policy only as tightening overrides", () => {
+  const policy = capabilityFieldsToToolPolicy(
+    createDefaultToolCapabilityFields({
+      codexSandboxOverride: "read-only",
+      codexApprovalOverride: "untrusted",
+      advancedDisallowedTools: "CustomClaudeTool",
+    }),
+  );
+  expect(policy.coreOverrides).toEqual({
+    claude: { disallowedTools: ["CustomClaudeTool"] },
+    codex: { sandboxMode: "read-only", approvalPolicy: "untrusted" },
+  });
 });

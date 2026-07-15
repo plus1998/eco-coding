@@ -341,27 +341,27 @@ function SystemPromptPresetControl({
     <div className="composer-route-prompt-control">
       <span className="composer-route-prompt-label">主 Agent 提示词</span>
       <div className="composer-route-prompt-segments" role="radiogroup" aria-label="主 Agent 提示词">
-        <label className={value === "claude_code" ? "active" : undefined} title="使用 Claude Code 内置提示词">
+        <label className={value === "core_native" ? "active" : undefined} title="跟随当前 Agent 的内置提示词">
           <input
             type="radio"
             name="composer-main-agent-system-prompt"
-            value="claude_code"
-            checked={value === "claude_code"}
+            value="core_native"
+            checked={value === "core_native"}
             disabled={disabled}
-            onChange={() => void onChange("claude_code")}
+            onChange={() => void onChange("core_native")}
           />
-          <span>内置</span>
+          <span>跟随 Agent</span>
         </label>
-        <label className={value === "custom" ? "active" : undefined} title="使用当前智能体配置的自定义提示词">
+        <label className={value === "custom_append" ? "active" : undefined} title="追加当前智能体配置的自定义指令">
           <input
             type="radio"
             name="composer-main-agent-system-prompt"
-            value="custom"
-            checked={value === "custom"}
+            value="custom_append"
+            checked={value === "custom_append"}
             disabled={disabled}
-            onChange={() => void onChange("custom")}
+            onChange={() => void onChange("custom_append")}
           />
-          <span>自定义</span>
+          <span>配置指令</span>
         </label>
       </div>
     </div>

@@ -608,7 +608,7 @@ function buildProfile(overrides: Partial<EcoOrchestrationProfileConfig> = {}): E
       agentKey: "main",
       name: "Main",
       domain: "coding",
-      systemPromptPreset: "custom",
+      systemPromptPreset: "custom_append",
       prompt: "Coordinate work.",
       modelRef: { providerId: "main", modelId: "main-model" },
       tools: toolPolicy({ sandboxMode: "workspace-write", allowSpawn: true }),

@@ -50,6 +50,18 @@ export interface ToolPolicy {
     webSearch: boolean;
     webFetch: boolean;
   };
+  confirmation?: "always" | "on_risk" | "never";
+  skills?: { enabled: boolean };
+  interaction?: { askUser: boolean };
+  taskProgress?: { enabled: boolean };
+  delegation?: { enabled: boolean; allowedAgents?: string[] };
+  coreOverrides?: {
+    claude?: { disallowedTools: string[] };
+    codex?: {
+      sandboxMode?: "read-only";
+      approvalPolicy?: "untrusted";
+    };
+  };
 }
 
 export interface AgentTemplate {
@@ -74,7 +86,7 @@ export interface MainAgentConfig {
   agentKey: string;
   name: string;
   domain: AgentDomain;
-  systemPromptPreset: "claude_code" | "custom";
+  systemPromptPreset: "core_native" | "custom_append";
   prompt: string;
   modelRef: ModelRef;
   tools: ToolPolicy;
@@ -406,7 +418,7 @@ export function buildOrchestrationProfileFromPreset(
       agentKey: "main",
       name: `${preset.name} Main Agent`,
       domain: preset.id,
-      systemPromptPreset: preset.id === "coding" ? "claude_code" : "custom",
+      systemPromptPreset: preset.id === "coding" ? "core_native" : "custom_append",
       prompt: preset.mainAgentPrompt.trim(),
       modelRef,
       tools: cloneToolPolicy(preset.mainAgentTools),
@@ -452,7 +464,7 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
       agentKey: CODING_AGENT_KEYS.main,
       name: "Main Agent",
       domain: "coding",
-      systemPromptPreset: "claude_code",
+      systemPromptPreset: "core_native",
       prompt: "Coordinate the coding task, choose useful subagents, and produce a concise final result.",
       modelRef: routeToModelRef(plannerRoute),
       tools: cloneToolPolicy(MAIN_CODING_TOOLS),
@@ -671,5 +683,25 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
     }),
     ...(policy.filesystem && { filesystem: { ...policy.filesystem } }),
     ...(policy.network && { network: { ...policy.network } }),
+    ...(policy.confirmation && { confirmation: policy.confirmation }),
+    ...(policy.skills && { skills: { ...policy.skills } }),
+    ...(policy.interaction && { interaction: { ...policy.interaction } }),
+    ...(policy.taskProgress && { taskProgress: { ...policy.taskProgress } }),
+    ...(policy.delegation && {
+      delegation: {
+        ...policy.delegation,
+        ...(policy.delegation.allowedAgents && {
+          allowedAgents: [...policy.delegation.allowedAgents],
+        }),
+      },
+    }),
+    ...(policy.coreOverrides && {
+      coreOverrides: {
+        ...(policy.coreOverrides.claude && {
+          claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] },
+        }),
+        ...(policy.coreOverrides.codex && { codex: { ...policy.coreOverrides.codex } }),
+      },
+    }),
   };
 }

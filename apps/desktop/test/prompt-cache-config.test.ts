@@ -183,7 +183,7 @@ test("resolvePromptCacheConfigDrift detects a temporary system prompt switch", (
   expect(
     resolvePromptCacheConfigDrift({
       baseline: config({}),
-      current: config({ mainAgentSystemPromptPresetOverride: "custom" }),
+      current: config({ mainAgentSystemPromptPresetOverride: "custom_append" }),
       settings,
       mcpServers,
     }),

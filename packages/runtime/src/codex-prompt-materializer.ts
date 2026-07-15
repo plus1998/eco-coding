@@ -57,7 +57,7 @@ export interface CodexCollaborationMode {
 
 export interface CodexTurnMaterializationConfig {
   sessionMode: CodexSessionMode;
-  /** Profile custom main-agent prompt only (when systemPromptPreset is custom). */
+  /** Profile instructions appended to the Core-native prompt. */
   profileAppend?: string;
   /** Profile mainAgent.tools (Codex-native). Defaults to product workspace-write policy. */
   profileToolPolicy?: EcoToolPolicy;
@@ -111,7 +111,7 @@ function resolveCustomDeveloperInstructions(profileAppend?: string): string {
  * Build Codex `turn/start` options from Eco thread runtime config.
  *
  * Codex ships base instructions; Eco only forwards Profile custom main-agent prompt
- * when `systemPromptPreset === "custom"`.
+ * when `systemPromptPreset === "custom_append"`.
  *
  * | sessionMode | collaborationMode | sandboxPolicy (before profile intersect) |
  * |-------------|-------------------|------------------------------------------|

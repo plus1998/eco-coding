@@ -53,7 +53,7 @@ const profile: EcoOrchestrationProfileConfig = {
     agentKey: "main",
     name: "Research Coordinator",
     domain: "research",
-    systemPromptPreset: "custom",
+    systemPromptPreset: "custom_append",
     prompt: "You coordinate research work without assuming a coding task.",
     modelRef: modelRef("main-model"),
     tools: toolPolicy(["Agent", "Read", "WebSearch"], ["Write"], {
@@ -126,13 +126,14 @@ test("createAgentDefinitionsFromProfile merges dynamic session skills", () => {
 test("buildMainAgentSystemPrompt injects profile strategy without leaking child prompts", () => {
   const prompt = buildMainAgentSystemPrompt(profile, [researchTemplate], "PHASE APPEND");
 
-  expect(typeof prompt).toBe("string");
-  expect(prompt).toContain("You coordinate research work without assuming a coding task.");
-  expect(prompt).toContain("PHASE APPEND");
-  expect(prompt).toContain("Research Desk");
-  expect(prompt).toContain("Delegate only when evidence quality improves.");
-  expect(prompt).not.toContain("CHILD SECRET PROMPT");
-  expect(prompt).not.toContain("Agent(eco_researcher)");
+  expect(prompt).toMatchObject({ type: "preset", preset: "claude_code" });
+  const append = String((prompt as Record<string, unknown>).append);
+  expect(append).toContain("You coordinate research work without assuming a coding task.");
+  expect(append).toContain("PHASE APPEND");
+  expect(append).toContain("Research Desk");
+  expect(append).toContain("Delegate only when evidence quality improves.");
+  expect(append).not.toContain("CHILD SECRET PROMPT");
+  expect(append).not.toContain("Agent(eco_researcher)");
 });
 
 test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", () => {
@@ -143,7 +144,7 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", 
     mainAgent: {
       ...profile.mainAgent,
       domain: "coding",
-      systemPromptPreset: "claude_code",
+      systemPromptPreset: "core_native",
     },
   };
 

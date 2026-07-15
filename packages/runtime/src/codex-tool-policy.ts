@@ -173,6 +173,15 @@ function migrateLegacyClaudeToolPolicy(
   const bash = isRecord(record.bash) ? record.bash : undefined;
   const network = isRecord(record.network) ? record.network : undefined;
   const mcp = record.mcp;
+  const confirmation = record.confirmation;
+  if (
+    confirmation !== undefined &&
+    confirmation !== "always" &&
+    confirmation !== "on_risk" &&
+    confirmation !== "never"
+  ) {
+    throw new Error(`Invalid confirmation policy: ${String(confirmation)}`);
+  }
 
   const writeNone =
     filesystem?.write === "none" ||
@@ -194,16 +203,33 @@ function migrateLegacyClaudeToolPolicy(
       ? "live"
       : "disabled";
 
-  const delegationBlocked = [...CLAUDE_DELEGATION_TOOLS].some((tool) => disallowedSet.has(tool));
+  const delegation = isRecord(record.delegation) ? record.delegation : undefined;
+  const delegationBlocked =
+    delegation?.enabled === false ||
+    [...CLAUDE_DELEGATION_TOOLS].some((tool) => disallowedSet.has(tool));
+
+  const coreOverrides = isRecord(record.coreOverrides) ? record.coreOverrides : undefined;
+  const codexOverride = isRecord(coreOverrides?.codex) ? coreOverrides.codex : undefined;
+  if (codexOverride?.sandboxMode !== undefined && codexOverride.sandboxMode !== "read-only") {
+    throw new Error("Codex sandbox override may only tighten to read-only.");
+  }
+  if (codexOverride?.approvalPolicy !== undefined && codexOverride.approvalPolicy !== "untrusted") {
+    throw new Error("Codex approval override may only tighten to untrusted.");
+  }
 
   const policy: EcoToolPolicy = {
-    sandboxMode,
-    approvalPolicy: "on-request",
+    sandboxMode: codexOverride?.sandboxMode === "read-only" ? "read-only" : sandboxMode,
+    approvalPolicy:
+      codexOverride?.approvalPolicy === "untrusted" || confirmation === "always"
+        ? "untrusted"
+        : confirmation === "never"
+          ? "never"
+          : "on-request",
     webSearch,
     allowSpawn: allowSpawnDefault ?? !delegationBlocked,
   };
 
-  if (sandboxMode === "workspace-write") {
+  if (policy.sandboxMode === "workspace-write") {
     policy.networkAccess = false;
   }
 
@@ -266,9 +292,14 @@ export function cloneEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
 export function applyCodexExecutionConfirmation(
   policy: EcoToolPolicy,
   mode: CodexExecutionConfirmationMode,
+  options: { minimumApprovalPolicy?: "untrusted" } = {},
 ): EcoToolPolicy {
   const approvalPolicy: CodexApprovalPolicy =
-    mode === "always" ? "untrusted" : mode === "auto" ? "on-request" : "never";
+    options.minimumApprovalPolicy === "untrusted" || mode === "always"
+      ? "untrusted"
+      : mode === "auto"
+        ? "on-request"
+        : "never";
   return { ...cloneEcoToolPolicy(policy), approvalPolicy };
 }
 

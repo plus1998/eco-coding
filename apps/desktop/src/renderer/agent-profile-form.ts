@@ -49,7 +49,7 @@ export interface AgentProfileFormState {
   mainThinkingEffort: string;
   mainApiCompat: string;
   mainCandidateModelId: string;
-  mainSystemPromptPreset: "claude_code" | "custom";
+  mainSystemPromptPreset: "core_native" | "custom_append";
   mainPrompt: string;
   mainReadCodebase: boolean;
   mainReadScope: ToolCapabilityFieldValues["readScope"];
@@ -62,7 +62,10 @@ export interface AgentProfileFormState {
   mainAskUser: boolean;
   mainTaskProgress: boolean;
   mainAllowDelegation: boolean;
+  mainConfirmation: ToolCapabilityFieldValues["confirmation"];
   mainAdvancedDisallowedTools: string;
+  mainCodexSandboxOverride: ToolCapabilityFieldValues["codexSandboxOverride"];
+  mainCodexApprovalOverride: ToolCapabilityFieldValues["codexApprovalOverride"];
   mainMcpServers: string;
   mainMcpTools: string;
   guidancePrompt: string;
@@ -104,7 +107,10 @@ export function mainCapabilityFromProfileForm(form: AgentProfileFormState): Tool
     askUser: form.mainAskUser,
     taskProgress: form.mainTaskProgress,
     allowDelegation: form.mainAllowDelegation,
+    confirmation: form.mainConfirmation,
     advancedDisallowedTools: form.mainAdvancedDisallowedTools,
+    codexSandboxOverride: form.mainCodexSandboxOverride,
+    codexApprovalOverride: form.mainCodexApprovalOverride,
     mcpServers: form.mainMcpServers,
     mcpTools: form.mainMcpTools,
   };
@@ -124,7 +130,10 @@ export function agentCapabilityFromAgentForm(
     skill: agent.skill,
     askUser: agent.askUser,
     taskProgress: agent.taskProgress,
+    confirmation: agent.confirmation,
     advancedDisallowedTools: agent.advancedDisallowedTools,
+    codexSandboxOverride: agent.codexSandboxOverride,
+    codexApprovalOverride: agent.codexApprovalOverride,
     mcpServers: agent.mcpServers,
     mcpTools: agent.mcpTools,
   };
@@ -145,8 +154,15 @@ export function mainCapabilityPatchToProfileForm(
   if (patch.askUser !== undefined) result.mainAskUser = patch.askUser;
   if (patch.taskProgress !== undefined) result.mainTaskProgress = patch.taskProgress;
   if (patch.allowDelegation !== undefined) result.mainAllowDelegation = patch.allowDelegation;
+  if (patch.confirmation !== undefined) result.mainConfirmation = patch.confirmation;
   if (patch.advancedDisallowedTools !== undefined) {
     result.mainAdvancedDisallowedTools = patch.advancedDisallowedTools;
+  }
+  if (patch.codexSandboxOverride !== undefined) {
+    result.mainCodexSandboxOverride = patch.codexSandboxOverride;
+  }
+  if (patch.codexApprovalOverride !== undefined) {
+    result.mainCodexApprovalOverride = patch.codexApprovalOverride;
   }
   if (patch.mcpServers !== undefined) result.mainMcpServers = patch.mcpServers;
   if (patch.mcpTools !== undefined) result.mainMcpTools = patch.mcpTools;
@@ -182,7 +198,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainThinkingEffort: "",
     mainApiCompat: "",
     mainCandidateModelId: "",
-    mainSystemPromptPreset: "claude_code",
+    mainSystemPromptPreset: "core_native",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
     ...mainCapabilityToProfileFormFields(mainCapability),
@@ -396,7 +412,10 @@ function agentCapabilityToAgentForm(
     skill: capability.skill,
     askUser: capability.askUser,
     taskProgress: capability.taskProgress,
+    confirmation: capability.confirmation,
     advancedDisallowedTools: capability.advancedDisallowedTools,
+    codexSandboxOverride: capability.codexSandboxOverride,
+    codexApprovalOverride: capability.codexApprovalOverride,
     mcpServers: capability.mcpServers,
     mcpTools: capability.mcpTools,
   };
@@ -417,7 +436,10 @@ function mainCapabilityToProfileFormFields(
   | "mainAskUser"
   | "mainTaskProgress"
   | "mainAllowDelegation"
+  | "mainConfirmation"
   | "mainAdvancedDisallowedTools"
+  | "mainCodexSandboxOverride"
+  | "mainCodexApprovalOverride"
   | "mainMcpServers"
   | "mainMcpTools"
 > {
@@ -433,7 +455,10 @@ function mainCapabilityToProfileFormFields(
     mainAskUser: capability.askUser,
     mainTaskProgress: capability.taskProgress,
     mainAllowDelegation: capability.allowDelegation,
+    mainConfirmation: capability.confirmation,
     mainAdvancedDisallowedTools: capability.advancedDisallowedTools,
+    mainCodexSandboxOverride: capability.codexSandboxOverride,
+    mainCodexApprovalOverride: capability.codexApprovalOverride,
     mainMcpServers: capability.mcpServers,
     mainMcpTools: capability.mcpTools,
   };

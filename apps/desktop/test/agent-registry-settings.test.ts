@@ -30,7 +30,7 @@ function customProfile(id: string): OrchestrationProfile {
       agentKey: "main",
       name: "Research Lead",
       domain: "research",
-      systemPromptPreset: "custom",
+      systemPromptPreset: "custom_append",
       prompt: "Coordinate research.",
       modelRef: { providerId: "p1", modelId: "m1" },
       tools: { allowed: ["Agent", "WebSearch"], disallowed: [] },

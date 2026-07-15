@@ -472,7 +472,7 @@ function AgentTemplateEditorModal({
 
             <aside className="models-agent-template-policy-panel">
               <div className="models-agent-template-policy-head">
-                <span className="models-route-profile-section-title">Claude Code 权限</span>
+                <span className="models-route-profile-section-title">权限与工具</span>
                 <p>按功能开关配置工具权限；需要时再展开高级细调。</p>
               </div>
 

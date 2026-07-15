@@ -342,7 +342,12 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
         }
       : {}),
     sessionMode,
-    bashReviewMode: "always",
+    bashReviewMode:
+      agentProfile.mainAgent.tools.confirmation === "never"
+        ? "allow_all"
+        : agentProfile.mainAgent.tools.confirmation === "always"
+          ? "always"
+          : "auto",
   };
 }
 
@@ -386,7 +391,7 @@ export function resolveMainAgentSystemPromptPreset(
 }
 
 function isMainAgentSystemPromptPreset(value: unknown): value is MainAgentSystemPromptPreset {
-  return value === "claude_code" || value === "custom";
+  return value === "core_native" || value === "custom_append";
 }
 
 function isMainAgentModelOverride(value: unknown): value is MainAgentModelOverride {

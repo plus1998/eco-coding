@@ -14084,6 +14084,64 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   gap: 14px;
 }
 
+.models-core-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.models-core-capability-status {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.models-core-capability-status > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.models-core-capability-status strong,
+.models-core-capability-status span,
+.models-core-capability-status small {
+  letter-spacing: 0;
+}
+
+.models-core-capability-status span,
+.models-core-capability-status small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.models-core-capability-status small {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+.models-core-capability-status.adapted {
+  border-color: color-mix(in srgb, var(--warning, #d29a35) 50%, var(--border-subtle));
+}
+
+.models-core-capability-status.unsupported {
+  border-color: color-mix(in srgb, var(--danger, #d65a5a) 55%, var(--border-subtle));
+}
+
+.models-core-overrides {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .models-core-capability-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .models-tool-capability-list {
   display: flex;
   flex-direction: column;

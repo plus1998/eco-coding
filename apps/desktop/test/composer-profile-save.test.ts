@@ -12,7 +12,7 @@ function profile(): OrchestrationProfile {
       agentKey: "main",
       name: "Main",
       domain: "coding",
-      systemPromptPreset: "claude_code",
+      systemPromptPreset: "core_native",
       prompt: "Coordinate coding.",
       modelRef: { providerId: "p1", modelId: "m1" },
       tools: { allowed: ["Agent", "Read"], disallowed: [] },

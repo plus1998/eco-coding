@@ -697,6 +697,10 @@ async function prepareCodexRuntimeUnlocked(
     ? applyCodexExecutionConfirmation(
         registryToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY,
         input.executionConfirmationMode,
+        input.agentRegistry?.profile.mainAgent.tools.coreOverrides?.codex?.approvalPolicy ===
+          "untrusted"
+          ? { minimumApprovalPolicy: "untrusted" }
+          : {},
       )
     : registryToolPolicy;
   const roleSync = input.agentRegistry && input.enableSubagents !== false

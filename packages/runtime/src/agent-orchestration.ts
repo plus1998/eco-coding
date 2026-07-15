@@ -59,6 +59,18 @@ export interface EcoToolPolicy {
     webSearch: boolean;
     webFetch: boolean;
   };
+  confirmation?: "always" | "on_risk" | "never";
+  skills?: { enabled: boolean };
+  interaction?: { askUser: boolean };
+  taskProgress?: { enabled: boolean };
+  delegation?: { enabled: boolean; allowedAgents?: string[] };
+  coreOverrides?: {
+    claude?: { disallowedTools: string[] };
+    codex?: {
+      sandboxMode?: "read-only";
+      approvalPolicy?: "untrusted";
+    };
+  };
 }
 
 export interface EcoAgentTemplateConfig {
@@ -83,7 +95,7 @@ export interface EcoMainAgentConfig {
   agentKey: string;
   name: string;
   domain: EcoAgentDomain;
-  systemPromptPreset: "claude_code" | "custom";
+  systemPromptPreset: "core_native" | "custom_append";
   prompt: string;
   modelRef: EcoModelRef;
   tools: EcoToolPolicy;
@@ -447,7 +459,8 @@ export function buildCodexMainAgentProfileAppend(
   if (profile.builtinAgents?.explore && options?.subagentAvailability?.explore !== false) {
     availableRoles.unshift("explore");
   }
-  const customPrompt = profile.mainAgent.systemPromptPreset === "custom" ? profile.mainAgent.prompt.trim() : "";
+  const customPrompt =
+    profile.mainAgent.systemPromptPreset === "custom_append" ? profile.mainAgent.prompt.trim() : "";
   const subagentProtocol = availableRoles.length > 0
     ? [
         `Available Codex subagent types: ${[...new Set(availableRoles)].join(", ")}.`,
@@ -463,12 +476,11 @@ export function buildMainAgentSystemPrompt(
   phaseAppend: string,
   options: { excludeDynamicSections?: boolean } = {},
 ): string | Record<string, unknown> {
-  const append = [phaseAppend, buildMainAgentProfileAppend(profile, templates)]
+  const customInstructions =
+    profile.mainAgent.systemPromptPreset === "custom_append" ? profile.mainAgent.prompt.trim() : "";
+  const append = [customInstructions, phaseAppend, buildMainAgentProfileAppend(profile, templates)]
     .filter((entry) => entry.trim())
     .join("\n\n");
-  if (profile.mainAgent.systemPromptPreset === "custom") {
-    return [profile.mainAgent.prompt.trim(), append].filter(Boolean).join("\n\n");
-  }
   return {
     type: "preset",
     preset: "claude_code",

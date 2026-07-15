@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { AgentTemplateCapabilityOption } from "./agent-template-form";
 import { parseList, toggleAgentTemplateAdvancedDisallowedTool, toggleAgentTemplateListValue } from "./agent-template-form";
 import {
+  diagnoseCoreCapabilities,
   matchesToolCapabilityPreset,
   TOOL_CAPABILITY_PRESETS,
   type ToolCapabilityFieldValues,
@@ -39,6 +40,7 @@ export function ToolCapabilityPanel({
   const selectedMcpServers = parseList(values.mcpServers);
   const mcpTools = parseList(values.mcpTools);
   const advancedDisallowed = parseList(values.advancedDisallowedTools);
+  const diagnostics = useMemo(() => diagnoseCoreCapabilities(values), [values]);
 
   function applyPreset(preset: (typeof TOOL_CAPABILITY_PRESETS)[number]) {
     onChange({
@@ -54,6 +56,26 @@ export function ToolCapabilityPanel({
 
   return (
     <div className="models-tool-capability-panel">
+      <div className="models-core-capability-grid">
+        {diagnostics.map((diagnostic) => (
+          <div
+            key={diagnostic.core}
+            className={`models-core-capability-status ${diagnostic.support}`}
+          >
+            <div>
+              <strong>{diagnostic.core === "claude" ? "Claude Code" : "Codex"}</strong>
+              <span>
+                {diagnostic.support === "native"
+                  ? "原生支持"
+                  : diagnostic.support === "adapted"
+                    ? "包含适配"
+                    : "存在不支持配置"}
+              </span>
+            </div>
+            {diagnostic.messages.map((message) => <small key={message}>{message}</small>)}
+          </div>
+        ))}
+      </div>
       {showPresets ? (
         <div className="models-agent-template-preset-grid">
           {TOOL_CAPABILITY_PRESETS.map((preset) => (
@@ -84,6 +106,22 @@ export function ToolCapabilityPanel({
           disabled={disabled}
           onChange={(readCodebase) => onChange({ readCodebase })}
         />
+
+        <label className="mcp-field models-tool-capability-subfield">
+          <span className="mcp-field-label">执行确认</span>
+          <select
+            className="mcp-field-input"
+            value={values.confirmation}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ confirmation: event.target.value as ToolCapabilityFieldValues["confirmation"] })
+            }
+          >
+            <option value="always">始终确认</option>
+            <option value="on_risk">按风险确认</option>
+            <option value="never">不确认</option>
+          </select>
+        </label>
         {values.readCodebase ? (
           <label className="mcp-field models-tool-capability-subfield">
             <span className="mcp-field-label">读取范围</span>
@@ -171,7 +209,7 @@ export function ToolCapabilityPanel({
 
         <CapabilityToggle
           label="加载 Skill"
-          description="加载已配置的 Claude Skill。"
+          description="加载当前 Core 已配置的 Skill。"
           checked={values.skill}
           disabled={disabled}
           onChange={(skill) => onChange({ skill })}
@@ -219,23 +257,42 @@ export function ToolCapabilityPanel({
       </button>
 
       {advancedOpen ? (
-        <SelectableTokenGroup
-          label="高级禁用工具"
-          tone="danger"
-          options={capabilityOptions.tools}
-          selectedValues={advancedDisallowed}
-          disabled={disabled}
-          emptyText="没有可单独细调的工具。"
-          onToggle={(value, checked) =>
-            onChange({
-              advancedDisallowedTools: toggleAgentTemplateAdvancedDisallowedTool(
-                values.advancedDisallowedTools,
-                value,
-                checked,
-              ),
-            })
-          }
-        />
+        <div className="models-core-overrides">
+          <SelectableTokenGroup
+            label="Claude Code 专属禁用工具"
+            tone="danger"
+            options={capabilityOptions.tools}
+            selectedValues={advancedDisallowed}
+            disabled={disabled}
+            emptyText="没有可单独细调的 Claude Code 工具。"
+            onToggle={(value, checked) =>
+              onChange({
+                advancedDisallowedTools: toggleAgentTemplateAdvancedDisallowedTool(
+                  values.advancedDisallowedTools,
+                  value,
+                  checked,
+                ),
+              })
+            }
+          />
+          <div className="models-agent-token-group">
+            <div className="models-agent-token-group-head"><span>Codex 专属收紧</span></div>
+            <CapabilityToggle
+              label="收紧为只读"
+              description="无论通用策略是否允许写入，Codex 都使用 read-only sandbox。"
+              checked={values.codexSandboxOverride === "read-only"}
+              disabled={disabled}
+              onChange={(checked) => onChange({ codexSandboxOverride: checked ? "read-only" : "" })}
+            />
+            <CapabilityToggle
+              label="严格确认"
+              description="将 Codex 审批策略收紧为 untrusted。"
+              checked={values.codexApprovalOverride === "untrusted"}
+              disabled={disabled}
+              onChange={(checked) => onChange({ codexApprovalOverride: checked ? "untrusted" : "" })}
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -135,5 +135,25 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
   if (policy.network) {
     cloned.network = { ...policy.network };
   }
+  if (policy.confirmation) cloned.confirmation = policy.confirmation;
+  if (policy.skills) cloned.skills = { ...policy.skills };
+  if (policy.interaction) cloned.interaction = { ...policy.interaction };
+  if (policy.taskProgress) cloned.taskProgress = { ...policy.taskProgress };
+  if (policy.delegation) {
+    cloned.delegation = {
+      ...policy.delegation,
+      ...(policy.delegation.allowedAgents
+        ? { allowedAgents: [...policy.delegation.allowedAgents] }
+        : {}),
+    };
+  }
+  if (policy.coreOverrides) {
+    cloned.coreOverrides = {
+      ...(policy.coreOverrides.claude
+        ? { claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] } }
+        : {}),
+      ...(policy.coreOverrides.codex ? { codex: { ...policy.coreOverrides.codex } } : {}),
+    };
+  }
   return cloned;
 }

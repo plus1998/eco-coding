@@ -54,7 +54,7 @@ function customProfile(): OrchestrationProfile {
       agentKey: "main",
       name: "Main Agent",
       domain: "research",
-      systemPromptPreset: "custom",
+      systemPromptPreset: "custom_append",
       prompt: "Coordinate research.",
       modelRef: { providerId: "p1", modelId: "m1" },
       tools: { allowed: ["Agent", "WebSearch", "WebFetch"], disallowed: [] },
@@ -112,6 +112,21 @@ test("normalizers reject built-in and derived configs for user storage", () => {
   expect(() =>
     normalizeStoredOrchestrationProfile(buildCodingOrchestrationProfileFromRouteProfile(routeProfile)),
   ).toThrow("内置或派生编排配置不可写入用户配置");
+});
+
+test("normalizer migrates legacy system prompt presets", () => {
+  const legacyCustom = customProfile() as unknown as OrchestrationProfile;
+  (legacyCustom.mainAgent as unknown as { systemPromptPreset: string }).systemPromptPreset = "custom";
+  expect(normalizeStoredOrchestrationProfile(legacyCustom).mainAgent.systemPromptPreset).toBe(
+    "custom_append",
+  );
+
+  const legacyClaude = customProfile() as unknown as OrchestrationProfile;
+  (legacyClaude.mainAgent as unknown as { systemPromptPreset: string }).systemPromptPreset =
+    "claude_code";
+  expect(normalizeStoredOrchestrationProfile(legacyClaude).mainAgent.systemPromptPreset).toBe(
+    "core_native",
+  );
 });
 
 test("normalizer strips legacy template model binding", () => {

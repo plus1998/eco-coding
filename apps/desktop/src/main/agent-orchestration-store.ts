@@ -160,6 +160,14 @@ export function normalizeStoredOrchestrationProfile(profile: OrchestrationProfil
     ...rest,
     id: profile.id.trim(),
     name: profile.name.trim(),
+    mainAgent: {
+      ...profile.mainAgent,
+      systemPromptPreset:
+        profile.mainAgent.systemPromptPreset === "custom_append" ||
+        (profile.mainAgent.systemPromptPreset as unknown) === "custom"
+          ? "custom_append"
+          : "core_native",
+    },
     agents: listOrchestrationProfileAgents(profile),
     source: profile.source === "project" ? "project" : "user",
     updatedAt: profile.updatedAt || now,

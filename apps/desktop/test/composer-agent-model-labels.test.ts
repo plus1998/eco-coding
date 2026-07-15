@@ -12,7 +12,7 @@ const profile: OrchestrationProfile = {
     agentKey: "main",
     name: "Research Captain",
     domain: "research",
-    systemPromptPreset: "custom",
+    systemPromptPreset: "custom_append",
     prompt: "Lead research.",
     modelRef: { providerId: "p1", modelId: "main-model" },
     tools,

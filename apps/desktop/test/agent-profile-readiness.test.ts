@@ -31,7 +31,7 @@ function profile(agentEnabled: boolean): OrchestrationProfile {
       agentKey: "main",
       name: "Main",
       domain: "custom",
-      systemPromptPreset: "custom",
+      systemPromptPreset: "custom_append",
       prompt: "Lead.",
       modelRef: { providerId: "p1", modelId: "main-model" },
       tools,

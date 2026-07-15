@@ -151,6 +151,21 @@ test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () =>
   expect(isAutonomousThreadRuntime(config)).toBe(true);
 });
 
+test("buildThreadRuntimeConfigFromDefaults maps profile confirmation to the session", () => {
+  const strictProfile = {
+    ...profileA,
+    mainAgent: {
+      ...profileA.mainAgent,
+      tools: { ...profileA.mainAgent.tools, confirmation: "never" as const },
+    },
+  };
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: { ...agentSettings, orchestrationProfiles: [strictProfile] },
+    workflowDefaults: { sessionMode: "agent" },
+  });
+  expect(config.bashReviewMode).toBe("allow_all");
+});
+
 test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan session mode", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: agentSettings,
@@ -309,13 +324,13 @@ test("thread runtime config preserves a temporary main-agent system prompt prese
       settings: agentSettings,
       workflowDefaults: { sessionMode: "agent" },
     }),
-    mainAgentSystemPromptPresetOverride: "custom" as const,
+    mainAgentSystemPromptPresetOverride: "custom_append" as const,
   };
 
   const normalized = normalizeThreadRuntimeConfig(config);
-  expect(normalized.mainAgentSystemPromptPresetOverride).toBe("custom");
+  expect(normalized.mainAgentSystemPromptPresetOverride).toBe("custom_append");
   expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(normalized);
-  expect(resolveMainAgentSystemPromptPreset(profileA, normalized)).toBe("custom");
+  expect(resolveMainAgentSystemPromptPreset(profileA, normalized)).toBe("custom_append");
 });
 
 test("main-agent system prompt preset falls back to the selected profile", () => {
@@ -523,7 +538,7 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
   expect(
     isBashReviewModeOnlyRuntimeConfigUpdate(base, {
       ...base,
-      mainAgentSystemPromptPresetOverride: "custom",
+      mainAgentSystemPromptPresetOverride: "custom_append",
     }),
   ).toBe(false);
 });
