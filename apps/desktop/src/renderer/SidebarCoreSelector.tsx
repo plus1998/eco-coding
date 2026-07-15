@@ -1,5 +1,5 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 interface SidebarCoreSelectorProps {
@@ -9,6 +9,7 @@ interface SidebarCoreSelectorProps {
   codexAvailable: boolean;
   codexUnavailableReason?: string;
   onChange: (coreKind: CoreKind) => void;
+  onOpenSearch: () => void;
 }
 
 const coreOptions: Array<{ kind: CoreKind; label: string }> = [
@@ -29,6 +30,7 @@ export function SidebarCoreSelector({
   codexAvailable,
   codexUnavailableReason,
   onChange,
+  onOpenSearch,
 }: SidebarCoreSelectorProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -71,6 +73,19 @@ export function SidebarCoreSelector({
       ) : (
         <div className="sidebar-core-heading">{coreDisplayName(coreKind)}</div>
       )}
+
+      <button
+        type="button"
+        className="sidebar-core-search"
+        aria-label="搜索会话和项目"
+        title="搜索会话和项目"
+        onClick={() => {
+          setOpen(false);
+          onOpenSearch();
+        }}
+      >
+        <Search size={17} aria-hidden />
+      </button>
 
       {open ? (
         <div className="sidebar-core-menu" role="menu" aria-label="选择 Core">

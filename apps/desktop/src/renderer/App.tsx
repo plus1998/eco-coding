@@ -183,6 +183,7 @@ import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
+import { SidebarSearchDialog } from "./SidebarSearchDialog";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   SubagentTaskDrawer,
@@ -756,6 +757,7 @@ function ActivityUserMessageNavigator({
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
   const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
@@ -1681,6 +1683,10 @@ function App() {
       projects,
       threadsByProject,
     ],
+  );
+  const sidebarSearchThreads = useMemo(
+    () => projectTree.flatMap((item) => item.projectThreads),
+    [projectTree],
   );
 
   const currentProjectPath = useMemo(() => {
@@ -5532,6 +5538,7 @@ function App() {
             codexUnavailableReason: coreAvailability.codex.reason,
           })}
           onChange={setNewThreadCoreKind}
+          onOpenSearch={() => setSidebarSearchOpen(true)}
         />
         <button type="button" className="sidebar-action" onClick={startNewChat}>
           <MessageSquarePlus size={18} />
@@ -5570,6 +5577,15 @@ function App() {
           设置
         </button>
       </aside>
+
+      <SidebarSearchDialog
+        open={sidebarSearchOpen}
+        threads={sidebarSearchThreads}
+        projects={projects}
+        onClose={() => setSidebarSearchOpen(false)}
+        onSelectThread={selectThread}
+        onSelectProject={switchProject}
+      />
 
       <section
         className={[

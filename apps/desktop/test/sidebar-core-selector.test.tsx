@@ -17,12 +17,14 @@ test("draft Core heading is switchable", () => {
       busy: false,
       codexAvailable: true,
       onChange: () => undefined,
+      onOpenSearch: () => undefined,
     }),
   );
 
   expect(markup).toContain("Claude Code");
   expect(markup).toContain('aria-haspopup="menu"');
   expect(markup).toContain('aria-expanded="false"');
+  expect(markup).toContain('aria-label="搜索会话和项目"');
 });
 
 test("bound thread Core heading is read-only", () => {
@@ -33,10 +35,11 @@ test("bound thread Core heading is read-only", () => {
       busy: false,
       codexAvailable: true,
       onChange: () => undefined,
+      onOpenSearch: () => undefined,
     }),
   );
 
   expect(markup).toContain("Codex");
   expect(markup).not.toContain('aria-haspopup="menu"');
-  expect(markup).not.toContain("<button");
+  expect(markup).toContain('aria-label="搜索会话和项目"');
 });

@@ -384,6 +384,28 @@ button.sidebar-core-heading {
   border-radius: 2px;
 }
 
+.sidebar-core-search {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  border-radius: 7px;
+  color: var(--sidebar-muted-strong);
+}
+
+.sidebar-core-search:hover {
+  background: var(--sidebar-control-hover-bg);
+  color: var(--text-primary);
+}
+
+.sidebar-core-search:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 52%, transparent);
+  outline-offset: 1px;
+}
+
 .sidebar-core-menu {
   position: absolute;
   z-index: 80;
@@ -423,6 +445,188 @@ button.sidebar-core-heading {
 .sidebar-core-menu button:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+.sidebar-search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(58px, 11vh, 112px) 16px 24px;
+  background: color-mix(in srgb, var(--bg-app) 38%, transparent);
+  backdrop-filter: blur(7px) saturate(115%);
+  -webkit-backdrop-filter: blur(7px) saturate(115%);
+  animation: eco-modal-backdrop-in 160ms ease-out both;
+}
+
+.sidebar-search-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(72vh, 650px);
+  overflow: hidden;
+  border: 1px solid var(--popover-border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-modal);
+  animation: eco-modal-shell-in 190ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.sidebar-search-backdrop-close {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.sidebar-search-input-wrap {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 58px;
+  padding: 0 17px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.sidebar-search-input-wrap input {
+  min-width: 0;
+  height: 56px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.sidebar-search-input-wrap input::placeholder {
+  color: var(--text-muted);
+}
+
+.sidebar-search-input-wrap input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.sidebar-search-input-wrap kbd {
+  min-width: 31px;
+  padding: 3px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.sidebar-search-results {
+  overflow: auto;
+  padding: 9px;
+  overscroll-behavior: contain;
+}
+
+.sidebar-search-group + .sidebar-search-group {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+}
+
+.sidebar-search-group h2 {
+  margin: 0;
+  padding: 6px 10px 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.sidebar-search-group-list {
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-search-result {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(80px, 34%);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.sidebar-search-result:hover,
+.sidebar-search-result.is-active {
+  background: var(--popover-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-search-result-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-muted);
+}
+
+.sidebar-search-result-icon > span {
+  width: 9px;
+  height: 9px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.sidebar-search-result-title,
+.sidebar-search-result-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-search-result-title {
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.sidebar-search-result-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.sidebar-search-empty {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 620px) {
+  .sidebar-search-backdrop {
+    padding-top: 36px;
+  }
+
+  .sidebar-search-result {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .sidebar-search-result-meta {
+    display: none;
+  }
 }
 
 .sidebar-action:hover {
@@ -19528,6 +19732,9 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .floating-workspace-card,
   .floating-workspace-card-collapse,
   .git-commit-dialog-backdrop,
+  .sidebar-search-backdrop,
+  .sidebar-search-dialog,
+  .sidebar-search-result,
   .git-commit-dialog,
   .git-commit-dialog-close,
   .git-commit-dialog-actions button,
@@ -19653,6 +19860,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .composer-codex-popover,
   .composer-bash-review-popover,
   .settings-modal,
+  .sidebar-search-dialog,
   .package-scripts-shell,
   .activity-user-message-nav-card,
   .thread-info-float-popover {
@@ -19664,6 +19872,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .git-commit-dialog-backdrop,
   .diff-review-overlay,
   .package-scripts-backdrop.is-open,
+  .sidebar-search-backdrop,
   .settings-modal-backdrop {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
