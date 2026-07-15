@@ -293,7 +293,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         model: codexGatewayModel,
         modelProvider,
         ...(this.threadConfig ? { config: this.threadConfig } : {}),
-        ...(this.threadConfig && hasAppliedThreadConfig(this.client, codexThreadId, this.threadConfig)
+        ...(this.threadConfig && isCodexThreadConfigApplied(this.client, codexThreadId, this.threadConfig)
           ? { configAlreadyApplied: true }
           : {}),
       });
@@ -453,7 +453,11 @@ function recordAppliedThreadConfig(client: object, threadId: string, config: Rec
   appliedThreadConfigByClient.set(client, byThread);
 }
 
-function hasAppliedThreadConfig(client: object, threadId: string, config: Record<string, unknown>): boolean {
+export function isCodexThreadConfigApplied(
+  client: object,
+  threadId: string,
+  config: Record<string, unknown>,
+): boolean {
   return appliedThreadConfigByClient.get(client)?.get(threadId.trim()) === stableConfigFingerprint(config);
 }
 

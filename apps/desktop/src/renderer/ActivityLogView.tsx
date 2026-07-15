@@ -2122,7 +2122,6 @@ function WaitingThinkingBlock({
   active?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
-  const [showDuration, setShowDuration] = useState(false);
   const durationMs = resolveRequestDurationMs(requestSpan);
 
   if (!active) {
@@ -2130,30 +2129,20 @@ function WaitingThinkingBlock({
       return null;
     }
     return (
-      <div className="run-log-thinking run-log-feed-surface is-collapsed">
-        <button
-          type="button"
-          className="run-log-thinking-header run-log-feed-surface-header"
-          onClick={() => setShowDuration((value) => !value)}
-          aria-expanded={showDuration}
-        >
-          <Sparkles size={14} className="run-log-feed-surface-icon" aria-hidden />
-          <span className="run-log-thinking-label run-log-feed-surface-title">
-            思考
-            {showDuration ? (
-              <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
-            ) : null}
+      <div className="run-log-thinking is-collapsed">
+        <div className="run-log-thinking-header">
+          <span className="run-log-thinking-label">
+            思考<span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
           </span>
-        </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="run-log-thinking run-log-feed-surface streaming empty">
-      <div className="run-log-thinking-header run-log-feed-surface-header">
-        <Sparkles size={14} className="run-log-feed-surface-icon" aria-hidden />
-        <span className="run-log-thinking-label run-log-feed-surface-title">
+    <div className="run-log-thinking streaming empty">
+      <div className="run-log-thinking-header">
+        <span className="run-log-thinking-label">
           <ShimmerText>正在思考</ShimmerText>
         </span>
       </div>
@@ -2181,7 +2170,6 @@ function ThinkingBlock({
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const hasBody = text.trim().length > 0;
   const [collapsed, setCollapsed] = useState(() => !streaming && hasBody);
-  const [showDuration, setShowDuration] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
   const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2330,7 +2318,6 @@ function ThinkingBlock({
     <div
       className={[
         "run-log-thinking",
-        "run-log-feed-surface",
         streaming ? "streaming" : "",
         waitingEmpty ? "empty" : "",
         streaming && hasBody ? "is-streaming-capped" : "",
@@ -2343,7 +2330,7 @@ function ThinkingBlock({
     >
       <button
         type="button"
-        className="run-log-thinking-header run-log-feed-surface-header"
+        className="run-log-thinking-header"
         onClick={() => {
           if (streaming || isCollapsing) {
             return;
@@ -2353,9 +2340,6 @@ function ThinkingBlock({
           }
           autoCollapseEligibleRef.current = false;
           autoCollapseSuppressedRef.current = true;
-          if (durationMs !== undefined) {
-            setShowDuration((value) => !value);
-          }
           if (!hasBody) {
             return;
           }
@@ -2367,13 +2351,12 @@ function ThinkingBlock({
           setIsCollapsing(false);
           setCollapsed(false);
         }}
-        aria-expanded={bodyOpen || Boolean(streaming) || showDuration}
+        aria-expanded={bodyOpen || Boolean(streaming)}
         disabled={waitingEmpty}
       >
-        <Sparkles size={14} className="run-log-feed-surface-icon" aria-hidden />
-        <span className="run-log-thinking-label run-log-feed-surface-title">
+        <span className="run-log-thinking-label">
           {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : "思考"}
-          {!waitingEmpty && showDuration && durationMs !== undefined ? (
+          {!waitingEmpty && durationMs !== undefined ? (
             <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
           ) : null}
         </span>
@@ -2387,7 +2370,6 @@ function ThinkingBlock({
         <div
           className={[
             "run-log-thinking-body-shell",
-            "run-log-feed-surface-body",
             bodyOpen ? "open" : "",
           ]
             .filter(Boolean)

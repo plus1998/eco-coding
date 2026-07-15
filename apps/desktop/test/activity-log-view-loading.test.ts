@@ -152,7 +152,7 @@ test("ActivityLogView exposes final output copy after thread stops", () => {
   expect(html).toContain("会话停止后的最终输出。");
 });
 
-test("ActivityLogView uses the shared feed surface for thinking content", () => {
+test("ActivityLogView keeps thinking content lightweight", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -162,16 +162,27 @@ test("ActivityLogView uses the shared feed surface for thinking content", () => 
             id: "thinking-final",
             eventType: "thinking.final",
             role: "thinking",
+            requestId: "req-thinking",
             text: "先检查事件投影，再统一渲染结构。",
+          }),
+        ],
+        requestSpans: [
+          requestSpan({
+            requestId: "req-thinking",
+            status: "completed",
+            endedAt: "2026-01-01T00:00:03.000Z",
           }),
         ],
       }),
     }),
   );
 
-  expect(html).toContain("run-log-thinking run-log-feed-surface");
-  expect(html).toContain("run-log-thinking-header run-log-feed-surface-header");
-  expect(html).toContain("run-log-feed-surface-icon");
+  expect(html).toContain('class="run-log-thinking');
+  expect(html).toContain('class="run-log-thinking-header"');
+  expect(html).not.toContain("run-log-thinking run-log-feed-surface");
+  expect(html).not.toContain("run-log-feed-surface-icon");
+  expect(html).toContain("run-log-thinking-timing-inline");
+  expect(html).toContain("· 耗时 3.0s");
 });
 
 test("ActivityLogView shows inline loading for a running file write action", () => {
@@ -463,7 +474,7 @@ test("ProjectionSubagentDetailFeed renders four runtime metric cards with billin
   expect(html.match(/subagent-run-instance-metric /g)?.length ?? 0).toBe(4);
 });
 
-test("ActivityLogView renders Bash directly without an outer tool group", () => {
+test("ActivityLogView summarizes Bash with adjacent file tools", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -503,10 +514,9 @@ test("ActivityLogView renders Bash directly without an outer tool group", () => 
     }),
   );
 
-  expect(html).toContain("run-log-action--bash-card");
-  expect(html).toContain("run-log-action-main run-log-feed-surface");
-  expect(html).toContain("run-log-feed-surface-header");
-  expect(html).not.toContain("run-log-tool-group");
+  expect(html).toContain("run-log-tool-group");
+  expect(html).toContain("已读取 1 个文件和已运行 1 条命令");
+  expect(html).not.toContain("run-log-action--bash-card");
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {

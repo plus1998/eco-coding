@@ -52,6 +52,7 @@ test("buildCodexConfigToml maps enabled providers to eco_* model_providers", () 
   });
 
   expect(toml).toContain('model_provider = "eco_anthropic-main"');
+  expect(toml).toContain('model_reasoning_summary = "detailed"');
   expect(toml).toContain("[model_providers.eco_anthropic-main]");
   expect(toml).toContain('name = "Eco Gateway (eco_anthropic-main)"');
   expect(toml).toContain('base_url = "http://127.0.0.1:18765/v1"');

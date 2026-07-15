@@ -153,7 +153,12 @@ export async function syncProfileAgentsToCodexRoles(
   const mainMcpVisibility = buildActorMcpVisibility({
     actor: "main",
     mcpScope,
-    assignedServers: resolveAssignedMcpServers(mainToolPolicy),
+    // Composer selection is the main actor's default MCP scope. A Profile only
+    // narrows it when it carries an explicit MCP policy; absence means inherit.
+    assignedServers:
+      mainToolPolicy.mcp === undefined
+        ? [...mcpScope.threadEnabled]
+        : resolveAssignedMcpServers(mainToolPolicy),
     ...(mainToolPolicy.mcp?.enabledTools
       ? { enabledTools: mainToolPolicy.mcp.enabledTools }
       : {}),

@@ -32,6 +32,7 @@ import {
   applyCodexExecutionConfirmation,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
+  isCodexThreadConfigApplied,
   readCodexThreadStatus,
   requireCodexSubagentThreadId,
   resolveCodexHomeDir,
@@ -53,6 +54,7 @@ import {
   CodexRuntimeLifecycle,
   ensureGlobalCodexRuntimeLifecycle,
   getGlobalCodexRuntimeLifecycle,
+  stopGlobalCodexRuntimeLifecycle,
 } from "./codex-runtime-lifecycle";
 import type { CodexThreadMap } from "./codex-thread-map";
 import { resolveCodexThreadAttribution } from "./codex-thread-map";
@@ -920,6 +922,7 @@ export async function runThreadRequestWithRuntimeProxy(
   ];
 
   try {
+    const previousPrepared = preparedRuntimeByThread.get(input.threadId);
     const mcpServers = input.resolveMcpServers?.() ?? [];
     const threadEnabledMcpServerNames = input.resolveEnabledMcpServerKeys?.() ?? [];
     const subagentAvailability = input.resolveSubagentAvailability?.();
@@ -936,6 +939,18 @@ export async function runThreadRequestWithRuntimeProxy(
     });
     // Wait for readiness AFTER prepare: reload (when it runs) restarts MCP processes.
     await input.ensureMcpReady?.();
+    const currentClient = getGlobalCodexRuntimeLifecycle()?.getClient();
+    const codexThreadId = requireDeps().threadMap.getCodexThreadId(input.threadId);
+    const configChanged =
+      previousPrepared &&
+      JSON.stringify(previousPrepared.threadConfig) !== JSON.stringify(prepared.threadConfig);
+    const configNotApplied =
+      currentClient &&
+      codexThreadId &&
+      !isCodexThreadConfigApplied(currentClient, codexThreadId, prepared.threadConfig);
+    if (configChanged || configNotApplied) {
+      await coldReloadIdleCodexThreadForConfigChange(input.threadId);
+    }
     // Commit only after the whole admission succeeds. A failed readiness check
     // must not replace the last known-good policy for this Eco thread.
     bindPreparedCodexRuntimeToThread(input.threadId, prepared);
@@ -953,6 +968,55 @@ export async function runThreadRequestWithRuntimeProxy(
 
   await input.onProxyReady?.(attempt);
   return input.run(attempt);
+}
+
+async function coldReloadIdleCodexThreadForConfigChange(ecoThreadId: string): Promise<void> {
+  const runtimeDeps = requireDeps();
+  const codexThreadId = runtimeDeps.threadMap.getCodexThreadId(ecoThreadId.trim());
+  const lifecycle = getGlobalCodexRuntimeLifecycle();
+  const client = lifecycle?.getClient();
+  if (!codexThreadId || !client) {
+    return;
+  }
+
+  const targetStatus = await readCodexThreadStatus(client, codexThreadId);
+  if (targetStatus === "notLoaded") {
+    return;
+  }
+  if (targetStatus !== "idle" && targetStatus !== "systemError") {
+    throw new CodexResumeNotAvailable(
+      `Codex cannot reload changed session config while thread '${codexThreadId}' is ${targetStatus}.`,
+      { nextAction: "Wait for the active Codex turn to finish, then retry the message." },
+    );
+  }
+
+  const loaded = await client.request<{ data?: unknown }>("thread/loaded/list", {});
+  const loadedThreadIds = Array.isArray(loaded.data)
+    ? loaded.data.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  for (const loadedThreadId of loadedThreadIds) {
+    if (loadedThreadId === codexThreadId) {
+      continue;
+    }
+    const status = await readCodexThreadStatus(client, loadedThreadId);
+    if (status === "active") {
+      throw new CodexResumeNotAvailable(
+        `Codex cannot reload changed session config while another thread '${loadedThreadId}' is active.`,
+        { nextAction: "Wait for the other Codex turn to finish, then retry the message." },
+      );
+    }
+  }
+
+  runtimeDeps.onStderr?.(
+    `[eco-codex] cold reload app-server for changed thread config ecoThread=${ecoThreadId} codexThread=${codexThreadId}`,
+  );
+  await stopGlobalCodexRuntimeLifecycle();
+  const codexExecutable = resolveCodexExecutable();
+  if (!codexExecutable) {
+    throw new Error("Codex CLI is unavailable after stopping app-server for session config reload.");
+  }
+  await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
+  clearCodexModelCatalogCache();
 }
 
 export function createCodexRuntimeDriver(

@@ -3729,7 +3729,7 @@ async function startCodexThreadContinuation(
     throw new Error(runtime.reason);
   }
 
-  updateThread(thread.id, { status: "running", message: "正在继续 Codex 会话…" });
+  updateThread(thread.id, { status: "running", message: "" });
   if (!input.rewindTarget) {
     recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt);
   }

@@ -286,7 +286,7 @@ function isGroupableToolFeedEntry(
     return false;
   }
   const block = projectionItemToDetailBlock(entry.item);
-  return block?.kind === "action" && !block.bashRun;
+  return block?.kind === "action";
 }
 
 function filterMainTimelineForFeed(
@@ -667,6 +667,7 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "计划已生成，请确认是否执行。" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||
     /^正在启动 Codex/u.test(trimmed) ||
+    trimmed === "正在继续 Codex 会话…" ||
     /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||
     /^Working in project directory:/u.test(trimmed) ||
     /^Local model router ready:/u.test(trimmed) ||

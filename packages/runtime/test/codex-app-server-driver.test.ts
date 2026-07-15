@@ -5,6 +5,7 @@ import { CodexAppServerClient } from "../src/codex-app-server-client";
 import {
   buildCodexTurnInput,
   CodexAppServerDriver,
+  isCodexThreadConfigApplied,
   toCodexTurnReasoningEffort,
 } from "../src/codex-app-server-driver";
 import { buildCodexGatewayModelAlias } from "../src/codex-config-sync";
@@ -1119,6 +1120,11 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
     threadConfig: { mcp_servers: { browser: { enabled: false } } },
   });
   const controller = new AbortController();
+  expect(
+    isCodexThreadConfigApplied(client, "thr_codex_existing", {
+      mcp_servers: { browser: { enabled: false } },
+    }),
+  ).toBe(false);
 
   const handshake = client.initialize();
   await Bun.sleep(0);
@@ -1181,6 +1187,11 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
     mcp_servers: { browser: { enabled: false } },
   });
   expect(turnStart?.params?.threadId).toBe("thr_codex_existing");
+  expect(
+    isCodexThreadConfigApplied(client, "thr_codex_existing", {
+      mcp_servers: { browser: { enabled: false } },
+    }),
+  ).toBe(true);
   driver.dispose();
 });
 

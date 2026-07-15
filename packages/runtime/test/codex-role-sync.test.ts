@@ -488,6 +488,50 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
   expect(researcherToml).not.toContain("Eco MCP allowlist");
 });
 
+test("main actor inherits Composer-selected MCP when its Profile has no MCP policy", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const profile = buildProfile({ agents: [], builtinAgents: undefined });
+
+  const result = await syncProfileAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    profile,
+    templates: [],
+    mcpServers: [
+      { name: "mongo", transport: "stdio", command: "node" },
+      { name: "browser", transport: "stdio", command: "node" },
+    ],
+    threadEnabledMcpServers: ["mongo"],
+  });
+
+  expect(result.threadConfig.mcp_servers).toEqual({
+    browser: { enabled: false },
+    mongo: { enabled: true },
+  });
+});
+
+test("explicit empty main MCP policy denies Composer-selected MCP", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const base = buildProfile();
+  const profile = buildProfile({
+    mainAgent: {
+      ...base.mainAgent,
+      tools: toolPolicy({ mcp: { allowedServers: [] } }),
+    },
+    agents: [],
+    builtinAgents: undefined,
+  });
+
+  const result = await syncProfileAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    profile,
+    templates: [],
+    mcpServers: [{ name: "mongo", transport: "stdio", command: "node" }],
+    threadEnabledMcpServers: ["mongo"],
+  });
+
+  expect(result.threadConfig.mcp_servers).toEqual({ mongo: { enabled: false } });
+});
+
 test("content-addressed role bundles survive a concurrent Profile preparation", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);

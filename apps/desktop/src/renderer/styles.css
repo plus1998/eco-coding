@@ -17911,22 +17911,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   border-top: 1px solid var(--codex-log-line-subtle);
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking.run-log-feed-surface {
-  margin: 0;
-  border: 1px solid var(--codex-log-line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking .run-log-thinking-header {
-  padding: 8px 10px;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking .run-log-thinking-body {
-  margin-top: 0;
-  padding: 9px 10px 10px;
-}
-
 .codex-main:not(.codex-main-landing) .run-log-action--bash-card {
   align-items: flex-start;
 }

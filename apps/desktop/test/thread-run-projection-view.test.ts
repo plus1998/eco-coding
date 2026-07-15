@@ -521,11 +521,18 @@ test("buildThreadRunProjectionViewModel hides follow-up interrupt and resume sta
           sequence: 4,
         }),
         item({
+          id: "codex-resume",
+          eventType: "thread.status",
+          role: "system",
+          text: "正在继续 Codex 会话…",
+          sequence: 5,
+        }),
+        item({
           id: "substantive",
           eventType: "message.final",
           role: "planner",
           text: "好的，继续实现。",
-          sequence: 5,
+          sequence: 6,
         }),
       ],
     }),
@@ -2440,7 +2447,7 @@ test("buildThreadRunProjectionViewModel keeps active thinking below bash cards",
   );
 });
 
-test("buildThreadRunProjectionViewModel keeps bash cards direct and ordered when a tool completes", () => {
+test("buildThreadRunProjectionViewModel groups adjacent bash calls into a tool summary", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       timeline: [
@@ -2484,12 +2491,14 @@ test("buildThreadRunProjectionViewModel keeps bash cards direct and ordered when
     }),
   );
 
-  expect(view.mainFeedEntries).toHaveLength(2);
-  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "timeline"]);
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:lifecycle:toolu_bash_a",
-    "main:lifecycle:toolu_bash_b",
-  ]);
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("tool-group");
+  if (view.mainFeedEntries[0]?.kind === "tool-group") {
+    expect(view.mainFeedEntries[0].entries.map((entry) => entry.key)).toEqual([
+      "main:lifecycle:toolu_bash_a",
+      "main:lifecycle:toolu_bash_b",
+    ]);
+  }
 });
 
 test("buildThreadRunProjectionViewModel keeps a growing file tool group key stable", () => {
