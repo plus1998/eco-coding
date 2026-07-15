@@ -1,5 +1,5 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
-import { Check, Code2, TerminalSquare } from "lucide-react";
+import { Check } from "lucide-react";
 
 interface DefaultAgentSettingsPanelProps {
   defaultCoreKind: CoreKind;
@@ -14,13 +14,13 @@ const agentOptions = [
     kind: "claude" as const,
     label: "Claude Code",
     description: "新会话默认使用 Claude Code。",
-    icon: Code2,
+    iconSrc: "/agent-icons/claude-code.ico",
   },
   {
     kind: "codex" as const,
     label: "Codex",
     description: "新会话默认使用 Codex。",
-    icon: TerminalSquare,
+    iconSrc: "/agent-icons/codex.ico",
   },
 ];
 
@@ -47,7 +47,6 @@ export function DefaultAgentSettingsPanel({
 
         <div className="default-agent-options" role="radiogroup" aria-label="默认 Agent">
           {agentOptions.map((option) => {
-            const Icon = option.icon;
             const selected = option.kind === defaultCoreKind;
             const unavailable = option.kind === "codex" && !codexAvailable;
             return (
@@ -65,7 +64,7 @@ export function DefaultAgentSettingsPanel({
                   onChange={() => onChange(option.kind)}
                 />
                 <span className="default-agent-option-icon" aria-hidden>
-                  <Icon size={18} />
+                  <img src={option.iconSrc} alt="" />
                 </span>
                 <span className="default-agent-option-body">
                   <strong>{option.label}</strong>

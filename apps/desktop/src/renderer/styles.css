@@ -6431,6 +6431,13 @@ button.sidebar-core-heading {
   color: var(--text-secondary);
 }
 
+.default-agent-option-icon img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 .default-agent-option.is-selected .default-agent-option-icon {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
