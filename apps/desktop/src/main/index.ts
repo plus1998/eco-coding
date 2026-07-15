@@ -6587,7 +6587,7 @@ function maybeEmitPromptCacheHitDrop(input: SingleUsageBillingRequest): void {
     return;
   }
   process.stderr.write(
-    `[eco] prompt cache hit dropped thread=${input.threadId} ${Math.round(detection.previousRatio * 100)}%→${Math.round(detection.currentRatio * 100)}%\n`,
+    `[eco] prompt cache hit dropped thread=${input.threadId} ${Math.round(detection.previousRatio * 100)}%→${Math.round(detection.currentRatio * 100)}% cache_read_loss=${detection.cacheReadLossTokens}/${detection.currentPromptTokens}\n`,
   );
   promptCacheRunEventEmitter.emitHitDropped(input.threadId, detection, {
     ...(input.requestKey && { requestKey: input.requestKey }),
