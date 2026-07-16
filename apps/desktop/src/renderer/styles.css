@@ -6658,7 +6658,6 @@ button.sidebar-core-heading {
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   color: var(--text-secondary);
 }
 
@@ -6670,7 +6669,6 @@ button.sidebar-core-heading {
 }
 
 .default-agent-option.is-selected .default-agent-option-icon {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 
