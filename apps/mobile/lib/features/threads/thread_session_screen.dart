@@ -942,6 +942,7 @@ ThreadRunProjectionSnapshot _projectionDetailSnapshot({
     agents: const [],
     timeline: timeline.map(_projectionDetailTimelineItem).toList(),
     requestSpans: base?.requestSpans ?? const [],
+    attempts: base?.attempts ?? const [],
   );
 }
 
@@ -960,6 +961,7 @@ ThreadRunProjectionTimelineItem _projectionDetailTimelineItem(
         at: item.at,
         role: 'user',
         agentId: item.agentId,
+        runAttemptId: item.runAttemptId,
         requestId: item.requestId,
         streamKey: item.streamKey,
         metadata: {...?item.metadata, 'liveType': 'thread.user_prompt'},
@@ -976,6 +978,7 @@ ThreadRunProjectionTimelineItem _projectionDetailTimelineItem(
     at: item.at,
     role: item.role,
     agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
     requestId: item.requestId,
     streamKey: item.streamKey,
     metadata: item.metadata,

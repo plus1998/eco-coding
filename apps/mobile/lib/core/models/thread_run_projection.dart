@@ -44,6 +44,7 @@ class ThreadRunProjectionTimelineItem {
     required this.at,
     this.role,
     this.agentId,
+    this.runAttemptId,
     this.requestId,
     this.streamKey,
     this.metadata,
@@ -59,6 +60,7 @@ class ThreadRunProjectionTimelineItem {
         at: json['at'] as String? ?? '',
         role: json['role'] as String?,
         agentId: json['agentId'] as String?,
+        runAttemptId: json['runAttemptId'] as String?,
         requestId: json['requestId'] as String?,
         streamKey: json['streamKey'] as String?,
         metadata: json['metadata'] is Map<String, dynamic>
@@ -74,6 +76,7 @@ class ThreadRunProjectionTimelineItem {
   final String at;
   final String? role;
   final String? agentId;
+  final String? runAttemptId;
   final String? requestId;
   final String? streamKey;
   final Map<String, dynamic>? metadata;
@@ -93,6 +96,7 @@ class ThreadRunProjectionAgent {
     this.parentToolUseId,
     this.latestActivity,
     this.endedAt,
+    this.runAttemptId,
   });
 
   factory ThreadRunProjectionAgent.fromJson(Map<String, dynamic> json) {
@@ -109,6 +113,7 @@ class ThreadRunProjectionAgent {
       parentToolUseId: json['parentToolUseId'] as String?,
       latestActivity: json['latestActivity'] as String?,
       endedAt: json['endedAt'] as String?,
+      runAttemptId: json['runAttemptId'] as String?,
       timeline: timelineRaw
           .map(
             (entry) => ThreadRunProjectionTimelineItem.fromJson(
@@ -130,9 +135,40 @@ class ThreadRunProjectionAgent {
   final String? parentToolUseId;
   final String? latestActivity;
   final String? endedAt;
+  final String? runAttemptId;
   final List<ThreadRunProjectionTimelineItem> timeline;
 
   bool get isRunning => status == 'active' || status == 'launching';
+}
+
+class ThreadRunProjectionAttempt {
+  const ThreadRunProjectionAttempt({
+    required this.attemptId,
+    required this.phase,
+    required this.retryIndex,
+    required this.status,
+    required this.startedAt,
+    this.endedAt,
+  });
+
+  factory ThreadRunProjectionAttempt.fromJson(Map<String, dynamic> json) =>
+      ThreadRunProjectionAttempt(
+        attemptId: json['attemptId'] as String? ?? '',
+        phase: json['phase'] as String? ?? '',
+        retryIndex: (json['retryIndex'] as num?)?.toInt() ?? 0,
+        status: json['status'] as String? ?? 'running',
+        startedAt: json['startedAt'] as String? ?? '',
+        endedAt: json['endedAt'] as String?,
+      );
+
+  final String attemptId;
+  final String phase;
+  final int retryIndex;
+  final String status;
+  final String startedAt;
+  final String? endedAt;
+
+  bool get isRunning => status == 'running';
 }
 
 class ThreadRunProjectionRequestSpan {
@@ -175,6 +211,7 @@ class ThreadRunProjectionSnapshot {
     required this.sourceEventCount,
     this.timeline = const [],
     this.requestSpans = const [],
+    this.attempts = const [],
   });
 
   factory ThreadRunProjectionSnapshot.fromJson(Map<String, dynamic> json) {
@@ -182,6 +219,7 @@ class ThreadRunProjectionSnapshot {
     final agentsRaw = json['agents'] as List<dynamic>? ?? const [];
     final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
     final requestSpansRaw = json['requestSpans'] as List<dynamic>? ?? const [];
+    final attemptsRaw = json['attempts'] as List<dynamic>? ?? const [];
     return ThreadRunProjectionSnapshot(
       threadId: thread['threadId'] as String? ?? '',
       status: thread['status'] as String? ?? '',
@@ -208,6 +246,13 @@ class ThreadRunProjectionSnapshot {
             ),
           )
           .toList(),
+      attempts: attemptsRaw
+          .map(
+            (entry) => ThreadRunProjectionAttempt.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -218,6 +263,7 @@ class ThreadRunProjectionSnapshot {
   final List<ThreadRunProjectionAgent> agents;
   final List<ThreadRunProjectionTimelineItem> timeline;
   final List<ThreadRunProjectionRequestSpan> requestSpans;
+  final List<ThreadRunProjectionAttempt> attempts;
 
   bool get hasData => sourceEventCount > 0;
 }
@@ -242,7 +288,21 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(
       current.requestSpans,
       incoming.requestSpans,
     ),
+    attempts: _mergeProjectionAttempts(current.attempts, incoming.attempts),
   );
+}
+
+List<ThreadRunProjectionAttempt> _mergeProjectionAttempts(
+  List<ThreadRunProjectionAttempt> current,
+  List<ThreadRunProjectionAttempt> incoming,
+) {
+  final byId = <String, ThreadRunProjectionAttempt>{
+    for (final attempt in current) attempt.attemptId: attempt,
+    for (final attempt in incoming) attempt.attemptId: attempt,
+  };
+  final merged = byId.values.toList();
+  merged.sort((left, right) => left.startedAt.compareTo(right.startedAt));
+  return merged;
 }
 
 ThreadRunProjectionSnapshot mergeThreadRunProjectionDetailResult(
@@ -293,6 +353,7 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionDetailResult(
     timeline: mainTimeline,
     agents: agents,
     requestSpans: current?.requestSpans ?? const [],
+    attempts: current?.attempts ?? const [],
   );
   return mergeThreadRunProjectionSnapshots(current, incoming);
 }
@@ -327,7 +388,9 @@ ThreadRunProjectionTimelineItem _mergeProjectionTimelineItem(
       ? current.text
       : incoming.text;
   if (!_isStreamProjectionItem(current) || !_isStreamProjectionItem(incoming)) {
-    if (identical(metadata, incoming.metadata) && text == incoming.text) {
+    if (identical(metadata, incoming.metadata) &&
+        text == incoming.text &&
+        (incoming.runAttemptId != null || current.runAttemptId == null)) {
       return incoming;
     }
     return ThreadRunProjectionTimelineItem(
@@ -339,12 +402,15 @@ ThreadRunProjectionTimelineItem _mergeProjectionTimelineItem(
       at: incoming.at,
       role: incoming.role,
       agentId: incoming.agentId,
+      runAttemptId: incoming.runAttemptId ?? current.runAttemptId,
       requestId: incoming.requestId,
       streamKey: incoming.streamKey,
       metadata: metadata,
     );
   }
-  if (text == incoming.text && identical(metadata, incoming.metadata)) {
+  if (text == incoming.text &&
+      identical(metadata, incoming.metadata) &&
+      (incoming.runAttemptId != null || current.runAttemptId == null)) {
     return incoming;
   }
   return ThreadRunProjectionTimelineItem(
@@ -356,6 +422,7 @@ ThreadRunProjectionTimelineItem _mergeProjectionTimelineItem(
     at: incoming.at,
     role: incoming.role,
     agentId: incoming.agentId,
+    runAttemptId: incoming.runAttemptId ?? current.runAttemptId,
     requestId: incoming.requestId,
     streamKey: incoming.streamKey,
     metadata: metadata,
@@ -438,6 +505,7 @@ ThreadRunProjectionAgent _mergeProjectionAgent(
     parentToolUseId: incoming.parentToolUseId ?? current.parentToolUseId,
     latestActivity: incoming.latestActivity ?? current.latestActivity,
     endedAt: incoming.endedAt ?? current.endedAt,
+    runAttemptId: incoming.runAttemptId ?? current.runAttemptId,
     timeline: incoming.timeline.isEmpty
         ? current.timeline
         : _mergeProjectionTimeline(current.timeline, incoming.timeline),
@@ -471,6 +539,7 @@ ThreadRunProjectionAgent _copyProjectionAgentWithTimeline(
     parentToolUseId: agent.parentToolUseId,
     latestActivity: agent.latestActivity,
     endedAt: agent.endedAt,
+    runAttemptId: agent.runAttemptId,
     timeline: timeline,
   );
 }
@@ -487,6 +556,7 @@ ThreadRunProjectionAgent _projectionAgentFromTimeline(
     status: 'stopped',
     startedAt: first?.at ?? '',
     durationMs: 0,
+    runAttemptId: first?.runAttemptId,
     timeline: timeline,
   );
 }

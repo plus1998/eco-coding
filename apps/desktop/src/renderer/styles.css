@@ -17271,6 +17271,115 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: var(--codex-log-text);
 }
 
+.codex-main:not(.codex-main-landing) .run-log-turn {
+  width: 100%;
+  min-width: 0;
+  margin-top: 22px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn + .run-log-turn,
+.codex-main:not(.codex-main-landing) .run-log-turn-final + .run-log-turn {
+  margin-top: 28px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-toggle {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 28px;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--codex-log-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-heading {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-toggle:hover,
+.codex-main:not(.codex-main-landing) .run-log-turn-toggle:focus-visible {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-status {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-chevron {
+  flex: 0 0 auto;
+  transition: transform 180ms ease;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn.is-expanded .run-log-turn-chevron {
+  transform: rotate(90deg);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-divider {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--codex-log-line);
+  opacity: 0.72;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-process {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 140ms ease;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn.is-expanded .run-log-turn-process {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-process-inner {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--codex-feed-gap-step);
+  overflow: hidden;
+  padding-top: 12px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn.is-collapsed .run-log-turn-process-inner {
+  padding-top: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn-final {
+  margin-top: 14px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn.is-expanded .run-log-turn-final {
+  margin-top: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-main:not(.codex-main-landing) .run-log-turn-chevron,
+  .codex-main:not(.codex-main-landing) .run-log-turn-process {
+    transition: none;
+  }
+}
+
 .codex-main:not(.codex-main-landing) .run-log-feed-entry {
   margin: 0;
   width: 100%;

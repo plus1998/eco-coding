@@ -295,6 +295,7 @@ function eventToTimelineItem(
     at: event.observedAt,
     ...(event.role && { role: event.role }),
     ...(resolvedAgentId || event.agentId ? { agentId: resolvedAgentId ?? event.agentId } : {}),
+    ...(event.runAttemptId && { runAttemptId: event.runAttemptId }),
     ...(event.requestId && { requestId: event.requestId }),
     ...(event.streamKey && { streamKey: event.streamKey }),
     ...(event.metadata && { metadata: event.metadata }),

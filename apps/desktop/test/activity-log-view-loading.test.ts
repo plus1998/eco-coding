@@ -23,6 +23,7 @@ function item(
     role: input.role ?? "planner",
     text: input.text ?? "Tool: Write",
     at: input.at ?? "2026-01-01T00:00:00.000Z",
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.requestId && { requestId: input.requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
     ...(input.metadata && { metadata: input.metadata }),
@@ -49,6 +50,7 @@ function projection(input: {
   timeline: ThreadRunProjectionTimelineItem[];
   agents?: ThreadRunProjectionAgent[];
   requestSpans?: ThreadRunProjectionRequestSpan[];
+  attempts?: ThreadRunProjectionSnapshot["attempts"];
   status?: string;
 }): ThreadRunProjectionSnapshot {
   return {
@@ -57,7 +59,7 @@ function projection(input: {
       status: input.status ?? "running",
       generatedAt: "2026-01-01T00:00:00.000Z",
     },
-    attempts: [],
+    attempts: input.attempts ?? [],
     agents: input.agents ?? [],
     requestSpans: input.requestSpans ?? [],
     timeline: input.timeline,
@@ -177,6 +179,83 @@ test("ActivityLogView exposes final output copy after thread stops", () => {
 
   expect(html).toContain('aria-label="复制消息"');
   expect(html).toContain("会话停止后的最终输出。");
+});
+
+test("ActivityLogView separates a completed attempt process from its final output", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        attempts: [
+          {
+            attemptId: "attempt-1",
+            phase: "initial",
+            retryIndex: 0,
+            status: "completed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            endedAt: "2026-01-01T00:00:04.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "process-message",
+            sequence: 1,
+            eventType: "message.final",
+            runAttemptId: "attempt-1",
+            text: "先检查事件投影。",
+            at: "2026-01-01T00:00:01.000Z",
+          }),
+          item({
+            id: "final-message",
+            sequence: 2,
+            eventType: "message.final",
+            runAttemptId: "attempt-1",
+            text: "Feed 已完成整理。",
+            at: "2026-01-01T00:00:04.000Z",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已处理 4.0s");
+  expect(html).toContain('class="run-log-turn is-completed is-collapsed"');
+  expect(html).toContain('class="run-log-turn-process"');
+  expect(html).toContain('aria-label="执行过程" aria-hidden="true"');
+  expect(html).toContain('class="run-log-turn-final" aria-label="最终输出"');
+  expect(html.indexOf("先检查事件投影。")).toBeLessThan(html.indexOf("run-log-turn-final"));
+  expect(html.indexOf("run-log-turn-final")).toBeLessThan(html.indexOf("Feed 已完成整理。"));
+});
+
+test("ActivityLogView keeps a running attempt process expanded without final output", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        attempts: [
+          {
+            attemptId: "attempt-running",
+            phase: "follow_up",
+            retryIndex: 0,
+            status: "running",
+            startedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "running-message",
+            eventType: "message.final",
+            runAttemptId: "attempt-running",
+            text: "正在检查剩余文件。",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("处理中");
+  expect(html).toContain('class="run-log-turn is-running is-expanded"');
+  expect(html).toContain('aria-label="执行过程" aria-hidden="false"');
+  expect(html).not.toContain('class="run-log-turn-final"');
 });
 
 test("ActivityLogView keeps thinking content lightweight", () => {

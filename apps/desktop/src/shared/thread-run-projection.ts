@@ -51,6 +51,7 @@ export interface ThreadRunProjectionTimelineItem {
   scope: ThreadRunEventScope;
   role?: string;
   agentId?: string;
+  runAttemptId?: string;
   requestId?: string;
   streamKey?: string;
   text: string;

@@ -2501,6 +2501,63 @@ test("buildThreadRunProjectionViewModel groups adjacent bash calls into a tool s
   }
 });
 
+test("empty terminal thinking does not split adjacent tool summaries", () => {
+  const tool = (id: string, sequence: number, path: string) =>
+    item({
+      id,
+      sequence,
+      eventType: "tool.completed",
+      role: "tool",
+      text: `Tool: Read · ${path}`,
+      at: `2026-01-01T00:00:0${sequence}.000Z`,
+      metadata: {
+        tool: {
+          name: "Read",
+          detail: path,
+          toolUseId: `toolu_${id}`,
+          status: "completed",
+        },
+      },
+    });
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        tool("read-a", 1, "src/a.ts"),
+        item({
+          id: "empty-reasoning",
+          sequence: 2,
+          eventType: "thinking.final",
+          role: "thinking",
+          text: "",
+          at: "2026-01-01T00:00:02.000Z",
+          metadata: { thinkingDurationMs: 0 },
+        }),
+        tool("read-b", 3, "src/b.ts"),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("tool-group");
+  if (view.mainFeedEntries[0]?.kind === "tool-group") {
+    expect(view.mainFeedEntries[0].entries.map((entry) => entry.item.id)).toEqual([
+      "read-a",
+      "read-b",
+    ]);
+  }
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "empty-reasoning-detail",
+        eventType: "thinking.final",
+        role: "thinking",
+        text: "",
+        metadata: { thinkingDurationMs: 0 },
+      }),
+    ),
+  ).toBeUndefined();
+});
+
 test("buildThreadRunProjectionViewModel keeps a growing file tool group key stable", () => {
   const fileTool = (id: string, sequence: number, name: "Read" | "Edit", detail: string) =>
     item({

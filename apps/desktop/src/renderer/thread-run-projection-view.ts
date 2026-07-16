@@ -435,7 +435,9 @@ function filterProjectionTimelineForDetailFeed(
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
   const displayTimeline = collapsePromptCacheTimelineItems(
-    buildProjectionDisplayTimelineItems(timeline, requestSpansById),
+    buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
+      (item) => !isEmptyTerminalThinkingItem(item),
+    ),
   );
   const requestsWithStreamRows = new Set(
     displayTimeline
@@ -500,6 +502,10 @@ function filterProjectionTimelineForDetailFeed(
       }),
     ),
   );
+}
+
+function isEmptyTerminalThinkingItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return item.eventType === "thinking.final" && item.text.trim().length === 0;
 }
 
 function filterProjectionToolProgressNoiseItems(
@@ -813,6 +819,9 @@ function markThinkingRequestDurationFallback(
   const thinkingCountByRequestId = new Map<string, number>();
   for (const item of displayItems) {
     if (item.eventType !== "thinking.delta" && item.eventType !== "thinking.final") {
+      continue;
+    }
+    if (!item.text.trim()) {
       continue;
     }
     const requestId = resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
@@ -2002,6 +2011,9 @@ export function projectionItemToDetailBlock(
   }
 
   if (item.eventType === "thinking.delta" || item.eventType === "thinking.final") {
+    if (!text && item.eventType === "thinking.final") {
+      return undefined;
+    }
     const thinkingDurationMs = readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs);
     const requestDurationFallbackAllowed =
       item.metadata?.thinkingRequestDurationFallbackAllowed !== false;

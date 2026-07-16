@@ -169,6 +169,27 @@ void main() {
     expect(tool['output'], 'full output');
     expect(tool['fileChange'], isA<Map<String, dynamic>>());
   });
+
+  test('projection merges preserve attempt ownership', () {
+    final current = _projection(
+      sourceEventCount: 1,
+      timeline: [
+        _item('message-1', 1, scope: 'main', runAttemptId: 'attempt-1'),
+      ],
+      agents: [_agent(runAttemptId: 'attempt-1')],
+    );
+    final incoming = _projection(
+      sourceEventCount: 2,
+      generatedAt: '2026-01-01T00:00:01.000Z',
+      timeline: [_item('message-1', 1, scope: 'main')],
+      agents: [_agent()],
+    );
+
+    final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+
+    expect(merged.timeline.single.runAttemptId, 'attempt-1');
+    expect(merged.agents.single.runAttemptId, 'attempt-1');
+  });
 }
 
 ThreadRunProjectionSnapshot _projection({
@@ -189,6 +210,7 @@ ThreadRunProjectionSnapshot _projection({
 
 ThreadRunProjectionAgent _agent({
   List<ThreadRunProjectionTimelineItem> timeline = const [],
+  String? runAttemptId,
 }) {
   return ThreadRunProjectionAgent(
     agentId: 'agent_1',
@@ -197,6 +219,7 @@ ThreadRunProjectionAgent _agent({
     status: 'active',
     startedAt: '2026-01-01T00:00:00.000Z',
     durationMs: 1,
+    runAttemptId: runAttemptId,
     timeline: timeline,
   );
 }
@@ -209,6 +232,7 @@ ThreadRunProjectionTimelineItem _item(
   String text = 'text',
   String? role,
   String? agentId,
+  String? runAttemptId,
   Map<String, dynamic>? metadata,
 }) {
   return ThreadRunProjectionTimelineItem(
@@ -220,6 +244,7 @@ ThreadRunProjectionTimelineItem _item(
     at: '2026-01-01T00:00:00.000Z',
     role: role,
     agentId: agentId,
+    runAttemptId: runAttemptId,
     metadata: metadata,
   );
 }

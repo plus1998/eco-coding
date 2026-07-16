@@ -44,6 +44,7 @@ TextStyle? activityFeedBodyStyle(
 }
 
 enum ActivityFeedKind {
+  turn,
   user,
   clarificationAnswer,
   assistant,
@@ -78,6 +79,12 @@ class ActivityFeedEntry {
     this.reconnecting = false,
     this.actionChildren = const [],
     this.attachments = const [],
+    this.runAttemptId,
+    this.at,
+    this.startedAt,
+    this.endedAt,
+    this.processEntries = const [],
+    this.finalOutput,
   });
 
   final String id;
@@ -101,6 +108,12 @@ class ActivityFeedEntry {
   final bool reconnecting;
   final List<ActivityFeedEntry> actionChildren;
   final List<PromptImageAttachment> attachments;
+  final String? runAttemptId;
+  final String? at;
+  final String? startedAt;
+  final String? endedAt;
+  final List<ActivityFeedEntry> processEntries;
+  final ActivityFeedEntry? finalOutput;
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -116,7 +129,7 @@ List<ActivityFeedEntry> buildActivityFeed({
   if (!isProjectionFeedReady(runProjection)) {
     return const [];
   }
-  return groupActivityFeedActionEntries(
+  final groupedActions = groupActivityFeedActionEntries(
     buildProjectionActivityFeed(
       projection: runProjection!,
       threadPrompt: threadPrompt,
@@ -124,6 +137,7 @@ List<ActivityFeedEntry> buildActivityFeed({
       subagentSessions: subagentSessions,
     ),
   );
+  return groupProjectionActivityFeedTurns(groupedActions, runProjection);
 }
 
 List<ActivityFeedEntry> groupActivityFeedActionEntries(
@@ -143,6 +157,10 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
 
   for (final entry in entries) {
     if (entry.kind == ActivityFeedKind.action) {
+      final pendingAttemptId = pending.firstOrNull?.runAttemptId;
+      if (pending.isNotEmpty && pendingAttemptId != entry.runAttemptId) {
+        flush();
+      }
       if (entry.bashRun != null) {
         flush();
         grouped.add(entry);
@@ -169,7 +187,18 @@ ActivityFeedEntry _buildActionGroupEntry(List<ActivityFeedEntry> entries) {
     actionIcon: summary.icon,
     lifecycle: _resolveActionGroupLifecycle(entries),
     actionChildren: List<ActivityFeedEntry>.unmodifiable(entries),
+    runAttemptId: _sharedRunAttemptId(entries),
+    at: first.at,
   );
+}
+
+String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
+  final ids = entries
+      .map((entry) => entry.runAttemptId?.trim())
+      .whereType<String>()
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  return ids.length == 1 ? ids.single : null;
 }
 
 ({String label, ActivityActionIcon icon}) _summarizeActionEntries(
@@ -324,6 +353,8 @@ bool shouldFollowStreamingTail({
 
 bool isValidContentAfterThinking(ActivityFeedEntry entry) {
   switch (entry.kind) {
+    case ActivityFeedKind.turn:
+      return true;
     case ActivityFeedKind.thinking:
     case ActivityFeedKind.phase:
       return false;
@@ -378,6 +409,9 @@ String _activityFeedEntrySignature(ActivityFeedEntry entry) {
   final childSignature = entry.actionChildren
       .map((child) => '${child.id}:${child.text.length}:${child.lifecycle}')
       .join(',');
+  final processSignature = entry.processEntries
+      .map((child) => '${child.id}:${child.text.length}:${child.streaming}')
+      .join(',');
   return [
     entry.id,
     entry.text.length,
@@ -385,6 +419,11 @@ String _activityFeedEntrySignature(ActivityFeedEntry entry) {
     entry.lifecycle,
     entry.actionChildren.length,
     childSignature,
+    entry.running,
+    entry.durationMs,
+    processSignature,
+    entry.finalOutput?.id ?? '',
+    entry.finalOutput?.text.length ?? 0,
   ].join(':');
 }
 
@@ -627,6 +666,13 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     switch (entry.kind) {
+      case ActivityFeedKind.turn:
+        return _TurnFeedTile(
+          entry: entry,
+          agentProfile: agentProfile,
+          onOpenAgentDetail: onOpenAgentDetail,
+          onOpenToolDetail: onOpenToolDetail,
+        );
       case ActivityFeedKind.user:
         return _UserPromptTile(
           text: entry.text,
@@ -683,6 +729,170 @@ class _ActivityFeedEntryTile extends StatelessWidget {
       case ActivityFeedKind.error:
         return _ErrorTile(text: entry.text);
     }
+  }
+}
+
+class _TurnFeedTile extends StatefulWidget {
+  const _TurnFeedTile({
+    required this.entry,
+    this.agentProfile,
+    this.onOpenAgentDetail,
+    this.onOpenToolDetail,
+  });
+
+  final ActivityFeedEntry entry;
+  final OrchestrationProfile? agentProfile;
+  final ActivityFeedEntryCallback? onOpenAgentDetail;
+  final ActivityFeedEntryCallback? onOpenToolDetail;
+
+  @override
+  State<_TurnFeedTile> createState() => _TurnFeedTileState();
+}
+
+class _TurnFeedTileState extends State<_TurnFeedTile> {
+  late bool _expanded;
+  late int _durationMs;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.entry.running;
+    _durationMs = _resolveDurationMs();
+    _syncTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TurnFeedTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.id != widget.entry.id) {
+      _expanded = widget.entry.running;
+    } else if (oldWidget.entry.running && !widget.entry.running) {
+      _expanded = false;
+    }
+    _durationMs = _resolveDurationMs();
+    _syncTimer();
+  }
+
+  int _resolveDurationMs() {
+    final startedAt = DateTime.tryParse(widget.entry.startedAt ?? '');
+    final endedAt = DateTime.tryParse(widget.entry.endedAt ?? '');
+    if (startedAt == null) return widget.entry.durationMs;
+    final end = endedAt ?? DateTime.now();
+    return end.difference(startedAt).inMilliseconds.clamp(0, 1 << 31);
+  }
+
+  void _syncTimer() {
+    _timer?.cancel();
+    _timer = null;
+    if (!widget.entry.running) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _durationMs = _resolveDurationMs());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final duration = _durationMs > 0 ? formatDurationMs(_durationMs) : '';
+    final status = widget.entry.running ? '处理中' : '已处理';
+    final process = widget.entry.processEntries;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            expanded: _expanded,
+            label: widget.entry.running ? '执行过程' : '本轮执行结果',
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          duration.isEmpty ? status : '$status $duration',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: eco.textMuted,
+                                fontWeight: FontWeight.w500,
+                              ),
+                        ),
+                        const SizedBox(width: 3),
+                        AnimatedRotation(
+                          turns: _expanded ? 0.25 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: eco.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Divider(height: 1, color: eco.borderSubtle),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          ClipRect(
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: _expanded
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 7),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final child in process)
+                            _ActivityFeedEntryTile(
+                              key: ValueKey(child.id),
+                              entry: child,
+                              agentProfile: widget.agentProfile,
+                              onOpenAgentDetail: widget.onOpenAgentDetail,
+                              onOpenToolDetail: widget.onOpenToolDetail,
+                            ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+          if (widget.entry.finalOutput != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 9),
+              child: Semantics(
+                label: '最终输出',
+                child: _ActivityFeedEntryTile(
+                  entry: widget.entry.finalOutput!,
+                  agentProfile: widget.agentProfile,
+                  onOpenAgentDetail: widget.onOpenAgentDetail,
+                  onOpenToolDetail: widget.onOpenToolDetail,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

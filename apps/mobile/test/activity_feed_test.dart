@@ -93,6 +93,277 @@ void main() {
     ]);
   });
 
+  test('groupActivityFeedActionEntries never merges different attempts', () {
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'read-attempt-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/first.dart',
+        runAttemptId: 'attempt-1',
+      ),
+      ActivityFeedEntry(
+        id: 'read-attempt-2',
+        kind: ActivityFeedKind.action,
+        text: 'lib/second.dart',
+        runAttemptId: 'attempt-2',
+      ),
+    ]);
+
+    expect(grouped, hasLength(2));
+    expect(grouped.map((entry) => entry.runAttemptId), [
+      'attempt-1',
+      'attempt-2',
+    ]);
+  });
+
+  test('empty terminal thinking does not split adjacent tool summaries', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:03.000Z',
+        sourceEventCount: 3,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'read-a',
+            sequence: 1,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: Read · lib/a.dart',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: {
+              'tool': {
+                'name': 'Read',
+                'detail': 'lib/a.dart',
+                'toolUseId': 'toolu_read_a',
+                'status': 'completed',
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'empty-reasoning',
+            sequence: 2,
+            eventType: 'thinking.final',
+            scope: 'main',
+            role: 'thinking',
+            text: '',
+            at: '2026-01-01T00:00:02.000Z',
+            metadata: {'thinkingDurationMs': 0},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'read-b',
+            sequence: 3,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: Read · lib/b.dart',
+            at: '2026-01-01T00:00:03.000Z',
+            metadata: {
+              'tool': {
+                'name': 'Read',
+                'detail': 'lib/b.dart',
+                'toolUseId': 'toolu_read_b',
+                'status': 'completed',
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.kind, ActivityFeedKind.actionGroup);
+    expect(feed.single.actionChildren.map((entry) => entry.id), [
+      'main:lifecycle:toolu_read_a',
+      'main:lifecycle:toolu_read_b',
+    ]);
+    expect(
+      feed.any((entry) => entry.kind == ActivityFeedKind.thinking),
+      isFalse,
+    );
+  });
+
+  test('completed attempt separates process from final output', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '修复 Feed',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:04.000Z',
+        sourceEventCount: 4,
+        agents: [],
+        attempts: [
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-1',
+            phase: 'initial',
+            retryIndex: 0,
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:04.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'user-1',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            runAttemptId: 'attempt-1',
+            text: '修复 Feed',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: {'liveType': 'thread.user_prompt'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'narrative-1',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            runAttemptId: 'attempt-1',
+            text: '我先检查投影数据。',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'tool-1',
+            sequence: 3,
+            eventType: 'tool.completed',
+            scope: 'main',
+            runAttemptId: 'attempt-1',
+            text: 'Tool: Read · lib/feed.dart',
+            at: '2026-01-01T00:00:02.000Z',
+            metadata: {
+              'tool': {
+                'name': 'Read',
+                'detail': 'lib/feed.dart',
+                'status': 'completed',
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'final-1',
+            sequence: 4,
+            eventType: 'message.final',
+            scope: 'main',
+            runAttemptId: 'attempt-1',
+            text: 'Feed 已按轮次完成整理。',
+            at: '2026-01-01T00:00:04.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.first.kind, ActivityFeedKind.user);
+    final turn = feed.singleWhere(
+      (entry) => entry.kind == ActivityFeedKind.turn,
+    );
+    expect(turn.running, isFalse);
+    expect(turn.finalOutput?.text, 'Feed 已按轮次完成整理。');
+    expect(
+      turn.processEntries.map((entry) => entry.text),
+      contains('我先检查投影数据。'),
+    );
+    expect(
+      turn.processEntries.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.action ||
+            entry.kind == ActivityFeedKind.actionGroup,
+      ),
+      isTrue,
+    );
+    expect(turn.processEntries.any((entry) => entry.id == 'final-1'), isFalse);
+  });
+
+  test('running attempt keeps all assistant output in process', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:02.000Z',
+        sourceEventCount: 1,
+        agents: [],
+        attempts: [
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-running',
+            phase: 'follow_up',
+            retryIndex: 0,
+            status: 'running',
+            startedAt: '2026-01-01T00:00:00.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'message-running',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            runAttemptId: 'attempt-running',
+            text: '正在检查剩余文件。',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+        ],
+      ),
+    );
+
+    final turn = feed.single;
+    expect(turn.kind, ActivityFeedKind.turn);
+    expect(turn.running, isTrue);
+    expect(turn.finalOutput, isNull);
+    expect(turn.processEntries.single.text, '正在检查剩余文件。');
+  });
+
+  testWidgets(
+    'completed turn collapses process and keeps final output visible',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              scrollController: controller,
+              shrinkWrap: true,
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'turn-1',
+                  kind: ActivityFeedKind.turn,
+                  text: '',
+                  durationMs: 2000,
+                  processEntries: [
+                    ActivityFeedEntry(
+                      id: 'process-1',
+                      kind: ActivityFeedKind.assistant,
+                      text: '执行过程正文',
+                    ),
+                  ],
+                  finalOutput: ActivityFeedEntry(
+                    id: 'final-1',
+                    kind: ActivityFeedKind.assistant,
+                    text: '最终输出正文',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('已处理'), findsOneWidget);
+      expect(find.text('最终输出正文'), findsOneWidget);
+      expect(find.text('执行过程正文'), findsNothing);
+
+      await tester.tap(find.textContaining('已处理'));
+      await tester.pumpAndSettle();
+      expect(find.text('执行过程正文'), findsOneWidget);
+    },
+  );
+
   test(
     'groupActivityFeedActionEntries keeps Bash cards out of action groups',
     () {

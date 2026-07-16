@@ -34,6 +34,115 @@ class _ProjectionSubagentCard {
   final String? statusText;
 }
 
+class _MutableProjectionTurn {
+  _MutableProjectionTurn(this.attempt);
+
+  final ThreadRunProjectionAttempt attempt;
+  final entries = <ActivityFeedEntry>[];
+}
+
+List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
+  List<ActivityFeedEntry> entries,
+  ThreadRunProjectionSnapshot projection,
+) {
+  if (projection.attempts.isEmpty) return entries;
+  final attempts = [...projection.attempts]
+    ..sort((left, right) => left.startedAt.compareTo(right.startedAt));
+  final attemptById = {
+    for (final attempt in attempts) attempt.attemptId: attempt,
+  };
+  final output = <Object>[];
+  final mutableById = <String, _MutableProjectionTurn>{};
+
+  for (final entry in entries) {
+    if (entry.kind == ActivityFeedKind.user) {
+      output.add(entry);
+      continue;
+    }
+    final attempt = _resolveFeedEntryAttempt(entry, attempts, attemptById);
+    if (attempt == null) {
+      output.add(entry);
+      continue;
+    }
+    final turn = mutableById.putIfAbsent(attempt.attemptId, () {
+      final created = _MutableProjectionTurn(attempt);
+      output.add(created);
+      return created;
+    });
+    turn.entries.add(entry);
+  }
+
+  return output.map((value) {
+    if (value is ActivityFeedEntry) return value;
+    final turn = value as _MutableProjectionTurn;
+    final finalOutput = turn.attempt.isRunning
+        ? null
+        : _resolveFinalProjectionOutput(turn.entries);
+    final processEntries = finalOutput == null
+        ? turn.entries
+        : turn.entries.where((entry) => entry.id != finalOutput.id).toList();
+    final startedAt = DateTime.tryParse(turn.attempt.startedAt);
+    final endedAt = DateTime.tryParse(turn.attempt.endedAt ?? '');
+    final durationMs = startedAt == null
+        ? 0
+        : (endedAt ?? DateTime.now())
+              .difference(startedAt)
+              .inMilliseconds
+              .clamp(0, 1 << 31);
+    return ActivityFeedEntry(
+      id: 'turn:${turn.attempt.attemptId}',
+      kind: ActivityFeedKind.turn,
+      text: '',
+      runAttemptId: turn.attempt.attemptId,
+      running: turn.attempt.isRunning,
+      durationMs: durationMs,
+      startedAt: turn.attempt.startedAt,
+      endedAt: turn.attempt.endedAt,
+      processEntries: List<ActivityFeedEntry>.unmodifiable(processEntries),
+      finalOutput: finalOutput,
+    );
+  }).toList();
+}
+
+ThreadRunProjectionAttempt? _resolveFeedEntryAttempt(
+  ActivityFeedEntry entry,
+  List<ThreadRunProjectionAttempt> attempts,
+  Map<String, ThreadRunProjectionAttempt> attemptById,
+) {
+  final explicitId = entry.runAttemptId?.trim();
+  if (explicitId != null && explicitId.isNotEmpty) {
+    final explicit = attemptById[explicitId];
+    if (explicit != null) return explicit;
+  }
+  final at = entry.at;
+  if (at == null || at.isEmpty) return null;
+  ThreadRunProjectionAttempt? candidate;
+  for (final attempt in attempts) {
+    if (attempt.startedAt.compareTo(at) > 0) break;
+    candidate = attempt;
+  }
+  return candidate;
+}
+
+ActivityFeedEntry? _resolveFinalProjectionOutput(
+  List<ActivityFeedEntry> entries,
+) {
+  for (var index = entries.length - 1; index >= 0; index -= 1) {
+    final entry = entries[index];
+    if (entry.kind == ActivityFeedKind.assistant &&
+        !entry.streaming &&
+        entry.agentId == null &&
+        entry.text.trim().isNotEmpty) {
+      return entry;
+    }
+  }
+  for (var index = entries.length - 1; index >= 0; index -= 1) {
+    final entry = entries[index];
+    if (entry.kind == ActivityFeedKind.error) return entry;
+  }
+  return null;
+}
+
 List<ActivityFeedEntry> buildProjectionActivityFeed({
   required ThreadRunProjectionSnapshot projection,
   String? threadPrompt,
@@ -57,6 +166,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           id: 'user-prompt-${threadId ?? projection.threadId}',
           kind: ActivityFeedKind.user,
           text: prompt,
+          at: '1970-01-01T00:00:00.000Z',
         ),
         at: '1970-01-01T00:00:00.000Z',
         sequence: 0,
@@ -73,6 +183,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           kind: ActivityFeedKind.user,
           text: item.text.trim(),
           attachments: _promptImagePreviews(item),
+          at: item.at,
         ),
         at: item.at,
         sequence: item.sequence,
@@ -101,6 +212,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           parentToolUseId: agent.parentToolUseId,
           latestActivity: agent.latestActivity,
           endedAt: agent.endedAt,
+          runAttemptId: agent.runAttemptId,
         );
         final missionText = resolveSubagentCardMissionText(
           agent,
@@ -164,6 +276,8 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           durationMs: durationMs,
           statusText: card.statusText ?? (running ? '工作中' : null),
           timeline: timeline,
+          runAttemptId: agent.runAttemptId,
+          at: agent.startedAt,
         ),
         at: agent.startedAt,
         sequence: card.displayTimeline.firstOrNull?.sequence ?? 0,
@@ -215,7 +329,12 @@ ActivityFeedEntry? _buildProjectionFeedEntry(
     rawMainTimeline,
     agentId: agentId,
   );
-  return _projectionItemToFeedEntry(item, feedId: feedId, agentRole: agentRole);
+  return _projectionItemToFeedEntry(
+    item,
+    feedId: feedId,
+    agentRole: agentRole,
+    agentId: agentId,
+  );
 }
 
 String _projectionMainFeedEntryKey(
@@ -768,6 +887,7 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
     at: item.at,
     role: item.role,
     agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
     requestId: item.requestId,
     streamKey: item.streamKey,
     metadata: item.metadata,
@@ -1073,6 +1193,7 @@ ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
     at: item.at,
     role: item.role,
     agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
     requestId: item.requestId,
     streamKey: item.streamKey,
     metadata: item.metadata,
@@ -1136,6 +1257,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   ThreadRunProjectionTimelineItem item, {
   required String feedId,
   String? agentRole,
+  String? agentId,
 }) {
   final text = item.text.trim();
   final reconnect = resolveReconnectPhaseDisplay(
@@ -1150,6 +1272,8 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       text: reconnect.summary,
       detail: reconnect.detail,
       reconnecting: true,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
     );
   }
 
@@ -1170,6 +1294,8 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
         id: feedId,
         kind: ActivityFeedKind.clarificationAnswer,
         text: item.text,
+        runAttemptId: item.runAttemptId,
+        at: item.at,
       );
     }
     return ActivityFeedEntry(
@@ -1178,16 +1304,23 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       text: item.text,
       streaming: item.eventType == 'message.delta',
       subagentRole: agentRole ?? _resolveProjectionSubagentRole(item),
+      agentId: agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
     );
   }
 
   if (item.eventType == 'thinking.delta' ||
       item.eventType == 'thinking.final') {
+    if (text.isEmpty && item.eventType == 'thinking.final') return null;
     return ActivityFeedEntry(
       id: feedId,
       kind: ActivityFeedKind.thinking,
       text: item.text,
       streaming: item.eventType == 'thinking.delta',
+      agentId: agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
     );
   }
 
@@ -1203,6 +1336,9 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       id: feedId,
       kind: ActivityFeedKind.error,
       text: apiError?.message ?? text,
+      agentId: agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
     );
   }
 
@@ -1212,6 +1348,8 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       id: feedId,
       kind: ActivityFeedKind.phase,
       text: phaseLabel,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
     );
   }
 
@@ -1266,6 +1404,8 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
           )
         : null,
     fileChange: fileChange,
+    runAttemptId: item.runAttemptId,
+    at: item.at,
   );
 }
 
@@ -1547,6 +1687,9 @@ String? _projectionStreamDisplayKey(
   }
   if (streamKey != null && streamKey.isNotEmpty) {
     return _appendStreamScopeSuffix('$channel:sk:$streamKey', item, requestId);
+  }
+  if (item.eventType == 'message.final' || item.eventType == 'thinking.final') {
+    return '$channel:${item.id}';
   }
   final ownerKey = _projectionOwnerKey(item);
   if (ownerKey != null) {

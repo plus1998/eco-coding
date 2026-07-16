@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Bot,
   ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   Copy,
   Database,
@@ -102,6 +103,10 @@ import {
   type ThreadRunProjectionTimelineFeedEntry,
   type ThreadRunProjectionToolGroupFeedEntry,
 } from "./thread-run-projection-view";
+import {
+  buildThreadRunTurnFeedSections,
+  type ThreadRunTurnFeedSection,
+} from "./thread-run-turn-feed";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
@@ -388,10 +393,21 @@ function ProjectionActivityLogView({
     [agentDisplayNames, projection, thread?.id, thread?.prompt],
   );
   const showThreadPrompt = viewModel.showThreadPrompt;
-  const finalSummaryItemIds = useMemo(
-    () => resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status),
-    [projection.thread.status, viewModel.mainFeedEntries],
+  const feedSections = useMemo(
+    () => buildThreadRunTurnFeedSections(viewModel.mainFeedEntries, projection),
+    [projection, viewModel.mainFeedEntries],
   );
+  const finalSummaryItemIds = useMemo(() => {
+    const ids = new Set(
+      resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status),
+    );
+    for (const section of feedSections) {
+      if (section.kind === "turn" && section.finalEntry?.kind === "timeline") {
+        ids.add(section.finalEntry.item.id);
+      }
+    }
+    return ids;
+  }, [feedSections, projection.thread.status, viewModel.mainFeedEntries]);
   const stickyFinalSummaryItemId = useMemo(() => {
     let itemId: string | undefined;
     for (const entry of viewModel.mainFeedEntries) {
@@ -443,23 +459,133 @@ function ProjectionActivityLogView({
               />,
             )
           : null}
-        {viewModel.mainFeedEntries.map((entry) => (
-          <ProjectionMainFeedEntry
-            key={entry.key}
-            entry={entry}
-            requestSpansById={requestSpansById}
-            finalSummaryItemIds={finalSummaryItemIds}
-            {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
-            {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
-            {...(onOpenSubagent && { onOpenSubagent })}
-            {...(agentDisplayNames && { agentDisplayNames })}
-            {...(agentThemes && { agentThemes })}
-            {...(onRestorePrompt && { onRestorePrompt })}
-          />
-        ))}
+        {feedSections.map((section) =>
+          section.kind === "turn" ? (
+            <ProjectionTurnFeedSection
+              key={section.key}
+              section={section}
+              requestSpansById={requestSpansById}
+              finalSummaryItemIds={finalSummaryItemIds}
+              {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
+              {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+              {...(onOpenSubagent && { onOpenSubagent })}
+              {...(agentDisplayNames && { agentDisplayNames })}
+              {...(agentThemes && { agentThemes })}
+              {...(onRestorePrompt && { onRestorePrompt })}
+            />
+          ) : (
+            <ProjectionMainFeedEntry
+              key={section.key}
+              entry={section.entry}
+              requestSpansById={requestSpansById}
+              finalSummaryItemIds={finalSummaryItemIds}
+              {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
+              {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+              {...(onOpenSubagent && { onOpenSubagent })}
+              {...(agentDisplayNames && { agentDisplayNames })}
+              {...(agentThemes && { agentThemes })}
+              {...(onRestorePrompt && { onRestorePrompt })}
+            />
+          ),
+        )}
       </div>
     </ActivityFeedLayoutContext.Provider>
   );
+}
+
+type ProjectionFeedEntrySharedProps = {
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  finalSummaryItemIds: ReadonlySet<string>;
+  stickyFinalSummaryItemId?: string;
+  selectedSubagentAgentId?: string;
+  onOpenSubagent?: OpenSubagentHandler;
+  onRestorePrompt?: RestorePromptHandler;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
+};
+
+function ProjectionTurnFeedSection({
+  section,
+  ...entryProps
+}: ProjectionFeedEntrySharedProps & {
+  section: Extract<ThreadRunTurnFeedSection, { kind: "turn" }>;
+}) {
+  const onLayoutChange = useActivityFeedLayoutChange();
+  const [expanded, setExpanded] = useState(section.running);
+  const previousRunningRef = useRef(section.running);
+  const durationMs = useTurnDurationMs(section.attempt.startedAt, section.attempt.endedAt, section.running);
+  const contentId = `turn-process-${section.attempt.attemptId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
+  useEffect(() => {
+    if (previousRunningRef.current && !section.running) {
+      setExpanded(false);
+    }
+    previousRunningRef.current = section.running;
+  }, [section.running]);
+
+  useLayoutEffect(() => {
+    onLayoutChange?.({ immediate: true });
+  }, [expanded, onLayoutChange]);
+
+  return (
+    <section
+      className={[
+        "run-log-turn",
+        section.running ? "is-running" : "is-completed",
+        expanded ? "is-expanded" : "is-collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label={section.running ? "执行过程" : "本轮执行结果"}
+    >
+      <button
+        type="button"
+        className="run-log-turn-toggle"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-controls={contentId}
+      >
+        <span className="run-log-turn-heading">
+          <span className="run-log-turn-status">
+            {section.running ? "处理中" : "已处理"}
+            {durationMs > 0 ? ` ${formatDuration(durationMs)}` : ""}
+          </span>
+          <ChevronRight size={15} className="run-log-turn-chevron" aria-hidden />
+        </span>
+        <span className="run-log-turn-divider" aria-hidden />
+      </button>
+      <div id={contentId} className="run-log-turn-process" aria-label="执行过程" aria-hidden={!expanded}>
+        <div className="run-log-turn-process-inner">
+          {section.processEntries.map((entry) => (
+            <ProjectionMainFeedEntry key={entry.key} entry={entry} {...entryProps} />
+          ))}
+        </div>
+      </div>
+      {section.finalEntry ? (
+        <div className="run-log-turn-final" aria-label="最终输出">
+          <ProjectionMainFeedEntry entry={section.finalEntry} {...entryProps} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function useTurnDurationMs(startedAt: string, endedAt: string | undefined, running: boolean): number {
+  const resolve = useCallback(() => {
+    const startMs = Date.parse(startedAt);
+    const endMs = endedAt ? Date.parse(endedAt) : Date.now();
+    return Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, endMs - startMs) : 0;
+  }, [endedAt, startedAt]);
+  const [durationMs, setDurationMs] = useState(resolve);
+
+  useEffect(() => {
+    setDurationMs(resolve());
+    if (!running) return;
+    const timer = setInterval(() => setDurationMs(resolve()), 1000);
+    return () => clearInterval(timer);
+  }, [resolve, running]);
+
+  return durationMs;
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
@@ -2112,26 +2238,12 @@ function ShimmerText({ children }: { children: string }) {
 
 function WaitingThinkingBlock({
   active,
-  requestSpan,
 }: {
   active?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
-  const durationMs = resolveRequestDurationMs(requestSpan);
-
   if (!active) {
-    if (!durationMs) {
-      return null;
-    }
-    return (
-      <div className="run-log-thinking is-collapsed">
-        <div className="run-log-thinking-header">
-          <span className="run-log-thinking-label">
-            思考<span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
-          </span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
