@@ -118,7 +118,9 @@ import {
   listSdkReadyProjectSkills,
   parseExplicitSkillNames,
   promptIncludesSkillName,
+  type SkillCatalogEntry,
   type SkillInfo,
+  type SkillLayout,
 } from "../shared/skills";
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
@@ -2288,13 +2290,22 @@ function App() {
     () => listSdkReadyProjectSkills(skillsSnapshot?.projectSkills ?? []),
     [skillsSnapshot?.projectSkills],
   );
+  const codexNativeSkills = useMemo(
+    () =>
+      dedupeSkillsByName(
+        [...(skillsSnapshot?.userSkills ?? []), ...(skillsSnapshot?.projectSkills ?? [])].filter(
+          (skill) => skill.layout === "agents" || skill.layout === "codex",
+        ),
+      ),
+    [skillsSnapshot?.projectSkills, skillsSnapshot?.userSkills],
+  );
   const slashPickerSkills = useMemo(
     () => dedupeSkillsByName([
       ...userSkills,
       ...projectSdkReadySkills,
-      ...(composerCoreKind === "codex" ? skillsSnapshot?.agentsOnlySkills ?? [] : []),
+      ...(composerCoreKind === "codex" ? codexNativeSkills : []),
     ]),
-    [composerCoreKind, projectSdkReadySkills, skillsSnapshot?.agentsOnlySkills, userSkills],
+    [codexNativeSkills, composerCoreKind, projectSdkReadySkills, userSkills],
   );
   const composerSupportsSkills = true;
   const projectAgentsOnly = useMemo(
@@ -3945,6 +3956,30 @@ function App() {
     }
   }
 
+  async function uninstallSkill(skill: SkillInfo) {
+    if (!window.eco) {
+      throw new Error("Desktop bridge is unavailable.");
+    }
+    await window.eco.uninstallSkill({ directory: skill.directory });
+    await refreshSkillsList(currentProjectPath);
+  }
+
+  async function searchSkillsCatalog(query: string) {
+    if (!window.eco) throw new Error("Desktop bridge is unavailable.");
+    return window.eco.searchSkillsCatalog({ query, limit: 20 });
+  }
+
+  async function loadSkillsCatalogLeaderboard() {
+    if (!window.eco) throw new Error("Desktop bridge is unavailable.");
+    return window.eco.listSkillsCatalogLeaderboard(12);
+  }
+
+  async function installCatalogSkill(entry: SkillCatalogEntry, layout: SkillLayout) {
+    if (!window.eco) throw new Error("Desktop bridge is unavailable.");
+    await window.eco.installCatalogSkill({ source: entry.source, skillId: entry.skillId, layout });
+    await refreshSkillsList(currentProjectPath);
+  }
+
   function openModelsSettings(tab: ModelsSettingsTab = "subagents") {
     setModelsSettingsTab(tab);
     setSettingsSection("models");
@@ -5031,7 +5066,7 @@ function App() {
       </button>
     </div>
   ) : null;
-  const fixedSidebarToolbar = showWorkspacePanel ? (
+  const fixedSidebarToolbar = showWorkspacePanel && !settingsOpen ? (
     <div className="codex-fixed-sidebar-toolbar" aria-label="侧边栏控制">
       <button
         type="button"
@@ -5941,6 +5976,10 @@ function App() {
                   {...(skillsSnapshot && { snapshot: skillsSnapshot })}
                   loading={isLoadingSkills}
                   onRefresh={() => void refreshSkillsList()}
+                  onUninstall={uninstallSkill}
+                  onLoadCatalogLeaderboard={loadSkillsCatalogLeaderboard}
+                  onSearchCatalog={searchSkillsCatalog}
+                  onInstallCatalog={installCatalogSkill}
                 />
               )}
 

@@ -80,3 +80,51 @@ test("discovers both .claude and .agents layouts in one repo", async () => {
     await fs.rm(tmp, { recursive: true, force: true });
   }
 });
+
+test("discovers Claude, Agents, and Codex user skill roots", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-user-skills-"));
+  try {
+    await writeSkill(path.join(tmp, ".claude", "skills"), "claude-skill", "claude-skill");
+    await writeSkill(path.join(tmp, ".agents", "skills"), "agents-skill", "agents-skill");
+    await writeSkill(path.join(tmp, ".codex", "skills"), "codex-skill", "codex-skill");
+    await writeSkill(
+      path.join(tmp, ".codex", "skills", ".system"),
+      "system-skill",
+      "system-skill",
+    );
+
+    const result = await listDiscoveredSkills(undefined, { homedir: tmp });
+
+    expect(result.userSkills.map((skill) => [skill.name, skill.layout, skill.sdkReady])).toEqual([
+      ["claude-skill", "claude", true],
+      ["agents-skill", "agents", false],
+      ["codex-skill", "codex", false],
+      ["system-skill", "codex", false],
+    ]);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("discovers catalog identity from the compatible global Skill lock", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-user-skills-"));
+  try {
+    await writeSkill(path.join(tmp, ".agents", "skills"), "frontend-design", "frontend-design");
+    await fs.writeFile(
+      path.join(tmp, ".agents", ".skill-lock.json"),
+      JSON.stringify({
+        version: 3,
+        skills: {
+          "frontend-design": { source: "anthropics/skills" },
+        },
+      }),
+    );
+
+    const result = await listDiscoveredSkills(undefined, { homedir: tmp });
+    const skill = result.userSkills.find((candidate) => candidate.name === "frontend-design");
+    expect(skill?.catalogSource).toBe("anthropics/skills");
+    expect(skill?.catalogSkillId).toBe("frontend-design");
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});

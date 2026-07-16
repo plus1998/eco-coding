@@ -471,43 +471,283 @@
 }
 
 .settings-page .skill-list {
-  gap: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--bg-elevated);
-  overflow: hidden;
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 10px;
 }
 
 .settings-page .skill-card {
-  border: none;
-  border-radius: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
-  background: transparent;
-  padding: 14px 16px;
-  transition: background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.settings-page .skill-card:last-child {
-  border-bottom: none;
+  min-height: 126px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  padding: 12px;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 0.14s ease;
 }
 
 .settings-page .skill-card:hover {
   background: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary) 16%, var(--border-subtle));
 }
 
 .settings-page .skill-card-title-row strong {
+  min-width: 0;
+  flex: 1;
   color: var(--text-primary);
   letter-spacing: -0.015em;
 }
 
+.settings-page .skill-card-uninstall {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+
+.settings-page .skill-card:hover .skill-card-uninstall,
+.settings-page .skill-card:focus-within .skill-card-uninstall {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.settings-page .skill-card-uninstall:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.settings-page .skill-card-uninstall:disabled {
+  cursor: not-allowed;
+}
+
+.settings-page .skill-card:hover .skill-card-uninstall:disabled,
+.settings-page .skill-card:focus-within .skill-card-uninstall:disabled {
+  opacity: 0.35;
+}
+
 .settings-page .skill-card-description {
+  display: -webkit-box;
+  min-height: 38px;
+  overflow: hidden;
   color: var(--text-secondary);
   letter-spacing: 0.01em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .settings-page .skill-card-path {
+  overflow: hidden;
   color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page .skill-uninstall-modal {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.settings-page .skill-uninstall-lead {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.settings-page .skill-uninstall-path {
+  display: block;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--bg-elevated-hover);
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .skills-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-page .skills-header-actions .settings-icon-button {
+  border: none;
+  background: transparent;
+}
+
+.settings-page .skills-header-actions .settings-icon-button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .skills-catalog-search {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0 6px 0 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.settings-page .skills-catalog-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent-text) 45%, var(--border-subtle));
+}
+
+.settings-page .skills-catalog-search input {
+  min-width: 0;
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.settings-page .skills-catalog-search button,
+.settings-page .skills-catalog-install {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-page .skills-catalog-search button {
+  height: 28px;
+  padding: 0 11px;
+}
+
+.settings-page .skills-catalog-search button:disabled,
+.settings-page .skills-catalog-install:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-page .skills-catalog-modal-meta {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-page .skills-catalog-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+}
+
+.settings-page .skills-catalog-modal-body {
+  overflow-y: auto;
+}
+
+.settings-page .skills-catalog-results-section + .skills-catalog-results-section {
+  margin-top: 18px;
+}
+
+.settings-page .skills-catalog-results-section h3 {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-page .skills-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-page .skills-catalog-card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.settings-page .skills-catalog-rank {
+  width: 20px;
+  flex: 0 0 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.settings-page .skills-catalog-card-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-decoration: none;
+}
+
+.settings-page .skills-catalog-card-main:hover strong {
+  color: var(--accent-text);
+}
+
+.settings-page .skills-catalog-card-main strong,
+.settings-page .skills-catalog-card-main code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page .skills-catalog-card-main strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.settings-page .skills-catalog-card-main code,
+.settings-page .skills-catalog-card-main span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.settings-page .skills-catalog-install {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    background-color 0.14s ease;
+}
+
+.settings-page .skills-catalog-card:hover .skills-catalog-install,
+.settings-page .skills-catalog-card:focus-within .skills-catalog-install {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .settings-page .skill-source-badge.claude,
@@ -519,6 +759,11 @@
 .settings-page .skill-source-badge.agents {
   background: var(--status-warn-bg);
   color: var(--status-warn-text);
+}
+
+.settings-page .skill-source-badge.codex {
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
 }
 
 .settings-page .skill-source-badge.project {

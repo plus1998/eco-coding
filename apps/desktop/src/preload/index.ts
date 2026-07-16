@@ -81,6 +81,12 @@ import {
   type SavePackageScriptArgsRequest,
   type RuntimeRoleRouteConfig,
   type SkillsListResult,
+  type SkillUninstallRequest,
+  type SkillUninstallResult,
+  type SkillCatalogInstallRequest,
+  type SkillCatalogInstallResult,
+  type SkillCatalogSearchRequest,
+  type SkillCatalogSearchResult,
   type StartPackageScriptResult,
   type TerminalInputRequest,
   type TerminalListRequest,
@@ -367,6 +373,18 @@ const api = {
   },
   linkAgentsSkills(request: LinkAgentsSkillsRequest): Promise<LinkAgentsSkillsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsLinkAgents, request);
+  },
+  uninstallSkill(request: SkillUninstallRequest): Promise<SkillUninstallResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.skillsUninstall, request);
+  },
+  listSkillsCatalogLeaderboard(limit = 12): Promise<SkillCatalogSearchResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.skillsCatalogLeaderboard, limit);
+  },
+  searchSkillsCatalog(request: SkillCatalogSearchRequest): Promise<SkillCatalogSearchResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.skillsCatalogSearch, request);
+  },
+  installCatalogSkill(request: SkillCatalogInstallRequest): Promise<SkillCatalogInstallResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.skillsCatalogInstall, request);
   },
   getWorkflowSettings(): Promise<WorkflowSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsGet);

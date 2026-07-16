@@ -205,6 +205,9 @@ import {
   resolveExplicitCodexSkillInputs,
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
+  type SkillUninstallRequest,
+  type SkillCatalogInstallRequest,
+  type SkillCatalogSearchRequest,
 } from "../shared/skills";
 import {
   activityLinesBeforeRewindTarget,
@@ -400,6 +403,8 @@ import {
 } from "./single-usage-billing-orchestration";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
+import { uninstallDiscoveredSkill } from "./skills-uninstall";
+import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from "./skills-catalog";
 import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import {
   clearThreadSubagentLaunchRegistry,
@@ -2529,6 +2534,44 @@ function registerIpcHandlers(): void {
       payload.baseDir ? { baseDir: payload.baseDir } : undefined,
     );
     return linkResult;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.skillsUninstall, async (payload: unknown) => {
+    if (!isSkillUninstallRequest(payload)) {
+      throw new Error("Invalid Skill uninstall request.");
+    }
+    const discovered = await listDiscoveredSkills();
+    const requestedDirectory = path.resolve(payload.directory.trim());
+    const skill = discovered.userSkills.find(
+      (candidate) => path.resolve(candidate.directory) === requestedDirectory,
+    );
+    if (!skill) {
+      throw new Error("Skill is not present in a supported user Skills directory.");
+    }
+    return uninstallDiscoveredSkill(skill);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.skillsCatalogSearch, async (payload: unknown) => {
+    if (!isSkillCatalogSearchRequest(payload)) {
+      throw new Error("Invalid Skills catalog search request.");
+    }
+    return searchSkillsCatalog(payload.query, {
+      ...(payload.limit !== undefined ? { limit: payload.limit } : {}),
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.skillsCatalogLeaderboard, async (payload: unknown) => {
+    if (typeof payload !== "number" || !Number.isInteger(payload)) {
+      throw new Error("Invalid Skills catalog leaderboard limit.");
+    }
+    return listSkillsLeaderboard({ limit: payload });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.skillsCatalogInstall, async (payload: unknown) => {
+    if (!isSkillCatalogInstallRequest(payload)) {
+      throw new Error("Invalid Skills catalog install request.");
+    }
+    return installCatalogSkill(payload);
   });
 
   registerDesktopCommand(IPC_CHANNELS.workflowSettingsGet, async () => workflowSettingsStore.get());
@@ -6926,6 +6969,33 @@ function isLinkAgentsSkillsRequest(value: unknown): value is LinkAgentsSkillsReq
     typeof (value as LinkAgentsSkillsRequest).workspacePath === "string" &&
     ((value as LinkAgentsSkillsRequest).baseDir === undefined ||
       typeof (value as LinkAgentsSkillsRequest).baseDir === "string")
+  );
+}
+
+function isSkillUninstallRequest(value: unknown): value is SkillUninstallRequest {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as SkillUninstallRequest).directory === "string" &&
+    Boolean((value as SkillUninstallRequest).directory.trim())
+  );
+}
+
+function isSkillCatalogSearchRequest(value: unknown): value is SkillCatalogSearchRequest {
+  return (
+    isRecord(value) &&
+    typeof value.query === "string" &&
+    value.query.trim().length >= 2 &&
+    (value.limit === undefined || (typeof value.limit === "number" && Number.isInteger(value.limit)))
+  );
+}
+
+function isSkillCatalogInstallRequest(value: unknown): value is SkillCatalogInstallRequest {
+  return (
+    isRecord(value) &&
+    typeof value.source === "string" &&
+    typeof value.skillId === "string" &&
+    (value.layout === "agents" || value.layout === "codex" || value.layout === "claude")
   );
 }
 

@@ -1,13 +1,14 @@
 import type { OrchestrationProfile } from "./agent-orchestration";
 
 export type SkillSource = "user" | "project";
-export type SkillLayout = "claude" | "agents";
+export type SkillLayout = "claude" | "agents" | "codex";
 
 export const CLAUDE_SKILLS_REL = ".claude/skills" as const;
 export const AGENTS_SKILLS_REL = ".agents/skills" as const;
+export const CODEX_SKILLS_REL = ".codex/skills" as const;
 
-export const USER_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL] as const;
-export const PROJECT_SKILL_ROOTS = [...USER_SKILL_ROOTS] as const;
+export const USER_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL, CODEX_SKILLS_REL] as const;
+export const PROJECT_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL] as const;
 
 export interface SkillInfo {
   name: string;
@@ -21,6 +22,10 @@ export interface SkillInfo {
   sdkReady: boolean;
   /** Project directory layer containing .claude / .agents (user skills: homedir). */
   baseDir?: string;
+  /** skills.sh repository identity when recorded by a compatible Skill lock file. */
+  catalogSource?: string;
+  /** skills.sh Skill id when recorded by a compatible Skill lock file. */
+  catalogSkillId?: string;
 }
 
 export interface SkillsListResult {
@@ -29,6 +34,50 @@ export interface SkillsListResult {
   projectSkills: SkillInfo[];
   agentsOnlySkills: SkillInfo[];
   scannedAt: string;
+}
+
+export interface SkillUninstallRequest {
+  directory: string;
+}
+
+export interface SkillUninstallResult {
+  ok: true;
+  directory: string;
+  removed: "directory" | "link";
+  method: "skills-cli" | "filesystem";
+}
+
+export interface SkillCatalogEntry {
+  id: string;
+  skillId: string;
+  name: string;
+  source: string;
+  installs: number;
+  url: string;
+}
+
+export interface SkillCatalogSearchRequest {
+  query: string;
+  limit?: number;
+}
+
+export interface SkillCatalogSearchResult {
+  query: string;
+  searchType: "fuzzy" | "semantic" | "unknown";
+  entries: SkillCatalogEntry[];
+  durationMs?: number;
+}
+
+export interface SkillCatalogInstallRequest {
+  source: string;
+  skillId: string;
+  layout: SkillLayout;
+}
+
+export interface SkillCatalogInstallResult {
+  ok: true;
+  directory: string;
+  fileCount: number;
 }
 
 export interface LinkAgentsSkillsRequest {

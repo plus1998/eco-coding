@@ -6802,6 +6802,11 @@ button.sidebar-core-heading {
   color: var(--status-warn-text);
 }
 
+.skill-source-badge.codex {
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
+}
+
 .skill-card-description {
   margin: 6px 0 8px;
   color: var(--text-secondary);

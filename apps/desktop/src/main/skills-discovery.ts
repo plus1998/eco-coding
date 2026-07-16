@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   AGENTS_SKILLS_REL,
   CLAUDE_SKILLS_REL,
+  CODEX_SKILLS_REL,
   dedupeSkillsByName,
   parseSkillFrontmatter,
   PROJECT_SKILL_ROOTS,
@@ -14,13 +15,21 @@ import {
   type SkillsListResult,
 } from "../shared/skills";
 
-export async function listDiscoveredSkills(workspacePath?: string): Promise<SkillsListResult> {
-  const homedir = os.homedir();
+export async function listDiscoveredSkills(
+  workspacePath?: string,
+  options: { homedir?: string } = {},
+): Promise<SkillsListResult> {
+  const homedir = options.homedir ?? os.homedir();
   const userSkills: SkillInfo[] = [];
   for (const rel of USER_SKILL_ROOTS) {
-    const layout: SkillLayout = rel === CLAUDE_SKILLS_REL ? "claude" : "agents";
-    const skills = await scanSkillsDirectory(path.join(homedir, rel), "user", layout, homedir);
-    userSkills.push(...skills);
+    const layout = skillLayoutForRoot(rel);
+    const skillsRoot = path.join(homedir, rel);
+    userSkills.push(...(await scanSkillsDirectory(skillsRoot, "user", layout, homedir)));
+    if (layout === "codex") {
+      userSkills.push(
+        ...(await scanSkillsDirectory(path.join(skillsRoot, ".system"), "user", layout, homedir)),
+      );
+    }
   }
   await applySdkReadyFlags(userSkills, homedir);
 
@@ -54,7 +63,7 @@ async function scanProjectSkills(workspacePath: string): Promise<SkillInfo[]> {
   let current = resolved;
   while (isPathInside(current, repoRoot)) {
     for (const rel of PROJECT_SKILL_ROOTS) {
-      const layout: SkillLayout = rel === CLAUDE_SKILLS_REL ? "claude" : "agents";
+      const layout = skillLayoutForRoot(rel);
       const skills = await scanSkillsDirectory(path.join(current, rel), "project", layout, current);
       for (const skill of skills) {
         if (!discovered.has(skill.directory)) {
@@ -93,8 +102,24 @@ async function applySdkReadyFlags(skills: SkillInfo[], baseDir: string): Promise
       skill.sdkReady = true;
       continue;
     }
+    if (skill.layout === "codex") {
+      skill.sdkReady = false;
+      continue;
+    }
     skill.sdkReady = await isAgentsSkillLinked(baseDir, skill.name, skill.directory);
   }
+}
+
+function skillLayoutForRoot(
+  root: (typeof USER_SKILL_ROOTS)[number] | (typeof PROJECT_SKILL_ROOTS)[number],
+): SkillLayout {
+  if (root === CLAUDE_SKILLS_REL) {
+    return "claude";
+  }
+  if (root === CODEX_SKILLS_REL) {
+    return "codex";
+  }
+  return "agents";
 }
 
 async function isAgentsSkillLinked(
@@ -132,6 +157,7 @@ async function scanSkillsDirectory(
     return [];
   }
 
+  const catalogLock = await readCatalogSkillLock(baseDir, layout);
   const skills: SkillInfo[] = [];
   for (const entry of entries) {
     if (entry.startsWith(".")) {
@@ -151,6 +177,8 @@ async function scanSkillsDirectory(
     const content = await fs.readFile(skillFilePath, "utf8");
     const frontmatter = parseSkillFrontmatter(content);
     const fallbackName = entry;
+    const catalogIdentity =
+      catalogLock.get(entry) ?? (await readLinkedCatalogIdentity(directory, entry));
     skills.push({
       name: frontmatter.name.trim() || fallbackName,
       description: frontmatter.description.trim() || "（无描述）",
@@ -160,10 +188,64 @@ async function scanSkillsDirectory(
       layout,
       sdkReady: layout === "claude",
       baseDir,
+      ...(catalogIdentity && {
+        catalogSource: catalogIdentity.source,
+        catalogSkillId: catalogIdentity.skillId,
+      }),
     });
   }
 
   return skills.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+interface CatalogSkillIdentity {
+  source: string;
+  skillId: string;
+}
+
+async function readCatalogSkillLock(
+  baseDir: string,
+  layout: SkillLayout,
+): Promise<Map<string, CatalogSkillIdentity>> {
+  const layoutDirectory = layout === "agents" ? ".agents" : layout === "codex" ? ".codex" : ".claude";
+  return readCatalogSkillLockFile(path.join(baseDir, layoutDirectory, ".skill-lock.json"));
+}
+
+async function readLinkedCatalogIdentity(
+  directory: string,
+  fallbackSkillId: string,
+): Promise<CatalogSkillIdentity | undefined> {
+  let resolved: string;
+  try {
+    resolved = await fs.realpath(directory);
+  } catch {
+    return undefined;
+  }
+  if (resolved === directory || path.basename(path.dirname(resolved)) !== "skills") return undefined;
+  const lock = await readCatalogSkillLockFile(
+    path.join(path.dirname(path.dirname(resolved)), ".skill-lock.json"),
+  );
+  return lock.get(path.basename(resolved)) ?? lock.get(fallbackSkillId);
+}
+
+async function readCatalogSkillLockFile(
+  lockPath: string,
+): Promise<Map<string, CatalogSkillIdentity>> {
+  const identities = new Map<string, CatalogSkillIdentity>();
+  let payload: unknown;
+  try {
+    payload = JSON.parse(await fs.readFile(lockPath, "utf8")) as unknown;
+  } catch {
+    return identities;
+  }
+  if (!isRecord(payload) || !isRecord(payload.skills)) return identities;
+  for (const [installedName, value] of Object.entries(payload.skills)) {
+    if (!isRecord(value) || typeof value.source !== "string" || !value.source.trim()) continue;
+    const skillId =
+      typeof value.skillId === "string" && value.skillId.trim() ? value.skillId.trim() : installedName;
+    identities.set(installedName, { source: value.source.trim(), skillId });
+  }
+  return identities;
 }
 
 async function findGitRoot(startPath: string): Promise<string | undefined> {
@@ -185,4 +267,8 @@ async function findGitRoot(startPath: string): Promise<string | undefined> {
 function isPathInside(child: string, parent: string): boolean {
   const relative = path.relative(parent, child);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

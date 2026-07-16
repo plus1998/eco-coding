@@ -98,6 +98,10 @@ export const IPC_CHANNELS = {
   mcpServerCheck: "mcp-server:check",
   skillsList: "skills:list",
   skillsLinkAgents: "skills:link-agents",
+  skillsUninstall: "skills:uninstall",
+  skillsCatalogLeaderboard: "skills:catalog-leaderboard",
+  skillsCatalogSearch: "skills:catalog-search",
+  skillsCatalogInstall: "skills:catalog-install",
   workflowSettingsGet: "workflow-settings:get",
   workflowSettingsSave: "workflow-settings:save",
   proxyBridgeSettingsGet: "proxy-bridge-settings:get",
@@ -219,6 +223,12 @@ export type {
   LinkAgentsSkillsResult,
   SkillInfo,
   SkillSource,
+  SkillCatalogInstallRequest,
+  SkillCatalogInstallResult,
+  SkillCatalogSearchRequest,
+  SkillCatalogSearchResult,
+  SkillUninstallRequest,
+  SkillUninstallResult,
   SkillsListResult,
 } from "./skills";
 export type {
