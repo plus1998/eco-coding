@@ -63,6 +63,8 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.skillsCatalogLeaderboard).toBe("skills:catalog-leaderboard");
   expect(IPC_CHANNELS.skillsCatalogSearch).toBe("skills:catalog-search");
   expect(IPC_CHANNELS.skillsCatalogInstall).toBe("skills:catalog-install");
+  expect(IPC_CHANNELS.projectSkillsSettingsGet).toBe("project-skills-settings:get");
+  expect(IPC_CHANNELS.projectSkillsSettingsSave).toBe("project-skills-settings:save");
   expect(IPC_CHANNELS.mcpServerSave).toBe("mcp-server:save");
   expect(IPC_CHANNELS.centerServerSettingsGet).toBe("center-server-settings:get");
   expect(IPC_CHANNELS.centerServerSettingsSave).toBe("center-server-settings:save");

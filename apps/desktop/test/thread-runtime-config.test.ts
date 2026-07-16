@@ -294,6 +294,19 @@ test("serialize and parse thread runtime config round-trip", () => {
   expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
 });
 
+test("thread runtime config preserves per-project Skill choices", () => {
+  const config = {
+    ...buildThreadRuntimeConfigFromDefaults({
+      settings: agentSettings,
+      workflowDefaults: { sessionMode: "agent" },
+    }),
+    skillsEnabled: { "project:agents:.agents/skills/local/SKILL.md": true, "user:one": false },
+  };
+  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))?.skillsEnabled).toEqual(
+    config.skillsEnabled,
+  );
+});
+
 test("thread runtime config preserves and normalizes a main-agent model override", () => {
   const config = {
     ...buildThreadRuntimeConfigFromDefaults({
@@ -519,6 +532,12 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only
   };
   expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" })).toBe(true);
   expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, sessionMode: "agent" })).toBe(false);
+  expect(
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
+      ...base,
+      skillsEnabled: { "user:a": true },
+    }),
+  ).toBe(false);
   expect(
     isBashReviewModeOnlyRuntimeConfigUpdate(base, {
       ...base,

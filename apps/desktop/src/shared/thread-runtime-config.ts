@@ -26,6 +26,10 @@ import type {
   ThinkingEffort,
   WorkflowSettingsSnapshot,
 } from "./ipc";
+import {
+  normalizeSkillsEnabled,
+  type SkillsEnabledSettings,
+} from "./composer-skills-settings";
 import { isSessionMode, normalizeSessionMode, resolveSessionMode, type SessionMode } from "./session-mode";
 
 export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
@@ -46,6 +50,7 @@ export interface ThreadRuntimeConfig {
   mainAgentSystemPromptPresetOverride?: MainAgentSystemPromptPreset;
   subagentEnabled: SubagentEnabledSettings;
   mcpServersEnabled?: McpServersEnabledSettings;
+  skillsEnabled?: SkillsEnabledSettings;
   sessionMode: SessionMode;
   bashReviewMode: BashReviewMode;
 }
@@ -203,7 +208,8 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
       bashReviewMode === "always" ||
       bashReviewMode === "auto" ||
       bashReviewMode === "allow_all") &&
-    (record.mcpServersEnabled === undefined || isMcpServersEnabledRecord(record.mcpServersEnabled))
+    (record.mcpServersEnabled === undefined || isMcpServersEnabledRecord(record.mcpServersEnabled)) &&
+    (record.skillsEnabled === undefined || isMcpServersEnabledRecord(record.skillsEnabled))
   );
 }
 
@@ -239,6 +245,7 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   const routeProfileId = typeof config.routeProfileId === "string" ? config.routeProfileId.trim() : "";
   const bashReviewMode = normalizeBashReviewMode(config.bashReviewMode);
   const mcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);
+  const skillsEnabled = normalizeSkillsEnabled(config.skillsEnabled);
   return {
     routeProfileId,
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
@@ -250,6 +257,7 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
       : {}),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
     ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    ...(skillsEnabled ? { skillsEnabled } : {}),
     sessionMode: normalizeSessionMode(config.sessionMode),
     bashReviewMode,
   };
@@ -379,7 +387,24 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
     mainAgentModelOverridesEqual(left.mainAgentModelOverride, right.mainAgentModelOverride) &&
     left.mainAgentSystemPromptPresetOverride === right.mainAgentSystemPromptPresetOverride &&
     left.sessionMode === right.sessionMode &&
+    booleanRecordsEqual(left.mcpServersEnabled, right.mcpServersEnabled) &&
+    booleanRecordsEqual(left.skillsEnabled, right.skillsEnabled) &&
     SUBAGENT_ROLES.every((role) => left.subagentEnabled[role] === right.subagentEnabled[role])
+  );
+}
+
+function booleanRecordsEqual(
+  left: Record<string, boolean> | undefined,
+  right: Record<string, boolean> | undefined,
+): boolean {
+  const leftEntries = Object.entries(left ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const rightEntries = Object.entries(right ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    leftEntries.length === rightEntries.length &&
+    leftEntries.every(
+      ([key, enabled], index) =>
+        rightEntries[index]?.[0] === key && rightEntries[index]?.[1] === enabled,
+    )
   );
 }
 

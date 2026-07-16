@@ -771,6 +771,18 @@
   color: var(--status-allow-text);
 }
 
+.composer-skills-scope + .composer-skills-scope {
+  margin-top: 10px;
+}
+
+.composer-skills-scope h3 {
+  margin: 0;
+  padding: 6px 10px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* Telemetry */
 .settings-page .telemetry-hint {
   color: var(--text-muted);

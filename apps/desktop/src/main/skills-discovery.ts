@@ -2,17 +2,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  AGENTS_SKILLS_REL,
   CLAUDE_SKILLS_REL,
   CODEX_SKILLS_REL,
   dedupeSkillsByName,
-  parseSkillFrontmatter,
   PROJECT_SKILL_ROOTS,
-  USER_SKILL_ROOTS,
+  parseSkillFrontmatter,
   type SkillInfo,
   type SkillLayout,
   type SkillSource,
   type SkillsListResult,
+  USER_SKILL_ROOTS,
 } from "../shared/skills";
 
 export async function listDiscoveredSkills(
@@ -32,8 +31,16 @@ export async function listDiscoveredSkills(
     }
   }
   await applySdkReadyFlags(userSkills, homedir);
+  for (const skill of userSkills) {
+    skill.settingsKey = `user:${skill.layout}:${skill.skillFilePath}`;
+  }
 
   const projectSkills = workspacePath ? await scanProjectSkills(workspacePath) : [];
+  if (workspacePath) {
+    for (const skill of projectSkills) {
+      skill.settingsKey = `project:${skill.layout}:${path.relative(path.resolve(workspacePath), skill.skillFilePath)}`;
+    }
+  }
   const projectSdkReadyNames = new Set(
     projectSkills.filter((skill) => skill.sdkReady).map((skill) => skill.name),
   );
@@ -177,8 +184,7 @@ async function scanSkillsDirectory(
     const content = await fs.readFile(skillFilePath, "utf8");
     const frontmatter = parseSkillFrontmatter(content);
     const fallbackName = entry;
-    const catalogIdentity =
-      catalogLock.get(entry) ?? (await readLinkedCatalogIdentity(directory, entry));
+    const catalogIdentity = catalogLock.get(entry) ?? (await readLinkedCatalogIdentity(directory, entry));
     skills.push({
       name: frontmatter.name.trim() || fallbackName,
       description: frontmatter.description.trim() || "（无描述）",
@@ -228,9 +234,7 @@ async function readLinkedCatalogIdentity(
   return lock.get(path.basename(resolved)) ?? lock.get(fallbackSkillId);
 }
 
-async function readCatalogSkillLockFile(
-  lockPath: string,
-): Promise<Map<string, CatalogSkillIdentity>> {
+async function readCatalogSkillLockFile(lockPath: string): Promise<Map<string, CatalogSkillIdentity>> {
   const identities = new Map<string, CatalogSkillIdentity>();
   let payload: unknown;
   try {

@@ -33,6 +33,7 @@ import {
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
   isCodexThreadConfigApplied,
+  withCodexSkillConfig,
   readCodexThreadStatus,
   requireCodexSubagentThreadId,
   resolveCodexHomeDir,
@@ -93,6 +94,8 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   resolveMcpServers?: () => readonly CodexMcpServerForConfigSync[];
   /** Composer-selected MCP names, intersected with each actor's Profile assignment. */
   resolveEnabledMcpServerKeys?: () => readonly string[];
+  /** Exact per-thread Skill path visibility. */
+  resolveSkillConfig?: () => readonly { path: string; enabled: boolean }[];
   /** Wait for thread-selected MCP servers to leave `starting` before the turn. */
   ensureMcpReady?: () => Promise<void>;
   /** Runs after the exact thread config is bound, before the driver starts the turn. */
@@ -157,6 +160,7 @@ export interface PrepareCodexRuntimeInput {
   mcpServers?: readonly CodexMcpServerForConfigSync[];
   /** Composer-selected MCP names for this thread. Omitted means all supplied servers. */
   threadEnabledMcpServerNames?: readonly string[];
+  skillConfig?: readonly { path: string; enabled: boolean }[];
 }
 
 export interface PreparedCodexRuntime {
@@ -744,6 +748,7 @@ async function prepareCodexRuntimeUnlocked(
     globalMultiAgentSupportRequired = true;
   }
   lastPreparedRoleIds = roleSync?.roleIds ?? [];
+  const baseThreadConfig = roleSync?.threadConfig ?? buildDenyAllMcpThreadConfig(mcpServers);
   const prepared: PreparedCodexRuntime = {
     ...(profileAppend ? { profileAppend } : {}),
     ...(profileToolPolicy ? { profileToolPolicy } : {}),
@@ -751,8 +756,13 @@ async function prepareCodexRuntimeUnlocked(
     roleToolPolicies: Object.fromEntries(
       (roleSync?.roles ?? []).map((role) => [role.roleId, role.toolPolicy]),
     ),
-    threadConfig: roleSync?.threadConfig ?? buildDenyAllMcpThreadConfig(mcpServers),
-    roleThreadConfigs: roleSync?.roleThreadConfigs ?? {},
+    threadConfig: withCodexSkillConfig(baseThreadConfig, input.skillConfig ?? []),
+    roleThreadConfigs: Object.fromEntries(
+      Object.entries(roleSync?.roleThreadConfigs ?? {}).map(([role, config]) => [
+        role,
+        withCodexSkillConfig(config, input.skillConfig ?? []),
+      ]),
+    ),
   };
 
   runtimeDeps.onStderr?.(
@@ -940,6 +950,7 @@ export async function runThreadRequestWithRuntimeProxy(
     const previousPrepared = preparedRuntimeByThread.get(input.threadId);
     const mcpServers = input.resolveMcpServers?.() ?? [];
     const threadEnabledMcpServerNames = input.resolveEnabledMcpServerKeys?.() ?? [];
+    const skillConfig = input.resolveSkillConfig?.() ?? [];
     const subagentAvailability = input.resolveSubagentAvailability?.();
     const prepared = await prepareCodexRuntime({
       agentRegistry: input.resolveAgentRegistry?.(),
@@ -951,6 +962,7 @@ export async function runThreadRequestWithRuntimeProxy(
       requiredProviderIds,
       mcpServers,
       threadEnabledMcpServerNames,
+      skillConfig,
     });
     // Wait for readiness AFTER prepare: reload (when it runs) restarts MCP processes.
     await input.ensureMcpReady?.();

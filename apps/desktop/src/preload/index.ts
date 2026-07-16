@@ -87,6 +87,7 @@ import {
   type SkillCatalogInstallResult,
   type SkillCatalogSearchRequest,
   type SkillCatalogSearchResult,
+  type ProjectSkillsSettingsSnapshot,
   type StartPackageScriptResult,
   type TerminalInputRequest,
   type TerminalListRequest,
@@ -385,6 +386,14 @@ const api = {
   },
   installCatalogSkill(request: SkillCatalogInstallRequest): Promise<SkillCatalogInstallResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsCatalogInstall, request);
+  },
+  getProjectSkillsSettings(workspacePath: string): Promise<ProjectSkillsSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectSkillsSettingsGet, workspacePath);
+  },
+  saveProjectSkillsSettings(
+    snapshot: ProjectSkillsSettingsSnapshot,
+  ): Promise<ProjectSkillsSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectSkillsSettingsSave, snapshot);
   },
   getWorkflowSettings(): Promise<WorkflowSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsGet);

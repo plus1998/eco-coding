@@ -114,6 +114,10 @@ import {
 } from "../shared/home-project";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import {
+  deriveSkillsEnabled,
+  type ProjectSkillsSettingsSnapshot,
+} from "../shared/composer-skills-settings";
+import {
   dedupeSkillsByName,
   listSdkReadyProjectSkills,
   parseExplicitSkillNames,
@@ -137,6 +141,7 @@ import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerMcpServers } from "./ComposerMcpServers";
+import { ComposerSkillsControl } from "./ComposerSkillsControl";
 import {
   buildComposerModelOptions,
   ComposerModelSelector,
@@ -812,6 +817,8 @@ function App() {
     });
   }, []);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
+  const [projectSkillsSettings, setProjectSkillsSettings] =
+    useState<ProjectSkillsSettingsSnapshot>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
@@ -2272,6 +2279,17 @@ function App() {
   }, [currentProjectPath]);
 
   useEffect(() => {
+    if (!window.eco || !currentProjectPath) {
+      setProjectSkillsSettings(undefined);
+      return;
+    }
+    void window.eco
+      .getProjectSkillsSettings(currentProjectPath)
+      .then(setProjectSkillsSettings)
+      .catch((caught) => setError(errorMessage(caught)));
+  }, [currentProjectPath]);
+
+  useEffect(() => {
     if (activeThread) {
       setComposerRoutePopoverOpen(false);
     }
@@ -2292,20 +2310,44 @@ function App() {
   );
   const codexNativeSkills = useMemo(
     () =>
-      dedupeSkillsByName(
-        [...(skillsSnapshot?.userSkills ?? []), ...(skillsSnapshot?.projectSkills ?? [])].filter(
+      [...(skillsSnapshot?.projectSkills ?? []), ...(skillsSnapshot?.userSkills ?? [])].filter(
           (skill) => skill.layout === "agents" || skill.layout === "codex",
-        ),
       ),
     [skillsSnapshot?.projectSkills, skillsSnapshot?.userSkills],
   );
+  const composerAvailableSkills = useMemo(() => {
+    const candidates = composerCoreKind === "codex"
+      ? codexNativeSkills.filter(
+          (skill) => !/[/\\]\.codex[/\\]skills[/\\]\.system[/\\]/.test(skill.skillFilePath),
+        )
+      : [...projectSdkReadySkills, ...userSkills];
+    return [...new Map(candidates.map((skill) => [skill.settingsKey ?? skill.skillFilePath, skill])).values()];
+  }, [codexNativeSkills, composerCoreKind, projectSdkReadySkills, userSkills]);
+  const composerSkillsEnabled = useMemo(
+    () =>
+      deriveSkillsEnabled(composerAvailableSkills, {
+        ...(activeThread && composerRuntimeConfig?.skillsEnabled
+          ? { existing: composerRuntimeConfig.skillsEnabled }
+          : {}),
+        ...(projectSkillsSettings?.enabledByPath
+          ? { remembered: projectSkillsSettings.enabledByPath }
+          : {}),
+      }),
+    [
+      activeThread?.id,
+      composerAvailableSkills,
+      composerRuntimeConfig?.skillsEnabled,
+      projectSkillsSettings?.enabledByPath,
+    ],
+  );
   const slashPickerSkills = useMemo(
-    () => dedupeSkillsByName([
-      ...userSkills,
-      ...projectSdkReadySkills,
-      ...(composerCoreKind === "codex" ? codexNativeSkills : []),
-    ]),
-    [codexNativeSkills, composerCoreKind, projectSdkReadySkills, userSkills],
+    () =>
+      dedupeSkillsByName(
+        composerAvailableSkills.filter(
+          (skill) => composerSkillsEnabled[skill.settingsKey ?? skill.skillFilePath],
+        ),
+      ),
+    [composerAvailableSkills, composerSkillsEnabled],
   );
   const composerSupportsSkills = true;
   const projectAgentsOnly = useMemo(
@@ -2426,7 +2468,18 @@ function App() {
     settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
   ]);
-  const effectiveComposerRuntimeConfig = composerRuntimeConfig;
+  const effectiveComposerRuntimeConfig = useMemo(
+    () =>
+      composerRuntimeConfig
+        ? {
+            ...composerRuntimeConfig,
+            ...(Object.keys(composerSkillsEnabled).length > 0
+              ? { skillsEnabled: composerSkillsEnabled }
+              : {}),
+          }
+        : null,
+    [composerRuntimeConfig, composerSkillsEnabled],
+  );
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
     if (!selectedRuntimeProfile) {
       return undefined;
@@ -4322,6 +4375,25 @@ function App() {
     }
   }
 
+  async function toggleComposerSkill(settingsKey: string, enabled: boolean) {
+    if (!composerRuntimeConfig || !currentProjectPath) return;
+    const nextSkillsEnabled = { ...composerSkillsEnabled, [settingsKey]: enabled };
+    await persistComposerRuntimeConfig(
+      { ...composerRuntimeConfig, skillsEnabled: nextSkillsEnabled },
+      { persistWhileRunning: true },
+    );
+    if (!window.eco) return;
+    try {
+      const saved = await window.eco.saveProjectSkillsSettings({
+        workspacePath: currentProjectPath,
+        enabledByPath: nextSkillsEnabled,
+      });
+      setProjectSkillsSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   async function selectComposerSessionMode(sessionMode: SessionMode) {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
@@ -5326,6 +5398,19 @@ function App() {
     </div>
   );
 
+  const composerSkillsControl = (
+    <div>
+      <ComposerSkillsControl
+        skills={composerAvailableSkills}
+        enabledSettings={composerSkillsEnabled}
+        canEdit={canEditComposerConfig}
+        saving={isSavingSettings}
+        compact={composerCompact}
+        onToggleSkill={(settingsKey, enabled) => void toggleComposerSkill(settingsKey, enabled)}
+      />
+    </div>
+  );
+
   const composerModelControl = templateMainModel ? (
     <ComposerModelSelector
       options={composerModelOptions}
@@ -5535,6 +5620,7 @@ function App() {
                 {composerRouteControl}
                 {composerAgentModelsControl}
                 {composerMcpControl}
+                {composerSkillsControl}
               </div>
             ) : null}
           </div>

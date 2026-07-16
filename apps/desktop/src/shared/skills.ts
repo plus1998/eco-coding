@@ -17,6 +17,8 @@ export interface SkillInfo {
   /** Directory containing SKILL.md */
   directory: string;
   skillFilePath: string;
+  /** Stable project/user settings key; project keys remain stable across worktrees. */
+  settingsKey?: string;
   layout: SkillLayout;
   /** True when Claude Agent SDK can load this skill (.claude path or symlink). */
   sdkReady: boolean;

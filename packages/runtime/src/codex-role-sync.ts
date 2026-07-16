@@ -59,7 +59,21 @@ export interface CodexThreadConfigOverrides extends Record<string, unknown> {
     hooks: boolean;
   };
   agents?: Record<string, unknown>;
+  skills?: {
+    config: Array<{ path: string; enabled: boolean }>;
+  };
   mcp_servers: Record<string, CodexMcpServerVisibilityOverride>;
+}
+
+export function withCodexSkillConfig(
+  config: CodexThreadConfigOverrides,
+  entries: readonly { path: string; enabled: boolean }[],
+): CodexThreadConfigOverrides {
+  if (entries.length === 0) return { ...config };
+  return {
+    ...config,
+    skills: { config: entries.map((entry) => ({ path: entry.path, enabled: entry.enabled })) },
+  };
 }
 
 export interface SyncedCodexRole {

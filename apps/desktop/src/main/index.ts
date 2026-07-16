@@ -199,12 +199,12 @@ import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
   buildRuntimeAgentSkillAssignments,
-  filterExplicitUserSkillNames,
   type LinkAgentsSkillsRequest,
   listSdkReadyProjectSkills,
   resolveExplicitCodexSkillInputs,
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
+  type SkillInfo,
   type SkillUninstallRequest,
   type SkillCatalogInstallRequest,
   type SkillCatalogSearchRequest,
@@ -405,6 +405,10 @@ import { listDiscoveredSkills } from "./skills-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { uninstallDiscoveredSkill } from "./skills-uninstall";
 import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from "./skills-catalog";
+import {
+  createProjectSkillsSettingsStore,
+  type ProjectSkillsSettingsStore,
+} from "./project-skills-settings-store";
 import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import {
   clearThreadSubagentLaunchRegistry,
@@ -604,6 +608,7 @@ let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let codexThreadMap: CodexThreadMap;
 let workflowSettingsStore: WorkflowSettingsStore;
+let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
@@ -885,6 +890,7 @@ app.whenReady().then(async () => {
     },
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
+  projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
   packageScriptArgsStore = createPackageScriptArgsStore(
     path.join(app.getPath("userData"), "package-script-args.json"),
@@ -2574,6 +2580,27 @@ function registerIpcHandlers(): void {
     return installCatalogSkill(payload);
   });
 
+  registerDesktopCommand(IPC_CHANNELS.projectSkillsSettingsGet, async (payload: unknown) => {
+    if (typeof payload !== "string" || !payload.trim()) {
+      throw new Error("Invalid project Skills settings workspace path.");
+    }
+    return projectSkillsSettingsStore.get(payload);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.projectSkillsSettingsSave, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.workspacePath !== "string" || !isRecord(payload.enabledByPath)) {
+      throw new Error("Invalid project Skills settings.");
+    }
+    return projectSkillsSettingsStore.save({
+      workspacePath: payload.workspacePath,
+      enabledByPath: Object.fromEntries(
+        Object.entries(payload.enabledByPath).filter(
+          (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+        ),
+      ),
+    });
+  });
+
   registerDesktopCommand(IPC_CHANNELS.workflowSettingsGet, async () => workflowSettingsStore.get());
 
   registerDesktopCommand(IPC_CHANNELS.workflowSettingsSave, async (payload: unknown) => {
@@ -3825,6 +3852,7 @@ async function startCodexThreadRun(
       input.thread.id,
       input.attachments ?? [],
     );
+    const codexSkills = await resolveCodexThreadSkills(input.thread.id, cwd);
     codexAttachmentDir = materializedAttachments.directory;
     const outcome = await runThreadRequestOnce(
       input.thread.id,
@@ -3850,6 +3878,8 @@ async function startCodexThreadRun(
             );
           },
           resolveEnabledMcpServerKeys: () => resolveCodexThreadMcpServerKeys(input.thread.id),
+          resolveSkillConfig: () =>
+            codexSkills.map(({ skill, enabled }) => ({ path: skill.skillFilePath, enabled })),
           onPrepared: async () => {
             if (input.rewindTarget) {
               await rollbackCodexThreadForEcoThread({
@@ -3879,7 +3909,7 @@ async function startCodexThreadRun(
                 routes,
                 signal: controller.signal,
                 codexSession: {
-                  ...(await buildCodexSessionOptions(input.thread.id, input.prompt)),
+                  ...(await buildCodexSessionOptions(input.thread.id, input.prompt, cwd)),
                   ...(materializedAttachments.paths.length > 0
                     ? { localImagePaths: materializedAttachments.paths }
                     : {}),
@@ -3959,14 +3989,34 @@ function resolveCodexThreadMcpServerKeys(threadId: string): string[] {
   });
 }
 
-async function buildCodexSessionOptions(threadId: string, prompt: string) {
+async function resolveCodexThreadSkills(
+  threadId: string,
+  workspacePath: string,
+): Promise<Array<{ skill: SkillInfo; enabled: boolean }>> {
   const thread = conversationStore.getThread(threadId);
-  const workspacePath = thread?.workspacePath ?? currentWorkspace?.path;
+  const settings = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.skillsEnabled : undefined;
   const discovered = await listDiscoveredSkills(workspacePath);
-  const skillInputs = resolveExplicitCodexSkillInputs(prompt, [
-    ...discovered.userSkills,
-    ...discovered.projectSkills,
-  ]);
+  return [...discovered.userSkills, ...discovered.projectSkills]
+    .filter(
+      (skill) =>
+        (skill.layout === "agents" || skill.layout === "codex") &&
+        !/[/\\]\.codex[/\\]skills[/\\]\.system[/\\]/.test(skill.skillFilePath),
+    )
+    .map((skill) => ({
+      skill,
+      enabled: settings?.[skill.settingsKey ?? skill.skillFilePath] ?? skill.source === "project",
+    }));
+}
+
+async function buildCodexSessionOptions(threadId: string, prompt: string, workspacePathOverride?: string) {
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = workspacePathOverride ?? thread?.workspacePath ?? currentWorkspace?.path;
+  if (!workspacePath) return {};
+  const resolved = await resolveCodexThreadSkills(threadId, workspacePath);
+  const skillInputs = resolveExplicitCodexSkillInputs(
+    prompt,
+    resolved.filter((entry) => entry.enabled).map((entry) => entry.skill),
+  );
   return skillInputs.length > 0 ? { skillInputs } : {};
 }
 
@@ -7021,20 +7071,24 @@ async function buildSdkSessionOptions(
     thread?.workspacePath ??
     (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);
   const discovered = await listDiscoveredSkills(workspacePath);
-  const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
-  const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
-  const explicitUserNames = new Set(explicitUser);
-  const explicitUserSkills = discovered.userSkills.filter(
-    (skill) => skill.sdkReady && explicitUserNames.has(skill.name),
+  const skillsEnabled = hydrated?.runtimeConfig?.skillsEnabled;
+  const enabledProjectSkills = listSdkReadyProjectSkills(discovered.projectSkills).filter(
+    (skill) => skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? true,
   );
-  const projectReadRootSkills = discovered.projectSkills.filter((skill) => skill.sdkReady);
+  const enabledUserSkills = discovered.userSkills.filter(
+    (skill) =>
+      skill.sdkReady &&
+      (skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? false),
+  );
+  const projectNames = enabledProjectSkills.map((skill) => skill.name);
+  const enabledUserNames = enabledUserSkills.map((skill) => skill.name);
   const implicitReadAllowRoots = resolveImplicitSkillReadRoots(os.homedir(), workspacePath, [
-    ...projectReadRootSkills,
-    ...explicitUserSkills,
+    ...enabledProjectSkills,
+    ...enabledUserSkills,
   ]);
   const skillConfig = resolveSdkSessionSkillConfig(options?.skillsScope ?? "default", {
     projectNames,
-    explicitUser,
+    explicitUser: enabledUserNames,
   });
   const profile = hydrated?.runtimeConfig
     ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)

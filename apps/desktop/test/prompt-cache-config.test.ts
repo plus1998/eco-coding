@@ -120,6 +120,17 @@ test("resolvePromptCacheConfigDrift detects profile and mcp changes", () => {
   ).toEqual(["profile", "main_model"]);
 });
 
+test("resolvePromptCacheConfigDrift detects enabled Skill changes", () => {
+  expect(
+    resolvePromptCacheConfigDrift({
+      baseline: config({ skillsEnabled: { "project:a": true, "user:b": false } }),
+      current: config({ skillsEnabled: { "project:a": true, "user:b": true } }),
+      settings,
+      mcpServers,
+    }),
+  ).toEqual(["skills"]);
+});
+
 test("resolvePromptCacheConfigDrift ignores an override from another provider", () => {
   expect(
     resolvePromptCacheConfigDrift({

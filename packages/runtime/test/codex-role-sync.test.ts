@@ -17,6 +17,7 @@ import {
   mapEcoThinkingEffortToCodexReasoningEffort,
   sanitizeCodexRoleId,
   syncProfileAgentsToCodexRoles,
+  withCodexSkillConfig,
 } from "../src/codex-role-sync";
 
 const tempDirs: string[] = [];
@@ -27,6 +28,22 @@ test("Codex effort mapping keeps max and ultra distinct", () => {
   expect(mapEcoThinkingEffortToCodexReasoningEffort("ultra")).toBe("ultra");
   expect(mapEcoThinkingEffortToCodexReasoningEffort(" focused ")).toBe("focused");
   expect(() => mapEcoThinkingEffortToCodexReasoningEffort("   ")).toThrow("non-empty string");
+});
+
+test("Codex thread Skill visibility is path-scoped", () => {
+  const config = withCodexSkillConfig(
+    { mcp_servers: {} },
+    [
+      { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
+      { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
+    ],
+  );
+  expect(config.skills).toEqual({
+    config: [
+      { path: "/repo/.agents/skills/project/SKILL.md", enabled: true },
+      { path: "/Users/test/.agents/skills/user/SKILL.md", enabled: false },
+    ],
+  });
 });
 
 afterEach(async () => {

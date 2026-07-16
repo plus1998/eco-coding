@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { createConversationStore } from "../src/main/conversation-store";
+import { createProjectSkillsSettingsStore } from "../src/main/project-skills-settings-store";
 import type { ThreadSummary } from "../src/shared/ipc";
 
 async function createTestDirectory(t: test.TestContext, prefix: string): Promise<string> {
@@ -14,6 +15,19 @@ async function createTestDirectory(t: test.TestContext, prefix: string): Promise
   });
   return directory;
 }
+
+test("Node SQLite remembers Skills independently for each project", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-project-skills-");
+  const store = await createProjectSkillsSettingsStore(path.join(directory, "eco-coding.sqlite"));
+  const projectA = path.join(directory, "a");
+  const projectB = path.join(directory, "b");
+
+  store.save({ workspacePath: projectA, enabledByPath: { "user:a": true } });
+  store.save({ workspacePath: projectB, enabledByPath: { "user:a": false } });
+
+  assert.deepEqual(store.get(projectA).enabledByPath, { "user:a": true });
+  assert.deepEqual(store.get(projectB).enabledByPath, { "user:a": false });
+});
 
 test("Node SQLite persists an Eco thread and Claude session binding", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-sqlite-store-");

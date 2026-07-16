@@ -20,13 +20,14 @@ export interface PromptCacheProfileLabel {
   profileName: string;
 }
 
-export type PromptCacheConfigDriftKind = "profile" | "main_model" | "system_prompt" | "mcp";
+export type PromptCacheConfigDriftKind = "profile" | "main_model" | "system_prompt" | "mcp" | "skills";
 
 export interface PromptCacheRuntimeSignature {
   profileId: string;
   mainAgentModelKey: string;
   mainAgentSystemPromptPreset: OrchestrationProfile["mainAgent"]["systemPromptPreset"] | "";
   mcpServerKeys: string[];
+  skillKeys: string[];
 }
 
 interface MainAgentModelIdentity {
@@ -76,7 +77,11 @@ export function resolvePromptCacheRuntimeSignature(input: {
   })
     .slice()
     .sort();
-  return { profileId, mainAgentModelKey, mainAgentSystemPromptPreset, mcpServerKeys };
+  const skillKeys = Object.entries(input.runtimeConfig.skillsEnabled ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([key]) => key)
+    .sort();
+  return { profileId, mainAgentModelKey, mainAgentSystemPromptPreset, mcpServerKeys, skillKeys };
 }
 
 function resolveEffectiveMainAgentModel(
@@ -109,6 +114,9 @@ export function diffPromptCacheRuntimeSignatures(
   }
   if (!stringArraysEqual(baseline.mcpServerKeys, current.mcpServerKeys)) {
     kinds.push("mcp");
+  }
+  if (!stringArraysEqual(baseline.skillKeys, current.skillKeys)) {
+    kinds.push("skills");
   }
   return kinds;
 }
@@ -177,6 +185,9 @@ function formatPromptCacheDriftChangeParts(
   }
   if (kinds.includes("mcp")) {
     parts.push("MCP 配置已变更");
+  }
+  if (kinds.includes("skills")) {
+    parts.push("Skills 配置已变更");
   }
   return parts;
 }
