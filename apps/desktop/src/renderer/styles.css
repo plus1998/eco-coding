@@ -8141,6 +8141,10 @@ button.sidebar-core-heading {
   font-weight: 600;
 }
 
+.run-log-tool-failed-label.is-recovered {
+  color: var(--success);
+}
+
 .run-log-tool-failed-error {
   margin: 0;
   color: var(--codex-log-text, var(--text-primary, #e5e5e5));
@@ -8148,6 +8152,120 @@ button.sidebar-core-heading {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.run-log-tool-result-panel {
+  overflow: hidden;
+  border: 1px solid var(--codex-log-line, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
+}
+
+.run-log-tool-result-panel.is-success {
+  border-color: color-mix(in srgb, var(--success) 24%, var(--codex-log-line));
+  background: color-mix(in srgb, var(--success) 5%, transparent);
+}
+
+.run-log-tool-result-header {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--codex-log-line, var(--border));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.run-log-tool-result-panel.is-success .run-log-tool-result-header {
+  border-bottom-color: color-mix(in srgb, var(--success) 18%, var(--codex-log-line));
+  color: var(--success);
+}
+
+.run-log-tool-result-panel .run-log-tool-failed-error {
+  padding: 8px 9px;
+  font-family: var(--font-mono);
+}
+
+.run-log-tool-result-files {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 8px 9px;
+  list-style: none;
+}
+
+.run-log-tool-result-files li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 16px 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  color: var(--codex-log-text, var(--text-primary));
+  font-size: 12px;
+}
+
+.run-log-tool-result-files code {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-tool-result-file-status {
+  color: var(--success);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.run-log-tool-failed-command-wrap {
+  min-width: 0;
+}
+
+.run-log-tool-failed-command {
+  max-height: 4.35em;
+  margin: 0;
+  overflow: hidden;
+  color: var(--codex-log-text, var(--text-primary, #e5e5e5));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-log-tool-failed-command.is-expanded {
+  max-height: none;
+  overflow: visible;
+}
+
+.run-log-tool-failed-command-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.run-log-tool-failed-command-toggle:hover {
+  color: var(--text-primary);
+}
+
+.run-log-tool-failed-command-toggle svg {
+  transition: transform 0.16s ease;
+}
+
+.run-log-tool-failed-command-toggle svg.is-expanded {
+  transform: rotate(180deg);
 }
 
 .run-log-api-error {

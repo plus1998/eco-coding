@@ -48,6 +48,7 @@ export interface ThreadRunToolMetadata {
   output?: string;
   toolUseId?: string;
   durationMs?: number;
+  exitCode?: number;
   status?: "started" | "completed" | "failed";
   /** Human-readable Bash title from Agent input or Codex commandActions. */
   description?: string;

@@ -2032,7 +2032,9 @@ function DetailBlock({
     return (
       <ToolFailedBlock
         tool={block.tool}
+        {...(block.command && { command: block.command })}
         {...(block.error && { error: block.error })}
+        {...(block.recoveredResult && { recoveredResult: block.recoveredResult })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
@@ -2711,17 +2713,42 @@ function SubagentMissionBlock({
 
 function ToolFailedBlock({
   tool,
+  command,
   error,
+  recoveredResult,
   subagent,
   modelByRole,
   omitRoleLabel,
 }: {
   tool: string;
+  command?: string;
   error?: string;
+  recoveredResult?: Extract<ActivityDetailBlock, { kind: "tool-failed" }>["recoveredResult"];
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
+  const commandRef = useRef<HTMLPreElement>(null);
+  const [commandExpanded, setCommandExpanded] = useState(false);
+  const [commandCanExpand, setCommandCanExpand] = useState(false);
+
+  useLayoutEffect(() => {
+    setCommandExpanded(false);
+    setCommandCanExpand(false);
+  }, [command]);
+
+  useLayoutEffect(() => {
+    const node = commandRef.current;
+    if (!node || commandExpanded) {
+      return;
+    }
+    const measure = () => setCommandCanExpand(node.scrollHeight > node.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [command, commandExpanded]);
+
   return (
     <div className="run-log-tool-failed" role="status">
       {subagent && !omitRoleLabel ? (
@@ -2729,8 +2756,61 @@ function ToolFailedBlock({
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
         </span>
       ) : null}
-      <span className="run-log-tool-failed-label">工具未完成 · {tool}</span>
-      {error ? <p className="run-log-tool-failed-error">{error}</p> : null}
+      <span
+        className={`run-log-tool-failed-label${recoveredResult ? " is-recovered" : ""}`}
+      >
+        {recoveredResult ? "补丁已应用 · 检查通过" : `工具未完成 · ${tool}`}
+      </span>
+      {command ? (
+        <div className="run-log-tool-failed-command-wrap">
+          <pre
+            ref={commandRef}
+            className={`run-log-tool-failed-command${commandExpanded ? " is-expanded" : ""}`}
+          >
+            {command}
+          </pre>
+          {commandCanExpand ? (
+            <button
+              type="button"
+              className="run-log-tool-failed-command-toggle"
+              onClick={() => setCommandExpanded((value) => !value)}
+              aria-expanded={commandExpanded}
+            >
+              {commandExpanded ? "收起命令" : "展开命令"}
+              <ChevronDown
+                size={13}
+                className={commandExpanded ? "is-expanded" : undefined}
+                aria-hidden
+              />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {recoveredResult ? (
+        <div className="run-log-tool-result-panel is-success">
+          <div className="run-log-tool-result-header">
+            <ShieldCheck size={14} aria-hidden />
+            <span>未发现待清理的残留引用</span>
+          </div>
+          <ul className="run-log-tool-result-files">
+            {recoveredResult.files.map((file) => (
+              <li key={`${file.status}:${file.path}`}>
+                <span className="run-log-tool-result-file-status">{file.status}</span>
+                <FileText size={13} aria-hidden />
+                <code>{file.path}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : error ? (
+        <div className="run-log-tool-result-panel">
+          <div className="run-log-tool-result-header">
+            <Terminal size={14} aria-hidden />
+            <span>命令输出</span>
+          </div>
+          <pre className="run-log-tool-failed-error">{error}</pre>
+        </div>
+      ) : null}
     </div>
   );
 }

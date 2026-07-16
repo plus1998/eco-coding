@@ -4154,6 +4154,116 @@ test("projectionItemToDetailBlock builds bash card display for completed bash to
   });
 });
 
+test("projectionItemToDetailBlock separates failed bash command from output", () => {
+  const command = "cd apps/desktop && bun test test/thread-run-projection-view.test.ts";
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "bash-failed",
+      eventType: "tool.failed",
+      scope: "main",
+      role: "planner",
+      text: `Tool: Bash · ${command}`,
+      metadata: {
+        liveType: "tool.failed",
+        tool: {
+          name: "Bash",
+          detail: command,
+          toolUseId: "toolu_bash_failed",
+          status: "failed",
+          output: "1 test failed",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "tool-failed",
+    tool: "Bash",
+    command,
+    error: "1 test failed",
+  });
+});
+
+test("projectionItemToDetailBlock recovers patch followed by an empty ripgrep verification", () => {
+  const command = `/bin/zsh -lc "apply_patch <<'PATCH'
+*** Begin Patch
+*** Update File: src/example.ts
+@@
+-old
++new
+*** End Patch
+PATCH
+rg -n \"oldSymbol\" src -g '*.ts'"`;
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "bash-patch-verified",
+      eventType: "tool.failed",
+      scope: "main",
+      role: "planner",
+      text: `Tool: Bash · ${command}`,
+      metadata: {
+        liveType: "tool.failed",
+        tool: {
+          name: "Bash",
+          detail: command,
+          toolUseId: "toolu_bash_patch_verified",
+          status: "failed",
+          exitCode: 1,
+          output: "Success. Updated the following files:\nM src/example.ts\n",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "tool-failed",
+    tool: "Bash",
+    command,
+    recoveredResult: {
+      kind: "patch-applied-verification-empty",
+      files: [{ status: "M", path: "src/example.ts" }],
+    },
+  });
+});
+
+test("projectionItemToDetailBlock keeps a real command after apply_patch as failed", () => {
+  const command = `/bin/zsh -lc "apply_patch <<'PATCH'
+*** Begin Patch
+*** Update File: src/example.ts
+@@
+-old
++new
+*** End Patch
+PATCH
+bun test"`;
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "bash-patch-test-failed",
+      eventType: "tool.failed",
+      scope: "main",
+      role: "planner",
+      text: `Tool: Bash · ${command}`,
+      metadata: {
+        liveType: "tool.failed",
+        tool: {
+          name: "Bash",
+          detail: command,
+          status: "failed",
+          exitCode: 1,
+          output: "Success. Updated the following files:\nM src/example.ts\n",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "tool-failed",
+    tool: "Bash",
+    error: "Success. Updated the following files:\nM src/example.ts",
+  });
+  expect(detail).not.toHaveProperty("recoveredResult");
+});
+
 test("projectionItemToDetailBlock formats MCP tool metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({

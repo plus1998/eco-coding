@@ -2058,10 +2058,23 @@ export function projectionItemToDetailBlock(
 
   if (item.eventType === "tool.failed") {
     const subagent = resolveProjectionSubagent(item);
+    const tool = resolveProjectionToolName(item);
+    const metadataTool = readProjectionToolMetadata(item);
+    const command = tool === "Bash" ? metadataTool?.detail?.trim() : undefined;
+    const output = metadataTool?.output?.trim();
+    const recoveredResult = resolvePatchAppliedNegativeSearchResult({
+      ...(command && { command }),
+      ...(output && { output }),
+      ...(metadataTool?.exitCode !== undefined && { exitCode: metadataTool.exitCode }),
+    });
+    const commandMessage = command ? `Tool: Bash · ${command}` : undefined;
+    const error = recoveredResult ? "" : output || (text !== commandMessage ? text : "");
     return {
       kind: "tool-failed",
-      tool: resolveProjectionToolName(item),
-      ...(text && { error: text }),
+      tool,
+      ...(command && { command }),
+      ...(error && { error }),
+      ...(recoveredResult && { recoveredResult }),
       ...(subagent && { subagent }),
       ...(item.agentId && { agentId: item.agentId }),
     };
@@ -2094,6 +2107,53 @@ export function projectionItemToDetailBlock(
     return { kind: "phase", label: phaseLabel };
   }
   return undefined;
+}
+
+function resolvePatchAppliedNegativeSearchResult(input: {
+  command?: string;
+  output?: string;
+  exitCode?: number;
+}):
+  | {
+      kind: "patch-applied-verification-empty";
+      files: Array<{ status: string; path: string }>;
+    }
+  | undefined {
+  if (input.exitCode !== 1 || !input.command || !input.output) {
+    return undefined;
+  }
+  const heredoc = input.command.match(/apply_patch\s+<<\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/u);
+  const delimiter = heredoc?.[1];
+  if (!delimiter) {
+    return undefined;
+  }
+  const delimiterOffset = input.command.lastIndexOf(`\n${delimiter}\n`);
+  if (delimiterOffset < 0) {
+    return undefined;
+  }
+  const trailingCommand = input.command
+    .slice(delimiterOffset + delimiter.length + 2)
+    .replace(/["']\s*$/u, "")
+    .trim();
+  if (!/^rg(?:\s|$)/u.test(trailingCommand)) {
+    return undefined;
+  }
+
+  const lines = input.output.split(/\r?\n/u).filter(Boolean);
+  if (lines[0] !== "Success. Updated the following files:") {
+    return undefined;
+  }
+  const files = lines.slice(1).map((line) => {
+    const match = line.match(/^([AMDR])\s+(.+)$/u);
+    return match?.[1] && match[2] ? { status: match[1], path: match[2] } : undefined;
+  });
+  if (files.length === 0 || files.some((file) => !file)) {
+    return undefined;
+  }
+  return {
+    kind: "patch-applied-verification-empty",
+    files: files.filter((file): file is { status: string; path: string } => Boolean(file)),
+  };
 }
 
 function formatReconnectPhaseSummary(
@@ -2254,6 +2314,8 @@ function readProjectionToolMetadata(
       record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
     ...(typeof record.durationMs === "number" &&
       Number.isFinite(record.durationMs) && { durationMs: record.durationMs }),
+    ...(typeof record.exitCode === "number" &&
+      Number.isFinite(record.exitCode) && { exitCode: record.exitCode }),
     ...(isProjectionToolStatus(record.status) && { status: record.status }),
     ...(typeof record.description === "string" &&
       record.description.trim() && { description: record.description.trim() }),

@@ -69,7 +69,18 @@ export type ActivityDetailBlock =
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
     }
-  | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
+  | {
+      kind: "tool-failed";
+      tool: string;
+      command?: string;
+      error?: string;
+      recoveredResult?: {
+        kind: "patch-applied-verification-empty";
+        files: Array<{ status: string; path: string }>;
+      };
+      subagent?: string;
+      agentId?: string;
+    }
   | {
       kind: "api-error";
       message: string;
