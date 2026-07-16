@@ -148,7 +148,6 @@ test.skipIf(!sqliteAvailable)("claims queued follow-ups for later delivery", asy
   const second = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "第二条" });
 
   const claimed = store.claimQueuedThreadFollowUps("thr_followup", {
-    limit: 1,
     deliveryMode: "resume",
     targetRunAttemptId: "attempt_1",
     deliveryBoundary: "safe_boundary",
@@ -163,6 +162,20 @@ test.skipIf(!sqliteAvailable)("claims queued follow-ups for later delivery", asy
     deliveryBoundary: "safe_boundary",
   });
   expect(claimed[0]?.deliveredAt).toBeTruthy();
+  expect(store.getThreadFollowUp("thr_followup", second.id)?.status).toBe("queued");
+});
+
+test.skipIf(!sqliteAvailable)("claims one queued follow-up by default", async () => {
+  const store = await createStore();
+  const first = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "第一条" });
+  const second = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "第二条" });
+
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", {
+    deliveryMode: "resume",
+    deliveryBoundary: "safe_boundary",
+  });
+
+  expect(claimed.map((item) => item.id)).toEqual([first.id]);
   expect(store.getThreadFollowUp("thr_followup", second.id)?.status).toBe("queued");
 });
 

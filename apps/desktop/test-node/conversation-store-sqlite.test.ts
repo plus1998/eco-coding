@@ -88,6 +88,39 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite claims queued follow-ups one at a time by default", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-follow-up-queue-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = new Date().toISOString();
+  store.saveThread({
+    id: "thr_followup_queue",
+    title: "Follow-up queue",
+    prompt: "start",
+    workspacePath: "/tmp/follow-up-queue",
+    status: "running",
+    message: "working",
+    createdAt: now,
+    updatedAt: now,
+  });
+  const first = store.enqueueThreadFollowUp({
+    threadId: "thr_followup_queue",
+    prompt: "第一条",
+  });
+  const second = store.enqueueThreadFollowUp({
+    threadId: "thr_followup_queue",
+    prompt: "第二条",
+  });
+
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup_queue", {
+    deliveryMode: "resume",
+    deliveryBoundary: "safe_boundary",
+  });
+
+  assert.deepEqual(claimed.map((item) => item.id), [first.id]);
+  assert.equal(store.getThreadFollowUp("thr_followup_queue", first.id)?.status, "delivered");
+  assert.equal(store.getThreadFollowUp("thr_followup_queue", second.id)?.status, "queued");
+});
+
 test("Node SQLite migrates the legacy thread activity schema", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-sqlite-migration-");
   const databasePath = path.join(directory, "eco-coding.sqlite");

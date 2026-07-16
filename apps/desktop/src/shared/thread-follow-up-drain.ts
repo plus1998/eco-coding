@@ -20,44 +20,30 @@ export function shouldBlockThreadFollowUpDrain(input: {
 }
 
 export function buildThreadFollowUpDisplayPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
-  const queued = followUps.filter((followUp) => followUp.status === "delivered");
-  if (queued.length === 0) {
-    return "";
-  }
-  return queued.map((followUp) => normalizeFollowUpPrompt(followUp)).join("\n\n");
+  const next = nextDeliveredFollowUp(followUps);
+  return next ? normalizeFollowUpPrompt(next) : "";
 }
 
 export function buildThreadFollowUpDrainPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
-  const queued = followUps.filter((followUp) => followUp.status === "delivered");
-  if (queued.length === 0) {
+  const next = nextDeliveredFollowUp(followUps);
+  if (!next) {
     return "";
   }
-  const instruction = buildDrainInstruction(queued);
-  if (queued.length === 1) {
-    const followUp = queued[0]!;
-    return `${instruction}\n\n后续消息 1${formatFollowUpMetadata(followUp)}：\n${normalizeFollowUpPrompt(followUp)}`;
-  }
-  const body = queued
-    .map((followUp, index) => {
-      const label = followUp.priority === "escalated" ? "立即后续消息" : "后续消息";
-      const metadata = formatFollowUpMetadata(followUp);
-      return `${label} ${index + 1}${metadata}：\n${normalizeFollowUpPrompt(followUp)}`;
-    })
-    .join("\n\n");
-  return `${instruction}\n\n${body}`;
+  const instruction = buildDrainInstruction(next);
+  const label = next.priority === "escalated" ? "立即后续消息" : "后续消息";
+  return `${instruction}\n\n${label}${formatFollowUpMetadata(next)}：\n${normalizeFollowUpPrompt(next)}`;
 }
 
 export function collectThreadFollowUpAttachments(
   followUps: readonly ThreadPendingFollowUp[],
 ): PromptImageAttachment[] {
-  const attachments: PromptImageAttachment[] = [];
-  for (const followUp of followUps) {
-    if (followUp.status !== "delivered" || !followUp.attachments?.length) {
-      continue;
-    }
-    attachments.push(...followUp.attachments);
-  }
-  return attachments;
+  return [...(nextDeliveredFollowUp(followUps)?.attachments ?? [])];
+}
+
+function nextDeliveredFollowUp(
+  followUps: readonly ThreadPendingFollowUp[],
+): ThreadPendingFollowUp | undefined {
+  return followUps.find((followUp) => followUp.status === "delivered");
 }
 
 function normalizeFollowUpPrompt(followUp: ThreadPendingFollowUp): string {
@@ -69,8 +55,8 @@ function normalizeFollowUpPrompt(followUp: ThreadPendingFollowUp): string {
   return imageCount > 0 ? `请查看并分析我附上的 ${imageCount} 张图片。` : "请继续。";
 }
 
-function buildDrainInstruction(followUps: readonly ThreadPendingFollowUp[]): string {
-  const forced = followUps.some((followUp) => followUp.deliveryBoundary === "forced_interrupt");
+function buildDrainInstruction(followUp: ThreadPendingFollowUp): string {
+  const forced = followUp.deliveryBoundary === "forced_interrupt";
   return [
     forced
       ? "以下是用户要求立即处理的后续消息，当前运行已在清理后恢复。"

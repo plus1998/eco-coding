@@ -71,7 +71,7 @@ test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
   expect(shouldDrainThreadFollowUps("idle")).toBe(false);
 });
 
-test("buildThreadFollowUpDisplayPrompt only includes user follow-up text", () => {
+test("buildThreadFollowUpDisplayPrompt only includes the first delivered message", () => {
   const prompt = buildThreadFollowUpDisplayPrompt([
     followUp("1", {
       prompt: "api端口是什么",
@@ -86,13 +86,13 @@ test("buildThreadFollowUpDisplayPrompt only includes user follow-up text", () =>
     }),
   ]);
 
-  expect(prompt).toBe("api端口是什么\n\n再更新文档");
+  expect(prompt).toBe("api端口是什么");
   expect(prompt).not.toContain("以下是用户要求立即处理");
   expect(prompt).not.toContain("queuedDuringPhase");
   expect(prompt).not.toContain("后续消息");
 });
 
-test("buildThreadFollowUpDrainPrompt merges delivered follow-ups in order", () => {
+test("buildThreadFollowUpDrainPrompt sends only the first delivered follow-up", () => {
   const prompt = buildThreadFollowUpDrainPrompt([
     followUp("1", {
       prompt: "先补测试",
@@ -109,11 +109,11 @@ test("buildThreadFollowUpDrainPrompt merges delivered follow-ups in order", () =
 
   expect(prompt).toContain("不要重规划");
   expect(prompt).toContain("queuedDuringPhase=execution");
-  expect(prompt).toContain("boundary=forced_interrupt");
-  expect(prompt).toContain("后续消息 1");
+  expect(prompt).toContain("boundary=safe_boundary");
+  expect(prompt).toContain("后续消息");
   expect(prompt).toContain("先补测试");
-  expect(prompt).toContain("立即后续消息 2");
-  expect(prompt).toContain("再更新文档");
+  expect(prompt).not.toContain("立即后续消息");
+  expect(prompt).not.toContain("再更新文档");
 });
 
 test("buildThreadFollowUpDrainPrompt ignores queued records until claimed", () => {
@@ -124,9 +124,10 @@ test("buildThreadFollowUpDrainPrompt ignores queued records until claimed", () =
   ).toBe("");
 });
 
-test("collectThreadFollowUpAttachments only includes delivered attachments", () => {
+test("collectThreadFollowUpAttachments only includes the first delivered message attachments", () => {
   const attachments = collectThreadFollowUpAttachments([
     followUp("delivered", { attachments: [{ mediaType: "image/png", data: "abc" }] }),
+    followUp("later", { attachments: [{ mediaType: "image/webp", data: "later" }] }),
     followUp("queued", {
       status: "queued",
       deliveryMode: "queued",

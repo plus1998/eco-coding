@@ -1942,17 +1942,15 @@ export class ConversationStore {
   claimQueuedThreadFollowUps(
     threadId: string,
     input?: {
-      limit?: number;
       deliveryMode?: ThreadFollowUpDeliveryMode;
       targetRunAttemptId?: string;
       priority?: ThreadFollowUpPriority;
       deliveryBoundary?: ThreadFollowUpBoundary;
     },
   ): ThreadPendingFollowUp[] {
-    const limit = Math.max(1, Math.min(input?.limit ?? 20, 50));
     const queued = this.listThreadFollowUps(threadId, { statuses: ["queued"] })
       .filter((followUp) => !input?.priority || followUp.priority === input.priority)
-      .slice(0, limit);
+      .slice(0, 1);
     if (queued.length === 0) {
       return [];
     }

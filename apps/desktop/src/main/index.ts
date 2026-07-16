@@ -648,6 +648,7 @@ const activeRunBillingState = new ActiveRunBillingStateStore();
 const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
+const threadFollowUpDrainInFlight = new Set<string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const proxyBillingStampRegistry = new ProxyBillingStampRegistry();
 const codexGatewayUsageDeduplicator = new CodexGatewayUsageDeduplicator();
@@ -3662,6 +3663,18 @@ async function requestEscalatedFollowUpInterrupt(
 }
 
 async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<void> {
+  if (threadFollowUpDrainInFlight.has(threadId)) {
+    return;
+  }
+  threadFollowUpDrainInFlight.add(threadId);
+  try {
+    await drainNextQueuedThreadFollowUp(threadId);
+  } finally {
+    threadFollowUpDrainInFlight.delete(threadId);
+  }
+}
+
+async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
   if (activeRunRuntimeState.hasRun(threadId)) {
     return;
   }
