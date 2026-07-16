@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
@@ -76,6 +77,7 @@ class ActivityFeedEntry {
     this.toolUseId,
     this.reconnecting = false,
     this.actionChildren = const [],
+    this.attachments = const [],
   });
 
   final String id;
@@ -98,6 +100,7 @@ class ActivityFeedEntry {
   final String? toolUseId;
   final bool reconnecting;
   final List<ActivityFeedEntry> actionChildren;
+  final List<PromptImageAttachment> attachments;
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -627,6 +630,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
       case ActivityFeedKind.user:
         return _UserPromptTile(
           text: entry.text,
+          attachments: entry.attachments,
           initiallyExpanded: expandUserPrompts,
         );
       case ActivityFeedKind.clarificationAnswer:
@@ -683,9 +687,14 @@ class _ActivityFeedEntryTile extends StatelessWidget {
 }
 
 class _UserPromptTile extends StatefulWidget {
-  const _UserPromptTile({required this.text, this.initiallyExpanded = false});
+  const _UserPromptTile({
+    required this.text,
+    this.attachments = const [],
+    this.initiallyExpanded = false,
+  });
 
   final String text;
+  final List<PromptImageAttachment> attachments;
   final bool initiallyExpanded;
 
   @override
@@ -741,12 +750,40 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                 textDirection: Directionality.of(context),
               );
               final showCollapsed = canExpand && !_expanded;
+              final galleryWidth = (widget.attachments.length * 108.0).clamp(
+                0.0,
+                maxBubbleWidth - horizontalPadding,
+              );
 
               return IntrinsicWidth(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (widget.attachments.isNotEmpty) ...[
+                      SizedBox(
+                        width: galleryWidth,
+                        height: 108,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: widget.attachments.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 6),
+                          itemBuilder: (context, index) => ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: SizedBox.square(
+                              dimension: 108,
+                              child: Image.memory(
+                                base64Decode(widget.attachments[index].data),
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                filterQuality: FilterQuality.medium,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     AnimatedSize(
                       duration: const Duration(milliseconds: 150),
                       curve: Curves.easeOut,
@@ -773,10 +810,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                                 style: textStyle,
                               ),
                             )
-                          : Text(
-                              widget.text,
-                              style: textStyle,
-                            ),
+                          : Text(widget.text, style: textStyle),
                     ),
                     if (canExpand)
                       Align(
@@ -1013,9 +1047,9 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                   ? Text(
                       widget.text,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textMuted.withValues(alpha: 0.9),
-                            height: 1.45,
-                          ),
+                        color: eco.textMuted.withValues(alpha: 0.9),
+                        height: 1.45,
+                      ),
                     )
                   : EcoMarkdown(
                       text: widget.text,
@@ -1422,10 +1456,10 @@ class _BashRunCardState extends State<_BashRunCard> {
     final eco = ecoColors(context);
     final body = display.body?.trim() ?? '';
     final bodyStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: eco.textSecondary,
-          fontFamily: 'Menlo',
-          height: 1.45,
-        );
+      color: eco.textSecondary,
+      fontFamily: 'Menlo',
+      height: 1.45,
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1455,10 +1489,7 @@ class _BashRunCardState extends State<_BashRunCard> {
                 titleColor: failed ? eco.danger : null,
                 expanded: canExpand ? _bodyExpanded : null,
                 trailing: failed
-                    ? const ActivityFeedStatusChip(
-                        label: '失败',
-                        danger: true,
-                      )
+                    ? const ActivityFeedStatusChip(label: '失败', danger: true)
                     : null,
               ),
               if (body.isNotEmpty) ...[
@@ -1540,10 +1571,10 @@ class _FileChangeCardState extends State<_FileChangeCard> {
     final hasMore = display.previewLines.length > _collapsedLineLimit;
 
     final lineStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontFamily: 'Menlo',
-          height: 1.45,
-          color: eco.textSecondary,
-        );
+      fontFamily: 'Menlo',
+      height: 1.45,
+      color: eco.textSecondary,
+    );
     final diffPalette = FileChangeDiffPalette.of(eco);
 
     String? diffMeta;
@@ -1566,14 +1597,14 @@ class _FileChangeCardState extends State<_FileChangeCard> {
             iconColor: failed
                 ? eco.danger
                 : running
-                    ? eco.accent
-                    : eco.textMuted,
+                ? eco.accent
+                : eco.textMuted,
             expanded: _expanded,
             trailing: failed
                 ? const ActivityFeedStatusChip(label: '失败', danger: true)
                 : running
-                    ? const ActivityFeedStatusChip(label: '运行中', active: true)
-                    : null,
+                ? const ActivityFeedStatusChip(label: '运行中', active: true)
+                : null,
           ),
           const ActivityFeedBlockDivider(),
           EcoClippedFadeBody(
@@ -1905,37 +1936,37 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       maxLines: expanded ? null : 1,
                       overflow: expanded ? null : TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textSecondary,
-                            height: 1.35,
-                          ),
+                        color: eco.textSecondary,
+                        height: 1.35,
+                      ),
                     ),
                     const SizedBox(height: 8),
                   ],
                   Text(
                     '任务目标',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: eco.textMuted,
-                          fontSize: 11,
-                          letterSpacing: 0.2,
-                        ),
+                      color: eco.textMuted,
+                      fontSize: 11,
+                      letterSpacing: 0.2,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   if (fullText.isEmpty)
                     Text(
                       '等待任务说明…',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textMuted,
-                            fontStyle: FontStyle.italic,
-                            height: 1.4,
-                          ),
+                        color: eco.textMuted,
+                        fontStyle: FontStyle.italic,
+                        height: 1.4,
+                      ),
                     )
                   else if (expanded)
                     Text(
                       fullText,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textSecondary,
-                            height: 1.45,
-                          ),
+                        color: eco.textSecondary,
+                        height: 1.45,
+                      ),
                     )
                   else
                     EcoClippedFadeBody(
@@ -1947,9 +1978,9 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                         maxLines: 2,
                         overflow: TextOverflow.clip,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: eco.textSecondary,
-                              height: 1.45,
-                            ),
+                          color: eco.textSecondary,
+                          height: 1.45,
+                        ),
                       ),
                     ),
                   if (expanded && hasTimeline) ...[
@@ -1964,9 +1995,9 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     Text(
                       '等待执行事件…',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textMuted,
-                            fontStyle: FontStyle.italic,
-                          ),
+                        color: eco.textMuted,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ],
                 ],

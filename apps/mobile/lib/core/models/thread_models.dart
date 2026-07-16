@@ -225,6 +225,12 @@ class WorkflowSettingsSnapshot {
 class PromptImageAttachment {
   const PromptImageAttachment({required this.mediaType, required this.data});
 
+  factory PromptImageAttachment.fromJson(Map<String, dynamic> json) =>
+      PromptImageAttachment(
+        mediaType: json['mediaType'] as String? ?? 'image/jpeg',
+        data: json['data'] as String? ?? '',
+      );
+
   Map<String, dynamic> toJson() => {'mediaType': mediaType, 'data': data};
 
   final String mediaType;
@@ -526,6 +532,7 @@ class ThreadPendingFollowUp {
     required this.status,
     required this.createdAt,
     this.priority = 'normal',
+    this.attachments = const [],
   });
 
   factory ThreadPendingFollowUp.fromJson(Map<String, dynamic> json) =>
@@ -536,6 +543,11 @@ class ThreadPendingFollowUp {
         status: json['status'] as String? ?? 'queued',
         createdAt: json['createdAt'] as String? ?? '',
         priority: json['priority'] as String? ?? 'normal',
+        attachments: (json['attachments'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(PromptImageAttachment.fromJson)
+            .where((attachment) => attachment.data.isNotEmpty)
+            .toList(),
       );
 
   final String id;
@@ -544,6 +556,7 @@ class ThreadPendingFollowUp {
   final String status;
   final String createdAt;
   final String priority;
+  final List<PromptImageAttachment> attachments;
 }
 
 class ThreadSessionBootstrapResult {

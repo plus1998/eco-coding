@@ -484,7 +484,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     setState(() {
       _editingFollowUpId = followUp.id;
       _promptController.text = followUp.prompt;
-      _attachments.clear();
+      _attachments
+        ..clear()
+        ..addAll(followUp.attachments);
     });
   }
 
@@ -565,24 +567,21 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
     try {
       if (followUpMode) {
-        if (_attachments.isNotEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('运行中引导消息暂不支持图片附件。')));
-          }
-          return;
-        }
         setState(() => _followUpBusy = true);
         if (_editingFollowUpId != null) {
           await rpc.followUpUpdate(
             threadId: widget.threadId,
             followUpId: _editingFollowUpId!,
             prompt: prompt,
+            attachments: _attachments.isEmpty ? null : List.of(_attachments),
           );
           _cancelEditingFollowUp();
         } else {
-          await rpc.followUpEnqueue(threadId: widget.threadId, prompt: prompt);
+          await rpc.followUpEnqueue(
+            threadId: widget.threadId,
+            prompt: prompt,
+            attachments: _attachments.isEmpty ? null : List.of(_attachments),
+          );
           FocusManager.instance.primaryFocus?.unfocus();
           _promptController.clear();
           if (mounted) {

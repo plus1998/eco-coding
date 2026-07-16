@@ -759,9 +759,7 @@ String formatMeaningfulBashTitle({
   final normalizedCommand = command?.trim();
   if (normalizedCommand != null && normalizedCommand.isNotEmpty) {
     final title = _deriveBashTitleFromCommand(normalizedCommand);
-    return title != null
-        ? title
-        : clampActivityPreviewLine(normalizedCommand, 48);
+    return title ?? clampActivityPreviewLine(normalizedCommand, 48);
   }
   return '运行命令';
 }

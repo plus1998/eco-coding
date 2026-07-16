@@ -82,6 +82,10 @@ import {
 } from "../shared/bash-approval-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
+import {
+  PROMPT_IMAGE_PREVIEWS_METADATA_KEY,
+  type PromptImagePreview,
+} from "../shared/prompt-image-metadata";
 import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
   type AgentRole,
@@ -2945,7 +2949,7 @@ function registerIpcHandlers(): void {
     };
 
     conversationStore.saveThread(thread);
-    recordUserPrompt(thread.id, prompt);
+    recordUserPrompt(thread.id, prompt, payload.attachments);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (runtimeConfig.ok) {
@@ -3805,7 +3809,7 @@ async function startCodexThreadContinuation(
 
   updateThread(thread.id, { status: "running", message: "" });
   if (!input.rewindTarget) {
-    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt);
+    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
   }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
   void startCodexThreadRun({
@@ -3886,7 +3890,11 @@ async function startCodexThreadRun(
                 ecoThreadId: input.thread.id,
                 targetItemId: input.rewindTarget.userMessageId,
               });
-              recordUserPrompt(input.thread.id, input.displayPrompt?.trim() || input.prompt);
+              recordUserPrompt(
+                input.thread.id,
+                input.displayPrompt?.trim() || input.prompt,
+                input.attachments,
+              );
             }
             await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
           },
@@ -4809,7 +4817,7 @@ async function startClaudeThreadContinuation(input: StartThreadContinuationInput
     status: "running",
     message: statusMessage,
   });
-  recordUserPrompt(input.threadId, input.displayPrompt?.trim() || prompt);
+  recordUserPrompt(input.threadId, input.displayPrompt?.trim() || prompt, input.attachments);
   if (input.rewindTarget) {
     // Publish the new history revision only after its replacement prompt exists.
     // An empty rewind projection can otherwise race the renderer refresh and make
@@ -7959,8 +7967,52 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   desktopEventCenter.publishThreadLiveEvent(payload);
 }
 
-function recordUserPrompt(threadId: string, prompt: string): ThreadActivityLine | undefined {
-  return emitThreadEvent(threadId, "thread.user_prompt", prompt, "user");
+function recordUserPrompt(
+  threadId: string,
+  prompt: string,
+  attachments?: readonly PromptImageAttachment[],
+): ThreadActivityLine | undefined {
+  const previews = createPromptImagePreviews(attachments ?? []);
+  return emitThreadEvent(threadId, "thread.user_prompt", prompt, "user", false, {
+    ...(previews.length > 0 && {
+      metadata: { [PROMPT_IMAGE_PREVIEWS_METADATA_KEY]: previews },
+    }),
+  });
+}
+
+function createPromptImagePreviews(
+  attachments: readonly PromptImageAttachment[],
+): PromptImagePreview[] {
+  const previews: PromptImagePreview[] = [];
+  for (const attachment of attachments) {
+    const image = nativeImage.createFromBuffer(Buffer.from(attachment.data, "base64"));
+    if (image.isEmpty()) {
+      process.stderr.write("[eco] unable to decode a prompt image preview\n");
+      continue;
+    }
+    const size = image.getSize();
+    const longestEdge = Math.max(size.width, size.height);
+    const scale = longestEdge > 512 ? 512 / longestEdge : 1;
+    const preview =
+      scale < 1
+        ? image.resize({
+            width: Math.max(1, Math.round(size.width * scale)),
+            height: Math.max(1, Math.round(size.height * scale)),
+            quality: "good",
+          })
+        : image;
+    const bytes = preview.toJPEG(80);
+    if (bytes.length === 0) {
+      process.stderr.write("[eco] unable to encode a prompt image preview\n");
+      continue;
+    }
+    previews.push({
+      id: `prompt_image_${randomUUID()}`,
+      mediaType: "image/jpeg",
+      data: bytes.toString("base64"),
+    });
+  }
+  return previews;
 }
 
 function archiveThreadContextBeforeCompaction(

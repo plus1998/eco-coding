@@ -40,9 +40,9 @@ List<ThreadPendingFollowUp> sortThreadFollowUps(
 List<ThreadPendingFollowUp> queuedThreadFollowUps(
   List<ThreadPendingFollowUp> followUps,
 ) {
-  return sortThreadFollowUps(followUps)
-      .where((followUp) => followUp.status == 'queued')
-      .toList();
+  return sortThreadFollowUps(
+    followUps,
+  ).where((followUp) => followUp.status == 'queued').toList();
 }
 
 List<ThreadPendingFollowUp> mergeThreadFollowUp(
@@ -56,10 +56,16 @@ List<ThreadPendingFollowUp> mergeThreadFollowUp(
 
 String formatThreadFollowUpPreview(ThreadPendingFollowUp followUp) {
   final prompt = followUp.prompt.trim();
+  final imageCount = followUp.attachments.length;
+  final imageLabel = '$imageCount 张图片';
   if (prompt.length > 120) {
-    return '${prompt.substring(0, 117)}...';
+    final clipped = '${prompt.substring(0, 117)}...';
+    return imageCount > 0 ? '$clipped ($imageLabel)' : clipped;
   }
-  return prompt.isEmpty ? '空引导消息' : prompt;
+  if (prompt.isNotEmpty) {
+    return imageCount > 0 ? '$prompt ($imageLabel)' : prompt;
+  }
+  return imageCount > 0 ? imageLabel : '空引导消息';
 }
 
 int _compareThreadFollowUps(

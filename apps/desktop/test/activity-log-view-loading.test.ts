@@ -132,6 +132,33 @@ test("ActivityLogView waits for thread stop before exposing final output copy", 
   expect(html).not.toContain('aria-label="复制消息"');
 });
 
+test("ActivityLogView renders prompt images above the user text", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        timeline: [
+          item({
+            id: "user-with-image",
+            eventType: "thread.status",
+            role: "user",
+            text: "分析这张图片",
+            metadata: {
+              liveType: "thread.user_prompt",
+              promptImagePreviews: [
+                { id: "preview-1", mediaType: "image/jpeg", data: "YWJj" },
+              ],
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain('class="run-log-user-prompt-images"');
+  expect(html).toContain('alt="用户上传的图片 1"');
+  expect(html.indexOf("run-log-user-prompt-images")).toBeLessThan(html.indexOf("分析这张图片"));
+});
+
 test("ActivityLogView exposes final output copy after thread stops", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {

@@ -695,6 +695,43 @@ void main() {
     },
   );
 
+  test('buildActivityFeed preserves user prompt image previews', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '分析图片',
+      threadId: 't-image',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't-image',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'user-image',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            text: '分析图片',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'liveType': 'thread.user_prompt',
+              'promptImagePreviews': [
+                {'id': 'preview-1', 'mediaType': 'image/jpeg', 'data': 'YWJj'},
+              ],
+            },
+          ),
+        ],
+        agents: const [],
+      ),
+    );
+
+    final user = feed.firstWhere(
+      (entry) => entry.kind == ActivityFeedKind.user,
+    );
+    expect(user.attachments, hasLength(1));
+    expect(user.attachments.single.mediaType, 'image/jpeg');
+  });
+
   test(
     'buildActivityFeed keeps subagent mission before later assistant text',
     () {

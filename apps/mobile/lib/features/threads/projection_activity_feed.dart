@@ -1,4 +1,5 @@
 import '../../core/models/thread_run_projection.dart';
+import '../../core/models/thread_models.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
@@ -71,6 +72,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           id: item.id,
           kind: ActivityFeedKind.user,
           text: item.text.trim(),
+          attachments: _promptImagePreviews(item),
         ),
         at: item.at,
         sequence: item.sequence,
@@ -266,6 +268,18 @@ bool _isProjectionUserPromptItem(ThreadRunProjectionTimelineItem item) {
   }
   return item.text.trim().isNotEmpty &&
       !isThreadFollowUpActivityMessage(item.text);
+}
+
+List<PromptImageAttachment> _promptImagePreviews(
+  ThreadRunProjectionTimelineItem item,
+) {
+  final raw = item.metadata?['promptImagePreviews'];
+  if (raw is! List<dynamic>) return const [];
+  return raw
+      .whereType<Map<String, dynamic>>()
+      .map(PromptImageAttachment.fromJson)
+      .where((attachment) => attachment.data.isNotEmpty)
+      .toList();
 }
 
 bool _isAgentEchoTimelineItem(ThreadRunProjectionTimelineItem item) {
@@ -1000,6 +1014,7 @@ String? _resolveEffectiveStreamRequestId(
     }
     return null;
   }
+  return null;
 }
 
 String? _projectionOwnerKey(ThreadRunProjectionTimelineItem item) {
@@ -1032,14 +1047,6 @@ String _appendStreamScopeSuffix(
   return requestId != null && requestId.isNotEmpty
       ? '$key:req:$requestId'
       : key;
-}
-
-String _appendThinkingStreamScopeSuffix(
-  String key,
-  ThreadRunProjectionTimelineItem item,
-  String? effectiveRequestId,
-) {
-  return _appendStreamScopeSuffix(key, item, effectiveRequestId);
 }
 
 ThreadRunProjectionTimelineItem? _settleTerminalStreamDisplayItem(
@@ -1530,11 +1537,7 @@ String? _projectionStreamDisplayKey(
   final hasExplicitStreamBlockKey =
       streamKey != null && streamKey.contains(':block:');
   if (streamKey != null && streamKey.isNotEmpty && hasExplicitStreamBlockKey) {
-    return _appendStreamScopeSuffix(
-      '${channel}:sk:$streamKey',
-      item,
-      requestId,
-    );
+    return _appendStreamScopeSuffix('$channel:sk:$streamKey', item, requestId);
   }
   if (requestId != null) {
     final span = requestSpansById[requestId];
@@ -1543,11 +1546,7 @@ String? _projectionStreamDisplayKey(
     }
   }
   if (streamKey != null && streamKey.isNotEmpty) {
-    return _appendStreamScopeSuffix(
-      '${channel}:sk:$streamKey',
-      item,
-      requestId,
-    );
+    return _appendStreamScopeSuffix('$channel:sk:$streamKey', item, requestId);
   }
   final ownerKey = _projectionOwnerKey(item);
   if (ownerKey != null) {

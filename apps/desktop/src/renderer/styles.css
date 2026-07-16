@@ -7143,6 +7143,26 @@ button.sidebar-core-heading {
   color: var(--run-log-user-prompt-fg);
 }
 
+.run-log-user-prompt-images {
+  display: flex;
+  max-width: min(520px, 72vw);
+  gap: 6px;
+  padding: 8px 8px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.run-log-user-prompt-images img {
+  display: block;
+  flex: 0 0 clamp(112px, 18vw, 164px);
+  width: clamp(112px, 18vw, 164px);
+  aspect-ratio: 1;
+  border-radius: 10px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--run-log-user-prompt-fg) 8%, transparent);
+}
+
 .run-log-user-prompt-body-wrap {
   position: relative;
 }
@@ -11510,23 +11530,46 @@ button.sidebar-core-heading {
   border: 1px solid color-mix(in srgb, #3b82f6 28%, transparent);
 }
 
+.composer-input-stack {
+  position: relative;
+  min-width: 0;
+}
+
 .composer-attachments {
+  position: absolute;
+  right: clamp(18px, 3vw, 42px);
+  bottom: calc(100% - 16px);
+  left: clamp(18px, 3vw, 42px);
+  z-index: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
-  margin: 0 0 8px;
-  padding: 0;
+  margin: 0;
+  padding: 10px 12px 26px;
   list-style: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  border: 1px solid color-mix(in srgb, var(--follow-up-card-border) 82%, transparent);
+  border-radius: 16px 16px 12px 12px;
+  background: color-mix(in srgb, var(--follow-up-card-bg) 82%, transparent);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 
 .composer-attachment {
   position: relative;
+  flex: 0 0 72px;
   width: 72px;
   height: 72px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #333;
-  background: #171717;
+  border: 1px solid color-mix(in srgb, var(--follow-up-card-border) 88%, transparent);
+  background: color-mix(in srgb, var(--follow-up-card-bg) 70%, #000 30%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
 }
 
 .composer-attachment img {
@@ -11555,6 +11598,10 @@ button.sidebar-core-heading {
 
 .composer-attachment-remove:hover {
   background: rgba(0, 0, 0, 0.85);
+}
+
+.composer-attachment-remove:active {
+  transform: scale(0.94);
 }
 
 .codex-composer-wrap {
@@ -19994,7 +20041,8 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .sidebar-search-dialog,
   .package-scripts-shell,
   .activity-user-message-nav-card,
-  .thread-info-float-popover {
+  .thread-info-float-popover,
+  .composer-attachments {
     background: var(--bg-elevated);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

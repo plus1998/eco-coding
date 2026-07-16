@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -93,9 +96,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     if (!mounted || _speechOverlayEntry != null) return;
     final overlay = Overlay.of(context);
     _speechOverlayEntry = OverlayEntry(
-      builder: (context) => VoiceDictationOverlay(
-        onStop: _handleSpeechInput,
-      ),
+      builder: (context) => VoiceDictationOverlay(onStop: _handleSpeechInput),
     );
     overlay.insert(_speechOverlayEntry!);
   }
@@ -196,9 +197,17 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-        child: DecoratedBox(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                color: ecoColors(context).composerContextBg,
+                color: ecoColors(context).composerContextBg.withValues(
+                  alpha: Theme.of(context).brightness == Brightness.dark
+                      ? 0.78
+                      : 0.72,
+                ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   width: 0.5,
@@ -209,10 +218,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                 boxShadow: [
                   BoxShadow(
                     color: ecoColors(context).shadowScrim.withValues(
-                      alpha:
-                          Theme.of(context).brightness == Brightness.dark
-                              ? 0.35
-                              : 0.04,
+                      alpha: Theme.of(context).brightness == Brightness.dark
+                          ? 0.35
+                          : 0.04,
                     ),
                     blurRadius: Theme.of(context).brightness == Brightness.dark
                         ? 24
@@ -229,19 +237,21 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                   children: [
                     if (widget.attachments.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: 12),
                         child: SizedBox(
-                          height: 40,
+                          height: 72,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: widget.attachments.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(width: 8),
-                            itemBuilder: (context, index) => InputChip(
-                              label: Text('图片 ${index + 1}'),
-                              visualDensity: VisualDensity.compact,
-                              onDeleted: () => widget.onRemoveAttachment(index),
-                            ),
+                            itemBuilder: (context, index) =>
+                                _PendingImagePreview(
+                                  attachment: widget.attachments[index],
+                                  index: index,
+                                  onRemove: () =>
+                                      widget.onRemoveAttachment(index),
+                                ),
                           ),
                         ),
                       ),
@@ -324,7 +334,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           ComposerToolbarIconButton(
                             onPressed: _handleSpeechInput,
                             tooltip: _speechBusy ? '停止语音输入' : '语音输入',
-                            color: _speechBusy ? ecoColors(context).accent : null,
+                            color: _speechBusy
+                                ? ecoColors(context).accent
+                                : null,
                             icon: ComposerToolbarIcon(
                               icon: _speechBusy ? EcoIcons.stop : EcoIcons.mic,
                               color: _speechBusy
@@ -361,6 +373,80 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingImagePreview extends StatelessWidget {
+  const _PendingImagePreview({
+    required this.attachment,
+    required this.index,
+    required this.onRemove,
+  });
+
+  final PromptImageAttachment attachment;
+  final int index;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Semantics(
+      label: '待发送图片 ${index + 1}',
+      child: SizedBox.square(
+        dimension: 72,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: eco.composerPillBg,
+                    border: Border.all(
+                      width: 0.5,
+                      color: eco.composerPillBorder.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Image.memory(
+                    base64Decode(attachment.data),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Semantics(
+                button: true,
+                label: '移除图片 ${index + 1}',
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.62),
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onRemove,
+                    customBorder: const CircleBorder(),
+                    child: const SizedBox.square(
+                      dimension: 24,
+                      child: Icon(
+                        EcoIcons.close,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

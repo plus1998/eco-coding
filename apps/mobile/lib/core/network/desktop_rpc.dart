@@ -265,9 +265,17 @@ class DesktopRpc {
   Future<void> followUpEnqueue({
     required String threadId,
     required String prompt,
+    List<PromptImageAttachment>? attachments,
   }) async {
     await _client.invoke(desktopDeviceId, 'thread:follow-up-enqueue', [
-      {'threadId': threadId, 'prompt': prompt},
+      {
+        'threadId': threadId,
+        'prompt': prompt,
+        if (attachments != null && attachments.isNotEmpty)
+          'attachments': attachments
+              .map((attachment) => attachment.toJson())
+              .toList(),
+      },
     ]);
   }
 
@@ -293,9 +301,18 @@ class DesktopRpc {
     required String threadId,
     required String followUpId,
     required String prompt,
+    List<PromptImageAttachment>? attachments,
   }) async {
     await _client.invoke(desktopDeviceId, 'thread:follow-up-update', [
-      {'threadId': threadId, 'followUpId': followUpId, 'prompt': prompt},
+      {
+        'threadId': threadId,
+        'followUpId': followUpId,
+        'prompt': prompt,
+        if (attachments != null && attachments.isNotEmpty)
+          'attachments': attachments
+              .map((attachment) => attachment.toJson())
+              .toList(),
+      },
     ]);
   }
 
@@ -552,11 +569,7 @@ class DesktopRpc {
       desktopDeviceId,
       'workspace:save-package-script-args',
       [
-        {
-          'workspacePath': workspacePath,
-          'script': script,
-          'args': args,
-        },
+        {'workspacePath': workspacePath, 'script': script, 'args': args},
       ],
     );
     final rawArgs = result['scriptArgs'];

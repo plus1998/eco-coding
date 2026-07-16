@@ -59,6 +59,10 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
+import {
+  type PromptImagePreview,
+  readPromptImagePreviews,
+} from "../shared/prompt-image-metadata";
 import { resolveRequestSpanDurationMs } from "../shared/request-span-timing";
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import { formatGrepTargetInlineDetail } from "../shared/tool-target";
@@ -1604,6 +1608,7 @@ function ProjectionTimelineEntry({
     return wrapRunLogFeedEntry(
       <UserPromptBlock
         text={item.text}
+        images={readPromptImagePreviews(item.metadata)}
         anchorId={item.id}
         createdAt={item.at}
         {...(rewindTarget && { rewindTarget })}
@@ -2392,6 +2397,7 @@ function ThinkingBlock({
 
 function UserPromptBlock({
   text,
+  images = [],
   className,
   anchorId,
   createdAt,
@@ -2399,6 +2405,7 @@ function UserPromptBlock({
   onRestorePrompt,
 }: {
   text: string;
+  images?: readonly PromptImagePreview[];
   className?: string;
   anchorId?: string;
   createdAt?: string;
@@ -2454,6 +2461,18 @@ function UserPromptBlock({
     >
       <div className={contentClassName}>
         <div className="run-log-user-prompt-bubble">
+          {images.length > 0 ? (
+            <div className="run-log-user-prompt-images">
+              {images.map((image, index) => (
+                <img
+                  key={image.id}
+                  src={`data:${image.mediaType};base64,${image.data}`}
+                  alt={`用户上传的图片 ${index + 1}`}
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          ) : null}
           <div
             className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
               .filter(Boolean)

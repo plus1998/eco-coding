@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../core/models/thread_models.dart';
@@ -126,10 +128,10 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: eco.composerPillText,
-          fontSize: 13,
-          height: 1.2,
-        );
+      color: eco.composerPillText,
+      fontSize: 13,
+      height: 1.2,
+    );
 
     return ComposerStackCard(
       stadium: true,
@@ -142,12 +144,23 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
               onTap: _actionBusy ? null : () => widget.onEdit(widget.followUp),
               child: Row(
                 children: [
-                  Icon(
-                    EcoIcons.indent,
-                    size: 14,
-                    color: eco.composerPillText,
-                  ),
+                  Icon(EcoIcons.indent, size: 14, color: eco.composerPillText),
                   const SizedBox(width: 6),
+                  if (widget.followUp.attachments.isNotEmpty) ...[
+                    SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: Image.memory(
+                          base64Decode(widget.followUp.attachments.first.data),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                  ],
                   Expanded(
                     child: Text(
                       formatThreadFollowUpPreview(widget.followUp),

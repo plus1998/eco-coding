@@ -85,7 +85,11 @@ void main() {
     );
 
     expect(
-      queuedThreadFollowUps([normal, cancelled, escalated]).map((item) => item.id),
+      queuedThreadFollowUps([
+        normal,
+        cancelled,
+        escalated,
+      ]).map((item) => item.id),
       ['escalated', 'normal'],
     );
   });
@@ -104,5 +108,20 @@ void main() {
 
     expect(preview.length, 120);
     expect(preview.endsWith('...'), isTrue);
+  });
+
+  test('formatThreadFollowUpPreview includes image count', () {
+    final item = ThreadPendingFollowUp(
+      id: 'image-follow-up',
+      threadId: 'thread-1',
+      prompt: '看一下',
+      status: 'queued',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      attachments: const [
+        PromptImageAttachment(mediaType: 'image/jpeg', data: 'YWJj'),
+      ],
+    );
+
+    expect(formatThreadFollowUpPreview(item), '看一下 (1 张图片)');
   });
 }

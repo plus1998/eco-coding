@@ -5442,24 +5442,25 @@ function App() {
           {composerPromptCacheHint}
         </p>
       ) : null}
-      {composerAttachments.length > 0 && (
-        <ul className="composer-attachments" aria-label="已粘贴的图片">
-          {composerAttachments.map((attachment) => (
-            <li key={attachment.id} className="composer-attachment">
-              <img src={attachment.previewUrl} alt="" />
-              <button
-                type="button"
-                className="composer-attachment-remove"
-                aria-label="移除图片"
-                onClick={() => removeComposerAttachment(attachment.id)}
-              >
-                <X size={14} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <ComposerDockMorph
+      <div className="composer-input-stack">
+        {composerAttachments.length > 0 && (
+          <ul className="composer-attachments" aria-label="已粘贴的图片">
+            {composerAttachments.map((attachment) => (
+              <li key={attachment.id} className="composer-attachment">
+                <img src={attachment.previewUrl} alt="" />
+                <button
+                  type="button"
+                  className="composer-attachment-remove"
+                  aria-label="移除图片"
+                  onClick={() => removeComposerAttachment(attachment.id)}
+                >
+                  <X size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ComposerDockMorph
         showApproval={showComposerDockApproval}
         surfaceKey={composerDockSurfaceKey}
         approval={
@@ -5625,7 +5626,8 @@ function App() {
             ) : null}
           </div>
         }
-      />
+        />
+      </div>
       {showLanding && showProjectSkillsPanel && composerSupportsSkills ? (
         <ComposerSkillsBar
           sdkReadySkills={projectSdkReadySkills}
