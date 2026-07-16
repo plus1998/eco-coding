@@ -1621,6 +1621,7 @@ test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () 
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
+    pathToClaudeCodeExecutable: "/opt/eco/claude",
     loadSdk: async () => ({
       query: ({ options }) => {
         capturedOptions = options;
@@ -1648,6 +1649,7 @@ test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () 
   );
 
   expect(capturedOptions?.cwd).toBe("/tmp/session-worktree");
+  expect(capturedOptions?.pathToClaudeCodeExecutable).toBe("/opt/eco/claude");
   expect(rewoundMessageId).toBe("user-target");
 });
 

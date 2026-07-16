@@ -501,6 +501,8 @@ export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
+  /** Native Claude CLI path supplied by packaged desktop builds. */
+  pathToClaudeCodeExecutable?: string;
   /**
    * When true, move cwd/git/platform context out of the cached system prompt prefix
    * so identical append text can share prompt cache across worktrees.
@@ -652,6 +654,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
       model: plannerRoute.primary.modelId,
+      ...(this.options.pathToClaudeCodeExecutable
+        ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }
+        : {}),
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       permissionMode: "dontAsk",
       allowedTools: [],
@@ -958,6 +963,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
       model: mainModel,
+      ...(this.options.pathToClaudeCodeExecutable
+        ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }
+        : {}),
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       includePartialMessages: true,
       settingSources: session.settingSources,

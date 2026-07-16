@@ -61,6 +61,10 @@ import {
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
 import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
+import {
+  readElectronResourcesPath,
+  resolvePackagedClaudeExecutableCandidate,
+} from "./packaged-runtime-executables";
 
 ensureDesktopPath();
 
@@ -5491,9 +5495,18 @@ function createSdkDriver(
     throw new Error("Thread was not found.");
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
+  const packagedClaudeExecutable = app.isPackaged
+    ? resolvePackagedClaudeExecutableCandidate({ resourcesPath: readElectronResourcesPath() })
+    : undefined;
+  if (app.isPackaged && (!packagedClaudeExecutable || !existsSync(packagedClaudeExecutable))) {
+    throw new Error("Packaged Claude Code executable is missing from app.asar.unpacked.");
+  }
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
+    ...(packagedClaudeExecutable && existsSync(packagedClaudeExecutable)
+      ? { pathToClaudeCodeExecutable: packagedClaudeExecutable }
+      : {}),
     hookContext: {
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),

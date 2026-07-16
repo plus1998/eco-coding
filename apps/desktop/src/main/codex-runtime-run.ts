@@ -51,6 +51,10 @@ import {
 } from "./codex-approval-bridge";
 import { CodexModelCatalogService } from "./codex-model-catalog";
 import {
+  readElectronResourcesPath,
+  resolvePackagedCodexExecutableCandidate,
+} from "./packaged-runtime-executables";
+import {
   CodexRuntimeLifecycle,
   ensureGlobalCodexRuntimeLifecycle,
   getGlobalCodexRuntimeLifecycle,
@@ -610,6 +614,17 @@ export function resolveCodexExecutable(): string | undefined {
   const fromEnv = process.env.CODEX_EXECUTABLE?.trim();
   if (fromEnv && isRunnableCodexExecutable(fromEnv)) {
     return fromEnv;
+  }
+
+  const resourcesPath = readElectronResourcesPath();
+  const packaged = resolvePackagedCodexExecutableCandidate({
+    resourcesPath,
+  });
+  if (packaged && isRunnableCodexExecutable(packaged)) {
+    return packaged;
+  }
+  if (resourcesPath && fs.existsSync(path.join(resourcesPath, "app.asar"))) {
+    return undefined;
   }
 
   for (const candidate of getProjectCodexCandidates()) {
