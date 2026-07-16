@@ -120,6 +120,8 @@ String roleDisplayLabel(String role) {
   switch (role) {
     case 'planner':
       return 'Main Agent';
+    case 'vision':
+      return '看图';
     case 'coder':
       return '编码';
     case 'reviewer':
@@ -152,6 +154,7 @@ String shortAgentId(String agentId) {
 }
 
 const _subagentRoleShort = <String, String>{
+  'vision': '看图',
   'explore': '探索',
   'architect': '架构',
   'coder': '编码',

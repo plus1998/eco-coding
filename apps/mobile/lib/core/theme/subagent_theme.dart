@@ -4,6 +4,7 @@ import '../models/thread_models.dart';
 import '../utils/activity_display.dart';
 
 const subagentDefaultThemeColors = <String, Color>{
+  'vision': Color(0xFF38BDF8),
   'explore': Color(0xFFA78BFA),
   'architect': Color(0xFF22D3EE),
   'coder': Color(0xFF34D399),

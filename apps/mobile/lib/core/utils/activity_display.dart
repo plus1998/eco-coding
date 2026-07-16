@@ -8,6 +8,7 @@ import 'file_change.dart';
 import 'subagent_session_timing.dart';
 
 const subagentDisplayRoles = {
+  'vision',
   'explore',
   'architect',
   'coder',
@@ -26,6 +27,7 @@ const _nonAgentActivityRoles = {
 };
 
 const _chineseRoleToId = {
+  '看图': 'vision',
   '探索': 'explore',
   '架构': 'architect',
   '编码': 'coder',
@@ -1056,6 +1058,7 @@ class ParsedReconnectActivity {
 
 String resolveSubagentRunDisplayTitle(String role) {
   const labels = {
+    'vision': '看图',
     'explore': '探索',
     'architect': '架构',
     'coder': '编码',

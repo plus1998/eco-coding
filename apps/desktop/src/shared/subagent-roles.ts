@@ -7,6 +7,7 @@ import { normalizeSdkSubagentType } from "@eco/runtime/subagent-resume";
 
 /** Fixed Chinese labels for sub-agent roles in activity cards and context UI. */
 export const SUBAGENT_ROLE_SHORT: Record<string, string> = {
+  vision: "看图",
   explore: "探索",
   architect: "架构",
   coder: "编码",

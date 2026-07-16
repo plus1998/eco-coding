@@ -1,4 +1,5 @@
 export const SUBAGENT_DEFAULT_THEME_COLORS = {
+  vision: "#38BDF8",
   explore: "#A78BFA",
   architect: "#22D3EE",
   coder: "#34D399",
@@ -9,6 +10,7 @@ export const SUBAGENT_DEFAULT_THEME_COLORS = {
 export const SUBAGENT_UNKNOWN_THEME_COLOR = "#60A5FA";
 
 export const SUBAGENT_PRESET_THEME_COLORS: readonly string[] = [
+  SUBAGENT_DEFAULT_THEME_COLORS.vision,
   SUBAGENT_DEFAULT_THEME_COLORS.explore,
   SUBAGENT_DEFAULT_THEME_COLORS.architect,
   SUBAGENT_DEFAULT_THEME_COLORS.coder,

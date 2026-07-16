@@ -86,6 +86,12 @@ import {
   PROMPT_IMAGE_PREVIEWS_METADATA_KEY,
   type PromptImagePreview,
 } from "../shared/prompt-image-metadata";
+import {
+  BUILTIN_VISION_AGENT_ROLE,
+  buildPromptWithVisionAnalysis,
+  buildVisionAnalysisRequestBody,
+  readVisionAnalysisResponse,
+} from "../shared/prompt-image-vision";
 import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
   type AgentRole,
@@ -463,9 +469,11 @@ import {
   applyThreadRunDecisionEffects,
 } from "./thread-run-decision-effects";
 import {
+  buildSubagentLifecycleRunEvent,
   buildThreadRunEventFromLiveEvent,
   isMetricsOnlyThreadLiveEvent,
 } from "./thread-run-event-normalizer";
+import { ECO_PROXY_BILLING_HEADERS } from "./proxy-billing-stamp";
 import {
   resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
@@ -1548,7 +1556,22 @@ function resolveRuntimeRoutesForThread(
   const settings = getModelSettingsSnapshot();
   const providers = providerStore.listProvidersWithSecrets();
   const roleRoutes = resolveRoleRoutesForThread(threadId);
-  return resolveRuntimeRoutesFromSettings(settings, providers, roleRoutes);
+  const routes = resolveRuntimeRoutesFromSettings(settings, providers, roleRoutes);
+  const plannerRoute = routes.find((route) => route.role === "planner");
+  if (!plannerRoute || routes.some((route) => route.role === BUILTIN_VISION_AGENT_ROLE)) {
+    return routes;
+  }
+  return [
+    ...routes,
+    {
+      ...plannerRoute,
+      role: BUILTIN_VISION_AGENT_ROLE,
+      manualSpec: {
+        ...plannerRoute.manualSpec,
+        maxOutputTokens: 1600,
+      },
+    },
+  ];
 }
 
 function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRuntimeConfig | undefined {
@@ -3843,7 +3866,6 @@ async function startCodexThreadRun(
 
   let worktreePlan = createSessionPlan(input.workspace.path, input.thread.id);
   let cwd = input.workspace.path;
-  let codexAttachmentDir: string | undefined;
   try {
     if (mode !== "ask") {
       const resolved = await resolveThreadWorktree(input.workspace, input.thread.id);
@@ -3852,18 +3874,20 @@ async function startCodexThreadRun(
       activeRunRuntimeState.setWorktreePlan(input.thread.id, worktreePlan);
     }
 
-    const materializedAttachments = await materializeCodexImageAttachments(
-      input.thread.id,
-      input.attachments ?? [],
-    );
     const codexSkills = await resolveCodexThreadSkills(input.thread.id, cwd);
-    codexAttachmentDir = materializedAttachments.directory;
     const outcome = await runThreadRequestOnce(
       input.thread.id,
       runAttemptPhaseFromThreadMode(mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution"),
       controller.signal,
-      () =>
-        runCodexThreadRequest({
+      async () => {
+        const mainPrompt = await resolvePromptImagesForMainContext({
+          threadId: input.thread.id,
+          prompt: input.prompt,
+          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          ...(input.roleRoutes ? { routesOverride: input.roleRoutes } : {}),
+          signal: controller.signal,
+        });
+        return runCodexThreadRequest({
           threadId: input.thread.id,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(input.thread.id, input.roleRoutes),
           resolveAgentRegistry: () => resolveAgentRuntimeConfigForThreadId(input.thread.id),
@@ -3911,16 +3935,13 @@ async function startCodexThreadRun(
               const agentRegistry = resolveAgentRuntimeConfigForThreadId(input.thread.id);
               const runInput = {
                 threadId: input.thread.id,
-                prompt: input.prompt,
+                prompt: mainPrompt,
                 workspacePath: input.workspace.path,
                 worktreePath: cwd,
                 routes,
                 signal: controller.signal,
                 codexSession: {
-                  ...(await buildCodexSessionOptions(input.thread.id, input.prompt, cwd)),
-                  ...(materializedAttachments.paths.length > 0
-                    ? { localImagePaths: materializedAttachments.paths }
-                    : {}),
+                  ...(await buildCodexSessionOptions(input.thread.id, mainPrompt, cwd)),
                 },
                 ...(agentRegistry ? { agentRegistry } : {}),
               };
@@ -3950,7 +3971,8 @@ async function startCodexThreadRun(
               driver.dispose();
             }
           },
-        }),
+        });
+      },
     );
 
     if (!outcome.ok) {
@@ -3972,9 +3994,6 @@ async function startCodexThreadRun(
   } catch (error) {
     markThreadInterrupted(input.thread.id, errorMessage(error));
   } finally {
-    if (codexAttachmentDir) {
-      await fs.rm(codexAttachmentDir, { recursive: true, force: true });
-    }
     await finalizeMainThreadRunCleanup({
       threadId: input.thread.id,
       worktreePath: cwd,
@@ -4028,53 +4047,6 @@ async function buildCodexSessionOptions(threadId: string, prompt: string, worksp
   return skillInputs.length > 0 ? { skillInputs } : {};
 }
 
-const CODEX_IMAGE_LIMIT = 10;
-const CODEX_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
-const CODEX_IMAGE_EXTENSIONS: Record<PromptImageAttachment["mediaType"], string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
-
-async function materializeCodexImageAttachments(
-  threadId: string,
-  attachments: readonly PromptImageAttachment[],
-): Promise<{ paths: string[]; directory?: string }> {
-  if (attachments.length === 0) return { paths: [] };
-  if (attachments.length > CODEX_IMAGE_LIMIT) {
-    throw new Error(`Codex image input supports at most ${CODEX_IMAGE_LIMIT} images per turn.`);
-  }
-  const directory = path.join(
-    app.getPath("userData"),
-    "codex-images",
-    `${threadId}-${Date.now()}-${randomUUID()}`,
-  );
-  await fs.mkdir(directory, { recursive: true });
-  try {
-    const paths: string[] = [];
-    for (const [index, attachment] of attachments.entries()) {
-      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(attachment.data) || attachment.data.length % 4 !== 0) {
-        throw new Error(`Image attachment ${index + 1} is not valid base64.`);
-      }
-      const bytes = Buffer.from(attachment.data, "base64");
-      if (bytes.length === 0 || bytes.length > CODEX_IMAGE_MAX_BYTES) {
-        throw new Error(`Image attachment ${index + 1} must be between 1 byte and 20 MB.`);
-      }
-      if (nativeImage.createFromBuffer(bytes).isEmpty()) {
-        throw new Error(`Image attachment ${index + 1} cannot be decoded as ${attachment.mediaType}.`);
-      }
-      const imagePath = path.join(directory, `${index + 1}.${CODEX_IMAGE_EXTENSIONS[attachment.mediaType]}`);
-      await fs.writeFile(imagePath, bytes, { mode: 0o600 });
-      paths.push(imagePath);
-    }
-    return { paths, directory };
-  } catch (error) {
-    await fs.rm(directory, { recursive: true, force: true });
-    throw error;
-  }
-}
-
 async function runAskThread(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
@@ -4092,9 +4064,15 @@ async function runAskThread(
 
   try {
     const outcome = await runThreadRequestOnce(thread.id, "ask", controller.signal, async () => {
+      const mainPrompt = await resolvePromptImagesForMainContext({
+        threadId: thread.id,
+        prompt,
+        ...(attachments?.length ? { attachments } : {}),
+        ...(routesOverride ? { routesOverride } : {}),
+        signal: controller.signal,
+      });
       return runThreadRequestWithRuntimeProxy({
         threadId: thread.id,
-        attachments,
         resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
         recordRouteFingerprint: recordThreadRouteFingerprint,
         startRuntimeProxy,
@@ -4108,7 +4086,7 @@ async function runAskThread(
         run: async ({ proxy: attemptProxy, routes }) => {
           const prepared = await prepareSdkRunAfterContextCompaction({
             threadId: thread.id,
-            prompt,
+            prompt: mainPrompt,
             worktreePath: cwd,
             resume: resume ?? resolveResumeOptions(thread.id, cwd),
             signal: controller.signal,
@@ -4209,9 +4187,15 @@ async function runPlanThread(
     activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
 
     const outcome = await runThreadRequestOnce(thread.id, "planning", controller.signal, async () => {
+      const mainPrompt = await resolvePromptImagesForMainContext({
+        threadId: thread.id,
+        prompt,
+        ...(attachments?.length ? { attachments } : {}),
+        ...(routesOverride ? { routesOverride } : {}),
+        signal: controller.signal,
+      });
       return runThreadRequestWithRuntimeProxy({
         threadId: thread.id,
-        attachments,
         resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
         recordRouteFingerprint: recordThreadRouteFingerprint,
         startRuntimeProxy,
@@ -4225,7 +4209,7 @@ async function runPlanThread(
         run: async ({ proxy: attemptProxy, routes }) => {
           const prepared = await prepareSdkRunAfterContextCompaction({
             threadId: thread.id,
-            prompt,
+            prompt: mainPrompt,
             worktreePath: effectiveCwd,
             resume: resume ?? resolveResumeOptions(thread.id, effectiveCwd),
             signal: controller.signal,
@@ -4391,9 +4375,15 @@ async function runCodingThreadAutonomous(
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
     const runOutcome = await runThreadRequestOnce(thread.id, "execution", controller.signal, async () => {
+      const mainPrompt = await resolvePromptImagesForMainContext({
+        threadId: thread.id,
+        prompt,
+        ...(attachments?.length ? { attachments } : {}),
+        ...(routesOverride ? { routesOverride } : {}),
+        signal: controller.signal,
+      });
       return runThreadRequestWithRuntimeProxy({
         threadId: thread.id,
-        attachments,
         resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
         recordRouteFingerprint: recordThreadRouteFingerprint,
         startRuntimeProxy,
@@ -4410,7 +4400,7 @@ async function runCodingThreadAutonomous(
         run: async ({ proxy: attemptProxy, routes }) => {
           const prepared = await prepareSdkRunAfterContextCompaction({
             threadId: thread.id,
-            prompt,
+            prompt: mainPrompt,
             worktreePath: cwd,
             resume: resumeOptsForRun,
             signal: controller.signal,
@@ -4569,9 +4559,17 @@ async function runCodingThreadExecution(
       "execution",
       controller.signal,
       async () => {
+        const followUp = options?.followUp?.trim();
+        const runPrompt = followUp || pending.userPrompt;
+        const mainPrompt = await resolvePromptImagesForMainContext({
+          threadId,
+          prompt: runPrompt,
+          ...(options?.attachments?.length ? { attachments: options.attachments } : {}),
+          ...(options?.routesOverride ? { routesOverride: options.routesOverride } : {}),
+          signal: controller.signal,
+        });
         return runThreadRequestWithRuntimeProxy({
           threadId,
-          attachments: options?.attachments,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(threadId, options?.routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
@@ -4589,11 +4587,9 @@ async function runCodingThreadExecution(
                 throw new Error("Runtime driver does not support session continuation.");
               }
 
-              const followUp = options?.followUp?.trim();
-              const runPrompt = followUp || pending.userPrompt;
               const prepared = await prepareSdkRunAfterContextCompaction({
                 threadId,
-                prompt: runPrompt,
+                prompt: mainPrompt,
                 worktreePath: executionCwd,
                 resume: options?.resume ?? resolveResumeOptions(threadId, executionCwd),
                 signal: controller.signal,
@@ -6170,9 +6166,15 @@ async function runThreadContinuation(
       runAttemptPhaseFromThreadMode(mode),
       controller.signal,
       async () => {
+        const mainPrompt = await resolvePromptImagesForMainContext({
+          threadId: thread.id,
+          prompt: followUp,
+          ...(attachments?.length ? { attachments } : {}),
+          ...(routesOverride ? { routesOverride } : {}),
+          signal: controller.signal,
+        });
         return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
-          attachments,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
@@ -6183,7 +6185,7 @@ async function runThreadContinuation(
             }
             const prepared = await prepareSdkRunAfterContextCompaction({
               threadId: thread.id,
-              prompt: followUp,
+              prompt: mainPrompt,
               worktreePath: cwd,
               resume,
               signal: controller.signal,
@@ -8013,6 +8015,202 @@ function createPromptImagePreviews(
     });
   }
   return previews;
+}
+
+async function resolvePromptImagesForMainContext(input: {
+  threadId: string;
+  prompt: string;
+  attachments?: readonly PromptImageAttachment[];
+  routesOverride?: readonly RuntimeRoleRouteConfig[];
+  signal?: AbortSignal;
+}): Promise<string> {
+  const attachments = input.attachments ?? [];
+  if (attachments.length === 0) {
+    return input.prompt;
+  }
+
+  const runtime = resolveRuntimeConfigForThreadId(input.threadId, input.routesOverride);
+  if (!runtime.ok) {
+    throw new Error(runtime.reason);
+  }
+  const sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
+  if (!sourceRoute) {
+    throw new Error("看图子代理缺少可用的模型路由。");
+  }
+  if (sourceRoute.manualSpec?.supportsImageInput === false) {
+    throw new Error(`主 Agent 模型 ${sourceRoute.modelId} 已明确配置为不支持图片输入。`);
+  }
+
+  const agentId = `vision:${input.threadId}:${randomUUID()}`;
+  const runAttemptId = agentLifecycle.currentRunAttemptId(input.threadId);
+  const parentAgentId = agentLifecycle.currentPlannerAgentId(input.threadId);
+  const phase = resolveBuiltInVisionSubagentPhase(input.threadId);
+  const startedAt = new Date().toISOString();
+  const visionRoute: RuntimeRoute = {
+    ...sourceRoute,
+    role: BUILTIN_VISION_AGENT_ROLE,
+    manualSpec: {
+      ...sourceRoute.manualSpec,
+      maxOutputTokens: 1600,
+    },
+  };
+
+  conversationStore.upsertSubagentSessionActive({
+    threadId: input.threadId,
+    role: BUILTIN_VISION_AGENT_ROLE,
+    agentId,
+    phase,
+    missionKey: `prompt-images:${attachments.length}`,
+  });
+  subagentMetricsRegistry.onSubagentStart(input.threadId, {
+    agentId,
+    role: BUILTIN_VISION_AGENT_ROLE,
+  });
+  agentLifecycle.startSubagent({
+    threadId: input.threadId,
+    agentId,
+    role: BUILTIN_VISION_AGENT_ROLE,
+    missionKey: `prompt-images:${attachments.length}`,
+  });
+  proxyBillingStampRegistry.register(input.threadId, {
+    agentId,
+    role: BUILTIN_VISION_AGENT_ROLE,
+    ...(runAttemptId && { runAttemptId }),
+  });
+  conversationStore.appendThreadRunEvent(
+    buildSubagentLifecycleRunEvent({
+      threadId: input.threadId,
+      agentId,
+      role: BUILTIN_VISION_AGENT_ROLE,
+      lifecycle: "started",
+      observedAt: startedAt,
+      ...(runAttemptId && { runAttemptId }),
+      ...(parentAgentId && { parentAgentId }),
+      missionKey: `prompt-images:${attachments.length}`,
+      delegationPrompt: `分析本轮 ${attachments.length} 张图片，只返回结构化视觉报告。`,
+    }),
+  );
+  scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
+  emitSubagentTimingUpdated(input.threadId);
+
+  let report: string | undefined;
+  let failure: unknown;
+  let proxy: Awaited<ReturnType<typeof startRuntimeProxy>> | undefined;
+  try {
+    proxy = await startRuntimeProxy([visionRoute], [...attachments], input.threadId);
+    const route = proxy.routes[0];
+    if (!route) {
+      throw new Error("看图子代理没有生成可调用的模型别名。");
+    }
+    const response = await fetch(`${proxy.baseUrl.replace(/\/$/, "")}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": proxy.apiKey,
+        [ECO_PROXY_BILLING_HEADERS.agentId]: agentId,
+        [ECO_PROXY_BILLING_HEADERS.billingRole]: BUILTIN_VISION_AGENT_ROLE,
+        ...(runAttemptId ? { [ECO_PROXY_BILLING_HEADERS.runAttemptId]: runAttemptId } : {}),
+      },
+      body: JSON.stringify(
+        buildVisionAnalysisRequestBody({
+          model: route.aliasModelId,
+          prompt: input.prompt,
+          imageCount: attachments.length,
+        }),
+      ),
+      ...(input.signal && { signal: input.signal }),
+    });
+    const payload = (await response.json()) as unknown;
+    if (!response.ok) {
+      throw new Error(`看图子代理请求失败（HTTP ${response.status}）：${readVisionError(payload)}`);
+    }
+    report = readVisionAnalysisResponse(payload);
+    conversationStore.appendThreadRunEvent({
+      id: `tre:${input.threadId}:agent:${agentId}:vision-report`,
+      threadId: input.threadId,
+      eventType: "message.final",
+      scope: "agent",
+      streamState: "finalized",
+      role: BUILTIN_VISION_AGENT_ROLE,
+      agentId,
+      message: report,
+      observedAt: new Date().toISOString(),
+      ...(runAttemptId && { runAttemptId }),
+      metadata: {
+        visionAnalysis: true,
+        imageCount: attachments.length,
+        originalImagesInMainContext: false,
+      },
+    });
+    return buildPromptWithVisionAnalysis({
+      prompt: input.prompt,
+      report,
+      imageCount: attachments.length,
+    });
+  } catch (error) {
+    failure = error;
+    throw new Error(`图片理解失败：${errorMessage(error)}`);
+  } finally {
+    await proxy?.close().catch(() => {});
+    proxyBillingStampRegistry.unregister(input.threadId, agentId);
+    const terminalAt = new Date().toISOString();
+    const lifecycle = failure ? "abandoned" : "stopped";
+    conversationStore.appendThreadRunEvent(
+      buildSubagentLifecycleRunEvent({
+        threadId: input.threadId,
+        agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+        lifecycle,
+        observedAt: terminalAt,
+        ...(runAttemptId && { runAttemptId }),
+        ...(parentAgentId && { parentAgentId }),
+        missionKey: `prompt-images:${attachments.length}`,
+        ...(report && { delegationSummary: `已完成 ${attachments.length} 张图片的结构化分析。` }),
+      }),
+    );
+    conversationStore.markSubagentSessionStopped(input.threadId, agentId);
+    subagentMetricsRegistry.onSubagentStop(input.threadId, {
+      agentId,
+      role: BUILTIN_VISION_AGENT_ROLE,
+    });
+    if (failure) {
+      agentLifecycle.abandonSubagent({
+        threadId: input.threadId,
+        agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+      });
+    } else {
+      agentLifecycle.stopSubagent({
+        threadId: input.threadId,
+        agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+      });
+    }
+    scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
+    emitSubagentTimingUpdated(input.threadId);
+  }
+}
+
+function resolveBuiltInVisionSubagentPhase(threadId: string): SubagentRunPhase {
+  const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
+  return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
+}
+
+function readVisionError(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const error = (value as { error?: unknown }).error;
+    if (typeof error === "string" && error.trim()) {
+      return error.trim();
+    }
+    if (error && typeof error === "object" && !Array.isArray(error)) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) {
+        return message.trim();
+      }
+    }
+  }
+  return "上游未返回错误详情。";
 }
 
 function archiveThreadContextBeforeCompaction(

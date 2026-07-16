@@ -16,6 +16,7 @@ import type {
   ThreadSubagentBillingSnapshot,
   ThreadUsageLedgerEventView,
 } from "../shared/ipc";
+import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import {
   type RuntimeAgentDisplayNames,
   formatRuntimeRoleModelLabel,
@@ -42,7 +43,7 @@ function formatLedgerEventAgentLabel(event: ThreadUsageLedgerEventView): string 
   if (agentId === event.billingRole || agentId === "planner") {
     return "主会话";
   }
-  return agentId.slice(0, 8);
+  return agentId.slice(-8);
 }
 
 const ATTRIBUTION_STATUS_LABELS: Record<ThreadUsageLedgerEventView["attributionStatus"], string> = {
@@ -75,8 +76,11 @@ export function formatUsageBreakdownAgentLabel(
   agentId: string | undefined,
   agentDisplayNames?: RuntimeAgentDisplayNames,
 ): string {
-  const name = resolveRuntimeAgentName(role, agentDisplayNames) ?? formatRoleModelLabel(role);
-  return agentId ? `${name} · ${agentId.slice(0, 8)}` : name;
+  const name =
+    resolveRuntimeAgentName(role, agentDisplayNames) ??
+    SUBAGENT_ROLE_SHORT[role] ??
+    formatRoleModelLabel(role);
+  return agentId ? `${name} · #${agentId.slice(-8)}` : name;
 }
 
 export function ExpandableBillingSection({
@@ -159,7 +163,11 @@ function BreakdownRows({
           </li>
         ))}
         {subagents.map((row) => (
-          <li key={row.agentId} className="usage-breakdown-row" title={`子代理 ${row.agentId}`}>
+          <li
+            key={row.agentId}
+            className="usage-breakdown-row"
+            title={formatUsageBreakdownAgentLabel(row.role, row.agentId, agentDisplayNames)}
+          >
             <span className="usage-breakdown-label">
               {formatUsageBreakdownAgentLabel(row.role, row.agentId, agentDisplayNames)}
             </span>
