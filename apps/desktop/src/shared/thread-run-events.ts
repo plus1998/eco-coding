@@ -49,7 +49,7 @@ export interface ThreadRunToolMetadata {
   toolUseId?: string;
   durationMs?: number;
   status?: "started" | "completed" | "failed";
-  /** Human-readable Bash title from Agent tool input.description */
+  /** Human-readable Bash title from Agent input or Codex commandActions. */
   description?: string;
   fileChange?: ThreadRunFileChangeMetadata;
   readTarget?: ThreadRunReadToolTarget;

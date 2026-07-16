@@ -3703,8 +3703,10 @@ function App() {
         setComposerImageNotice(undefined);
         requestActivityFeedForceScroll();
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
-        if (composerRuntimeConfig) {
-          promptCacheBaselineByThreadRef.current[activeThread.id] = composerRuntimeConfig;
+        const acceptedRuntimeConfig = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
+        if (acceptedRuntimeConfig) {
+          promptCacheBaselineByThreadRef.current[activeThread.id] =
+            acceptedRuntimeConfig;
           setPromptCacheBaselineVersion((v) => v + 1);
         }
       } catch (caught) {
@@ -3752,8 +3754,9 @@ function App() {
           setError(`消息已发送，但界面状态同步失败：${errorMessage(caught)}`);
         }
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
-        if (composerRuntimeConfig) {
-          promptCacheBaselineByThreadRef.current[activeThread.id] = composerRuntimeConfig;
+        if (effectiveComposerRuntimeConfig ?? composerRuntimeConfig) {
+          promptCacheBaselineByThreadRef.current[activeThread.id] =
+            result.thread.runtimeConfig ?? effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
           setPromptCacheBaselineVersion((v) => v + 1);
         }
       } else {
@@ -3775,8 +3778,9 @@ function App() {
           [result.thread.id]: [],
         }));
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
-        if (composerRuntimeConfig) {
-          promptCacheBaselineByThreadRef.current[result.thread.id] = composerRuntimeConfig;
+        if (effectiveComposerRuntimeConfig ?? composerRuntimeConfig) {
+          promptCacheBaselineByThreadRef.current[result.thread.id] =
+            result.thread.runtimeConfig ?? effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
           setPromptCacheBaselineVersion((v) => v + 1);
         }
       }

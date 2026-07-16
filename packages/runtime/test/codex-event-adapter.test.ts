@@ -1816,6 +1816,7 @@ test("dispatch maps commandExecution lifecycle to tool.started and tool.complete
         id: "item_bash_001",
         command: "git status",
         cwd: "/repo",
+        commandActions: [{ type: "listFiles", command: "git status", path: "/repo" }],
         status: "inProgress",
       },
     });
@@ -1826,6 +1827,7 @@ test("dispatch maps commandExecution lifecycle to tool.started and tool.complete
         type: "commandExecution",
         id: "item_bash_001",
         command: "git status",
+        commandActions: [{ type: "listFiles", command: "git status", path: "/repo" }],
         status: "completed",
         aggregatedOutput: "clean\n",
         exitCode: 0,
@@ -1839,12 +1841,14 @@ test("dispatch maps commandExecution lifecycle to tool.started and tool.complete
   expect(events[0]?.metadata?.tool).toMatchObject({
     name: "Bash",
     detail: "git status",
+    description: "列出文件 · /repo",
     toolUseId: "item_bash_001",
     status: "started",
   });
   expect(events[1]?.metadata?.tool).toMatchObject({
     name: "Bash",
     detail: "git status",
+    description: "列出文件 · /repo",
     toolUseId: "item_bash_001",
     status: "completed",
     output: "clean\n",

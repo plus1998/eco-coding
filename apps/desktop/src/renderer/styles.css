@@ -8121,23 +8121,22 @@ button.sidebar-core-heading {
 
 .run-log-tool-failed {
   margin: 4px 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  background: var(--danger-soft);
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .run-log-tool-failed-role {
-  color: var(--danger);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
 }
 
 .run-log-tool-failed-label {
-  color: var(--danger);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
 }
@@ -18113,7 +18112,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   font-size: 13px;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-tool-failed,
 .codex-main:not(.codex-main-landing) .run-log-api-error {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--codex-log-line));
@@ -18121,11 +18119,20 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: var(--codex-log-text);
 }
 
-.codex-main:not(.codex-main-landing) .run-log-tool-failed-role,
-.codex-main:not(.codex-main-landing) .run-log-tool-failed-label,
+.codex-main:not(.codex-main-landing) .run-log-tool-failed {
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-api-error-role,
 .codex-main:not(.codex-main-landing) .run-log-api-error-label {
   color: var(--danger);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-failed-role,
+.codex-main:not(.codex-main-landing) .run-log-tool-failed-label {
+  color: var(--codex-log-muted);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-tool-failed-error,

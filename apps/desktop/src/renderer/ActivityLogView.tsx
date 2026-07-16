@@ -2723,13 +2723,13 @@ function ToolFailedBlock({
   omitRoleLabel?: boolean;
 }) {
   return (
-    <div className="run-log-tool-failed" role="alert">
+    <div className="run-log-tool-failed" role="status">
       {subagent && !omitRoleLabel ? (
         <span className="run-log-tool-failed-role">
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
         </span>
       ) : null}
-      <span className="run-log-tool-failed-label">工具失败 · {tool}</span>
+      <span className="run-log-tool-failed-label">工具未完成 · {tool}</span>
       {error ? <p className="run-log-tool-failed-error">{error}</p> : null}
     </div>
   );

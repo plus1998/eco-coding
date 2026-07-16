@@ -41,6 +41,12 @@ test("detectPromptCacheHitDrop ignores modest cache loss against a much larger p
   expect(detectPromptCacheHitDrop(previous, current)).toBeNull();
 });
 
+test("detectPromptCacheHitDrop ignores cache loss explained by newly added input", () => {
+  const previous = { inputTokens: 1_000, cacheReadTokens: 9_000, cacheCreationTokens: 0 };
+  const current = { inputTokens: 11_000, cacheReadTokens: 4_000, cacheCreationTokens: 0 };
+  expect(detectPromptCacheHitDrop(previous, current)).toBeNull();
+});
+
 test("computePromptCacheHitRatio includes cache creation in prompt size", () => {
   expect(
     computePromptCacheHitRatio({
@@ -76,7 +82,10 @@ test("formatPromptCacheHitDropMessage includes percentages and token counts", ()
     currentPromptTokens: 102_000,
     previousCacheReadTokens: 82_000,
     cacheReadLossTokens: 70_000,
+    addedUncachedInputTokens: 0,
+    unexplainedCacheReadLossTokens: 70_000,
     cacheReadLossShare: 70_000 / 102_000,
+    unexplainedCacheReadLossShare: 70_000 / 102_000,
     inputTokens: 90_000,
     cacheReadTokens: 12_000,
     cacheCreationTokens: 0,
@@ -84,6 +93,6 @@ test("formatPromptCacheHitDropMessage includes percentages and token counts", ()
   expect(message).toContain("78%");
   expect(message).toContain("12%");
   expect(message).toContain("cache_read 12,000");
-  expect(message).toContain("减少 70,000");
+  expect(message).toContain("仍有 70,000");
   expect(message).toContain("Prompt 输入 69%");
 });

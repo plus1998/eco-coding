@@ -49,6 +49,7 @@ type CodexCommandExecutionStatus = "inProgress" | "completed" | "failed" | "decl
 
 interface CodexCommandExecutionFields {
   command: string;
+  description?: string;
   status?: CodexCommandExecutionStatus;
   aggregatedOutput?: string;
   exitCode?: number;
@@ -886,6 +887,7 @@ function emitCommandExecutionToolEvent(
       tool: {
         name: "Bash",
         detail: fields.command,
+        ...(fields.description ? { description: fields.description } : {}),
         toolUseId: itemId,
         status: toolStatus,
         ...(output ? { output } : {}),
@@ -990,17 +992,55 @@ function formatCodexBashToolMessage(command: string): string {
 
 function readCommandExecutionFields(item: Record<string, unknown>): CodexCommandExecutionFields {
   const command = readString(item, "command") ?? "";
+  const description = formatCodexCommandActions(item.commandActions);
   const status = readCommandExecutionStatus(item);
   const aggregatedOutput = readOptionalString(item, "aggregatedOutput");
   const exitCode = readNumber(item, "exitCode");
   const durationMs = readNumber(item, "durationMs");
   return {
     command,
+    ...(description && { description }),
     ...(status && { status }),
     ...(aggregatedOutput && { aggregatedOutput }),
     ...(exitCode !== undefined && { exitCode }),
     ...(durationMs !== undefined && { durationMs }),
   };
+}
+
+function formatCodexCommandActions(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const labels = value
+    .map((entry) => {
+      if (!isRecord(entry)) {
+        return undefined;
+      }
+      const type = readString(entry, "type");
+      if (type === "read") {
+        const name = readString(entry, "name");
+        const path = readString(entry, "path");
+        return name || path ? `读取 ${name ?? path}` : "读取文件";
+      }
+      if (type === "listFiles") {
+        const path = readString(entry, "path");
+        return path ? `列出文件 · ${path}` : "列出文件";
+      }
+      if (type === "search") {
+        const query = readString(entry, "query");
+        const path = readString(entry, "path");
+        if (query && path) {
+          return `搜索 ${query} · ${path}`;
+        }
+        return query ? `搜索 ${query}` : path ? `搜索文件 · ${path}` : "搜索文件";
+      }
+      return undefined;
+    })
+    .filter((label): label is string => Boolean(label));
+  if (labels.length === 0) {
+    return undefined;
+  }
+  return labels.length === 1 ? labels[0] : `${labels[0]} 等 ${labels.length} 项`;
 }
 
 function readCommandExecutionStatus(item: Record<string, unknown>): CodexCommandExecutionStatus | undefined {

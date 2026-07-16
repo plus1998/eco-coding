@@ -11,7 +11,10 @@ export interface CacheHitDropDetection {
   currentPromptTokens: number;
   previousCacheReadTokens: number;
   cacheReadLossTokens: number;
+  addedUncachedInputTokens: number;
+  unexplainedCacheReadLossTokens: number;
   cacheReadLossShare: number;
+  unexplainedCacheReadLossShare: number;
   inputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
@@ -65,10 +68,21 @@ export function detectPromptCacheHitDrop(
   const previousCacheReadTokens = Math.max(0, previous.cacheReadTokens);
   const cacheReadTokens = Math.max(0, current.cacheReadTokens);
   const cacheReadLossTokens = Math.max(0, previousCacheReadTokens - cacheReadTokens);
+  const previousUncachedInputTokens =
+    Math.max(0, previous.inputTokens) + Math.max(0, previous.cacheCreationTokens);
+  const currentUncachedInputTokens =
+    Math.max(0, current.inputTokens) + Math.max(0, current.cacheCreationTokens);
+  const addedUncachedInputTokens = Math.max(
+    0,
+    currentUncachedInputTokens - previousUncachedInputTokens,
+  );
+  const unexplainedCacheReadLossTokens = Math.max(0, cacheReadLossTokens - addedUncachedInputTokens);
   const currentPromptTokens = computeBilledPromptTokens(current);
   const cacheReadLossShare =
     currentPromptTokens > 0 ? Math.min(1, cacheReadLossTokens / currentPromptTokens) : 0;
-  if (cacheReadLossShare < minCacheReadLossShare) {
+  const unexplainedCacheReadLossShare =
+    currentPromptTokens > 0 ? Math.min(1, unexplainedCacheReadLossTokens / currentPromptTokens) : 0;
+  if (unexplainedCacheReadLossShare < minCacheReadLossShare) {
     return null;
   }
   return {
@@ -78,7 +92,10 @@ export function detectPromptCacheHitDrop(
     currentPromptTokens,
     previousCacheReadTokens,
     cacheReadLossTokens,
+    addedUncachedInputTokens,
+    unexplainedCacheReadLossTokens,
     cacheReadLossShare,
+    unexplainedCacheReadLossShare,
     inputTokens: Math.max(0, current.inputTokens),
     cacheReadTokens,
     cacheCreationTokens: Math.max(0, current.cacheCreationTokens),
@@ -89,8 +106,8 @@ export function formatPromptCacheHitDropMessage(detection: CacheHitDropDetection
   const previousPct = Math.round(detection.previousRatio * 100);
   const currentPct = Math.round(detection.currentRatio * 100);
   const dropPp = Math.round(detection.dropPoints * 100);
-  const lossSharePct = Math.round(detection.cacheReadLossShare * 100);
-  return `Prompt cache 命中率从 ${previousPct}% 降至 ${currentPct}%（↓${dropPp}pp），且 cache_read 较上轮减少 ${detection.cacheReadLossTokens.toLocaleString("en-US")}（占本轮 Prompt 输入 ${lossSharePct}%），可能由 cache break 引起。本轮 cache_read ${detection.cacheReadTokens.toLocaleString("en-US")} / Prompt 输入 ${detection.currentPromptTokens.toLocaleString("en-US")}`;
+  const lossSharePct = Math.round(detection.unexplainedCacheReadLossShare * 100);
+  return `Prompt cache 命中率从 ${previousPct}% 降至 ${currentPct}%（↓${dropPp}pp），排除本轮新增输入后仍有 ${detection.unexplainedCacheReadLossTokens.toLocaleString("en-US")} cache_read 损失（占本轮 Prompt 输入 ${lossSharePct}%），可能由 cache break 引起。本轮 cache_read ${detection.cacheReadTokens.toLocaleString("en-US")} / Prompt 输入 ${detection.currentPromptTokens.toLocaleString("en-US")}`;
 }
 
 export class ThreadCacheHitMonitor {
