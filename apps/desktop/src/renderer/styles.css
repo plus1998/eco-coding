@@ -12483,6 +12483,17 @@ button.sidebar-core-heading {
   gap: 2px;
 }
 
+.composer-skills-popover {
+  max-height: min(440px, calc(100vh - 24px));
+}
+
+.composer-skills-popover-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .composer-agents-popover-header {
   display: flex;
   align-items: center;
@@ -22000,7 +22011,8 @@ body.is-resizing-task-panel {
 
 .floating-workspace-card-body .composer-route-card-body,
 .floating-workspace-card-body .composer-agent-models-card-body,
-.floating-workspace-card-body .composer-mcp-card-body {
+.floating-workspace-card-body .composer-mcp-card-body,
+.floating-workspace-card-body .composer-skills-card-body {
   padding: 0 2px;
 }
 

@@ -15,6 +15,75 @@ interface ComposerSkillsControlProps {
   onToggleSkill: (settingsKey: string, enabled: boolean) => void;
 }
 
+interface ComposerSkillsRowsProps {
+  skills: readonly SkillInfo[];
+  enabledSettings: SkillsEnabledSettings;
+  canEdit: boolean;
+  saving?: boolean;
+  onToggleSkill?: (settingsKey: string, enabled: boolean) => void;
+}
+
+function ComposerSkillsRows({
+  skills,
+  enabledSettings,
+  canEdit,
+  saving,
+  onToggleSkill,
+}: ComposerSkillsRowsProps) {
+  return (
+    <>
+      {(["project", "user"] as const).map((source) => {
+        const scoped = skills.filter((skill) => skill.source === source);
+        if (scoped.length === 0) return null;
+        return (
+          <section key={source} className="composer-skills-scope">
+            <h3>{source === "project" ? "项目" : "用户"}</h3>
+            <div className="composer-agents-list">
+              {scoped.map((skill) => {
+                const key = skill.settingsKey ?? skill.skillFilePath;
+                const enabled = enabledSettings[key] ?? false;
+                return (
+                  <div key={key} className="composer-mcp-row">
+                    <div className="composer-mcp-row-main">
+                      <span className="composer-mcp-row-name">{skill.name}</span>
+                      <span className="composer-mcp-row-transport">{skill.layout}</span>
+                    </div>
+                    <label
+                      className="composer-switch"
+                      title={enabled ? `${skill.name} · 已启用` : `${skill.name} · 已停用`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        disabled={!canEdit || saving || !onToggleSkill}
+                        aria-label={`${skill.name} ${enabled ? "已启用" : "已停用"}`}
+                        onChange={() => onToggleSkill?.(key, !enabled)}
+                      />
+                      <span className="composer-switch-track" aria-hidden />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+export function ComposerSkillsCardBody(props: ComposerSkillsRowsProps) {
+  if (props.skills.length === 0) {
+    return <p className="floating-workspace-card-empty">当前项目没有可配置的 Skills</p>;
+  }
+
+  return (
+    <div className="composer-skills-card-body is-embedded">
+      <ComposerSkillsRows {...props} />
+    </div>
+  );
+}
+
 export function ComposerSkillsControl({
   skills,
   enabledSettings,
@@ -73,48 +142,24 @@ export function ComposerSkillsControl({
     ? createPortal(
         <div
           ref={panelRef}
-          className="composer-codex-popover composer-agents-popover"
+          className="composer-codex-popover composer-agents-popover composer-skills-popover"
           role="dialog"
-          aria-label="项目 Skills"
+          aria-label="Skills"
           style={panelStyle}
         >
           <div className="composer-agents-popover-header">
-            <span>项目 Skills</span>
+            <span>Skills</span>
             <span>{summary}</span>
           </div>
-          {(["project", "user"] as const).map((source) => {
-            const scoped = skills.filter((skill) => skill.source === source);
-            if (scoped.length === 0) return null;
-            return (
-              <section key={source} className="composer-skills-scope">
-                <h3>{source === "project" ? "项目" : "用户"}</h3>
-                <div className="composer-agents-list">
-                  {scoped.map((skill) => {
-                    const key = skill.settingsKey ?? skill.skillFilePath;
-                    const enabled = enabledSettings[key] ?? false;
-                    return (
-                      <div key={key} className="composer-mcp-row">
-                        <div className="composer-mcp-row-main">
-                          <span className="composer-mcp-row-name">{skill.name}</span>
-                          <span className="composer-mcp-row-transport">{skill.layout}</span>
-                        </div>
-                        <label className="composer-switch">
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            disabled={!canEdit || saving}
-                            aria-label={`${skill.name} ${enabled ? "已启用" : "已停用"}`}
-                            onChange={() => onToggleSkill(key, !enabled)}
-                          />
-                          <span className="composer-switch-track" aria-hidden />
-                        </label>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
+          <div className="composer-skills-popover-scroll">
+            <ComposerSkillsRows
+              skills={skills}
+              enabledSettings={enabledSettings}
+              canEdit={canEdit}
+              {...(saving !== undefined && { saving })}
+              onToggleSkill={onToggleSkill}
+            />
+          </div>
         </div>,
         document.body,
       )
@@ -133,7 +178,7 @@ export function ComposerSkillsControl({
         ]
           .filter(Boolean)
           .join(" ")}
-        aria-label={`配置项目 Skills，已启用 ${summary}`}
+        aria-label={`配置 Skills，已启用 ${summary}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {

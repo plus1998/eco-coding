@@ -8,10 +8,12 @@ import {
   ListTodo,
   PanelRightOpen,
   Plug,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
+import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import type {
   CoderTodoItem,
   GitSettingsSnapshot,
@@ -26,11 +28,13 @@ import type {
   ThreadStatus,
   WorkspaceInfo,
 } from "../shared/ipc";
+import type { SkillInfo } from "../shared/skills";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
 import { resolveSubagentRunDisplayTitle, thinkingPreviewLine } from "./activity-log";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
+import { ComposerSkillsCardBody } from "./ComposerSkillsControl";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -77,8 +81,11 @@ export interface WorkspaceFloatingCardsProps {
   isSavingSettings?: boolean;
   mcpServers?: readonly McpServerConfigView[];
   composerMcpSettings?: McpServersEnabledSettings;
+  skills?: readonly SkillInfo[];
+  composerSkillsEnabled?: SkillsEnabledSettings;
   onToggleComposerSubagent?: (role: SubagentRole, enabled: boolean) => void | Promise<void>;
   onToggleComposerMcpServer?: (serverKey: string, enabled: boolean) => void | Promise<void>;
+  onToggleComposerSkill?: (settingsKey: string, enabled: boolean) => void | Promise<void>;
   approvedPlan?: ThreadPendingPlan;
   onOpenPlan?: () => void;
   subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
@@ -266,8 +273,11 @@ export function WorkspaceFloatingCards({
   isSavingSettings,
   mcpServers = [],
   composerMcpSettings,
+  skills = [],
+  composerSkillsEnabled,
   onToggleComposerSubagent,
   onToggleComposerMcpServer,
+  onToggleComposerSkill,
   approvedPlan,
   onOpenPlan,
   subagentRunCards = [],
@@ -289,6 +299,9 @@ export function WorkspaceFloatingCards({
   const deletions = gitStatus?.deletions ?? 0;
   const enabledMcpCount = composerMcpSettings ? countEnabledMcpServers(composerMcpSettings) : 0;
   const enabledMcpServers = mcpServers.filter((server) => server.enabled && server.name.trim());
+  const enabledSkillsCount = skills.filter(
+    (skill) => composerSkillsEnabled?.[skill.settingsKey ?? skill.skillFilePath],
+  ).length;
   const subagentLabels = agentModelLabels.filter((label) => !label.main);
   const subagentSettings = composerRuntimeConfig?.subagentEnabled ?? subagentEnabled;
   const composerConfigEditableInWorkspace = Boolean(canEditComposerConfig);
@@ -406,7 +419,7 @@ export function WorkspaceFloatingCards({
           </WorkspacePanelSection>
         ) : null}
 
-        {hasActiveThread && agentModelLabels.length > 0 ? (
+        {hasActiveThread && subagentLabels.length > 0 ? (
           <WorkspacePanelSection
             id="workspace-agents"
             title="智能体编排"
@@ -415,9 +428,7 @@ export function WorkspaceFloatingCards({
               <>
                 <Users size={14} aria-hidden />
                 <span>
-                  {subagentLabels.length > 0
-                    ? `${enabledSubagents}/${subagentLabels.length}`
-                    : String(agentModelLabels.length)}
+                  {enabledSubagents}/{subagentLabels.length}
                 </span>
               </>
             }
@@ -455,6 +466,31 @@ export function WorkspaceFloatingCards({
               canEdit={composerConfigEditableInWorkspace}
               {...(isSavingSettings !== undefined && { saving: isSavingSettings })}
               {...(onToggleComposerMcpServer && { onToggleServer: onToggleComposerMcpServer })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {hasActiveThread && skills.length > 0 && composerSkillsEnabled ? (
+          <WorkspacePanelSection
+            id="workspace-skills"
+            title="Skills"
+            defaultExpanded={enabledSkillsCount > 0}
+            summary={
+              <>
+                <Sparkles size={14} aria-hidden />
+                <span>
+                  {enabledSkillsCount}/{skills.length}
+                </span>
+              </>
+            }
+            maxBodyHeight={320}
+          >
+            <ComposerSkillsCardBody
+              skills={skills}
+              enabledSettings={composerSkillsEnabled}
+              canEdit={composerConfigEditableInWorkspace}
+              {...(isSavingSettings !== undefined && { saving: isSavingSettings })}
+              {...(onToggleComposerSkill && { onToggleSkill: onToggleComposerSkill })}
             />
           </WorkspacePanelSection>
         ) : null}

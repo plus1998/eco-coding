@@ -5910,9 +5910,14 @@ function App() {
                 isSavingSettings={isSavingSettings}
                 mcpServers={mcpSettings.servers}
                 composerMcpSettings={composerMcpSettings}
+                skills={composerAvailableSkills}
+                composerSkillsEnabled={composerSkillsEnabled}
                 onToggleComposerSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
                 onToggleComposerMcpServer={(serverKey, enabled) =>
                   void toggleComposerMcpServer(serverKey, enabled)
+                }
+                onToggleComposerSkill={(settingsKey, enabled) =>
+                  void toggleComposerSkill(settingsKey, enabled)
                 }
                 {...(approvedPlan && { approvedPlan })}
                 onOpenPlan={openPlanTaskDrawer}

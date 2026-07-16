@@ -62,3 +62,43 @@ test("agent orchestration switches remain editable for an editable active thread
   expect(markup).toContain('aria-label="reviewer 已停用"');
   expect(markup).not.toContain('type="checkbox" disabled=""');
 });
+
+test("agent orchestration is hidden when the profile only has the main agent", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      agentModelLabels: [label("planner", true)],
+    }),
+  );
+
+  expect(markup).not.toContain("智能体编排");
+});
+
+test("workspace Skills render as a collapsible section", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      skills: [
+        {
+          name: "local-skill",
+          description: "Local skill",
+          source: "project",
+          directory: "/repo/.agents/skills/local-skill",
+          skillFilePath: "/repo/.agents/skills/local-skill/SKILL.md",
+          settingsKey: "project:agents:.agents/skills/local-skill/SKILL.md",
+          layout: "agents",
+          sdkReady: true,
+        },
+      ],
+      composerSkillsEnabled: {
+        "project:agents:.agents/skills/local-skill/SKILL.md": true,
+      },
+      canEditComposerConfig: true,
+      onToggleComposerSkill: () => {},
+    }),
+  );
+
+  expect(markup).toContain("workspace-skills-body");
+  expect(markup).toContain("local-skill");
+  expect(markup).toContain('aria-label="local-skill 已启用"');
+});
