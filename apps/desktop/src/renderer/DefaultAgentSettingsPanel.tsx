@@ -14,13 +14,13 @@ const agentOptions = [
     kind: "claude" as const,
     label: "Claude Code",
     description: "新会话默认使用 Claude Code。",
-    iconSrc: "/agent-icons/claude-code.ico",
+    iconSrc: "./agent-icons/claude-code.ico",
   },
   {
     kind: "codex" as const,
     label: "Codex",
     description: "新会话默认使用 Codex。",
-    iconSrc: "/agent-icons/codex.ico",
+    iconSrc: "./agent-icons/codex.ico",
   },
 ];
 
