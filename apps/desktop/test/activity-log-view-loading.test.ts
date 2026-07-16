@@ -289,6 +289,7 @@ test("ActivityLogView keeps thinking content lightweight", () => {
   expect(html).not.toContain("run-log-feed-surface-icon");
   expect(html).toContain("run-log-thinking-timing-inline");
   expect(html).toContain("· 耗时 3.0s");
+  expect(html).not.toContain("先检查事件投影，再统一渲染结构。");
 });
 
 test("ActivityLogView shows independent durations for multiple thinking items in one request", () => {

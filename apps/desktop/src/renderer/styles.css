@@ -1,6 +1,8 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
   font-optical-sizing: auto;
+  --ui-font-size: 14px;
+  --code-font-size: 12px;
   /* macOS traffic-light inset — use only on left sidebars (.codex-sidebar, .settings-nav) */
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --content-top-inset: 16px;
@@ -31,6 +33,7 @@ html[data-theme] {
 
 body {
   margin: 0;
+  font-size: var(--ui-font-size);
   background: transparent;
   color: var(--text-primary);
   user-select: none;
@@ -828,7 +831,7 @@ button.sidebar-core-heading {
   border-radius: 8px;
   background: transparent;
   color: var(--sidebar-thread-text);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   text-align: left;
 }
 
@@ -858,7 +861,7 @@ button.sidebar-core-heading {
   border-radius: 8px;
   background: transparent;
   color: var(--sidebar-thread-text);
-  font-size: 14px;
+  font-size: var(--ui-font-size);
   text-align: left;
 }
 
@@ -867,7 +870,7 @@ button.sidebar-core-heading {
   min-width: 0;
   padding: 4px 0;
   color: var(--sidebar-thread-text);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
 }
 
 .project-group-main:hover .project-group-toggle,
@@ -1174,7 +1177,7 @@ button.sidebar-core-heading {
 .chat-item.nested {
   padding-left: 28px;
   color: var(--sidebar-thread-text);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
 }
 
 .chat-item-title {
@@ -3843,7 +3846,7 @@ button.sidebar-core-heading {
   min-height: 0;
   overflow: auto;
   padding: 8px 10px 16px;
-  font-size: 11px;
+  font-size: var(--code-font-size);
   --diff-background-color: transparent;
   --diff-text-color: var(--text-primary);
   --diff-font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -3856,7 +3859,7 @@ button.sidebar-core-heading {
 }
 
 .workspace-diff-viewer .diff-line {
-  font-size: 11px;
+  font-size: var(--code-font-size);
   line-height: 1.35;
 }
 
@@ -3983,7 +3986,7 @@ button.sidebar-core-heading {
 }
 
 .subagent-task-panel-tab-pane--review .workspace-diff-viewer .diff-line {
-  font-size: 11.5px;
+  font-size: var(--code-font-size);
   line-height: 1.45;
 }
 
@@ -4160,6 +4163,30 @@ button.sidebar-core-heading {
   animation-delay: 0.24s;
 }
 
+.workspace-diff-viewer-error {
+  display: flex;
+  min-height: 160px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.workspace-diff-viewer-error button {
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--nav-hover-solid);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.workspace-diff-viewer-error button:hover {
+  border-color: var(--border-strong);
+}
+
 @keyframes workspace-diff-code-loading {
   from {
     opacity: 0.35;
@@ -4187,7 +4214,7 @@ button.sidebar-core-heading {
 }
 
 .workspace-diff-code-table .diff-line {
-  font-size: 12.5px;
+  font-size: var(--code-font-size);
   line-height: 1.55;
 }
 
@@ -4411,7 +4438,7 @@ button.sidebar-core-heading {
 .workspace-subagent-run-name {
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.3;
@@ -4490,7 +4517,7 @@ button.sidebar-core-heading {
 
 .workspace-plan-card-title {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.25;
@@ -8216,31 +8243,6 @@ button.sidebar-core-heading {
   letter-spacing: 0.02em;
 }
 
-.run-log-thinking-preview {
-  flex: 0 1 0;
-  min-width: 0;
-  max-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 400;
-  color: #8a8a8a;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1),
-    flex 0.32s cubic-bezier(0.4, 0, 0.2, 1),
-    max-width 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.run-log-thinking-preview.is-visible {
-  flex: 1 1 auto;
-  max-width: 100%;
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .run-log-thinking.streaming .run-log-thinking-label {
   color: #a3a3a3;
 }
@@ -8710,7 +8712,7 @@ button.sidebar-core-heading {
   max-width: none;
   padding: 0;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--code-font-size);
   line-height: 1.5;
   white-space: pre;
 }
@@ -9043,7 +9045,7 @@ button.sidebar-core-heading {
   background: transparent;
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-size: var(--code-font-size);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -9199,7 +9201,7 @@ button.sidebar-core-heading {
   padding: 8px 0 10px;
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-size: var(--code-font-size);
   line-height: 1.5;
 }
 
@@ -13441,7 +13443,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   background: transparent;
   color: var(--sidebar-muted-strong, var(--text-secondary));
   font: inherit;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   letter-spacing: -0.01em;
   text-align: left;
   cursor: pointer;
@@ -13455,7 +13457,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   gap: 6px;
   margin-top: 6px;
   margin-bottom: 4px;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   font-weight: 500;
   color: var(--text-primary);
 }
@@ -13508,7 +13510,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   box-shadow: 0 0 0 1px var(--search-border);
   color: var(--text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   letter-spacing: -0.01em;
   transition:
     background-color 0.14s ease,
@@ -13543,7 +13545,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .settings-nav-group-label {
   padding: 0 10px 5px;
   color: var(--sidebar-empty-text, var(--text-muted));
-  font-size: 11px;
+  font-size: max(10px, calc(var(--ui-font-size) - 3px));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -13708,6 +13710,78 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .settings-row-main small {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.typography-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 68px;
+  padding: 12px 16px;
+}
+
+.font-size-stepper {
+  display: grid;
+  grid-template-columns: 28px 58px 28px;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 30px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-input);
+}
+
+.font-size-stepper-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.font-size-stepper-button:hover:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+}
+
+.font-size-stepper-button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.font-size-stepper-button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.42;
+}
+
+.font-size-stepper-value {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  height: 20px;
+  border-right: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.font-size-stepper-value small {
+  margin-left: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .settings-badge {
@@ -17171,6 +17245,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 /* —— Codex app inspired activity surface —— */
 .codex-main:not(.codex-main-landing) {
   position: relative;
+  --codex-feed-font-size: var(--ui-font-size);
   background: var(--codex-log-bg);
   color: var(--codex-log-text);
 }
@@ -17316,7 +17391,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-turn-status {
   flex: 0 0 auto;
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -17426,7 +17501,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   padding: 0 0 14px;
   border-bottom: 1px solid var(--codex-log-line);
   color: var(--codex-log-heading);
-  font-size: 16px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 500;
 }
 
@@ -17464,6 +17539,10 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   margin: 0;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-body {
+  font-size: var(--codex-feed-font-size);
+}
+
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content p,
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ul,
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ol {
@@ -17474,7 +17553,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
 .codex-main:not(.codex-main-landing) .run-log-narrative p {
   color: var(--codex-log-text);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 400;
   line-height: 1.55;
 }
@@ -17483,7 +17562,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .markdown-content,
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact p {
   color: var(--codex-log-text);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   line-height: 1.6;
 }
 
@@ -17533,7 +17612,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   border-radius: 8px;
   background: var(--codex-log-chip);
   color: var(--codex-log-chip-text);
-  font-size: 0.92em;
+  font-size: var(--code-font-size);
 }
 
 .codex-main:not(.codex-main-landing) .markdown-pre,
@@ -17564,7 +17643,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   border: 0;
   background: transparent;
   color: var(--codex-log-muted);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 450;
   line-height: 1.55;
 }
@@ -17581,7 +17660,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-tool-group-trigger {
   gap: 8px;
   color: var(--codex-log-muted);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 450;
   line-height: 1.55;
 }
@@ -17643,7 +17722,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-bash-card-output {
   padding: 8px 12px 11px;
   color: var(--codex-log-muted);
-  font-size: 12px;
+  font-size: var(--code-font-size);
   line-height: 1.55;
 }
 
@@ -17783,16 +17862,16 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-header:hover .run-log-thinking-label,
-.codex-main:not(.codex-main-landing) .run-log-thinking-header:hover .run-log-thinking-preview.is-visible {
+.codex-main:not(.codex-main-landing) .run-log-thinking-header:focus-visible .run-log-thinking-label {
   color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-label,
-.codex-main:not(.codex-main-landing) .run-log-thinking-preview,
 .codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-label {
   color: var(--codex-log-muted);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 500;
+  letter-spacing: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body-shell.open .run-log-thinking-body {
@@ -17811,13 +17890,13 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body p {
   color: #a8a8a8;
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   line-height: 1.6;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body-plain {
   color: var(--codex-log-muted);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -17825,7 +17904,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content {
   color: var(--codex-log-muted);
-  font-size: 13px;
+  font-size: var(--codex-feed-font-size);
   line-height: 1.6;
 }
 
@@ -17881,9 +17960,9 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-shimmer-text {
-  font-size: 12px;
+  font-size: var(--codex-feed-font-size);
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   background-image: linear-gradient(
     90deg,
     var(--codex-log-muted) 0%,
@@ -18569,7 +18648,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
   .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
   .codex-main:not(.codex-main-landing) .run-log-narrative p {
-    font-size: 13px;
+    font-size: var(--codex-feed-font-size);
   }
 
   .codex-main:not(.codex-main-landing) .run-log-phase,
@@ -18577,13 +18656,12 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .codex-main:not(.codex-main-landing) .run-log-agent-request,
   .codex-main:not(.codex-main-landing) .run-log-context-compaction,
   .codex-main:not(.codex-main-landing) .run-log-thinking-label,
-  .codex-main:not(.codex-main-landing) .run-log-thinking-preview,
   .codex-main:not(.codex-main-landing) .subagent-run-title-role,
   .codex-main:not(.codex-main-landing) .subagent-run-title-model,
   .codex-main:not(.codex-main-landing) .subagent-run-title-sep,
   .codex-main:not(.codex-main-landing) .subagent-run-status,
   .codex-main:not(.codex-main-landing) .subagent-run-mission-preview {
-    font-size: 12px;
+    font-size: var(--codex-feed-font-size);
   }
 }
 
@@ -21063,7 +21141,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size);
   font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1.2;
@@ -21430,7 +21508,7 @@ body.is-resizing-task-panel {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: inherit;
-  font-size: inherit;
+  font-size: var(--ui-font-size);
   font-weight: inherit;
 }
 
@@ -22091,7 +22169,7 @@ body.is-resizing-task-panel {
 
 .floating-workspace-card-title {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size);
   font-weight: 600;
   color: var(--text-muted);
   letter-spacing: 0.02em;

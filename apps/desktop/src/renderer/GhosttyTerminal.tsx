@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { FitAddon, Ghostty, ITheme, Terminal as GhosttyTerminalType } from "ghostty-web";
 import type { TerminalStreamEvent } from "../shared/ipc";
+import {
+  DEFAULT_TYPOGRAPHY_PREFERENCES,
+  TYPOGRAPHY_CHANGE_EVENT,
+  type TypographyPreferences,
+} from "./typography-preferences";
 
 interface GhosttyRuntime {
   mod: typeof import("ghostty-web");
@@ -29,6 +34,13 @@ function loadGhosttyRuntime(): Promise<GhosttyRuntime> {
 function readCssVar(name: string, fallback: string): string {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
+}
+
+function readTerminalFontSize(): number {
+  const value = Number.parseFloat(
+    readCssVar("--code-font-size", String(DEFAULT_TYPOGRAPHY_PREFERENCES.codeFontSize)),
+  );
+  return Number.isFinite(value) ? value : DEFAULT_TYPOGRAPHY_PREFERENCES.codeFontSize;
 }
 
 function readTerminalTheme(): ITheme {
@@ -231,7 +243,7 @@ export function GhosttyTerminal({
         ghostty,
         cursorBlink: true,
         scrollback: 10_000,
-        fontSize: 13,
+        fontSize: readTerminalFontSize(),
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
         theme: readTerminalTheme(),
       });
@@ -293,6 +305,17 @@ export function GhosttyTerminal({
       const handleWindowResize = () => scheduleFit();
       window.addEventListener("resize", handleWindowResize);
       cleanups.push(() => window.removeEventListener("resize", handleWindowResize));
+
+      const handleTypographyChange = (event: Event) => {
+        const preferences = (event as CustomEvent<TypographyPreferences>).detail;
+        if (!preferences || disposed || !termRef.current) {
+          return;
+        }
+        termRef.current.options.fontSize = preferences.codeFontSize;
+        scheduleFit();
+      };
+      window.addEventListener(TYPOGRAPHY_CHANGE_EVENT, handleTypographyChange);
+      cleanups.push(() => window.removeEventListener(TYPOGRAPHY_CHANGE_EVENT, handleTypographyChange));
 
       if (document.fonts) {
         await document.fonts.ready;
@@ -356,9 +379,7 @@ export function GhosttyTerminal({
 
     terminal.clear();
     initialResizeSyncedRef.current = false;
-    void eco
-      .resizeTerminal({ sessionId, cols: terminal.cols, rows: terminal.rows })
-      .catch(() => undefined);
+    void eco.resizeTerminal({ sessionId, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
     initialResizeSyncedRef.current = true;
 
     const onData = terminal.onData((data) => {

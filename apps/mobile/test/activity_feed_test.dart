@@ -364,6 +364,89 @@ void main() {
     },
   );
 
+  testWidgets('completed thinking hides content until expanded', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'thinking-1',
+                kind: ActivityFeedKind.thinking,
+                text: '这段思考只能在展开后显示',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('思考'), findsOneWidget);
+    expect(find.text('这段思考只能在展开后显示'), findsNothing);
+
+    await tester.tap(find.text('思考'));
+    await tester.pumpAndSettle();
+    expect(find.text('这段思考只能在展开后显示'), findsOneWidget);
+  });
+
+  testWidgets('primary feed rows share one font size', (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'user-font',
+                kind: ActivityFeedKind.user,
+                text: '用户消息字号',
+              ),
+              ActivityFeedEntry(
+                id: 'assistant-font',
+                kind: ActivityFeedKind.assistant,
+                text: '正文输出字号',
+                streaming: true,
+              ),
+              ActivityFeedEntry(
+                id: 'thinking-font',
+                kind: ActivityFeedKind.thinking,
+                text: '',
+                streaming: true,
+              ),
+              ActivityFeedEntry(
+                id: 'turn-font',
+                kind: ActivityFeedKind.turn,
+                text: '',
+                durationMs: 2000,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    double? fontSize(String text) =>
+        tester.widget<Text>(find.text(text)).style?.fontSize;
+    final expected = fontSize('用户消息字号');
+    expect(expected, isNotNull);
+    expect(fontSize('正文输出字号'), expected);
+    expect(fontSize('正在思考'), expected);
+    expect(fontSize('已处理 2.0s'), expected);
+  });
+
   test(
     'groupActivityFeedActionEntries keeps Bash cards out of action groups',
     () {

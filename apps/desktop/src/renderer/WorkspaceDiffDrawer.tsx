@@ -1,11 +1,44 @@
 import { FileCode2, RotateCcw, X } from "lucide-react";
-import { lazy, Suspense, useEffect } from "react";
+import { Component, lazy, type ReactNode, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { WorkspaceDiffResult } from "../shared/ipc";
+import { clearVitePreloadRecovery } from "./vite-preload-recovery";
 
 const GitDiffViewer = lazy(() =>
-  import("./GitDiffViewer").then((module) => ({ default: module.GitDiffViewer })),
+  import("./GitDiffViewer").then((module) => {
+    clearVitePreloadRecovery();
+    return { default: module.GitDiffViewer };
+  }),
 );
+
+class DiffViewerErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error("[eco] Git diff viewer failed", error);
+  }
+
+  render(): ReactNode {
+    if (!this.state.failed) {
+      return this.props.children;
+    }
+    return (
+      <div className="workspace-diff-viewer-error" role="alert">
+        <span>代码审查器加载失败</span>
+        <button type="button" onClick={() => window.location.reload()}>
+          重新加载
+        </button>
+      </div>
+    );
+  }
+}
 
 function DiffViewerLoading() {
   return (
@@ -162,9 +195,11 @@ export function WorkspaceDiffPanel({
               </p>
             ) : null}
             {activePath && diff?.patch ? (
-              <Suspense fallback={<DiffViewerLoading />}>
-                <GitDiffViewer patch={diff.patch} selectedPath={activePath} />
-              </Suspense>
+              <DiffViewerErrorBoundary>
+                <Suspense fallback={<DiffViewerLoading />}>
+                  <GitDiffViewer patch={diff.patch} selectedPath={activePath} />
+                </Suspense>
+              </DiffViewerErrorBoundary>
             ) : (
               <p className="workspace-diff-empty">选择文件查看 diff</p>
             )}

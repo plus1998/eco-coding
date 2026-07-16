@@ -25,14 +25,12 @@ class EcoMarkdown extends StatelessWidget {
     final baseColor = muted
         ? eco.textMuted.withValues(alpha: 0.85)
         : eco.textHeading;
-    final baseStyle = muted
-        ? Theme.of(context).textTheme.bodySmall
-        : Theme.of(context).textTheme.bodyMedium;
+    final baseStyle = Theme.of(context).textTheme.bodyMedium;
     final base = baseStyle?.copyWith(
-          fontSize: (baseStyle.fontSize ?? 13) * fontSizeScale,
-          height: compact ? 1.45 : 1.55,
-          color: baseColor,
-        );
+      fontSize: (baseStyle.fontSize ?? 13) * fontSizeScale,
+      height: compact ? 1.45 : 1.55,
+      color: baseColor,
+    );
 
     return MarkdownBody(
       data: text,
@@ -79,9 +77,7 @@ class EcoMarkdown extends StatelessWidget {
         horizontalRuleDecoration: BoxDecoration(
           border: Border(top: BorderSide(color: eco.borderSubtle)),
         ),
-        a: base?.copyWith(
-          color: muted ? eco.textSecondary : eco.accentText,
-        ),
+        a: base?.copyWith(color: muted ? eco.textSecondary : eco.accentText),
       ),
     );
   }

@@ -45,6 +45,7 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { installVitePreloadRecovery } from "./vite-preload-recovery";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
@@ -241,6 +242,11 @@ import {
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
+import {
+  persistTypographyPreferences,
+  readStoredTypographyPreferences,
+  type TypographyPreferences,
+} from "./typography-preferences";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
 import "./styles.css";
@@ -344,6 +350,7 @@ interface SettingsSection {
   id: SettingsSectionId;
   label: string;
   icon: LucideIcon;
+  keywords?: string[];
 }
 
 interface SettingsNavGroup {
@@ -354,7 +361,7 @@ interface SettingsNavGroup {
 const settingsNavGroups: SettingsNavGroup[] = [
   {
     label: "个人",
-    sections: [{ id: "general", label: "外观", icon: Monitor }],
+    sections: [{ id: "general", label: "外观", icon: Monitor, keywords: ["主题", "字体", "字号", "代码"] }],
   },
   {
     label: "集成",
@@ -768,10 +775,17 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
   const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
+  const [typographyPreferences, setTypographyPreferences] = useState<TypographyPreferences>(() =>
+    readStoredTypographyPreferences(),
+  );
 
   useEffect(() => {
     persistAppTheme(appTheme);
   }, [appTheme]);
+
+  useEffect(() => {
+    persistTypographyPreferences(typographyPreferences);
+  }, [typographyPreferences]);
 
   useEffect(() => {
     if (appTheme !== "system") {
@@ -6029,7 +6043,9 @@ function App() {
                       return true;
                     }
                     return (
-                      section.label.toLowerCase().includes(query) || group.label.toLowerCase().includes(query)
+                      section.label.toLowerCase().includes(query) ||
+                      group.label.toLowerCase().includes(query) ||
+                      section.keywords?.some((keyword) => keyword.toLowerCase().includes(query))
                     );
                   }),
                 }))
@@ -6061,7 +6077,12 @@ function App() {
           <div className="settings-main">
             <div className="settings-content">
               {settingsSection === "general" && (
-                <GeneralSettingsPanel theme={appTheme} onThemeChange={setAppTheme} />
+                <GeneralSettingsPanel
+                  theme={appTheme}
+                  onThemeChange={setAppTheme}
+                  typography={typographyPreferences}
+                  onTypographyChange={setTypographyPreferences}
+                />
               )}
 
               {settingsSection === "skills" && (
@@ -6310,4 +6331,5 @@ function pathToName(projectPath: string): string {
   return segments[segments.length - 1] ?? projectPath;
 }
 
+installVitePreloadRecovery();
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);

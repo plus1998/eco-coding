@@ -23,8 +23,8 @@ import 'activity_feed_scroll_coordinator.dart';
 import 'projection_activity_feed.dart';
 import 'thread_session_layout.dart';
 
-/// Feed body text is 20% larger than the default body style.
-const activityFeedBodyFontScale = 1.2;
+/// Feed primary text shares the theme body size across all entry types.
+const activityFeedBodyFontScale = 1.0;
 const _scrollToBottomButtonSize = 36.0;
 const _scrollToBottomButtonAlignedBottomGap = 6.0;
 
@@ -826,11 +826,11 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                       children: [
                         Text(
                           duration.isEmpty ? status : '$status $duration',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: eco.textMuted,
-                                fontWeight: FontWeight.w500,
-                              ),
+                          style: activityFeedBodyStyle(
+                            context,
+                            height: 1.4,
+                            color: eco.textMuted,
+                          )?.copyWith(fontWeight: FontWeight.w500),
                         ),
                         const SizedBox(width: 3),
                         AnimatedRotation(
@@ -1217,7 +1217,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
         child: ShimmerText(
           text: '正在思考',
-          style: Theme.of(context).textTheme.bodySmall,
+          style: activityFeedBodyStyle(context, height: 1.4),
           baseColor: ecoColors(context).textMuted,
           highlightColor: ecoColors(context).textSecondary,
         ),
@@ -1225,8 +1225,6 @@ class _ThinkingTileState extends State<_ThinkingTile> {
     }
 
     final eco = ecoColors(context);
-    final preview = _hasBody ? thinkingPreviewLine(widget.text) : '';
-    final showPreview = _hasBody && _collapsed && !widget.streaming;
     final canToggle = _hasBody && !widget.streaming;
 
     return ActivityFeedBlock(
@@ -1244,9 +1242,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
           ActivityFeedBlockHeader(
             icon: EcoIcons.sparkles,
             title: '思考',
-            preview: showPreview ? preview : null,
             iconColor: widget.streaming ? eco.accent : eco.textMuted,
-            dense: showPreview,
             expanded: canToggle ? _expanded : null,
           ),
           if (_hasBody && _expanded) ...[
@@ -1256,7 +1252,8 @@ class _ThinkingTileState extends State<_ThinkingTile> {
               child: widget.streaming
                   ? Text(
                       widget.text,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      style: activityFeedBodyStyle(
+                        context,
                         color: eco.textMuted.withValues(alpha: 0.9),
                         height: 1.45,
                       ),
@@ -1266,6 +1263,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                       compact: true,
                       muted: true,
                       selectable: false,
+                      fontSizeScale: activityFeedBodyFontScale,
                     ),
             ),
           ],
@@ -1468,7 +1466,8 @@ class _ActionTileState extends State<_ActionTile> {
             widget.label,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            style: activityFeedBodyStyle(
+              context,
               color: ecoColors(context).textMuted,
               height: 1.35,
             ),
@@ -1543,11 +1542,11 @@ class _ActionSummaryLine extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            style: activityFeedBodyStyle(
+              context,
               color: failed ? eco.statusDenyText : eco.textMuted,
-              fontWeight: FontWeight.w500,
               height: 1.35,
-            ),
+            )?.copyWith(fontWeight: FontWeight.w500),
           ),
         ),
         if (additions > 0 || deletions > 0) ...[
@@ -1858,9 +1857,10 @@ class _PhaseTile extends StatelessWidget {
         children: [
           Text(
             text,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            style: activityFeedBodyStyle(
+              context,
               color: ecoColors(context).textMuted,
-              fontStyle: FontStyle.italic,
+              height: 1.4,
             ),
           ),
           if (detail != null && detail!.isNotEmpty)

@@ -96,11 +96,11 @@ class ActivityFeedBlockHeader extends StatelessWidget {
     final resolvedIconColor = iconColor ?? muted;
 
     final titleStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: titleColor ?? eco.textPrimary,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.1,
-          fontSize: 13,
-        );
+      color: titleColor ?? eco.textPrimary,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0,
+      fontSize: Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14,
+    );
     final hasPreview = preview != null && preview!.isNotEmpty;
 
     return Padding(
@@ -145,9 +145,9 @@ class ActivityFeedBlockHeader extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: muted.withValues(alpha: 0.9),
-                      height: 1.3,
-                    ),
+                  color: muted.withValues(alpha: 0.9),
+                  height: 1.3,
+                ),
               ),
             ),
           ],
@@ -156,26 +156,19 @@ class ActivityFeedBlockHeader extends StatelessWidget {
             Text(
               meta!,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: muted,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
+                color: muted,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
           ],
-          if (trailing != null) ...[
-            const SizedBox(width: 6),
-            trailing!,
-          ],
+          if (trailing != null) ...[const SizedBox(width: 6), trailing!],
           if (expanded != null) ...[
             const SizedBox(width: 2),
             AnimatedRotation(
               turns: expanded! ? 0.5 : 0,
               duration: const Duration(milliseconds: 160),
               curve: Curves.easeOutCubic,
-              child: Icon(
-                EcoIcons.expandDown,
-                size: 16,
-                color: muted,
-              ),
+              child: Icon(EcoIcons.expandDown, size: 16, color: muted),
             ),
           ],
         ],
@@ -219,8 +212,8 @@ class ActivityFeedStatusChip extends StatelessWidget {
     final color = danger
         ? eco.danger
         : active
-            ? eco.accent
-            : eco.textMuted;
+        ? eco.accent
+        : eco.textMuted;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color.withValues(alpha: active || danger ? 0.12 : 0.08),
@@ -231,11 +224,11 @@ class ActivityFeedStatusChip extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: color,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.1,
-              ),
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.1,
+          ),
         ),
       ),
     );
@@ -252,10 +245,7 @@ class ActivityFeedRoleDot extends StatelessWidget {
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

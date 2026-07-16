@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { GitDiffViewer, resolveDiffLanguage } from "../src/renderer/GitDiffViewer";
@@ -36,4 +37,15 @@ test("GitDiffViewer renders syntax tokens, inline edits, and layout controls", (
   expect(html).toContain("并排");
   expect(html).toContain("token keyword");
   expect(html).toContain("diff-code-edit");
+});
+
+test("review code uses the configurable code font size in every panel", () => {
+  const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
+
+  expect(styles).toMatch(
+    /\.workspace-diff-viewer \.diff-line\s*\{\s*font-size: var\(--code-font-size\);/,
+  );
+  expect(styles).toMatch(
+    /\.subagent-task-panel-tab-pane--review \.workspace-diff-viewer \.diff-line\s*\{\s*font-size: var\(--code-font-size\);/,
+  );
 });

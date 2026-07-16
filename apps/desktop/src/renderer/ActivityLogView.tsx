@@ -2285,8 +2285,6 @@ function ThinkingBlock({
   const autoCollapseReadKey = hasBody ? text : "";
   const latestRenderStateRef = useRef({ streaming: false, hasBody: false, readKey: "" });
   const expanded = Boolean(streaming && hasBody) || !collapsed;
-  const preview = hasBody ? thinkingPreviewLine(text) : "";
-  const showPreview = hasBody && collapsed && !streaming && !isCollapsing;
   const bodyOpen = expanded && !isCollapsing;
   latestRenderStateRef.current = {
     streaming: Boolean(streaming),
@@ -2461,11 +2459,6 @@ function ThinkingBlock({
             <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
           ) : null}
         </span>
-        {showPreview ? (
-          <span className="run-log-thinking-preview is-visible" title={preview}>
-            {preview}
-          </span>
-        ) : null}
       </button>
       {hasBody && (bodyOpen || isCollapsing) ? (
         <div
