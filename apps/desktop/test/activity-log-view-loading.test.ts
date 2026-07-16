@@ -212,6 +212,94 @@ test("ActivityLogView keeps thinking content lightweight", () => {
   expect(html).toContain("· 耗时 3.0s");
 });
 
+test("ActivityLogView shows independent durations for multiple thinking items in one request", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "thinking-first",
+            eventType: "thinking.final",
+            role: "thinking",
+            requestId: "req-thinking-multi",
+            streamKey: "reasoning-first",
+            text: "第一段思考。",
+            metadata: {
+              logicalEntityId: "reasoning-first",
+              thinkingDurationMs: 1200,
+            },
+          }),
+          item({
+            id: "thinking-second",
+            eventType: "thinking.final",
+            role: "thinking",
+            requestId: "req-thinking-multi",
+            streamKey: "reasoning-second",
+            text: "第二段思考。",
+            metadata: {
+              logicalEntityId: "reasoning-second",
+              thinkingDurationMs: 3400,
+            },
+            sequence: 2,
+          }),
+        ],
+        requestSpans: [
+          requestSpan({
+            requestId: "req-thinking-multi",
+            status: "completed",
+            endedAt: "2026-01-01T00:00:09.000Z",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("· 耗时 1.2s");
+  expect(html).toContain("· 耗时 3.4s");
+  expect(html).not.toContain("· 耗时 9.0s");
+});
+
+test("ActivityLogView does not reuse request duration for legacy multi-part thinking", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "legacy-thinking-first",
+            eventType: "thinking.final",
+            role: "thinking",
+            requestId: "req-legacy-thinking",
+            streamKey: "legacy-reasoning-first",
+            text: "旧第一段思考。",
+            metadata: { logicalEntityId: "legacy-reasoning-first" },
+          }),
+          item({
+            id: "legacy-thinking-second",
+            eventType: "thinking.final",
+            role: "thinking",
+            requestId: "req-legacy-thinking",
+            streamKey: "legacy-reasoning-second",
+            text: "旧第二段思考。",
+            metadata: { logicalEntityId: "legacy-reasoning-second" },
+            sequence: 2,
+          }),
+        ],
+        requestSpans: [
+          requestSpan({
+            requestId: "req-legacy-thinking",
+            status: "completed",
+            endedAt: "2026-01-01T00:00:09.000Z",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).not.toContain("run-log-thinking-timing-inline");
+});
+
 test("ActivityLogView shows inline loading for a running file write action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {

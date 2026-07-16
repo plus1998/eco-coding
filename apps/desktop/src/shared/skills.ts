@@ -159,7 +159,7 @@ export function resolveExplicitCodexSkillInputs(
   const byName = new Map(dedupeSkillsByName(skills).map((skill) => [skill.name, skill]));
   return parseExplicitSkillNames(prompt).flatMap((name) => {
     const skill = byName.get(name);
-    return skill ? [{ type: "skill" as const, name: skill.name, path: skill.directory }] : [];
+    return skill ? [{ type: "skill" as const, name: skill.name, path: skill.skillFilePath }] : [];
   });
 }
 

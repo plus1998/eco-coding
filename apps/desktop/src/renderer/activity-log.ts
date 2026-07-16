@@ -46,7 +46,15 @@ export type ActivityDetailBlock =
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string; agentId?: string }
   | { kind: "model-request"; role?: string }
   | { kind: "agent-request"; subagent?: string; agentId?: string }
-  | { kind: "thinking"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
+  | {
+      kind: "thinking";
+      text: string;
+      streaming?: boolean;
+      subagent?: string;
+      agentId?: string;
+      durationMs?: number;
+      requestDurationFallbackAllowed?: boolean;
+    }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | {
       kind: "action";

@@ -102,7 +102,6 @@ import {
   type ThreadRunProjectionTimelineFeedEntry,
   type ThreadRunProjectionToolGroupFeedEntry,
 } from "./thread-run-projection-view";
-import { type StreamRequestTimingAnchor, useStreamRequestTiming } from "./useStreamRequestTiming";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
@@ -115,18 +114,6 @@ const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
 
 function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
-}
-
-function toStreamRequestTimingAnchor(
-  requestSpan?: ThreadRunProjectionRequestSpan,
-): StreamRequestTimingAnchor | undefined {
-  if (!requestSpan?.startedAt) {
-    return undefined;
-  }
-  return {
-    startedAtIso: requestSpan.startedAt,
-    ...(requestSpan.firstTokenAt && { firstTokenAtIso: requestSpan.firstTokenAt }),
-  };
 }
 
 function readRewindTarget(value: unknown): ThreadActivityRewindTarget | undefined {
@@ -1073,6 +1060,7 @@ function ProjectionAgentEchoEntry({
     );
   }
   if (block.kind === "thinking") {
+    const durationMs = resolveThinkingDisplayDurationMs(block, requestSpan);
     return (
       <ProjectionAgentEchoShell
         label={entry.agentLabel}
@@ -1082,7 +1070,7 @@ function ProjectionAgentEchoEntry({
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
-          {...(requestSpan && { requestSpan })}
+          {...(durationMs !== undefined && { durationMs })}
         />
       </ProjectionAgentEchoShell>
     );
@@ -1642,11 +1630,12 @@ function ProjectionTimelineEntry({
     );
   }
   if (block.kind === "thinking") {
+    const durationMs = resolveThinkingDisplayDurationMs(block, requestSpan);
     return wrapRunLogFeedEntry(
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
-        {...(requestSpan && { requestSpan })}
+        {...(durationMs !== undefined && { durationMs })}
       />,
       { compact, tight: true },
     );
@@ -1936,11 +1925,12 @@ function DetailBlock({
     );
   }
   if (block.kind === "thinking") {
+    const durationMs = resolveThinkingDisplayDurationMs(block, requestSpan);
     return (
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
-        {...(requestSpan && { requestSpan })}
+        {...(durationMs !== undefined && { durationMs })}
       />
     );
   }
@@ -2165,11 +2155,11 @@ function resolveRequestDurationMs(requestSpan?: ThreadRunProjectionRequestSpan):
 function ThinkingBlock({
   text,
   streaming,
-  requestSpan,
+  durationMs,
 }: {
   text: string;
   streaming?: boolean;
-  requestSpan?: ThreadRunProjectionRequestSpan;
+  durationMs?: number;
 }) {
   const onLayoutChange = useActivityFeedLayoutChange();
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
@@ -2186,12 +2176,6 @@ function ThinkingBlock({
   const preview = hasBody ? thinkingPreviewLine(text) : "";
   const showPreview = hasBody && collapsed && !streaming && !isCollapsing;
   const bodyOpen = expanded && !isCollapsing;
-  const timing = useStreamRequestTiming(
-    Boolean(streaming) && !hasBody,
-    hasBody,
-    toStreamRequestTimingAnchor(requestSpan),
-  );
-  const durationMs = timing.ttftMs ?? resolveRequestDurationMs(requestSpan);
   latestRenderStateRef.current = {
     streaming: Boolean(streaming),
     hasBody,
@@ -2393,6 +2377,21 @@ function ThinkingBlock({
       ) : null}
     </div>
   );
+}
+
+function resolveThinkingDisplayDurationMs(
+  block: Extract<ActivityDetailBlock, { kind: "thinking" }>,
+  requestSpan?: ThreadRunProjectionRequestSpan,
+): number | undefined {
+  if (block.streaming) {
+    return undefined;
+  }
+  if (block.durationMs !== undefined) {
+    return block.durationMs;
+  }
+  return block.requestDurationFallbackAllowed === false
+    ? undefined
+    : resolveRequestDurationMs(requestSpan);
 }
 
 function UserPromptBlock({

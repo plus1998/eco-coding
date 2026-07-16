@@ -7,6 +7,8 @@ export interface CodexSkillsExtraRootsSetParams {
   extraRoots: string[];
 }
 
+const appliedExtraRootsByClient = new WeakMap<object, string>();
+
 export function buildCodexSkillsExtraRootsSetParams(
   extraRoots: readonly string[],
 ): CodexSkillsExtraRootsSetParams {
@@ -39,4 +41,19 @@ export async function setCodexSkillsExtraRoots(
   ) {
     throw new Error("Codex skills/extraRoots/set response must be an empty object.");
   }
+}
+
+/** Reapply roots for each app-server client, while avoiding a rescan before every turn. */
+export async function ensureCodexSkillsExtraRoots(
+  client: Pick<CodexAppServerClient, "request">,
+  extraRoots: readonly string[],
+): Promise<boolean> {
+  const params = buildCodexSkillsExtraRootsSetParams(extraRoots);
+  const fingerprint = JSON.stringify(params.extraRoots);
+  if (appliedExtraRootsByClient.get(client) === fingerprint) {
+    return false;
+  }
+  await setCodexSkillsExtraRoots(client, params.extraRoots);
+  appliedExtraRootsByClient.set(client, fingerprint);
+  return true;
 }

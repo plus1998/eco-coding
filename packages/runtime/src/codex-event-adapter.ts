@@ -145,6 +145,7 @@ type AdapterContext = CodexEventAdapterOptions & {
   commandOutputByItemId: Map<string, string>;
   commandByItemId: Map<string, string>;
   reasoningTextByItemId: Map<string, string>;
+  reasoningStartedAtByItemId: Map<string, string>;
   agentMessageTextByItemId: Map<string, string>;
   pendingEventsByCodexThreadId: Map<string, EmitInput[]>;
   /** Dedupe agent.started from spawn item + thread/started for the same child. */
@@ -176,6 +177,8 @@ export class CodexEventAdapter {
   private readonly commandByItemId = new Map<string, string>();
   /** Accumulate reasoning/thinking text for thinking cards. */
   private readonly reasoningTextByItemId = new Map<string, string>();
+  /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
+  private readonly reasoningStartedAtByItemId = new Map<string, string>();
   /**
    * Accumulate agentMessage delta chunks.
    * Projection/view merge keeps the latest stream item's text (not chunk-append),
@@ -199,6 +202,7 @@ export class CodexEventAdapter {
       commandOutputByItemId: this.commandOutputByItemId,
       commandByItemId: this.commandByItemId,
       reasoningTextByItemId: this.reasoningTextByItemId,
+      reasoningStartedAtByItemId: this.reasoningStartedAtByItemId,
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
       emittedAgentStartedIds: this.emittedAgentStartedIds,
@@ -486,6 +490,10 @@ function handleItemStarted(ctx: AdapterContext, params: Record<string, unknown>)
     return;
   }
   if (itemType === "reasoning") {
+    const itemId = readCodexItemId(params, item);
+    if (itemId) {
+      ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
+    }
     // item/started for reasoning is a placeholder; text arrives via deltas.
     return;
   }
@@ -551,6 +559,9 @@ function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>
     return;
   }
   const turnId = readCodexTurnId(params);
+  if (!ctx.reasoningStartedAtByItemId.has(itemId)) {
+    ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
+  }
   const previous = ctx.reasoningTextByItemId.get(itemId) ?? "";
   const next = `${previous}${delta}`;
   ctx.reasoningTextByItemId.set(itemId, next);
@@ -717,6 +728,9 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
   if (itemType === "reasoning") {
     const text = readReasoningItemText(item) || ctx.reasoningTextByItemId.get(itemId) || "";
     ctx.reasoningTextByItemId.delete(itemId);
+    const startedAt = ctx.reasoningStartedAtByItemId.get(itemId);
+    ctx.reasoningStartedAtByItemId.delete(itemId);
+    const thinkingDurationMs = resolveObservedDurationMs(startedAt, ctx.observedAt);
     emit(ctx, {
       eventType: "thinking.final",
       codexThreadId,
@@ -730,6 +744,7 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
         logicalEntityId: itemId,
         itemId,
         itemType: "reasoning",
+        ...(thinkingDurationMs !== undefined && { thinkingDurationMs }),
       },
     });
     return;
@@ -781,6 +796,18 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
   if (itemType === "collabAgentToolCall") {
     handleCollabToolCallLifecycle(ctx, params, item, "completed");
   }
+}
+
+function resolveObservedDurationMs(startedAt: string | undefined, endedAt: string): number | undefined {
+  if (!startedAt) {
+    return undefined;
+  }
+  const startedMs = Date.parse(startedAt);
+  const endedMs = Date.parse(endedAt);
+  if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs < startedMs) {
+    return undefined;
+  }
+  return endedMs - startedMs;
 }
 
 function emitContextCompactionLifecycle(

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
@@ -24,6 +25,7 @@ import {
   clearCodexSpawnPayloadQueueSync,
   compactCodexThreadAndWait,
   dequeueCodexSpawnPayloadMatchingSync,
+  ensureCodexSkillsExtraRoots,
   type EcoAgentRuntimeConfig,
   type EcoProviderForCodexConfig,
   type CodexToolPolicy,
@@ -869,6 +871,11 @@ async function prepareCodexRuntimeUnlocked(
   return prepared;
 }
 
+function resolveCodexUserSkillExtraRoots(): string[] {
+  const root = path.join(os.homedir(), ".codex", "skills");
+  return fs.existsSync(root) ? [root] : [];
+}
+
 function buildDenyAllMcpThreadConfig(
   servers: readonly CodexMcpServerForConfigSync[],
 ): CodexThreadConfigOverrides {
@@ -883,11 +890,11 @@ function buildDenyAllMcpThreadConfig(
   };
 }
 
-function startSharedCodexRuntimeLifecycle(
+async function startSharedCodexRuntimeLifecycle(
   runtimeDeps: CodexRuntimeRunDeps,
   codexExecutable: string,
 ): Promise<CodexAppServerClient> {
-  return ensureGlobalCodexRuntimeLifecycle({
+  const client = await ensureGlobalCodexRuntimeLifecycle({
     ecoDataDir: runtimeDeps.ecoDataDir,
     codexExecutable,
     clientOptions: {
@@ -901,6 +908,8 @@ function startSharedCodexRuntimeLifecycle(
       runtimeDeps.onStderr?.(`[codex app-server] ${chunk}`);
     },
   });
+  await ensureCodexSkillsExtraRoots(client, resolveCodexUserSkillExtraRoots());
+  return client;
 }
 
 function fingerprintPreparedMcpServers(servers: readonly CodexMcpServerForConfigSync[]): string {

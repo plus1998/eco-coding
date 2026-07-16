@@ -7,6 +7,7 @@ import {
   listSdkReadyProjectSkills,
   mergeSkillNames,
   parseExplicitSkillNames,
+  resolveExplicitCodexSkillInputs,
   resolveSdkSessionSkillConfig,
   promptIncludesSkillName,
   type SkillInfo,
@@ -33,6 +34,26 @@ test("filterExplicitUserSkillNames keeps only sdk-ready user skills", () => {
 test("promptIncludesSkillName detects explicit tokens", () => {
   expect(promptIncludesSkillName("use $vue-best  ", "vue-best")).toBe(true);
   expect(promptIncludesSkillName("use $vue-best", "other")).toBe(false);
+});
+
+test("resolveExplicitCodexSkillInputs sends the exact SKILL.md path to Codex", () => {
+  const skill: SkillInfo = {
+    name: "repo-docs",
+    description: "Read repository documentation",
+    source: "project",
+    directory: "/repo/.agents/skills/repo-docs",
+    skillFilePath: "/repo/.agents/skills/repo-docs/SKILL.md",
+    layout: "agents",
+    sdkReady: false,
+  };
+
+  expect(resolveExplicitCodexSkillInputs("Use $repo-docs", [skill])).toEqual([
+    {
+      type: "skill",
+      name: "repo-docs",
+      path: "/repo/.agents/skills/repo-docs/SKILL.md",
+    },
+  ]);
 });
 
 test("resolveSdkSessionSkillConfig keeps discovered user skills out of planning unless explicit", () => {

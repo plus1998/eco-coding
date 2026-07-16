@@ -801,7 +801,40 @@ export function buildProjectionDisplayTimelineItems(
       displayItems.push(settled);
     }
   }
-  return displayItems;
+  return markThinkingRequestDurationFallback(displayItems, timeline, requestSpansById);
+}
+
+function markThinkingRequestDurationFallback(
+  displayItems: readonly ThreadRunProjectionTimelineItem[],
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): ThreadRunProjectionTimelineItem[] {
+  const requestIdByItemId = new Map<string, string>();
+  const thinkingCountByRequestId = new Map<string, number>();
+  for (const item of displayItems) {
+    if (item.eventType !== "thinking.delta" && item.eventType !== "thinking.final") {
+      continue;
+    }
+    const requestId = resolveEffectiveStreamRequestId(item, timeline, requestSpansById);
+    if (!requestId) {
+      continue;
+    }
+    requestIdByItemId.set(item.id, requestId);
+    thinkingCountByRequestId.set(requestId, (thinkingCountByRequestId.get(requestId) ?? 0) + 1);
+  }
+  return displayItems.map((item) => {
+    const requestId = requestIdByItemId.get(item.id);
+    if (!requestId) {
+      return item;
+    }
+    return {
+      ...item,
+      metadata: {
+        ...(item.metadata ?? {}),
+        thinkingRequestDurationFallbackAllowed: thinkingCountByRequestId.get(requestId) === 1,
+      },
+    };
+  });
 }
 
 interface ReconnectCollapseMetadata {
@@ -840,6 +873,10 @@ function readReconnectCollapseMetadata(
     return undefined;
   }
   return { count, failedCount };
+}
+
+function readFiniteNonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function isDuplicateStreamBlockFinalEcho(
@@ -1965,12 +2002,17 @@ export function projectionItemToDetailBlock(
   }
 
   if (item.eventType === "thinking.delta" || item.eventType === "thinking.final") {
+    const thinkingDurationMs = readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs);
+    const requestDurationFallbackAllowed =
+      item.metadata?.thinkingRequestDurationFallbackAllowed !== false;
     return {
       kind: "thinking",
       text: item.text,
       streaming: item.eventType === "thinking.delta",
       ...(item.role && { subagent: item.role }),
       ...(item.agentId && { agentId: item.agentId }),
+      ...(thinkingDurationMs !== undefined && { durationMs: thinkingDurationMs }),
+      ...(requestDurationFallbackAllowed === false && { requestDurationFallbackAllowed: false }),
     };
   }
 
