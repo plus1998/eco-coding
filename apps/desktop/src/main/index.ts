@@ -165,6 +165,7 @@ import {
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
   type ThreadFollowUpMutationResult,
+  type ThreadFollowUpReorderRequest,
   type ThreadFollowUpRunPhase,
   type ThreadFollowUpUpdateRequest,
   type ThreadLiveEvent,
@@ -3282,6 +3283,12 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(followUp);
   });
 
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpReorder, async (payload: unknown) => {
+    const request = parseThreadFollowUpReorderRequest(payload);
+    conversationStore.reorderQueuedThreadFollowUps(request.threadId, request.followUpIds);
+    return { followUps: conversationStore.listThreadFollowUps(request.threadId) };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpUpdate, async (payload: unknown) => {
     const request = parseThreadFollowUpUpdateRequest(payload);
     const thread = conversationStore.getThread(request.threadId);
@@ -4927,6 +4934,22 @@ function parseThreadFollowUpCancelRequest(payload: unknown): ThreadFollowUpCance
   return {
     threadId: readRequiredString(payload.threadId, "Thread id is required."),
     followUpId: readRequiredString(payload.followUpId, "Follow-up id is required."),
+  };
+}
+
+function parseThreadFollowUpReorderRequest(payload: unknown): ThreadFollowUpReorderRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up reorder payload.");
+  }
+  const followUpIds = Array.isArray(payload.followUpIds)
+    ? payload.followUpIds.map((id) => readRequiredString(id, "Follow-up id is required."))
+    : [];
+  if (followUpIds.length === 0) {
+    throw new Error("Follow-up order is required.");
+  }
+  return {
+    threadId: readRequiredString(payload.threadId, "Thread id is required."),
+    followUpIds,
   };
 }
 

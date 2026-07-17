@@ -1525,13 +1525,8 @@ class _ActionSummaryLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final running = lifecycle == ToolActionLifecycle.running;
     final failed = lifecycle == ToolActionLifecycle.failed;
-    final iconColor = failed
-        ? eco.statusDenyText
-        : running
-        ? eco.accentText
-        : eco.textMuted;
+    final iconColor = failed ? eco.statusDenyText : eco.textMuted;
 
     final content = Row(
       children: [
@@ -1803,11 +1798,7 @@ class _FileChangeCardState extends State<_FileChangeCard> {
             icon: EcoIcons.file,
             title: display.fileName,
             meta: diffMeta,
-            iconColor: failed
-                ? eco.danger
-                : running
-                ? eco.accent
-                : eco.textMuted,
+            iconColor: failed ? eco.danger : eco.textMuted,
             expanded: _expanded,
             trailing: failed
                 ? const ActivityFeedStatusChip(label: '失败', danger: true)

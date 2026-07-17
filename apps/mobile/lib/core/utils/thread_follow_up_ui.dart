@@ -72,6 +72,12 @@ int _compareThreadFollowUps(
   ThreadPendingFollowUp left,
   ThreadPendingFollowUp right,
 ) {
+  final positionDelta =
+      (left.queuePosition ?? 0x7fffffffffffffff) -
+      (right.queuePosition ?? 0x7fffffffffffffff);
+  if (positionDelta != 0) {
+    return positionDelta;
+  }
   final priorityDelta = _priorityRank(left) - _priorityRank(right);
   if (priorityDelta != 0) {
     return priorityDelta;

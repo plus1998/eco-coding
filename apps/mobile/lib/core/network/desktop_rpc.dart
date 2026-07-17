@@ -297,6 +297,26 @@ class DesktopRpc {
     ]);
   }
 
+  Future<List<ThreadPendingFollowUp>> followUpReorder({
+    required String threadId,
+    required List<String> followUpIds,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'thread:follow-up-reorder',
+      [
+        {'threadId': threadId, 'followUpIds': followUpIds},
+      ],
+    );
+    final followUps = result['followUps'] as List<dynamic>? ?? [];
+    return followUps
+        .map(
+          (entry) =>
+              ThreadPendingFollowUp.fromJson(entry as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
   Future<void> followUpUpdate({
     required String threadId,
     required String followUpId,

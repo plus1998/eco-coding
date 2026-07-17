@@ -2801,7 +2801,11 @@ button.sidebar-core-heading {
 }
 
 .codex-main:not(.codex-main-landing) .activity-feed-scroll-jump {
-  bottom: calc(var(--activity-feed-composer-mask-height) + 16px);
+  bottom: calc(
+    var(--activity-feed-composer-mask-height) +
+    var(--composer-input-overlays-height, 0px) +
+    16px
+  );
 }
 
 .activity-scroll-anchor {
@@ -2921,11 +2925,27 @@ button.sidebar-core-heading {
   border-radius: 8px;
 }
 
-.follow-up-card-leading-icon {
+.follow-up-card-leading-icon,
+.follow-up-card-drag-handle {
   flex: 0 0 14px;
   width: 14px;
   color: var(--follow-up-card-label);
   opacity: 0.82;
+}
+
+.follow-up-card-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+
+.follow-up-card-drag-handle:active {
+  cursor: grabbing;
+}
+
+.follow-up-row.is-dragging {
+  opacity: 0.5;
 }
 
 .follow-up-card-main-editable:hover {
@@ -17729,9 +17749,17 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .activity-messages {
   color: inherit;
   padding-top: 12px;
-  padding-bottom: calc(var(--activity-feed-composer-mask-height) + 12px);
+  padding-bottom: calc(
+    var(--activity-feed-composer-mask-height) +
+    var(--composer-input-overlays-height, 0px) +
+    12px
+  );
   scroll-padding-top: 12px;
-  scroll-padding-bottom: calc(var(--activity-feed-composer-mask-height) + 12px);
+  scroll-padding-bottom: calc(
+    var(--activity-feed-composer-mask-height) +
+    var(--composer-input-overlays-height, 0px) +
+    12px
+  );
 }
 
 .codex-main:not(.codex-main-landing) .run-log {

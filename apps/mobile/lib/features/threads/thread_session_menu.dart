@@ -54,9 +54,7 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       icon: EcoIcons.commitPush,
       label: '提交与推送',
       enabled:
-          !isRunning &&
-          workspacePath.isNotEmpty &&
-          (gitStatus?.isGitRepository ?? false),
+          workspacePath.isNotEmpty && (gitStatus?.isGitRepository ?? false),
     ),
     _ThreadSessionMenuEntry(
       value: 'pull',
@@ -70,7 +68,7 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       value: 'scripts',
       icon: EcoIcons.npmScripts,
       label: 'npm scripts',
-      enabled: !isRunning && workspacePath.isNotEmpty,
+      enabled: workspacePath.isNotEmpty,
     ),
   ];
 
@@ -237,11 +235,7 @@ Future<void> openCommitPushFromMenu({
   if (committed != null && context.mounted) {
     refreshWorkspaceChanges(ref, workspacePath);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          committed == 'commit-push' ? '已提交并推送到远程' : '已提交',
-        ),
-      ),
+      SnackBar(content: Text(committed == 'commit-push' ? '已提交并推送到远程' : '已提交')),
     );
   }
 }

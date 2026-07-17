@@ -532,6 +532,7 @@ class ThreadPendingFollowUp {
     required this.status,
     required this.createdAt,
     this.priority = 'normal',
+    this.queuePosition,
     this.attachments = const [],
   });
 
@@ -543,6 +544,7 @@ class ThreadPendingFollowUp {
         status: json['status'] as String? ?? 'queued',
         createdAt: json['createdAt'] as String? ?? '',
         priority: json['priority'] as String? ?? 'normal',
+        queuePosition: (json['queuePosition'] as num?)?.toInt(),
         attachments: (json['attachments'] as List<dynamic>? ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(PromptImageAttachment.fromJson)
@@ -556,6 +558,7 @@ class ThreadPendingFollowUp {
   final String status;
   final String createdAt;
   final String priority;
+  final int? queuePosition;
   final List<PromptImageAttachment> attachments;
 }
 

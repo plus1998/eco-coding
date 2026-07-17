@@ -17,6 +17,7 @@ import {
   CornerDownRight,
   FolderOpen,
   GitBranch,
+  GripVertical,
   Loader2,
   MessageSquarePlus,
   Monitor,
@@ -844,6 +845,8 @@ function App() {
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
   const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
   const composerAnchorRef = useRef<HTMLDivElement>(null);
+  const composerInputOverlaysRef = useRef<HTMLDivElement>(null);
+  const [composerInputOverlaysHeight, setComposerInputOverlaysHeight] = useState(0);
   const [composerCursor, setComposerCursor] = useState(0);
   const [composerSkillActiveIndex, setComposerSkillActiveIndex] = useState(0);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
@@ -3814,6 +3817,27 @@ function App() {
     }
   }
 
+  async function reorderQueuedFollowUps(followUpIds: string[]) {
+    if (!activeThread || typeof window.eco?.reorderThreadFollowUps !== "function") {
+      return;
+    }
+    const previous = followUpsByThread[activeThread.id] ?? [];
+    const queuedById = new Map(previous.filter((item) => item.status === "queued").map((item) => [item.id, item]));
+    const reordered = followUpIds.map((id) => queuedById.get(id)).filter((item): item is ThreadPendingFollowUp => Boolean(item));
+    if (reordered.length !== queuedById.size) {
+      return;
+    }
+    const nonQueued = previous.filter((item) => item.status !== "queued");
+    setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: [...reordered, ...nonQueued] }));
+    try {
+      const result = await window.eco.reorderThreadFollowUps({ threadId: activeThread.id, followUpIds });
+      setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: result.followUps }));
+    } catch (caught) {
+      setFollowUpsByThread((current) => ({ ...current, [activeThread.id]: previous }));
+      setError(errorMessage(caught));
+    }
+  }
+
   async function cancelQueuedFollowUp(followUp: ThreadPendingFollowUp) {
     if (!window.eco || typeof window.eco.cancelThreadFollowUp !== "function") {
       setError("当前桌面预加载 API 不包含取消后续消息入口，请重启应用后再试。");
@@ -5460,6 +5484,19 @@ function App() {
     />
   ) : null;
 
+  useLayoutEffect(() => {
+    const overlays = composerInputOverlaysRef.current;
+    if (!overlays) {
+      setComposerInputOverlaysHeight(0);
+      return;
+    }
+    const updateHeight = () => setComposerInputOverlaysHeight(Math.ceil(overlays.getBoundingClientRect().height));
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(overlays);
+    return () => observer.disconnect();
+  }, [displayedQueuedFollowUps.length, composerAttachments.length]);
+
   const composer = (
     <div className="codex-composer-wrap">
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
@@ -5470,7 +5507,7 @@ function App() {
       ) : null}
       <div className="composer-input-stack">
         {displayedQueuedFollowUps.length > 0 || composerAttachments.length > 0 ? (
-          <div className="composer-input-overlays">
+          <div ref={composerInputOverlaysRef} className="composer-input-overlays">
             {displayedQueuedFollowUps.length > 0 ? (
               <FollowUpQueuePanel
                 followUps={displayedQueuedFollowUps}
@@ -5479,6 +5516,7 @@ function App() {
                 onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
                 onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
                 onEdit={startEditingFollowUp}
+                onReorder={(followUpIds) => void reorderQueuedFollowUps(followUpIds)}
               />
             ) : null}
             {composerAttachments.length > 0 ? (
@@ -5833,7 +5871,14 @@ function App() {
                     {composer}
                   </div>
                 ) : (
-                  <div className="codex-feed-stack">
+                  <div
+                    className="codex-feed-stack"
+                    style={
+                      {
+                        "--composer-input-overlays-height": `${composerInputOverlaysHeight}px`,
+                      } as CSSProperties
+                    }
+                  >
                     <div className="activity-feed">
                       <div className="activity-messages-shell">
                         <div className="activity-feed-top-mask" aria-hidden />
@@ -6220,6 +6265,7 @@ function FollowUpQueuePanel({
   onCancel,
   onEscalate,
   onEdit,
+  onReorder,
 }: {
   followUps: ThreadPendingFollowUp[];
   cancelBusyId: string | undefined;
@@ -6227,7 +6273,19 @@ function FollowUpQueuePanel({
   onCancel: (followUp: ThreadPendingFollowUp) => void;
   onEscalate: (followUp: ThreadPendingFollowUp) => void;
   onEdit: (followUp: ThreadPendingFollowUp) => void;
+  onReorder: (followUpIds: string[]) => void;
 }) {
+  const [draggedId, setDraggedId] = useState<string>();
+
+  const moveDraggedBefore = (targetId: string) => {
+    if (!draggedId || draggedId === targetId) return;
+    const next = followUps.map((followUp) => followUp.id);
+    const from = next.indexOf(draggedId);
+    const to = next.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    next.splice(to, 0, next.splice(from, 1)[0]!);
+    onReorder(next);
+  };
   return (
     <div className="follow-up-queue" aria-label="已排队的引导消息">
       <div className="follow-up-queue-rows">
@@ -6237,7 +6295,16 @@ function FollowUpQueuePanel({
           const canEscalate = followUp.priority !== "escalated";
 
           return (
-            <div key={followUp.id} className="follow-up-row">
+            <div
+              key={followUp.id}
+              className={`follow-up-row${draggedId === followUp.id ? " is-dragging" : ""}`}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                moveDraggedBefore(followUp.id);
+                setDraggedId(undefined);
+              }}
+            >
               <div
                 className="follow-up-card-main follow-up-card-main-editable"
                 role="button"
@@ -6257,7 +6324,23 @@ function FollowUpQueuePanel({
                   onEdit(followUp);
                 }}
               >
-                <CornerDownRight size={14} aria-hidden className="follow-up-card-leading-icon" />
+                <span
+                  className="follow-up-card-drag-handle"
+                  draggable={!actionBusy}
+                  role="button"
+                  tabIndex={actionBusy ? -1 : 0}
+                  aria-label="拖动调整消息顺序"
+                  title="拖动调整顺序"
+                  onClick={(event) => event.stopPropagation()}
+                  onDragStart={(event) => {
+                    event.stopPropagation();
+                    setDraggedId(followUp.id);
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragEnd={() => setDraggedId(undefined)}
+                >
+                  <GripVertical size={14} aria-hidden />
+                </span>
                 <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
               </div>
               <div className="follow-up-card-actions">

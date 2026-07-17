@@ -67,6 +67,7 @@ export const IPC_CHANNELS = {
   threadFollowUpEnqueue: "thread:follow-up-enqueue",
   threadFollowUpEscalate: "thread:follow-up-escalate",
   threadFollowUpUpdate: "thread:follow-up-update",
+  threadFollowUpReorder: "thread:follow-up-reorder",
   threadFollowUpList: "thread:follow-up-list",
   threadFollowUpCancel: "thread:follow-up-cancel",
   threadGetPendingPlan: "thread:get-pending-plan",
@@ -1003,6 +1004,7 @@ export interface ThreadPendingFollowUp {
   targetRunAttemptId?: string;
   queuedDuringPhase?: ThreadFollowUpRunPhase;
   deliveryBoundary?: ThreadFollowUpBoundary;
+  queuePosition?: number;
   error?: string;
 }
 
@@ -1030,6 +1032,11 @@ export interface ThreadFollowUpUpdateRequest {
   followUpId: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+}
+
+export interface ThreadFollowUpReorderRequest {
+  threadId: string;
+  followUpIds: string[];
 }
 
 export interface ThreadFollowUpListResult {

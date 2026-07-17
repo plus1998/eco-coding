@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -7,7 +8,6 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import 'composer_context_menu.dart';
-import 'composer_stack_card.dart';
 
 class FollowUpQueueBar extends StatelessWidget {
   const FollowUpQueueBar({
@@ -18,6 +18,7 @@ class FollowUpQueueBar extends StatelessWidget {
     required this.onEscalate,
     required this.onEdit,
     required this.onDelete,
+    required this.onReorder,
   });
 
   final List<ThreadPendingFollowUp> followUps;
@@ -26,25 +27,97 @@ class FollowUpQueueBar extends StatelessWidget {
   final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
   final void Function(ThreadPendingFollowUp followUp) onEdit;
   final Future<void> Function(ThreadPendingFollowUp followUp) onDelete;
+  final Future<void> Function(int oldIndex, int newIndex) onReorder;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: composerStackOuterPadding,
-      child: Column(
-        children: [
-          for (var index = 0; index < followUps.length; index++) ...[
-            if (index > 0) const SizedBox(height: composerStackItemGap),
-            _FollowUpQueueItem(
-              followUp: followUps[index],
-              cancelBusyId: cancelBusyId,
-              escalateBusyId: escalateBusyId,
-              onEscalate: onEscalate,
-              onEdit: onEdit,
-              onDelete: onDelete,
+    final eco = ecoColors(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Transform.translate(
+      offset: const Offset(0, 16),
+      transformHitTests: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: eco.composerContextBg.withValues(
+                  alpha: isDark ? 0.58 : 0.52,
+                ),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+                border: Border.all(
+                  width: 0.5,
+                  color: isDark
+                      ? eco.borderSubtle.withValues(alpha: 0.42)
+                      : const Color(0x143C3C43),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: eco.shadowScrim.withValues(
+                      alpha: isDark ? 0.16 : 0.04,
+                    ),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 180),
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                  buildDefaultDragHandles: false,
+                  itemCount: followUps.length,
+                  onReorder: onReorder,
+                  itemBuilder: (context, index) => Column(
+                    key: ValueKey(followUps[index].id),
+                    children: [
+                      if (index > 0)
+                        Divider(height: 9, color: eco.borderSubtle),
+                      _FollowUpQueueItem(
+                        followUp: followUps[index],
+                        cancelBusyId: cancelBusyId,
+                        escalateBusyId: escalateBusyId,
+                        onEscalate: onEscalate,
+                        onEdit: onEdit,
+                        onDelete: onDelete,
+                        dragHandle: ReorderableDragStartListener(
+                          index: index,
+                          child: _FollowUpDragHandle(
+                            color: eco.composerPillText.withValues(alpha: 0.82),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ],
-        ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FollowUpDragHandle extends StatelessWidget {
+  const _FollowUpDragHandle({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '拖动调整消息顺序',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Icon(Icons.drag_indicator_rounded, size: 16, color: color),
       ),
     );
   }
@@ -58,6 +131,7 @@ class _FollowUpQueueItem extends StatefulWidget {
     required this.onEscalate,
     required this.onEdit,
     required this.onDelete,
+    required this.dragHandle,
   });
 
   final ThreadPendingFollowUp followUp;
@@ -66,6 +140,7 @@ class _FollowUpQueueItem extends StatefulWidget {
   final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
   final void Function(ThreadPendingFollowUp followUp) onEdit;
   final Future<void> Function(ThreadPendingFollowUp followUp) onDelete;
+  final Widget dragHandle;
 
   @override
   State<_FollowUpQueueItem> createState() => _FollowUpQueueItemState();
@@ -127,68 +202,68 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final attachments = widget.followUp.attachments;
     final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: eco.composerPillText,
       fontSize: 13,
-      height: 1.2,
+      height: 1.25,
     );
 
-    return ComposerStackCard(
-      stadium: true,
-      padding: composerStackRowPadding,
-      child: Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _actionBusy ? null : () => widget.onEdit(widget.followUp),
-              child: Row(
-                children: [
-                  Icon(EcoIcons.indent, size: 14, color: eco.composerPillText),
-                  const SizedBox(width: 6),
-                  if (widget.followUp.attachments.isNotEmpty) ...[
-                    SizedBox(
-                      width: 30,
-                      height: 30,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(7),
-                        child: Image.memory(
-                          base64Decode(widget.followUp.attachments.first.data),
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                        ),
+    return Semantics(
+      label: '已排队的引导消息',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _actionBusy ? null : () => widget.onEdit(widget.followUp),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                widget.dragHandle,
+                const SizedBox(width: 6),
+                if (attachments.isNotEmpty) ...[
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Image.memory(
+                        base64Decode(attachments.first.data),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
                       ),
                     ),
-                    const SizedBox(width: 7),
-                  ],
-                  Expanded(
-                    child: Text(
-                      formatThreadFollowUpPreview(widget.followUp),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textStyle,
+                  ),
+                  const SizedBox(width: 7),
+                ],
+                Expanded(
+                  child: Text(
+                    formatThreadFollowUpPreview(widget.followUp),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textStyle,
+                  ),
+                ),
+                GestureDetector(
+                  key: _menuKey,
+                  onTap: _actionBusy ? null : _showMenu,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 7, 2, 7),
+                    child: Icon(
+                      EcoIcons.more,
+                      size: 14,
+                      color: _actionBusy
+                          ? eco.composerPillText.withValues(alpha: 0.4)
+                          : eco.composerPillText,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          GestureDetector(
-            key: _menuKey,
-            onTap: _actionBusy ? null : _showMenu,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Icon(
-                EcoIcons.more,
-                size: 14,
-                color: _actionBusy
-                    ? eco.composerPillText.withValues(alpha: 0.4)
-                    : eco.composerPillText,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

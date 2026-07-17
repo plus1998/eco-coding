@@ -88,6 +88,32 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite persists reordered follow-ups", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-follow-up-reorder-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = new Date().toISOString();
+  store.saveThread({
+    id: "thr_followup_reorder",
+    title: "Follow-up reorder",
+    prompt: "start",
+    workspacePath: "/tmp/follow-up-reorder",
+    status: "running",
+    message: "working",
+    createdAt: now,
+    updatedAt: now,
+  });
+  const first = store.enqueueThreadFollowUp({ threadId: "thr_followup_reorder", prompt: "第一条" });
+  const second = store.enqueueThreadFollowUp({ threadId: "thr_followup_reorder", prompt: "第二条" });
+
+  const reordered = store.reorderQueuedThreadFollowUps("thr_followup_reorder", [second.id, first.id]);
+
+  assert.deepEqual(reordered.map((item) => item.id), [second.id, first.id]);
+  assert.deepEqual(
+    store.listThreadFollowUps("thr_followup_reorder", { statuses: ["queued"] }).map((item) => item.id),
+    [second.id, first.id],
+  );
+});
+
 test("Node SQLite claims queued follow-ups one at a time by default", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-follow-up-queue-");
   const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));

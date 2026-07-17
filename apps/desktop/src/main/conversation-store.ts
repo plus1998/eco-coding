@@ -419,6 +419,7 @@ interface ThreadPendingFollowUpRow {
   queued_during_phase: string | null;
   delivery_boundary: string | null;
   error: string | null;
+  queue_position: number | null;
   created_at: string;
   updated_at: string;
   delivered_at: string | null;
@@ -527,6 +528,7 @@ export class ConversationStore {
         queued_during_phase TEXT,
         delivery_boundary TEXT,
         error TEXT,
+        queue_position INTEGER,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         delivered_at TEXT,
@@ -1078,6 +1080,7 @@ export class ConversationStore {
         queued_during_phase TEXT,
         delivery_boundary TEXT,
         error TEXT,
+        queue_position INTEGER,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         delivered_at TEXT,
@@ -1097,6 +1100,9 @@ export class ConversationStore {
     }
     if (!followUpNames.has("delivery_boundary")) {
       this.db.exec(`ALTER TABLE thread_pending_followups ADD COLUMN delivery_boundary TEXT`);
+    }
+    if (!followUpNames.has("queue_position")) {
+      this.db.exec(`ALTER TABLE thread_pending_followups ADD COLUMN queue_position INTEGER`);
     }
 
     if (!names.has("claude_plan_file_path")) {
@@ -1789,7 +1795,7 @@ export class ConversationStore {
       .prepare(
         `SELECT id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
                 source_run_attempt_id, target_run_attempt_id, queued_during_phase, delivery_boundary, error,
-                created_at, updated_at, delivered_at, applied_at
+                queue_position, created_at, updated_at, delivered_at, applied_at
          FROM thread_pending_followups
          WHERE thread_id = ? AND id = ?`,
       )
@@ -1804,14 +1810,15 @@ export class ConversationStore {
     const statuses = options?.statuses?.filter(isThreadFollowUpStatus) ?? [];
     const base = `SELECT id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
                          source_run_attempt_id, target_run_attempt_id, queued_during_phase, delivery_boundary, error,
-                         created_at, updated_at, delivered_at, applied_at
+                         queue_position, created_at, updated_at, delivered_at, applied_at
                   FROM thread_pending_followups
                   WHERE thread_id = ?`;
     const where = statuses.length > 0 ? ` AND status IN (${statuses.map(() => "?").join(", ")})` : "";
     const rows = this.db
       .prepare(
         `${base}${where}
-         ORDER BY CASE priority WHEN 'escalated' THEN 0 ELSE 1 END,
+         ORDER BY COALESCE(queue_position, 2147483647) ASC,
+                  CASE priority WHEN 'escalated' THEN 0 ELSE 1 END,
                   created_at ASC,
                   id ASC`,
       )
@@ -1863,6 +1870,34 @@ export class ConversationStore {
         followUpId,
       );
     return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  reorderQueuedThreadFollowUps(threadId: string, followUpIds: readonly string[]): ThreadPendingFollowUp[] {
+    const queued = this.listThreadFollowUps(threadId, { statuses: ["queued"] });
+    const queuedIds = new Set(queued.map((followUp) => followUp.id));
+    if (
+      followUpIds.length !== queuedIds.size ||
+      new Set(followUpIds).size !== followUpIds.length ||
+      followUpIds.some((id) => !queuedIds.has(id))
+    ) {
+      throw new Error("Follow-up order does not match the queued messages.");
+    }
+    const statement = this.db.prepare(
+      `UPDATE thread_pending_followups
+       SET queue_position = ?, updated_at = ?
+       WHERE thread_id = ? AND id = ? AND status = 'queued'`,
+    );
+    const now = new Date().toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      followUpIds.forEach((followUpId, index) => statement.run(index, now, threadId, followUpId));
+      this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.listThreadFollowUps(threadId, { statuses: ["queued"] });
   }
 
   cancelThreadFollowUp(threadId: string, followUpId: string): ThreadPendingFollowUp | undefined {
@@ -4198,6 +4233,7 @@ function rowToThreadPendingFollowUp(row: ThreadPendingFollowUpRow): ThreadPendin
     ...(row.target_run_attempt_id ? { targetRunAttemptId: row.target_run_attempt_id } : {}),
     ...(queuedDuringPhase ? { queuedDuringPhase } : {}),
     ...(isThreadFollowUpBoundary(row.delivery_boundary) ? { deliveryBoundary: row.delivery_boundary } : {}),
+    ...(row.queue_position !== null ? { queuePosition: row.queue_position } : {}),
     ...(row.error ? { error: row.error } : {}),
   };
 }

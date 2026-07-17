@@ -39,9 +39,17 @@ export function formatThreadFollowUpPreview(followUp: ThreadPendingFollowUp): st
 }
 
 function compareThreadFollowUps(left: ThreadPendingFollowUp, right: ThreadPendingFollowUp): number {
+  const positionDelta = (left.queuePosition ?? Number.MAX_SAFE_INTEGER) -
+    (right.queuePosition ?? Number.MAX_SAFE_INTEGER);
+  if (positionDelta !== 0) {
+    return positionDelta;
+  }
   const priorityDelta = priorityRank(left) - priorityRank(right);
   if (priorityDelta !== 0) {
     return priorityDelta;
+  }
+  if (positionDelta !== 0) {
+    return positionDelta;
   }
   const createdDelta = left.createdAt.localeCompare(right.createdAt);
   if (createdDelta !== 0) {

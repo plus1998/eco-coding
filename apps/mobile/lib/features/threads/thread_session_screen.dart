@@ -291,6 +291,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   onEscalate: (followUp) => _escalateFollowUp(followUp),
                   onEdit: _startEditingFollowUp,
                   onDelete: (followUp) => _deleteFollowUp(followUp),
+                  onReorder: (oldIndex, newIndex) =>
+                      _reorderFollowUps(queuedFollowUps, oldIndex, newIndex),
                 ),
               if (_editingFollowUpId != null)
                 _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
@@ -504,6 +506,32 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         .refreshPending();
   }
 
+  Future<void> _reorderFollowUps(
+    List<ThreadPendingFollowUp> followUps,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (oldIndex == newIndex) return;
+    final reordered = List<ThreadPendingFollowUp>.of(followUps);
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    try {
+      await rpc.followUpReorder(
+        threadId: widget.threadId,
+        followUpIds: reordered.map((followUp) => followUp.id).toList(),
+      );
+      await _refreshFollowUps();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
   Future<void> _deleteFollowUp(ThreadPendingFollowUp followUp) async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
@@ -708,10 +736,11 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           feedBottomInset: feedBottomInset,
           controlsBottomInset: controlsBottomInset,
         ),
-        Positioned(
-          bottom: 8 + controlsBottomInset,
-          right: 8,
-          child: _ThreadUsageOverlay(threadId: threadId),
+        Positioned.fill(
+          child: _DraggableThreadUsageOverlay(
+            threadId: threadId,
+            bottomInset: controlsBottomInset,
+          ),
         ),
       ],
     );
@@ -1299,22 +1328,88 @@ List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
   return merged;
 }
 
-class _ThreadUsageOverlay extends ConsumerWidget {
-  const _ThreadUsageOverlay({required this.threadId});
+class _DraggableThreadUsageOverlay extends ConsumerStatefulWidget {
+  const _DraggableThreadUsageOverlay({
+    required this.threadId,
+    required this.bottomInset,
+  });
 
   final String threadId;
+  final double bottomInset;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DraggableThreadUsageOverlay> createState() =>
+      _DraggableThreadUsageOverlayState();
+}
+
+class _DraggableThreadUsageOverlayState
+    extends ConsumerState<_DraggableThreadUsageOverlay> {
+  static const _edgeInset = 8.0;
+  static const _estimatedWidth = 96.0;
+  static const _height = 36.0;
+
+  Offset? _position;
+
+  Offset _clampPosition(Offset position, Size size) {
+    final topInset = MediaQuery.paddingOf(context).top + 8;
+    final maxX = (size.width - _estimatedWidth - _edgeInset).clamp(
+      _edgeInset,
+      double.infinity,
+    );
+    final maxY = (size.height - widget.bottomInset - _height - _edgeInset)
+        .clamp(topInset, double.infinity);
+    return Offset(
+      position.dx.clamp(_edgeInset, maxX),
+      position.dy.clamp(topInset, maxY),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final billing = ref.watch(
-      threadSessionProvider(threadId).select((state) => state.billing),
+      threadSessionProvider(widget.threadId).select((state) => state.billing),
     );
     final threadStatus = ref.watch(
-      threadSessionProvider(threadId).select((state) => state.thread?.status),
+      threadSessionProvider(
+        widget.threadId,
+      ).select((state) => state.thread?.status),
     );
-    return ThreadUsageFloatButtons(
-      billing: billing,
-      threadStatus: threadStatus,
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        final fallback = Offset(
+          size.width - _estimatedWidth - _edgeInset,
+          size.height - widget.bottomInset - _height - _edgeInset,
+        );
+        final position = _clampPosition(_position ?? fallback, size);
+        if (_position != null && position != _position) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _position = position);
+          });
+        }
+
+        return Stack(
+          children: [
+            Positioned(
+              left: position.dx,
+              top: position.dy,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: (details) {
+                  setState(() {
+                    _position = _clampPosition(position + details.delta, size);
+                  });
+                },
+                child: ThreadUsageFloatButtons(
+                  billing: billing,
+                  threadStatus: threadStatus,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
