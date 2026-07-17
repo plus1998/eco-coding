@@ -33,6 +33,20 @@ test("discovers project skill under .agents/skills", async () => {
   }
 });
 
+test("discovers project skill under .codex/skills", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-skills-"));
+  try {
+    await writeSkill(path.join(tmp, ".codex", "skills"), "codex-project", "codex-project");
+    const result = await listDiscoveredSkills(tmp);
+    const skill = result.projectSkills.find((candidate) => candidate.name === "codex-project");
+    expect(skill?.layout).toBe("codex");
+    expect(skill?.sdkReady).toBe(false);
+    expect(result.agentsOnlySkills.some((candidate) => candidate.name === "codex-project")).toBe(false);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("agents skill becomes sdkReady after symlink to .claude/skills", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-skills-"));
   try {

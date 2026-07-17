@@ -120,6 +120,7 @@ import {
 } from "../shared/composer-skills-settings";
 import {
   dedupeSkillsByName,
+  isSkillAvailableForCore,
   listSdkReadyProjectSkills,
   parseExplicitSkillNames,
   promptIncludesSkillName,
@@ -2335,29 +2336,17 @@ function App() {
     settings,
     workflowSettings.defaultAgentProfileId,
   );
-  const userSkills = useMemo(
-    () => dedupeSkillsByName((skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady)),
-    [skillsSnapshot?.userSkills],
-  );
-  const projectSdkReadySkills = useMemo(
-    () => listSdkReadyProjectSkills(skillsSnapshot?.projectSkills ?? []),
-    [skillsSnapshot?.projectSkills],
-  );
-  const codexNativeSkills = useMemo(
-    () =>
-      [...(skillsSnapshot?.projectSkills ?? []), ...(skillsSnapshot?.userSkills ?? [])].filter(
-          (skill) => skill.layout === "agents" || skill.layout === "codex",
-      ),
-    [skillsSnapshot?.projectSkills, skillsSnapshot?.userSkills],
-  );
   const composerAvailableSkills = useMemo(() => {
+    const projectSkills = skillsSnapshot?.projectSkills ?? [];
+    const userSkills = skillsSnapshot?.userSkills ?? [];
     const candidates = composerCoreKind === "codex"
-      ? codexNativeSkills.filter(
-          (skill) => !/[/\\]\.codex[/\\]skills[/\\]\.system[/\\]/.test(skill.skillFilePath),
-        )
-      : [...projectSdkReadySkills, ...userSkills];
+      ? [...projectSkills, ...userSkills].filter((skill) => isSkillAvailableForCore(skill, composerCoreKind))
+      : [
+          ...listSdkReadyProjectSkills(projectSkills),
+          ...dedupeSkillsByName(userSkills.filter((skill) => isSkillAvailableForCore(skill, composerCoreKind))),
+        ];
     return [...new Map(candidates.map((skill) => [skill.settingsKey ?? skill.skillFilePath, skill])).values()];
-  }, [codexNativeSkills, composerCoreKind, projectSdkReadySkills, userSkills]);
+  }, [composerCoreKind, skillsSnapshot?.projectSkills, skillsSnapshot?.userSkills]);
   const composerSkillsEnabled = useMemo(
     () =>
       deriveSkillsEnabled(composerAvailableSkills, {
@@ -2386,12 +2375,18 @@ function App() {
   );
   const composerSupportsSkills = true;
   const projectAgentsOnly = useMemo(
-    () => (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project"),
-    [skillsSnapshot?.agentsOnlySkills],
+    () => composerCoreKind === "claude"
+      ? (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project")
+      : [],
+    [composerCoreKind, skillsSnapshot?.agentsOnlySkills],
+  );
+  const projectCoreSkills = useMemo(
+    () => composerAvailableSkills.filter((skill) => skill.source === "project"),
+    [composerAvailableSkills],
   );
   const showProjectSkillsPanel =
     Boolean(currentProjectPath) &&
-    (isLoadingSkills || projectSdkReadySkills.length > 0 || projectAgentsOnly.length > 0);
+    (isLoadingSkills || projectCoreSkills.length > 0 || projectAgentsOnly.length > 0);
   const composerSkillSlash = useMemo(() => parseSlashQuery(prompt, composerCursor), [prompt, composerCursor]);
   const referencedSkillNames = useMemo(() => new Set(parseExplicitSkillNames(prompt)), [prompt]);
   const composerSkillMatches = useMemo(() => {
@@ -5683,12 +5678,12 @@ function App() {
       </div>
       {showLanding && showProjectSkillsPanel && composerSupportsSkills ? (
         <ComposerSkillsBar
-          sdkReadySkills={projectSdkReadySkills}
-          agentsOnlySkills={projectAgentsOnly}
+          availableSkills={projectCoreSkills}
+          skillsNeedingLink={projectAgentsOnly}
           referencedSkillNames={referencedSkillNames}
           linking={skillsLinking}
           {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
-          onLinkAgents={linkProjectAgentsSkills}
+          {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
         />
       ) : null}
     </div>

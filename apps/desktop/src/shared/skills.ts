@@ -8,7 +8,7 @@ export const AGENTS_SKILLS_REL = ".agents/skills" as const;
 export const CODEX_SKILLS_REL = ".codex/skills" as const;
 
 export const USER_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL, CODEX_SKILLS_REL] as const;
-export const PROJECT_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL] as const;
+export const PROJECT_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL, CODEX_SKILLS_REL] as const;
 
 export interface SkillInfo {
   name: string;
@@ -119,6 +119,19 @@ export function dedupeSkillsByName(skills: readonly SkillInfo[]): SkillInfo[] {
 export function listSdkReadyProjectSkills(skills: readonly SkillInfo[]): SkillInfo[] {
   return dedupeSkillsByName(
     skills.filter((skill) => skill.source === "project" && skill.sdkReady),
+  );
+}
+
+export function isSkillAvailableForCore(
+  skill: Pick<SkillInfo, "layout" | "sdkReady" | "skillFilePath">,
+  coreKind: "claude" | "codex",
+): boolean {
+  if (coreKind === "claude") {
+    return skill.sdkReady;
+  }
+  return (
+    (skill.layout === "agents" || skill.layout === "codex") &&
+    !/[/\\]\.codex[/\\]skills[/\\]\.system[/\\]/.test(skill.skillFilePath)
   );
 }
 

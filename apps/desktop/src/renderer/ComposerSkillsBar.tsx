@@ -2,8 +2,8 @@ import type { LinkAgentsSkillsResult, SkillInfo } from "../shared/skills";
 import { SkillPillWithCard } from "./composer-skills-ui";
 
 interface ComposerSkillsBarProps {
-  sdkReadySkills: readonly SkillInfo[];
-  agentsOnlySkills: readonly SkillInfo[];
+  availableSkills: readonly SkillInfo[];
+  skillsNeedingLink: readonly SkillInfo[];
   referencedSkillNames: ReadonlySet<string>;
   linking?: boolean | undefined;
   onLinkAgents?: () => void | Promise<void>;
@@ -11,15 +11,15 @@ interface ComposerSkillsBarProps {
 }
 
 export function ComposerSkillsBar({
-  sdkReadySkills,
-  agentsOnlySkills,
+  availableSkills,
+  skillsNeedingLink,
   referencedSkillNames,
   linking,
   onLinkAgents,
   lastLinkResult,
 }: ComposerSkillsBarProps) {
-  const projectAgentsOnly = agentsOnlySkills.filter((skill) => skill.source === "project");
-  if (sdkReadySkills.length === 0 && projectAgentsOnly.length === 0) {
+  const projectSkillsNeedingLink = skillsNeedingLink.filter((skill) => skill.source === "project");
+  if (availableSkills.length === 0 && projectSkillsNeedingLink.length === 0) {
     return null;
   }
 
@@ -28,25 +28,25 @@ export function ComposerSkillsBar({
       <div className="composer-skills-bar-row">
         <span className="composer-skills-bar-label">Skills</span>
         <ul className="composer-skills-bar-list">
-          {sdkReadySkills.map((skill) => (
+          {availableSkills.map((skill) => (
             <SkillPillWithCard
               key={skill.skillFilePath}
               skill={skill}
               variant={referencedSkillNames.has(skill.name) ? "referenced" : "default"}
             />
           ))}
-          {projectAgentsOnly.map((skill) => (
+          {projectSkillsNeedingLink.map((skill) => (
             <SkillPillWithCard key={skill.skillFilePath} skill={skill} variant="pending" />
           ))}
         </ul>
       </div>
 
-      {projectAgentsOnly.length > 0 ? (
+      {projectSkillsNeedingLink.length > 0 ? (
         <div className="composer-skills-bar-row composer-skills-link-hint-row" role="note">
           <span className="composer-skills-bar-label" aria-hidden="true" />
           <p className="composer-skills-link-hint">
             <span className="composer-skills-link-hint-message">
-              {projectAgentsOnly.length} 个 Skills 需链至 .claude
+              {projectSkillsNeedingLink.length} 个 Skills 需链至 .claude
             </span>
             {onLinkAgents ? (
               <button
