@@ -28,6 +28,56 @@ void main() {
     expect(feed, isEmpty);
   });
 
+  test('buildActivityFeed hides Codex connection status messages', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 4,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'starting',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            text: '正在启动Codex…',
+            at: '2026-01-01T00:00:00.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'connected',
+            sequence: 2,
+            eventType: 'thread.status',
+            scope: 'main',
+            text: 'Codex 已连接 · gpt-5.6-sol',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'approval-waiting',
+            sequence: 3,
+            eventType: 'thread.status',
+            scope: 'main',
+            text: '等待工具权限确认…',
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'assistant',
+            sequence: 4,
+            eventType: 'message.final',
+            scope: 'main',
+            text: '开始处理任务。',
+            at: '2026-01-01T00:00:03.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.map((entry) => entry.text), ['开始处理任务。']);
+  });
+
   test('parseToolActionDisplayLabel normalizes tool lines', () {
     expect(
       parseToolActionDisplayLabel('Tool: Read · lib/main.dart'),
@@ -471,7 +521,8 @@ void main() {
           bashRun: BashRunCardDisplay(
             title: 'Run unit tests',
             meta: 'npm, 1.2s',
-            body: '36 pass',
+            command: 'npm test',
+            output: '36 pass',
           ),
         ),
         ActivityFeedEntry(
@@ -493,7 +544,8 @@ void main() {
         'bash-1',
         'action-group:search-1:read-2:2',
       ]);
-      expect(grouped[1].bashRun?.body, '36 pass');
+      expect(grouped[1].bashRun?.command, 'npm test');
+      expect(grouped[1].bashRun?.output, '36 pass');
     },
   );
 
@@ -658,7 +710,8 @@ void main() {
       expect(actions.first.toolUseId, 'toolu_bash_1');
       expect(actions.first.text, 'Run unit tests');
       expect(actions.first.lifecycle, ToolActionLifecycle.completed);
-      expect(actions.first.bashRun?.body, '36 pass');
+      expect(actions.first.bashRun?.command, 'npm test');
+      expect(actions.first.bashRun?.output, '36 pass');
       expect(
         feed.any(
           (entry) =>
@@ -754,7 +807,8 @@ void main() {
                   bashRun: BashRunCardDisplay(
                     title: 'Run unit tests',
                     meta: 'npm, 1.2s',
-                    body: '36 pass',
+                    command: 'npm test',
+                    output: '36 pass',
                   ),
                 ),
               ],
@@ -769,6 +823,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('36 pass'), findsOneWidget);
+      expect(find.text('npm test'), findsOneWidget);
       expect(find.text('Run unit tests'), findsOneWidget);
 
       await tester.tap(find.text('Run unit tests').first);
@@ -777,6 +832,21 @@ void main() {
       expect(detailOpenCount, 0);
     },
   );
+
+  test('Bash title uses description or Shell without command fallback', () {
+    expect(
+      resolveBashRunCardDisplay(toolName: 'Bash', command: 'npm test')?.title,
+      'Shell',
+    );
+    expect(
+      resolveBashRunCardDisplay(
+        toolName: 'Bash',
+        command: 'npm test',
+        description: 'Run unit tests',
+      )?.title,
+      'Run unit tests',
+    );
+  });
 
   test('subagent mission card gets duration and timeline from projection', () {
     final feed = buildActivityFeed(

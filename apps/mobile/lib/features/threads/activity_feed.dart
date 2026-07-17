@@ -1648,7 +1648,8 @@ class _BashRunCard extends StatefulWidget {
 }
 
 class _BashRunCardState extends State<_BashRunCard> {
-  static const _collapsedBodyLines = 2;
+  static const _collapsedCommandLines = 2;
+  static const _collapsedOutputLines = 3;
   bool _bodyExpanded = false;
 
   @override
@@ -1658,25 +1659,39 @@ class _BashRunCardState extends State<_BashRunCard> {
     // subagent missions). Lifecycle often stays `running` in projection data.
     final failed = widget.lifecycle == ToolActionLifecycle.failed;
     final eco = ecoColors(context);
-    final body = display.body?.trim() ?? '';
+    final command = display.command?.trim() ?? '';
+    final output = display.output?.trim() ?? '';
     final bodyStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: eco.textSecondary,
       fontFamily: 'Menlo',
-      height: 1.45,
+      height: 1.4,
     );
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final bodyMaxWidth = constraints.maxWidth - 24;
-        final canExpand =
-            body.isNotEmpty &&
+        final textWidth = bodyMaxWidth > 0
+            ? bodyMaxWidth
+            : constraints.maxWidth;
+        final commandCanExpand =
+            command.isNotEmpty &&
             _textExceedsLineLimit(
-              text: body,
+              text: command,
               style: bodyStyle,
-              maxWidth: bodyMaxWidth > 0 ? bodyMaxWidth : constraints.maxWidth,
-              maxLines: _collapsedBodyLines,
+              maxWidth: textWidth - 18,
+              maxLines: _collapsedCommandLines,
               textDirection: Directionality.of(context),
             );
+        final outputCanExpand =
+            output.isNotEmpty &&
+            _textExceedsLineLimit(
+              text: output,
+              style: bodyStyle,
+              maxWidth: textWidth,
+              maxLines: _collapsedOutputLines,
+              textDirection: Directionality.of(context),
+            );
+        final canExpand = commandCanExpand || outputCanExpand;
 
         return ActivityFeedBlock(
           onTap: canExpand
@@ -1696,39 +1711,91 @@ class _BashRunCardState extends State<_BashRunCard> {
                     ? const ActivityFeedStatusChip(label: '失败', danger: true)
                     : null,
               ),
-              if (body.isNotEmpty) ...[
+              if (command.isNotEmpty || output.isNotEmpty) ...[
                 const ActivityFeedBlockDivider(),
-                EcoClippedFadeBody(
-                  expanded: _bodyExpanded || !canExpand,
-                  collapsedMaxHeight: 60,
-                  showFade: canExpand && !_bodyExpanded,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      12,
-                      10,
-                      12,
-                      _bodyExpanded || !canExpand ? 12 : 8,
-                    ),
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOut,
-                      alignment: Alignment.topLeft,
-                      child: _bodyExpanded || !canExpand
-                          ? SelectableText(body, style: bodyStyle)
-                          : Text(
-                              body,
-                              maxLines: _collapsedBodyLines,
-                              overflow: TextOverflow.clip,
-                              style: bodyStyle,
-                            ),
-                    ),
+                if (command.isNotEmpty)
+                  _BashCommandBody(
+                    command: command,
+                    style: bodyStyle,
+                    expanded: _bodyExpanded || !commandCanExpand,
                   ),
-                ),
+                if (command.isNotEmpty && output.isNotEmpty)
+                  const ActivityFeedBlockDivider(),
+                if (output.isNotEmpty)
+                  _BashOutputBody(
+                    output: output,
+                    style: bodyStyle,
+                    expanded: _bodyExpanded || !outputCanExpand,
+                  ),
               ],
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _BashCommandBody extends StatelessWidget {
+  const _BashCommandBody({
+    required this.command,
+    required this.style,
+    required this.expanded,
+  });
+
+  final String command;
+  final TextStyle? style;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(r'$', style: style?.copyWith(color: eco.textMuted)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: expanded
+                ? SelectableText(command, style: style)
+                : Text(
+                    command,
+                    maxLines: _BashRunCardState._collapsedCommandLines,
+                    overflow: TextOverflow.clip,
+                    style: style,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BashOutputBody extends StatelessWidget {
+  const _BashOutputBody({
+    required this.output,
+    required this.style,
+    required this.expanded,
+  });
+
+  final String output;
+  final TextStyle? style;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: expanded
+          ? SelectableText(output, style: style)
+          : Text(
+              output,
+              maxLines: _BashRunCardState._collapsedOutputLines,
+              overflow: TextOverflow.clip,
+              style: style,
+            ),
     );
   }
 }

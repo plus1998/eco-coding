@@ -12,6 +12,15 @@ import '../composer/commit_push_sheet.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
 
+String resolveGitRemoteSyncAction(int behindCount) {
+  return behindCount > 0 ? 'pull' : 'fetch';
+}
+
+String resolveGitRemoteSyncLabel(GitWorkingTreeStatus? gitStatus) {
+  final behindCount = gitStatus?.behindCount ?? 0;
+  return behindCount > 0 ? '拉取（落后 $behindCount）' : '抓取';
+}
+
 class ThreadSessionMenuButton extends ConsumerWidget {
   const ThreadSessionMenuButton({
     super.key,
@@ -57,11 +66,9 @@ class ThreadSessionMenuButton extends ConsumerWidget {
           workspacePath.isNotEmpty && (gitStatus?.isGitRepository ?? false),
     ),
     _ThreadSessionMenuEntry(
-      value: 'pull',
+      value: resolveGitRemoteSyncAction(gitStatus?.behindCount ?? 0),
       icon: EcoIcons.pull,
-      label: _canPull && (gitStatus?.behindCount ?? 0) > 0
-          ? '拉取（落后 ${gitStatus!.behindCount}）'
-          : '拉取',
+      label: resolveGitRemoteSyncLabel(gitStatus),
       enabled: !isRunning && _canPull,
     ),
     _ThreadSessionMenuEntry(
@@ -181,6 +188,13 @@ Future<void> handleThreadSessionMenuAction({
           workspacePath: workspacePath,
           branch: gitStatus?.branch,
         );
+      case 'fetch':
+        if (workspacePath.isEmpty) return;
+        await fetchChangesFromMenu(
+          context: context,
+          ref: ref,
+          workspacePath: workspacePath,
+        );
       case 'scripts':
         if (workspacePath.isEmpty) return;
         await showNpmScriptsSheet(
@@ -291,6 +305,49 @@ Future<void> pullChangesFromMenu({
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步')),
     );
+  } finally {
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+}
+
+Future<void> fetchChangesFromMenu({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String workspacePath,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+
+  if (!context.mounted) return;
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => const Center(
+      child: Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('正在抓取…'),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  try {
+    await rpc.fetchChanges(workspacePath: workspacePath);
+    refreshWorkspaceChanges(ref, workspacePath);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('抓取完成')));
   } finally {
     if (context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();

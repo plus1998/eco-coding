@@ -592,6 +592,18 @@ class DesktopRpc {
     return GitPullResult.fromJson(result);
   }
 
+  Future<GitFetchResult> fetchChanges({required String workspacePath}) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:fetch',
+      [
+        {'workspacePath': workspacePath},
+      ],
+      deadlineMs: 120000,
+    );
+    return GitFetchResult.fromJson(result);
+  }
+
   Future<List<CoderTodoItem>> listThreadTodos(String threadId) async {
     final result = await _client.invoke<List<dynamic>>(
       desktopDeviceId,

@@ -51,10 +51,10 @@ class GitWorkingTreeStatus {
   bool get hasChanges => dirtyFileCount > 0;
 
   WorkspaceChangesSummary toChangesSummary() => WorkspaceChangesSummary(
-        fileCount: dirtyFileCount,
-        totalAdditions: insertions,
-        totalDeletions: deletions,
-      );
+    fileCount: dirtyFileCount,
+    totalAdditions: insertions,
+    totalDeletions: deletions,
+  );
 }
 
 class WorkspaceChangesSummary {
@@ -168,16 +168,17 @@ class CommitModelPricingHint {
     this.outputPerM,
   });
 
-  factory CommitModelPricingHint.fromJson(Map<String, dynamic> json) =>
-      CommitModelPricingHint(
-        candidateModelId: json['candidateModelId'] as String? ?? '',
-        modelId: json['modelId'] as String? ?? '',
-        providerName: json['providerName'] as String? ?? '',
-        pricingResolved: json['pricingResolved'] as bool? ?? false,
-        pricingLabel: json['pricingLabel'] as String?,
-        inputPerM: (json['rates'] as Map<String, dynamic>?)?['inputPerM'] as num?,
-        outputPerM: (json['rates'] as Map<String, dynamic>?)?['outputPerM'] as num?,
-      );
+  factory CommitModelPricingHint.fromJson(
+    Map<String, dynamic> json,
+  ) => CommitModelPricingHint(
+    candidateModelId: json['candidateModelId'] as String? ?? '',
+    modelId: json['modelId'] as String? ?? '',
+    providerName: json['providerName'] as String? ?? '',
+    pricingResolved: json['pricingResolved'] as bool? ?? false,
+    pricingLabel: json['pricingLabel'] as String?,
+    inputPerM: (json['rates'] as Map<String, dynamic>?)?['inputPerM'] as num?,
+    outputPerM: (json['rates'] as Map<String, dynamic>?)?['outputPerM'] as num?,
+  );
 
   final String candidateModelId;
   final String modelId;
@@ -211,7 +212,9 @@ class CommitModelOptionView {
         providerColor: json['providerColor'] as String? ?? '',
         hint: json['hint'] == null
             ? null
-            : CommitModelPricingHint.fromJson(json['hint'] as Map<String, dynamic>),
+            : CommitModelPricingHint.fromJson(
+                json['hint'] as Map<String, dynamic>,
+              ),
       );
 
   final String id;
@@ -233,9 +236,13 @@ class GitListCommitModelOptionsResult {
   factory GitListCommitModelOptionsResult.fromJson(Map<String, dynamic> json) =>
       GitListCommitModelOptionsResult(
         options: (json['options'] as List<dynamic>? ?? [])
-            .map((entry) => CommitModelOptionView.fromJson(entry as Map<String, dynamic>))
+            .map(
+              (entry) =>
+                  CommitModelOptionView.fromJson(entry as Map<String, dynamic>),
+            )
             .toList(),
-        savedCandidateModelId: json['savedCandidateModelId'] as String? ?? 'auto',
+        savedCandidateModelId:
+            json['savedCandidateModelId'] as String? ?? 'auto',
       );
 
   final List<CommitModelOptionView> options;
@@ -251,7 +258,8 @@ class GitCommitResult {
     this.modelId,
   });
 
-  factory GitCommitResult.fromJson(Map<String, dynamic> json) => GitCommitResult(
+  factory GitCommitResult.fromJson(Map<String, dynamic> json) =>
+      GitCommitResult(
         commitSha: json['commitSha'] as String? ?? '',
         message: json['message'] as String? ?? '',
         generated: json['generated'] as bool? ?? false,
@@ -267,17 +275,23 @@ class GitCommitResult {
 }
 
 class GitPushResult {
-  const GitPushResult({
-    required this.method,
-    required this.output,
-  });
+  const GitPushResult({required this.method, required this.output});
 
   factory GitPushResult.fromJson(Map<String, dynamic> json) => GitPushResult(
-        method: json['method'] as String? ?? 'git',
-        output: json['output'] as String? ?? '',
-      );
+    method: json['method'] as String? ?? 'git',
+    output: json['output'] as String? ?? '',
+  );
 
   final String method;
+  final String output;
+}
+
+class GitFetchResult {
+  const GitFetchResult({required this.output});
+
+  factory GitFetchResult.fromJson(Map<String, dynamic> json) =>
+      GitFetchResult(output: json['output'] as String? ?? '');
+
   final String output;
 }
 
@@ -290,13 +304,13 @@ class GitPullResult {
   });
 
   factory GitPullResult.fromJson(Map<String, dynamic> json) => GitPullResult(
-        output: json['output'] as String? ?? '',
-        pulled: json['pulled'] as bool? ?? false,
-        conflicted: json['conflicted'] as bool? ?? false,
-        conflictFiles: (json['conflictFiles'] as List<dynamic>? ?? [])
-            .map((entry) => entry as String)
-            .toList(),
-      );
+    output: json['output'] as String? ?? '',
+    pulled: json['pulled'] as bool? ?? false,
+    conflicted: json['conflicted'] as bool? ?? false,
+    conflictFiles: (json['conflictFiles'] as List<dynamic>? ?? [])
+        .map((entry) => entry as String)
+        .toList(),
+  );
 
   final String output;
   final bool pulled;
@@ -305,10 +319,7 @@ class GitPullResult {
 }
 
 class PackageScriptInfo {
-  const PackageScriptInfo({
-    required this.name,
-    required this.command,
-  });
+  const PackageScriptInfo({required this.name, required this.command});
 
   factory PackageScriptInfo.fromJson(Map<String, dynamic> json) =>
       PackageScriptInfo(
@@ -347,7 +358,10 @@ class PackageScriptsListResult {
       packageName: json['packageName'] as String?,
       packageManager: json['packageManager'] as String? ?? 'npm',
       scripts: (json['scripts'] as List<dynamic>? ?? [])
-          .map((entry) => PackageScriptInfo.fromJson(entry as Map<String, dynamic>))
+          .map(
+            (entry) =>
+                PackageScriptInfo.fromJson(entry as Map<String, dynamic>),
+          )
           .toList(),
       scriptArgs: scriptArgs,
     );

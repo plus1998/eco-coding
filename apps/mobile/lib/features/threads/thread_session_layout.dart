@@ -27,11 +27,13 @@ class ThreadSessionConversationLayout extends StatefulWidget {
     required this.feedBuilder,
     required this.composer,
     this.floatingComposer,
+    this.foreground,
   });
 
   final ThreadSessionFeedBuilder feedBuilder;
   final Widget composer;
   final Widget? floatingComposer;
+  final Widget? foreground;
 
   @override
   State<ThreadSessionConversationLayout> createState() =>
@@ -99,6 +101,8 @@ class _ThreadSessionConversationLayoutState
             ],
           ),
         ),
+        if (widget.foreground != null)
+          Positioned.fill(child: widget.foreground!),
       ],
     );
   }

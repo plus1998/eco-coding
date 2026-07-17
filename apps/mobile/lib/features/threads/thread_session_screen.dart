@@ -316,6 +316,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ),
       body: ThreadSessionConversationLayout(
         floatingComposer: floatingComposer,
+        foreground: showLanding
+            ? null
+            : _DraggableThreadUsageOverlay(threadId: widget.threadId),
         feedBuilder: (context, feedBottomInset, controlsBottomInset) =>
             session.loading
             ? const Center(child: CircularProgressIndicator())
@@ -737,12 +740,6 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           isRunning: isRunning,
           feedBottomInset: feedBottomInset,
           controlsBottomInset: controlsBottomInset,
-        ),
-        Positioned.fill(
-          child: _DraggableThreadUsageOverlay(
-            threadId: threadId,
-            bottomInset: controlsBottomInset,
-          ),
         ),
       ],
     );
@@ -1331,13 +1328,9 @@ List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
 }
 
 class _DraggableThreadUsageOverlay extends ConsumerStatefulWidget {
-  const _DraggableThreadUsageOverlay({
-    required this.threadId,
-    required this.bottomInset,
-  });
+  const _DraggableThreadUsageOverlay({required this.threadId});
 
   final String threadId;
-  final double bottomInset;
 
   @override
   ConsumerState<_DraggableThreadUsageOverlay> createState() =>
@@ -1353,12 +1346,13 @@ class _DraggableThreadUsageOverlayState
   Offset? _position;
 
   Offset _clampPosition(Offset position, Size size) {
-    final topInset = MediaQuery.paddingOf(context).top + 8;
+    final safePadding = MediaQuery.paddingOf(context);
+    final topInset = safePadding.top + _edgeInset;
     final maxX = (size.width - _estimatedWidth - _edgeInset).clamp(
       _edgeInset,
       double.infinity,
     );
-    final maxY = (size.height - widget.bottomInset - _height - _edgeInset)
+    final maxY = (size.height - safePadding.bottom - _height - _edgeInset)
         .clamp(topInset, double.infinity);
     return Offset(
       position.dx.clamp(_edgeInset, maxX),
@@ -1382,7 +1376,7 @@ class _DraggableThreadUsageOverlayState
         final size = constraints.biggest;
         final fallback = Offset(
           size.width - _estimatedWidth - _edgeInset,
-          size.height - widget.bottomInset - _height - _edgeInset,
+          sessionToolbarFrostHeight(context) + _edgeInset,
         );
         final position = _clampPosition(_position ?? fallback, size);
         if (_position != null && position != _position) {

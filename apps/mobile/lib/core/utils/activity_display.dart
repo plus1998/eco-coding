@@ -369,14 +369,12 @@ String? bashApprovalLiveTypeToToolStatus(String liveType) {
 }
 
 BashRunCardDisplay? resolveBashRunCardDisplayFromTool(
-  ThreadRunToolMetadata tool, {
-  String? summaryText,
-}) {
+  ThreadRunToolMetadata tool,
+) {
   if (tool.name != 'Bash') return null;
   return resolveBashRunCardDisplay(
     toolName: tool.name,
     command: tool.detail,
-    summaryText: summaryText,
     output: tool.output,
     durationMs: tool.durationMs,
     description: tool.description,
@@ -650,11 +648,17 @@ class ParsedActivityToolInvocation {
 }
 
 class BashRunCardDisplay {
-  const BashRunCardDisplay({required this.title, this.meta, this.body});
+  const BashRunCardDisplay({
+    required this.title,
+    this.meta,
+    this.command,
+    this.output,
+  });
 
   final String title;
   final String? meta;
-  final String? body;
+  final String? command;
+  final String? output;
 }
 
 int? parseToolDurationMsFromMessage(String message) {
@@ -749,51 +753,17 @@ String formatBashRunMeta(String command, {int? durationMs}) {
   return parts.join(', ');
 }
 
-String formatMeaningfulBashTitle({
-  String? command,
-  String? summaryText,
-  String? description,
-}) {
+String formatBashRunTitle(String? description) {
   final normalizedDescription = description?.trim();
   if (normalizedDescription != null && normalizedDescription.isNotEmpty) {
     return clampActivityPreviewLine(normalizedDescription, 48);
   }
-  final normalizedCommand = command?.trim();
-  if (normalizedCommand != null && normalizedCommand.isNotEmpty) {
-    final title = _deriveBashTitleFromCommand(normalizedCommand);
-    return title ?? clampActivityPreviewLine(normalizedCommand, 48);
-  }
-  return '运行命令';
-}
-
-String? _deriveBashTitleFromCommand(String command) {
-  final lastSegment = command
-      .split(RegExp(r'\s*(?:&&|\|\||;)\s*'))
-      .map((s) => s.trim())
-      .where((s) => s.isNotEmpty)
-      .lastOrNull;
-  if (lastSegment == null) return null;
-
-  final normalized = lastSegment.replaceAll(RegExp(r'\s+'), ' ');
-  final tokens = normalized
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
-  if (tokens.isEmpty) return null;
-
-  final first = tokens[0];
-  if (first.startsWith('/') ||
-      first.startsWith('./') ||
-      first.startsWith('~/')) {
-    return clampActivityPreviewLine(pathBasename(first), 48);
-  }
-  return null;
+  return 'Shell';
 }
 
 BashRunCardDisplay? resolveBashRunCardDisplay({
   String? toolName,
   String? command,
-  String? summaryText,
   String? output,
   int? durationMs,
   String? description,
@@ -801,20 +771,15 @@ BashRunCardDisplay? resolveBashRunCardDisplay({
   if (toolName != 'Bash') return null;
   final normalizedCommand = command?.trim();
   final normalizedOutput = output?.trim();
-  final normalizedSummary = summaryText?.trim();
-  final title = formatMeaningfulBashTitle(
-    command: normalizedCommand,
-    summaryText: normalizedSummary,
-    description: description,
-  );
+  final title = formatBashRunTitle(description);
   final meta = normalizedCommand == null || normalizedCommand.isEmpty
       ? null
       : formatBashRunMeta(normalizedCommand, durationMs: durationMs);
-  final body = normalizedOutput ?? normalizedCommand;
   return BashRunCardDisplay(
     title: title,
     meta: meta?.isEmpty == true ? null : meta,
-    body: body?.isEmpty == true ? null : body,
+    command: normalizedCommand?.isEmpty == true ? null : normalizedCommand,
+    output: normalizedOutput?.isEmpty == true ? null : normalizedOutput,
   );
 }
 

@@ -1400,7 +1400,6 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
             description: description ?? tool?.description,
             output: tool?.output,
             durationMs: tool?.durationMs,
-            summaryText: item.text,
           )
         : null,
     fileChange: fileChange,
@@ -1460,13 +1459,16 @@ bool _isProjectionInternalMessageText(String text) {
       trimmed == '执行完成，变更已写入项目目录。' ||
       trimmed == '执行完成，工作树内无相对基线的文件变更。' ||
       RegExp(r'^正在启动 Claude Agent SDK').hasMatch(trimmed) ||
+      RegExp(r'^正在启动\s*Codex').hasMatch(trimmed) ||
+      RegExp(r'^Codex\s*已连接(?:\s*·|$)').hasMatch(trimmed) ||
       RegExp(r'^Working in project directory:').hasMatch(trimmed) ||
       RegExp(r'^Local model router ready:').hasMatch(trimmed) ||
       _isProjectionApprovalTransitionStatus(trimmed);
 }
 
 bool _isProjectionApprovalTransitionStatus(String text) {
-  return text == '等待工具读取确认…' ||
+  return text == '等待工具权限确认…' ||
+      text == '等待工具读取确认…' ||
       text == '等待 Bash 执行确认…' ||
       text == '读取已确认，继续执行…' ||
       text == '读取已拒绝，等待 Agent 调整…' ||

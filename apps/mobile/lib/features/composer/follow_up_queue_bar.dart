@@ -35,7 +35,7 @@ class FollowUpQueueBar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Transform.translate(
-      offset: const Offset(0, 16),
+      offset: const Offset(0, 18),
       transformHitTests: true,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 30),
@@ -68,10 +68,10 @@ class FollowUpQueueBar extends StatelessWidget {
                 ],
               ),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 180),
+                constraints: const BoxConstraints(maxHeight: 160),
                 child: ReorderableListView.builder(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
                   buildDefaultDragHandles: false,
                   itemCount: followUps.length,
                   onReorder: onReorder,
@@ -79,7 +79,7 @@ class FollowUpQueueBar extends StatelessWidget {
                     key: ValueKey(followUps[index].id),
                     children: [
                       if (index > 0)
-                        Divider(height: 9, color: eco.borderSubtle),
+                        Divider(height: 5, color: eco.borderSubtle),
                       _FollowUpQueueItem(
                         followUp: followUps[index],
                         cancelBusyId: cancelBusyId,
@@ -116,7 +116,7 @@ class _FollowUpDragHandle extends StatelessWidget {
     return Semantics(
       label: '拖动调整消息顺序',
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 5),
         child: Icon(Icons.drag_indicator_rounded, size: 16, color: color),
       ),
     );
@@ -217,7 +217,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
           onTap: _actionBusy ? null : () => widget.onEdit(widget.followUp),
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: Row(
               children: [
                 widget.dragHandle,
@@ -250,7 +250,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
                   onTap: _actionBusy ? null : _showMenu,
                   behavior: HitTestBehavior.opaque,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 7, 2, 7),
+                    padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
                     child: Icon(
                       EcoIcons.more,
                       size: 14,
