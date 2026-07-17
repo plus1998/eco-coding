@@ -2731,26 +2731,7 @@ function ToolFailedBlock({
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
-  const commandRef = useRef<HTMLPreElement>(null);
-  const [commandExpanded, setCommandExpanded] = useState(false);
-  const [commandCanExpand, setCommandCanExpand] = useState(false);
-
-  useLayoutEffect(() => {
-    setCommandExpanded(false);
-    setCommandCanExpand(false);
-  }, [command]);
-
-  useLayoutEffect(() => {
-    const node = commandRef.current;
-    if (!node || commandExpanded) {
-      return;
-    }
-    const measure = () => setCommandCanExpand(node.scrollHeight > node.clientHeight + 1);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [command, commandExpanded]);
+  const isBash = tool.trim().toLowerCase() === "bash";
 
   return (
     <div className="run-log-tool-failed" role="status">
@@ -2766,27 +2747,11 @@ function ToolFailedBlock({
       </span>
       {command ? (
         <div className="run-log-tool-failed-command-wrap">
-          <pre
-            ref={commandRef}
-            className={`run-log-tool-failed-command${commandExpanded ? " is-expanded" : ""}`}
-          >
-            {command}
-          </pre>
-          {commandCanExpand ? (
-            <button
-              type="button"
-              className="run-log-tool-failed-command-toggle"
-              onClick={() => setCommandExpanded((value) => !value)}
-              aria-expanded={commandExpanded}
-            >
-              {commandExpanded ? "收起命令" : "展开命令"}
-              <ChevronDown
-                size={13}
-                className={commandExpanded ? "is-expanded" : undefined}
-                aria-hidden
-              />
-            </button>
-          ) : null}
+          {isBash ? (
+            <RunLogBashCard display={{ title: "Bash", body: command }} standalone />
+          ) : (
+            <pre className="run-log-tool-failed-command">{command}</pre>
+          )}
         </div>
       ) : null}
       {recoveredResult ? (
@@ -3212,20 +3177,32 @@ function RunLogFileChangeCard({
 function RunLogBashCard({
   display,
   lifecycle,
+  standalone = false,
 }: {
   display: import("../shared/activity-display").BashRunCardDisplay;
   lifecycle?: ToolActionLifecycle;
+  standalone?: boolean;
 }) {
   return (
     <div
       className={[
         "run-log-bash-card",
+        standalone ? "is-standalone" : "",
         lifecycle === "running" ? "is-running" : "",
         lifecycle === "failed" ? "is-failed" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
+      {standalone ? (
+        <>
+          <div className="run-log-bash-card-header">
+            <Terminal size={14} className="run-log-bash-card-icon" aria-hidden />
+            <span className="run-log-bash-card-title">{display.title}</span>
+          </div>
+          <div className="run-log-bash-card-divider" aria-hidden />
+        </>
+      ) : null}
       {display.body ? (
         <pre className="run-log-bash-card-output">{display.body}</pre>
       ) : null}

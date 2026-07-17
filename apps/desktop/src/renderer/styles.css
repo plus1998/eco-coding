@@ -8182,8 +8182,14 @@ button.sidebar-core-heading {
 }
 
 .run-log-tool-result-panel .run-log-tool-failed-error {
+  max-height: 180px;
   padding: 8px 9px;
+  overflow-x: auto;
+  overflow-y: auto;
   font-family: var(--font-mono);
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .run-log-tool-result-files {
@@ -8224,46 +8230,20 @@ button.sidebar-core-heading {
 }
 
 .run-log-tool-failed-command {
-  max-height: 4.35em;
+  max-height: 180px;
   margin: 0;
-  overflow: hidden;
+  padding: 8px 12px 11px;
+  overflow-x: auto;
+  overflow-y: auto;
   color: var(--codex-log-text, var(--text-primary, #e5e5e5));
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  scrollbar-gutter: stable;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.run-log-tool-failed-command.is-expanded {
-  max-height: none;
-  overflow: visible;
-}
-
-.run-log-tool-failed-command-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-top: 3px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.run-log-tool-failed-command-toggle:hover {
-  color: var(--text-primary);
-}
-
-.run-log-tool-failed-command-toggle svg {
-  transition: transform 0.16s ease;
-}
-
-.run-log-tool-failed-command-toggle svg.is-expanded {
-  transform: rotate(180deg);
 }
 
 .run-log-api-error {
@@ -9167,8 +9147,13 @@ button.sidebar-core-heading {
   overflow-wrap: anywhere;
   overflow-x: auto;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
+}
+
+.run-log-bash-card.is-standalone .run-log-bash-card-output {
+  max-height: 180px;
 }
 
 .run-log-bash-card.is-running .run-log-bash-card-title {
