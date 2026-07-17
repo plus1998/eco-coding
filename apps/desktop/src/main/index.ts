@@ -1008,6 +1008,7 @@ app.whenReady().then(async () => {
     },
     pruneThreadAfterCodexRollback: (threadId, itemId) => {
       conversationStore.rewindThreadToActivityLine(threadId, sdkActivityLineId(itemId));
+      resetThreadRuntimeAfterHistoryRewrite(threadId);
       scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
     },
     scheduleThreadRunProjectionUpdated,
@@ -5756,6 +5757,24 @@ function bumpThreadRunProjectionHistoryRevision(threadId: string): number {
   return next;
 }
 
+function resetThreadRuntimeAfterHistoryRewrite(threadId: string): void {
+  const timer = runProjectionEmitTimers.get(threadId);
+  if (timer) {
+    clearTimeout(timer);
+    runProjectionEmitTimers.delete(threadId);
+  }
+  threadUsageAccumulator.clear(threadId);
+  contextScheduler.clearThread(threadId);
+  threadPromptCacheMonitor.clearThread(threadId);
+  threadPromptCacheEpisodeMonitor.clearThread(threadId);
+  threadCacheHitMonitor.clearThread(threadId);
+  subagentMetricsRegistry.clearThread(threadId);
+  usageLedgerCoordinator.clearProxyAttributionState(threadId);
+  bumpThreadRunProjectionHistoryRevision(threadId);
+  lastFeedProjectionSignatures.delete(threadId);
+  lastFeedProjectionTimelineSequences.delete(threadId);
+}
+
 async function prepareThreadRewindForContinue(input: {
   threadId: string;
   prompt: string;
@@ -5803,7 +5822,7 @@ async function prepareThreadRewindForContinue(input: {
   });
 
   conversationStore.rewindThreadToActivityLine(input.threadId, storedTarget.activityLineId);
-  bumpThreadRunProjectionHistoryRevision(input.threadId);
+  resetThreadRuntimeAfterHistoryRewrite(input.threadId);
   conversationStore.clearThreadClaudePlanFilePath(input.threadId);
   if (!resumeSessionAt) {
     conversationStore.updateThreadPrompt(input.threadId, input.prompt);
