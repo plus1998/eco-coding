@@ -232,7 +232,20 @@ export class SdkStreamActivityBridge {
   ): void {
     const pendingExisting = this.pendingDeltas.get(streamKey);
     if (pendingExisting?.timer) {
-      clearTimeout(pendingExisting.timer);
+      pendingExisting.role = role;
+      pendingExisting.message = message;
+      pendingExisting.stream = stream;
+      if (agentId) {
+        pendingExisting.agentId = agentId;
+      } else {
+        delete pendingExisting.agentId;
+      }
+      if (extras) {
+        pendingExisting.extras = extras;
+      } else {
+        delete pendingExisting.extras;
+      }
+      return;
     }
     const pending: PendingStreamDelta = {
       role,
@@ -242,7 +255,7 @@ export class SdkStreamActivityBridge {
       ...(extras && { extras }),
       timer: setTimeout(() => {
         this.pendingDeltas.delete(streamKey);
-        emit(threadId, type, message, role, stream, agentId, extras);
+        emit(threadId, type, pending.message, pending.role, pending.stream, pending.agentId, pending.extras);
       }, STREAM_THROTTLE_MS),
     };
     this.pendingDeltas.set(streamKey, pending);

@@ -1,6 +1,56 @@
 import { expect, test } from "bun:test";
 import { SdkStreamActivityBridge } from "../src/main/sdk-stream-activity";
 
+test("emits continuous SDK text during a rapid stream without waiting for a pause", async () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: string[] = [];
+  const emit = (_threadId: string, _type: string, message: string, _role: string, stream: boolean) => {
+    if (stream && message) {
+      emitted.push(message);
+    }
+  };
+
+  bridge.handleEvent(
+    "thr_continuous_stream",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        streamPlaceholder: true,
+        stream_block_key: "text:0",
+      },
+    },
+    emit,
+  );
+
+  for (const text of ["逐", "字", "输", "出", "正", "常"]) {
+    bridge.handleEvent(
+      "thr_continuous_stream",
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: {
+          type: "eco_stream",
+          blockKind: "text",
+          text,
+          streaming: true,
+          stream_block_key: "text:0",
+        },
+      },
+      emit,
+    );
+    await Bun.sleep(15);
+  }
+
+  expect(emitted.length).toBeGreaterThanOrEqual(1);
+  expect(emitted[0]?.length).toBeLessThan(6);
+
+  await Bun.sleep(60);
+  expect(emitted.at(-1)).toBe("逐字输出正常");
+});
+
 test("emits structured SDK tool metadata with tool started activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{
@@ -697,13 +747,8 @@ test("persists exact SDK message id in activity metadata", () => {
 test("suppresses replayed SDK text blocks by message id when block indexes differ", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; stream: boolean }> = [];
-  const emit = (
-    _threadId: string,
-    _type: string,
-    message: string,
-    _role: string,
-    stream: boolean,
-  ) => emitted.push({ message, stream });
+  const emit = (_threadId: string, _type: string, message: string, _role: string, stream: boolean) =>
+    emitted.push({ message, stream });
 
   for (const payload of [
     {
@@ -737,11 +782,7 @@ test("suppresses replayed SDK text blocks by message id when block indexes diffe
       messageId: "msg_replayed",
     },
   ]) {
-    bridge.handleEvent(
-      "thr_replayed",
-      { type: "message.delta", role: "planner", payload },
-      emit,
-    );
+    bridge.handleEvent("thr_replayed", { type: "message.delta", role: "planner", payload }, emit);
   }
 
   expect(emitted).toEqual([
