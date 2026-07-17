@@ -152,6 +152,7 @@ class ThreadRuntimeConfig {
     Map<String, bool>? mcpServersEnabled,
     Map<String, bool>? skillsEnabled,
     MainAgentModelOverride? mainAgentModelOverride,
+    bool clearMainAgentModelOverride = false,
     SessionMode? sessionMode,
     String? bashReviewMode,
   }) {
@@ -161,8 +162,9 @@ class ThreadRuntimeConfig {
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
       skillsEnabled: skillsEnabled ?? this.skillsEnabled,
-      mainAgentModelOverride:
-          mainAgentModelOverride ?? this.mainAgentModelOverride,
+      mainAgentModelOverride: clearMainAgentModelOverride
+          ? null
+          : (mainAgentModelOverride ?? this.mainAgentModelOverride),
       sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
@@ -855,6 +857,39 @@ class OrchestrationAgentInstance {
   final List<String> mcpServers;
 }
 
+class OrchestrationModelRef {
+  const OrchestrationModelRef({
+    required this.providerId,
+    required this.modelId,
+    this.thinkingEffort,
+    this.candidateModelId,
+  });
+
+  factory OrchestrationModelRef.fromJson(Map<String, dynamic> json) =>
+      OrchestrationModelRef(
+        providerId: json['providerId'] as String? ?? '',
+        modelId: json['modelId'] as String? ?? '',
+        thinkingEffort: json['thinkingEffort'] as String?,
+        candidateModelId: json['candidateModelId'] as String?,
+      );
+
+  final String providerId;
+  final String modelId;
+  final String? thinkingEffort;
+  final String? candidateModelId;
+}
+
+OrchestrationModelRef? _readMainAgentModelRef(Map<String, dynamic> json) {
+  final mainAgent = json['mainAgent'];
+  if (mainAgent is! Map<String, dynamic>) return null;
+  final modelRef = mainAgent['modelRef'];
+  if (modelRef is! Map<String, dynamic>) return null;
+  final parsed = OrchestrationModelRef.fromJson(modelRef);
+  return parsed.providerId.trim().isEmpty || parsed.modelId.trim().isEmpty
+      ? null
+      : parsed;
+}
+
 List<String> _readMainAssignedMcpServers(Map<String, dynamic> json) {
   final mainAgent = json['mainAgent'];
   if (mainAgent is! Map<String, dynamic>) return const [];
@@ -872,6 +907,7 @@ class OrchestrationProfile {
     required this.id,
     required this.name,
     required this.agents,
+    this.mainModelRef,
     this.builtinExploreThemeColor,
     this.mainAssignedMcpServers = const [],
   });
@@ -880,6 +916,7 @@ class OrchestrationProfile {
       OrchestrationProfile(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? json['id'] as String? ?? '',
+        mainModelRef: _readMainAgentModelRef(json),
         builtinExploreThemeColor: _readBuiltinExploreThemeColor(json),
         mainAssignedMcpServers: _readMainAssignedMcpServers(json),
         agents: (json['agents'] as List<dynamic>? ?? [])
@@ -894,6 +931,7 @@ class OrchestrationProfile {
   final String id;
   final String name;
   final List<OrchestrationAgentInstance> agents;
+  final OrchestrationModelRef? mainModelRef;
   final String? builtinExploreThemeColor;
   final List<String> mainAssignedMcpServers;
 }
@@ -930,6 +968,7 @@ class ModelSettingsSnapshot {
   const ModelSettingsSnapshot({
     required this.orchestrationProfiles,
     required this.routeProfiles,
+    this.providers = const [],
     this.mcpSettings,
   });
 
@@ -945,6 +984,9 @@ class ModelSettingsSnapshot {
       routeProfiles: (json['routeProfiles'] as List<dynamic>? ?? [])
           .map((e) => RouteProfileSummary.fromJson(e as Map<String, dynamic>))
           .toList(),
+      providers: (json['providers'] as List<dynamic>? ?? [])
+          .map((e) => ModelProviderView.fromJson(e as Map<String, dynamic>))
+          .toList(),
       mcpSettings: rawMcpSettings is Map<String, dynamic>
           ? McpSettingsSnapshot.fromJson(rawMcpSettings)
           : null,
@@ -953,5 +995,50 @@ class ModelSettingsSnapshot {
 
   final List<OrchestrationProfile> orchestrationProfiles;
   final List<RouteProfileSummary> routeProfiles;
+  final List<ModelProviderView> providers;
   final McpSettingsSnapshot? mcpSettings;
+}
+
+class ModelProviderView {
+  const ModelProviderView({
+    required this.id,
+    required this.name,
+    required this.defaultModel,
+    required this.enabled,
+  });
+
+  factory ModelProviderView.fromJson(Map<String, dynamic> json) =>
+      ModelProviderView(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        defaultModel: json['defaultModel'] as String? ?? '',
+        enabled: json['enabled'] as bool? ?? false,
+      );
+
+  final String id;
+  final String name;
+  final String defaultModel;
+  final bool enabled;
+}
+
+class CandidateModelView {
+  const CandidateModelView({
+    required this.id,
+    required this.providerId,
+    required this.modelId,
+    this.displayName,
+  });
+
+  factory CandidateModelView.fromJson(Map<String, dynamic> json) =>
+      CandidateModelView(
+        id: json['id'] as String? ?? '',
+        providerId: json['providerId'] as String? ?? '',
+        modelId: json['modelId'] as String? ?? '',
+        displayName: json['displayName'] as String?,
+      );
+
+  final String id;
+  final String providerId;
+  final String modelId;
+  final String? displayName;
 }

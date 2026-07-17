@@ -48,6 +48,7 @@ test("registers explicit remote command definitions", () => {
     "workflow-settings:save",
   );
   expect(isRemoteCommandChannel("mcp-settings:get")).toBe(true);
+  expect(isRemoteCommandChannel("candidate-model:list")).toBe(true);
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(
     expect.arrayContaining([
       "thread:get",
@@ -109,6 +110,8 @@ test("validates remote command args", () => {
     ]),
   ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("center-server:sign-in", [])).toMatchObject({ ok: false });
+  expect(validateRemoteCommandArgs("candidate-model:list", ["provider-1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("candidate-model:list", [])).toMatchObject({ ok: false });
 });
 
 test("registers workspace remote command definitions", () => {

@@ -70,6 +70,16 @@ final modelSettingsProvider = FutureProvider<ModelSettingsSnapshot?>((
   return rpc.getModelSettings();
 });
 
+final candidateModelsProvider =
+    FutureProvider.family<List<CandidateModelView>, String>((
+      ref,
+      providerId,
+    ) async {
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null || providerId.trim().isEmpty) return const [];
+      return rpc.listCandidateModels(providerId);
+    });
+
 final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   ref,
 ) async {

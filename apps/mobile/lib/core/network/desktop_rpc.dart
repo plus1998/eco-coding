@@ -417,6 +417,21 @@ class DesktopRpc {
     return ModelSettingsSnapshot.fromJson(result);
   }
 
+  Future<List<CandidateModelView>> listCandidateModels(
+    String providerId,
+  ) async {
+    final result = await _client.invoke<List<dynamic>>(
+      desktopDeviceId,
+      'candidate-model:list',
+      [providerId],
+    );
+    return result
+        .map(
+          (entry) => CandidateModelView.fromJson(entry as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
   Future<WorkflowSettingsSnapshot> getWorkflowSettings() async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
+import 'package:eco_mobile/features/composer/composer_controls.dart';
 
 OrchestrationProfile _profile({
   required List<OrchestrationAgentInstance> agents,
@@ -188,6 +189,108 @@ void main() {
 
     expect(copied.mainAgentModelOverride, same(override));
     expect(copied.sessionMode, 'plan');
+  });
+
+  test('copyWith clears main agent model override explicitly', () {
+    final copied = _runtimeConfig(
+      mainAgentModelOverride: const MainAgentModelOverride(
+        providerId: 'provider-1',
+        modelId: 'gpt-5.6-sol',
+      ),
+    ).copyWith(clearMainAgentModelOverride: true);
+
+    expect(copied.mainAgentModelOverride, isNull);
+  });
+
+  test('model settings parse provider and profile main model', () {
+    final settings = ModelSettingsSnapshot.fromJson({
+      'providers': [
+        {
+          'id': 'provider-1',
+          'name': 'OpenAI',
+          'defaultModel': 'gpt-5.6',
+          'enabled': true,
+        },
+      ],
+      'routeProfiles': const [],
+      'orchestrationProfiles': [
+        {
+          'id': 'p1',
+          'name': 'Coding',
+          'mainAgent': {
+            'modelRef': {
+              'providerId': 'provider-1',
+              'modelId': 'gpt-5.6-sol',
+              'thinkingEffort': 'high',
+              'candidateModelId': 'candidate-template',
+            },
+          },
+          'agents': const [],
+        },
+      ],
+    });
+
+    expect(settings.providers.single.name, 'OpenAI');
+    expect(
+      settings.orchestrationProfiles.single.mainModelRef?.modelId,
+      'gpt-5.6-sol',
+    );
+    expect(
+      settings.orchestrationProfiles.single.mainModelRef?.thinkingEffort,
+      'high',
+    );
+  });
+
+  test('temporary model options follow desktop candidate behavior', () {
+    const provider = ModelProviderView(
+      id: 'provider-1',
+      name: 'OpenAI',
+      defaultModel: 'gpt-default',
+      enabled: true,
+    );
+    const template = OrchestrationModelRef(
+      providerId: 'provider-1',
+      modelId: 'gpt-template',
+      candidateModelId: 'candidate-template',
+    );
+    final options = buildComposerTemporaryModelOptions(
+      provider: provider,
+      templateModel: template,
+      candidates: const [
+        CandidateModelView(
+          id: 'candidate-fast',
+          providerId: 'provider-1',
+          modelId: 'gpt-fast',
+          displayName: 'Fast',
+        ),
+        CandidateModelView(
+          id: 'candidate-fast-copy',
+          providerId: 'provider-1',
+          modelId: 'gpt-fast',
+        ),
+      ],
+    );
+
+    expect(options.map((option) => option.modelId), [
+      'gpt-template',
+      'gpt-fast',
+      'gpt-default',
+    ]);
+    expect(
+      composerTemporaryModelSelected(
+        const MainAgentModelOverride(
+          providerId: 'provider-1',
+          modelId: 'gpt-fast',
+          candidateModelId: 'candidate-fast',
+        ),
+        options[1],
+      ),
+      isTrue,
+    );
+    expect(
+      composerTemporaryModelMatchesTemplate(options.first, template),
+      isTrue,
+    );
   });
 
   test('switching profiles clears main agent model override', () {

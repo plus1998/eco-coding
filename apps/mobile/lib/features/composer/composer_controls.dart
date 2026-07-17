@@ -26,6 +26,102 @@ const _subagentRoleLabels = {
   'tester': 'Tester',
 };
 
+class ComposerTemporaryModelOption {
+  const ComposerTemporaryModelOption({
+    required this.providerId,
+    required this.modelId,
+    this.displayName,
+    this.candidateModelId,
+  });
+
+  final String providerId;
+  final String modelId;
+  final String? displayName;
+  final String? candidateModelId;
+}
+
+List<ComposerTemporaryModelOption> buildComposerTemporaryModelOptions({
+  required ModelProviderView provider,
+  required OrchestrationModelRef templateModel,
+  required List<CandidateModelView> candidates,
+}) {
+  if (!provider.enabled || provider.id != templateModel.providerId) {
+    return const [];
+  }
+  final seen = <String>{};
+  final options = <ComposerTemporaryModelOption>[];
+  for (final candidate in candidates) {
+    final modelId = candidate.modelId.trim();
+    if (candidate.providerId != provider.id ||
+        modelId.isEmpty ||
+        !seen.add(modelId)) {
+      continue;
+    }
+    options.add(
+      ComposerTemporaryModelOption(
+        providerId: provider.id,
+        modelId: modelId,
+        displayName: candidate.displayName?.trim().isEmpty == true
+            ? null
+            : candidate.displayName?.trim(),
+        candidateModelId: candidate.id.trim().isEmpty
+            ? null
+            : candidate.id.trim(),
+      ),
+    );
+  }
+  final defaultModel = provider.defaultModel.trim();
+  if (defaultModel.isNotEmpty && seen.add(defaultModel)) {
+    options.add(
+      ComposerTemporaryModelOption(
+        providerId: provider.id,
+        modelId: defaultModel,
+      ),
+    );
+  }
+  final templateModelId = templateModel.modelId.trim();
+  if (templateModelId.isNotEmpty && seen.add(templateModelId)) {
+    options.insert(
+      0,
+      ComposerTemporaryModelOption(
+        providerId: provider.id,
+        modelId: templateModelId,
+        candidateModelId: templateModel.candidateModelId,
+      ),
+    );
+  }
+  return options;
+}
+
+bool composerTemporaryModelSelected(
+  MainAgentModelOverride? override,
+  ComposerTemporaryModelOption option,
+) {
+  if (override == null) return false;
+  final overrideCandidateId = override.candidateModelId?.trim();
+  final optionCandidateId = option.candidateModelId?.trim();
+  if (overrideCandidateId?.isNotEmpty == true &&
+      optionCandidateId?.isNotEmpty == true) {
+    return overrideCandidateId == optionCandidateId;
+  }
+  return override.providerId == option.providerId &&
+      override.modelId == option.modelId;
+}
+
+bool composerTemporaryModelMatchesTemplate(
+  ComposerTemporaryModelOption option,
+  OrchestrationModelRef templateModel,
+) {
+  final optionCandidateId = option.candidateModelId?.trim();
+  final templateCandidateId = templateModel.candidateModelId?.trim();
+  if (optionCandidateId?.isNotEmpty == true &&
+      templateCandidateId?.isNotEmpty == true) {
+    return optionCandidateId == templateCandidateId;
+  }
+  return option.providerId == templateModel.providerId &&
+      option.modelId == templateModel.modelId;
+}
+
 Future<void> persistComposerMcpWorkflowDefaults(
   WidgetRef ref, {
   required Map<String, bool> mcpServersEnabled,
@@ -197,6 +293,16 @@ class ComposerRouteSheet extends ConsumerWidget {
     final selectedId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
     final profile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
+    final templateModel = profile?.mainModelRef;
+    ModelProviderView? modelProvider;
+    if (templateModel != null) {
+      for (final provider in modelSettings?.providers ?? const []) {
+        if (provider.id == templateModel.providerId) {
+          modelProvider = provider;
+          break;
+        }
+      }
+    }
 
     return EcoSheetScaffold(
       title: '方案与编排',
@@ -266,6 +372,15 @@ class ComposerRouteSheet extends ConsumerWidget {
                   ],
                 ],
               ),
+            ),
+          if (templateModel != null && modelProvider?.enabled == true)
+            _ComposerTemporaryModelSection(
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              canEdit: canEdit,
+              onChanged: onChanged,
+              provider: modelProvider!,
+              templateModel: templateModel,
             ),
           EcoGroupedSection(
             label: '子代理',
@@ -433,6 +548,109 @@ class ComposerRouteSheet extends ConsumerWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ComposerTemporaryModelSection extends ConsumerWidget {
+  const _ComposerTemporaryModelSection({
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+    required this.provider,
+    required this.templateModel,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final ModelProviderView provider;
+  final OrchestrationModelRef templateModel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final candidates = ref.watch(candidateModelsProvider(provider.id));
+    final options = buildComposerTemporaryModelOptions(
+      provider: provider,
+      templateModel: templateModel,
+      candidates: candidates.valueOrNull ?? const [],
+    );
+    final override = runtimeConfig.mainAgentModelOverride;
+
+    void selectOverride(MainAgentModelOverride? nextOverride) {
+      persistRuntimeConfig(
+        ref,
+        threadId: threadId,
+        config: nextOverride == null
+            ? runtimeConfig.copyWith(clearMainAgentModelOverride: true)
+            : runtimeConfig.copyWith(mainAgentModelOverride: nextOverride),
+        onChanged: onChanged,
+      );
+      Navigator.pop(context);
+    }
+
+    return EcoGroupedSection(
+      label: '临时模型',
+      topSpacing: 20,
+      footer: canEdit ? '仅影响当前会话；切换方案后恢复方案默认' : '当前会话不可切换模型',
+      child: Column(
+        children: [
+          EcoSheetOptionTile(
+            title: '跟随方案',
+            subtitle: templateModel.modelId,
+            selected: override == null,
+            enabled: canEdit,
+            onTap: !canEdit ? null : () => selectOverride(null),
+          ),
+          if (candidates.isLoading) ...[
+            const EcoGroupedDivider(indent: 16),
+            const EcoGroupedTile(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 2),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            ),
+          ] else if (candidates.hasError) ...[
+            const EcoGroupedDivider(indent: 16),
+            EcoGroupedTile(
+              child: Text(
+                '候选模型加载失败',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: ecoColors(context).danger,
+                ),
+              ),
+            ),
+          ] else
+            for (final option in options.where(
+              (option) =>
+                  !composerTemporaryModelMatchesTemplate(option, templateModel),
+            )) ...[
+              const EcoGroupedDivider(indent: 16),
+              EcoSheetOptionTile(
+                title: option.displayName?.isNotEmpty == true
+                    ? option.displayName!
+                    : shortenModelId(option.modelId),
+                subtitle: option.displayName?.isNotEmpty == true
+                    ? option.modelId
+                    : provider.name,
+                selected: composerTemporaryModelSelected(override, option),
+                enabled: canEdit,
+                onTap: !canEdit
+                    ? null
+                    : () => selectOverride(
+                        MainAgentModelOverride(
+                          providerId: option.providerId,
+                          modelId: option.modelId,
+                          thinkingEffort: templateModel.thinkingEffort,
+                          candidateModelId: option.candidateModelId,
+                        ),
+                      ),
+              ),
+            ],
         ],
       ),
     );
