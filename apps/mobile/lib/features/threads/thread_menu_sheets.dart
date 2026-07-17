@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +11,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
+import '../../core/utils/strip_ansi.dart';
 import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
@@ -398,6 +401,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   String? _editingScript;
   final TextEditingController _argsInputController = TextEditingController();
   bool _running = false;
+  bool _stopping = false;
+  String? _activeScriptName;
+  BackgroundTerminalTask? _activeTask;
+  Timer? _taskPollTimer;
 
   @override
   void initState() {
@@ -430,8 +437,51 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
 
   @override
   void dispose() {
+    _taskPollTimer?.cancel();
     _argsInputController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pollActiveTask(String taskId) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null || !mounted) return;
+    try {
+      final task = await rpc.getBackgroundTerminalTask(taskId);
+      if (!mounted || _activeTask?.taskId != taskId) return;
+      setState(() => _activeTask = task);
+      if (!task.isActive) {
+        _taskPollTimer?.cancel();
+      }
+    } catch (_) {
+      return;
+    }
+  }
+
+  void _startTaskPolling(String taskId) {
+    _taskPollTimer?.cancel();
+    unawaited(_pollActiveTask(taskId));
+    _taskPollTimer = Timer.periodic(
+      const Duration(milliseconds: 600),
+      (_) => unawaited(_pollActiveTask(taskId)),
+    );
+  }
+
+  Future<void> _stopActiveTask() async {
+    final task = _activeTask;
+    final rpc = ref.read(desktopRpcProvider);
+    if (task == null || rpc == null || _stopping) return;
+    setState(() => _stopping = true);
+    try {
+      await rpc.stopBackgroundTerminalTask(task.taskId);
+      await _pollActiveTask(task.taskId);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _stopping = false);
+    }
   }
 
   Future<PackageScriptsListResult> _loadScripts() async {
@@ -469,20 +519,29 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     String? args,
   }) async {
     final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null || _running) {
+    if (rpc == null || _running || (_activeTask?.isActive ?? false)) {
       return;
     }
     setState(() => _running = true);
     try {
-      await rpc.startPackageScript(
+      final result = await rpc.startPackageScript(
         workspacePath: widget.workspacePath,
         script: script.name,
         args: args,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已在 Desktop 终端中启动 ${script.name}')),
-      );
+      setState(() {
+        _activeScriptName = script.name;
+        _activeTask = BackgroundTerminalTask(
+          taskId: result.taskId,
+          sessionId: result.sessionId,
+          status: 'running',
+          command: result.command,
+        );
+      });
+      if (result.taskId.isNotEmpty) {
+        _startTaskPolling(result.taskId);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -517,7 +576,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                 final subtitle = listing.packageName != null
                     ? '${listing.packageName} · ${listing.packageManager}'
                     : listing.packageManager;
-                final isRunning = _running;
+                final isRunning = _running || (_activeTask?.isActive ?? false);
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -529,6 +588,16 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                           children: [
                             _SheetHeader(title: 'npm scripts', subtitle: subtitle),
+                            if (_activeTask != null) ...[
+                              const SizedBox(height: 12),
+                              _PackageScriptProgressCard(
+                                scriptName: _activeScriptName ?? '',
+                                task: _activeTask!,
+                                stopping: _stopping,
+                                onStop: _stopActiveTask,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             if (!listing.hasPackageJson || listing.scripts.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 24),
@@ -682,6 +751,131 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PackageScriptProgressCard extends StatelessWidget {
+  const _PackageScriptProgressCard({
+    required this.scriptName,
+    required this.task,
+    required this.stopping,
+    required this.onStop,
+  });
+
+  final String scriptName;
+  final BackgroundTerminalTask task;
+  final bool stopping;
+  final VoidCallback onStop;
+
+  String get _statusLabel => switch (task.status) {
+        'starting' => '启动中',
+        'running' => '运行中',
+        'exited' => '已完成',
+        'failed' => '执行失败',
+        'stopped' => '已停止',
+        _ => task.status,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final output = stripAnsi(task.output)
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .trimRight();
+    final statusColor = switch (task.status) {
+      'exited' => Colors.green,
+      'failed' => eco.danger,
+      'stopped' => eco.textMuted,
+      _ => eco.accent,
+    };
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: eco.borderSubtle),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    scriptName,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                Text(
+                  task.exitCode == null
+                      ? _statusLabel
+                      : '$_statusLabel · ${task.exitCode}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (task.isActive) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: stopping ? null : onStop,
+                    child: Text(stopping ? '停止中' : '停止'),
+                  ),
+                ],
+              ],
+            ),
+            if (task.isActive) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              task.command.join(' '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: eco.textMuted,
+                    fontFamily: 'monospace',
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              constraints: const BoxConstraints(minHeight: 80, maxHeight: 220),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: eco.bgMenu,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SingleChildScrollView(
+                reverse: true,
+                child: SelectableText(
+                  output.isEmpty ? '等待 Desktop 返回命令输出…' : output,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: output.isEmpty ? eco.textMuted : eco.textPrimary,
+                        fontFamily: 'monospace',
+                        height: 1.35,
+                      ),
+                ),
+              ),
+            ),
+            if (task.outputTruncated) ...[
+              const SizedBox(height: 6),
+              Text(
+                '输出过长，已仅保留最近内容',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: eco.textMuted,
+                    ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

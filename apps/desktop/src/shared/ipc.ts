@@ -354,6 +354,8 @@ export interface BackgroundTerminalTask {
   exitCode?: number;
   signal?: number;
   endedAt?: string;
+  output?: string;
+  outputTruncated?: boolean;
 }
 
 export interface BackgroundTerminalListRequest {

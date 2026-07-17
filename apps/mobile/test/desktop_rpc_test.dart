@@ -54,6 +54,33 @@ void main() {
     expect(detail?.kind, 'agent');
     expect(detail?.key, 'agent_1');
   });
+
+  test('getBackgroundTerminalTask parses task progress', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final task = await rpc.getBackgroundTerminalTask('task_1');
+
+    expect(client.channel, 'background-terminal:open');
+    expect(client.args, [
+      {'taskId': 'task_1'},
+    ]);
+    expect(task.status, 'running');
+    expect(task.output, 'building...');
+    expect(task.isActive, isTrue);
+  });
+
+  test('stopBackgroundTerminalTask sends task id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.stopBackgroundTerminalTask('task_1');
+
+    expect(client.channel, 'background-terminal:stop');
+    expect(client.args, [
+      {'taskId': 'task_1'},
+    ]);
+  });
 }
 
 class _RecordingEcoCenterClient extends EcoCenterClient {
@@ -84,6 +111,19 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'hasMore': false,
           }
           as T;
+    }
+    if (channel == 'background-terminal:open') {
+      return {
+            'taskId': 'task_1',
+            'sessionId': 'session_1',
+            'status': 'running',
+            'command': ['npm', 'run', 'build'],
+            'output': 'building...',
+          }
+          as T;
+    }
+    if (channel == 'background-terminal:stop') {
+      return {'stopped': true} as T;
     }
     return {
           'thread': {

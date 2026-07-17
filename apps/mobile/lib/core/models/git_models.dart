@@ -380,11 +380,13 @@ class StartPackageScriptResult {
     required this.script,
     required this.command,
     required this.sessionId,
+    required this.taskId,
   });
 
   factory StartPackageScriptResult.fromJson(Map<String, dynamic> json) =>
       StartPackageScriptResult(
         sessionId: json['sessionId'] as String? ?? '',
+        taskId: json['taskId'] as String? ?? '',
         script: json['script'] as String? ?? '',
         command: (json['command'] as List<dynamic>? ?? [])
             .map((entry) => entry as String)
@@ -392,6 +394,42 @@ class StartPackageScriptResult {
       );
 
   final String sessionId;
+  final String taskId;
   final String script;
   final List<String> command;
+}
+
+class BackgroundTerminalTask {
+  const BackgroundTerminalTask({
+    required this.taskId,
+    required this.sessionId,
+    required this.status,
+    required this.command,
+    this.exitCode,
+    this.output = '',
+    this.outputTruncated = false,
+  });
+
+  factory BackgroundTerminalTask.fromJson(Map<String, dynamic> json) =>
+      BackgroundTerminalTask(
+        taskId: json['taskId'] as String? ?? '',
+        sessionId: json['sessionId'] as String? ?? '',
+        status: json['status'] as String? ?? 'running',
+        command: (json['command'] as List<dynamic>? ?? [])
+            .whereType<String>()
+            .toList(),
+        exitCode: json['exitCode'] as int?,
+        output: json['output'] as String? ?? '',
+        outputTruncated: json['outputTruncated'] as bool? ?? false,
+      );
+
+  final String taskId;
+  final String sessionId;
+  final String status;
+  final List<String> command;
+  final int? exitCode;
+  final String output;
+  final bool outputTruncated;
+
+  bool get isActive => status == 'starting' || status == 'running';
 }

@@ -14,6 +14,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+const MAX_CAPTURED_OUTPUT_LENGTH = 128 * 1024;
+
 function normalizeOptionalText(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -33,6 +35,13 @@ function resolveCommand(command: readonly string[]): string[] {
     throw new Error("Background terminal command is required.");
   }
   return [resolveCommandExecutable(executable), ...command.slice(1)];
+}
+
+function toTaskSummary(task: BackgroundTerminalTask): BackgroundTerminalTask {
+  const summary = { ...task };
+  delete summary.output;
+  delete summary.outputTruncated;
+  return summary;
 }
 
 export class BackgroundTerminalTaskRegistry {
@@ -68,7 +77,7 @@ export class BackgroundTerminalTaskRegistry {
       .filter((task) => !resolvedWorkspacePath || task.workspacePath === resolvedWorkspacePath)
       .filter((task) => !threadId || task.threadId === threadId)
       .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
-      .map((task) => ({ ...task }));
+      .map(toTaskSummary);
   }
 
   get(taskId: string): BackgroundTerminalTask | undefined {
@@ -92,11 +101,23 @@ export class BackgroundTerminalTaskRegistry {
   }
 
   handleTerminalEvent(event: TerminalStreamEvent): void {
-    if (event.type !== "exit" && event.type !== "error") {
+    const match = [...this.tasks.values()].find((task) => task.sessionId === event.sessionId);
+    if (!match) {
       return;
     }
-    const match = [...this.tasks.values()].find((task) => task.sessionId === event.sessionId);
-    if (!match || match.status === "stopped") {
+
+    if (event.type === "output") {
+      const combined = `${match.output ?? ""}${event.data}`;
+      const outputTruncated = combined.length > MAX_CAPTURED_OUTPUT_LENGTH;
+      this.tasks.set(match.taskId, {
+        ...match,
+        output: outputTruncated ? combined.slice(-MAX_CAPTURED_OUTPUT_LENGTH) : combined,
+        ...(outputTruncated || match.outputTruncated ? { outputTruncated: true } : {}),
+      });
+      return;
+    }
+
+    if ((event.type !== "exit" && event.type !== "error") || match.status === "stopped") {
       return;
     }
     const next: BackgroundTerminalTask =

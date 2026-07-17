@@ -33,6 +33,10 @@ test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () 
   expect(writes[0]?.data.endsWith("ready\r")).toBe(true);
   expect(registry.list({ threadId: "thr_1" })).toHaveLength(1);
 
+  registry.handleTerminalEvent({ type: "output", sessionId: task.sessionId, data: "building...\r\n" });
+  expect(registry.get(task.taskId)?.output).toBe("building...\r\n");
+  expect(registry.list({ threadId: "thr_1" })[0]?.output).toBeUndefined();
+
   registry.handleTerminalEvent({ type: "exit", sessionId: task.sessionId, exitCode: 1 });
   expect(registry.get(task.taskId)?.status).toBe("failed");
   expect(registry.get(task.taskId)?.exitCode).toBe(1);

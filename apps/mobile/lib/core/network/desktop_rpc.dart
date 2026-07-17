@@ -685,6 +685,29 @@ class DesktopRpc {
     );
     return StartPackageScriptResult.fromJson(result);
   }
+
+  Future<BackgroundTerminalTask> getBackgroundTerminalTask(
+    String taskId,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'background-terminal:open',
+      [
+        {'taskId': taskId},
+      ],
+    );
+    return BackgroundTerminalTask.fromJson(result);
+  }
+
+  Future<void> stopBackgroundTerminalTask(String taskId) async {
+    await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'background-terminal:stop',
+      [
+        {'taskId': taskId},
+      ],
+    );
+  }
 }
 
 String _encodeRunProjectionArg(
