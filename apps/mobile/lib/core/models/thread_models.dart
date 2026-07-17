@@ -1027,6 +1027,7 @@ class CandidateModelView {
     required this.providerId,
     required this.modelId,
     this.displayName,
+    this.resolvedSupportsReasoning,
   });
 
   factory CandidateModelView.fromJson(Map<String, dynamic> json) =>
@@ -1035,10 +1036,12 @@ class CandidateModelView {
         providerId: json['providerId'] as String? ?? '',
         modelId: json['modelId'] as String? ?? '',
         displayName: json['displayName'] as String?,
+        resolvedSupportsReasoning: json['resolvedSupportsReasoning'] as bool?,
       );
 
   final String id;
   final String providerId;
   final String modelId;
   final String? displayName;
+  final bool? resolvedSupportsReasoning;
 }

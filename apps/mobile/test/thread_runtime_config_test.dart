@@ -262,6 +262,7 @@ void main() {
           providerId: 'provider-1',
           modelId: 'gpt-fast',
           displayName: 'Fast',
+          resolvedSupportsReasoning: false,
         ),
         CandidateModelView(
           id: 'candidate-fast-copy',
@@ -291,6 +292,50 @@ void main() {
       composerTemporaryModelMatchesTemplate(options.first, template),
       isTrue,
     );
+    expect(options[1].supportsReasoning, isFalse);
+  });
+
+  test('temporary model overrides preserve desktop effort behavior', () {
+    const template = OrchestrationModelRef(
+      providerId: 'provider-1',
+      modelId: 'gpt-template',
+      thinkingEffort: 'high',
+      candidateModelId: 'candidate-template',
+    );
+    const templateOption = ComposerTemporaryModelOption(
+      providerId: 'provider-1',
+      modelId: 'gpt-template',
+      candidateModelId: 'candidate-template',
+    );
+    const otherOption = ComposerTemporaryModelOption(
+      providerId: 'provider-1',
+      modelId: 'gpt-fast',
+      candidateModelId: 'candidate-fast',
+    );
+
+    expect(
+      buildComposerTemporaryModelOverride(
+        model: templateOption,
+        thinkingEffort: 'high',
+        templateModel: template,
+      ),
+      isNull,
+    );
+    final effortOverride = buildComposerTemporaryModelOverride(
+      model: templateOption,
+      thinkingEffort: 'max',
+      templateModel: template,
+    );
+    expect(effortOverride?.thinkingEffort, 'max');
+    expect(composerTemporaryModelEffort(effortOverride, template), 'max');
+
+    final modelOverride = buildComposerTemporaryModelOverride(
+      model: otherOption,
+      thinkingEffort: null,
+      templateModel: template,
+    );
+    expect(modelOverride?.candidateModelId, 'candidate-fast');
+    expect(composerTemporaryModelEffort(modelOverride, template), isNull);
   });
 
   test('switching profiles clears main agent model override', () {

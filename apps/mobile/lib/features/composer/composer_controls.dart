@@ -32,13 +32,24 @@ class ComposerTemporaryModelOption {
     required this.modelId,
     this.displayName,
     this.candidateModelId,
+    this.supportsReasoning,
   });
 
   final String providerId;
   final String modelId;
   final String? displayName;
   final String? candidateModelId;
+  final bool? supportsReasoning;
 }
+
+const _thinkingEffortOptions = [
+  (value: 'off', label: '关闭'),
+  (value: 'low', label: '低'),
+  (value: 'medium', label: '中'),
+  (value: 'high', label: '高'),
+  (value: 'xhigh', label: '极高'),
+  (value: 'max', label: '最大'),
+];
 
 List<ComposerTemporaryModelOption> buildComposerTemporaryModelOptions({
   required ModelProviderView provider,
@@ -67,6 +78,7 @@ List<ComposerTemporaryModelOption> buildComposerTemporaryModelOptions({
         candidateModelId: candidate.id.trim().isEmpty
             ? null
             : candidate.id.trim(),
+        supportsReasoning: candidate.resolvedSupportsReasoning,
       ),
     );
   }
@@ -91,6 +103,43 @@ List<ComposerTemporaryModelOption> buildComposerTemporaryModelOptions({
     );
   }
   return options;
+}
+
+String? composerTemporaryModelEffort(
+  MainAgentModelOverride? override,
+  OrchestrationModelRef templateModel,
+) {
+  final overrideUsesTemplateModel =
+      override?.providerId.trim() == templateModel.providerId.trim() &&
+      override?.modelId.trim() == templateModel.modelId.trim();
+  return override?.thinkingEffort ??
+      (override == null || overrideUsesTemplateModel
+          ? templateModel.thinkingEffort
+          : null);
+}
+
+MainAgentModelOverride? buildComposerTemporaryModelOverride({
+  required ComposerTemporaryModelOption model,
+  required String? thinkingEffort,
+  required OrchestrationModelRef templateModel,
+}) {
+  final providerId = model.providerId.trim();
+  final modelId = model.modelId.trim();
+  final candidateModelId = model.candidateModelId?.trim();
+  final sameAsTemplate =
+      providerId == templateModel.providerId.trim() &&
+      modelId == templateModel.modelId.trim() &&
+      candidateModelId == templateModel.candidateModelId?.trim() &&
+      thinkingEffort == templateModel.thinkingEffort;
+  if (sameAsTemplate) return null;
+  return MainAgentModelOverride(
+    providerId: providerId,
+    modelId: modelId,
+    thinkingEffort: thinkingEffort,
+    candidateModelId: candidateModelId?.isEmpty == true
+        ? null
+        : candidateModelId,
+  );
 }
 
 bool composerTemporaryModelSelected(
@@ -580,6 +629,37 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
       candidates: candidates.valueOrNull ?? const [],
     );
     final override = runtimeConfig.mainAgentModelOverride;
+    ComposerTemporaryModelOption? currentModel;
+    for (final option in options) {
+      if (composerTemporaryModelSelected(override, option)) {
+        currentModel = option;
+        break;
+      }
+    }
+    if (currentModel == null && override != null) {
+      currentModel = ComposerTemporaryModelOption(
+        providerId: override.providerId,
+        modelId: override.modelId,
+        candidateModelId: override.candidateModelId,
+      );
+    }
+    if (currentModel == null) {
+      for (final option in options) {
+        if (composerTemporaryModelMatchesTemplate(option, templateModel)) {
+          currentModel = option;
+          break;
+        }
+      }
+    }
+    currentModel ??= ComposerTemporaryModelOption(
+      providerId: templateModel.providerId,
+      modelId: templateModel.modelId,
+      candidateModelId: templateModel.candidateModelId,
+    );
+
+    final currentEffort = composerTemporaryModelEffort(override, templateModel);
+    final selectedEffort = currentEffort ?? 'off';
+    final reasoningUnavailable = currentModel.supportsReasoning == false;
 
     void selectOverride(MainAgentModelOverride? nextOverride) {
       persistRuntimeConfig(
@@ -593,66 +673,105 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
       Navigator.pop(context);
     }
 
-    return EcoGroupedSection(
-      label: '临时模型',
-      topSpacing: 20,
-      footer: canEdit ? '仅影响当前会话；切换方案后恢复方案默认' : '当前会话不可切换模型',
-      child: Column(
-        children: [
-          EcoSheetOptionTile(
-            title: '跟随方案',
-            subtitle: templateModel.modelId,
-            selected: override == null,
-            enabled: canEdit,
-            onTap: !canEdit ? null : () => selectOverride(null),
-          ),
-          if (candidates.isLoading) ...[
-            const EcoGroupedDivider(indent: 16),
-            const EcoGroupedTile(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 2),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-            ),
-          ] else if (candidates.hasError) ...[
-            const EcoGroupedDivider(indent: 16),
-            EcoGroupedTile(
-              child: Text(
-                '候选模型加载失败',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: ecoColors(context).danger,
-                ),
-              ),
-            ),
-          ] else
-            for (final option in options.where(
-              (option) =>
-                  !composerTemporaryModelMatchesTemplate(option, templateModel),
-            )) ...[
-              const EcoGroupedDivider(indent: 16),
+    return Column(
+      children: [
+        EcoGroupedSection(
+          label: '模型',
+          topSpacing: 20,
+          footer: canEdit ? '仅显示当前方案 Provider 的候选模型' : '当前会话不可切换模型',
+          child: Column(
+            children: [
               EcoSheetOptionTile(
-                title: option.displayName?.isNotEmpty == true
-                    ? option.displayName!
-                    : shortenModelId(option.modelId),
-                subtitle: option.displayName?.isNotEmpty == true
-                    ? option.modelId
-                    : provider.name,
-                selected: composerTemporaryModelSelected(override, option),
+                title: '跟随方案',
+                subtitle: templateModel.modelId,
+                selected: override == null,
                 enabled: canEdit,
-                onTap: !canEdit
-                    ? null
-                    : () => selectOverride(
-                        MainAgentModelOverride(
-                          providerId: option.providerId,
-                          modelId: option.modelId,
-                          thinkingEffort: templateModel.thinkingEffort,
-                          candidateModelId: option.candidateModelId,
-                        ),
-                      ),
+                onTap: !canEdit ? null : () => selectOverride(null),
               ),
+              if (candidates.isLoading) ...[
+                const EcoGroupedDivider(indent: 16),
+                const EcoGroupedTile(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                ),
+              ] else if (candidates.hasError) ...[
+                const EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Text(
+                    '候选模型加载失败',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: ecoColors(context).danger,
+                    ),
+                  ),
+                ),
+              ] else
+                for (final option in options.where(
+                  (option) => !composerTemporaryModelMatchesTemplate(
+                    option,
+                    templateModel,
+                  ),
+                )) ...[
+                  const EcoGroupedDivider(indent: 16),
+                  EcoSheetOptionTile(
+                    title: option.displayName?.isNotEmpty == true
+                        ? option.displayName!
+                        : shortenModelId(option.modelId),
+                    subtitle: option.displayName?.isNotEmpty == true
+                        ? option.modelId
+                        : provider.name,
+                    selected: composerTemporaryModelSelected(override, option),
+                    enabled: canEdit,
+                    onTap: !canEdit
+                        ? null
+                        : () => selectOverride(
+                            buildComposerTemporaryModelOverride(
+                              model: option,
+                              thinkingEffort: option.supportsReasoning == false
+                                  ? 'off'
+                                  : currentEffort,
+                              templateModel: templateModel,
+                            ),
+                          ),
+                  ),
+                ],
             ],
-        ],
-      ),
+          ),
+        ),
+        EcoGroupedSection(
+          label: '推理强度',
+          topSpacing: 20,
+          footer: reasoningUnavailable ? '当前模型不支持推理' : '仅影响当前会话',
+          child: Column(
+            children: [
+              for (var i = 0; i < _thinkingEffortOptions.length; i++) ...[
+                if (i > 0) const EcoGroupedDivider(indent: 16),
+                EcoSheetOptionTile(
+                  title: _thinkingEffortOptions[i].label,
+                  selected: selectedEffort == _thinkingEffortOptions[i].value,
+                  enabled:
+                      canEdit &&
+                      (!reasoningUnavailable ||
+                          _thinkingEffortOptions[i].value == 'off'),
+                  onTap:
+                      !canEdit ||
+                          (reasoningUnavailable &&
+                              _thinkingEffortOptions[i].value != 'off')
+                      ? null
+                      : () => selectOverride(
+                          buildComposerTemporaryModelOverride(
+                            model: currentModel!,
+                            thinkingEffort: _thinkingEffortOptions[i].value,
+                            templateModel: templateModel,
+                          ),
+                        ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
