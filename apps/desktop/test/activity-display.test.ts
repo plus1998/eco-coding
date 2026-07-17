@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   formatBashRunMeta,
-  formatMeaningfulBashTitle,
+  formatBashRunTitle,
   formatToolStatusPreview,
   readBashApprovalMetadata,
   resolveBashRunCardDisplay,
@@ -18,30 +18,30 @@ test("formatToolStatusPreview shortens long Bash commands for compact status row
   );
 });
 
-test("resolveBashRunCardDisplay builds card fields for bash summaries and output", () => {
+test("resolveBashRunCardDisplay uses description or Shell for bash titles", () => {
   expect(
     resolveBashRunCardDisplay({
       toolName: "Bash",
       command: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
-      summaryText: "Run projection view tests",
+      description: "Run projection view tests",
       output: "36 pass\n0 fail",
       durationMs: 716,
     }),
   ).toEqual({
     title: "Run projection view tests",
     meta: "cd, 1+, 0.7s",
-    body: "36 pass\n0 fail",
+    command: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
+    output: "36 pass\n0 fail",
   });
   expect(
     resolveBashRunCardDisplay({
       toolName: "Bash",
       command: "git status",
-      summaryText: "Tool: Bash · git status (0.2s)",
     }),
   ).toEqual({
-    title: "git status",
+    title: "Shell",
     meta: "git",
-    body: "git status",
+    command: "git status",
   });
   expect(
     resolveBashRunCardDisplay({
@@ -50,27 +50,17 @@ test("resolveBashRunCardDisplay builds card fields for bash summaries and output
         "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
     }),
   ).toEqual({
-    title: "Run event-center tests",
+    title: "Shell",
     meta: "cd, 1+",
-    body: "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
+    command:
+      "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
   });
 });
 
-test("formatMeaningfulBashTitle prefers bash approval description", () => {
-  expect(
-    formatMeaningfulBashTitle("npm test", "Tool: Bash · npm test", "Run unit tests"),
-  ).toBe("Run unit tests");
-});
-
-test("formatMeaningfulBashTitle prefers readable SDK summaries and short command labels", () => {
-  expect(
-    formatMeaningfulBashTitle(
-      "kill -9 $(lsof -t -i:17891) && FLUX_PORT=17890 node server.js",
-      "Restart Flux server on port 17890",
-    ),
-  ).toBe("Restart Flux server on port 17890");
-  expect(formatMeaningfulBashTitle("npm run build:desktop")).toBe("Run build:desktop");
-  expect(formatMeaningfulBashTitle("curl -s https://example.com/api/status")).toBe("Fetch URL");
+test("formatBashRunTitle only uses structured descriptions", () => {
+  expect(formatBashRunTitle("Run unit tests")).toBe("Run unit tests");
+  expect(formatBashRunTitle()).toBe("Shell");
+  expect(formatBashRunTitle("   ")).toBe("Shell");
 });
 
 test("formatBashRunMeta summarizes chained commands", () => {
@@ -96,12 +86,6 @@ test("readBashApprovalMetadata reads structured projection metadata", () => {
     detail: "/tmp/file.txt",
     description: "Search outside workspace",
   });
-});
-
-test("formatMeaningfulBashTitle truncates absolute path to basename", () => {
-  expect(formatMeaningfulBashTitle("/opt/android/adb")).toBe("adb");
-  expect(formatMeaningfulBashTitle("/usr/local/bin/docker ps")).toBe("docker");
-  expect(formatMeaningfulBashTitle("~/Library/Android/adb")).toBe("adb");
 });
 
 test("formatBashRunMeta truncates absolute path to basename", () => {

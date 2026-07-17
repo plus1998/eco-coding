@@ -714,6 +714,41 @@ test("ActivityLogView summarizes Bash with adjacent file tools", () => {
   expect(html).not.toContain("run-log-action--bash-card");
 });
 
+test("ActivityLogView separates failed Bash command and output cards", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "failed",
+        timeline: [
+          item({
+            id: "bash-failed",
+            eventType: "tool.failed",
+            text: "Tool: Bash · bun test",
+            metadata: {
+              tool: {
+                name: "Bash",
+                detail: "bun test",
+                toolUseId: "toolu_bash_failed",
+                status: "failed",
+                output: "1 test failed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-bash-command");
+  expect(html).toContain("run-log-bash-prompt");
+  expect(html).toContain('aria-label="复制 Bash 命令"');
+  expect(html).toContain('aria-label="复制命令输出"');
+  expect(html).toContain("bun test");
+  expect(html).toContain("run-log-bash-output-actions");
+  expect(html).toContain("run-log-bash-output");
+  expect(html).toContain("1 test failed");
+});
+
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {
   const subagent = agent({
     agentId: "agent_coder_1",

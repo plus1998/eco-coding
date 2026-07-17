@@ -1916,7 +1916,6 @@ function buildProjectionToolActionBlock(
   const bashRun = resolveBashRunCardDisplay({
     toolName: input.toolName,
     ...(command && { command }),
-    summaryText: item.text,
     ...(metadataTool?.output && { output: metadataTool.output }),
     ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
     ...(description && { description }),

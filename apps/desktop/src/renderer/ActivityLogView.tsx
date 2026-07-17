@@ -41,6 +41,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type WheelEvent,
 } from "react";
 import {
   activityLabelIncludesAgentRole,
@@ -172,6 +173,25 @@ function copyRunLogMessageText(text: string): void {
     return;
   }
   void navigator.clipboard.writeText(text).catch(() => undefined);
+}
+
+function scrollBashOutputFromCommand(event: WheelEvent<HTMLDivElement>): void {
+  const output = event.currentTarget
+    .closest(".run-log-bash-terminal")
+    ?.querySelector<HTMLElement>(".run-log-bash-output-wrap");
+  if (!output || event.deltaY === 0) {
+    return;
+  }
+  const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? output.clientHeight : 1;
+  const deltaY = event.deltaY * multiplier;
+  const maxScrollTop = Math.max(0, output.scrollHeight - output.clientHeight);
+  const nextScrollTop = Math.min(maxScrollTop, Math.max(0, output.scrollTop + deltaY));
+  if (nextScrollTop === output.scrollTop) {
+    return;
+  }
+  output.scrollTop = nextScrollTop;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 function RunLogMessageMeta({
@@ -2745,13 +2765,14 @@ function ToolFailedBlock({
       >
         {recoveredResult ? "补丁已应用 · 检查通过" : `工具未完成 · ${tool}`}
       </span>
-      {command ? (
+      {isBash && (command || (!recoveredResult && error)) ? (
+        <RunLogBashTerminal
+          {...(command && { command })}
+          {...(!recoveredResult && error && { output: error })}
+        />
+      ) : command ? (
         <div className="run-log-tool-failed-command-wrap">
-          {isBash ? (
-            <RunLogBashCard display={{ title: "Bash", body: command }} standalone />
-          ) : (
-            <pre className="run-log-tool-failed-command">{command}</pre>
-          )}
+          <pre className="run-log-tool-failed-command">{command}</pre>
         </div>
       ) : null}
       {recoveredResult ? (
@@ -2770,7 +2791,7 @@ function ToolFailedBlock({
             ))}
           </ul>
         </div>
-      ) : error ? (
+      ) : error && !isBash ? (
         <div className="run-log-tool-result-panel">
           <div className="run-log-tool-result-header">
             <Terminal size={14} aria-hidden />
@@ -2864,7 +2885,7 @@ function RunLogAction({
       ? formatRoleModelLabel(subagentRole, modelByRole?.[subagentRole])
       : undefined;
   const displayLabel = bashRun?.title ?? fileChange?.fileName ?? label;
-  const hasHeavyDetails = Boolean(bashRun || fileChange);
+  const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange);
   const detailsExpanded = forceDetailsExpanded || expanded;
   const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
 
@@ -2955,9 +2976,9 @@ function RunLogAction({
           )}
           {detailsExpanded ? (
             <div className="run-log-action-card-detail run-log-feed-surface-body">
-              <RunLogBashCard
-                display={bashRun}
-                {...(lifecycle && { lifecycle })}
+              <RunLogBashTerminal
+                {...(bashRun.command && { command: bashRun.command })}
+                {...(bashRun.output && { output: bashRun.output })}
               />
             </div>
           ) : null}
@@ -3174,38 +3195,48 @@ function RunLogFileChangeCard({
   );
 }
 
-function RunLogBashCard({
-  display,
-  lifecycle,
-  standalone = false,
-}: {
-  display: import("../shared/activity-display").BashRunCardDisplay;
-  lifecycle?: ToolActionLifecycle;
-  standalone?: boolean;
-}) {
+function RunLogBashTerminal({ command, output }: { command?: string; output?: string }) {
   return (
-    <div
-      className={[
-        "run-log-bash-card",
-        standalone ? "is-standalone" : "",
-        lifecycle === "running" ? "is-running" : "",
-        lifecycle === "failed" ? "is-failed" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      {standalone ? (
-        <>
-          <div className="run-log-bash-card-header">
-            <Terminal size={14} className="run-log-bash-card-icon" aria-hidden />
-            <span className="run-log-bash-card-title">{display.title}</span>
-          </div>
-          <div className="run-log-bash-card-divider" aria-hidden />
-        </>
-      ) : null}
-      {display.body ? (
-        <pre className="run-log-bash-card-output">{display.body}</pre>
-      ) : null}
+    <div className="run-log-bash-terminal">
+      {command ? <RunLogBashCommand command={command} /> : null}
+      {output ? <RunLogBashOutput output={output} /> : null}
+    </div>
+  );
+}
+
+function RunLogBashCommand({ command }: { command: string }) {
+  return (
+    <div className="run-log-bash-command" onWheel={scrollBashOutputFromCommand}>
+      <span className="run-log-bash-prompt" aria-hidden>$</span>
+      <pre className="run-log-bash-command-text">{command}</pre>
+      <button
+        type="button"
+        className="run-log-bash-copy"
+        onClick={() => copyRunLogMessageText(command)}
+        aria-label="复制 Bash 命令"
+        title="复制命令"
+      >
+        <Copy size={13} />
+      </button>
+    </div>
+  );
+}
+
+function RunLogBashOutput({ output }: { output: string }) {
+  return (
+    <div className="run-log-bash-output-wrap">
+      <div className="run-log-bash-output-actions">
+        <button
+          type="button"
+          className="run-log-bash-copy run-log-bash-output-copy"
+          onClick={() => copyRunLogMessageText(output)}
+          aria-label="复制命令输出"
+          title="复制输出"
+        >
+          <Copy size={13} />
+        </button>
+      </div>
+      <pre className="run-log-bash-output">{output}</pre>
     </div>
   );
 }

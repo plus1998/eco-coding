@@ -5444,16 +5444,6 @@ function App() {
 
   const composer = (
     <div className="codex-composer-wrap">
-      {displayedQueuedFollowUps.length > 0 ? (
-        <FollowUpQueuePanel
-          followUps={displayedQueuedFollowUps}
-          cancelBusyId={followUpCancelBusyId}
-          escalateBusyId={followUpEscalateBusyId}
-          onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
-          onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
-          onEdit={startEditingFollowUp}
-        />
-      ) : null}
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
       {composerPromptCacheHint ? (
         <p className="composer-prompt-cache-hint" role="status">
@@ -5461,23 +5451,37 @@ function App() {
         </p>
       ) : null}
       <div className="composer-input-stack">
-        {composerAttachments.length > 0 && (
-          <ul className="composer-attachments" aria-label="已粘贴的图片">
-            {composerAttachments.map((attachment) => (
-              <li key={attachment.id} className="composer-attachment">
-                <img src={attachment.previewUrl} alt="" />
-                <button
-                  type="button"
-                  className="composer-attachment-remove"
-                  aria-label="移除图片"
-                  onClick={() => removeComposerAttachment(attachment.id)}
-                >
-                  <X size={14} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        {displayedQueuedFollowUps.length > 0 || composerAttachments.length > 0 ? (
+          <div className="composer-input-overlays">
+            {displayedQueuedFollowUps.length > 0 ? (
+              <FollowUpQueuePanel
+                followUps={displayedQueuedFollowUps}
+                cancelBusyId={followUpCancelBusyId}
+                escalateBusyId={followUpEscalateBusyId}
+                onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
+                onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
+                onEdit={startEditingFollowUp}
+              />
+            ) : null}
+            {composerAttachments.length > 0 ? (
+              <ul className="composer-attachments" aria-label="已粘贴的图片">
+                {composerAttachments.map((attachment) => (
+                  <li key={attachment.id} className="composer-attachment">
+                    <img src={attachment.previewUrl} alt="" />
+                    <button
+                      type="button"
+                      className="composer-attachment-remove"
+                      aria-label="移除图片"
+                      onClick={() => removeComposerAttachment(attachment.id)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
         <ComposerDockMorph
         showApproval={showComposerDockApproval}
         surfaceKey={composerDockSurfaceKey}

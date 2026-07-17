@@ -2866,17 +2866,17 @@ button.sidebar-core-heading {
 .follow-up-queue {
   position: relative;
   z-index: 0;
-  width: auto;
+  width: 100%;
   min-width: 0;
-  margin: 0 clamp(18px, 3vw, 42px) -16px;
+  margin: 0;
   border: 1px solid var(--follow-up-card-border);
   border-radius: 16px 16px 12px 12px;
-  background: var(--follow-up-card-bg);
+  background: color-mix(in srgb, var(--follow-up-card-bg) 58%, transparent);
   box-shadow:
     0 12px 30px rgba(0, 0, 0, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(22px) saturate(1.35);
-  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .follow-up-queue::after {
@@ -2889,7 +2889,7 @@ button.sidebar-core-heading {
   gap: 0;
   max-height: 112px;
   overflow-y: auto;
-  padding: 6px 12px 24px;
+  padding: 6px 12px 20px;
   border-radius: inherit;
 }
 
@@ -9081,70 +9081,66 @@ button.sidebar-core-heading {
   margin-top: 8px;
 }
 
-.run-log-bash-card {
-  display: block;
+.run-log-bash-terminal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  max-height: 180px;
   box-sizing: border-box;
   border: 1px solid var(--codex-log-line, rgba(255, 255, 255, 0.1));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--codex-log-text, #e5e5e5) 3%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--codex-log-bg, #181818) 94%, transparent);
   overflow: hidden;
 }
 
-.run-log-bash-card-header {
-  display: flex;
-  align-items: center;
+.run-log-bash-command {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   gap: 8px;
-  min-width: 0;
-  padding: 10px 12px;
-}
-
-.run-log-bash-card-icon {
-  flex-shrink: 0;
-  color: var(--codex-log-muted, #8a8a8a);
-}
-
-.run-log-bash-card-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
+  padding: 10px 10px 4px;
   color: var(--codex-log-text, #e5e5e5);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.run-log-bash-card-meta {
-  flex-shrink: 0;
-  color: var(--codex-log-faint, #737373);
-  font-size: 12px;
-  line-height: 1.4;
+.run-log-bash-prompt {
+  color: var(--success, #4ade80);
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size);
+  font-weight: 700;
+  line-height: 1.55;
+  user-select: none;
 }
 
-.run-log-bash-card-divider {
-  height: 1px;
-  background: var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
-}
-
-.run-log-bash-card-output {
-  margin: 0;
-  max-height: 100px;
-  max-width: 100%;
+.run-log-bash-command-text,
+.run-log-bash-output {
   min-width: 0;
-  padding: 10px 12px 12px;
-  color: var(--codex-log-muted, #9a9a9a);
-  background: transparent;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  margin: 0;
+  font-family: var(--font-mono);
   font-size: var(--code-font-size);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.run-log-bash-command-text {
+  display: -webkit-box;
+  max-height: 3.1em;
+  overflow: hidden;
+  color: var(--codex-log-text, #e5e5e5);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.run-log-bash-output-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
   overscroll-behavior-x: contain;
@@ -9152,12 +9148,55 @@ button.sidebar-core-heading {
   scrollbar-gutter: stable;
 }
 
-.run-log-bash-card.is-standalone .run-log-bash-card-output {
-  max-height: 180px;
+.run-log-bash-output {
+  min-height: 100%;
+  padding: 4px 10px 10px 26px;
+  color: var(--codex-log-muted, #9a9a9a);
 }
 
-.run-log-bash-card.is-running .run-log-bash-card-title {
-  color: var(--codex-log-text, #c8c8c8);
+.run-log-bash-output-actions {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  height: 0;
+  pointer-events: none;
+}
+
+.run-log-bash-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--codex-log-faint, #737373);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    color 0.14s ease,
+    background 0.14s ease;
+}
+
+.run-log-bash-command:hover .run-log-bash-copy,
+.run-log-bash-command:focus-within .run-log-bash-copy,
+.run-log-bash-output-wrap:hover .run-log-bash-copy,
+.run-log-bash-output-wrap:focus-within .run-log-bash-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.run-log-bash-copy:hover {
+  background: color-mix(in srgb, var(--codex-log-text, #e5e5e5) 8%, transparent);
+  color: var(--codex-log-text, #e5e5e5);
+}
+
+.run-log-bash-output-copy {
+  margin: 4px 6px 0 0;
 }
 
 .run-log-action--read-target,
@@ -11637,14 +11676,27 @@ button.sidebar-core-heading {
   min-width: 0;
 }
 
-.composer-attachments {
+.composer-input-overlays {
   position: absolute;
   right: clamp(18px, 3vw, 42px);
   bottom: calc(100% - 16px);
   left: clamp(18px, 3vw, 42px);
   z-index: 0;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.composer-input-overlays > * {
+  pointer-events: auto;
+}
+
+.composer-attachments {
+  display: flex;
   flex-wrap: nowrap;
+  width: 100%;
   gap: 8px;
   margin: 0;
   padding: 10px 12px 26px;
@@ -17794,42 +17846,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   font-size: 12px;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-bash-card {
-  border-color: var(--codex-log-line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--codex-log-text) 3%, transparent);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-bash-card-header {
-  padding: 9px 12px;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-bash-card-icon {
-  color: var(--codex-log-muted);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-bash-card-title {
-  color: var(--codex-log-text);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-bash-card-meta {
-  color: var(--codex-log-faint);
-  font-size: 12px;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-bash-card-divider {
-  background: var(--codex-log-line-subtle);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-bash-card-output {
-  padding: 8px 12px 11px;
-  color: var(--codex-log-muted);
-  font-size: var(--code-font-size);
-  line-height: 1.55;
-}
-
 .codex-main:not(.codex-main-landing) .run-log-action--bash-card {
   width: 100%;
   max-width: 100%;
@@ -18182,7 +18198,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   min-height: min-content;
 }
 
-.codex-main:not(.codex-main-landing) .work-session-details-compact-inner .run-log-bash-card,
+.codex-main:not(.codex-main-landing) .work-session-details-compact-inner .run-log-bash-terminal,
 .codex-main:not(.codex-main-landing) .work-session-details-compact-inner .run-log-fs-target-card,
 .codex-main:not(.codex-main-landing) .work-session-details-compact-inner .run-log-file-change-card {
   width: 100%;
@@ -18300,15 +18316,18 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   margin-top: 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-card {
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-terminal {
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-card-output {
-  max-height: 180px;
-  padding: 9px 10px 10px;
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-command {
+  padding: 9px 10px 4px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action--bash-card .run-log-bash-output {
+  padding: 4px 10px 10px 26px;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap {

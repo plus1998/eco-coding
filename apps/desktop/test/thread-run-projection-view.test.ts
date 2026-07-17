@@ -3956,7 +3956,7 @@ test("projectionItemToDetailBlock builds bash card for bash approval requests", 
     lifecycle: "approval-pending",
     bashRun: {
       title: "Run unit tests",
-      body: "npm test",
+      command: "npm test",
     },
   });
 });
@@ -4116,7 +4116,8 @@ test("projectionItemToDetailBlock prefers structured tool description on complet
     icon: "terminal",
     bashRun: {
       title: "Run unit tests",
-      body: "36 pass\n0 fail",
+      command: "npm test",
+      output: "36 pass\n0 fail",
     },
   });
 });
@@ -4147,9 +4148,10 @@ test("projectionItemToDetailBlock builds bash card display for completed bash to
     kind: "action",
     icon: "terminal",
     bashRun: {
-      title: "Run projection view tests",
+      title: "Shell",
       meta: "cd, 1+, 0.7s",
-      body: "36 pass\n0 fail",
+      command: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
+      output: "36 pass\n0 fail",
     },
   });
 });
