@@ -117,6 +117,7 @@ import {
   isBackgroundTerminalStopRequest,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isGitCommitRequest,
+  isGitFetchRequest,
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
   isGitPullRequest,
@@ -336,6 +337,7 @@ import {
   checkoutGitBranch,
   createGitBranch,
   discardWorkspaceChanges,
+  fetchFromOrigin,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
   handleGitCommit,
@@ -2796,6 +2798,19 @@ function registerIpcHandlers(): void {
     }
     scheduleWorkspaceGitStatusPublish(payload.workspacePath);
     return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.gitFetch, async (payload: unknown) => {
+    if (!isGitFetchRequest(payload) || !payload.workspacePath.trim()) {
+      throw new Error("Invalid git fetch request.");
+    }
+    const workspacePath = payload.workspacePath.trim();
+    const result = await fetchFromOrigin(workspacePath, runGitCommand);
+    if (!result.ok) {
+      throw new Error(result.output || "抓取远程更新失败。");
+    }
+    desktopEventCenter.publishGitRemoteFetched(workspacePath);
+    return { output: result.output };
   });
 
   registerDesktopCommand(IPC_CHANNELS.proxyBridgeSettingsGet, async () => proxyBridgeSettingsStore.get());

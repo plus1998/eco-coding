@@ -130,6 +130,8 @@ test("registers git remote command definitions", () => {
     ]),
   ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("git:push", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
+  expect(isRemoteCommandChannel("git:fetch")).toBe(true);
+  expect(validateRemoteCommandArgs("git:fetch", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
   expect(isRemoteCommandChannel("git:pull")).toBe(true);
   expect(validateRemoteCommandArgs("git:pull", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
   expect(isRemoteCommandChannel("thread:todo-list")).toBe(true);

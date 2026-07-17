@@ -50,6 +50,10 @@ export interface WorkspaceGitSectionProps {
   onOpenScriptsDialog?: () => void;
 }
 
+export function resolveGitRemoteSyncAction(behindCount: number): "fetch" | "pull" {
+  return behindCount > 0 ? "pull" : "fetch";
+}
+
 export function WorkspaceGitSection({
   workspacePath,
   workspaceLabel: _workspaceLabel,
@@ -90,7 +94,7 @@ export function WorkspaceGitSection({
   const [changesDiff, setChangesDiff] = useState<WorkspaceDiffResult | undefined>();
   const [selectedChangePath, setSelectedChangePath] = useState<string | undefined>();
   const [discardBusy, setDiscardBusy] = useState(false);
-  const [pullBusy, setPullBusy] = useState(false);
+  const [remoteSyncOperation, setRemoteSyncOperation] = useState<"fetch" | "pull">();
   const [pullError, setPullError] = useState<string | undefined>();
   const [pullConflict, setPullConflict] = useState<string[] | undefined>();
   const [resolveConflictBusy, setResolveConflictBusy] = useState(false);
@@ -121,6 +125,9 @@ export function WorkspaceGitSection({
       gitStatus.branch !== "detached" &&
       gitStatus.hasUpstream,
   );
+  const remoteSyncAction = resolveGitRemoteSyncAction(gitStatus?.behindCount ?? 0);
+  const hasRemoteUpdates = remoteSyncAction === "pull";
+  const pullBusy = remoteSyncOperation !== undefined;
   const showPullEntry = Boolean(workspacePath && gitStatus?.isGitRepository);
 
   const closeBranchMenu = useCallback(() => {
@@ -259,13 +266,19 @@ export function WorkspaceGitSection({
     await syncWorkspaceChangesState();
   }
 
-  async function handlePull() {
+  async function handleRemoteSync() {
     if (!workspacePath || !window.eco || pullBusy || gitBusy) {
       return;
     }
-    setPullBusy(true);
+    const action = remoteSyncAction;
+    setRemoteSyncOperation(action);
     setPullError(undefined);
     try {
+      if (action === "fetch") {
+        await window.eco.fetchGitChanges({ workspacePath });
+        await onPullSuccess?.();
+        return;
+      }
       const result = await window.eco.pullGitChanges({
         workspacePath,
         ...(gitStatus?.branch && { branch: gitStatus.branch }),
@@ -283,7 +296,7 @@ export function WorkspaceGitSection({
     } catch (caught) {
       setPullError(caught instanceof Error ? caught.message : String(caught));
     } finally {
-      setPullBusy(false);
+      setRemoteSyncOperation(undefined);
     }
   }
 
@@ -551,17 +564,25 @@ export function WorkspaceGitSection({
               type="button"
               className="thread-info-workspace-git-row-button"
               disabled={!canPull || gitBusy || pullBusy}
-              onClick={() => void handlePull()}
+              onClick={() => void handleRemoteSync()}
               title={
                 !canPull
                   ? "未配置远程跟踪分支"
-                  : (gitStatus?.behindCount ?? 0) > 0
+                  : hasRemoteUpdates
                     ? `落后远程 ${gitStatus?.behindCount ?? 0} 个提交`
-                    : "从远程拉取最新变更"
+                    : "抓取远程更新"
               }
             >
               <CloudDownload size={16} aria-hidden />
-              <span>{pullBusy ? "拉取中…" : "拉取"}</span>
+              <span>
+                {remoteSyncOperation
+                  ? remoteSyncOperation === "pull"
+                    ? "拉取中…"
+                    : "抓取中…"
+                  : hasRemoteUpdates
+                    ? "拉取"
+                    : "抓取"}
+              </span>
             </button>
           </li>
         ) : null}

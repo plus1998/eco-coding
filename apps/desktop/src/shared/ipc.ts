@@ -142,6 +142,7 @@ export const IPC_CHANNELS = {
   gitListCommitModelOptions: "git:list-commit-model-options",
   gitCommit: "git:commit",
   gitPush: "git:push",
+  gitFetch: "git:fetch",
   gitPull: "git:pull",
   gitRemoteFetched: "git:remote-fetched",
   gitSettingsGet: "git-settings:get",
@@ -593,6 +594,14 @@ export interface GitPushRequest {
 
 export interface GitPushResult {
   method: "git" | "gh";
+  output: string;
+}
+
+export interface GitFetchRequest {
+  workspacePath: string;
+}
+
+export interface GitFetchResult {
   output: string;
 }
 
@@ -1623,6 +1632,14 @@ export function isGitCommitRequest(value: unknown): value is GitCommitRequest {
 }
 
 export function isGitPushRequest(value: unknown): value is GitPushRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.workspacePath === "string";
+}
+
+export function isGitFetchRequest(value: unknown): value is GitFetchRequest {
   if (!value || typeof value !== "object") {
     return false;
   }

@@ -39,6 +39,8 @@ import {
   type GitCreateBranchRequest,
   type GitDiscardWorkspaceChangesRequest,
   type GitDiscardWorkspaceChangesResult,
+  type GitFetchRequest,
+  type GitFetchResult,
   type GitGenerateCommitMessageDeltaPayload,
   type GitGenerateCommitMessageRequest,
   type GitGenerateCommitMessageResult,
@@ -458,6 +460,9 @@ const api = {
   },
   pushGitChanges(request: GitPushRequest): Promise<GitPushResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitPush, request);
+  },
+  fetchGitChanges(request: GitFetchRequest): Promise<GitFetchResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitFetch, request);
   },
   pullGitChanges(request: GitPullRequest): Promise<GitPullResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitPull, request);

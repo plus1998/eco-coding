@@ -115,6 +115,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     objectArg(["workspacePath", "profileId", "includeUnstaged"]),
   ]),
   command("git:push", "Push commits to remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
+  command("git:fetch", "Fetch from remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
   command("git:pull", "Pull from remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
 ] as const satisfies readonly RemoteCommandDefinition[];
 

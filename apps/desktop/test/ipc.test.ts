@@ -83,6 +83,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.gitGetStatus).toBe("git:get-status");
   expect(IPC_CHANNELS.gitDiscardWorkspaceChanges).toBe("git:discard-workspace-changes");
   expect(IPC_CHANNELS.gitCommit).toBe("git:commit");
+  expect(IPC_CHANNELS.gitFetch).toBe("git:fetch");
   expect(IPC_CHANNELS.gitPull).toBe("git:pull");
   expect(IPC_CHANNELS.gitSettingsGet).toBe("git-settings:get");
   expect(IPC_CHANNELS.billingRouteCapabilities).toBe("billing:route-capabilities");
