@@ -62,6 +62,22 @@ export function buildThreadRunTurnFeedSections(
     turn.entries.push(entry);
   }
 
+  for (const attempt of attempts) {
+    if (attempt.status !== "running" || turnByAttemptId.has(attempt.attemptId)) {
+      continue;
+    }
+    const turn = {
+      kind: "turn" as const,
+      key: `turn:${attempt.attemptId}`,
+      attempt,
+      running: true,
+      processEntries: [],
+      entries: [],
+    };
+    turnByAttemptId.set(attempt.attemptId, turn);
+    sections.push(turn);
+  }
+
   return sections.map((section) => {
     if (section.kind !== "turn") {
       return section;

@@ -17551,6 +17551,10 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   padding-top: 12px;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-turn-process-inner.is-empty {
+  padding-top: 0;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-turn.is-collapsed .run-log-turn-process-inner {
   padding-top: 0;
 }

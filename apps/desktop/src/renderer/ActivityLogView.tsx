@@ -116,6 +116,7 @@ type ProjectionRequestSpansById = Map<string, ProjectionRequestSpan>;
 
 const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
+const LIVE_DURATION_TICK_MS = 100;
 
 function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
@@ -555,7 +556,9 @@ function ProjectionTurnFeedSection({
         <span className="run-log-turn-divider" aria-hidden />
       </button>
       <div id={contentId} className="run-log-turn-process" aria-label="执行过程" aria-hidden={!expanded}>
-        <div className="run-log-turn-process-inner">
+        <div
+          className={`run-log-turn-process-inner${section.processEntries.length === 0 ? " is-empty" : ""}`}
+        >
           {section.processEntries.map((entry) => (
             <ProjectionMainFeedEntry key={entry.key} entry={entry} {...entryProps} />
           ))}
@@ -581,7 +584,7 @@ function useTurnDurationMs(startedAt: string, endedAt: string | undefined, runni
   useEffect(() => {
     setDurationMs(resolve());
     if (!running) return;
-    const timer = setInterval(() => setDurationMs(resolve()), 1000);
+    const timer = setInterval(() => setDurationMs(resolve()), LIVE_DURATION_TICK_MS);
     return () => clearInterval(timer);
   }, [resolve, running]);
 
@@ -1320,7 +1323,7 @@ function ProjectionSubagentRunRow({
     const anchorAt = Date.now();
     const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
     tick();
-    const timer = setInterval(tick, 1000);
+    const timer = setInterval(tick, LIVE_DURATION_TICK_MS);
     return () => clearInterval(timer);
   }, [agent.agentId, agent.durationMs, running]);
 
@@ -1491,7 +1494,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     const anchorAt = Date.now();
     const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
     tick();
-    const timer = setInterval(tick, 1000);
+    const timer = setInterval(tick, LIVE_DURATION_TICK_MS);
     return () => clearInterval(timer);
   }, [agent.agentId, agent.durationMs, running]);
 

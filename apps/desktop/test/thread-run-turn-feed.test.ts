@@ -103,6 +103,28 @@ test("running turn keeps every narrative in the expanded process", () => {
   expect(sections[0].running).toBe(true);
 });
 
+test("running attempt renders immediately before the first process event", () => {
+  const sections = buildThreadRunTurnFeedSections(
+    [
+      entry(
+        item("user", "立即开始", {
+          role: "user",
+          at: "2026-01-01T00:00:00.500Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ),
+    ],
+    { attempts: [attempt("running")] },
+  );
+
+  expect(sections).toHaveLength(2);
+  expect(sections[0]?.kind).toBe("entry");
+  expect(sections[1]?.kind).toBe("turn");
+  if (sections[1]?.kind !== "turn") throw new Error("expected turn section");
+  expect(sections[1].running).toBe(true);
+  expect(sections[1].processEntries).toEqual([]);
+});
+
 test("legacy entries recover turn ownership from the attempt time window", () => {
   const sections = buildThreadRunTurnFeedSections(
     [entry(item("legacy-final", "旧会话结果。", { at: "2026-01-01T00:00:07.000Z" }))],
