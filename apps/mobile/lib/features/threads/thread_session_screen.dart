@@ -452,6 +452,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                           : (showLanding ? composerLandingPlaceholder : null),
                       contextSnapshot: session.contextSnapshot,
                       threadStatus: thread?.status,
+                      workspacePath: workspacePath,
+                      coreKind: thread?.coreKind,
                       onPickImage: _pickImage,
                       onRemoveAttachment: (index) =>
                           setState(() => _attachments.removeAt(index)),

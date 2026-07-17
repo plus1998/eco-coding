@@ -84,6 +84,7 @@ class ThreadRuntimeConfig {
     this.agentProfileId,
     required this.subagentEnabled,
     this.mcpServersEnabled,
+    this.skillsEnabled,
     this.mainAgentModelOverride,
     required this.sessionMode,
     required this.bashReviewMode,
@@ -105,6 +106,11 @@ class ThreadRuntimeConfig {
         rawMcp.map((key, value) => MapEntry(key.toString(), value)),
       );
     }
+    final rawSkills = json['skillsEnabled'];
+    Map<String, bool>? parsedSkills;
+    if (rawSkills is Map) {
+      parsedSkills = _normalizeBooleanSettings(rawSkills);
+    }
     MainAgentModelOverride? mainAgentModelOverride;
     if (json.containsKey('mainAgentModelOverride')) {
       mainAgentModelOverride = MainAgentModelOverride.fromJson(
@@ -120,6 +126,7 @@ class ThreadRuntimeConfig {
       agentProfileId: json['agentProfileId'] as String?,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
       mcpServersEnabled: parsedMcp,
+      skillsEnabled: parsedSkills,
       mainAgentModelOverride: mainAgentModelOverride,
       sessionMode: sessionMode,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
@@ -131,6 +138,7 @@ class ThreadRuntimeConfig {
     if (agentProfileId != null) 'agentProfileId': agentProfileId,
     'subagentEnabled': subagentEnabled,
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
+    if (skillsEnabled != null) 'skillsEnabled': skillsEnabled,
     if (mainAgentModelOverride != null)
       'mainAgentModelOverride': mainAgentModelOverride!.toJson(),
     'sessionMode': sessionMode,
@@ -142,6 +150,7 @@ class ThreadRuntimeConfig {
     String? agentProfileId,
     Map<String, bool>? subagentEnabled,
     Map<String, bool>? mcpServersEnabled,
+    Map<String, bool>? skillsEnabled,
     MainAgentModelOverride? mainAgentModelOverride,
     SessionMode? sessionMode,
     String? bashReviewMode,
@@ -151,6 +160,7 @@ class ThreadRuntimeConfig {
       agentProfileId: agentProfileId ?? this.agentProfileId,
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
+      skillsEnabled: skillsEnabled ?? this.skillsEnabled,
       mainAgentModelOverride:
           mainAgentModelOverride ?? this.mainAgentModelOverride,
       sessionMode: sessionMode ?? this.sessionMode,
@@ -162,6 +172,7 @@ class ThreadRuntimeConfig {
   final String? agentProfileId;
   final Map<String, bool> subagentEnabled;
   final Map<String, bool>? mcpServersEnabled;
+  final Map<String, bool>? skillsEnabled;
   final MainAgentModelOverride? mainAgentModelOverride;
   final SessionMode sessionMode;
   final String bashReviewMode;
@@ -173,6 +184,17 @@ String _requiredMainAgentOverrideString(Map<String, dynamic> json, String key) {
     throw FormatException('Invalid mainAgentModelOverride.$key');
   }
   return value.trim();
+}
+
+Map<String, bool>? _normalizeBooleanSettings(Map<dynamic, dynamic> value) {
+  final result = <String, bool>{};
+  for (final entry in value.entries) {
+    final key = entry.key.toString().trim();
+    if (key.isNotEmpty && entry.value is bool) {
+      result[key] = entry.value as bool;
+    }
+  }
+  return result.isEmpty ? null : result;
 }
 
 Map<String, dynamic> _requiredJsonObject(Object? value, String field) {
@@ -194,6 +216,8 @@ typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
+    this.defaultCoreKind,
+    this.defaultAgentProfileId,
     this.mcpServersEnabled,
   });
 
@@ -208,6 +232,8 @@ class WorkflowSettingsSnapshot {
     final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
+      defaultCoreKind: json['defaultCoreKind'] as String?,
+      defaultAgentProfileId: json['defaultAgentProfileId'] as String?,
       mcpServersEnabled: parsedMcp,
     );
   }
@@ -215,10 +241,15 @@ class WorkflowSettingsSnapshot {
   Map<String, dynamic> toJson() => {
     'sessionMode': sessionMode,
     'planModelEnabled': sessionMode == 'plan',
+    if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
+    if (defaultAgentProfileId != null)
+      'defaultAgentProfileId': defaultAgentProfileId,
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
   };
 
   final SessionMode sessionMode;
+  final String? defaultCoreKind;
+  final String? defaultAgentProfileId;
   final Map<String, bool>? mcpServersEnabled;
 }
 
@@ -249,6 +280,7 @@ class ThreadSummary {
     required this.createdAt,
     required this.updatedAt,
     required this.message,
+    this.coreKind,
     this.runtimeConfig,
   });
 
@@ -261,6 +293,7 @@ class ThreadSummary {
     createdAt: json['createdAt'] as String? ?? '',
     updatedAt: json['updatedAt'] as String? ?? '',
     message: json['message'] as String? ?? '',
+    coreKind: json['coreKind'] as String?,
     runtimeConfig: json['runtimeConfig'] != null
         ? ThreadRuntimeConfig.fromJson(
             json['runtimeConfig'] as Map<String, dynamic>,
@@ -276,6 +309,7 @@ class ThreadSummary {
     String? createdAt,
     String? updatedAt,
     String? message,
+    String? coreKind,
     ThreadRuntimeConfig? runtimeConfig,
   }) {
     return ThreadSummary(
@@ -287,6 +321,7 @@ class ThreadSummary {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       message: message ?? this.message,
+      coreKind: coreKind ?? this.coreKind,
       runtimeConfig: runtimeConfig ?? this.runtimeConfig,
     );
   }
@@ -299,6 +334,7 @@ class ThreadSummary {
   final String createdAt;
   final String updatedAt;
   final String message;
+  final String? coreKind;
   final ThreadRuntimeConfig? runtimeConfig;
 }
 

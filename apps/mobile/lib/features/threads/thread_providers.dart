@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/mcp_models.dart';
+import '../../core/models/skill_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
@@ -92,6 +93,32 @@ final mcpSettingsProvider = FutureProvider<McpSettingsSnapshot?>((ref) async {
     return null;
   }
 });
+
+final composerSkillsProvider = FutureProvider.family<SkillsListResult?, String>(
+  (ref, workspacePath) async {
+    final rpc = ref.watch(desktopRpcProvider);
+    if (rpc == null || workspacePath.trim().isEmpty) return null;
+    try {
+      return await rpc.listSkills(workspacePath);
+    } catch (_) {
+      return null;
+    }
+  },
+);
+
+final projectSkillsSettingsProvider =
+    FutureProvider.family<ProjectSkillsSettingsSnapshot?, String>((
+      ref,
+      workspacePath,
+    ) async {
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null || workspacePath.trim().isEmpty) return null;
+      try {
+        return await rpc.getProjectSkillsSettings(workspacePath);
+      } catch (_) {
+        return null;
+      }
+    });
 
 ThreadRuntimeConfig defaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,

@@ -30,6 +30,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   var _starting = false;
+  var _coreKind = 'claude';
   String? _runtimeConfigDesktopId;
 
   @override
@@ -50,6 +51,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     final workflow = await ref.read(workflowSettingsProvider.future);
     final mcpSettings = await ref.read(mcpSettingsProvider.future);
     if (!mounted) return;
+    _coreKind = workflow?.defaultCoreKind ?? 'claude';
     ref.read(runtimeConfigProvider.notifier).state = buildDefaultRuntimeConfig(
       modelSettings: modelSettings,
       workflow: workflow,
@@ -181,6 +183,12 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                             sendBusy: _starting,
                             hasActivity: false,
                             inputHint: composerLandingPlaceholder,
+                            workspacePath: workspacePath,
+                            coreKind: _coreKind,
+                            onCoreKindChanged: (coreKind) {
+                              setState(() => _coreKind = coreKind);
+                              _saveDefaultCoreKind(coreKind);
+                            },
                             onPickImage: _pickImage,
                             onRemoveAttachment: (index) =>
                                 setState(() => _attachments.removeAt(index)),
@@ -199,6 +207,25 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
               ],
             ),
     );
+  }
+
+  Future<void> _saveDefaultCoreKind(String coreKind) async {
+    final rpc = ref.read(desktopRpcProvider);
+    final workflow = ref.read(workflowSettingsProvider).valueOrNull;
+    if (rpc == null || workflow == null) return;
+    try {
+      await rpc.saveWorkflowSettings(
+        WorkflowSettingsSnapshot(
+          sessionMode: workflow.sessionMode,
+          defaultCoreKind: coreKind,
+          defaultAgentProfileId: workflow.defaultAgentProfileId,
+          mcpServersEnabled: workflow.mcpServersEnabled,
+        ),
+      );
+      ref.invalidate(workflowSettingsProvider);
+    } catch (_) {
+      // The local selection still applies to this new thread.
+    }
   }
 
   Future<void> _pickImage() async {
@@ -231,6 +258,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       final thread = await rpc.startThread(
         workspacePath: workspacePath,
         prompt: prompt,
+        coreKind: _coreKind,
         attachments: _attachments.isEmpty ? null : List.of(_attachments),
         runtimeConfig: runtimeConfig,
       );

@@ -4,7 +4,7 @@ import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
-import '../../core/models/mcp_models.dart';
+import '../../core/models/skill_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
@@ -37,6 +37,8 @@ Future<void> persistComposerMcpWorkflowDefaults(
   await rpc.saveWorkflowSettings(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
+      defaultCoreKind: workflow.defaultCoreKind,
+      defaultAgentProfileId: workflow.defaultAgentProfileId,
       mcpServersEnabled: mcpServersEnabled,
     ),
   );
@@ -87,9 +89,9 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Text(
           '当前方案未配置子代理',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: ecoColors(context).textMuted,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: ecoColors(context).textMuted),
         ),
       );
     }
@@ -114,8 +116,8 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
                 subtitle: !configured
                     ? 'Profile 未配置'
                     : enabled
-                        ? '已启用'
-                        : '已停用',
+                    ? '已启用'
+                    : '已停用',
                 value: enabled,
                 enabled: toggleable,
                 onChanged: !toggleable
@@ -130,8 +132,7 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
                         persistRuntimeConfig(
                           ref,
                           threadId: threadId,
-                          config:
-                              runtimeConfig.copyWith(subagentEnabled: next),
+                          config: runtimeConfig.copyWith(subagentEnabled: next),
                           onChanged: onChanged,
                         );
                       },
@@ -151,12 +152,18 @@ class ComposerRouteSheet extends ConsumerWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.workspacePath = '',
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
   final ThreadRuntimeConfigInput fallbackConfig;
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String workspacePath;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -165,6 +172,27 @@ class ComposerRouteSheet extends ConsumerWidget {
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
+    final enabledMcpServers = mcpServers
+        .where((server) => server.enabled && server.name.trim().isNotEmpty)
+        .toList(growable: false);
+    final mcpEnabledSettings = resolveComposerMcpSettings(
+      servers: mcpServers,
+      runtimeConfig: runtimeConfig,
+      profile: resolveThreadAgentProfile(modelSettings, runtimeConfig),
+      remembered: workflow?.mcpServersEnabled,
+    );
+    final skillsResult = workspacePath.isEmpty
+        ? null
+        : ref.watch(composerSkillsProvider(workspacePath)).valueOrNull;
+    final projectSkillsSettings = workspacePath.isEmpty
+        ? null
+        : ref.watch(projectSkillsSettingsProvider(workspacePath)).valueOrNull;
+    final skills = skillsResult?.allSkills ?? const <SkillInfo>[];
+    final skillsEnabled = _deriveComposerSkillsEnabled(
+      skills,
+      runtimeConfig.skillsEnabled,
+      projectSkillsSettings?.enabledByPath,
+    );
     final profiles = modelSettings?.orchestrationProfiles ?? [];
     final selectedId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
@@ -172,16 +200,44 @@ class ComposerRouteSheet extends ConsumerWidget {
 
     return EcoSheetScaffold(
       title: '方案与编排',
-      subtitle: '选择智能体方案，并按需启停子代理',
+      subtitle: '统一配置运行核心、智能体方案与工具',
       maxHeightFactor: 0.82,
       child: ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.only(bottom: 8),
         children: [
+          if (coreKind != null)
+            EcoGroupedSection(
+              label: '运行核心',
+              topSpacing: 4,
+              footer: onCoreKindChanged == null ? '当前会话的运行核心已锁定' : null,
+              child: Column(
+                children: [
+                  for (var i = 0; i < _coreOptions.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 52),
+                    EcoSheetOptionTile(
+                      leading: Icon(
+                        _coreOptions[i].icon,
+                        size: 22,
+                        color: _coreOptions[i].value == coreKind
+                            ? ecoColors(context).accent
+                            : ecoColors(context).textMuted,
+                      ),
+                      title: _coreOptions[i].label,
+                      selected: _coreOptions[i].value == coreKind,
+                      enabled: canEdit && onCoreKindChanged != null,
+                      onTap: !canEdit || onCoreKindChanged == null
+                          ? null
+                          : () => onCoreKindChanged!(_coreOptions[i].value),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           if (profiles.isNotEmpty)
             EcoGroupedSection(
               label: '方案',
-              topSpacing: 4,
+              topSpacing: coreKind == null ? 4 : 20,
               child: Column(
                 children: [
                   for (var i = 0; i < profiles.length; i++) ...[
@@ -213,7 +269,7 @@ class ComposerRouteSheet extends ConsumerWidget {
             ),
           EcoGroupedSection(
             label: '子代理',
-            topSpacing: profiles.isEmpty ? 4 : 20,
+            topSpacing: profiles.isEmpty && coreKind == null ? 4 : 20,
             footer: canEdit ? null : '当前会话不可编辑编排',
             child: Column(
               children: [
@@ -227,20 +283,13 @@ class ComposerRouteSheet extends ConsumerWidget {
                           children: [
                             Text(
                               '主 Agent',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyLarge
-                                  ?.copyWith(
-                                    fontSize: 17,
-                                    letterSpacing: -0.2,
-                                  ),
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(fontSize: 17, letterSpacing: -0.2),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               '始终启用',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: ecoColors(context).textMuted,
                                   ),
@@ -282,10 +331,131 @@ class ComposerRouteSheet extends ConsumerWidget {
               ],
             ),
           ),
+          if (enabledMcpServers.isNotEmpty)
+            EcoGroupedSection(
+              label: 'MCP',
+              topSpacing: 20,
+              footer: canEdit ? '关闭后当前会话不再调用该服务器工具' : null,
+              child: Column(
+                children: [
+                  for (var i = 0; i < enabledMcpServers.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 16),
+                    Builder(
+                      builder: (context) {
+                        final server = enabledMcpServers[i];
+                        final serverKey = sanitizeMcpServerName(server.name);
+                        final enabled = mcpEnabledSettings[serverKey] ?? false;
+                        return EcoSheetSwitchTile(
+                          title: server.name,
+                          subtitle: server.transport,
+                          value: enabled,
+                          enabled: canEdit,
+                          onChanged: !canEdit
+                              ? null
+                              : (value) async {
+                                  final nextSettings = Map<String, bool>.from(
+                                    mcpEnabledSettings,
+                                  )..[serverKey] = value;
+                                  persistRuntimeConfig(
+                                    ref,
+                                    threadId: threadId,
+                                    config: runtimeConfig.copyWith(
+                                      mcpServersEnabled: nextSettings,
+                                    ),
+                                    onChanged: onChanged,
+                                  );
+                                  await persistComposerMcpWorkflowDefaults(
+                                    ref,
+                                    mcpServersEnabled: nextSettings,
+                                  );
+                                },
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (skills.isNotEmpty)
+            EcoGroupedSection(
+              label: 'Skills',
+              topSpacing: 20,
+              footer: canEdit ? '按需启用当前项目可用的 Skills' : null,
+              child: Column(
+                children: [
+                  for (var i = 0; i < skills.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 16),
+                    Builder(
+                      builder: (context) {
+                        final skill = skills[i];
+                        final key = skill.settingsId;
+                        final enabled = skillsEnabled[key] ?? false;
+                        return EcoSheetSwitchTile(
+                          title: skill.name,
+                          subtitle: skill.source == 'project'
+                              ? '项目 · ${skill.layout}'
+                              : '用户 · ${skill.layout}',
+                          value: enabled,
+                          enabled: canEdit,
+                          onChanged: !canEdit
+                              ? null
+                              : (value) async {
+                                  final nextSettings = Map<String, bool>.from(
+                                    skillsEnabled,
+                                  )..[key] = value;
+                                  persistRuntimeConfig(
+                                    ref,
+                                    threadId: threadId,
+                                    config: runtimeConfig.copyWith(
+                                      skillsEnabled: nextSettings,
+                                    ),
+                                    onChanged: onChanged,
+                                  );
+                                  if (workspacePath.isNotEmpty) {
+                                    final rpc = ref.read(desktopRpcProvider);
+                                    await rpc?.saveProjectSkillsSettings(
+                                      ProjectSkillsSettingsSnapshot(
+                                        workspacePath: workspacePath,
+                                        enabledByPath: nextSettings,
+                                      ),
+                                    );
+                                    ref.invalidate(
+                                      projectSkillsSettingsProvider(
+                                        workspacePath,
+                                      ),
+                                    );
+                                  }
+                                },
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+const _coreOptions = [
+  (value: 'claude', label: 'Claude Code', icon: EcoIcons.agent),
+  (value: 'codex', label: 'Codex', icon: EcoIcons.terminalSquare),
+];
+
+Map<String, bool> _deriveComposerSkillsEnabled(
+  List<SkillInfo> skills,
+  Map<String, bool>? existing,
+  Map<String, bool>? remembered,
+) {
+  return {
+    for (final skill in skills)
+      skill.settingsId:
+          existing?[skill.settingsId] ??
+          remembered?[skill.settingsId] ??
+          (skill.source == 'project'),
+  };
 }
 
 class ComposerContextTrigger extends StatelessWidget {
@@ -321,7 +491,9 @@ class ComposerContextTrigger extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: enabled ? ecoColors(context).textSecondary : ecoColors(context).textMuted,
+                color: enabled
+                    ? ecoColors(context).textSecondary
+                    : ecoColors(context).textMuted,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -330,14 +502,20 @@ class ComposerContextTrigger extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: enabled ? ecoColors(context).textPrimary : ecoColors(context).textMuted,
+                    color: enabled
+                        ? ecoColors(context).textPrimary
+                        : ecoColors(context).textMuted,
                     fontWeight: FontWeight.w500,
                     fontSize: 12,
                   ),
                 ),
               ),
               if (enabled && onTap != null)
-                Icon(EcoIcons.expandDown, size: 14, color: ecoColors(context).textMuted),
+                Icon(
+                  EcoIcons.expandDown,
+                  size: 14,
+                  color: ecoColors(context).textMuted,
+                ),
             ],
           ),
         ),
@@ -389,20 +567,28 @@ class ComposerToolbarTrigger extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: enabled ? ecoColors(context).textSecondary : ecoColors(context).textMuted,
+                color: enabled
+                    ? ecoColors(context).textSecondary
+                    : ecoColors(context).textMuted,
               ),
               const SizedBox(width: 5),
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: enabled ? ecoColors(context).textPrimary : ecoColors(context).textMuted,
+                  color: enabled
+                      ? ecoColors(context).textPrimary
+                      : ecoColors(context).textMuted,
                   fontWeight: FontWeight.w500,
                   fontSize: 12,
                 ),
               ),
               if (enabled && onTap != null) ...[
                 const SizedBox(width: 2),
-                Icon(EcoIcons.expandDown, size: 14, color: ecoColors(context).textMuted),
+                Icon(
+                  EcoIcons.expandDown,
+                  size: 14,
+                  color: ecoColors(context).textMuted,
+                ),
               ],
             ],
           ),
@@ -601,9 +787,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                             children: [
                               Text(
                                 '主 Agent',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
+                                style: Theme.of(context).textTheme.bodyLarge
                                     ?.copyWith(
                                       fontSize: 17,
                                       letterSpacing: -0.2,
@@ -612,9 +796,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                               const SizedBox(height: 2),
                               Text(
                                 '始终启用',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
+                                style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: ecoColors(context).textMuted,
                                     ),
@@ -728,14 +910,16 @@ Future<void> showComposerSessionModeSheet(
                     leading: SessionModeIcon(
                       mode: sessionModeUiOptions[i].value,
                       size: 22,
-                      color: sessionModeUiOptions[i].value ==
+                      color:
+                          sessionModeUiOptions[i].value ==
                               runtimeConfig.sessionMode
                           ? ecoColors(context).accent
                           : ecoColors(context).textMuted,
                     ),
                     title: sessionModeUiOptions[i].title,
                     subtitle: sessionModeUiOptions[i].description,
-                    selected: sessionModeUiOptions[i].value ==
+                    selected:
+                        sessionModeUiOptions[i].value ==
                         runtimeConfig.sessionMode,
                     onTap: () {
                       persistRuntimeConfig(
@@ -759,145 +943,6 @@ Future<void> showComposerSessionModeSheet(
   );
 }
 
-class ComposerMcpIconButton extends ConsumerWidget {
-  const ComposerMcpIconButton({
-    super.key,
-    required this.runtimeConfig,
-    required this.threadId,
-    required this.onChanged,
-  });
-
-  final ThreadRuntimeConfigInput runtimeConfig;
-  final String threadId;
-  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mcpSettings = ref.watch(mcpSettingsProvider).valueOrNull;
-    final servers = mcpSettings?.servers ?? const [];
-    final enabledServers = servers
-        .where((server) => server.enabled && server.name.trim().isNotEmpty)
-        .toList();
-    if (enabledServers.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
-    final profile = resolveThreadAgentProfile(
-      ref.watch(modelSettingsProvider).valueOrNull,
-      runtimeConfig,
-    );
-    final enabledSettings = resolveComposerMcpSettings(
-      servers: servers,
-      runtimeConfig: runtimeConfig,
-      profile: profile,
-      remembered: workflow?.mcpServersEnabled,
-    );
-    final enabledCount = countEnabledMcpServers(enabledSettings);
-    final summary = '$enabledCount/${enabledServers.length}';
-
-    return ComposerToolbarIconButton(
-      onPressed: () => showComposerMcpSheet(
-        context,
-        ref,
-        runtimeConfig: runtimeConfig,
-        threadId: threadId,
-        servers: enabledServers,
-        enabledSettings: enabledSettings,
-        onChanged: onChanged,
-      ),
-      tooltip: 'MCP 服务器 · $summary',
-      icon: ComposerToolbarIcon(
-        icon: EcoIcons.mcp,
-        color: enabledCount > 0
-            ? ecoColors(context).accent
-            : ecoColors(context).textSecondary,
-      ),
-    );
-  }
-}
-
-Future<void> showComposerMcpSheet(
-  BuildContext context,
-  WidgetRef ref, {
-  required ThreadRuntimeConfigInput runtimeConfig,
-  required String threadId,
-  required List<McpServerConfigView> servers,
-  required Map<String, bool> enabledSettings,
-  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-}) async {
-  var currentConfig = runtimeConfig;
-  var currentSettings = Map<String, bool>.from(enabledSettings);
-
-  await showEcoActionSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) => StatefulBuilder(
-      builder: (context, setSheetState) {
-        final enabledCount = countEnabledMcpServers(currentSettings);
-        return EcoSheetScaffold(
-          title: 'MCP 工具',
-          subtitle: '已启用 $enabledCount / ${servers.length}',
-          maxHeightFactor: 0.72,
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 8),
-            children: [
-              EcoGroupedSection(
-                label: '服务器',
-                topSpacing: 4,
-                footer: '关闭后当前会话不再调用该服务器工具',
-                child: Column(
-                  children: [
-                    for (var i = 0; i < servers.length; i++) ...[
-                      if (i > 0) const EcoGroupedDivider(indent: 16),
-                      Builder(
-                        builder: (context) {
-                          final server = servers[i];
-                          final serverKey =
-                              sanitizeMcpServerName(server.name);
-                          final enabled =
-                              currentSettings[serverKey] ?? false;
-                          return EcoSheetSwitchTile(
-                            title: server.name,
-                            subtitle: server.transport,
-                            value: enabled,
-                            onChanged: (value) async {
-                              final nextSettings =
-                                  Map<String, bool>.from(currentSettings)
-                                    ..[serverKey] = value;
-                              final nextConfig = currentConfig.copyWith(
-                                mcpServersEnabled: nextSettings,
-                              );
-                              currentConfig = nextConfig;
-                              currentSettings = nextSettings;
-                              setSheetState(() {});
-                              persistRuntimeConfig(
-                                ref,
-                                threadId: threadId,
-                                config: nextConfig,
-                                onChanged: onChanged,
-                              );
-                              await persistComposerMcpWorkflowDefaults(
-                                ref,
-                                mcpServersEnabled: nextSettings,
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
-}
-
 class ComposerRouteSummary extends ConsumerWidget {
   const ComposerRouteSummary({
     super.key,
@@ -907,6 +952,9 @@ class ComposerRouteSummary extends ConsumerWidget {
     required this.onChanged,
     this.contextSnapshot,
     this.threadStatus,
+    this.workspacePath = '',
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -915,6 +963,9 @@ class ComposerRouteSummary extends ConsumerWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
+  final String workspacePath;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -969,6 +1020,9 @@ class ComposerRouteSummary extends ConsumerWidget {
             threadId: threadId,
             canEdit: canEdit,
             onChanged: onChanged,
+            workspacePath: workspacePath,
+            coreKind: coreKind,
+            onCoreKindChanged: onCoreKindChanged,
           ),
           tooltip: tooltip,
           icon: ComposerToolbarIcon(
@@ -987,6 +1041,9 @@ class ComposerRouteSummary extends ConsumerWidget {
     required String threadId,
     required bool canEdit,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+    required String workspacePath,
+    required String? coreKind,
+    required ValueChanged<String>? onCoreKindChanged,
   }) async {
     await showEcoActionSheet<void>(
       context: context,
@@ -996,6 +1053,9 @@ class ComposerRouteSummary extends ConsumerWidget {
         threadId: threadId,
         canEdit: canEdit,
         onChanged: onChanged,
+        workspacePath: workspacePath,
+        coreKind: coreKind,
+        onCoreKindChanged: onCoreKindChanged,
       ),
     );
   }
@@ -1029,14 +1089,16 @@ Future<void> showComposerBashReviewSheet(
                     leading: ComposerBashReviewToolbarIcon(
                       mode: bashReviewUiOptions[i].value,
                       size: 22,
-                      color: bashReviewUiOptions[i].value ==
+                      color:
+                          bashReviewUiOptions[i].value ==
                               runtimeConfig.bashReviewMode
                           ? ecoColors(context).accent
                           : ecoColors(context).textMuted,
                     ),
                     title: bashReviewUiOptions[i].title,
                     subtitle: bashReviewUiOptions[i].description,
-                    selected: bashReviewUiOptions[i].value ==
+                    selected:
+                        bashReviewUiOptions[i].value ==
                         runtimeConfig.bashReviewMode,
                     onTap: () {
                       persistRuntimeConfig(

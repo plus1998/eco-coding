@@ -101,6 +101,11 @@ export const REMOTE_COMMAND_DEFINITIONS = [
 
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),
+  command("skills:list", "List Skills", "read", RPC_INVOKE, [optionalStringArg()]),
+  command("project-skills-settings:get", "Get project Skills settings", "read", RPC_INVOKE, [stringArg()]),
+  command("project-skills-settings:save", "Save project Skills settings", "write_safe", RPC_INVOKE, [
+    objectArg(["workspacePath", "enabledByPath"]),
+  ]),
   command("workflow-settings:get", "Get workflow settings", "read", RPC_INVOKE, []),
   command("workflow-settings:save", "Save workflow settings", "write_safe", RPC_INVOKE, [
     objectArg(["sessionMode"]),

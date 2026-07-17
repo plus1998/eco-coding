@@ -35,6 +35,9 @@ class SessionComposer extends ConsumerStatefulWidget {
     this.inputHint,
     this.contextSnapshot,
     this.threadStatus,
+    this.workspacePath = '',
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
   final TextEditingController controller;
@@ -55,6 +58,9 @@ class SessionComposer extends ConsumerStatefulWidget {
   final String? inputHint;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
+  final String workspacePath;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
 
   @override
   ConsumerState<SessionComposer> createState() => _SessionComposerState();
@@ -310,11 +316,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           canEdit: canEditConfig,
                           onChanged: widget.onRuntimeConfigChanged,
                         ),
-                        ComposerMcpIconButton(
-                          runtimeConfig: widget.runtimeConfig,
-                          threadId: widget.threadId,
-                          onChanged: widget.onRuntimeConfigChanged,
-                        ),
                         ComposerBashReviewIconButton(
                           runtimeConfig: widget.runtimeConfig,
                           threadId: widget.threadId,
@@ -328,6 +329,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           onChanged: widget.onRuntimeConfigChanged,
                           contextSnapshot: widget.contextSnapshot,
                           threadStatus: widget.threadStatus,
+                          workspacePath: widget.workspacePath,
+                          coreKind: widget.coreKind,
+                          onCoreKindChanged: widget.onCoreKindChanged,
                         ),
                         const SizedBox(width: 2),
                         if (showSpeechInput) ...[

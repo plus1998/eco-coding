@@ -51,6 +51,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await rpc.saveWorkflowSettings(
         WorkflowSettingsSnapshot(
           sessionMode: nextMode,
+          defaultCoreKind: workflow?.defaultCoreKind,
+          defaultAgentProfileId: workflow?.defaultAgentProfileId,
           mcpServersEnabled: workflow?.mcpServersEnabled,
         ),
       );

@@ -1,5 +1,6 @@
 import '../models/git_models.dart';
 import '../models/mcp_models.dart';
+import '../models/skill_models.dart';
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
 import '../models/thread_usage_models.dart';
@@ -45,6 +46,7 @@ class DesktopRpc {
     required String workspacePath,
     required String prompt,
     required ThreadRuntimeConfigInput runtimeConfig,
+    String? coreKind,
     List<PromptImageAttachment>? attachments,
   }) async {
     final result = await _client.invoke<Map<String, dynamic>>(
@@ -54,6 +56,7 @@ class DesktopRpc {
         {
           'workspacePath': workspacePath,
           'prompt': prompt,
+          'coreKind': ?coreKind,
           if (attachments != null && attachments.isNotEmpty)
             'attachments': attachments.map((a) => a.toJson()).toList(),
           'runtimeConfig': runtimeConfig.toJson(),
@@ -441,6 +444,37 @@ class DesktopRpc {
       [],
     );
     return McpSettingsSnapshot.fromJson(result);
+  }
+
+  Future<SkillsListResult> listSkills(String workspacePath) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'skills:list',
+      [workspacePath],
+    );
+    return SkillsListResult.fromJson(result);
+  }
+
+  Future<ProjectSkillsSettingsSnapshot> getProjectSkillsSettings(
+    String workspacePath,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'project-skills-settings:get',
+      [workspacePath],
+    );
+    return ProjectSkillsSettingsSnapshot.fromJson(result);
+  }
+
+  Future<ProjectSkillsSettingsSnapshot> saveProjectSkillsSettings(
+    ProjectSkillsSettingsSnapshot settings,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'project-skills-settings:save',
+      [settings.toJson()],
+    );
+    return ProjectSkillsSettingsSnapshot.fromJson(result);
   }
 
   Future<GitWorkingTreeStatus> getGitStatus(String workspacePath) async {
