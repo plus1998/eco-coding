@@ -5946,11 +5946,6 @@ function App() {
                 workspaceLabel={currentProjectName}
                 {...(gitStatus && { gitStatus })}
                 gitBusy={gitStatusBusy || gitStatusLoading}
-                commitDisabled={
-                    activeThread
-                      ? activeThread.status === "running" || activeThread.status === "queued"
-                      : false
-                }
                 onCheckoutGitBranch={handleGitCheckoutBranch}
                 onCreateGitBranch={handleGitCreateBranch}
                 onOpenGitSettings={openGitSettings}
@@ -5967,9 +5962,6 @@ function App() {
                   void handleGitPullConflictsWithAgent(conflictFiles)
                 }
                 {...(showPackageScriptsEntry && {
-                  scriptsDisabled: activeThread
-                    ? activeThread.status === "running" || activeThread.status === "queued"
-                    : false,
                   onOpenScriptsDialog: () => {
                     void refreshPackageScripts();
                     setScriptsDialogOpen(true);

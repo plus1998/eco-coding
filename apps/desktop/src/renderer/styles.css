@@ -20368,6 +20368,21 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   }
 }
 
+html[data-platform="darwin"] .settings-modal-backdrop,
+html[data-platform="darwin"] .git-commit-dialog-backdrop,
+html[data-platform="darwin"] .diff-review-overlay,
+html[data-platform="darwin"] .sidebar-search-backdrop,
+html[data-platform="darwin"] .package-scripts-backdrop.is-open {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
+  background: color-mix(in srgb, var(--popover-bg) 20%, var(--bg-elevated) 80%);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+}
+
 /* —— Center server (cs) —— */
 .cs {
   max-width: none;
