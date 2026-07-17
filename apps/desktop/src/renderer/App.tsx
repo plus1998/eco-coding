@@ -2713,14 +2713,15 @@ function App() {
   );
   const canSend = composerFollowUpMode ? canSendFollowUp : canSendThreadMessage;
   const showPlanApproval = Boolean(activeThread && pendingPlan);
-  const showComposerDockApproval = showBashApproval || showPlanApproval;
+  const showClarification = Boolean(pendingClarification);
+  const showComposerDockApproval = showBashApproval || showPlanApproval || showClarification;
   const composerDockSurfaceKey = showBashApproval
     ? `bash-${pendingBashApproval!.toolUseId}`
     : showPlanApproval
       ? `plan-${activeThread?.id ?? "unknown"}`
-      : "composer";
-
-  const showClarification = Boolean(pendingClarification);
+      : showClarification
+        ? `clarification-${pendingClarification!.toolUseId}`
+        : "composer";
 
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
 
@@ -5343,7 +5344,7 @@ function App() {
   }, [showLanding, currentProjectPath]);
   const shellClassName = ["shell", settingsOpen ? "shell-settings-open" : ""].filter(Boolean).join(" ");
   const composerPlaceholder = showClarification
-    ? "补充消息会排队；回答问题请用上方卡片"
+    ? "补充消息会排队；请先回答当前问题"
     : showBashApproval
       ? "补充消息会排队；工具授权请用下方卡片"
       : showPlanApproval
@@ -5525,6 +5526,14 @@ function App() {
               onApprove={() => void approvePendingPlan()}
               onDismiss={() => void dismissPendingPlan()}
               onOpenInPanel={openPlanTaskDrawer}
+            />
+          ) : showClarification && pendingClarification ? (
+            <ClarificationPanel
+              request={pendingClarification}
+              busy={clarificationBusy}
+              variant="dock"
+              onSubmit={submitClarificationAnswers}
+              onDismiss={() => void dismissPendingClarification()}
             />
           ) : null
         }
@@ -5866,14 +5875,6 @@ function App() {
                                 context: contextByThread[activeThread.id],
                               })}
                           />
-                          {showClarification && pendingClarification ? (
-                            <ClarificationPanel
-                              request={pendingClarification}
-                              busy={clarificationBusy}
-                              onSubmit={submitClarificationAnswers}
-                              onDismiss={() => void dismissPendingClarification()}
-                            />
-                          ) : null}
                           <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
                         </div>
                         {activityFeedScrollJump ? (

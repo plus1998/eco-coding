@@ -362,6 +362,33 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:approval-wait")).toBe(false);
 });
 
+test("buildThreadRunProjectionViewModel hides clarification request narration from the feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "设计删除语义",
+          metadata: { liveType: "thread.user_prompt" },
+          sequence: 1,
+        }),
+        item({
+          id: "clarification-request",
+          eventType: "message.final",
+          role: "planner",
+          text: "Planner 需要你回答几个问题。",
+          metadata: { liveType: "clarification.requested" },
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt"]);
+});
+
 test("buildProjectionDisplayTimelineItems merges approval and tool execution by toolUseId", () => {
   const timeline = [
     item({
@@ -2540,10 +2567,7 @@ test("empty terminal thinking does not split adjacent tool summaries", () => {
   expect(view.mainFeedEntries).toHaveLength(1);
   expect(view.mainFeedEntries[0]?.kind).toBe("tool-group");
   if (view.mainFeedEntries[0]?.kind === "tool-group") {
-    expect(view.mainFeedEntries[0].entries.map((entry) => entry.item.id)).toEqual([
-      "read-a",
-      "read-b",
-    ]);
+    expect(view.mainFeedEntries[0].entries.map((entry) => entry.item.id)).toEqual(["read-a", "read-b"]);
   }
   expect(
     projectionItemToDetailBlock(

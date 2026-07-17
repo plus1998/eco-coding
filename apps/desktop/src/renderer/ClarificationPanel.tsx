@@ -1,21 +1,37 @@
-import { ChevronLeft, ChevronRight, Info, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ClarificationAnswers, ClarificationRequest } from "../shared/ipc";
+import { ChevronLeft, ChevronRight, Info, Loader2, Pencil, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CLARIFICATION_CUSTOM_OPTION_LABEL,
   isClarificationQuestionReady,
-  optionRequiresCustomExplanation,
   resolveClarificationQuestionAnswer,
 } from "../shared/clarification";
+import type { ClarificationAnswers, ClarificationRequest } from "../shared/ipc";
 
 interface ClarificationPanelProps {
   request: ClarificationRequest;
   busy?: boolean;
+  variant?: "feed" | "dock";
   onSubmit: (answers: ClarificationAnswers) => void;
   onDismiss: () => void;
 }
 
-export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: ClarificationPanelProps) {
+const RECOMMENDED_LABEL_SUFFIX = /\s*(?:\(Recommended\)|（Recommended）|（推荐）)$/i;
+
+function isRecommendedOption(option: { label: string; recommended?: boolean }): boolean {
+  return option.recommended === true || RECOMMENDED_LABEL_SUFFIX.test(option.label);
+}
+
+function formatOptionLabel(label: string): string {
+  return label.replace(RECOMMENDED_LABEL_SUFFIX, "").trim();
+}
+
+export function ClarificationPanel({
+  request,
+  busy,
+  variant = "feed",
+  onSubmit,
+  onDismiss,
+}: ClarificationPanelProps) {
   const total = request.questions.length;
   const [questionIndex, setQuestionIndex] = useState(0);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -46,7 +62,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
     if (!question) {
       return -1;
     }
-    return displayOptions.findIndex((option) => option.recommended);
+    return displayOptions.findIndex(isRecommendedOption);
   }, [question, displayOptions]);
 
   const currentSelection = selections[questionIndex] ?? [];
@@ -63,7 +79,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       if ((current[questionIndex]?.length ?? 0) > 0) {
         return current;
       }
-      const recommended = displayOptions.find((option) => option.recommended);
+      const recommended = displayOptions.find(isRecommendedOption);
       if (!recommended) {
         return current;
       }
@@ -78,7 +94,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       return;
     }
     customInputRef.current?.focus();
-  }, [showCustomInput, questionIndex, busy]);
+  }, [showCustomInput, busy]);
 
   function advanceToNextQuestionIfReady(nextSelection: string[]) {
     if (!question || question.multiSelect || questionIndex >= total - 1) {
@@ -124,17 +140,17 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
     });
   }
 
-  function buildFinalSelections(): string[][] {
-    return request.questions.map((_, index) =>
-      resolveClarificationQuestionAnswer(selections[index] ?? [], customTexts[index] ?? ""),
-    );
-  }
+  const submitAll = useCallback(
+    (selectionRows: string[][] = selections) => {
+      const finalSelections = request.questions.map((_, index) =>
+        resolveClarificationQuestionAnswer(selectionRows[index] ?? [], customTexts[index] ?? ""),
+      );
+      onSubmit({ toolUseId: request.toolUseId, selections: finalSelections });
+    },
+    [customTexts, onSubmit, request.questions, request.toolUseId, selections],
+  );
 
-  function submitAll() {
-    onSubmit({ toolUseId: request.toolUseId, selections: buildFinalSelections() });
-  }
-
-  function continueFlow() {
+  function completeCurrentQuestion() {
     if (!question || !questionReady) {
       return;
     }
@@ -146,6 +162,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
   }
 
   const isLastQuestion = questionIndex >= total - 1;
+  const docked = variant === "dock";
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -161,13 +178,9 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
         return;
       }
       if (inCustomField) {
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && questionReady) {
+        if (event.key === "Enter" && !event.shiftKey && questionReady && questionIndex < total - 1) {
           event.preventDefault();
-          if (questionIndex >= total - 1) {
-            submitAll();
-          } else {
-            setQuestionIndex((index) => index + 1);
-          }
+          setQuestionIndex((index) => index + 1);
         }
         return;
       }
@@ -208,9 +221,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
         if (!readyAfterSelect) {
           return;
         }
-        if (questionIndex >= total - 1) {
-          submitAll();
-        } else {
+        if (questionIndex < total - 1) {
           setQuestionIndex((index) => index + 1);
         }
       }
@@ -228,7 +239,6 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
     onDismiss,
     displayOptions,
     questionReady,
-    selections,
     customTexts,
   ]);
 
@@ -236,47 +246,60 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
     return null;
   }
 
-  return (
-    <section className="clarification-panel codex-style" aria-label="澄清问题">
+  const panelBody = (
+    <>
       <header className="clarification-top">
         <p className="clarification-title">{question.question}</p>
-        {total > 1 ? (
-          <div className="clarification-pagination" aria-label={`第 ${questionIndex + 1} 题，共 ${total} 题`}>
+        <div className="clarification-header-actions">
+          {total > 1 ? (
+            <div className="clarification-pagination">
+              <button
+                type="button"
+                className="clarification-page-btn"
+                disabled={busy || questionIndex === 0}
+                onClick={() => setQuestionIndex((index) => index - 1)}
+                aria-label="上一题"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="clarification-page-label">
+                {questionIndex + 1} / {total}
+              </span>
+              <button
+                type="button"
+                className="clarification-page-btn"
+                disabled={busy || questionIndex >= total - 1 || !questionReady}
+                onClick={() => setQuestionIndex((index) => index + 1)}
+                aria-label="下一题"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          ) : null}
+          {docked ? (
             <button
               type="button"
-              className="clarification-page-btn"
-              disabled={busy || questionIndex === 0}
-              onClick={() => setQuestionIndex((index) => index - 1)}
-              aria-label="上一题"
+              className="clarification-close"
+              disabled={busy}
+              onClick={onDismiss}
+              aria-label="关闭问题"
             >
-              <ChevronLeft size={16} />
+              <X size={18} />
             </button>
-            <span className="clarification-page-label">
-              {questionIndex + 1} / {total}
-            </span>
-            <button
-              type="button"
-              className="clarification-page-btn"
-              disabled={busy || questionIndex >= total - 1 || !questionReady}
-              onClick={() => setQuestionIndex((index) => index + 1)}
-              aria-label="下一题"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
 
-      <ul className="clarification-option-list" role="listbox" aria-label="选项">
+      <ul className="clarification-option-list" aria-label="选项">
         {displayOptions.map((option, optionIndex) => {
           const selected = currentSelection.includes(option.label);
           const highlighted = highlightIndex === optionIndex;
+          const recommended = isRecommendedOption(option);
           return (
             <li key={option.label}>
               <button
                 type="button"
-                role="option"
-                aria-selected={selected}
+                aria-pressed={selected}
                 className={[
                   "clarification-option-row",
                   selected ? "is-selected" : "",
@@ -288,13 +311,17 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
                 onMouseEnter={() => setHighlightIndex(optionIndex)}
                 onClick={() => selectOption(option.label)}
               >
-                <span className="clarification-option-index">{optionIndex + 1}.</span>
+                <span className="clarification-option-index">
+                  {option.label === CLARIFICATION_CUSTOM_OPTION_LABEL ? (
+                    <Pencil size={14} strokeWidth={1.75} aria-hidden />
+                  ) : (
+                    optionIndex + 1
+                  )}
+                </span>
                 <span className="clarification-option-body">
                   <span className="clarification-option-label">
-                    {option.label}
-                    {option.recommended ? (
-                      <span className="clarification-recommended">（推荐）</span>
-                    ) : null}
+                    {formatOptionLabel(option.label)}
+                    {recommended ? <span className="clarification-recommended">（推荐）</span> : null}
                   </span>
                   {option.description ? (
                     <span className="clarification-option-desc">{option.description}</span>
@@ -304,6 +331,9 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
                   <span className="clarification-info" title={option.description}>
                     <Info size={14} aria-hidden />
                   </span>
+                ) : null}
+                {docked && selected && option.label !== CLARIFICATION_CUSTOM_OPTION_LABEL ? (
+                  <ChevronRight className="clarification-option-arrow" size={18} aria-hidden />
                 ) : null}
               </button>
             </li>
@@ -336,41 +366,74 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
               });
             }}
           />
-          <p className="clarification-custom-hint">提交时将使用此处文字作为回答（不会提交「其他」字样本身）。</p>
+          <p className="clarification-custom-hint">
+            提交时将使用此处文字作为回答（不会提交「其他」字样本身）。
+          </p>
         </div>
       ) : null}
 
       <footer className="clarification-footer">
-        <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>
-          {busy ? (
-            <>
-              <Loader2 size={14} className="spinning" aria-hidden />
-              处理中…
-            </>
-          ) : (
-            <>
-              忽略 <kbd>ESC</kbd>
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          className="clarification-continue"
-          disabled={busy || !questionReady}
-          onClick={continueFlow}
-        >
-          {busy ? (
-            <>
-              <Loader2 size={14} className="spinning" aria-hidden />
-              提交中…
-            </>
-          ) : (
-            <>
-              {isLastQuestion ? "确认提交" : "下一题"} <kbd>↵</kbd>
-            </>
-          )}
-        </button>
+        {isLastQuestion ? (
+          <button
+            type="button"
+            className="clarification-continue"
+            disabled={busy || !questionReady}
+            onClick={completeCurrentQuestion}
+          >
+            {busy ? (
+              <>
+                <Loader2 size={14} className="spinning" aria-hidden />
+                提交中…
+              </>
+            ) : (
+              "确认"
+            )}
+          </button>
+        ) : (
+          <>
+            <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>
+              {busy ? (
+                <>
+                  <Loader2 size={14} className="spinning" aria-hidden />
+                  处理中…
+                </>
+              ) : docked ? (
+                "跳过"
+              ) : (
+                <>
+                  忽略 <kbd>ESC</kbd>
+                </>
+              )}
+            </button>
+            {question.multiSelect ? (
+              <button
+                type="button"
+                className="clarification-continue"
+                disabled={busy || !questionReady}
+                onClick={completeCurrentQuestion}
+              >
+                完成选择
+              </button>
+            ) : null}
+          </>
+        )}
       </footer>
+    </>
+  );
+
+  if (docked) {
+    return (
+      <div className="codex-composer is-compact clarification-dock-shell">
+        <section className="composer-primary clarification-dock-inner" aria-label="澄清问题">
+          {panelBody}
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <section className="clarification-panel codex-style" aria-label="澄清问题">
+      {panelBody}
     </section>
   );
 }

@@ -620,7 +620,11 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
     return true;
   }
   const liveType = projectionLiveType(item);
-  if (liveType === "plan.ready" || liveType === "thread.awaiting_plan") {
+  if (
+    liveType === "plan.ready" ||
+    liveType === "thread.awaiting_plan" ||
+    liveType === "clarification.requested"
+  ) {
     return true;
   }
   if (liveType && isThreadFollowUpLiveEvent(liveType)) {
@@ -1662,8 +1666,7 @@ function projectionStreamDisplayKey(
   const streamKey = item.streamKey?.trim();
   const hasExplicitStreamBlockKey = Boolean(streamKey?.includes(":block:"));
   const hasExplicitLogicalItemKey = Boolean(
-    streamKey &&
-      (item.metadata?.logicalEntityId === streamKey || item.metadata?.itemId === streamKey),
+    streamKey && (item.metadata?.logicalEntityId === streamKey || item.metadata?.itemId === streamKey),
   );
   if (streamKey && (hasExplicitStreamBlockKey || hasExplicitLogicalItemKey)) {
     return appendStreamScopeSuffix(`${channel}:sk:${streamKey}`, item, requestId);
@@ -2014,8 +2017,7 @@ export function projectionItemToDetailBlock(
       return undefined;
     }
     const thinkingDurationMs = readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs);
-    const requestDurationFallbackAllowed =
-      item.metadata?.thinkingRequestDurationFallbackAllowed !== false;
+    const requestDurationFallbackAllowed = item.metadata?.thinkingRequestDurationFallbackAllowed !== false;
     return {
       kind: "thinking",
       text: item.text,
