@@ -2,10 +2,8 @@ import { toResponsesCallID } from './anthropic-to-responses.js';
 import { jsonMarshal } from './json.js';
 import { responsesStreamEventToJSON } from './responses-stream-event-wire.js';
 import type {
-  AnthropicContentBlock,
   AnthropicResponse,
   AnthropicStreamEvent,
-  AnthropicUsage,
   ResponsesContentPart,
   ResponsesIncompleteDetails,
   ResponsesInputTokensDetails,
@@ -158,9 +156,12 @@ export interface AnthropicEventToResponsesState {
   currentItemId: string;
   currentItemType: string;
   currentEncryptedContent: string;
+  currentText: string;
+  currentReasoningSummary: string;
   contentIndex: number;
   currentCallId: string;
   currentName: string;
+  currentArguments: string;
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -179,9 +180,12 @@ export function newAnthropicEventToResponsesState(): AnthropicEventToResponsesSt
     currentItemId: '',
     currentItemType: '',
     currentEncryptedContent: '',
+    currentText: '',
+    currentReasoningSummary: '',
     contentIndex: 0,
     currentCallId: '',
     currentName: '',
+    currentArguments: '',
     inputTokens: 0,
     outputTokens: 0,
     cacheReadInputTokens: 0,
@@ -274,6 +278,7 @@ function anthToResHandleContentBlockStart(
       state.currentItemId = generateItemId();
       state.currentItemType = 'reasoning';
       state.currentEncryptedContent = '';
+      state.currentReasoningSummary = evt.content_block.thinking ?? '';
       state.contentIndex = 0;
 
       events.push(
@@ -291,6 +296,7 @@ function anthToResHandleContentBlockStart(
       state.currentItemId = generateItemId();
       state.currentItemType = 'reasoning';
       state.currentEncryptedContent = evt.content_block.data ?? '';
+      state.currentReasoningSummary = '';
       state.contentIndex = 0;
 
       events.push(
@@ -310,6 +316,7 @@ function anthToResHandleContentBlockStart(
       if (state.currentItemType !== 'message') {
         state.currentItemId = generateItemId();
         state.currentItemType = 'message';
+        state.currentText = evt.content_block.text ?? '';
         state.contentIndex = 0;
 
         events.push(
@@ -333,6 +340,7 @@ function anthToResHandleContentBlockStart(
       state.currentItemType = 'function_call';
       state.currentCallId = toResponsesCallID(evt.content_block.id ?? '');
       state.currentName = evt.content_block.name ?? '';
+      state.currentArguments = initialToolArguments(evt.content_block.input);
 
       events.push(
         makeResponsesEvent(state, 'response.output_item.added', {
@@ -365,6 +373,7 @@ function anthToResHandleContentBlockDelta(
       if (evt.delta.text === '') {
         return [];
       }
+      state.currentText += evt.delta.text ?? '';
       return [
         makeResponsesEvent(state, 'response.output_text.delta', {
           output_index: state.outputIndex,
@@ -378,6 +387,7 @@ function anthToResHandleContentBlockDelta(
       if (evt.delta.thinking === '') {
         return [];
       }
+      state.currentReasoningSummary += evt.delta.thinking ?? '';
       return [
         makeResponsesEvent(state, 'response.reasoning_summary_text.delta', {
           output_index: state.outputIndex,
@@ -391,6 +401,7 @@ function anthToResHandleContentBlockDelta(
       if (evt.delta.partial_json === '') {
         return [];
       }
+      state.currentArguments += evt.delta.partial_json ?? '';
       return [
         makeResponsesEvent(state, 'response.function_call_arguments.delta', {
           output_index: state.outputIndex,
@@ -418,6 +429,7 @@ function anthToResHandleContentBlockStop(
           output_index: state.outputIndex,
           summary_index: 0,
           item_id: state.currentItemId,
+          text: state.currentReasoningSummary,
         }),
       ];
       events.push(...closeCurrentResponsesItem(state));
@@ -431,6 +443,7 @@ function anthToResHandleContentBlockStop(
           item_id: state.currentItemId,
           call_id: state.currentCallId,
           name: state.currentName,
+          arguments: completedToolArguments(state.currentArguments),
         }),
       ];
       events.push(...closeCurrentResponsesItem(state));
@@ -443,6 +456,7 @@ function anthToResHandleContentBlockStop(
           output_index: state.outputIndex,
           content_index: state.contentIndex,
           item_id: state.currentItemId,
+          text: state.currentText,
         }),
       ];
   }
@@ -494,12 +508,20 @@ function closeCurrentResponsesItem(
   const itemType = state.currentItemType;
   const itemId = state.currentItemId;
   const encryptedContent = state.currentEncryptedContent;
+  const text = state.currentText;
+  const reasoningSummary = state.currentReasoningSummary;
+  const callId = state.currentCallId;
+  const name = state.currentName;
+  const args = completedToolArguments(state.currentArguments);
 
   state.currentItemType = '';
   state.currentItemId = '';
   state.currentEncryptedContent = '';
+  state.currentText = '';
+  state.currentReasoningSummary = '';
   state.currentCallId = '';
   state.currentName = '';
+  state.currentArguments = '';
   state.outputIndex++;
   state.contentIndex = 0;
 
@@ -509,15 +531,45 @@ function closeCurrentResponsesItem(
       item: {
         type: itemType,
         id: itemId,
+        role: itemType === 'message' ? 'assistant' : undefined,
+        content:
+          itemType === 'message'
+            ? [{ type: 'output_text', text }]
+            : undefined,
+        call_id: itemType === 'function_call' ? callId : undefined,
+        name: itemType === 'function_call' ? name : undefined,
+        arguments: itemType === 'function_call' ? args : undefined,
         encrypted_content:
           itemType === 'reasoning' && encryptedContent !== ''
             ? encryptedContent
             : undefined,
-        summary: itemType === 'reasoning' ? [] : undefined,
+        summary:
+          itemType === 'reasoning' && reasoningSummary !== ''
+            ? [{ type: 'summary_text', text: reasoningSummary }]
+            : itemType === 'reasoning'
+              ? []
+              : undefined,
         status: 'completed',
       },
     }),
   ];
+}
+
+function initialToolArguments(input: unknown): string {
+  if (input === undefined || input === null) {
+    return '';
+  }
+  if (typeof input === 'string') {
+    return input === '{}' ? '' : input;
+  }
+  if (typeof input === 'object' && Object.keys(input).length === 0) {
+    return '';
+  }
+  return jsonMarshal(input);
+}
+
+function completedToolArguments(args: string): string {
+  return args === '' ? '{}' : args;
 }
 
 function makeResponsesCreatedEvent(
