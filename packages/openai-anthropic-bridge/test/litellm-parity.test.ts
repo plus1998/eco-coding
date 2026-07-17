@@ -194,7 +194,7 @@ describe('LiteLLM parity: Anthropic Messages -> Responses input', () => {
         parameters: { type: 'object', properties: {} },
         strict: false,
       },
-      { type: 'web_search_preview' },
+      { type: 'web_search' },
       {
         type: 'function',
         name: 'tool_b',

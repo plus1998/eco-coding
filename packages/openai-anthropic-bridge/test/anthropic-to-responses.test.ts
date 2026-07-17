@@ -206,10 +206,10 @@ describe('anthropicToResponses', () => {
       tool_choice: { type: 'tool', name: 'web_search' },
     });
 
-    expect(resp.tool_choice).toEqual({ type: 'web_search_preview' });
+    expect(resp.tool_choice).toEqual({ type: 'web_search' });
     expect(resp.tools).toEqual([
       {
-        type: 'web_search_preview',
+        type: 'web_search',
         filters: { allowed_domains: ['weather.com.cn', 'tianqi.com'] },
       },
     ]);

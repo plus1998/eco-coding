@@ -265,7 +265,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
   expect(body.instructions).toBe("System prompt\nSecond instruction");
   expect(body.max_output_tokens).toBe(4096);
   expect(body.reasoning).toEqual({ effort: "high", summary: "auto" });
-  expect(body.tool_choice).toEqual({ type: "web_search_preview" });
+  expect(body.tool_choice).toEqual({ type: "web_search" });
   expect(body.context_management).toBeUndefined();
   expect(body.tools).toEqual([
     {
@@ -275,7 +275,7 @@ test("buildBridgeUpstreamMessagesPayload builds full OpenAI Responses wire body"
       parameters: { type: "object", properties: {} },
       strict: false,
     },
-    { type: "web_search_preview", filters: { allowed_domains: ["example.com"] } },
+    { type: "web_search", filters: { allowed_domains: ["example.com"] } },
   ]);
 
   const input = body.input as Array<Record<string, unknown>>;

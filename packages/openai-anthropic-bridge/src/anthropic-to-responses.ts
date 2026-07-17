@@ -336,7 +336,7 @@ export function convertAnthropicToolChoiceToResponses(raw: unknown): unknown {
       return { type: 'none' };
     case 'tool':
       return isWebSearchToolName(tc.name)
-        ? { type: 'web_search_preview' }
+        ? { type: 'web_search' }
         : { type: 'function', name: tc.name };
     default:
       return raw;
@@ -575,7 +575,7 @@ export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): Respon
       (t.type !== undefined && t.type.startsWith('web_search')) ||
       isWebSearchToolName(t.name)
     ) {
-      const converted: ResponsesTool = { type: 'web_search_preview' };
+      const converted: ResponsesTool = { type: 'web_search' };
       const allowedDomains = (t.allowed_domains ?? [])
         .map(normalizeWebSearchDomain)
         .filter((domain) => domain !== '');
