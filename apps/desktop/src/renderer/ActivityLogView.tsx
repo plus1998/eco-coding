@@ -82,6 +82,7 @@ import {
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
 } from "./activity-log";
+import { useLocalStreamProjection } from "./local-stream-projection";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -364,12 +365,13 @@ function ProjectionFeedLoading() {
 }
 
 export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogViewProps) {
-  if (!props.projection?.sourceEventCount) {
+  const projection = useLocalStreamProjection(props.projection);
+  if (!projection?.sourceEventCount) {
     return <ProjectionFeedLoading />;
   }
   return (
     <ProjectionActivityLogView
-      projection={props.projection}
+      projection={projection}
       {...(props.thread && { thread: props.thread })}
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}

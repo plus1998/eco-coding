@@ -1544,6 +1544,19 @@ export interface ThreadLiveEvent {
   apiError?: ThreadApiErrorInfo;
   runtimeConfig?: ThreadRuntimeConfig;
   tool?: ThreadRunToolMetadata;
+  /** Desktop-only unthrottled SDK stream overlay. Never forwarded through the event center. */
+  localStream?: ThreadLocalStreamUpdate;
+}
+
+export interface ThreadLocalStreamUpdate {
+  threadId: string;
+  streamKey: string;
+  text: string;
+  role: string;
+  channel: "message" | "thinking";
+  streaming: boolean;
+  observedAt: string;
+  agentId?: string;
 }
 
 export interface ThreadApiErrorInfo {

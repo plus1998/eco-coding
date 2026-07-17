@@ -401,7 +401,7 @@ import {
   listSdkSubagentActivityLines,
 } from "./sdk-session-activity.js";
 import { sdkActivityLineId } from "./sdk-session-activity.js";
-import { SdkStreamActivityBridge } from "./sdk-stream-activity";
+import { type SdkLocalStreamUpdate, SdkStreamActivityBridge } from "./sdk-stream-activity";
 import {
   resolveSdkStreamPartialBillingOrchestration,
   type SdkStreamPartialBillingRequest,
@@ -587,6 +587,11 @@ function broadcastGitCommitMessageDelta(requestId: string, text: string): void {
   const payload = { requestId, text };
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.gitGenerateCommitMessageDelta, payload);
+  });
+}
+function broadcastLocalThreadStreamUpdate(payload: ThreadLiveEvent): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
 }
 function broadcastPackageScriptTerminalLaunch(payload: {
@@ -6424,6 +6429,25 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       ...(plannerSessionId && { plannerSessionId }),
       metricsRegistry: subagentMetricsRegistry,
     }) ?? streamAttributedAgentId;
+  const onLocalStreamUpdate = (update: SdkLocalStreamUpdate): void => {
+    broadcastLocalThreadStreamUpdate({
+      threadId: update.threadId,
+      type: "thread.local_stream_updated",
+      message: update.message,
+      role: update.role as RuntimeAgentRole,
+      stream: update.stream,
+      localStream: {
+        threadId: update.threadId,
+        streamKey: update.streamKey,
+        text: update.message,
+        role: update.role,
+        channel: update.role === "thinking" ? "thinking" : "message",
+        streaming: update.stream,
+        observedAt: new Date().toISOString(),
+        ...(update.agentId && { agentId: update.agentId }),
+      },
+    });
+  };
   sdkStreamBridge.handleEvent(
     threadId,
     event,
@@ -6480,12 +6504,11 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       }
     },
     undefined,
-    activityAgentId || sdkParentToolUseId
-      ? {
-          ...(activityAgentId && { activityAgentId }),
-          ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
-        }
-      : undefined,
+    {
+      ...(activityAgentId && { activityAgentId }),
+      ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
+      onLocalStreamUpdate,
+    },
   );
 }
 

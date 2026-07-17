@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { SdkStreamActivityBridge } from "../src/main/sdk-stream-activity";
 
-test("emits continuous SDK text during a rapid stream without waiting for a pause", async () => {
+test("emits every SDK text update locally while throttling the remote stream", async () => {
   const bridge = new SdkStreamActivityBridge();
-  const emitted: string[] = [];
+  const remote: string[] = [];
+  const local: string[] = [];
   const emit = (_threadId: string, _type: string, message: string, _role: string, stream: boolean) => {
     if (stream && message) {
-      emitted.push(message);
+      remote.push(message);
     }
   };
 
@@ -23,6 +24,14 @@ test("emits continuous SDK text during a rapid stream without waiting for a paus
       },
     },
     emit,
+    undefined,
+    {
+      onLocalStreamUpdate(update) {
+        if (update.stream && update.message) {
+          local.push(update.message);
+        }
+      },
+    },
   );
 
   for (const text of ["逐", "字", "输", "出", "正", "常"]) {
@@ -40,15 +49,22 @@ test("emits continuous SDK text during a rapid stream without waiting for a paus
         },
       },
       emit,
+      undefined,
+      {
+        onLocalStreamUpdate(update) {
+          if (update.stream && update.message) {
+            local.push(update.message);
+          }
+        },
+      },
     );
-    await Bun.sleep(15);
   }
 
-  expect(emitted.length).toBeGreaterThanOrEqual(1);
-  expect(emitted[0]?.length).toBeLessThan(6);
+  expect(local).toEqual(["逐", "逐字", "逐字输", "逐字输出", "逐字输出正", "逐字输出正常"]);
+  expect(remote).toEqual([]);
 
   await Bun.sleep(60);
-  expect(emitted.at(-1)).toBe("逐字输出正常");
+  expect(remote).toEqual(["逐字输出正常"]);
 });
 
 test("emits structured SDK tool metadata with tool started activity", () => {

@@ -17,13 +17,24 @@ import { classifySdkStreamMessageOrigin } from "./sdk-activity-origin.js";
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
 
-interface PendingStreamDelta {
+interface PendingRemoteStreamDelta {
   role: string;
   message: string;
   stream: boolean;
   agentId?: string;
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
   timer: ReturnType<typeof setTimeout> | null;
+}
+
+export interface SdkLocalStreamUpdate {
+  threadId: string;
+  streamKey: string;
+  type: string;
+  message: string;
+  role: string;
+  stream: boolean;
+  agentId?: string;
+  extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
 }
 
 export type SdkActivityEmit = (
@@ -36,10 +47,10 @@ export type SdkActivityEmit = (
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> },
 ) => void;
 
-const STREAM_THROTTLE_MS = 50;
+const REMOTE_STREAM_THROTTLE_MS = 50;
 
 export class SdkStreamActivityBridge {
-  private readonly pendingDeltas = new Map<string, PendingStreamDelta>();
+  private readonly pendingDeltas = new Map<string, PendingRemoteStreamDelta>();
   private readonly lastStreamLine = new Map<string, { role: string; message: string; agentId?: string }>();
   private readonly finalizedSdkMessageBlocks = new Set<string>();
 
@@ -70,7 +81,11 @@ export class SdkStreamActivityBridge {
     event: AgentEventLike,
     emit: SdkActivityEmit,
     emitUsage?: (threadId: string, event: AgentEventLike) => void,
-    options?: { activityAgentId?: string; parentToolUseId?: string },
+    options?: {
+      activityAgentId?: string;
+      parentToolUseId?: string;
+      onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
+    },
   ): void {
     const activityAgentId = options?.activityAgentId;
 
@@ -142,15 +157,27 @@ export class SdkStreamActivityBridge {
       this.flushPending(threadId, emit);
       const last = this.lastStreamLine.get(streamKey);
       const finalizedMessage = last?.message.trim() ? last.message : message;
+      const finalizedAgentId = last?.agentId ?? activityAgentId;
+      const finalizedExtras = mergeSdkActivityEmitExtras(finalizedMessage, undefined, event.payload);
       emit(
         threadId,
         event.type,
         finalizedMessage,
         last?.role ?? role,
         false,
-        last?.agentId ?? activityAgentId,
-        mergeSdkActivityEmitExtras(finalizedMessage, undefined, event.payload),
+        finalizedAgentId,
+        finalizedExtras,
       );
+      options?.onLocalStreamUpdate?.({
+        threadId,
+        streamKey,
+        type: event.type,
+        message: finalizedMessage,
+        role: last?.role ?? role,
+        stream: false,
+        ...(finalizedAgentId && { agentId: finalizedAgentId }),
+        ...(finalizedExtras && { extras: finalizedExtras }),
+      });
       this.lastStreamLine.delete(streamKey);
       if (stableSdkMessageBlock) {
         this.finalizedSdkMessageBlocks.add(stableSdkMessageBlock);
@@ -160,20 +187,23 @@ export class SdkStreamActivityBridge {
 
     if (event.payload && isEcoStreamPlaceholder(event.payload)) {
       this.flushPending(threadId, emit);
+      const placeholderExtras = mergeSdkActivityEmitExtras(message, undefined, event.payload);
       this.lastStreamLine.set(streamKey, {
         role,
         message: "",
         ...(activityAgentId && { agentId: activityAgentId }),
       });
-      emit(
+      emit(threadId, event.type, message, role, true, activityAgentId, placeholderExtras);
+      options?.onLocalStreamUpdate?.({
         threadId,
-        event.type,
+        streamKey,
+        type: event.type,
         message,
         role,
-        true,
-        activityAgentId,
-        mergeSdkActivityEmitExtras(message, undefined, event.payload),
-      );
+        stream: true,
+        ...(activityAgentId && { agentId: activityAgentId }),
+        ...(placeholderExtras && { extras: placeholderExtras }),
+      });
       return;
     }
 
@@ -186,7 +216,17 @@ export class SdkStreamActivityBridge {
         message: accumulated,
         ...(activityAgentId && { agentId: activityAgentId }),
       });
-      this.scheduleThrottledDelta(
+      options?.onLocalStreamUpdate?.({
+        threadId,
+        streamKey,
+        type: event.type,
+        message: accumulated,
+        role,
+        stream,
+        ...(activityAgentId && { agentId: activityAgentId }),
+        ...(emitExtras && { extras: emitExtras }),
+      });
+      this.scheduleRemoteDelta(
         threadId,
         streamKey,
         event.type,
@@ -219,7 +259,7 @@ export class SdkStreamActivityBridge {
     emit(threadId, event.type, message, role, stream, activityAgentId, emitExtras);
   }
 
-  private scheduleThrottledDelta(
+  private scheduleRemoteDelta(
     threadId: string,
     streamKey: string,
     type: string,
@@ -247,7 +287,7 @@ export class SdkStreamActivityBridge {
       }
       return;
     }
-    const pending: PendingStreamDelta = {
+    const pending: PendingRemoteStreamDelta = {
       role,
       message,
       stream,
@@ -256,7 +296,7 @@ export class SdkStreamActivityBridge {
       timer: setTimeout(() => {
         this.pendingDeltas.delete(streamKey);
         emit(threadId, type, pending.message, pending.role, pending.stream, pending.agentId, pending.extras);
-      }, STREAM_THROTTLE_MS),
+      }, REMOTE_STREAM_THROTTLE_MS),
     };
     this.pendingDeltas.set(streamKey, pending);
   }

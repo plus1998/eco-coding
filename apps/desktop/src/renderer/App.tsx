@@ -233,6 +233,10 @@ import {
 } from "./thread-follow-up-ui";
 import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import {
+  clearLocalStreamUpdates,
+  publishLocalStreamUpdate,
+} from "./local-stream-projection";
+import {
   buildThreadRunProjectionViewModel,
   isProjectionUserPromptItem,
   isThreadAutoCompactSuspended,
@@ -1073,9 +1077,25 @@ function App() {
 
       ensureThreadListed(event.threadId);
 
+      if (event.type === "thread.local_stream_updated" && event.localStream) {
+        publishLocalStreamUpdate(event.localStream);
+        return;
+      }
+
       if (event.type === "thread.deleted") {
+        clearLocalStreamUpdates(event.threadId);
         clearThreadClientState(event.threadId);
         return;
+      }
+
+      if (
+        event.type === "thread.failed" ||
+        event.type === "thread.execution_failed" ||
+        event.type === "thread.cancelled" ||
+        event.type === "thread.idle" ||
+        event.type === "thread.blocked"
+      ) {
+        clearLocalStreamUpdates(event.threadId);
       }
 
       if (event.type === "thread.run_projection_updated" && event.projection) {
@@ -1138,6 +1158,7 @@ function App() {
           void fetchApprovedPlanForThread(event.threadId);
         }
       } else if (event.type === "thread.completed") {
+        clearLocalStreamUpdates(event.threadId);
         clearPendingPlanForThread(event.threadId);
         if (
           !isThreadActivelyViewed(
@@ -4878,6 +4899,7 @@ function App() {
   }
 
   function clearThreadClientState(threadId: string) {
+    clearLocalStreamUpdates(threadId);
     clearComposerDraft(composerDraftsByKeyRef.current, `thread:${threadId}`);
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
     setUnreadThreadIds((current) => {
