@@ -88,6 +88,36 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite persists composer drafts and clears deleted thread drafts", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-composer-draft-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createConversationStore(databasePath);
+
+  store.saveComposerDraft("landing:/tmp/project", "draft on landing");
+  const reloaded = await createConversationStore(databasePath);
+  assert.equal(reloaded.getComposerDraft("landing:/tmp/project")?.prompt, "draft on landing");
+
+  const now = new Date().toISOString();
+  reloaded.saveThread({
+    id: "thr_composer_draft",
+    title: "Composer draft",
+    prompt: "initial",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ready",
+    createdAt: now,
+    updatedAt: now,
+  });
+  reloaded.saveComposerDraft("thread:thr_composer_draft", "thread draft");
+  assert.equal(reloaded.getComposerDraft("thread:thr_composer_draft")?.prompt, "thread draft");
+
+  reloaded.deleteThread("thr_composer_draft");
+  assert.equal(reloaded.getComposerDraft("thread:thr_composer_draft"), undefined);
+
+  reloaded.saveComposerDraft("landing:/tmp/project", "");
+  assert.equal(reloaded.getComposerDraft("landing:/tmp/project"), undefined);
+});
+
 test("Node SQLite persists reordered follow-ups", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-follow-up-reorder-");
   const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));

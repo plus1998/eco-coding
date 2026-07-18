@@ -33,6 +33,9 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
   expect(IPC_CHANNELS.threadUpdateRuntimeConfig).toBe("thread:update-runtime-config");
   expect(IPC_CHANNELS.threadGet).toBe("thread:get");
+  expect(IPC_CHANNELS.composerDraftGet).toBe("composer-draft:get");
+  expect(IPC_CHANNELS.composerDraftSave).toBe("composer-draft:save");
+  expect(IPC_CHANNELS.composerDraftDelete).toBe("composer-draft:delete");
   expect(IPC_CHANNELS.threadSessionBootstrap).toBe("thread:session-bootstrap");
   expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");
   expect(IPC_CHANNELS.threadRollbackTo).toBe("thread:rollback-to");
@@ -97,6 +100,7 @@ test("guards unknown channels", () => {
   expect(isKnownIpcChannel("workspace:open")).toBe(true);
   expect(isKnownIpcChannel("model-settings:get")).toBe(true);
   expect(isKnownIpcChannel("thread:start")).toBe(true);
+  expect(isKnownIpcChannel("composer-draft:save")).toBe(true);
   expect(isKnownIpcChannel("thread:follow-up-enqueue")).toBe(true);
   expect(isKnownIpcChannel("thread:follow-up-escalate")).toBe(true);
   expect(isKnownIpcChannel("terminal:spawn")).toBe(true);

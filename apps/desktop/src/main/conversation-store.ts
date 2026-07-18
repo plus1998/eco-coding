@@ -9,6 +9,7 @@ import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
 import type {
   CoderTodoItem,
   CoderTodoStatus,
+  ComposerDraftRecord,
   PromptImageAttachment,
   RuntimeAgentRole,
   ThreadActivityLine,
@@ -473,6 +474,12 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_threads_workspace_updated
         ON threads(workspace_path, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS composer_drafts (
+        context_key TEXT PRIMARY KEY,
+        prompt TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS thread_core_sessions (
         thread_id TEXT PRIMARY KEY,
@@ -1730,6 +1737,7 @@ export class ConversationStore {
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      this.deleteComposerDraft(`thread:${id}`);
       for (const table of threadOwnedTables) {
         this.db.prepare(`DELETE FROM ${table} WHERE thread_id = ?`).run(id);
       }
@@ -3407,6 +3415,49 @@ export class ConversationStore {
       .get(threadId) as ThreadRow | undefined;
 
     return row ? rowToThread(row) : undefined;
+  }
+
+  getComposerDraft(contextKey: string): ComposerDraftRecord | undefined {
+    const key = contextKey.trim();
+    if (!key) {
+      return undefined;
+    }
+    const row = this.db
+      .prepare(`SELECT context_key, prompt, updated_at FROM composer_drafts WHERE context_key = ?`)
+      .get(key) as { context_key: string; prompt: string; updated_at: string } | undefined;
+    return row
+      ? { contextKey: row.context_key, prompt: row.prompt, updatedAt: row.updated_at }
+      : undefined;
+  }
+
+  saveComposerDraft(contextKey: string, prompt: string): ComposerDraftRecord | undefined {
+    const key = contextKey.trim();
+    if (!key) {
+      throw new Error("Composer draft context key is required.");
+    }
+    if (prompt.length === 0) {
+      this.deleteComposerDraft(key);
+      return undefined;
+    }
+    const updatedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO composer_drafts (context_key, prompt, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(context_key) DO UPDATE SET
+           prompt = excluded.prompt,
+           updated_at = excluded.updated_at`,
+      )
+      .run(key, prompt, updatedAt);
+    return { contextKey: key, prompt, updatedAt };
+  }
+
+  deleteComposerDraft(contextKey: string): boolean {
+    const key = contextKey.trim();
+    if (!key) {
+      return false;
+    }
+    return Number(this.db.prepare(`DELETE FROM composer_drafts WHERE context_key = ?`).run(key).changes) > 0;
   }
 
   private activityLineMatchesForMerge(

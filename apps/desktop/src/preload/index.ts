@@ -31,6 +31,8 @@ import {
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
+  type ComposerDraftRecord,
+  type ComposerDraftSaveRequest,
   type CoreAvailabilitySnapshot,
   type FileCheckpointRecord,
   type GitCheckoutBranchRequest,
@@ -617,6 +619,15 @@ const api = {
   },
   getThread(threadId: string): Promise<ThreadSummary | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGet, threadId);
+  },
+  getComposerDraft(contextKey: string): Promise<ComposerDraftRecord | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.composerDraftGet, contextKey);
+  },
+  saveComposerDraft(request: ComposerDraftSaveRequest): Promise<ComposerDraftRecord | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.composerDraftSave, request);
+  },
+  deleteComposerDraft(contextKey: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.composerDraftDelete, contextKey);
   },
   sessionBootstrap(threadId: string): Promise<ThreadSessionBootstrapResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSessionBootstrap, threadId);

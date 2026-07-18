@@ -1658,6 +1658,18 @@ function registerDesktopCommand<Args extends unknown[], Result>(
   ipcMain.handle(channel, async (_event, ...args: unknown[]) => handler(...(args as Args)));
 }
 
+function parseComposerDraftContextKey(value: unknown): string {
+  const key = typeof value === "string" ? value.trim() : "";
+  if (
+    !key ||
+    key.length > 4_096 ||
+    (!key.startsWith("thread:") && !key.startsWith("landing:"))
+  ) {
+    throw new Error("Invalid composer draft context key.");
+  }
+  return key;
+}
+
 type AppThemeSource = "dark" | "light" | "system";
 
 function normalizeAppThemeSource(value: unknown): AppThemeSource {
@@ -1996,6 +2008,29 @@ function registerIpcHandlers(): void {
     }
     const thread = conversationStore.getThread(id);
     return thread ? ensureThreadRuntimeConfig(thread) : undefined;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.composerDraftGet, async (contextKey: unknown) => {
+    return conversationStore.getComposerDraft(parseComposerDraftContextKey(contextKey));
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.composerDraftSave, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid composer draft save request.");
+    }
+    const record = payload as { contextKey?: unknown; prompt?: unknown };
+    if (typeof record.prompt !== "string") {
+      throw new Error("Composer draft prompt must be a string.");
+    }
+    return conversationStore.saveComposerDraft(
+      parseComposerDraftContextKey(record.contextKey),
+      record.prompt,
+    );
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.composerDraftDelete, async (contextKey: unknown) => {
+    conversationStore.deleteComposerDraft(parseComposerDraftContextKey(contextKey));
+    return { ok: true as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadSessionBootstrap, async (threadId: unknown) => {

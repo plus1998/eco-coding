@@ -563,6 +563,7 @@ const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
+const COMPOSER_DRAFT_SAVE_DEBOUNCE_MS = 250;
 const WORKSPACE_CARDS_PANEL_WIDTH_PX = 300;
 
 type ActivityFeedScrollJump = "bottom" | "top";
@@ -1916,9 +1917,13 @@ function App() {
   );
   const composerDraftsByKeyRef = useRef<Record<string, ComposerDraft>>({});
   const prevComposerContextKeyRef = useRef<string | undefined>(undefined);
+  const composerContextKeyRef = useRef(composerContextKey);
   const composerPromptRef = useRef(prompt);
   const composerAttachmentsRef = useRef(composerAttachments);
   const composerRewindTargetRef = useRef(composerRewindTarget);
+  const composerDraftLoadRequestRef = useRef(0);
+  const composerDraftSaveTimerRef = useRef<{ key: string; timer: number } | undefined>(undefined);
+  composerContextKeyRef.current = composerContextKey;
   composerPromptRef.current = prompt;
   composerAttachmentsRef.current = composerAttachments;
   composerRewindTargetRef.current = composerRewindTarget;
@@ -2749,6 +2754,35 @@ function App() {
       )
     : null;
 
+  function saveComposerDraftInBackground(contextKey: string, value: string): void {
+    if (typeof window.eco?.saveComposerDraft !== "function") {
+      return;
+    }
+    void window.eco.saveComposerDraft({ contextKey, prompt: value }).catch((caught) => {
+      console.error("[eco] composer draft save failed", caught);
+    });
+  }
+
+  function removeComposerDraft(contextKey: string | undefined): void {
+    clearComposerDraft(composerDraftsByKeyRef.current, contextKey);
+    if (!contextKey) {
+      return;
+    }
+    if (composerContextKeyRef.current === contextKey) {
+      composerPromptRef.current = "";
+    }
+    const pending = composerDraftSaveTimerRef.current;
+    if (pending?.key === contextKey) {
+      window.clearTimeout(pending.timer);
+      composerDraftSaveTimerRef.current = undefined;
+    }
+    if (typeof window.eco?.deleteComposerDraft === "function") {
+      void window.eco.deleteComposerDraft(contextKey).catch((caught) => {
+        console.error("[eco] composer draft delete failed", caught);
+      });
+    }
+  }
+
   const canSendFollowUp = Boolean(
     currentProjectPath &&
       activeThread &&
@@ -2794,13 +2828,16 @@ function App() {
         attachments: composerAttachmentsRef.current,
         ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
       });
+      saveComposerDraftInBackground(prevKey, composerPromptRef.current);
     }
 
     if (prevKey !== composerContextKey) {
       const draft = composerContextKey ? composerDraftsByKeyRef.current[composerContextKey] : undefined;
       const threadId = composerContextKey ? threadIdFromComposerContextKey(composerContextKey) : undefined;
+      const nextPrompt = draft?.prompt ?? "";
       setEditingFollowUpId(undefined);
-      setPrompt(draft?.prompt ?? "");
+      composerPromptRef.current = nextPrompt;
+      setPrompt(nextPrompt);
       setComposerAttachments(draft?.attachments ? [...draft.attachments] : []);
       setComposerRewindTarget(
         draft?.rewindTarget && (!threadId || draft.rewindTarget.threadId === threadId)
@@ -2809,8 +2846,79 @@ function App() {
       );
       setComposerImageNotice(undefined);
       prevComposerContextKeyRef.current = composerContextKey;
+
+      const requestId = ++composerDraftLoadRequestRef.current;
+      if (!draft && composerContextKey && typeof window.eco?.getComposerDraft === "function") {
+        void window.eco
+          .getComposerDraft(composerContextKey)
+          .then((persisted) => {
+            if (
+              requestId !== composerDraftLoadRequestRef.current ||
+              composerContextKeyRef.current !== composerContextKey ||
+              composerPromptRef.current !== nextPrompt ||
+              !persisted
+            ) {
+              return;
+            }
+            const restored: ComposerDraft = {
+              prompt: persisted.prompt,
+              attachments: [],
+            };
+            composerDraftsByKeyRef.current[composerContextKey] = restored;
+            composerPromptRef.current = persisted.prompt;
+            setPrompt(persisted.prompt);
+          })
+          .catch((caught) => {
+            console.error("[eco] composer draft load failed", caught);
+          });
+      }
     }
   }, [composerContextKey]);
+
+  useEffect(() => {
+    if (
+      !composerContextKey ||
+      prevComposerContextKeyRef.current !== composerContextKey ||
+      composerPromptRef.current !== prompt
+    ) {
+      return;
+    }
+    persistComposerDraftSnapshot(composerDraftsByKeyRef.current, composerContextKey, {
+      prompt,
+      attachments: composerAttachmentsRef.current,
+      ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
+    });
+    const pending = composerDraftSaveTimerRef.current;
+    if (pending) {
+      window.clearTimeout(pending.timer);
+    }
+    const timer = window.setTimeout(() => {
+      composerDraftSaveTimerRef.current = undefined;
+      saveComposerDraftInBackground(composerContextKey, prompt);
+    }, COMPOSER_DRAFT_SAVE_DEBOUNCE_MS);
+    composerDraftSaveTimerRef.current = { key: composerContextKey, timer };
+    return () => window.clearTimeout(timer);
+  }, [composerContextKey, prompt]);
+
+  useEffect(() => {
+    const flushComposerDraft = () => {
+      const contextKey = composerContextKeyRef.current;
+      if (contextKey) {
+        saveComposerDraftInBackground(contextKey, composerPromptRef.current);
+      }
+    };
+    const flushHiddenComposerDraft = () => {
+      if (document.visibilityState === "hidden") {
+        flushComposerDraft();
+      }
+    };
+    window.addEventListener("beforeunload", flushComposerDraft);
+    document.addEventListener("visibilitychange", flushHiddenComposerDraft);
+    return () => {
+      window.removeEventListener("beforeunload", flushComposerDraft);
+      document.removeEventListener("visibilitychange", flushHiddenComposerDraft);
+    };
+  }, []);
 
   const canStopThread =
     activeThread?.status === "running" ||
@@ -3779,7 +3887,7 @@ function App() {
           ...current,
           [activeThread.id]: sortThreadFollowUps(result.followUps),
         }));
-        clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
+        removeComposerDraft(composerContextKey);
         setPrompt("");
         setComposerRewindTarget(undefined);
         setComposerAttachments([]);
@@ -3825,7 +3933,7 @@ function App() {
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
         clearPendingPlanForThread(result.thread.id);
-        clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
+        removeComposerDraft(composerContextKey);
         setPrompt("");
         setComposerRewindTarget(undefined);
         setComposerAttachments([]);
@@ -3867,7 +3975,7 @@ function App() {
           setPromptCacheBaselineVersion((v) => v + 1);
         }
       }
-      clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
+      removeComposerDraft(composerContextKey);
       setPrompt("");
       setComposerRewindTarget(undefined);
       setComposerAttachments([]);
@@ -4983,7 +5091,7 @@ function App() {
 
   function clearThreadClientState(threadId: string) {
     clearLocalStreamUpdates(threadId);
-    clearComposerDraft(composerDraftsByKeyRef.current, `thread:${threadId}`);
+    removeComposerDraft(`thread:${threadId}`);
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
     setUnreadThreadIds((current) => {
       if (!current.has(threadId)) {
@@ -5071,10 +5179,7 @@ function App() {
 
   function startNewChat() {
     setComposerRoutePopoverOpen(false);
-    clearComposerDraft(
-      composerDraftsByKeyRef.current,
-      composerContextKeyFromParts(undefined, currentProjectPath),
-    );
+    removeComposerDraft(composerContextKeyFromParts(undefined, currentProjectPath));
     selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     setNewThreadCoreKind(workflowSettings.defaultCoreKind ?? "claude");
@@ -5654,6 +5759,7 @@ function App() {
                 ref={composerRef}
                 value={prompt}
                 onChange={(next) => {
+                  composerPromptRef.current = next;
                   setPrompt(next);
                   if (composerRoutePopoverOpen) {
                     setComposerRoutePopoverOpen(false);

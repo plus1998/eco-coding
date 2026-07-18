@@ -47,6 +47,9 @@ export const IPC_CHANNELS = {
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
   threadGet: "thread:get",
+  composerDraftGet: "composer-draft:get",
+  composerDraftSave: "composer-draft:save",
+  composerDraftDelete: "composer-draft:delete",
   threadSessionBootstrap: "thread:session-bootstrap",
   threadActivityList: "thread:activity-list",
   threadRunProjectionGet: "thread:run-projection-get",
@@ -1051,6 +1054,17 @@ export interface ThreadFollowUpMutationResult extends ThreadFollowUpListResult {
 
 export interface ThreadDeleteResult {
   ok: true;
+}
+
+export interface ComposerDraftRecord {
+  contextKey: string;
+  prompt: string;
+  updatedAt: string;
+}
+
+export interface ComposerDraftSaveRequest {
+  contextKey: string;
+  prompt: string;
 }
 
 export interface ThreadRollbackResult {
