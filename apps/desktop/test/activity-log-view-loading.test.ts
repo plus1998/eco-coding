@@ -50,10 +50,10 @@ function requestSpan(
   };
 }
 
-test("tool running status remains visible for at least 500ms", () => {
+test("tool running status remains visible for at least one second", () => {
   const running = resolveMinimumVisibleToolRunningState({
     nowMs: 1_000,
-    minimumMs: 500,
+    minimumMs: 1_000,
     summary: { label: "正在运行 git status", icon: "terminal" },
     lifecycle: "running",
     currentActionIdentity: "tool-a",
@@ -61,7 +61,7 @@ test("tool running status remains visible for at least 500ms", () => {
   });
   const completed = resolveMinimumVisibleToolRunningState({
     nowMs: 1_100,
-    minimumMs: 500,
+    minimumMs: 1_000,
     summary: { label: "已运行 git status", icon: "terminal" },
     lifecycle: "completed",
     currentActionIdentity: "tool-a",
@@ -70,11 +70,11 @@ test("tool running status remains visible for at least 500ms", () => {
 
   expect(completed.lifecycle).toBe("running");
   expect(completed.summary.label).toBe("正在运行 git status");
-  expect(completed.remainingMs).toBe(400);
+  expect(completed.remainingMs).toBe(900);
 
   const released = resolveMinimumVisibleToolRunningState({
-    nowMs: 1_500,
-    minimumMs: 500,
+    nowMs: 2_000,
+    minimumMs: 1_000,
     summary: { label: "已运行 git status", icon: "terminal" },
     lifecycle: "completed",
     currentActionIdentity: "tool-a",
@@ -87,7 +87,7 @@ test("tool running status remains visible for at least 500ms", () => {
 test("a newer overlapping tool skips the previous minimum running duration", () => {
   const running = resolveMinimumVisibleToolRunningState({
     nowMs: 1_000,
-    minimumMs: 500,
+    minimumMs: 1_000,
     summary: { label: "正在运行 git status", icon: "terminal" },
     lifecycle: "running",
     currentActionIdentity: "tool-a",
@@ -95,7 +95,7 @@ test("a newer overlapping tool skips the previous minimum running duration", () 
   });
   const newer = resolveMinimumVisibleToolRunningState({
     nowMs: 1_100,
-    minimumMs: 500,
+    minimumMs: 1_000,
     summary: { label: "已读取 README.md", icon: "file" },
     lifecycle: "completed",
     currentActionIdentity: "tool-b",

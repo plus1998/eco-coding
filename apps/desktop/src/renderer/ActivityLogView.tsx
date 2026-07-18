@@ -116,7 +116,7 @@ type ToolGroupDetailBlock = Extract<ActivityDetailBlock, { kind: "action" | "too
 const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
 const LIVE_DURATION_TICK_MS = 100;
-const TOOL_RUNNING_MIN_VISIBLE_MS = 500;
+const TOOL_RUNNING_MIN_VISIBLE_MS = 1_000;
 
 function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
