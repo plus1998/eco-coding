@@ -1835,7 +1835,7 @@ function resolveSubagentStatusBadge(
   if (status === "abandoned") {
     return { label: "已中止", tone: "abandoned" };
   }
-  return { label: "已完成", tone: "done" };
+  return { label: "", tone: "done" };
 }
 
 function resolveSubagentKindBadge(role: string): string {
@@ -1928,7 +1928,7 @@ function SubagentRunCardButton({
           <span className="subagent-run-title-trailing">
             {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
             {running ? <span className="subagent-run-loading" aria-hidden /> : null}
-            {!running ? (
+            {!running && statusBadge.label ? (
               <span className={`subagent-run-status-badge tone-${statusBadge.tone}`}>
                 {statusBadge.label}
               </span>

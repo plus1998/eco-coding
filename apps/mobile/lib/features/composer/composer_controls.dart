@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode_ui.dart';
@@ -290,7 +291,17 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
   }
 }
 
-class ComposerRouteSheet extends ConsumerWidget {
+enum _ComposerRouteCategory {
+  agent,
+  model,
+  thinking,
+  mcp,
+  skills,
+  profile,
+  subagents,
+}
+
+class ComposerRouteSheet extends ConsumerStatefulWidget {
   const ComposerRouteSheet({
     super.key,
     required this.fallbackConfig,
@@ -311,8 +322,26 @@ class ComposerRouteSheet extends ConsumerWidget {
   final ValueChanged<String>? onCoreKindChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final runtimeConfig = watchedComposerRuntimeConfig(ref, fallbackConfig);
+  ConsumerState<ComposerRouteSheet> createState() => _ComposerRouteSheetState();
+}
+
+class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
+  _ComposerRouteCategory _selectedCategory = _ComposerRouteCategory.agent;
+
+  ThreadRuntimeConfigInput get fallbackConfig => widget.fallbackConfig;
+  String get threadId => widget.threadId;
+  bool get canEdit => widget.canEdit;
+  ValueChanged<ThreadRuntimeConfigInput> get onChanged => widget.onChanged;
+  String get workspacePath => widget.workspacePath;
+  String? get coreKind => widget.coreKind;
+  ValueChanged<String>? get onCoreKindChanged => widget.onCoreKindChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final runtimeConfig = watchedComposerRuntimeConfig(
+      ref,
+      widget.fallbackConfig,
+    );
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
     final mcpServers =
@@ -326,12 +355,14 @@ class ComposerRouteSheet extends ConsumerWidget {
       profile: resolveThreadAgentProfile(modelSettings, runtimeConfig),
       remembered: workflow?.mcpServersEnabled,
     );
-    final skillsResult = workspacePath.isEmpty
+    final skillsResult = widget.workspacePath.isEmpty
         ? null
-        : ref.watch(composerSkillsProvider(workspacePath)).valueOrNull;
-    final projectSkillsSettings = workspacePath.isEmpty
+        : ref.watch(composerSkillsProvider(widget.workspacePath)).valueOrNull;
+    final projectSkillsSettings = widget.workspacePath.isEmpty
         ? null
-        : ref.watch(projectSkillsSettingsProvider(workspacePath)).valueOrNull;
+        : ref
+              .watch(projectSkillsSettingsProvider(widget.workspacePath))
+              .valueOrNull;
     final skills = skillsResult?.allSkills ?? const <SkillInfo>[];
     final skillsEnabled = _deriveComposerSkillsEnabled(
       skills,
@@ -353,254 +384,555 @@ class ComposerRouteSheet extends ConsumerWidget {
       }
     }
 
+    final categories = [
+      (
+        value: _ComposerRouteCategory.agent,
+        label: 'Agent',
+        summary: coreKind == 'codex' ? 'Codex' : 'Claude Code',
+        icon: EcoIcons.agent,
+      ),
+      (
+        value: _ComposerRouteCategory.model,
+        label: '模型',
+        summary: templateModel == null
+            ? '未配置'
+            : shortenModelId(
+                runtimeConfig.mainAgentModelOverride?.modelId ??
+                    templateModel.modelId,
+              ),
+        icon: EcoIcons.contextMemory,
+      ),
+      (
+        value: _ComposerRouteCategory.thinking,
+        label: '推理',
+        summary: templateModel == null
+            ? '未配置'
+            : _thinkingEffortLabel(
+                composerTemporaryModelEffort(
+                  runtimeConfig.mainAgentModelOverride,
+                  templateModel,
+                ),
+              ),
+        icon: EcoIcons.sparkles,
+      ),
+      (
+        value: _ComposerRouteCategory.mcp,
+        label: 'MCP',
+        summary:
+            '${mcpEnabledSettings.values.where((value) => value).length}/${enabledMcpServers.length}',
+        icon: EcoIcons.mcp,
+      ),
+      (
+        value: _ComposerRouteCategory.skills,
+        label: 'Skills',
+        summary:
+            '${skillsEnabled.values.where((value) => value).length}/${skills.length}',
+        icon: EcoIcons.todos,
+      ),
+      (
+        value: _ComposerRouteCategory.profile,
+        label: '方案',
+        summary: profile?.name ?? '未配置',
+        icon: EcoIcons.profile,
+      ),
+      (
+        value: _ComposerRouteCategory.subagents,
+        label: '子代理',
+        summary: _firstEnabledSubagentLabel(runtimeConfig, profile),
+        icon: EcoIcons.subagents,
+      ),
+    ];
+    final selected = categories.firstWhere(
+      (category) => category.value == _selectedCategory,
+    );
+
     return EcoSheetScaffold(
       title: '方案与编排',
-      subtitle: '统一配置运行核心、智能体方案与工具',
-      maxHeightFactor: 0.82,
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.only(bottom: 8),
+      subtitle: '配置仅作用于当前会话',
+      maxHeightFactor: 0.86,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (coreKind != null)
-            EcoGroupedSection(
-              label: '运行核心',
-              topSpacing: 4,
-              footer: onCoreKindChanged == null ? '当前会话的运行核心已锁定' : null,
-              child: Column(
-                children: [
-                  for (var i = 0; i < _coreOptions.length; i++) ...[
-                    if (i > 0) const EcoGroupedDivider(indent: 52),
-                    EcoSheetOptionTile(
-                      leading: Icon(
-                        _coreOptions[i].icon,
-                        size: 22,
-                        color: _coreOptions[i].value == coreKind
-                            ? ecoColors(context).accent
-                            : ecoColors(context).textMuted,
-                      ),
-                      title: _coreOptions[i].label,
-                      selected: _coreOptions[i].value == coreKind,
-                      enabled: canEdit && onCoreKindChanged != null,
-                      onTap: !canEdit || onCoreKindChanged == null
-                          ? null
-                          : () => onCoreKindChanged!(_coreOptions[i].value),
-                    ),
-                  ],
-                ],
-              ),
+          SizedBox(
+            height: 76,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+              itemCount: categories.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final category = categories[index];
+                return _ComposerRouteCategoryTile(
+                  label: category.label,
+                  icon: category.icon,
+                  selected: category.value == _selectedCategory,
+                  onTap: () {
+                    if (category.value == _selectedCategory) return;
+                    HapticFeedback.selectionClick();
+                    setState(() => _selectedCategory = category.value);
+                  },
+                );
+              },
             ),
-          if (profiles.isNotEmpty)
-            EcoGroupedSection(
-              label: '方案',
-              topSpacing: coreKind == null ? 4 : 20,
-              child: Column(
-                children: [
-                  for (var i = 0; i < profiles.length; i++) ...[
-                    if (i > 0) const EcoGroupedDivider(indent: 16),
-                    EcoSheetOptionTile(
-                      title: profiles[i].name,
-                      selected: profiles[i].id == selectedId,
-                      enabled: canEdit,
-                      onTap: !canEdit
-                          ? null
-                          : () {
-                              persistRuntimeConfig(
-                                ref,
-                                threadId: threadId,
-                                config: buildRuntimeConfigForProfile(
-                                  profile: profiles[i],
-                                  runtimeConfig: runtimeConfig,
-                                  servers: mcpServers,
-                                  remembered: workflow?.mcpServersEnabled,
-                                ),
-                                onChanged: onChanged,
-                              );
-                              Navigator.pop(context);
-                            },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          if (templateModel != null && modelProvider?.enabled == true)
-            _ComposerTemporaryModelSection(
-              runtimeConfig: runtimeConfig,
-              threadId: threadId,
-              canEdit: canEdit,
-              onChanged: onChanged,
-              provider: modelProvider!,
-              templateModel: templateModel,
-            ),
-          EcoGroupedSection(
-            label: '子代理',
-            topSpacing: profiles.isEmpty && coreKind == null ? 4 : 20,
-            footer: canEdit ? null : '当前会话不可编辑编排',
-            child: Column(
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            child: Row(
               children: [
-                EcoGroupedTile(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '主 Agent',
-                              style: Theme.of(context).textTheme.bodyLarge
-                                  ?.copyWith(fontSize: 17, letterSpacing: -0.2),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '始终启用',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: ecoColors(context).textMuted,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: ecoColors(context).statusAllowBg,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Text(
-                            '启用',
-                            style: TextStyle(
-                              color: ecoColors(context).statusAllowText,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                Expanded(
+                  child: Text(
+                    selected.label,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.25,
+                    ),
                   ),
                 ),
-                const EcoGroupedDivider(indent: 16),
-                _ComposerSubagentSwitchList(
-                  fallbackConfig: fallbackConfig,
-                  threadId: threadId,
-                  profile: profile,
-                  canEdit: canEdit,
-                  onChanged: onChanged,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 180),
+                  child: Text(
+                    selected.summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: ecoColors(context).textMuted,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          if (enabledMcpServers.isNotEmpty)
-            EcoGroupedSection(
-              label: 'MCP',
-              topSpacing: 20,
-              footer: canEdit ? '关闭后当前会话不再调用该服务器工具' : null,
-              child: Column(
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
+              child: ListView(
+                key: ValueKey(_selectedCategory),
+                padding: const EdgeInsets.only(bottom: 8),
                 children: [
-                  for (var i = 0; i < enabledMcpServers.length; i++) ...[
-                    if (i > 0) const EcoGroupedDivider(indent: 16),
-                    Builder(
-                      builder: (context) {
-                        final server = enabledMcpServers[i];
-                        final serverKey = sanitizeMcpServerName(server.name);
-                        final enabled = mcpEnabledSettings[serverKey] ?? false;
-                        return EcoSheetSwitchTile(
-                          title: server.name,
-                          subtitle: server.transport,
-                          value: enabled,
-                          enabled: canEdit,
-                          onChanged: !canEdit
-                              ? null
-                              : (value) async {
-                                  final nextSettings = Map<String, bool>.from(
-                                    mcpEnabledSettings,
-                                  )..[serverKey] = value;
-                                  persistRuntimeConfig(
-                                    ref,
-                                    threadId: threadId,
-                                    config: runtimeConfig.copyWith(
-                                      mcpServersEnabled: nextSettings,
+                  if (_selectedCategory == _ComposerRouteCategory.agent &&
+                      coreKind != null)
+                    EcoGroupedSection(
+                      label: '运行核心',
+                      topSpacing: 4,
+                      footer: onCoreKindChanged == null ? '当前会话的运行核心已锁定' : null,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < _coreOptions.length; i++) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 52),
+                            EcoSheetOptionTile(
+                              leading: Icon(
+                                _coreOptions[i].icon,
+                                size: 22,
+                                color: _coreOptions[i].value == coreKind
+                                    ? ecoColors(context).accent
+                                    : ecoColors(context).textMuted,
+                              ),
+                              title: _coreOptions[i].label,
+                              selected: _coreOptions[i].value == coreKind,
+                              enabled: canEdit && onCoreKindChanged != null,
+                              onTap: !canEdit || onCoreKindChanged == null
+                                  ? null
+                                  : () => onCoreKindChanged!(
+                                      _coreOptions[i].value,
                                     ),
-                                    onChanged: onChanged,
-                                  );
-                                  await persistComposerMcpWorkflowDefaults(
-                                    ref,
-                                    mcpServersEnabled: nextSettings,
-                                  );
-                                },
-                        );
-                      },
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ],
+                  if (_selectedCategory == _ComposerRouteCategory.profile &&
+                      profiles.isNotEmpty)
+                    EcoGroupedSection(
+                      label: '方案',
+                      topSpacing: coreKind == null ? 4 : 20,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < profiles.length; i++) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 16),
+                            EcoSheetOptionTile(
+                              title: profiles[i].name,
+                              selected: profiles[i].id == selectedId,
+                              enabled: canEdit,
+                              onTap: !canEdit
+                                  ? null
+                                  : () {
+                                      persistRuntimeConfig(
+                                        ref,
+                                        threadId: threadId,
+                                        config: buildRuntimeConfigForProfile(
+                                          profile: profiles[i],
+                                          runtimeConfig: runtimeConfig,
+                                          servers: mcpServers,
+                                          remembered:
+                                              workflow?.mcpServersEnabled,
+                                        ),
+                                        onChanged: onChanged,
+                                      );
+                                      Navigator.pop(context);
+                                    },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  if ((_selectedCategory == _ComposerRouteCategory.model ||
+                          _selectedCategory ==
+                              _ComposerRouteCategory.thinking) &&
+                      templateModel != null &&
+                      modelProvider?.enabled == true)
+                    _ComposerTemporaryModelSection(
+                      showModel:
+                          _selectedCategory == _ComposerRouteCategory.model,
+                      showThinking:
+                          _selectedCategory == _ComposerRouteCategory.thinking,
+                      runtimeConfig: runtimeConfig,
+                      threadId: threadId,
+                      canEdit: canEdit,
+                      onChanged: onChanged,
+                      provider: modelProvider!,
+                      templateModel: templateModel,
+                    ),
+                  if (_selectedCategory == _ComposerRouteCategory.subagents)
+                    EcoGroupedSection(
+                      label: '子代理',
+                      topSpacing: profiles.isEmpty && coreKind == null ? 4 : 20,
+                      footer: canEdit ? null : '当前会话不可编辑编排',
+                      child: Column(
+                        children: [
+                          EcoGroupedTile(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '主 Agent',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyLarge
+                                            ?.copyWith(
+                                              fontSize: 17,
+                                              letterSpacing: -0.2,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '始终启用',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: ecoColors(
+                                                context,
+                                              ).textMuted,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: ecoColors(context).statusAllowBg,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    child: Text(
+                                      '启用',
+                                      style: TextStyle(
+                                        color: ecoColors(
+                                          context,
+                                        ).statusAllowText,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const EcoGroupedDivider(indent: 16),
+                          _ComposerSubagentSwitchList(
+                            fallbackConfig: fallbackConfig,
+                            threadId: threadId,
+                            profile: profile,
+                            canEdit: canEdit,
+                            onChanged: onChanged,
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_selectedCategory == _ComposerRouteCategory.mcp &&
+                      enabledMcpServers.isNotEmpty)
+                    EcoGroupedSection(
+                      label: 'MCP',
+                      topSpacing: 20,
+                      footer: canEdit ? '关闭后当前会话不再调用该服务器工具' : null,
+                      child: Column(
+                        children: [
+                          for (
+                            var i = 0;
+                            i < enabledMcpServers.length;
+                            i++
+                          ) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 16),
+                            Builder(
+                              builder: (context) {
+                                final server = enabledMcpServers[i];
+                                final serverKey = sanitizeMcpServerName(
+                                  server.name,
+                                );
+                                final enabled =
+                                    mcpEnabledSettings[serverKey] ?? false;
+                                return EcoSheetSwitchTile(
+                                  title: server.name,
+                                  subtitle: server.transport,
+                                  value: enabled,
+                                  enabled: canEdit,
+                                  onChanged: !canEdit
+                                      ? null
+                                      : (value) async {
+                                          final nextSettings =
+                                              Map<String, bool>.from(
+                                                mcpEnabledSettings,
+                                              )..[serverKey] = value;
+                                          persistRuntimeConfig(
+                                            ref,
+                                            threadId: threadId,
+                                            config: runtimeConfig.copyWith(
+                                              mcpServersEnabled: nextSettings,
+                                            ),
+                                            onChanged: onChanged,
+                                          );
+                                          await persistComposerMcpWorkflowDefaults(
+                                            ref,
+                                            mcpServersEnabled: nextSettings,
+                                          );
+                                        },
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  if (_selectedCategory == _ComposerRouteCategory.agent &&
+                      coreKind == null)
+                    const _ComposerRouteEmptyState(
+                      message: '当前会话未提供可切换的 Agent',
+                    ),
+                  if (_selectedCategory == _ComposerRouteCategory.model &&
+                      (templateModel == null || modelProvider?.enabled != true))
+                    const _ComposerRouteEmptyState(message: '当前方案未配置可切换模型'),
+                  if (_selectedCategory == _ComposerRouteCategory.thinking &&
+                      (templateModel == null || modelProvider?.enabled != true))
+                    const _ComposerRouteEmptyState(message: '当前方案未配置推理强度'),
+                  if (_selectedCategory == _ComposerRouteCategory.profile &&
+                      profiles.isEmpty)
+                    const _ComposerRouteEmptyState(message: '暂无可用方案'),
+                  if (_selectedCategory == _ComposerRouteCategory.mcp &&
+                      enabledMcpServers.isEmpty)
+                    const _ComposerRouteEmptyState(message: '未配置 MCP 服务器'),
+                  if (_selectedCategory == _ComposerRouteCategory.skills &&
+                      skills.isEmpty)
+                    const _ComposerRouteEmptyState(message: '当前项目没有可用 Skills'),
+                  if (_selectedCategory == _ComposerRouteCategory.skills &&
+                      skills.isNotEmpty)
+                    EcoGroupedSection(
+                      label: 'Skills',
+                      topSpacing: 20,
+                      footer: canEdit ? '按需启用当前项目可用的 Skills' : null,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < skills.length; i++) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 16),
+                            Builder(
+                              builder: (context) {
+                                final skill = skills[i];
+                                final key = skill.settingsId;
+                                final enabled = skillsEnabled[key] ?? false;
+                                return EcoSheetSwitchTile(
+                                  title: skill.name,
+                                  subtitle: skill.source == 'project'
+                                      ? '项目 · ${skill.layout}'
+                                      : '用户 · ${skill.layout}',
+                                  value: enabled,
+                                  enabled: canEdit,
+                                  onChanged: !canEdit
+                                      ? null
+                                      : (value) async {
+                                          final nextSettings =
+                                              Map<String, bool>.from(
+                                                skillsEnabled,
+                                              )..[key] = value;
+                                          persistRuntimeConfig(
+                                            ref,
+                                            threadId: threadId,
+                                            config: runtimeConfig.copyWith(
+                                              skillsEnabled: nextSettings,
+                                            ),
+                                            onChanged: onChanged,
+                                          );
+                                          if (workspacePath.isNotEmpty) {
+                                            final rpc = ref.read(
+                                              desktopRpcProvider,
+                                            );
+                                            await rpc
+                                                ?.saveProjectSkillsSettings(
+                                                  ProjectSkillsSettingsSnapshot(
+                                                    workspacePath:
+                                                        workspacePath,
+                                                    enabledByPath: nextSettings,
+                                                  ),
+                                                );
+                                            ref.invalidate(
+                                              projectSkillsSettingsProvider(
+                                                workspacePath,
+                                              ),
+                                            );
+                                          }
+                                        },
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
-          if (skills.isNotEmpty)
-            EcoGroupedSection(
-              label: 'Skills',
-              topSpacing: 20,
-              footer: canEdit ? '按需启用当前项目可用的 Skills' : null,
-              child: Column(
-                children: [
-                  for (var i = 0; i < skills.length; i++) ...[
-                    if (i > 0) const EcoGroupedDivider(indent: 16),
-                    Builder(
-                      builder: (context) {
-                        final skill = skills[i];
-                        final key = skill.settingsId;
-                        final enabled = skillsEnabled[key] ?? false;
-                        return EcoSheetSwitchTile(
-                          title: skill.name,
-                          subtitle: skill.source == 'project'
-                              ? '项目 · ${skill.layout}'
-                              : '用户 · ${skill.layout}',
-                          value: enabled,
-                          enabled: canEdit,
-                          onChanged: !canEdit
-                              ? null
-                              : (value) async {
-                                  final nextSettings = Map<String, bool>.from(
-                                    skillsEnabled,
-                                  )..[key] = value;
-                                  persistRuntimeConfig(
-                                    ref,
-                                    threadId: threadId,
-                                    config: runtimeConfig.copyWith(
-                                      skillsEnabled: nextSettings,
-                                    ),
-                                    onChanged: onChanged,
-                                  );
-                                  if (workspacePath.isNotEmpty) {
-                                    final rpc = ref.read(desktopRpcProvider);
-                                    await rpc?.saveProjectSkillsSettings(
-                                      ProjectSkillsSettingsSnapshot(
-                                        workspacePath: workspacePath,
-                                        enabledByPath: nextSettings,
-                                      ),
-                                    );
-                                    ref.invalidate(
-                                      projectSkillsSettingsProvider(
-                                        workspacePath,
-                                      ),
-                                    );
-                                  }
-                                },
-                        );
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
+          ),
         ],
       ),
     );
   }
+}
+
+class _ComposerRouteEmptyState extends StatelessWidget {
+  const _ComposerRouteEmptyState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 16, 0),
+      child: Text(
+        message,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: ecoColors(context).textMuted),
+      ),
+    );
+  }
+}
+
+class _ComposerRouteCategoryTile extends StatelessWidget {
+  const _ComposerRouteCategoryTile({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ecoColors(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: AnimatedScale(
+        scale: selected ? 1 : 0.98,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        child: Material(
+          color: selected ? colors.accentSoft : colors.cardSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              width: 0.5,
+              color: selected
+                  ? colors.accent.withValues(alpha: 0.3)
+                  : colors.cardSurfaceBorder,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: 74,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 20,
+                      color: selected ? colors.accent : colors.textSecondary,
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: selected ? colors.accent : colors.textPrimary,
+                        fontSize: 12,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _thinkingEffortLabel(String? effort) {
+  final value = effort ?? 'off';
+  for (final option in _thinkingEffortOptions) {
+    if (option.value == value) return option.label;
+  }
+  return value;
+}
+
+String _firstEnabledSubagentLabel(
+  ThreadRuntimeConfigInput runtimeConfig,
+  OrchestrationProfile? profile,
+) {
+  for (final role in configuredOrchestrationSubagentRoles(profile)) {
+    if (isRuntimeSubagentEnabled(runtimeConfig.subagentEnabled, role)) {
+      return _subagentRoleLabels[role] ?? role;
+    }
+  }
+  return '未启用';
 }
 
 class _ComposerTemporaryModelSection extends ConsumerWidget {
@@ -611,6 +943,8 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
     required this.onChanged,
     required this.provider,
     required this.templateModel,
+    this.showModel = true,
+    this.showThinking = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -619,6 +953,8 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ModelProviderView provider;
   final OrchestrationModelRef templateModel;
+  final bool showModel;
+  final bool showThinking;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -675,102 +1011,108 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
 
     return Column(
       children: [
-        EcoGroupedSection(
-          label: '模型',
-          topSpacing: 20,
-          footer: canEdit ? '仅显示当前方案 Provider 的候选模型' : '当前会话不可切换模型',
-          child: Column(
-            children: [
-              EcoSheetOptionTile(
-                title: '跟随方案',
-                subtitle: templateModel.modelId,
-                selected: override == null,
-                enabled: canEdit,
-                onTap: !canEdit ? null : () => selectOverride(null),
-              ),
-              if (candidates.isLoading) ...[
-                const EcoGroupedDivider(indent: 16),
-                const EcoGroupedTile(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 2),
-                    child: LinearProgressIndicator(minHeight: 2),
-                  ),
+        if (showModel)
+          EcoGroupedSection(
+            label: '模型',
+            topSpacing: 20,
+            footer: canEdit ? '仅显示当前方案 Provider 的候选模型' : '当前会话不可切换模型',
+            child: Column(
+              children: [
+                EcoSheetOptionTile(
+                  title: '跟随方案',
+                  subtitle: templateModel.modelId,
+                  selected: override == null,
+                  enabled: canEdit,
+                  onTap: !canEdit ? null : () => selectOverride(null),
                 ),
-              ] else if (candidates.hasError) ...[
-                const EcoGroupedDivider(indent: 16),
-                EcoGroupedTile(
-                  child: Text(
-                    '候选模型加载失败',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).danger,
+                if (candidates.isLoading) ...[
+                  const EcoGroupedDivider(indent: 16),
+                  const EcoGroupedTile(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 2),
+                      child: LinearProgressIndicator(minHeight: 2),
                     ),
                   ),
-                ),
-              ] else
-                for (final option in options.where(
-                  (option) => !composerTemporaryModelMatchesTemplate(
-                    option,
-                    templateModel,
-                  ),
-                )) ...[
+                ] else if (candidates.hasError) ...[
                   const EcoGroupedDivider(indent: 16),
+                  EcoGroupedTile(
+                    child: Text(
+                      '候选模型加载失败',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: ecoColors(context).danger,
+                      ),
+                    ),
+                  ),
+                ] else
+                  for (final option in options.where(
+                    (option) => !composerTemporaryModelMatchesTemplate(
+                      option,
+                      templateModel,
+                    ),
+                  )) ...[
+                    const EcoGroupedDivider(indent: 16),
+                    EcoSheetOptionTile(
+                      title: option.displayName?.isNotEmpty == true
+                          ? option.displayName!
+                          : shortenModelId(option.modelId),
+                      subtitle: option.displayName?.isNotEmpty == true
+                          ? option.modelId
+                          : provider.name,
+                      selected: composerTemporaryModelSelected(
+                        override,
+                        option,
+                      ),
+                      enabled: canEdit,
+                      onTap: !canEdit
+                          ? null
+                          : () => selectOverride(
+                              buildComposerTemporaryModelOverride(
+                                model: option,
+                                thinkingEffort:
+                                    option.supportsReasoning == false
+                                    ? 'off'
+                                    : currentEffort,
+                                templateModel: templateModel,
+                              ),
+                            ),
+                    ),
+                  ],
+              ],
+            ),
+          ),
+        if (showThinking)
+          EcoGroupedSection(
+            label: '推理强度',
+            topSpacing: 20,
+            footer: reasoningUnavailable ? '当前模型不支持推理' : '仅影响当前会话',
+            child: Column(
+              children: [
+                for (var i = 0; i < _thinkingEffortOptions.length; i++) ...[
+                  if (i > 0) const EcoGroupedDivider(indent: 16),
                   EcoSheetOptionTile(
-                    title: option.displayName?.isNotEmpty == true
-                        ? option.displayName!
-                        : shortenModelId(option.modelId),
-                    subtitle: option.displayName?.isNotEmpty == true
-                        ? option.modelId
-                        : provider.name,
-                    selected: composerTemporaryModelSelected(override, option),
-                    enabled: canEdit,
-                    onTap: !canEdit
+                    title: _thinkingEffortOptions[i].label,
+                    selected: selectedEffort == _thinkingEffortOptions[i].value,
+                    enabled:
+                        canEdit &&
+                        (!reasoningUnavailable ||
+                            _thinkingEffortOptions[i].value == 'off'),
+                    onTap:
+                        !canEdit ||
+                            (reasoningUnavailable &&
+                                _thinkingEffortOptions[i].value != 'off')
                         ? null
                         : () => selectOverride(
                             buildComposerTemporaryModelOverride(
-                              model: option,
-                              thinkingEffort: option.supportsReasoning == false
-                                  ? 'off'
-                                  : currentEffort,
+                              model: currentModel!,
+                              thinkingEffort: _thinkingEffortOptions[i].value,
                               templateModel: templateModel,
                             ),
                           ),
                   ),
                 ],
-            ],
-          ),
-        ),
-        EcoGroupedSection(
-          label: '推理强度',
-          topSpacing: 20,
-          footer: reasoningUnavailable ? '当前模型不支持推理' : '仅影响当前会话',
-          child: Column(
-            children: [
-              for (var i = 0; i < _thinkingEffortOptions.length; i++) ...[
-                if (i > 0) const EcoGroupedDivider(indent: 16),
-                EcoSheetOptionTile(
-                  title: _thinkingEffortOptions[i].label,
-                  selected: selectedEffort == _thinkingEffortOptions[i].value,
-                  enabled:
-                      canEdit &&
-                      (!reasoningUnavailable ||
-                          _thinkingEffortOptions[i].value == 'off'),
-                  onTap:
-                      !canEdit ||
-                          (reasoningUnavailable &&
-                              _thinkingEffortOptions[i].value != 'off')
-                      ? null
-                      : () => selectOverride(
-                          buildComposerTemporaryModelOverride(
-                            model: currentModel!,
-                            thinkingEffort: _thinkingEffortOptions[i].value,
-                            templateModel: templateModel,
-                          ),
-                        ),
-                ),
               ],
-            ],
+            ),
           ),
-        ),
       ],
     );
   }
