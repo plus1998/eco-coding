@@ -45,6 +45,7 @@ import {
 } from "react";
 import {
   activityLabelIncludesAgentRole,
+  clampActivityPreviewLine,
   isRedundantAgentModelShort,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
@@ -77,6 +78,7 @@ import {
   type ActivityActionIcon,
   type ActivityDetailBlock,
   formatDuration,
+  iconForToolName,
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
 } from "./activity-log";
@@ -109,6 +111,7 @@ type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewind
 type OpenSubagentHandler = (agentId: string) => void;
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
 type ProjectionRequestSpansById = Map<string, ProjectionRequestSpan>;
+type ToolGroupDetailBlock = Extract<ActivityDetailBlock, { kind: "action" | "tool-failed" }>;
 
 const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
@@ -737,7 +740,8 @@ function ProjectionToolGroupEntry({
       entry.entries
         .map((child) => projectionItemToDetailBlock(child.item))
         .filter(
-          (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block?.kind === "action",
+          (block): block is ToolGroupDetailBlock =>
+            block?.kind === "action" || block?.kind === "tool-failed",
         ),
     [entry.entries],
   );
@@ -817,10 +821,44 @@ function ProjectionToolGroupChildEntry({
   );
 }
 
-function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { kind: "action" }>[]): {
+function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   label: string;
   icon: ActivityActionIcon;
 } {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block?.kind === "tool-failed") {
+      return {
+        label: block.recoveredResult ? "补丁已应用 · 检查通过" : `工具未完成 · ${block.tool}`,
+        icon: iconForToolName(block.tool),
+      };
+    }
+  }
+
+  let runningBlock: Extract<ActivityDetailBlock, { kind: "action" }> | undefined;
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block?.kind === "action" && block.lifecycle === "running") {
+      runningBlock = block;
+      break;
+    }
+  }
+  if (runningBlock) {
+    return {
+      label: summarizeRunningActionBlock(runningBlock),
+      icon: runningBlock.icon,
+    };
+  }
+  const actionBlocks = blocks.filter(
+    (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action",
+  );
+  if (actionBlocks.length === 1 && actionBlocks[0]) {
+    return {
+      label: summarizeCompletedActionBlock(actionBlocks[0]),
+      icon: actionBlocks[0].icon,
+    };
+  }
+
   const editedFiles = new Set<string>();
   const readFiles = new Set<string>();
   const writtenFiles = new Set<string>();
@@ -831,7 +869,7 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
   let taskUpdates = 0;
   let otherTools = 0;
 
-  for (const block of blocks) {
+  for (const block of actionBlocks) {
     if (block.toolName === "TaskCreate") {
       taskCreates += 1;
       continue;
@@ -908,7 +946,9 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
     clauses.push(`已执行 ${otherTools} 个工具`);
   }
 
-  const label = joinChineseClauses(clauses.length ? clauses : [`已执行 ${blocks.length} 个工具`]);
+  const label = joinChineseClauses(
+    clauses.length ? clauses : [`已执行 ${actionBlocks.length} 个工具`],
+  );
   const icon: ActivityActionIcon =
     writtenFiles.size > 0 || editedFiles.size > 0 || taskCreates > 0 || taskUpdates > 0
       ? "edit"
@@ -922,6 +962,78 @@ function summarizeActionBlocks(blocks: readonly Extract<ActivityDetailBlock, { k
               ? "agent"
               : "file";
   return { label, icon };
+}
+
+function summarizeRunningActionBlock(
+  block: Extract<ActivityDetailBlock, { kind: "action" }>,
+): string {
+  const target = clampActivityPreviewLine(
+    block.bashRun?.command ?? actionBlockTargetKey(block),
+    64,
+  );
+  const suffix = target ? ` ${target}` : "";
+
+  if (block.toolName === "TaskCreate") {
+    return `正在创建任务${suffix}`;
+  }
+  if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+    return `正在更新任务${suffix}`;
+  }
+  if (block.toolName === "Write") {
+    return `正在写入${suffix}`;
+  }
+  if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
+    return `正在编辑${suffix}`;
+  }
+  if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
+    return `正在读取${suffix}`;
+  }
+  if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
+    return `正在搜索${suffix}`;
+  }
+  if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
+    return `正在运行${suffix}`;
+  }
+  if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+    return `正在调用子代理${suffix}`;
+  }
+  return `正在执行${suffix || ` ${block.toolName ?? "工具"}`}`;
+}
+
+function summarizeCompletedActionBlock(
+  block: Extract<ActivityDetailBlock, { kind: "action" }>,
+): string {
+  const target = clampActivityPreviewLine(
+    block.bashRun?.command ?? actionBlockTargetKey(block),
+    64,
+  );
+  const suffix = target ? ` ${target}` : "";
+
+  if (block.toolName === "TaskCreate") {
+    return `已创建任务${suffix}`;
+  }
+  if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+    return `已更新任务${suffix}`;
+  }
+  if (block.toolName === "Write") {
+    return `已写入${suffix}`;
+  }
+  if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
+    return `已编辑${suffix}`;
+  }
+  if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
+    return `已读取${suffix}`;
+  }
+  if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
+    return `已搜索${suffix}`;
+  }
+  if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
+    return `已运行${suffix}`;
+  }
+  if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+    return `已调用子代理${suffix}`;
+  }
+  return `已执行${suffix || ` ${block.toolName ?? "工具"}`}`;
 }
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
@@ -949,9 +1061,10 @@ function joinChineseClauses(clauses: readonly string[]): string {
 }
 
 function resolveActionBlocksLifecycle(
-  blocks: readonly Extract<ActivityDetailBlock, { kind: "action" }>[],
+  blocks: readonly ToolGroupDetailBlock[],
 ): ToolActionLifecycle | undefined {
   const lifecycles = blocks
+    .filter((block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action")
     .map((block) => block.lifecycle)
     .filter((value): value is ToolActionLifecycle => Boolean(value));
   if (lifecycles.includes("failed")) {
@@ -983,7 +1096,7 @@ function groupSubagentDetailFeedEntries(
 
   const flush = () => {
     const first = pending[0];
-    if (pending.length > 1 && first) {
+    if (first) {
       grouped.push({
         kind: "tool-group",
         key: `subagent-tool-group:${first.key}`,
@@ -991,15 +1104,13 @@ function groupSubagentDetailFeedEntries(
         at: first.at,
         sequence: first.sequence,
       });
-    } else {
-      grouped.push(...pending);
     }
     pending = [];
   };
 
   for (const entry of entries) {
     const block = projectionItemToDetailBlock(entry.item);
-    if (block?.kind === "action" && !block.bashRun) {
+    if (block?.kind === "action" || block?.kind === "tool-failed") {
       pending.push(entry);
       continue;
     }

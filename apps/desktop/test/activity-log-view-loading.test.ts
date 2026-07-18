@@ -495,9 +495,77 @@ test("ActivityLogView keeps loading at the feed tail for collapsed running tool 
   );
 
   expect(html).toContain("run-log-tool-group-trigger is-running");
+  expect(html).toContain("正在读取 src/config.ts");
+  expect(html).not.toContain("已写入 1 个文件和已读取 1 个文件");
   expect(html).not.toContain("run-log-inline-loading");
   expect(html).toContain('aria-label="会话进行中"');
   expect(html.match(/class="run-log-streaming-dot"/g)?.length).toBe(3);
+});
+
+test("ActivityLogView switches command groups from live action back to completed totals", () => {
+  const completedCommands = Array.from({ length: 6 }, (_, index) =>
+    item({
+      id: `bash-completed-${index + 1}`,
+      sequence: index + 1,
+      eventType: "tool.completed",
+      text: `Tool: Bash · echo ${index + 1}`,
+      metadata: {
+        tool: {
+          name: "Bash",
+          detail: `echo ${index + 1}`,
+          toolUseId: `toolu_bash_${index + 1}`,
+          status: "completed",
+        },
+      },
+    }),
+  );
+  const latestCommand = '/bin/zsh -lc "sed -n \'1,180p\' src/services/very-long-tool-status-file.ts"';
+  const runningCommand = item({
+    id: "bash-running-7",
+    sequence: 7,
+    text: `Tool: Bash · ${latestCommand}`,
+    metadata: {
+      tool: {
+        name: "Bash",
+        detail: latestCommand,
+        toolUseId: "toolu_bash_7",
+        status: "started",
+      },
+    },
+  });
+
+  const runningHtml = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({ timeline: [...completedCommands, runningCommand] }),
+    }),
+  );
+  expect(runningHtml).toContain("正在运行 /bin/zsh -lc &quot;sed -n");
+  expect(runningHtml).not.toContain("已运行 6 条命令");
+
+  const completedHtml = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          ...completedCommands,
+          item({
+            ...runningCommand,
+            eventType: "tool.completed",
+            metadata: {
+              tool: {
+                name: "Bash",
+                detail: latestCommand,
+                toolUseId: "toolu_bash_7",
+                status: "completed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+  expect(completedHtml).toContain("已运行 7 条命令");
+  expect(completedHtml).not.toContain("正在运行");
 });
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {
@@ -758,7 +826,46 @@ test("ActivityLogView summarizes Bash with adjacent file tools", () => {
   expect(html).not.toContain("run-log-action--bash-card");
 });
 
-test("ActivityLogView separates failed Bash command and output cards", () => {
+test("ActivityLogView collapses a single completed tool behind the shared summary", () => {
+  const cases = [
+    { name: "Bash", detail: "bun test", expected: "已运行 bun test" },
+    { name: "Read", detail: "src/App.tsx", expected: "已读取 src/App.tsx" },
+    { name: "Edit", detail: "src/App.tsx", expected: "已编辑 src/App.tsx" },
+  ] as const;
+
+  for (const toolCase of cases) {
+    const html = renderToStaticMarkup(
+      createElement(ActivityLogView, {
+        projection: projection({
+          status: "completed",
+          timeline: [
+            item({
+              id: `single-${toolCase.name.toLowerCase()}`,
+              eventType: "tool.completed",
+              text: `Tool: ${toolCase.name} · ${toolCase.detail}`,
+              metadata: {
+                tool: {
+                  name: toolCase.name,
+                  detail: toolCase.detail,
+                  toolUseId: `toolu_single_${toolCase.name.toLowerCase()}`,
+                  status: "completed",
+                  ...(toolCase.name === "Bash" && { output: "2 pass" }),
+                },
+              },
+            }),
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("run-log-tool-group-trigger");
+    expect(html).toContain(toolCase.expected);
+    expect(html).not.toContain("run-log-action-trigger");
+    expect(html).not.toContain("run-log-action--bash-card");
+  }
+});
+
+test("ActivityLogView collapses incomplete Bash details behind a neutral summary", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -783,14 +890,12 @@ test("ActivityLogView separates failed Bash command and output cards", () => {
     }),
   );
 
-  expect(html).toContain("run-log-bash-command");
-  expect(html).toContain("run-log-bash-prompt");
-  expect(html).toContain('aria-label="复制 Bash 命令"');
-  expect(html).toContain('aria-label="复制命令输出"');
-  expect(html).toContain("bun test");
-  expect(html).toContain("run-log-bash-output-actions");
-  expect(html).toContain("run-log-bash-output");
-  expect(html).toContain("1 test failed");
+  expect(html).toContain("run-log-tool-group-trigger");
+  expect(html).toContain("工具未完成 · Bash");
+  expect(html).not.toContain("run-log-tool-group-trigger is-failed");
+  expect(html).not.toContain("run-log-bash-command");
+  expect(html).not.toContain("run-log-bash-output");
+  expect(html).not.toContain("1 test failed");
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {
@@ -1058,7 +1163,7 @@ test("ActivityLogView uses conversation loading for a completed request with a s
     }),
   );
 
-  expect(html).toContain("run-log-action-trigger is-running");
+  expect(html).toContain("run-log-tool-group-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
   expect(html).toContain("run-log-conversation-tail");
 });
@@ -1087,7 +1192,11 @@ test("ActivityLogView does not show inline loading for orphan running actions wh
     }),
   );
 
-  expect(html).toContain("run-log-action-trigger is-running");
+  expect(html).toContain("run-log-tool-group-trigger is-running");
+  expect(html).toContain("正在运行 sleep 8");
+  expect(html).not.toContain("run-log-action-trigger");
+  expect(html).not.toContain("run-log-action--bash-card");
+  expect(html).not.toContain("run-log-bash-command");
   expect(html).not.toContain("run-log-inline-loading");
   expect(html).toContain("run-log-conversation-tail");
 });
@@ -1116,7 +1225,7 @@ test("ActivityLogView does not leave inline loading on orphan running actions af
     }),
   );
 
-  expect(html).toContain("run-log-action-trigger is-running");
+  expect(html).toContain("run-log-tool-group-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
   expect(html).not.toContain("run-log-conversation-tail");
 });

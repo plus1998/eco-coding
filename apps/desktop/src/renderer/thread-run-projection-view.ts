@@ -246,24 +246,20 @@ function groupProjectionToolFeedEntries(
   let pending: Array<ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry> = [];
 
   const flush = () => {
-    if (pending.length > 1) {
-      const first = pending[0];
-      if (!first) {
-        pending = [];
-        return;
-      }
-      grouped.push({
-        kind: "tool-group",
-        // Keep the group mounted while adjacent tool events are appended so its
-        // user-controlled expanded state is not reset by a changing React key.
-        key: `tool-group:${first.key}`,
-        entries: pending,
-        at: first.at,
-        sequence: first.sequence,
-      });
-    } else {
-      grouped.push(...pending);
+    const first = pending[0];
+    if (!first) {
+      pending = [];
+      return;
     }
+    grouped.push({
+      kind: "tool-group",
+      // Keep the group mounted while adjacent tool events are appended so its
+      // user-controlled expanded state is not reset by a changing React key.
+      key: `tool-group:${first.key}`,
+      entries: pending,
+      at: first.at,
+      sequence: first.sequence,
+    });
     pending = [];
   };
 
@@ -286,7 +282,7 @@ function isGroupableToolFeedEntry(
     return false;
   }
   const block = projectionItemToDetailBlock(entry.item);
-  return block?.kind === "action";
+  return block?.kind === "action" || block?.kind === "tool-failed";
 }
 
 function filterMainTimelineForFeed(

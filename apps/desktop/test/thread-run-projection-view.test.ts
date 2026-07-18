@@ -356,7 +356,7 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
     "main:prompt",
-    "main:stream:message:sk:activity-line-approved",
+    "tool-group:main:stream:message:sk:activity-line-approved",
   ]);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:generic-wait")).toBe(false);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:approval-wait")).toBe(false);
@@ -3276,8 +3276,8 @@ test("buildThreadRunProjectionViewModel hides Reading progress rows when structu
 
   expect(viewModel.mainFeedEntries).toHaveLength(1);
   expect(viewModel.mainFeedEntries[0]).toMatchObject({
-    kind: "timeline",
-    item: { id: "read-structured" },
+    kind: "tool-group",
+    entries: [{ item: { id: "read-structured" } }],
   });
 });
 
@@ -3322,8 +3322,8 @@ test("buildThreadRunProjectionViewModel hides Searching progress rows when struc
 
   expect(viewModel.mainFeedEntries).toHaveLength(1);
   expect(viewModel.mainFeedEntries[0]).toMatchObject({
-    kind: "timeline",
-    item: { id: "grep-structured" },
+    kind: "tool-group",
+    entries: [{ item: { id: "grep-structured" } }],
   });
 });
 
@@ -3426,6 +3426,7 @@ test("buildThreadRunProjectionViewModel hides bare Read placeholder rendering wh
   );
 
   const visibleBlocks = viewModel.mainFeedEntries
+    .flatMap((entry) => (entry.kind === "tool-group" ? entry.entries : [entry]))
     .filter((entry) => entry.kind === "timeline")
     .map((entry) => projectionItemToDetailBlock(entry.item))
     .filter(Boolean);
@@ -3651,10 +3652,11 @@ test("buildThreadRunProjectionViewModel shows planner delegation on main feed", 
   );
 
   expect(view.mainFeedEntries).toHaveLength(1);
-  expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
-  const timelineEntry = view.mainFeedEntries[0];
-  if (timelineEntry?.kind === "timeline") {
-    expect(projectionItemToDetailBlock(timelineEntry.item)?.kind).toBe("action");
+  expect(view.mainFeedEntries[0]?.kind).toBe("tool-group");
+  const toolGroup = view.mainFeedEntries[0];
+  if (toolGroup?.kind === "tool-group") {
+    expect(toolGroup.entries).toHaveLength(1);
+    expect(projectionItemToDetailBlock(toolGroup.entries[0]?.item)?.kind).toBe("action");
   }
 });
 
@@ -4424,14 +4426,14 @@ test("buildThreadRunProjectionViewModel drops redundant permission denied lines 
     }),
   );
 
-  const timelineEntries = view.mainFeedEntries.filter((entry) => entry.kind === "timeline");
-  expect(timelineEntries).toHaveLength(1);
-  expect(timelineEntries[0]?.kind === "timeline" && timelineEntries[0].item.id).toBe("tool-failed");
-  const firstEntry = requireValue(timelineEntries[0], "timeline entry");
-  if (firstEntry.kind !== "timeline") {
-    throw new Error("timeline entry missing");
+  expect(view.mainFeedEntries).toHaveLength(1);
+  const firstEntry = requireValue(view.mainFeedEntries[0], "tool group");
+  expect(firstEntry.kind).toBe("tool-group");
+  if (firstEntry.kind !== "tool-group") {
+    throw new Error("tool group missing");
   }
-  expect(projectionItemToDetailBlock(firstEntry.item)).toMatchObject({
+  expect(firstEntry.entries).toHaveLength(1);
+  expect(projectionItemToDetailBlock(firstEntry.entries[0]?.item)).toMatchObject({
     kind: "tool-failed",
     tool: "Write",
   });
