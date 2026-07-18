@@ -29,10 +29,16 @@ Future<T?> showEcoModalBottomSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
-    builder: builder,
+    builder: (context) => ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Builder(builder: builder),
+      ),
+    ),
     backgroundColor: backgroundColor ?? eco.bgElevated,
     elevation: elevation ?? 0,
-    shape: shape ??
+    shape:
+        shape ??
         const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
         ),

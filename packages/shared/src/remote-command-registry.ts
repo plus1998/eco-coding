@@ -99,6 +99,13 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     objectArg(["workspacePath", "script"]),
   ]),
 
+  command("background-terminal:open", "Read background terminal task", "read", RPC_INVOKE, [
+    objectArg(["taskId"]),
+  ]),
+  command("background-terminal:stop", "Stop background terminal task", "execute", RPC_INVOKE, [
+    objectArg(["taskId"]),
+  ]),
+
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),
   command("candidate-model:list", "List candidate models", "read", RPC_INVOKE, [stringArg()]),
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),

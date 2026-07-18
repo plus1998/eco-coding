@@ -140,6 +140,11 @@ test("registers git remote command definitions", () => {
   expect(isRemoteCommandChannel("thread:todo-list")).toBe(true);
   expect(isRemoteCommandChannel("workspace:list-package-scripts")).toBe(true);
   expect(isRemoteCommandChannel("workspace:save-package-script-args")).toBe(true);
+  expect(isRemoteCommandChannel("workspace:start-package-script")).toBe(true);
+  expect(isRemoteCommandChannel("background-terminal:open")).toBe(true);
+  expect(validateRemoteCommandArgs("background-terminal:open", [{ taskId: "task-1" }])).toEqual({ ok: true });
+  expect(isRemoteCommandChannel("background-terminal:stop")).toBe(true);
+  expect(validateRemoteCommandArgs("background-terminal:stop", [{ taskId: "task-1" }])).toEqual({ ok: true });
 });
 
 test("validates eco.invoke params with desktop target", () => {
