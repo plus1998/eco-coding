@@ -2,6 +2,7 @@ import { useLayoutEffect } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
+import { usePacedStreamText } from "./use-paced-stream-text";
 
 interface StreamingMarkdownContentProps {
   text: string;
@@ -16,19 +17,22 @@ export function StreamingMarkdownContent({
 }: StreamingMarkdownContentProps) {
   const onLayoutChange = useActivityFeedLayoutChange();
   const snapshot = resolveStreamingDisplaySnapshot(text, streaming);
-  const renderText = streaming ? snapshot.displayText : text;
-  const layoutSignature = streaming
+  const targetText = streaming ? snapshot.displayText : text;
+  const renderText = usePacedStreamText(targetText, streaming);
+  const revealing = renderText !== targetText;
+  const renderAsStreaming = streaming || revealing;
+  const layoutSignature = renderAsStreaming
     ? `${renderText.length}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
     : "";
 
   useLayoutEffect(() => {
-    if (!streaming || !layoutSignature) {
+    if (!renderAsStreaming || !layoutSignature) {
       return;
     }
     onLayoutChange?.();
-  }, [streaming, layoutSignature, onLayoutChange]);
+  }, [renderAsStreaming, layoutSignature, onLayoutChange]);
 
-  if (streaming) {
+  if (renderAsStreaming) {
     const hasRenderableText = renderText.trim().length > 0;
     if (!hasRenderableText) {
       return null;
@@ -46,5 +50,5 @@ export function StreamingMarkdownContent({
     );
   }
 
-  return <MarkdownContent text={text} {...(className && { className })} />;
+  return <MarkdownContent text={renderText} {...(className && { className })} />;
 }

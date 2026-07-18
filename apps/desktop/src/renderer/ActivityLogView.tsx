@@ -102,6 +102,7 @@ import {
   buildThreadRunTurnFeedSections,
   type ThreadRunTurnFeedSection,
 } from "./thread-run-turn-feed";
+import { usePacedStreamText } from "./use-paced-stream-text";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
@@ -2306,10 +2307,11 @@ function ThinkingBlock({
   streaming?: boolean;
 }) {
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
-  const hasBody = text.trim().length > 0;
+  const displayText = usePacedStreamText(text, Boolean(streaming));
+  const hasBody = displayText.trim().length > 0;
 
   useLayoutEffect(() => {
-    if (!streaming || !text.trim()) {
+    if ((!streaming && displayText === text) || !displayText.trim()) {
       return;
     }
     const bodyInner = thinkingBodyInnerRef.current;
@@ -2320,7 +2322,7 @@ function ThinkingBlock({
     if (distanceFromBottom <= 48) {
       bodyInner.scrollTop = bodyInner.scrollHeight;
     }
-  }, [streaming, text]);
+  }, [streaming, text, displayText]);
 
   const waitingEmpty = Boolean(streaming) && !hasBody;
 
@@ -2348,9 +2350,9 @@ function ThinkingBlock({
           >
             <div className="run-log-thinking-body">
               {streaming ? (
-                <div className="run-log-thinking-body-plain">{text}</div>
+                <div className="run-log-thinking-body-plain">{displayText}</div>
               ) : (
-                <MarkdownContent text={text} className="markdown-content" />
+                <MarkdownContent text={displayText} className="markdown-content" />
               )}
             </div>
           </div>
