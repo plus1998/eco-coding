@@ -1,7 +1,6 @@
 import { useLayoutEffect } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
-import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
 
 interface StreamingMarkdownContentProps {
@@ -31,7 +30,7 @@ export function StreamingMarkdownContent({
 
   if (streaming) {
     const hasRenderableText = renderText.trim().length > 0;
-    if (!hasRenderableText && !snapshot.pendingBlock) {
+    if (!hasRenderableText) {
       return null;
     }
     return (
@@ -41,16 +40,7 @@ export function StreamingMarkdownContent({
         }
       >
         <div className="markdown-content--streaming-body">
-          {hasRenderableText ? (
-            <MarkdownContent text={renderText} />
-          ) : null}
-          <div
-            className={`markdown-content--streaming-tail${hasRenderableText ? "" : " is-pending-only"}`}
-            role="status"
-            aria-label="正在输出"
-          >
-            <StreamingTypingIndicator />
-          </div>
+          <MarkdownContent text={renderText} />
         </div>
       </div>
     );

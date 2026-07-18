@@ -8574,6 +8574,13 @@ button.sidebar-core-heading {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
+.run-log-thinking-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+}
+
 .run-log-thinking-content {
   display: flex;
   align-items: flex-start;
@@ -8792,27 +8799,6 @@ button.sidebar-core-heading {
   min-width: 0;
 }
 
-.markdown-content--streaming-tail {
-  display: flex;
-  align-items: center;
-  min-height: 14px;
-  margin-top: 2px;
-}
-
-.markdown-content--streaming-tail .run-log-streaming-dots {
-  margin-left: 0;
-}
-
-.markdown-content--streaming-tail.is-pending-only {
-  min-height: 18px;
-  margin-top: 0;
-}
-
-.markdown-content--streaming-tail.is-pending-only .run-log-streaming-dots {
-  color: var(--terminal-muted, #8a8a8a);
-  font-size: 13px;
-}
-
 .run-log-streaming-dots {
   display: inline-flex;
   align-items: baseline;
@@ -8824,6 +8810,18 @@ button.sidebar-core-heading {
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.02em;
+}
+
+.run-log-conversation-tail {
+  display: flex;
+  align-items: center;
+  min-height: 18px;
+  margin-top: 4px;
+  color: var(--codex-log-muted, #a3a3a3);
+}
+
+.run-log-conversation-tail .run-log-streaming-dots {
+  margin-left: 0;
 }
 
 .run-log-streaming-dot {
@@ -9172,21 +9170,6 @@ button.sidebar-core-heading {
   font-size: 12px;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
-}
-
-.run-log-inline-loading {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  min-width: 20px;
-  color: var(--codex-log-muted, #a3a3a3);
-  line-height: 1;
-}
-
-.run-log-inline-loading .run-log-streaming-dots {
-  margin-left: 0;
-  color: currentColor;
-  font-size: 13px;
 }
 
 .run-log-action-file-stats {
@@ -18138,6 +18121,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   background: color-mix(in srgb, var(--codex-log-text) 3%, transparent);
 }
 
+.codex-main:not(.codex-main-landing) .run-log-thinking.empty {
+  border-radius: 0;
+  background: transparent;
+}
+
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry
@@ -18155,6 +18143,10 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-thinking-content {
   gap: 8px;
   padding: 7px 9px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-header {
+  padding: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-icon {

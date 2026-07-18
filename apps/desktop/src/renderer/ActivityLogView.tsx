@@ -360,6 +360,20 @@ function ProjectionFeedLoading() {
 export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogViewProps) {
   const projection = useLocalStreamProjection(props.projection);
   if (!projection?.sourceEventCount) {
+    if (props.thread?.prompt && !isThreadStoppedForFinalSummary(props.thread.status)) {
+      return (
+        <div className="run-log">
+          {wrapRunLogFeedEntry(
+            <UserPromptBlock
+              text={props.thread.prompt}
+              anchorId={`thread:${props.thread.id}`}
+              createdAt={props.thread.createdAt}
+            />,
+          )}
+          {wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })}
+        </div>
+      );
+    }
     return <ProjectionFeedLoading />;
   }
   return (
@@ -413,6 +427,20 @@ function ProjectionActivityLogView({
     () => buildThreadRunTurnFeedSections(viewModel.mainFeedEntries, projection),
     [projection, viewModel.mainFeedEntries],
   );
+  const conversationActive = !isThreadStoppedForFinalSummary(projection.thread.status);
+  const showInitialWaiting =
+    conversationActive &&
+    viewModel.mainFeedEntries.every(
+      (entry) => entry.kind === "timeline" && isProjectionUserPromptItem(entry.item),
+    );
+  const waitingThinkingVisible =
+    showInitialWaiting ||
+    viewModel.mainFeedEntries.some((entry) => {
+      if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+        return false;
+      }
+      return isWaitingThinkingItem(entry.item, requestSpansById);
+    });
   const finalSummaryItemIds = useMemo(() => {
     const ids = new Set(
       resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status),
@@ -504,6 +532,10 @@ function ProjectionActivityLogView({
             />
           ),
         )}
+        {showInitialWaiting
+          ? wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
+          : null}
+        {conversationActive && !waitingThinkingVisible ? <RunLogConversationTail /> : null}
       </div>
     </ActivityFeedLayoutContext.Provider>
   );
@@ -710,22 +742,6 @@ function ProjectionToolGroupEntry({
   );
   const summary = useMemo(() => summarizeActionBlocks(blocks), [blocks]);
   const lifecycle = useMemo(() => resolveActionBlocksLifecycle(blocks), [blocks]);
-  const showInlineLoading = useMemo(
-    () =>
-      lifecycle === "running" &&
-      entry.entries.some((child) => {
-        const block = projectionItemToDetailBlock(child.item);
-        if (block?.kind !== "action" || block.lifecycle !== "running") {
-          return false;
-        }
-        const requestSpan = child.item.requestId ? requestSpansById.get(child.item.requestId) : undefined;
-        return shouldShowActionInlineLoading({
-          itemRequestId: child.item.requestId,
-          requestSpan,
-        });
-      }),
-    [entry.entries, lifecycle, requestSpansById],
-  );
   const Icon = actionIcons[summary.icon];
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
@@ -762,7 +778,6 @@ function ProjectionToolGroupEntry({
           className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
           aria-hidden
         />
-        {showInlineLoading ? <RunLogInlineLoading label="正在执行工具" /> : null}
       </button>
       {expanded ? (
         <div className="run-log-tool-group-details">
@@ -954,17 +969,6 @@ function resolveActionBlocksLifecycle(
     return "approval-approved";
   }
   return lifecycles.length > 0 ? "completed" : undefined;
-}
-
-function shouldShowActionInlineLoading({
-  itemRequestId,
-  requestSpan,
-}: {
-  itemRequestId: string | undefined;
-  requestSpan: ThreadRunProjectionRequestSpan | undefined;
-}): boolean {
-  void itemRequestId;
-  return isProjectionRequestActive(requestSpan);
 }
 
 type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry;
@@ -1226,10 +1230,6 @@ function ProjectionAgentEchoEntry({
       <DetailBlock
         block={block}
         requestActive={requestActive}
-        actionInlineLoadingActive={shouldShowActionInlineLoading({
-          itemRequestId: entry.item.requestId,
-          requestSpan,
-        })}
         hideSubagentIdentity
         forceActionDetailsExpanded={forceActionDetailsExpanded}
         {...(requestSpan && { requestSpan })}
@@ -1462,6 +1462,10 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     () => groupSubagentDetailFeedEntries(detailFeedEntries),
     [detailFeedEntries],
   );
+  const waitingThinkingVisible =
+    running &&
+    (detailFeedEntries.length === 0 ||
+      detailFeedEntries.some((entry) => isWaitingThinkingItem(entry.item, requestSpansById)));
   const latestTimelineItem = filteredTimeline.at(-1);
   const layoutSignature = [
     agent.agentId,
@@ -1598,9 +1602,12 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
                 />
               ),
             )
+          ) : running ? (
+            <WaitingThinkingBlock active />
           ) : (
             <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
           )}
+          {running && !waitingThinkingVisible ? <RunLogConversationTail /> : null}
         </div>
       </div>
       <ProjectionSubagentRunInstanceStrip agent={agent} />
@@ -1797,10 +1804,6 @@ function ProjectionTimelineEntry({
       block={block}
       requestActive={requestActive}
       createdAt={item.at}
-      actionInlineLoadingActive={shouldShowActionInlineLoading({
-        itemRequestId: item.requestId,
-        requestSpan,
-      })}
       hideSubagentIdentity={compact}
       forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(requestSpan && { requestSpan })}
@@ -1975,7 +1978,6 @@ function DetailBlock({
   hideSubagentIdentity,
   forceActionDetailsExpanded = false,
   requestActive = false,
-  actionInlineLoadingActive = false,
   requestSpan,
   agentThemes,
   createdAt,
@@ -1986,7 +1988,6 @@ function DetailBlock({
   hideSubagentIdentity?: boolean;
   forceActionDetailsExpanded?: boolean;
   requestActive?: boolean;
-  actionInlineLoadingActive?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
   agentThemes?: RuntimeAgentThemes;
   createdAt?: string;
@@ -2037,7 +2038,6 @@ function DetailBlock({
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         forceDetailsExpanded={forceActionDetailsExpanded}
-        showInlineLoading={block.lifecycle === "running" && actionInlineLoadingActive}
         {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
@@ -2262,12 +2262,38 @@ function WaitingThinkingBlock({
 
   return (
     <div className="run-log-thinking streaming empty">
-      <div className="run-log-thinking-content">
+      <div className="run-log-thinking-header">
         <span className="run-log-thinking-label">
-          <Sparkles size={14} className="run-log-thinking-icon" aria-hidden />
           <ShimmerText>正在思考</ShimmerText>
         </span>
       </div>
+    </div>
+  );
+}
+
+function isWaitingThinkingItem(
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionRequestSpan>,
+): boolean {
+  const block = projectionItemToDetailBlock(item);
+  if (!block) {
+    return false;
+  }
+  if (block.kind === "model-request" || block.kind === "agent-request") {
+    const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
+    return isProjectionRequestActive(requestSpan);
+  }
+  return (
+    (block.kind === "thinking" || block.kind === "narrative") &&
+    Boolean(block.streaming) &&
+    !block.text.trim()
+  );
+}
+
+function RunLogConversationTail() {
+  return (
+    <div className="run-log-conversation-tail" role="status" aria-label="会话进行中">
+      <StreamingTypingIndicator />
     </div>
   );
 }
@@ -2298,19 +2324,21 @@ function ThinkingBlock({
 
   const waitingEmpty = Boolean(streaming) && !hasBody;
 
+  if (waitingEmpty) {
+    return <WaitingThinkingBlock active />;
+  }
+
   return (
     <div
       className={[
         "run-log-thinking",
         streaming ? "streaming" : "",
-        waitingEmpty ? "empty" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <div className="run-log-thinking-content">
         <Sparkles size={14} className="run-log-thinking-icon" aria-hidden />
-        {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : null}
         {hasBody ? (
           <div
             className="run-log-thinking-body-inner"
@@ -2640,19 +2668,10 @@ function ApiErrorBlock({
   );
 }
 
-function RunLogInlineLoading({ label = "正在执行" }: { label?: string }) {
-  return (
-    <span className="run-log-inline-loading" role="status" aria-label={label}>
-      <StreamingTypingIndicator />
-    </span>
-  );
-}
-
 function RunLogAction({
   icon,
   label,
   lifecycle,
-  showInlineLoading = false,
   bashRun,
   fileChange,
   readTarget,
@@ -2665,7 +2684,6 @@ function RunLogAction({
   icon: ActivityActionIcon;
   label: string;
   lifecycle?: ToolActionLifecycle;
-  showInlineLoading?: boolean;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
@@ -2751,7 +2769,6 @@ function RunLogAction({
           {fileChange.deletions > 0 ? <span className="stat-del">-{fileChange.deletions}</span> : null}
         </span>
       ) : null}
-      {showInlineLoading ? <RunLogInlineLoading /> : null}
       {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
       {hasHeavyDetails || (isTerminal && canExpand) ? (
         <ChevronDown
@@ -2818,7 +2835,6 @@ function RunLogAction({
             <div className="run-log-action-card-detail">
               <RunLogFileChangeCard
                 display={fileChange}
-                showInlineLoading={showInlineLoading}
                 {...(lifecycle && { lifecycle })}
               />
             </div>
@@ -2834,7 +2850,6 @@ function RunLogAction({
         {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
         <RunLogReadTargetLine
           readTarget={readTarget}
-          showInlineLoading={showInlineLoading}
           {...(lifecycle && { lifecycle })}
         />
       </div>
@@ -2847,7 +2862,6 @@ function RunLogAction({
         {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
         <RunLogGrepTargetLine
           grepTarget={grepTarget}
-          showInlineLoading={showInlineLoading}
           {...(lifecycle && { lifecycle })}
         />
       </div>
@@ -2888,11 +2902,9 @@ function RunLogAction({
 function RunLogReadTargetLine({
   readTarget,
   lifecycle,
-  showInlineLoading = false,
 }: {
   readTarget: import("../shared/tool-target").ReadToolTargetDisplay;
   lifecycle?: ToolActionLifecycle;
-  showInlineLoading?: boolean;
 }) {
   return (
     <p
@@ -2912,7 +2924,6 @@ function RunLogReadTargetLine({
           <span className="run-log-read-target-range">{readTarget.lineRange}</span>
         </>
       ) : null}
-      {showInlineLoading ? <RunLogInlineLoading label="正在读取" /> : null}
     </p>
   );
 }
@@ -2920,11 +2931,9 @@ function RunLogReadTargetLine({
 function RunLogGrepTargetLine({
   grepTarget,
   lifecycle,
-  showInlineLoading = false,
 }: {
   grepTarget: import("../shared/tool-target").GrepToolTargetDisplay;
   lifecycle?: ToolActionLifecycle;
-  showInlineLoading?: boolean;
 }) {
   return (
     <p
@@ -2938,7 +2947,6 @@ function RunLogGrepTargetLine({
     >
       <span className="run-log-grep-target-verb">Grepped</span>{" "}
       <span className="run-log-grep-target-detail">{formatGrepTargetInlineDetail(grepTarget)}</span>
-      {showInlineLoading ? <RunLogInlineLoading label="正在搜索" /> : null}
     </p>
   );
 }
@@ -2946,11 +2954,9 @@ function RunLogGrepTargetLine({
 function RunLogFileChangeCard({
   display,
   lifecycle,
-  showInlineLoading = false,
 }: {
   display: import("../shared/activity-display").FileChangeCardDisplay;
   lifecycle?: ToolActionLifecycle;
-  showInlineLoading?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const collapsedLineLimit = 6;
@@ -2978,7 +2984,6 @@ function RunLogFileChangeCard({
             {display.deletions > 0 ? <span className="stat-del">-{display.deletions}</span> : null}
           </span>
         ) : null}
-        {showInlineLoading ? <RunLogInlineLoading label="正在写入文件" /> : null}
       </div>
       <div className="run-log-file-change-card-divider" aria-hidden />
       <div className="run-log-file-change-card-preview-shell">

@@ -85,7 +85,7 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
   };
 }
 
-test("StreamingMarkdownContent renders an incomplete code fence progressively without a waiting card", () => {
+test("StreamingMarkdownContent renders an incomplete code fence without a local loading tail", () => {
   const html = renderToStaticMarkup(
     createElement(StreamingMarkdownContent, {
       text: "开始执行\n```bash\necho ready",
@@ -95,13 +95,13 @@ test("StreamingMarkdownContent renders an incomplete code fence progressively wi
 
   expect(html).toContain("markdown-pre");
   expect(html).toContain("echo ready");
-  expect(html).toContain('aria-label="正在输出"');
+  expect(html).not.toContain("run-log-streaming-dots");
   expect(html).not.toContain("等待代码块");
   expect(html).not.toContain("等待 Bash 代码块");
   expect(html).not.toContain("markdown-streaming-block-loading");
 });
 
-test("StreamingMarkdownContent uses only a compact pulse for a held structured edit", () => {
+test("StreamingMarkdownContent leaves held structured edit loading to the conversation tail", () => {
   const html = renderToStaticMarkup(
     createElement(StreamingMarkdownContent, {
       text: "<<<<<<< SEARCH\nold value",
@@ -109,10 +109,7 @@ test("StreamingMarkdownContent uses only a compact pulse for a held structured e
     }),
   );
 
-  expect(html).toContain("markdown-content--streaming-tail is-pending-only");
-  expect(html).toContain('aria-label="正在输出"');
-  expect(html).not.toContain("old value");
-  expect(html).not.toContain("等待");
+  expect(html).toBe("");
 });
 
 test("ActivityLogView waits for thread stop before exposing final output copy", () => {
@@ -132,6 +129,89 @@ test("ActivityLogView waits for thread stop before exposing final output copy", 
   );
 
   expect(html).not.toContain('aria-label="复制消息"');
+  expect(html).toContain('class="run-log-conversation-tail"');
+});
+
+test("ActivityLogView shows the original thinking loader before the first response event", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "initial-user-prompt",
+            eventType: "thread.status",
+            role: "user",
+            text: "检查当前实现",
+            metadata: { liveType: "thread.user_prompt" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain('class="run-log-thinking-header"');
+  expect(html).toContain("正在思考");
+  expect(html).not.toContain("run-log-thinking-icon");
+  expect(html).not.toContain('aria-label="会话进行中"');
+});
+
+test("ActivityLogView shows thinking immediately while the first projection event is pending", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      thread: {
+        id: "thread-initial-loading",
+        title: "检查当前实现",
+        prompt: "检查当前实现",
+        workspacePath: "/tmp/project",
+        status: "running",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        message: "",
+      },
+    }),
+  );
+
+  expect(html).toContain("检查当前实现");
+  expect(html).toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain("正在思考");
+  expect(html).not.toContain("run-log-thinking-icon");
+  expect(html).not.toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("run-log-projection-loading");
+});
+
+test("ActivityLogView hides the conversation tail while a request is waiting for its first token", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [
+          requestSpan({ requestId: "req-waiting", status: "waiting_first_token" }),
+        ],
+        timeline: [
+          item({
+            id: "user-before-request",
+            sequence: 1,
+            eventType: "thread.status",
+            role: "user",
+            text: "继续检查",
+            metadata: { liveType: "thread.user_prompt" },
+          }),
+          item({
+            id: "request-started",
+            sequence: 2,
+            eventType: "request.started",
+            requestId: "req-waiting",
+            text: "",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("正在思考");
+  expect(html).not.toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView renders prompt images above the user text", () => {
@@ -178,6 +258,7 @@ test("ActivityLogView exposes final output copy after thread stops", () => {
   );
 
   expect(html).toContain('aria-label="复制消息"');
+  expect(html).not.toContain("run-log-conversation-tail");
   expect(html).toContain("会话停止后的最终输出。");
 });
 
@@ -342,7 +423,7 @@ test("ActivityLogView shows content for multiple thinking items without timing m
   expect(html).not.toContain("耗时");
 });
 
-test("ActivityLogView shows inline loading for a running file write action", () => {
+test("ActivityLogView shows only the conversation tail for a running file write action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -367,12 +448,12 @@ test("ActivityLogView shows inline loading for a running file write action", () 
     }),
   );
 
-  expect(html).toContain("run-log-inline-loading");
-  expect(html).toContain('aria-label="正在执行"');
+  expect(html).not.toContain("run-log-inline-loading");
+  expect(html).toContain('aria-label="会话进行中"');
   expect(html.match(/class="run-log-streaming-dot"/g)?.length).toBe(3);
 });
 
-test("ActivityLogView shows inline loading on collapsed running tool groups", () => {
+test("ActivityLogView keeps loading at the feed tail for collapsed running tool groups", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -414,7 +495,8 @@ test("ActivityLogView shows inline loading on collapsed running tool groups", ()
   );
 
   expect(html).toContain("run-log-tool-group-trigger is-running");
-  expect(html).toContain('aria-label="正在执行工具"');
+  expect(html).not.toContain("run-log-inline-loading");
+  expect(html).toContain('aria-label="会话进行中"');
   expect(html.match(/class="run-log-streaming-dot"/g)?.length).toBe(3);
 });
 
@@ -945,7 +1027,7 @@ test("ActivityLogView summarizes task progress tools without calling them subage
   expect(html).not.toContain("已调用 2 个子代理");
 });
 
-test("ActivityLogView does not show inline loading for a completed request with a stale running action", () => {
+test("ActivityLogView uses conversation loading for a completed request with a stale running action", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
       projection: projection({
@@ -978,6 +1060,7 @@ test("ActivityLogView does not show inline loading for a completed request with 
 
   expect(html).toContain("run-log-action-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
+  expect(html).toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView does not show inline loading for orphan running actions while thread continues", () => {
@@ -1006,6 +1089,7 @@ test("ActivityLogView does not show inline loading for orphan running actions wh
 
   expect(html).toContain("run-log-action-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
+  expect(html).toContain("run-log-conversation-tail");
 });
 
 test("ActivityLogView does not leave inline loading on orphan running actions after the thread ends", () => {
@@ -1034,4 +1118,5 @@ test("ActivityLogView does not leave inline loading on orphan running actions af
 
   expect(html).toContain("run-log-action-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
+  expect(html).not.toContain("run-log-conversation-tail");
 });
