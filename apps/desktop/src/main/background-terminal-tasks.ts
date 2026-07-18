@@ -52,7 +52,7 @@ export class BackgroundTerminalTaskRegistry {
   start(request: BackgroundTerminalStartRequest): BackgroundTerminalTask {
     const workspacePath = path.resolve(request.workspacePath.trim());
     const command = resolveCommand(request.command);
-    const { sessionId } = this.terminalManager.spawn(workspacePath);
+    const { sessionId } = this.terminalManager.spawnCommand(workspacePath, command);
     const threadId = normalizeOptionalText(request.threadId);
     const task: BackgroundTerminalTask = {
       taskId: randomUUID(),
@@ -65,7 +65,6 @@ export class BackgroundTerminalTaskRegistry {
       ...(threadId && { threadId }),
     };
     this.tasks.set(task.taskId, task);
-    this.terminalManager.write(sessionId, `${buildShellCommandLine(command)}\r`);
     return { ...task };
   }
 
@@ -89,6 +88,9 @@ export class BackgroundTerminalTaskRegistry {
     const current = this.tasks.get(taskId);
     if (!current) {
       return { stopped: false };
+    }
+    if (current.status !== "starting" && current.status !== "running") {
+      return { stopped: false, task: { ...current } };
     }
     const killed = this.terminalManager.kill(current.sessionId);
     const next: BackgroundTerminalTask = {

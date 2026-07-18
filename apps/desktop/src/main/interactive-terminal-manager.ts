@@ -39,6 +39,28 @@ export class InteractiveTerminalManager {
   constructor(private readonly emit: TerminalEventEmitter) {}
 
   spawn(workspacePath: string, size?: { cols: number; rows: number }): { sessionId: string } {
+    const { executable, args } = resolveInteractiveShell();
+    return this.spawnProcess(workspacePath, executable, args, size);
+  }
+
+  spawnCommand(
+    workspacePath: string,
+    command: readonly string[],
+    size?: { cols: number; rows: number },
+  ): { sessionId: string } {
+    const executable = command[0]?.trim();
+    if (!executable) {
+      throw new Error("Terminal command is required.");
+    }
+    return this.spawnProcess(workspacePath, executable, command.slice(1), size);
+  }
+
+  private spawnProcess(
+    workspacePath: string,
+    executable: string,
+    args: readonly string[],
+    size?: { cols: number; rows: number },
+  ): { sessionId: string } {
     const cwd = workspacePath.trim();
     if (!cwd) {
       throw new Error("Workspace path is required.");
@@ -48,14 +70,13 @@ export class InteractiveTerminalManager {
     }
 
     const sessionId = randomUUID();
-    const { executable, args } = resolveInteractiveShell();
     const cols = size?.cols ?? DEFAULT_COLS;
     const rows = size?.rows ?? DEFAULT_ROWS;
     const env = toSpawnEnv();
 
     let ptyProcess: IPty;
     try {
-      ptyProcess = pty.spawn(executable, args, {
+      ptyProcess = pty.spawn(executable, [...args], {
         name: "xterm-256color",
         cols,
         rows,

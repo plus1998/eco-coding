@@ -29,12 +29,7 @@ Future<T?> showEcoModalBottomSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
-    builder: (context) => ScaffoldMessenger(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Builder(builder: builder),
-      ),
-    ),
+    builder: builder,
     backgroundColor: backgroundColor ?? eco.bgElevated,
     elevation: elevation ?? 0,
     shape:

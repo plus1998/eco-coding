@@ -17,6 +17,7 @@ interface MockPty {
 }
 
 const spawned: MockPty[] = [];
+const spawnRequests: Array<{ executable: string; args: string[]; cwd: string }> = [];
 let dataHandler: PtyHandler | undefined;
 let exitHandler: ExitHandler | undefined;
 
@@ -51,7 +52,10 @@ function requireSpawned(index: number): MockPty {
 }
 
 mock.module("node-pty", () => ({
-  spawn: mock(() => createMockPty()),
+  spawn: mock((executable: string, args: string[], options: { cwd: string }) => {
+    spawnRequests.push({ executable, args, cwd: options.cwd });
+    return createMockPty();
+  }),
 }));
 
 const { InteractiveTerminalManager } = await import("../src/main/interactive-terminal-manager");
@@ -63,6 +67,7 @@ describe("InteractiveTerminalManager", () => {
   beforeEach(() => {
     events.length = 0;
     spawned.length = 0;
+    spawnRequests.length = 0;
     dataHandler = undefined;
     exitHandler = undefined;
     mkdirSync(workspaceRoot, { recursive: true });
@@ -91,6 +96,19 @@ describe("InteractiveTerminalManager", () => {
 
     expect(() => manager.spawn(missingPath)).toThrow(/does not exist/);
     expect(existsSync(missingPath)).toBe(false);
+  });
+
+  test("spawns a command directly so its exit completes the session", () => {
+    const manager = new InteractiveTerminalManager((event) => {
+      events.push(event as { type: string; sessionId: string });
+    });
+
+    const { sessionId } = manager.spawnCommand(workspaceRoot, ["npm", "run", "build"]);
+    requireSpawned(0).emitExit(0);
+
+    expect(spawnRequests).toEqual([{ executable: "npm", args: ["run", "build"], cwd: workspaceRoot }]);
+    expect(events.at(-1)).toEqual({ type: "exit", sessionId, exitCode: 0 });
+    expect(manager.get(sessionId)).toBeUndefined();
   });
 
   test("supports multiple concurrent sessions", () => {

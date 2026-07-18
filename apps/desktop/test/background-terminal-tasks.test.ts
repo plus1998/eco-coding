@@ -3,13 +3,13 @@ import { BackgroundTerminalTaskRegistry } from "../src/main/background-terminal-
 import type { InteractiveTerminalManager } from "../src/main/interactive-terminal-manager";
 
 test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () => {
-  const writes: Array<{ sessionId: string; data: string }> = [];
+  const commands: Array<{ workspacePath: string; command: readonly string[] }> = [];
   const killed: string[] = [];
   let sessionIndex = 0;
   const manager = {
-    spawn: () => ({ sessionId: `session_${++sessionIndex}` }),
-    write: (sessionId: string, data: string) => {
-      writes.push({ sessionId, data });
+    spawnCommand: (workspacePath: string, command: readonly string[]) => {
+      commands.push({ workspacePath, command });
+      return { sessionId: `session_${++sessionIndex}` };
     },
     kill: (sessionId: string) => {
       killed.push(sessionId);
@@ -29,8 +29,9 @@ test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () 
   expect(task.sessionId).toBe("session_1");
   expect(task.status).toBe("running");
   expect(task.threadId).toBe("thr_1");
-  expect(writes).toHaveLength(1);
-  expect(writes[0]?.data.endsWith("ready\r")).toBe(true);
+  expect(commands).toHaveLength(1);
+  expect(commands[0]?.workspacePath).toBe("/tmp/project");
+  expect(commands[0]?.command.at(-1)).toBe("ready");
   expect(registry.list({ threadId: "thr_1" })).toHaveLength(1);
 
   registry.handleTerminalEvent({ type: "output", sessionId: task.sessionId, data: "building...\r\n" });
@@ -41,8 +42,17 @@ test("BackgroundTerminalTaskRegistry starts, lists, exits, and stops tasks", () 
   expect(registry.get(task.taskId)?.status).toBe("failed");
   expect(registry.get(task.taskId)?.exitCode).toBe(1);
 
-  const stopped = registry.stop(task.taskId);
+  const completedStop = registry.stop(task.taskId);
+  expect(completedStop.stopped).toBe(false);
+  expect(completedStop.task?.status).toBe("failed");
+  expect(killed).toEqual([]);
+
+  const runningTask = registry.start({
+    workspacePath: "/tmp/project",
+    command: ["sleep", "10"],
+  });
+  const stopped = registry.stop(runningTask.taskId);
   expect(stopped.stopped).toBe(true);
   expect(stopped.task?.status).toBe("stopped");
-  expect(killed).toEqual([task.sessionId]);
+  expect(killed).toEqual([runningTask.sessionId]);
 });

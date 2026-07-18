@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('shows sheet snackbars above the modal route', (tester) async {
+  testWidgets('keeps modal sheet content at its requested height', (
+    tester,
+  ) async {
+    const sheetKey = Key('sheet-content');
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
@@ -11,13 +14,10 @@ void main() {
             body: TextButton(
               onPressed: () => showEcoModalBottomSheet<void>(
                 context: context,
-                builder: (sheetContext) => Center(
-                  child: TextButton(
-                    onPressed: () => ScaffoldMessenger.of(
-                      sheetContext,
-                    ).showSnackBar(const SnackBar(content: Text('脚本执行失败'))),
-                    child: const Text('触发错误'),
-                  ),
+                builder: (_) => const SizedBox(
+                  key: sheetKey,
+                  height: 200,
+                  child: Text('弹窗内容'),
                 ),
               ),
               child: const Text('打开弹窗'),
@@ -29,14 +29,14 @@ void main() {
 
     await tester.tap(find.text('打开弹窗'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('触发错误'));
-    await tester.pump();
 
-    expect(find.text('触发错误'), findsOneWidget);
-    expect(find.text('脚本执行失败'), findsOneWidget);
+    expect(tester.getSize(find.byKey(sheetKey)).height, 200);
     expect(
-      tester.widgetList<ScaffoldMessenger>(find.byType(ScaffoldMessenger)),
-      hasLength(2),
+      find.descendant(
+        of: find.byKey(sheetKey),
+        matching: find.byType(Scaffold),
+      ),
+      findsNothing,
     );
   });
 }

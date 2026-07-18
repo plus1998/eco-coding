@@ -402,6 +402,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   final TextEditingController _argsInputController = TextEditingController();
   bool _running = false;
   bool _stopping = false;
+  String? _errorMessage;
   String? _activeScriptName;
   BackgroundTerminalTask? _activeTask;
   Timer? _taskPollTimer;
@@ -452,8 +453,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
       if (!task.isActive) {
         _taskPollTimer?.cancel();
       }
-    } catch (_) {
-      return;
+    } catch (error) {
+      if (!mounted || _activeTask?.taskId != taskId) return;
+      _taskPollTimer?.cancel();
+      setState(() => _errorMessage = error.toString());
     }
   }
 
@@ -470,15 +473,16 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     final task = _activeTask;
     final rpc = ref.read(desktopRpcProvider);
     if (task == null || rpc == null || _stopping) return;
-    setState(() => _stopping = true);
+    setState(() {
+      _stopping = true;
+      _errorMessage = null;
+    });
     try {
       await rpc.stopBackgroundTerminalTask(task.taskId);
       await _pollActiveTask(task.taskId);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      setState(() => _errorMessage = error.toString());
     } finally {
       if (mounted) setState(() => _stopping = false);
     }
@@ -522,7 +526,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
     if (rpc == null || _running || (_activeTask?.isActive ?? false)) {
       return;
     }
-    setState(() => _running = true);
+    setState(() {
+      _running = true;
+      _errorMessage = null;
+    });
     try {
       final result = await rpc.startPackageScript(
         workspacePath: widget.workspacePath,
@@ -544,9 +551,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      setState(() => _errorMessage = error.toString());
     } finally {
       if (mounted) {
         setState(() => _running = false);
@@ -588,6 +593,14 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                           children: [
                             _SheetHeader(title: 'npm scripts', subtitle: subtitle),
+                            if (_errorMessage != null) ...[
+                              const SizedBox(height: 12),
+                              _PackageScriptErrorNotice(
+                                message: _errorMessage!,
+                                onDismiss: () =>
+                                    setState(() => _errorMessage = null),
+                              ),
+                            ],
                             if (_activeTask != null) ...[
                               const SizedBox(height: 12),
                               _PackageScriptProgressCard(
@@ -751,6 +764,56 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PackageScriptErrorNotice extends StatelessWidget {
+  const _PackageScriptErrorNotice({
+    required this.message,
+    required this.onDismiss,
+  });
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.dangerSoft,
+        border: Border.all(color: eco.danger.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(EcoIcons.error, size: 18, color: eco.danger),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: eco.danger,
+                      height: 1.35,
+                    ),
+              ),
+            ),
+            IconButton(
+              tooltip: '关闭',
+              visualDensity: VisualDensity.compact,
+              onPressed: onDismiss,
+              icon: const Icon(Icons.close_rounded, size: 18),
+            ),
+          ],
+        ),
       ),
     );
   }
