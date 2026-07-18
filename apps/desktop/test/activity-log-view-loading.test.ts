@@ -601,6 +601,7 @@ test("ActivityLogView switches command groups from live action back to completed
     }),
   );
   expect(runningHtml).toContain("正在运行 /bin/zsh -lc &quot;sed -n");
+  expect(runningHtml).toContain("run-log-shimmer-text");
   expect(runningHtml).not.toContain("已运行 6 条命令");
 
   const completedHtml = renderToStaticMarkup(
@@ -627,6 +628,7 @@ test("ActivityLogView switches command groups from live action back to completed
   );
   expect(completedHtml).toContain("已运行 7 条命令");
   expect(completedHtml).not.toContain("正在运行");
+  expect(completedHtml).not.toContain("run-log-shimmer-text");
 });
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {
@@ -1255,6 +1257,7 @@ test("ActivityLogView does not show inline loading for orphan running actions wh
 
   expect(html).toContain("run-log-tool-group-trigger is-running");
   expect(html).toContain("正在运行 sleep 8");
+  expect(html).toContain("run-log-shimmer-text");
   expect(html).not.toContain("run-log-action-trigger");
   expect(html).not.toContain("run-log-action--bash-card");
   expect(html).not.toContain("run-log-bash-command");

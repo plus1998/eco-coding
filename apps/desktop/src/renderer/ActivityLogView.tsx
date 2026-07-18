@@ -792,7 +792,9 @@ function ProjectionToolGroupEntry({
             />
           ) : null}
         </span>
-        <span className="run-log-tool-group-summary">{summary.label}</span>
+        <span className="run-log-tool-group-summary">
+          {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
+        </span>
         <ChevronDown
           size={15}
           className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
