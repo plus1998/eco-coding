@@ -8574,29 +8574,33 @@ button.sidebar-core-heading {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-.run-log-thinking.empty .run-log-thinking-header {
-  cursor: default;
-}
-
-.run-log-thinking-header {
+.run-log-thinking-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   padding: 8px 12px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
 }
 
 .run-log-thinking-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   flex-shrink: 0;
   font-size: 13px;
   font-weight: 500;
   color: #737373;
   letter-spacing: 0.02em;
+}
+
+.run-log-thinking-icon {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: #737373;
+}
+
+.run-log-thinking-label .run-log-thinking-icon {
+  margin-top: 0;
 }
 
 .run-log-thinking.streaming .run-log-thinking-label {
@@ -8618,21 +8622,6 @@ button.sidebar-core-heading {
   -webkit-text-fill-color: transparent;
   color: transparent;
   animation: run-log-shimmer-sweep 1.6s ease-in-out infinite;
-}
-
-.run-log-thinking-timing {
-  margin: 0;
-  padding: 0 12px 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #737373;
-  font-variant-numeric: tabular-nums;
-}
-
-.run-log-thinking-timing-inline {
-  font-weight: 400;
-  color: #737373;
-  font-variant-numeric: tabular-nums;
 }
 
 @keyframes run-log-shimmer-sweep {
@@ -8688,85 +8677,44 @@ button.sidebar-core-heading {
   margin-left: 6px;
 }
 
-.run-log-thinking-chevron {
-  margin-left: auto;
-  color: #525252;
-  transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.run-log-thinking-chevron.open {
-  transform: rotate(180deg);
-}
-
-.run-log-thinking-body-shell {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  overflow: hidden;
-  transition:
-    grid-template-rows 0.42s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.36s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.run-log-thinking-body-shell.open {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-.run-log-thinking.is-collapsing .run-log-thinking-body-shell {
-  transition:
-    grid-template-rows 0.42s cubic-bezier(0.4, 0, 0.6, 1),
-    opacity 0.36s cubic-bezier(0.4, 0, 0.6, 1);
-}
-
-.run-log-thinking.is-collapsed .run-log-thinking-body-shell {
-  grid-template-rows: 0fr;
-  max-height: 0;
-  opacity: 0;
-  transition: none;
-}
-
 .run-log-thinking-body-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.run-log-thinking.is-streaming-capped.is-expanded .run-log-thinking-body-inner {
-  max-height: 280px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 168px;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-.run-log-thinking.is-collapsed:not(.empty) {
-  min-height: 37px;
+  scrollbar-width: thin;
 }
 
 .run-log-thinking-body {
-  padding: 0 12px 10px;
+  padding: 0;
+  color: #e5e5e5;
+  font-size: 15px;
+  line-height: 1.65;
 }
 
 .run-log-thinking-body p {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #8a8a8a;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .run-log-thinking-body-plain {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #8a8a8a;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .run-log-thinking-body .markdown-content {
-  color: #8a8a8a;
-  font-size: 13px;
-  line-height: 1.55;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .run-log-thinking-body .markdown-content p,
@@ -8787,47 +8735,12 @@ button.sidebar-core-heading {
   margin: 0.35em 0;
 }
 
-.run-log-thinking-body .markdown-content h1,
-.run-log-thinking-body .markdown-content h2,
-.run-log-thinking-body .markdown-content h3,
-.run-log-thinking-body .markdown-content h4 {
-  margin: 0.65em 0 0.3em;
-  color: #949494;
-  font-size: inherit;
-  font-weight: 600;
-  line-height: 1.45;
+.run-log-thinking-body .markdown-content > :first-child {
+  margin-top: 0;
 }
 
-.run-log-thinking-body .markdown-content strong,
-.run-log-thinking-body .markdown-content b {
-  color: #949494;
-  font-weight: 600;
-}
-
-.run-log-thinking-body .markdown-content a {
-  color: #9a9a9a;
-}
-
-.run-log-thinking-body .markdown-content li::marker {
-  color: #737373;
-}
-
-.run-log-thinking-body .markdown-content .markdown-inline-code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9a9a9a;
-  font-size: 0.92em;
-}
-
-.run-log-thinking-body .markdown-content .markdown-pre {
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-  color: #9a9a9a;
-  font-size: 12px;
-  line-height: 1.5;
+.run-log-thinking-body .markdown-content > :last-child {
+  margin-bottom: 0;
 }
 
 .run-log-narrative {
@@ -9280,6 +9193,10 @@ button.sidebar-core-heading {
   flex-shrink: 0;
 }
 
+.run-log-action-trigger.is-file-change .run-log-action-label {
+  flex: 0 1 auto;
+}
+
 .run-log-action--terminal .run-log-action-label {
   font-family: inherit;
 }
@@ -9553,13 +9470,8 @@ button.sidebar-core-heading {
   padding: 10px 12px;
 }
 
-.run-log-file-change-card-icon {
-  flex-shrink: 0;
-  color: #2dd4bf;
-}
-
 .run-log-file-change-card-title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--codex-log-text, #e5e5e5);
@@ -18222,37 +18134,31 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-thinking {
   margin: 0;
   border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking.is-collapsed:not(.empty) {
-  min-height: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--codex-log-text) 3%, transparent);
 }
 
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry
-  + .run-log-feed-entry--tight:has(.run-log-thinking.is-collapsed:not(.empty)) {
+  + .run-log-feed-entry--tight:has(.run-log-thinking:not(.empty)) {
   margin-top: 10px;
 }
 
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-feed-entry--tight:has(.run-log-thinking.is-collapsed:not(.empty))
+  > .run-log-feed-entry--tight:has(.run-log-thinking:not(.empty))
   + .run-log-feed-entry {
   margin-top: 5px;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking-header {
+.codex-main:not(.codex-main-landing) .run-log-thinking-content {
   gap: 8px;
-  padding: 0;
-  cursor: pointer;
+  padding: 7px 9px;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking-header:hover .run-log-thinking-label,
-.codex-main:not(.codex-main-landing) .run-log-thinking-header:focus-visible .run-log-thinking-label {
-  color: var(--codex-log-text);
+.codex-main:not(.codex-main-landing) .run-log-thinking-icon {
+  color: var(--codex-log-muted);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-label,
@@ -18263,38 +18169,26 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   letter-spacing: 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking-body-shell.open .run-log-thinking-body {
-  margin-top: var(--codex-feed-gap-step);
-}
-
-.codex-main:not(.codex-main-landing)
-  .run-log-thinking.is-streaming-capped.is-expanded
-  .run-log-thinking-body-inner {
-  max-height: 280px;
-}
-
 .codex-main:not(.codex-main-landing) .run-log-thinking-body {
   padding: 0;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-body p {
-  color: #a8a8a8;
+  color: var(--codex-log-text);
   font-size: var(--codex-feed-font-size);
-  line-height: 1.6;
+  font-weight: 400;
+  line-height: 1.55;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body-plain {
-  color: var(--codex-log-muted);
-  font-size: var(--codex-feed-font-size);
-  line-height: 1.6;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content {
-  color: var(--codex-log-muted);
-  font-size: var(--codex-feed-font-size);
-  line-height: 1.6;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content p,
@@ -18315,39 +18209,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   margin: 0.35em 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content h1,
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content h2,
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content h3,
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content h4 {
-  margin: 0.65em 0 0.3em;
-  color: var(--codex-log-muted);
-  font-size: inherit;
-  font-weight: 600;
-  line-height: 1.45;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content strong,
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content b {
-  color: var(--codex-log-muted);
-  font-weight: 650;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content a {
-  color: var(--codex-log-faint);
-  text-decoration-color: color-mix(in srgb, var(--codex-log-faint) 45%, transparent);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content li::marker {
-  color: var(--codex-log-faint);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content .markdown-inline-code,
-.codex-main:not(.codex-main-landing) .run-log-thinking-body .markdown-content .markdown-pre {
-  border-color: var(--border-subtle);
-  background: var(--codex-log-chip);
-  color: var(--codex-log-muted);
-}
-
 .codex-main:not(.codex-main-landing) .run-log-shimmer-text {
   font-size: var(--codex-feed-font-size);
   font-weight: 500;
@@ -18360,11 +18221,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
     var(--codex-log-muted) 62%,
     var(--codex-log-muted) 100%
   );
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-timing,
-.codex-main:not(.codex-main-landing) .run-log-thinking-timing-inline {
-  color: var(--codex-log-muted);
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap {

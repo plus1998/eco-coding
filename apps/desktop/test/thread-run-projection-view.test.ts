@@ -2557,7 +2557,6 @@ test("empty terminal thinking does not split adjacent tool summaries", () => {
           role: "thinking",
           text: "",
           at: "2026-01-01T00:00:02.000Z",
-          metadata: { thinkingDurationMs: 0 },
         }),
         tool("read-b", 3, "src/b.ts"),
       ],
@@ -2576,7 +2575,6 @@ test("empty terminal thinking does not split adjacent tool summaries", () => {
         eventType: "thinking.final",
         role: "thinking",
         text: "",
-        metadata: { thinkingDurationMs: 0 },
       }),
     ),
   ).toBeUndefined();

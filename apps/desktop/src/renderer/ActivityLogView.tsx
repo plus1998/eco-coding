@@ -65,11 +65,9 @@ import {
   type PromptImagePreview,
   readPromptImagePreviews,
 } from "../shared/prompt-image-metadata";
-import { resolveRequestSpanDurationMs } from "../shared/request-span-timing";
 import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import { formatGrepTargetInlineDetail } from "../shared/tool-target";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
-import { formatDurationMs } from "./AppMessage";
 import {
   type ActivityFeedLayoutChange,
   ActivityFeedLayoutContext,
@@ -88,11 +86,6 @@ import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtim
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
-import {
-  shouldScheduleThinkingAutoCollapse,
-  THINKING_AUTO_COLLAPSE_READ_MS,
-  THINKING_COLLAPSE_MS,
-} from "./thinking-auto-collapse";
 import {
   buildThreadRunProjectionViewModel,
   isProjectionRequestActive,
@@ -1211,7 +1204,6 @@ function ProjectionAgentEchoEntry({
     );
   }
   if (block.kind === "thinking") {
-    const durationMs = resolveThinkingDisplayDurationMs(block, requestSpan);
     return (
       <ProjectionAgentEchoShell
         label={entry.agentLabel}
@@ -1221,7 +1213,6 @@ function ProjectionAgentEchoEntry({
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
-          {...(durationMs !== undefined && { durationMs })}
         />
       </ProjectionAgentEchoShell>
     );
@@ -1781,12 +1772,10 @@ function ProjectionTimelineEntry({
     );
   }
   if (block.kind === "thinking") {
-    const durationMs = resolveThinkingDisplayDurationMs(block, requestSpan);
     return wrapRunLogFeedEntry(
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
-        {...(durationMs !== undefined && { durationMs })}
       />,
       { compact, tight: true },
     );
@@ -2078,12 +2067,10 @@ function DetailBlock({
     );
   }
   if (block.kind === "thinking") {
-    const durationMs = resolveThinkingDisplayDurationMs(block, requestSpan);
     return (
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
-        {...(durationMs !== undefined && { durationMs })}
       />
     );
   }
@@ -2275,8 +2262,9 @@ function WaitingThinkingBlock({
 
   return (
     <div className="run-log-thinking streaming empty">
-      <div className="run-log-thinking-header">
+      <div className="run-log-thinking-content">
         <span className="run-log-thinking-label">
+          <Sparkles size={14} className="run-log-thinking-icon" aria-hidden />
           <ShimmerText>正在思考</ShimmerText>
         </span>
       </div>
@@ -2284,148 +2272,18 @@ function WaitingThinkingBlock({
   );
 }
 
-function resolveRequestDurationMs(requestSpan?: ThreadRunProjectionRequestSpan): number | undefined {
-  if (!requestSpan) {
-    return undefined;
-  }
-  return resolveRequestSpanDurationMs(requestSpan);
-}
-
 function ThinkingBlock({
   text,
   streaming,
-  durationMs,
 }: {
   text: string;
   streaming?: boolean;
-  durationMs?: number;
 }) {
-  const onLayoutChange = useActivityFeedLayoutChange();
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const hasBody = text.trim().length > 0;
-  const [collapsed, setCollapsed] = useState(() => !streaming && hasBody);
-  const [isCollapsing, setIsCollapsing] = useState(false);
-  const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoCollapseEligibleRef = useRef(false);
-  const autoCollapseSuppressedRef = useRef(false);
-  const autoCollapseReadKey = hasBody ? text : "";
-  const latestRenderStateRef = useRef({ streaming: false, hasBody: false, readKey: "" });
-  const expanded = Boolean(streaming && hasBody) || !collapsed;
-  const bodyOpen = expanded && !isCollapsing;
-  latestRenderStateRef.current = {
-    streaming: Boolean(streaming),
-    hasBody,
-    readKey: autoCollapseReadKey,
-  };
-
-  const clearCollapseTimers = useCallback(() => {
-    if (collapseDelayRef.current) {
-      clearTimeout(collapseDelayRef.current);
-      collapseDelayRef.current = null;
-    }
-    if (collapseAnimRef.current) {
-      clearTimeout(collapseAnimRef.current);
-      collapseAnimRef.current = null;
-    }
-  }, []);
-
-  const startCollapseAnimation = useCallback(() => {
-    if (latestRenderStateRef.current.streaming || !latestRenderStateRef.current.hasBody) {
-      return;
-    }
-    clearCollapseTimers();
-    onLayoutChange?.({ immediate: true });
-    setIsCollapsing(true);
-    collapseAnimRef.current = setTimeout(() => {
-      collapseAnimRef.current = null;
-      setCollapsed(true);
-      setIsCollapsing(false);
-      onLayoutChange?.({ immediate: true });
-    }, THINKING_COLLAPSE_MS);
-  }, [clearCollapseTimers, onLayoutChange]);
-
-  useEffect(() => {
-    if (streaming) {
-      autoCollapseEligibleRef.current = true;
-      autoCollapseSuppressedRef.current = false;
-    }
-  }, [streaming]);
-
-  useEffect(() => {
-    if (!streaming || !hasBody) {
-      return;
-    }
-    clearCollapseTimers();
-    setIsCollapsing(false);
-    setCollapsed(false);
-  }, [streaming, hasBody, clearCollapseTimers]);
 
   useLayoutEffect(() => {
-    if (
-      streaming ||
-      !hasBody ||
-      collapsed ||
-      !autoCollapseEligibleRef.current ||
-      autoCollapseSuppressedRef.current
-    ) {
-      return;
-    }
-    autoCollapseEligibleRef.current = false;
-    clearCollapseTimers();
-    setIsCollapsing(false);
-    setCollapsed(true);
-    onLayoutChange?.({ immediate: true });
-  }, [streaming, hasBody, collapsed, clearCollapseTimers, onLayoutChange]);
-
-  useEffect(() => {
-    if (
-      !shouldScheduleThinkingAutoCollapse({
-        streaming,
-        hasBody,
-        collapsed,
-        autoCollapseEligible: autoCollapseEligibleRef.current,
-        autoCollapseSuppressed: autoCollapseSuppressedRef.current,
-      })
-    ) {
-      return;
-    }
-
-    const scheduledReadKey = autoCollapseReadKey;
-    collapseDelayRef.current = setTimeout(() => {
-      collapseDelayRef.current = null;
-      if (
-        latestRenderStateRef.current.readKey !== scheduledReadKey ||
-        !shouldScheduleThinkingAutoCollapse({
-          streaming: latestRenderStateRef.current.streaming,
-          hasBody: latestRenderStateRef.current.hasBody,
-          collapsed,
-          autoCollapseEligible: autoCollapseEligibleRef.current,
-          autoCollapseSuppressed: autoCollapseSuppressedRef.current,
-        })
-      ) {
-        return;
-      }
-      autoCollapseEligibleRef.current = false;
-      startCollapseAnimation();
-    }, THINKING_AUTO_COLLAPSE_READ_MS);
-
-    return () => {
-      if (collapseDelayRef.current) {
-        clearTimeout(collapseDelayRef.current);
-        collapseDelayRef.current = null;
-      }
-    };
-  }, [streaming, hasBody, collapsed, autoCollapseReadKey, startCollapseAnimation]);
-
-  useEffect(() => () => clearCollapseTimers(), [clearCollapseTimers]);
-
-  useLayoutEffect(() => {
-    onLayoutChange?.({ immediate: !bodyOpen });
-  }, [bodyOpen, onLayoutChange]);
-
-  useLayoutEffect(() => {
-    if (!streaming || !hasBody) {
+    if (!streaming || !text.trim()) {
       return;
     }
     const bodyInner = thinkingBodyInnerRef.current;
@@ -2436,7 +2294,7 @@ function ThinkingBlock({
     if (distanceFromBottom <= 48) {
       bodyInner.scrollTop = bodyInner.scrollHeight;
     }
-  }, [streaming, hasBody, text]);
+  }, [streaming, text]);
 
   const waitingEmpty = Boolean(streaming) && !hasBody;
 
@@ -2446,57 +2304,20 @@ function ThinkingBlock({
         "run-log-thinking",
         streaming ? "streaming" : "",
         waitingEmpty ? "empty" : "",
-        streaming && hasBody ? "is-streaming-capped" : "",
-        collapsed && !isCollapsing ? "is-collapsed" : "",
-        isCollapsing ? "is-collapsing" : "",
-        bodyOpen ? "is-expanded" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <button
-        type="button"
-        className="run-log-thinking-header"
-        onClick={() => {
-          if (streaming || isCollapsing) {
-            return;
-          }
-          if (waitingEmpty) {
-            return;
-          }
-          autoCollapseEligibleRef.current = false;
-          autoCollapseSuppressedRef.current = true;
-          if (!hasBody) {
-            return;
-          }
-          if (expanded) {
-            startCollapseAnimation();
-            return;
-          }
-          clearCollapseTimers();
-          setIsCollapsing(false);
-          setCollapsed(false);
-        }}
-        aria-expanded={bodyOpen || Boolean(streaming)}
-        disabled={waitingEmpty}
-      >
-        <span className="run-log-thinking-label">
-          {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : "思考"}
-          {!waitingEmpty && durationMs !== undefined ? (
-            <span className="run-log-thinking-timing-inline"> · 耗时 {formatDurationMs(durationMs)}</span>
-          ) : null}
-        </span>
-      </button>
-      {hasBody && (bodyOpen || isCollapsing) ? (
-        <div
-          className={[
-            "run-log-thinking-body-shell",
-            bodyOpen ? "open" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          <div className="run-log-thinking-body-inner" ref={thinkingBodyInnerRef}>
+      <div className="run-log-thinking-content">
+        <Sparkles size={14} className="run-log-thinking-icon" aria-hidden />
+        {waitingEmpty ? <ShimmerText>正在思考</ShimmerText> : null}
+        {hasBody ? (
+          <div
+            className="run-log-thinking-body-inner"
+            ref={thinkingBodyInnerRef}
+            role="region"
+            aria-label="思考内容"
+          >
             <div className="run-log-thinking-body">
               {streaming ? (
                 <div className="run-log-thinking-body-plain">{text}</div>
@@ -2505,25 +2326,10 @@ function ThinkingBlock({
               )}
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
-}
-
-function resolveThinkingDisplayDurationMs(
-  block: Extract<ActivityDetailBlock, { kind: "thinking" }>,
-  requestSpan?: ThreadRunProjectionRequestSpan,
-): number | undefined {
-  if (block.streaming) {
-    return undefined;
-  }
-  if (block.durationMs !== undefined) {
-    return block.durationMs;
-  }
-  return block.requestDurationFallbackAllowed === false
-    ? undefined
-    : resolveRequestDurationMs(requestSpan);
 }
 
 function UserPromptBlock({
@@ -2919,6 +2725,7 @@ function RunLogAction({
     lifecycle === "approval-pending" ? "is-pending" : "",
     canToggleDetails ? "is-expandable" : "",
     detailsExpanded ? "is-expanded" : "",
+    fileChange ? "is-file-change" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -2938,14 +2745,14 @@ function RunLogAction({
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
-      {showInlineLoading ? <RunLogInlineLoading /> : null}
-      {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
       {fileChange && !detailsExpanded && (fileChange.additions > 0 || fileChange.deletions > 0) ? (
         <span className="run-log-file-change-card-stats run-log-action-file-stats">
           {fileChange.additions > 0 ? <span className="stat-add">+{fileChange.additions}</span> : null}
           {fileChange.deletions > 0 ? <span className="stat-del">-{fileChange.deletions}</span> : null}
         </span>
       ) : null}
+      {showInlineLoading ? <RunLogInlineLoading /> : null}
+      {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
       {hasHeavyDetails || (isTerminal && canExpand) ? (
         <ChevronDown
           size={14}
@@ -3164,15 +2971,14 @@ function RunLogFileChangeCard({
       aria-expanded={expanded}
     >
       <div className="run-log-file-change-card-header">
-        <FileText size={16} className="run-log-file-change-card-icon" aria-hidden />
         <span className="run-log-file-change-card-title">{display.fileName}</span>
-        {showInlineLoading ? <RunLogInlineLoading label="正在写入文件" /> : null}
         {!expanded && (display.additions > 0 || display.deletions > 0) ? (
           <span className="run-log-file-change-card-stats">
             {display.additions > 0 ? <span className="stat-add">+{display.additions}</span> : null}
             {display.deletions > 0 ? <span className="stat-del">-{display.deletions}</span> : null}
           </span>
         ) : null}
+        {showInlineLoading ? <RunLogInlineLoading label="正在写入文件" /> : null}
       </div>
       <div className="run-log-file-change-card-divider" aria-hidden />
       <div className="run-log-file-change-card-preview-shell">

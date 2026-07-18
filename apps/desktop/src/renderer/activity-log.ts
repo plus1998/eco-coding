@@ -52,8 +52,6 @@ export type ActivityDetailBlock =
       streaming?: boolean;
       subagent?: string;
       agentId?: string;
-      durationMs?: number;
-      requestDurationFallbackAllowed?: boolean;
     }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | {

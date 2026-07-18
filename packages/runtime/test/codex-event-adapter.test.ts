@@ -1478,43 +1478,6 @@ test("dispatch reads structured reasoning summary text on item completion", () =
   });
 });
 
-test("dispatch records duration for each completed reasoning item", () => {
-  let now = "2026-01-01T00:00:01.000Z";
-  const events = collectEvents((record) => {
-    const adapter = new CodexEventAdapter({
-      resolveEcoThreadId,
-      recordThreadRunEvent: record,
-      now: () => now,
-    });
-    adapter.dispatch("item/started", {
-      threadId: CODEX_THREAD,
-      turnId: "turn_reasoning_duration",
-      item: { type: "reasoning", id: "item_reasoning_duration" },
-    });
-    now = "2026-01-01T00:00:02.500Z";
-    adapter.dispatch("item/reasoning/textDelta", {
-      threadId: CODEX_THREAD,
-      turnId: "turn_reasoning_duration",
-      itemId: "item_reasoning_duration",
-      delta: "检查事件时间。",
-    });
-    now = "2026-01-01T00:00:05.250Z";
-    adapter.dispatch("item/completed", {
-      threadId: CODEX_THREAD,
-      turnId: "turn_reasoning_duration",
-      item: {
-        type: "reasoning",
-        id: "item_reasoning_duration",
-        summary: [{ type: "summary_text", text: "检查事件时间。" }],
-      },
-    });
-  });
-
-  expect(events.find((event) => event.eventType === "thinking.final")?.metadata).toMatchObject({
-    thinkingDurationMs: 4250,
-  });
-});
-
 test("buffers child events until parent eco mapping is known then flushes", () => {
   const parentMapped = { value: false };
   const attributions = new Map<string, { parentThreadId: string; agentRole?: string }>();
