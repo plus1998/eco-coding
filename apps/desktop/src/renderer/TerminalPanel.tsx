@@ -20,6 +20,7 @@ interface TerminalPanelProps {
   workspaceLabel: string;
   state: ProjectTerminalState;
   onStateChange: (next: ProjectTerminalState) => void;
+  onSessionExit?: (sessionId: string, exitCode: number) => boolean;
   isCurrentProject?: boolean;
   injectedSessionId?: string | null;
   onInjectedSessionConsumed?: () => void;
@@ -30,6 +31,7 @@ export function TerminalPanel({
   workspaceLabel,
   state,
   onStateChange,
+  onSessionExit,
   isCurrentProject = true,
   injectedSessionId,
   onInjectedSessionConsumed,
@@ -332,7 +334,11 @@ export function TerminalPanel({
                       void ensureTabSession(tab.id, dimensions);
                     },
                   })}
-                  onExit={() => {
+                  onExit={(exitCode) => {
+                    if (sessionId && onSessionExit?.(sessionId, exitCode) === false) {
+                      deleteTerminalSessionId(workspacePath, tab.id);
+                      return;
+                    }
                     handleExitedTab(tab);
                   }}
                 />
