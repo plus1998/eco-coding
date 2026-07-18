@@ -1286,12 +1286,9 @@ function getCodexModelCatalogService(): CodexModelCatalogService {
   return modelCatalogService;
 }
 
-/** Delta events must throttle-emit projection; debounce would wait until the stream pauses. */
+/** User-visible messages and tool lifecycle events publish immediately. */
 export function isCodexStreamingProjectionEvent(event: ThreadRunEventInput): boolean {
-  if (event.eventType === "message.delta" || event.eventType === "thinking.delta") {
-    return true;
-  }
-  return event.eventType === "tool.started" && event.streamState === "streaming";
+  return event.eventType === "thinking.delta";
 }
 
 function getProjectCodexCandidates(): string[] {

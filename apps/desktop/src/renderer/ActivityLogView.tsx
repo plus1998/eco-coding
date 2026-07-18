@@ -116,6 +116,7 @@ type ToolGroupDetailBlock = Extract<ActivityDetailBlock, { kind: "action" | "too
 const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
 const LIVE_DURATION_TICK_MS = 100;
+const TOOL_RUNNING_MIN_VISIBLE_MS = 500;
 
 function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
@@ -745,8 +746,22 @@ function ProjectionToolGroupEntry({
         ),
     [entry.entries],
   );
-  const summary = useMemo(() => summarizeActionBlocks(blocks), [blocks]);
-  const lifecycle = useMemo(() => resolveActionBlocksLifecycle(blocks), [blocks]);
+  const currentSummary = useMemo(() => summarizeActionBlocks(blocks), [blocks]);
+  const currentLifecycle = useMemo(() => resolveActionBlocksLifecycle(blocks), [blocks]);
+  const currentActionIdentity = useMemo(
+    () => resolveLatestToolGroupActionIdentity(entry.entries),
+    [entry.entries],
+  );
+  const runningActionIdentity = useMemo(
+    () => resolveLatestToolGroupActionIdentity(entry.entries, "running"),
+    [entry.entries],
+  );
+  const { summary, lifecycle } = useMinimumVisibleToolRunningState({
+    summary: currentSummary,
+    ...(currentLifecycle && { lifecycle: currentLifecycle }),
+    ...(currentActionIdentity && { currentActionIdentity }),
+    ...(runningActionIdentity && { runningActionIdentity }),
+  });
   const Icon = actionIcons[summary.icon];
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
@@ -797,6 +812,114 @@ function ProjectionToolGroupEntry({
       ) : null}
     </div>
   );
+}
+
+interface MinimumVisibleToolRunningSnapshot {
+  identity: string;
+  startedAtMs: number;
+  summary: { label: string; icon: ActivityActionIcon };
+}
+
+export function resolveMinimumVisibleToolRunningState(input: {
+  nowMs: number;
+  minimumMs: number;
+  summary: { label: string; icon: ActivityActionIcon };
+  lifecycle?: ToolActionLifecycle;
+  currentActionIdentity?: string;
+  runningActionIdentity?: string;
+  previous?: MinimumVisibleToolRunningSnapshot;
+}): {
+  summary: { label: string; icon: ActivityActionIcon };
+  lifecycle?: ToolActionLifecycle;
+  running?: MinimumVisibleToolRunningSnapshot;
+  remainingMs: number;
+} {
+  if (input.lifecycle === "running" && input.runningActionIdentity) {
+    const running =
+      input.previous?.identity === input.runningActionIdentity
+        ? { ...input.previous, summary: input.summary }
+        : {
+            identity: input.runningActionIdentity,
+            startedAtMs: input.nowMs,
+            summary: input.summary,
+          };
+    return { summary: input.summary, lifecycle: input.lifecycle, running, remainingMs: 0 };
+  }
+
+  const previous = input.previous;
+  const hasNewerAction = Boolean(
+    previous && input.currentActionIdentity && input.currentActionIdentity !== previous.identity,
+  );
+  if (previous && !hasNewerAction) {
+    const remainingMs = Math.max(0, input.minimumMs - (input.nowMs - previous.startedAtMs));
+    if (remainingMs > 0) {
+      return {
+        summary: previous.summary,
+        lifecycle: "running",
+        running: previous,
+        remainingMs,
+      };
+    }
+  }
+
+  return {
+    summary: input.summary,
+    ...(input.lifecycle && { lifecycle: input.lifecycle }),
+    remainingMs: 0,
+  };
+}
+
+function useMinimumVisibleToolRunningState(input: {
+  summary: { label: string; icon: ActivityActionIcon };
+  lifecycle?: ToolActionLifecycle;
+  currentActionIdentity?: string;
+  runningActionIdentity?: string;
+}): {
+  summary: { label: string; icon: ActivityActionIcon };
+  lifecycle?: ToolActionLifecycle;
+} {
+  const runningRef = useRef<MinimumVisibleToolRunningSnapshot | undefined>(undefined);
+  const [, refresh] = useState(0);
+  const resolved = resolveMinimumVisibleToolRunningState({
+    nowMs: Date.now(),
+    minimumMs: TOOL_RUNNING_MIN_VISIBLE_MS,
+    summary: input.summary,
+    ...(input.lifecycle && { lifecycle: input.lifecycle }),
+    ...(input.currentActionIdentity && { currentActionIdentity: input.currentActionIdentity }),
+    ...(input.runningActionIdentity && { runningActionIdentity: input.runningActionIdentity }),
+    ...(runningRef.current && { previous: runningRef.current }),
+  });
+  runningRef.current = resolved.running;
+
+  useEffect(() => {
+    if (resolved.remainingMs <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => refresh((value) => value + 1), resolved.remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [resolved.remainingMs]);
+
+  return { summary: resolved.summary, ...(resolved.lifecycle && { lifecycle: resolved.lifecycle }) };
+}
+
+function resolveLatestToolGroupActionIdentity(
+  entries: readonly (
+    | ThreadRunProjectionTimelineFeedEntry
+    | ThreadRunProjectionAgentEchoFeedEntry
+  )[],
+  lifecycle?: ToolActionLifecycle,
+): string | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+    const block = projectionItemToDetailBlock(entry.item);
+    if (block?.kind === "action" && (!lifecycle || block.lifecycle === lifecycle)) {
+      return entry.key;
+    }
+  }
+  return undefined;
 }
 
 function ProjectionToolGroupChildEntry({

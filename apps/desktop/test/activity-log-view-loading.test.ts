@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityLogView, ProjectionSubagentDetailFeed } from "../src/renderer/ActivityLogView";
-import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
+import {
+  ActivityLogView,
+  ProjectionSubagentDetailFeed,
+  resolveMinimumVisibleToolRunningState,
+} from "../src/renderer/ActivityLogView";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
+import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
   ThreadRunProjectionAgent,
@@ -45,6 +49,63 @@ function requestSpan(
     ...(input.error && { error: input.error }),
   };
 }
+
+test("tool running status remains visible for at least 500ms", () => {
+  const running = resolveMinimumVisibleToolRunningState({
+    nowMs: 1_000,
+    minimumMs: 500,
+    summary: { label: "正在运行 git status", icon: "terminal" },
+    lifecycle: "running",
+    currentActionIdentity: "tool-a",
+    runningActionIdentity: "tool-a",
+  });
+  const completed = resolveMinimumVisibleToolRunningState({
+    nowMs: 1_100,
+    minimumMs: 500,
+    summary: { label: "已运行 git status", icon: "terminal" },
+    lifecycle: "completed",
+    currentActionIdentity: "tool-a",
+    previous: running.running,
+  });
+
+  expect(completed.lifecycle).toBe("running");
+  expect(completed.summary.label).toBe("正在运行 git status");
+  expect(completed.remainingMs).toBe(400);
+
+  const released = resolveMinimumVisibleToolRunningState({
+    nowMs: 1_500,
+    minimumMs: 500,
+    summary: { label: "已运行 git status", icon: "terminal" },
+    lifecycle: "completed",
+    currentActionIdentity: "tool-a",
+    previous: completed.running,
+  });
+  expect(released.lifecycle).toBe("completed");
+  expect(released.summary.label).toBe("已运行 git status");
+});
+
+test("a newer overlapping tool skips the previous minimum running duration", () => {
+  const running = resolveMinimumVisibleToolRunningState({
+    nowMs: 1_000,
+    minimumMs: 500,
+    summary: { label: "正在运行 git status", icon: "terminal" },
+    lifecycle: "running",
+    currentActionIdentity: "tool-a",
+    runningActionIdentity: "tool-a",
+  });
+  const newer = resolveMinimumVisibleToolRunningState({
+    nowMs: 1_100,
+    minimumMs: 500,
+    summary: { label: "已读取 README.md", icon: "file" },
+    lifecycle: "completed",
+    currentActionIdentity: "tool-b",
+    previous: running.running,
+  });
+
+  expect(newer.lifecycle).toBe("completed");
+  expect(newer.summary.label).toBe("已读取 README.md");
+  expect(newer.remainingMs).toBe(0);
+});
 
 function projection(input: {
   timeline: ThreadRunProjectionTimelineItem[];
