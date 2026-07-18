@@ -17,6 +17,7 @@ import '../../core/utils/subagent_session_timing.dart';
 import '../../core/widgets/activity_feed_block.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
+import '../../core/widgets/paced_stream_text.dart';
 import '../../core/widgets/shimmer_text.dart';
 import '../../core/theme/subagent_theme.dart';
 import 'activity_feed_scroll_coordinator.dart';
@@ -1127,10 +1128,34 @@ class _AssistantNarrativeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return PacedStreamText(
+      text: text,
+      streaming: streaming,
+      builder: (context, displayText, revealing) => _AssistantNarrativeContent(
+        text: displayText,
+        streaming: streaming || revealing,
+        usageBadge: usageBadge,
+      ),
+    );
+  }
+}
+
+class _AssistantNarrativeContent extends StatelessWidget {
+  const _AssistantNarrativeContent({
+    required this.text,
+    required this.streaming,
+    this.usageBadge,
+  });
+
+  final String text;
+  final bool streaming;
+  final String? usageBadge;
+
+  @override
+  Widget build(BuildContext context) {
     if (text.isEmpty && usageBadge != null) {
       return _UsageBadgeLine(badge: usageBadge!);
     }
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
       child: Column(
@@ -1170,17 +1195,36 @@ class _AssistantNarrativeTile extends StatelessWidget {
   }
 }
 
-class _ThinkingTile extends StatefulWidget {
+class _ThinkingTile extends StatelessWidget {
   const _ThinkingTile({required this.text, this.streaming = false});
 
   final String text;
   final bool streaming;
 
   @override
-  State<_ThinkingTile> createState() => _ThinkingTileState();
+  Widget build(BuildContext context) {
+    return PacedStreamText(
+      text: text,
+      streaming: streaming,
+      builder: (context, displayText, revealing) => _ThinkingTileContent(
+        text: displayText,
+        streaming: streaming || revealing,
+      ),
+    );
+  }
 }
 
-class _ThinkingTileState extends State<_ThinkingTile> {
+class _ThinkingTileContent extends StatefulWidget {
+  const _ThinkingTileContent({required this.text, required this.streaming});
+
+  final String text;
+  final bool streaming;
+
+  @override
+  State<_ThinkingTileContent> createState() => _ThinkingTileContentState();
+}
+
+class _ThinkingTileContentState extends State<_ThinkingTileContent> {
   var _collapsed = false;
   var _collapseSuppressed = false;
 
@@ -1199,7 +1243,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
   }
 
   @override
-  void didUpdateWidget(covariant _ThinkingTile oldWidget) {
+  void didUpdateWidget(covariant _ThinkingTileContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.streaming && _hasBody) {
       _collapsed = false;

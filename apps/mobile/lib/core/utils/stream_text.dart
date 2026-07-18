@@ -1,3 +1,35 @@
+import 'package:characters/characters.dart';
+
+const pacedStreamInterval = Duration(milliseconds: 24);
+
+int resolvePacedRevealCount(int pendingCount, {required bool streaming}) {
+  if (pendingCount <= 0) return 0;
+  if (!streaming) {
+    final third = (pendingCount / 3).ceil();
+    return pendingCount < 4 ? pendingCount : (third < 4 ? 4 : third);
+  }
+  if (pendingCount > 120) return 8;
+  if (pendingCount > 60) return 4;
+  if (pendingCount > 24) return 2;
+  return 1;
+}
+
+String revealPacedStreamText(
+  String current,
+  String target, {
+  required bool streaming,
+}) {
+  if (current == target) return current;
+  if (!target.startsWith(current)) return target;
+
+  final pending = target.substring(current.length).characters;
+  final revealCount = resolvePacedRevealCount(
+    pending.length,
+    streaming: streaming,
+  );
+  return current + pending.take(revealCount).toString();
+}
+
 /// Merges streaming text chunks (cumulative snapshots or incremental deltas).
 String mergeStreamText(String previous, String incoming) {
   if (incoming.isEmpty) {
@@ -25,8 +57,11 @@ String mergeStreamText(String previous, String incoming) {
 }
 
 String? _mergeWithSuffixPrefixOverlap(String previous, String incoming) {
-  final max = [previous.length, incoming.length, 256]
-      .reduce((left, right) => left < right ? left : right);
+  final max = [
+    previous.length,
+    incoming.length,
+    256,
+  ].reduce((left, right) => left < right ? left : right);
   for (var len = max; len >= 3; len--) {
     if (previous.substring(previous.length - len) ==
         incoming.substring(0, len)) {
@@ -64,10 +99,7 @@ String thinkingPreviewLine(String text, {int max = 120}) {
     RegExp(r'\*\*([^*]+)\*\*'),
     RegExp(r'\*([^*]+)\*'),
   ]) {
-    plain = plain.replaceAllMapped(
-      pattern,
-      (match) => match.group(1) ?? '',
-    );
+    plain = plain.replaceAllMapped(pattern, (match) => match.group(1) ?? '');
   }
   plain = plain
       .replaceAll(RegExp(r'^#+\s+', multiLine: true), '')

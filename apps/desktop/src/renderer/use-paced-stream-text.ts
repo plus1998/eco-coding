@@ -76,6 +76,11 @@ export function usePacedStreamText(text: string, streaming: boolean): string {
     targetTextRef.current = text;
     streamingRef.current = streaming;
 
+    if (!displayTextRef.current && text) {
+      displayTextRef.current = text;
+      setDisplayText(text);
+      return;
+    }
     if (!text.startsWith(displayTextRef.current)) {
       displayTextRef.current = text;
       setDisplayText(text);
