@@ -3170,6 +3170,39 @@ function registerIpcHandlers(): void {
     if (!approvalThread) {
       throw new Error("Thread was not found.");
     }
+    if (approvalThread.coreKind === "codex") {
+      requireThreadCore(approvalThread, "codex", "approve a Codex plan");
+      if (getPendingPlanApprovalForThread(threadId)) {
+        throw new Error("Codex plan approval cannot use the Claude approval bridge.");
+      }
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      if (!pendingPlan) {
+        throw new Error("找不到待批准的计划。");
+      }
+      if (approvalThread.status !== "awaiting_plan") {
+        throw new Error("This thread is not waiting for plan approval.");
+      }
+      if (!pendingPlan.plan.trim()) {
+        throw new Error("计划内容不能为空。");
+      }
+      const currentConfig = ensureThreadRuntimeConfig(approvalThread).runtimeConfig;
+      if (!currentConfig) {
+        throw new Error("Thread runtime configuration is missing.");
+      }
+      const runtimeConfig = withAgentSessionMode(
+        request.runtimeConfig ? parseThreadRuntimeConfigInput(request.runtimeConfig) : currentConfig,
+        "agent",
+      );
+      conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
+      const result = await startCodexThreadContinuation({
+        threadId,
+        prompt: "Implement the plan.",
+        runtimeConfigInput: runtimeConfig,
+      });
+      conversationStore.clearPendingPlan(threadId);
+      emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      return { thread: result.thread };
+    }
     requireThreadCore(approvalThread, "claude", "approve a Claude plan");
     const pendingBridge = getPendingPlanApprovalForThread(threadId);
     const pendingRuntimeConfig = request.runtimeConfig
