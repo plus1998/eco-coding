@@ -101,6 +101,25 @@ export function responsesStreamEventToJSON(evt: ResponsesStreamEvent): string {
       return jsonMarshal(m);
     }
 
+    case 'response.custom_tool_call_input.delta':
+    case 'response.custom_tool_call_input.done': {
+      const m = wireBase(evt);
+      putItemID(m, evt);
+      m.output_index = evt.output_index ?? 0;
+      if (evt.call_id !== undefined && evt.call_id !== '') {
+        m.call_id = evt.call_id;
+      }
+      if (evt.name !== undefined && evt.name !== '') {
+        m.name = evt.name;
+      }
+      if (evt.type === 'response.custom_tool_call_input.done') {
+        m.input = evt.input ?? '';
+      } else {
+        m.delta = evt.delta ?? '';
+      }
+      return jsonMarshal(m);
+    }
+
     default:
       return jsonMarshal(evt);
   }
@@ -171,6 +190,18 @@ function responsesItemWire(item: ResponsesOutput | undefined): Record<string, un
       m.name = item.name ?? '';
       if (item.namespace !== undefined && item.namespace !== '') {
         m.namespace = item.namespace;
+      }
+      m.arguments = item.arguments ?? '';
+      break;
+    case 'custom_tool_call':
+      m.call_id = item.call_id ?? '';
+      m.name = item.name ?? '';
+      m.input = item.input ?? '';
+      break;
+    case 'tool_search_call':
+      m.call_id = item.call_id ?? '';
+      if (item.execution !== undefined && item.execution !== '') {
+        m.execution = item.execution;
       }
       m.arguments = item.arguments ?? '';
       break;

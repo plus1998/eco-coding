@@ -8,6 +8,7 @@ import {
 } from './codex-chat-common.js';
 import {
   buildCodexToolContextFromRequest,
+  isCustomToolChatName,
   lookupChatName,
   type CodexToolContext,
 } from './codex-tool-context.js';
@@ -820,7 +821,8 @@ function chatMessageToResponsesOutput(
 
   for (const toolCall of message.tool_calls ?? []) {
     let arguments_ = toolCall.function.arguments ?? '';
-    if (bytesTrimSpace(arguments_) === '') {
+    const toolName = toolCall.function.name ?? '';
+    if (!isCustomToolChatName(toolContext, toolName) && bytesTrimSpace(arguments_) === '') {
       arguments_ = '{}';
     }
     outputs.push(chatToolCallToResponsesOutput(toolCall, arguments_, toolContext));
@@ -1145,24 +1147,33 @@ export function chatCompletionsChunkToResponsesEvents(
         if (toolCall.id !== undefined && toolCall.id !== '') {
           stored.id = toolCall.id;
         }
-        if (toolCall.function.name !== '') {
-          stored.function.name = toolCall.function.name;
+        // Argument-only deltas often omit `function.name` (null/undefined). Do not
+        // treat that as an empty string overwrite — it clears the name already set
+        // on the first chunk and yields empty-name output_item.done for Codex.
+        const nextName = toolCall.function?.name;
+        if (typeof nextName === 'string' && nextName !== '') {
+          stored.function.name = nextName;
         }
       }
 
-      const argsDelta = toolCall.function.arguments ?? '';
+      const argsDelta = toolCall.function?.arguments ?? '';
       if (argsDelta !== '') {
         stored.function.arguments = (stored.function.arguments ?? '') + argsDelta;
         const outputIndex = state.toolOutputIndex.get(idx)!;
-        events.push(
-          chatToResponsesEvent(state, 'response.function_call_arguments.delta', {
-            output_index: outputIndex,
-            item_id: state.toolItemIds.get(idx) ?? '',
-            delta: argsDelta,
-            call_id: stored.id ?? '',
-            name: stored.function.name,
-          }),
-        );
+        const toolName = stored.function.name ?? '';
+        if (isCustomToolChatName(state.toolContext, toolName)) {
+          // Buffer JSON fragments for freeform tools; Codex needs unwrapped input on done.
+        } else {
+          events.push(
+            chatToResponsesEvent(state, 'response.function_call_arguments.delta', {
+              output_index: outputIndex,
+              item_id: state.toolItemIds.get(idx) ?? '',
+              delta: argsDelta,
+              call_id: stored.id ?? '',
+              name: toolName,
+            }),
+          );
+        }
       }
     }
 
@@ -1413,7 +1424,9 @@ function closeChatToolItems(
       continue;
     }
     let arguments_ = toolCall.function.arguments ?? '';
-    if (bytesTrimSpace(arguments_) === '') {
+    const toolName = toolCall.function.name ?? '';
+    const isCustom = isCustomToolChatName(state.toolContext, toolName);
+    if (!isCustom && bytesTrimSpace(arguments_) === '') {
       arguments_ = '{}';
     }
     const outputIndex = state.toolOutputIndex.get(i)!;
@@ -1423,19 +1436,36 @@ function closeChatToolItems(
       state.toolContext,
       itemID,
     );
-    events.push(
-      chatToResponsesEvent(state, 'response.function_call_arguments.done', {
-        output_index: outputIndex,
-        item_id: itemID,
-        call_id: toolCall.id ?? '',
-        name: toolCall.function.name,
-        arguments: arguments_,
-      }),
-      chatToResponsesEvent(state, 'response.output_item.done', {
-        output_index: outputIndex,
-        item,
-      }),
-    );
+    if (isCustom) {
+      const input = item.input ?? customToolInputFromChatArguments(arguments_);
+      events.push(
+        chatToResponsesEvent(state, 'response.custom_tool_call_input.done', {
+          output_index: outputIndex,
+          item_id: itemID,
+          call_id: toolCall.id ?? '',
+          name: toolName,
+          input,
+        }),
+        chatToResponsesEvent(state, 'response.output_item.done', {
+          output_index: outputIndex,
+          item,
+        }),
+      );
+    } else {
+      events.push(
+        chatToResponsesEvent(state, 'response.function_call_arguments.done', {
+          output_index: outputIndex,
+          item_id: itemID,
+          call_id: toolCall.id ?? '',
+          name: toolName,
+          arguments: arguments_,
+        }),
+        chatToResponsesEvent(state, 'response.output_item.done', {
+          output_index: outputIndex,
+          item,
+        }),
+      );
+    }
   }
   return events;
 }
@@ -1466,7 +1496,8 @@ function chatStreamOutput(
       continue;
     }
     let arguments_ = toolCall.function.arguments ?? '';
-    if (bytesTrimSpace(arguments_) === '') {
+    const toolName = toolCall.function.name ?? '';
+    if (!isCustomToolChatName(state.toolContext, toolName) && bytesTrimSpace(arguments_) === '') {
       arguments_ = '{}';
     }
     outputs.push(chatToolCallToResponsesOutput(toolCall, arguments_, state.toolContext));

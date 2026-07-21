@@ -74,6 +74,30 @@ describe('chat completions stream → responses lifecycle (sub2api parity)', () 
     expect(sawItemDone).toBe(true);
   });
 
+  test('argument-only deltas with null name must not wipe tool name on done', () => {
+    const events = collectResponsesStreamEvents([
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"exec_command","arguments":""}}]}}]}`,
+      // Upstream often omits name on later deltas; JSON null must not clear stored name.
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":null,"arguments":"{\\"cmd\\":"}}]}}]}`,
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"ls\\"}"}}]}}]}`,
+      `{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+    ]);
+
+    const added = events.find(
+      (e) => e.type === 'response.output_item.added' && e.item?.type === 'function_call',
+    );
+    const argsDone = events.find((e) => e.type === 'response.function_call_arguments.done');
+    const itemDone = events.find(
+      (e) => e.type === 'response.output_item.done' && e.item?.type === 'function_call',
+    );
+
+    expect(added?.item?.name).toBe('exec_command');
+    expect(argsDone?.name).toBe('exec_command');
+    expect(itemDone?.item?.name).toBe('exec_command');
+    expect(itemDone?.item?.arguments).toBe('{"cmd":"ls"}');
+    expect(itemDone?.item?.call_id).toBe('call_a');
+  });
+
   test('function_call output_item.added wire includes empty arguments and call_id', () => {
     const events = collectResponsesStreamEvents([
       `{"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"plan"}}]}`,
