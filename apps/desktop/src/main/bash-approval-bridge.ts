@@ -14,6 +14,17 @@ interface PendingBashApproval {
 
 const pending = new Map<string, PendingBashApproval>();
 
+export function buildResolvedBashApprovalThreadPatch(decision: BashApprovalDecision): {
+  status: "running";
+  message: string;
+} {
+  const denied = decision === "denied" || decision === "cancelled";
+  return {
+    status: "running",
+    message: denied ? "已拒绝操作，正在继续…" : "已批准操作，正在继续…",
+  };
+}
+
 export function registerPendingBashApproval(
   threadId: string,
   request: BashApprovalRequest,

@@ -643,6 +643,36 @@ function useTurnDurationMs(startedAt: string, endedAt: string | undefined, runni
   return durationMs;
 }
 
+export function resolveActiveSubagentDurationMs(
+  startedAt: string,
+  projectedDurationMs: number,
+  nowMs = Date.now(),
+): number {
+  const startedAtMs = Date.parse(startedAt);
+  const elapsedSinceStartMs = Number.isFinite(startedAtMs) ? Math.max(0, nowMs - startedAtMs) : 0;
+  return Math.max(0, projectedDurationMs, elapsedSinceStartMs);
+}
+
+function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean): number {
+  const resolve = useCallback(
+    () =>
+      running
+        ? resolveActiveSubagentDurationMs(agent.startedAt, agent.durationMs)
+        : Math.max(0, agent.durationMs),
+    [agent.durationMs, agent.startedAt, running],
+  );
+  const [durationMs, setDurationMs] = useState(resolve);
+
+  useEffect(() => {
+    setDurationMs(resolve());
+    if (!running) return;
+    const timer = setInterval(() => setDurationMs(resolve()), LIVE_DURATION_TICK_MS);
+    return () => clearInterval(timer);
+  }, [resolve, running]);
+
+  return durationMs;
+}
+
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
   if (block.kind === "action" && (block.bashRun || block.fileChange)) {
     return false;
@@ -1562,20 +1592,7 @@ function ProjectionSubagentRunRow({
   agentThemes?: RuntimeAgentThemes;
 }) {
   const running = agent.status === "active" || agent.status === "launching";
-  const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
-
-  useEffect(() => {
-    if (!running) {
-      setLiveDurationMs(agent.durationMs);
-      return;
-    }
-    const baselineMs = agent.durationMs;
-    const anchorAt = Date.now();
-    const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
-    tick();
-    const timer = setInterval(tick, LIVE_DURATION_TICK_MS);
-    return () => clearInterval(timer);
-  }, [agent.agentId, agent.durationMs, running]);
+  const liveDurationMs = useSubagentDurationMs(agent, running);
 
   const roleLabel =
     resolveRuntimeAgentName(agent.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(agent.role);
@@ -1680,7 +1697,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
-  const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
+  const liveDurationMs = useSubagentDurationMs(agent, running);
   const visibleTimeline = useMemo(
     () =>
       agent.timeline.filter((item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText))),
@@ -1738,19 +1755,6 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
       });
     });
   }, []);
-
-  useEffect(() => {
-    if (!running) {
-      setLiveDurationMs(agent.durationMs);
-      return;
-    }
-    const baselineMs = agent.durationMs;
-    const anchorAt = Date.now();
-    const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
-    tick();
-    const timer = setInterval(tick, LIVE_DURATION_TICK_MS);
-    return () => clearInterval(timer);
-  }, [agent.agentId, agent.durationMs, running]);
 
   useEffect(() => {
     const feed = feedRef.current;

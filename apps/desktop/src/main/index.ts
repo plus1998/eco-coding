@@ -262,6 +262,7 @@ import {
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
+  buildResolvedBashApprovalThreadPatch,
   type BashApprovalResolution,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
@@ -3176,17 +3177,20 @@ function registerIpcHandlers(): void {
     if (!pendingApproval) {
       throw new Error("No pending Bash approval for this tool use.");
     }
-    const ok = resolvePendingBashApproval(payload.toolUseId, {
+    const resolution: BashApprovalResolution = {
       decision: payload.decision,
       ...(payload.feedback?.trim() ? { feedback: payload.feedback.trim() } : {}),
-    });
+    };
+    const ok = resolvePendingBashApproval(payload.toolUseId, resolution);
     if (!ok) {
       throw new Error("Failed to resolve Bash approval.");
     }
+    const threadPatch = buildResolvedBashApprovalThreadPatch(resolution.decision);
+    patchThreadSummary(pendingApproval.threadId, threadPatch);
     desktopEventCenter.publishThreadLiveEvent({
       threadId: pendingApproval.threadId,
       type: "bash_approval.resolved",
-      message: "状态已更新",
+      message: threadPatch.message,
       role: "tool",
       stream: false,
       bashApproval: pendingApproval,

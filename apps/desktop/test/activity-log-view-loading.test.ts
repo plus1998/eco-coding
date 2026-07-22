@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   ActivityLogView,
   ProjectionSubagentDetailFeed,
+  resolveActiveSubagentDurationMs,
   resolveMinimumVisibleToolRunningState,
 } from "../src/renderer/ActivityLogView";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
@@ -145,6 +146,22 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
     ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
   };
 }
+
+test("active subagent duration stays anchored to its feed card start time", () => {
+  expect(
+    resolveActiveSubagentDurationMs("2026-01-01T00:00:00.000Z", 0, Date.parse("2026-01-01T00:00:42.000Z")),
+  ).toBe(42_000);
+});
+
+test("active subagent duration never moves behind the projected duration", () => {
+  expect(
+    resolveActiveSubagentDurationMs(
+      "2026-01-01T00:00:40.000Z",
+      45_000,
+      Date.parse("2026-01-01T00:01:00.000Z"),
+    ),
+  ).toBe(45_000);
+});
 
 test("StreamingMarkdownContent renders an incomplete code fence without a local loading tail", () => {
   const html = renderToStaticMarkup(

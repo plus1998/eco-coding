@@ -1,11 +1,27 @@
 import { expect, test } from "bun:test";
 import {
+  buildResolvedBashApprovalThreadPatch,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
   getPendingBashApprovalForThread,
   registerPendingBashApproval,
   resolvePendingBashApproval,
 } from "../src/main/bash-approval-bridge";
+
+test("resolved Bash approvals clear the waiting summary while the thread continues", () => {
+  expect(buildResolvedBashApprovalThreadPatch("approved")).toEqual({
+    status: "running",
+    message: "已批准操作，正在继续…",
+  });
+  expect(buildResolvedBashApprovalThreadPatch("approved_remember_prefix")).toEqual({
+    status: "running",
+    message: "已批准操作，正在继续…",
+  });
+  expect(buildResolvedBashApprovalThreadPatch("denied")).toEqual({
+    status: "running",
+    message: "已拒绝操作，正在继续…",
+  });
+});
 
 test("registers and resolves pending Bash approvals", async () => {
   const pending = registerPendingBashApproval("thread_1", {
