@@ -211,7 +211,10 @@ import {
   shouldShowActivityMessageNav,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
-import { TerminalPanel } from "./TerminalPanel";
+import {
+  TerminalPanel,
+  type TerminalSessionPresentation,
+} from "./TerminalPanel";
 import {
   createProjectTerminalState,
   DEFAULT_TERMINAL_HEIGHT,
@@ -946,7 +949,11 @@ function App() {
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
   const packageScriptByTerminalSessionRef = useRef(new Map<string, string>());
+  const packageScriptTaskByTerminalSessionRef = useRef(new Map<string, string>());
   const settledPackageScriptTerminalSessionRef = useRef(new Map<string, boolean>());
+  const [terminalSessionPresentations, setTerminalSessionPresentations] = useState<
+    Record<string, TerminalSessionPresentation>
+  >({});
   const [terminalLifecycleEpoch, setTerminalLifecycleEpoch] = useState(0);
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
@@ -2160,12 +2167,17 @@ function App() {
     void refreshBackgroundTerminalTasks();
   }, [refreshBackgroundTerminalTasks]);
 
-  const trackPackageScriptTerminalSession = useCallback((sessionId: string, scriptName: string) => {
-    if (settledPackageScriptTerminalSessionRef.current.has(sessionId)) {
-      return;
-    }
-    packageScriptByTerminalSessionRef.current.set(sessionId, scriptName);
-  }, []);
+  const trackPackageScriptTerminalSession = useCallback(
+    (sessionId: string, scriptName: string, taskId?: string) => {
+      if (!settledPackageScriptTerminalSessionRef.current.has(sessionId)) {
+        packageScriptByTerminalSessionRef.current.set(sessionId, scriptName);
+      }
+      if (taskId) {
+        packageScriptTaskByTerminalSessionRef.current.set(sessionId, taskId);
+      }
+    },
+    [],
+  );
 
   const settlePackageScriptTerminalSession = useCallback(
     (sessionId: string, exitCode?: number): boolean | undefined => {
@@ -2197,6 +2209,38 @@ function App() {
     [],
   );
 
+  const syncPackageScriptTerminalPresentation = useCallback(
+    async (sessionId: string, taskId?: string) => {
+      const resolvedTaskId = taskId ?? packageScriptTaskByTerminalSessionRef.current.get(sessionId);
+      if (!resolvedTaskId || !window.eco?.openBackgroundTerminalTask) {
+        return;
+      }
+      try {
+        const task = await window.eco.openBackgroundTerminalTask({ taskId: resolvedTaskId });
+        const isSettled =
+          task.status === "exited" ||
+          task.status === "failed" ||
+          task.status === "stopped";
+        setTerminalSessionPresentations((current) => ({
+          ...current,
+          [sessionId]: {
+            ...(task.output !== undefined && { initialOutput: task.output }),
+            ...(isSettled && { exitCode: task.exitCode ?? (task.status === "exited" ? 0 : 1) }),
+          },
+        }));
+        if (isSettled) {
+          settlePackageScriptTerminalSession(
+            sessionId,
+            task.exitCode ?? (task.status === "exited" ? 0 : 1),
+          );
+        }
+      } catch {
+        // The live terminal event path still handles sessions whose task snapshot is unavailable.
+      }
+    },
+    [settlePackageScriptTerminalSession],
+  );
+
   useEffect(() => {
     if (!window.eco?.onTerminalEvent) {
       return undefined;
@@ -2204,8 +2248,10 @@ function App() {
     return window.eco.onTerminalEvent((event) => {
       if (event.type === "exit") {
         settlePackageScriptTerminalSession(event.sessionId, event.exitCode);
+        void syncPackageScriptTerminalPresentation(event.sessionId);
       } else if (event.type === "error") {
         settlePackageScriptTerminalSession(event.sessionId);
+        void syncPackageScriptTerminalPresentation(event.sessionId);
       }
       if (event.type === "started" || event.type === "exit" || event.type === "error") {
         void refreshBackgroundTerminalTasks();
@@ -2214,7 +2260,11 @@ function App() {
         setTerminalLifecycleEpoch((epoch) => epoch + 1);
       }
     });
-  }, [refreshBackgroundTerminalTasks, settlePackageScriptTerminalSession]);
+  }, [
+    refreshBackgroundTerminalTasks,
+    settlePackageScriptTerminalSession,
+    syncPackageScriptTerminalPresentation,
+  ]);
 
   const dismissPackageScriptRunOverlays = useCallback(() => {
     setScriptsDialogOpen(false);
@@ -2247,9 +2297,15 @@ function App() {
 
   const handleTerminalSessionExit = useCallback(
     (sessionId: string, exitCode: number) => {
-      return settlePackageScriptTerminalSession(sessionId, exitCode) ?? true;
+      const isPackageScript =
+        packageScriptByTerminalSessionRef.current.has(sessionId) ||
+        settledPackageScriptTerminalSessionRef.current.has(sessionId) ||
+        packageScriptTaskByTerminalSessionRef.current.has(sessionId);
+      settlePackageScriptTerminalSession(sessionId, exitCode);
+      void syncPackageScriptTerminalPresentation(sessionId);
+      return !isPackageScript;
     },
-    [settlePackageScriptTerminalSession],
+    [settlePackageScriptTerminalSession, syncPackageScriptTerminalPresentation],
   );
 
   const openBackgroundTerminalTask = useCallback(
@@ -2283,18 +2339,20 @@ function App() {
   );
 
   const presentPackageScriptTerminal = useCallback(
-    async (workspacePath: string, sessionId: string, scriptName: string) => {
-      trackPackageScriptTerminalSession(sessionId, scriptName);
+    async (workspacePath: string, sessionId: string, scriptName: string, taskId?: string) => {
+      trackPackageScriptTerminalSession(sessionId, scriptName, taskId);
       const dismissStartedAt = performance.now();
       dismissPackageScriptRunOverlays();
       void refreshBackgroundTerminalTasks();
       await waitForOverlayDismiss(dismissStartedAt);
       openPackageScriptTerminalSession(workspacePath, sessionId);
+      void syncPackageScriptTerminalPresentation(sessionId, taskId);
     },
     [
       dismissPackageScriptRunOverlays,
       openPackageScriptTerminalSession,
       refreshBackgroundTerminalTasks,
+      syncPackageScriptTerminalPresentation,
       trackPackageScriptTerminalSession,
     ],
   );
@@ -2304,11 +2362,16 @@ function App() {
       return undefined;
     }
     return window.eco.onPackageScriptTerminalLaunch((payload) => {
-      trackPackageScriptTerminalSession(payload.sessionId, payload.script);
+      trackPackageScriptTerminalSession(payload.sessionId, payload.script, payload.taskId);
       if (!currentProjectPath || payload.workspacePath !== currentProjectPath) {
         return;
       }
-      void presentPackageScriptTerminal(payload.workspacePath, payload.sessionId, payload.script);
+      void presentPackageScriptTerminal(
+        payload.workspacePath,
+        payload.sessionId,
+        payload.script,
+        payload.taskId,
+      );
     });
   }, [currentProjectPath, presentPackageScriptTerminal, trackPackageScriptTerminalSession]);
 
@@ -2328,10 +2391,11 @@ function App() {
           ...(trimmedArgs && { args: trimmedArgs }),
           ...(activeThread?.id && { threadId: activeThread.id }),
         });
-        trackPackageScriptTerminalSession(result.sessionId, result.script);
+        trackPackageScriptTerminalSession(result.sessionId, result.script, result.taskId);
         void refreshBackgroundTerminalTasks();
         await waitForOverlayDismiss(dismissStartedAt);
         openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
+        void syncPackageScriptTerminalPresentation(result.sessionId, result.taskId);
       } catch (error) {
         console.error(error);
       } finally {
@@ -2344,6 +2408,7 @@ function App() {
       dismissPackageScriptRunOverlays,
       openPackageScriptTerminalSession,
       refreshBackgroundTerminalTasks,
+      syncPackageScriptTerminalPresentation,
       trackPackageScriptTerminalSession,
     ],
   );
@@ -6137,6 +6202,7 @@ function App() {
                       isCurrentProject={isCurrentProject}
                       onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
                       onSessionExit={handleTerminalSessionExit}
+                      sessionPresentations={terminalSessionPresentations}
                       {...(isCurrentProject && {
                         injectedSessionId: injectedTerminalSessionId,
                         onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),

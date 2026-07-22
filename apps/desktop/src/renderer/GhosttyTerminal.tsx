@@ -141,6 +141,7 @@ async function fitWhenLayoutReady(
 interface GhosttyTerminalProps {
   sessionId: string | null;
   active?: boolean;
+  initialOutput?: string;
   onDimensionsReady?: (dimensions: TerminalDimensions) => void;
   onExit?: (exitCode: number) => void;
 }
@@ -148,6 +149,7 @@ interface GhosttyTerminalProps {
 export function GhosttyTerminal({
   sessionId,
   active = true,
+  initialOutput,
   onDimensionsReady,
   onExit,
 }: GhosttyTerminalProps) {
@@ -378,6 +380,9 @@ export function GhosttyTerminal({
     }
 
     terminal.clear();
+    if (initialOutput) {
+      terminal.write(initialOutput);
+    }
     initialResizeSyncedRef.current = false;
     void eco.resizeTerminal({ sessionId, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
     initialResizeSyncedRef.current = true;
@@ -407,7 +412,7 @@ export function GhosttyTerminal({
       onData.dispose();
       unsubscribe();
     };
-  }, [sessionId, terminalEpoch]);
+  }, [initialOutput, sessionId, terminalEpoch]);
 
   useEffect(() => {
     const terminal = termRef.current;
