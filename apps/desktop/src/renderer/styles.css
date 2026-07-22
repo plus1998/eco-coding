@@ -6858,7 +6858,8 @@ button.sidebar-core-heading {
 .activity-icon-button .spinning,
 .coder-todo-icon .spinning,
 .chat-item-loading .spinning,
-.run-log-reconnect-icon.spinning {
+.run-log-reconnect-icon.spinning,
+.thread-info-workspace-git .spinning {
   animation: eco-spin 0.8s linear infinite;
 }
 
