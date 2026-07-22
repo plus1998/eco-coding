@@ -9,7 +9,7 @@ import {
   PinOff,
   Trash2,
 } from "lucide-react";
-import { type DragEvent, useEffect, useRef, useState } from "react";
+import { type DragEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
 import { formatRelativeTime } from "./relative-time";
@@ -28,6 +28,7 @@ interface ProjectSidebarTreeProps {
   projectTree: ProjectTreeItem[];
   currentProjectPath: string | undefined;
   activeThreadId: string | undefined;
+  revealTarget?: { kind: "project" | "thread"; id: string; requestId: number } | undefined;
   unreadThreadIds: ReadonlySet<string>;
   pinnedThreadIds: ReadonlySet<string>;
   onSwitchProject: (path: string) => void;
@@ -63,6 +64,7 @@ export function ProjectSidebarTree({
   projectTree,
   currentProjectPath,
   activeThreadId,
+  revealTarget,
   unreadThreadIds,
   pinnedThreadIds,
   onSwitchProject,
@@ -84,6 +86,26 @@ export function ProjectSidebarTree({
   const [dropTarget, setDropTarget] = useState<{ path: string; position: ProjectReorderPosition }>();
   const [openMenuPath, setOpenMenuPath] = useState<string>();
   const dragCounterRef = useRef(0);
+  const treeRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!revealTarget) {
+      return;
+    }
+    const attribute = revealTarget.kind === "thread" ? "data-thread-id" : "data-project-path";
+    const target = Array.from(treeRef.current?.querySelectorAll<HTMLElement>(`[${attribute}]`) ?? []).find(
+      (element) => element.getAttribute(attribute) === revealTarget.id,
+    );
+    if (!target) {
+      return;
+    }
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "nearest" });
+    target.classList.remove("sidebar-reveal-highlight");
+    void target.offsetWidth;
+    target.classList.add("sidebar-reveal-highlight");
+    return () => target.classList.remove("sidebar-reveal-highlight");
+  }, [revealTarget]);
 
   useEffect(() => {
     if (!openMenuPath) {
@@ -271,6 +293,7 @@ export function ProjectSidebarTree({
           <fieldset
             aria-label={`${project.name} 拖拽排序区域`}
             className={projectMainClassNames.join(" ")}
+            data-project-path={project.path}
             draggable={!project.isHome}
             onDragStart={(event) => handleProjectDragStart(event, project.path, project.isHome)}
             onDragEnd={handleProjectDragEnd}
@@ -395,7 +418,7 @@ export function ProjectSidebarTree({
                   .join(" ");
 
                 return (
-                  <div key={thread.id} className={rowClassName}>
+                  <div key={thread.id} className={rowClassName} data-thread-id={thread.id}>
                     <button
                       type="button"
                       className="chat-item nested"
@@ -531,6 +554,7 @@ export function ProjectSidebarTree({
 
   return (
     <div
+      ref={treeRef}
       aria-label="项目列表"
       className={treeClassNames.join(" ")}
       onDragEnter={handleTreeDragEnter}

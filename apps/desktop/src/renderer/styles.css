@@ -758,6 +758,48 @@ button.sidebar-core-heading {
   background: var(--sidebar-control-active-bg);
 }
 
+.project-group-main.sidebar-reveal-highlight,
+.chat-item-row.sidebar-reveal-highlight {
+  animation: sidebar-reveal-highlight 0.48s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes sidebar-reveal-highlight {
+  0% {
+    opacity: 0.82;
+    transform: scale(0.985);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-group-main.sidebar-reveal-highlight,
+  .chat-item-row.sidebar-reveal-highlight {
+    animation: sidebar-reveal-highlight-reduced 0.24s ease-out;
+  }
+}
+
+@keyframes sidebar-reveal-highlight-reduced {
+  from {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
 .project-group-main.menu-open,
 .project-tree-menu-open .project-group-main.menu-open:hover {
   position: relative;

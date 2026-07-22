@@ -783,6 +783,11 @@ function ActivityUserMessageNavigator({
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
+    kind: "project" | "thread";
+    id: string;
+    requestId: number;
+  }>();
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
   const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
@@ -5165,6 +5170,24 @@ function App() {
     resetComposerDefaultConfig();
   }
 
+  function requestSidebarReveal(kind: "project" | "thread", id: string) {
+    setSidebarRevealTarget((current) => ({ kind, id, requestId: (current?.requestId ?? 0) + 1 }));
+  }
+
+  function selectSearchProject(projectPath: string) {
+    switchProject(projectPath);
+    setCollapsedProjectPaths((current) => {
+      if (!current.has(projectPath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(projectPath);
+      window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+    requestSidebarReveal("project", projectPath);
+  }
+
   function selectThread(thread: ThreadSummary) {
     setUnreadThreadIds((current) => {
       if (!current.has(thread.id)) {
@@ -5188,11 +5211,16 @@ function App() {
       window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
       return next;
     });
-    const projectThreads = threads.filter((item) => item.workspacePath === thread.workspacePath);
+    const projectThreads = threadsByProject.get(thread.workspacePath) ?? [];
     const threadIndex = projectThreads.findIndex((item) => item.id === thread.id);
     if (threadIndex >= sidebarThreadsCollapsed) {
       expandProjectThreads(thread.workspacePath);
     }
+  }
+
+  function selectSearchThread(thread: ThreadSummary) {
+    selectThread(thread);
+    requestSidebarReveal("thread", thread.id);
   }
 
   function clearThreadClientState(threadId: string) {
@@ -6038,6 +6066,7 @@ function App() {
             projectTree={projectTree}
             currentProjectPath={currentProjectPath}
             activeThreadId={activeThread?.id}
+            revealTarget={sidebarRevealTarget}
             unreadThreadIds={unreadThreadIds}
             pinnedThreadIds={pinnedThreadIds}
             onSwitchProject={switchProject}
@@ -6067,8 +6096,8 @@ function App() {
         threads={sidebarSearchThreads}
         projects={projects}
         onClose={() => setSidebarSearchOpen(false)}
-        onSelectThread={selectThread}
-        onSelectProject={switchProject}
+        onSelectThread={selectSearchThread}
+        onSelectProject={selectSearchProject}
       />
 
       <section
