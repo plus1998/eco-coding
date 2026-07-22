@@ -137,8 +137,8 @@ export interface CodexRuntimeRunDeps {
   isContextCompactionInFlight?: (ecoThreadId: string) => boolean;
   /**
    * Emit feed projection. Pass `{ streaming: true }` for delta events so the
-   * scheduler throttles (~50ms) instead of debouncing (which suppresses all
-   * intermediate updates while deltas keep arriving).
+   * scheduler throttles streaming projections instead of debouncing away all
+   * intermediate updates while deltas keep arriving.
    */
   scheduleThreadRunProjectionUpdated: (
     threadId: string,

@@ -25,8 +25,13 @@ import {
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
 } from "../shared/center-server";
-import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
+import type {
+  EventCenterEnvelope,
+  EventCenterJsonRpcNotification,
+  EventCenterJsonRpcResponse,
+} from "../shared/event-center";
 import { buildEventCenterJsonRpcFailure, EVENT_CENTER_JSON_RPC_ERROR } from "../shared/event-center";
+import type { ThreadLiveEvent, ThreadRunProjectionSnapshot } from "../shared/ipc";
 import type { CenterServerSettingsSecret, CenterServerStore } from "./center-server-store";
 import {
   collectDesktopDeviceProfile,
@@ -57,8 +62,10 @@ export interface CenterServerDesktopClientOptions {
   now?: () => Date;
   reconnectDelayMs?: number;
   connectTimeoutMs?: number;
+  mobileStreamingProjectionThrottleMs?: number;
   log?: (message: string) => void;
   onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
+  resolveThreadProjection?: (threadId: string) => ThreadRunProjectionSnapshot | undefined;
 }
 
 interface TokenResponse {
@@ -92,6 +99,12 @@ interface AccountAuthResponse {
 const WS_OPEN = 1;
 const MAX_QUEUED_EVENTS = 100;
 const KEEPALIVE_INTERVAL_MS = 25_000;
+const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 1_000;
+
+interface PendingMobileProjection {
+  notification: EventCenterJsonRpcNotification;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly store: CenterServerStore;
@@ -101,8 +114,12 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly now: () => Date;
   private readonly reconnectDelayMs: number;
   private readonly connectTimeoutMs: number;
+  private readonly mobileStreamingProjectionThrottleMs: number;
   private readonly log: (message: string) => void;
   private readonly onStatusChange: ((snapshot: CenterServerSettingsSnapshot) => void) | undefined;
+  private readonly resolveThreadProjection:
+    | ((threadId: string) => ThreadRunProjectionSnapshot | undefined)
+    | undefined;
   private readonly unsubscribe: () => void;
   private socket: WebSocketLike | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -111,6 +128,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private intentionallyStopped = true;
   private status: CenterServerConnectionStatus = { state: "disabled" };
   private readonly queuedEvents: EventCenterJsonRpcNotification[] = [];
+  private readonly pendingMobileProjections = new Map<string, PendingMobileProjection>();
 
   constructor(options: CenterServerDesktopClientOptions) {
     this.store = options.store;
@@ -120,24 +138,35 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     this.now = options.now ?? (() => new Date());
     this.reconnectDelayMs = options.reconnectDelayMs ?? 3_000;
     this.connectTimeoutMs = options.connectTimeoutMs ?? 15_000;
+    this.mobileStreamingProjectionThrottleMs =
+      options.mobileStreamingProjectionThrottleMs ?? MOBILE_STREAMING_PROJECTION_THROTTLE_MS;
     this.log = options.log ?? (() => {});
     this.onStatusChange = options.onStatusChange;
+    this.resolveThreadProjection = options.resolveThreadProjection;
     this.unsubscribe = this.eventCenter.subscribe(this);
   }
 
-  publish(_envelope: unknown, notification: EventCenterJsonRpcNotification): void {
+  publish(envelope: EventCenterEnvelope, notification: EventCenterJsonRpcNotification): void {
     const settings = this.store.getSettingsWithSecrets();
     if (!settings.enabled) {
       return;
     }
-    if (this.socket?.readyState === WS_OPEN) {
-      this.socket.send(JSON.stringify(notification));
+
+    const threadEvent = readThreadLiveEvent(envelope);
+    if (threadEvent && isRemoteOnlyStreamDelta(threadEvent)) {
       return;
     }
-    this.queuedEvents.push(notification);
-    if (this.queuedEvents.length > MAX_QUEUED_EVENTS) {
-      this.queuedEvents.shift();
+
+    if (envelope.kind === "thread.projection" && threadEvent?.projection) {
+      this.publishMobileProjection(envelope, notification, threadEvent);
+      return;
     }
+
+    const threadId = envelope.threadId ?? threadEvent?.threadId;
+    if (threadId && shouldFlushProjectionBeforeEvent(envelope.kind, threadEvent)) {
+      this.flushPendingMobileProjection(threadId);
+    }
+    this.sendOrQueue(notification);
   }
 
   getSnapshot(): CenterServerSettingsSnapshot {
@@ -151,6 +180,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
   stop(): void {
     this.intentionallyStopped = true;
+    this.clearPendingMobileProjections();
     this.clearReconnectTimer();
     this.clearKeepalive();
     this.socket?.close(1000, "Desktop center server client stopped.");
@@ -693,6 +723,81 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     }
   }
 
+  private publishMobileProjection(
+    envelope: EventCenterEnvelope,
+    notification: EventCenterJsonRpcNotification,
+    event: ThreadLiveEvent,
+  ): void {
+    const threadId = envelope.threadId ?? event.threadId;
+    const projection = event.projection;
+    if (!threadId || !projection) {
+      this.sendOrQueue(notification);
+      return;
+    }
+
+    const pending = this.pendingMobileProjections.get(threadId);
+    if (!isStreamingProjection(projection)) {
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingMobileProjections.delete(threadId);
+        this.sendOrQueue(this.resolveProjectionNotification(threadId, notification));
+      } else {
+        this.sendOrQueue(notification);
+      }
+      return;
+    }
+
+    if (pending) {
+      pending.notification = notification;
+      return;
+    }
+
+    const entry: PendingMobileProjection = {
+      notification,
+      timer: setTimeout(() => {
+        const latest = this.pendingMobileProjections.get(threadId);
+        if (!latest) return;
+        this.pendingMobileProjections.delete(threadId);
+        this.sendOrQueue(this.resolveProjectionNotification(threadId, latest.notification));
+      }, this.mobileStreamingProjectionThrottleMs),
+    };
+    this.pendingMobileProjections.set(threadId, entry);
+  }
+
+  private flushPendingMobileProjection(threadId: string): void {
+    const pending = this.pendingMobileProjections.get(threadId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingMobileProjections.delete(threadId);
+    this.sendOrQueue(this.resolveProjectionNotification(threadId, pending.notification));
+  }
+
+  private clearPendingMobileProjections(): void {
+    for (const pending of this.pendingMobileProjections.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingMobileProjections.clear();
+  }
+
+  private sendOrQueue(notification: EventCenterJsonRpcNotification): void {
+    if (this.socket?.readyState === WS_OPEN) {
+      this.socket.send(JSON.stringify(notification));
+      return;
+    }
+    this.queuedEvents.push(notification);
+    if (this.queuedEvents.length > MAX_QUEUED_EVENTS) {
+      this.queuedEvents.shift();
+    }
+  }
+
+  private resolveProjectionNotification(
+    threadId: string,
+    fallback: EventCenterJsonRpcNotification,
+  ): EventCenterJsonRpcNotification {
+    const projection = this.resolveThreadProjection?.(threadId);
+    return projection ? replaceProjectionNotification(fallback, projection) : fallback;
+  }
+
   private failConnection(message: string): void {
     this.log(`[eco] center server connection failed: ${message}\n`);
     this.store.markError(message);
@@ -745,6 +850,67 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     this.status = status;
     this.onStatusChange?.(this.getSnapshot());
   }
+}
+
+function readThreadLiveEvent(envelope: EventCenterEnvelope): ThreadLiveEvent | undefined {
+  if (!envelope.kind.startsWith("thread.")) {
+    return undefined;
+  }
+  return isRecord(envelope.payload) ? (envelope.payload as unknown as ThreadLiveEvent) : undefined;
+}
+
+function isRemoteOnlyStreamDelta(event: ThreadLiveEvent): boolean {
+  return (
+    event.stream === true &&
+    (event.type === "message.delta" || event.type === "thinking.delta")
+  );
+}
+
+function shouldFlushProjectionBeforeEvent(
+  kind: EventCenterEnvelope["kind"],
+  event: ThreadLiveEvent | undefined,
+): boolean {
+  if (kind === "thread.stream") {
+    return event?.stream === false;
+  }
+  return (
+    kind === "thread.lifecycle" ||
+    kind === "thread.plan" ||
+    kind === "thread.clarification" ||
+    kind === "thread.bash_approval" ||
+    kind === "thread.follow_up" ||
+    kind === "thread.todo"
+  );
+}
+
+function isStreamingProjection(projection: ThreadRunProjectionSnapshot): boolean {
+  return (
+    projection.timeline.some(
+      (item) => item.eventType === "message.delta" || item.eventType === "thinking.delta",
+    ) ||
+    projection.agents.some((agent) =>
+      agent.timeline.some(
+        (item) => item.eventType === "message.delta" || item.eventType === "thinking.delta",
+      ),
+    )
+  );
+}
+
+function replaceProjectionNotification(
+  notification: EventCenterJsonRpcNotification,
+  projection: ThreadRunProjectionSnapshot,
+): EventCenterJsonRpcNotification {
+  const envelope = notification.params as EventCenterEnvelope<ThreadLiveEvent>;
+  return {
+    ...notification,
+    params: {
+      ...envelope,
+      payload: {
+        ...envelope.payload,
+        projection,
+      },
+    },
+  };
 }
 
 function resolveWebSocketConstructor(): WebSocketConstructorLike {

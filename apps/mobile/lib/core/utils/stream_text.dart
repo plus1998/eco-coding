@@ -1,6 +1,6 @@
 import 'package:characters/characters.dart';
 
-const pacedStreamInterval = Duration(milliseconds: 24);
+const pacedStreamInterval = Duration(milliseconds: 40);
 
 int resolvePacedRevealCount(int pendingCount, {required bool streaming}) {
   if (pendingCount <= 0) return 0;
@@ -8,9 +8,9 @@ int resolvePacedRevealCount(int pendingCount, {required bool streaming}) {
     final third = (pendingCount / 3).ceil();
     return pendingCount < 4 ? pendingCount : (third < 4 ? 4 : third);
   }
-  if (pendingCount > 120) return 8;
-  if (pendingCount > 60) return 4;
-  if (pendingCount > 24) return 2;
+  if (pendingCount > 96) return 8;
+  if (pendingCount > 48) return 4;
+  if (pendingCount > 20) return 2;
   return 1;
 }
 

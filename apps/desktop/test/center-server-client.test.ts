@@ -5,7 +5,11 @@ import type { CenterServerSettingsSecret, CenterServerStore } from "../src/main/
 import { DesktopEventCenter } from "../src/main/event-center";
 import type { CenterServerConnectionStatus, CenterServerSettingsView } from "../src/shared/center-server";
 import { CenterServerRemoveConnectionError } from "../src/shared/center-server";
-import { EVENT_CENTER_JSON_RPC_METHODS, IPC_CHANNELS } from "../src/shared/ipc";
+import {
+  EVENT_CENTER_JSON_RPC_METHODS,
+  IPC_CHANNELS,
+  type ThreadRunProjectionSnapshot,
+} from "../src/shared/ipc";
 
 const fixedNow = () => new Date("2030-01-01T00:00:00.000Z");
 
@@ -114,6 +118,57 @@ test("center server client refreshes tokens and forwards events over websocket",
   expect(lastSent).toContain(IPC_CHANNELS.threadList);
   expect(lastSent).toContain("thr_1");
 
+  client.dispose();
+});
+
+test("center server client throttles mobile streaming projections and sends only the latest snapshot", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  eventCenter.publishThreadLiveEvent({
+    threadId: "thr_stream",
+    type: "message.delta",
+    message: "raw delta",
+    role: "planner",
+    stream: true,
+  });
+  eventCenter.publishThreadLiveEvent(projectionEvent("first", "message.delta"));
+  eventCenter.publishThreadLiveEvent(projectionEvent("latest", "message.delta"));
+
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(0);
+  await Bun.sleep(30);
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("latest");
+  client.dispose();
+});
+
+test("center server client flushes a final projection without waiting for the mobile throttle", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  eventCenter.publishThreadLiveEvent(projectionEvent("streaming", "message.delta"));
+  eventCenter.publishThreadLiveEvent(projectionEvent("complete", "message.final"));
+
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("complete");
+  await Bun.sleep(30);
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
   client.dispose();
 });
 
@@ -902,6 +957,61 @@ function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret
   };
 
   return store as unknown as CenterServerStore;
+}
+
+function createConnectedCenterServerStore(): CenterServerStore {
+  return createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "fresh_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+}
+
+function projectionEvent(
+  text: string,
+  eventType: "message.delta" | "message.final",
+): {
+  threadId: string;
+  type: "thread.run_projection_updated";
+  message: string;
+  role: "system";
+  stream: false;
+  projection: ThreadRunProjectionSnapshot;
+} {
+  return {
+    threadId: "thr_stream",
+    type: "thread.run_projection_updated",
+    message: "projection updated",
+    role: "system",
+    stream: false,
+    projection: {
+      thread: {
+        threadId: "thr_stream",
+        status: eventType === "message.delta" ? "running" : "idle",
+        generatedAt: fixedNow().toISOString(),
+      },
+      attempts: [],
+      agents: [],
+      requestSpans: [],
+      timeline: [
+        {
+          id: "stream_item",
+          sequence: 1,
+          eventType,
+          scope: "main",
+          text,
+          at: fixedNow().toISOString(),
+          role: "planner",
+        },
+      ],
+      diagnostics: [],
+      sourceEventCount: 1,
+    },
+  };
 }
 
 function normalizeFakeSettings(settings: CenterServerSettingsSecret): CenterServerSettingsSecret {

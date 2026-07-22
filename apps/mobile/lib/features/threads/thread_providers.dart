@@ -554,7 +554,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
     final isActiveThread = _isActiveThreadStatus(state.thread?.status);
 
-    if (isActiveThread && !isMetricsOnlyEvent) {
+    if (isActiveThread && !isMetricsOnlyEvent && live.projection == null) {
       _scheduleProjectionRefresh();
     }
 

@@ -929,6 +929,10 @@ app.whenReady().then(async () => {
     eventCenter: desktopEventCenter,
     log: (message) => process.stderr.write(message),
     onStatusChange: emitCenterServerStatus,
+    resolveThreadProjection: (threadId) => {
+      const projection = buildCurrentThreadRunProjection(threadId);
+      return projection ? trimProjectionForFeed(projection) : undefined;
+    },
   });
   agentLifecycle = new AgentLifecycleService(conversationStore);
   codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
