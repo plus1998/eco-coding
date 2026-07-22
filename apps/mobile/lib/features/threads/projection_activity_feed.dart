@@ -1458,6 +1458,7 @@ bool _isProjectionInternalMessageText(String text) {
       trimmed == '执行完成。' ||
       trimmed == '执行完成，变更已写入项目目录。' ||
       trimmed == '执行完成，工作树内无相对基线的文件变更。' ||
+      trimmed == '执行已结束，但无法确认文件变更。' ||
       RegExp(r'^正在启动 Claude Agent SDK').hasMatch(trimmed) ||
       RegExp(r'^正在启动\s*Codex').hasMatch(trimmed) ||
       RegExp(r'^Codex\s*已连接(?:\s*·|$)').hasMatch(trimmed) ||

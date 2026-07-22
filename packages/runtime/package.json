@@ -13,6 +13,7 @@
     "./tool-target": "./src/tool-target.ts",
     "./codex-app-server-client": "./src/codex-app-server-client.ts",
     "./codex-config-sync": "./src/codex-config-sync.ts",
+    "./codex-model-catalog-sync": "./src/codex-model-catalog-sync.ts",
     "./codex-app-server-driver": "./src/codex-app-server-driver.ts",
     "./codex-rollback": "./src/codex-rollback.ts",
     "./agent-mission": "./src/agent-mission.ts",

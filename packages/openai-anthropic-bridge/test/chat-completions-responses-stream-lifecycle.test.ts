@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { jsonParse } from '../src/json.js';
 import {
   chatCompletionsChunkToResponsesEvents,
+  chatCompletionsResponseToResponses,
   finalizeChatCompletionsResponsesStream,
   newChatCompletionsToResponsesStreamState,
 } from '../src/chat-completions-responses-bridge.js';
@@ -22,6 +23,77 @@ function collectResponsesStreamEvents(chunkPayloads: string[]): ResponsesStreamE
 }
 
 describe('chat completions stream → responses lifecycle (sub2api parity)', () => {
+  test('maps token-limit finish reason variants to response.incomplete', () => {
+    const events = collectResponsesStreamEvents([
+      `{"choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}`,
+      `{"choices":[{"index":0,"delta":{},"finish_reason":"max_tokens"}]}`,
+    ]);
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'response.incomplete',
+      response: {
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+      },
+    });
+  });
+
+  test('treats a stream without finish_reason as failed', () => {
+    const events = collectResponsesStreamEvents([
+      `{"choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}`,
+    ]);
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'response.failed',
+      response: {
+        status: 'failed',
+        error: { code: 'missing_finish_reason' },
+      },
+    });
+  });
+
+  test('non-stream conversion does not mark unknown finish reasons completed', () => {
+    const response = chatCompletionsResponseToResponses(
+      {
+        id: 'chatcmpl-unknown',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-v4-flash',
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: 'partial' },
+            finish_reason: 'max_output_tokens',
+          },
+        ],
+      },
+      'deepseek-v4-flash',
+    );
+
+    expect(response).toMatchObject({
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+    });
+  });
+
+  test('non-stream conversion rejects a response without choices', () => {
+    const response = chatCompletionsResponseToResponses(
+      {
+        id: 'chatcmpl-empty',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-v4-flash',
+        choices: [],
+      },
+      'deepseek-v4-flash',
+    );
+
+    expect(response).toMatchObject({
+      status: 'failed',
+      error: { code: 'missing_choices' },
+    });
+  });
+
   test('reasoning output_item opens before first reasoning delta', () => {
     const events = collectResponsesStreamEvents([
       `{"choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}`,
@@ -72,6 +144,42 @@ describe('chat completions stream → responses lifecycle (sub2api parity)', () 
     expect(sawAdded).toBe(true);
     expect(sawArgsDone).toBe(true);
     expect(sawItemDone).toBe(true);
+  });
+
+  test('preserves a non-zero-indexed tool call emitted alongside assistant text', () => {
+    const events = collectResponsesStreamEvents([
+      `{"choices":[{"index":0,"delta":{"content":"Let me implement this."},"finish_reason":null}]}`,
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_plan","type":"function","function":{"name":"update_plan","arguments":""}}]},"finish_reason":null}]}`,
+      `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"plan\\":[]}"}}]},"finish_reason":null}]}`,
+      `{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+    ]);
+
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'response.output_item.done' && event.item?.type === 'function_call',
+      ),
+    ).toMatchObject({
+      item: {
+        call_id: 'call_plan',
+        name: 'update_plan',
+        arguments: '{"plan":[]}',
+      },
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: 'response.completed',
+      response: {
+        status: 'completed',
+        output: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'function_call',
+            call_id: 'call_plan',
+            name: 'update_plan',
+            arguments: '{"plan":[]}',
+          }),
+        ]),
+      },
+    });
   });
 
   test('argument-only deltas with null name must not wipe tool name on done', () => {

@@ -669,6 +669,7 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "执行完成。" ||
     trimmed === "执行完成，变更已写入项目目录。" ||
     trimmed === "执行完成，工作树内无相对基线的文件变更。" ||
+    trimmed === "执行已结束，但无法确认文件变更。" ||
     trimmed === "计划已生成，等待确认。" ||
     trimmed === "计划已生成，请确认是否执行。" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||

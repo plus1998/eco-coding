@@ -273,4 +273,87 @@ describe("responses passthrough", () => {
       },
     });
   });
+
+  test("Responses route passthrough preserves custom apply_patch tools", async () => {
+    const provider: GatewayProvider = {
+      id: "responses-provider",
+      name: "Responses mock",
+      upstreamKind: "responses",
+      baseUrl: "https://mock.responses.test",
+      apiKey: "test-key",
+      upstreamModelId: "gpt-5.2",
+      models: ["gpt-5.2"],
+    };
+    const alias = buildCodexGatewayModelAlias(
+      provider.id,
+      "gpt-5.2",
+      "openai_responses",
+    );
+    let upstreamBody: {
+      tools?: { type?: string; name?: string }[];
+      model?: string;
+    } = {};
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;
+        return Response.json({
+          id: "resp_custom",
+          object: "response",
+          model: "gpt-5.2",
+          status: "completed",
+          output: [
+            {
+              type: "custom_tool_call",
+              id: "item_1",
+              call_id: "call_1",
+              name: "apply_patch",
+              input: "*** Begin Patch\n*** End Patch",
+              status: "completed",
+            },
+          ],
+          usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+        });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: alias,
+          stream: false,
+          input: [
+            {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "patch" }],
+            },
+          ],
+          tools: [
+            {
+              type: "custom",
+              name: "apply_patch",
+              description: "Apply freeform patch",
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(upstreamBody.model).toBe("gpt-5.2");
+    expect(upstreamBody.tools?.[0]).toMatchObject({
+      type: "custom",
+      name: "apply_patch",
+    });
+    const body = (await response.json()) as {
+      output?: { type?: string; name?: string }[];
+    };
+    expect(body.output?.[0]).toMatchObject({
+      type: "custom_tool_call",
+      name: "apply_patch",
+    });
+  });
 });

@@ -31,11 +31,30 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
   const models = provider.models?.length
     ? provider.models
     : [provider.upstreamModelId, `eco_${provider.id}`];
+  const modelMaxOutputTokens = normalizeModelMaxOutputTokens(provider.modelMaxOutputTokens);
   return {
     ...provider,
     baseUrl: trimTrailingSlash(provider.baseUrl),
     models,
+    ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),
   };
+}
+
+function normalizeModelMaxOutputTokens(
+  value: Record<string, number> | undefined,
+): Record<string, number> | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized: Record<string, number> = {};
+  for (const [modelId, tokens] of Object.entries(value)) {
+    const trimmedModelId = modelId.trim();
+    if (!trimmedModelId || !Number.isFinite(tokens) || tokens <= 0) {
+      continue;
+    }
+    normalized[trimmedModelId] = Math.floor(tokens);
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 /** Phase 0 static table used when ECO_GATEWAY_PROVIDERS is unset (tests / local dev). */

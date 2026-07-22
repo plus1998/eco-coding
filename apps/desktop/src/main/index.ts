@@ -939,19 +939,25 @@ app.whenReady().then(async () => {
           routeModels.set(route.providerId, models);
         }
       }
-      return providerStore.listProvidersWithSecrets().map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        enabled: provider.enabled,
-        baseUrl: provider.baseUrl,
-        apiKey: provider.apiKey,
-        apiCompat: provider.apiCompat,
-        defaultModel: provider.defaultModel,
-        modelIds: [
-          ...providerStore.listCandidateModels(provider.id).map((model) => model.modelId),
-          ...(routeModels.get(provider.id) ?? []),
-        ],
-      }));
+      return providerStore.listProvidersWithSecrets().map((provider) => {
+        const candidates = providerStore.listCandidateModels(provider.id);
+        return {
+          id: provider.id,
+          name: provider.name,
+          enabled: provider.enabled,
+          baseUrl: provider.baseUrl,
+          apiKey: provider.apiKey,
+          apiCompat: provider.apiCompat,
+          defaultModel: provider.defaultModel,
+          models: candidates.map((model) => ({
+            modelId: model.modelId,
+            ...(model.manualSpec?.maxOutputTokens !== undefined
+              ? { maxOutputTokens: model.manualSpec.maxOutputTokens }
+              : {}),
+          })),
+          modelIds: routeModels.get(provider.id) ?? [],
+        };
+      });
     },
     onUsage: handleCodexGatewayUsage,
     onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
@@ -964,7 +970,60 @@ app.whenReady().then(async () => {
         name: provider.name,
         enabled: provider.enabled,
         apiCompat: provider.apiCompat,
+        defaultModel: provider.defaultModel,
+        models: providerStore.listCandidateModels(provider.id).map((model) => ({
+          modelId: model.modelId,
+          ...(model.displayName ? { displayName: model.displayName } : {}),
+          ...(model.manualSpec
+            ? {
+                manualSpec: {
+                  ...(model.manualSpec.contextTokens !== undefined
+                    ? { contextTokens: model.manualSpec.contextTokens }
+                    : {}),
+                  ...(model.manualSpec.supportsImageInput !== undefined
+                    ? { supportsImageInput: model.manualSpec.supportsImageInput }
+                    : {}),
+                },
+              }
+            : {}),
+        })),
       })),
+    listCatalogRouteConfigs: () => {
+      const routes: {
+        providerId: string;
+        modelId: string;
+        apiCompat: UpstreamApiCompat;
+        displayName?: string;
+        manualSpec?: { contextTokens?: number; supportsImageInput?: boolean };
+      }[] = [];
+      for (const profile of providerStore.listRouteProfiles()) {
+        for (const route of profile.routes) {
+          const provider = providerStore.listProviders().find((p) => p.id === route.providerId);
+          if (!provider || !route.modelId.trim()) {
+            continue;
+          }
+          routes.push({
+            providerId: route.providerId,
+            modelId: route.modelId,
+            apiCompat: route.apiCompat ?? provider.apiCompat,
+            displayName: `${provider.name} / ${route.modelId}`,
+            ...(route.manualSpec
+              ? {
+                  manualSpec: {
+                    ...(route.manualSpec.contextTokens !== undefined
+                      ? { contextTokens: route.manualSpec.contextTokens }
+                      : {}),
+                    ...(route.manualSpec.supportsImageInput !== undefined
+                      ? { supportsImageInput: route.manualSpec.supportsImageInput }
+                      : {}),
+                  },
+                }
+              : {}),
+          });
+        }
+      }
+      return routes;
+    },
     threadMap: codexThreadMap,
     resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
     appendThreadRunEvent: (event) => {
@@ -4423,8 +4482,8 @@ async function runPlanThread(
 }
 
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
-  updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
   if (isDirectWorkspacePlan(worktreePlan)) {
+    updateThread(threadId, { status: "completed", message: "执行完成。" });
     return;
   }
 
@@ -4434,9 +4493,16 @@ async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreeP
       conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
       const summary = buildWorktreeMergeSummary(diff, files);
       emitThreadEvent(threadId, "workspace.changes", serializeWorktreeMergeMessage(summary), "system");
+      updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
+      return;
     }
+    updateThread(threadId, {
+      status: "completed",
+      message: "执行完成，工作树内无相对基线的文件变更。",
+    });
   } catch (error) {
     process.stderr.write(`[eco] workspace diff snapshot failed: ${errorMessage(error)}\n`);
+    updateThread(threadId, { status: "completed", message: "执行已结束，但无法确认文件变更。" });
   }
 }
 

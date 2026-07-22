@@ -1,3 +1,12 @@
+import {
+  CUSTOM_TOOL_INPUT_FIELD,
+  customToolInputFromChatArguments,
+} from './codex-chat-common.js';
+import {
+  buildCodexToolContextFromRequest,
+  isCustomToolChatName,
+  type CodexToolContext,
+} from './codex-tool-context.js';
 import { bytesTrimSpace, jsonMarshal, jsonParse } from './json.js';
 import type {
   AnthropicContentBlock,
@@ -16,7 +25,11 @@ import type {
 export function responsesToAnthropicRequest(
   req: ResponsesRequest,
 ): AnthropicRequest {
-  const { system, messages, err } = convertResponsesInputToAnthropic(req.input);
+  const toolContext = buildCodexToolContextFromRequest(req);
+  const { system, messages, err } = convertResponsesInputToAnthropic(
+    req.input,
+    toolContext,
+  );
   if (err !== undefined) {
     throw err;
   }
@@ -43,7 +56,7 @@ export function responsesToAnthropicRequest(
   }
 
   if (req.tools !== undefined && req.tools.length > 0) {
-    out.tools = convertResponsesToAnthropicTools(req.tools);
+    out.tools = convertResponsesToAnthropicTools(req.tools, toolContext);
   }
 
   if (req.tool_choice !== undefined) {
@@ -97,7 +110,10 @@ export function mapResponsesEffortToAnthropic(effort: string): string {
   return effort;
 }
 
-function convertResponsesInputToAnthropic(inputRaw: unknown): {
+function convertResponsesInputToAnthropic(
+  inputRaw: unknown,
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
+): {
   system: unknown | undefined;
   messages: AnthropicMessage[];
   err: Error | undefined;
@@ -108,10 +124,9 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
   try {
     const asString = jsonParse(serialized) as unknown;
     if (typeof asString === 'string') {
-      const content = jsonMarshal(asString);
       return {
         system: undefined,
-        messages: [{ role: 'user', content }],
+        messages: [{ role: 'user', content: asString }],
         err: undefined,
       };
     }
@@ -123,10 +138,9 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
   try {
     const parsed = jsonParse(serialized) as unknown;
     if (typeof parsed === 'string') {
-      const content = jsonMarshal(parsed);
       return {
         system: undefined,
-        messages: [{ role: 'user', content }],
+        messages: [{ role: 'user', content: parsed }],
         err: undefined,
       };
     }
@@ -162,7 +176,7 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
       if (blocks.length > 0) {
         messages.push({
           role: 'assistant',
-          content: jsonMarshal(blocks),
+          content: blocks,
         });
       }
     } else if (item.type === 'function_call') {
@@ -170,30 +184,61 @@ function convertResponsesInputToAnthropic(inputRaw: unknown): {
       if (item.arguments !== undefined && item.arguments !== '') {
         input = jsonParse(item.arguments);
       }
+      if (isCustomToolChatName(toolContext, item.name ?? '')) {
+        input = {
+          [CUSTOM_TOOL_INPUT_FIELD]: customToolInputFromChatArguments(
+            typeof item.arguments === 'string'
+              ? item.arguments
+              : jsonMarshal(input),
+          ),
+        };
+      }
       const block: AnthropicContentBlock = {
         type: 'tool_use',
         id: fromResponsesCallIdToAnthropic(item.call_id ?? ''),
         name: item.name,
         input,
       };
-      const blockJSON = jsonMarshal([block]);
       messages.push({
         role: 'assistant',
-        content: blockJSON,
+        content: [block],
       });
-    } else if (item.type === 'function_call_output') {
-      const contentJSON = convertResponsesFunctionCallOutputToAnthropicContent(
+    } else if (item.type === 'custom_tool_call') {
+      const name = item.name ?? '';
+      if (name && !isCustomToolChatName(toolContext, name)) {
+        toolContext.chatNameToSpec.set(name, { kind: 'custom', name });
+      }
+      const freeformInput =
+        typeof item.input === 'string'
+          ? item.input
+          : item.input === undefined || item.input === null
+            ? ''
+            : jsonMarshal(item.input);
+      const block: AnthropicContentBlock = {
+        type: 'tool_use',
+        id: fromResponsesCallIdToAnthropic(item.call_id ?? ''),
+        name,
+        input: { [CUSTOM_TOOL_INPUT_FIELD]: freeformInput },
+      };
+      messages.push({
+        role: 'assistant',
+        content: [block],
+      });
+    } else if (
+      item.type === 'function_call_output' ||
+      item.type === 'custom_tool_call_output'
+    ) {
+      const content = convertResponsesFunctionCallOutputToAnthropicContent(
         item.output,
       );
       const block: AnthropicContentBlock = {
         type: 'tool_result',
         tool_use_id: fromResponsesCallIdToAnthropic(item.call_id ?? ''),
-        content: contentJSON,
+        content,
       };
-      const blockJSON = jsonMarshal([block]);
       messages.push({
         role: 'user',
-        content: blockJSON,
+        content: [block],
       });
     } else if (item.role === 'user') {
       const result = convertResponsesUserToAnthropicContent(item.content);
@@ -280,19 +325,24 @@ function responsesReasoningInputToAnthropicBlocks(
   return blocks;
 }
 
-function convertResponsesFunctionCallOutputToAnthropicContent(raw: unknown): string {
+function convertResponsesFunctionCallOutputToAnthropicContent(
+  raw: unknown,
+): string | AnthropicContentBlock[] {
   if (raw === undefined || raw === null) {
-    return jsonMarshal('(empty)');
+    return '(empty)';
   }
   if (typeof raw === 'string') {
     if (raw === '') {
-      return jsonMarshal('(empty)');
+      return '(empty)';
     }
     try {
       const parsed = jsonParse(raw);
+      if (typeof parsed === 'string') {
+        return parsed;
+      }
       return convertResponsesFunctionCallOutputToAnthropicContent(parsed);
     } catch {
-      return jsonMarshal(raw);
+      return raw;
     }
   }
   if (Array.isArray(raw)) {
@@ -320,9 +370,9 @@ function convertResponsesFunctionCallOutputToAnthropicContent(raw: unknown): str
       }
     }
     if (blocks.length > 0) {
-      return jsonMarshal(blocks);
+      return blocks;
     }
-    return jsonMarshal('(empty)');
+    return '(empty)';
   }
   return jsonMarshal(raw);
 }
@@ -380,18 +430,18 @@ function convertResponsesUserToAnthropicContent(raw: unknown): {
   err: Error | undefined;
 } {
   if (raw === undefined || raw === null) {
-    return { content: jsonMarshal(''), err: undefined };
+    return { content: '', err: undefined };
   }
 
   if (typeof raw === 'string') {
     try {
       const parsed = jsonParse(raw);
       if (typeof parsed === 'string') {
-        return { content: jsonMarshal(parsed), err: undefined };
+        return { content: parsed, err: undefined };
       }
       return convertResponsesUserToAnthropicContent(parsed);
     } catch {
-      return { content: jsonMarshal(raw), err: undefined };
+      return { content: raw, err: undefined };
     }
   }
 
@@ -400,7 +450,7 @@ function convertResponsesUserToAnthropicContent(raw: unknown): {
     const serialized = typeof raw === 'string' ? raw : jsonMarshal(raw);
     const parsed = jsonParse(serialized);
     if (typeof parsed === 'string') {
-      return { content: jsonMarshal(parsed), err: undefined };
+      return { content: parsed, err: undefined };
     }
     if (!Array.isArray(parsed)) {
       return { content: raw, err: undefined };
@@ -430,9 +480,9 @@ function convertResponsesUserToAnthropicContent(raw: unknown): {
   }
 
   if (blocks.length === 0) {
-    return { content: jsonMarshal(''), err: undefined };
+    return { content: '', err: undefined };
   }
-  return { content: jsonMarshal(blocks), err: undefined };
+  return { content: blocks, err: undefined };
 }
 
 function convertResponsesAssistantToAnthropicContent(raw: unknown): {
@@ -441,7 +491,7 @@ function convertResponsesAssistantToAnthropicContent(raw: unknown): {
 } {
   if (raw === undefined || raw === null) {
     return {
-      content: jsonMarshal([{ type: 'text', text: '' }]),
+      content: [{ type: 'text', text: '' }],
       err: undefined,
     };
   }
@@ -451,14 +501,14 @@ function convertResponsesAssistantToAnthropicContent(raw: unknown): {
       const parsed = jsonParse(raw);
       if (typeof parsed === 'string') {
         return {
-          content: jsonMarshal([{ type: 'text', text: parsed }]),
+          content: [{ type: 'text', text: parsed }],
           err: undefined,
         };
       }
       return convertResponsesAssistantToAnthropicContent(parsed);
     } catch {
       return {
-        content: jsonMarshal([{ type: 'text', text: raw }]),
+        content: [{ type: 'text', text: raw }],
         err: undefined,
       };
     }
@@ -470,7 +520,7 @@ function convertResponsesAssistantToAnthropicContent(raw: unknown): {
     const parsed = jsonParse(serialized);
     if (typeof parsed === 'string') {
       return {
-        content: jsonMarshal([{ type: 'text', text: parsed }]),
+        content: [{ type: 'text', text: parsed }],
         err: undefined,
       };
     }
@@ -497,7 +547,7 @@ function convertResponsesAssistantToAnthropicContent(raw: unknown): {
   if (blocks.length === 0) {
     blocks.push({ type: 'text', text: '' });
   }
-  return { content: jsonMarshal(blocks), err: undefined };
+  return { content: blocks, err: undefined };
 }
 
 export function fromResponsesCallIdToAnthropic(id: string): string {
@@ -558,7 +608,7 @@ export function mergeConsecutiveMessages(
     const lastBlocks = parseContentBlocks(last.content);
     const newBlocks = parseContentBlocks(msg.content);
     const combined = [...lastBlocks, ...newBlocks];
-    last.content = jsonMarshal(combined);
+    last.content = combined;
   }
   return merged;
 }
@@ -566,6 +616,9 @@ export function mergeConsecutiveMessages(
 export function parseContentBlocks(raw: unknown): AnthropicContentBlock[] {
   if (raw === undefined || raw === null) {
     return [];
+  }
+  if (Array.isArray(raw)) {
+    return raw as AnthropicContentBlock[];
   }
   try {
     const serialized = typeof raw === 'string' ? raw : jsonMarshal(raw);
@@ -587,6 +640,7 @@ export function parseContentBlocks(raw: unknown): AnthropicContentBlock[] {
 
 function convertResponsesToAnthropicTools(
   tools: ResponsesTool[],
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): AnthropicTool[] {
   const out: AnthropicTool[] = [];
   for (const t of tools) {
@@ -614,13 +668,41 @@ function convertResponsesToAnthropicTools(
           input_schema: normalizeAnthropicInputSchema(t.parameters),
         });
         break;
-      default:
+      case 'custom': {
+        // Never send invalid Anthropic type:"custom". Wrap freeform tools as client tools.
+        const name = t.name ?? '';
+        if (name) {
+          toolContext.chatNameToSpec.set(name, { kind: 'custom', name });
+        }
         out.push({
-          type: t.type,
-          name: t.name ?? '',
-          description: t.description,
-          input_schema: t.parameters ?? {},
+          name,
+          description:
+            t.description ??
+            `Original custom tool definition:\n\`\`\`json\n${jsonMarshal(t)}\n\`\`\``,
+          input_schema: {
+            type: 'object',
+            properties: {
+              [CUSTOM_TOOL_INPUT_FIELD]: {
+                type: 'string',
+                description:
+                  'Raw string input for the original custom tool. Preserve formatting exactly.',
+              },
+            },
+            required: [CUSTOM_TOOL_INPUT_FIELD],
+          },
         });
+        break;
+      }
+      default:
+        // Drop unknown tool types rather than forwarding invalid Anthropic tool shapes.
+        if (typeof t.name === 'string' && t.name.trim() && t.parameters !== undefined) {
+          out.push({
+            name: t.name,
+            description: t.description,
+            input_schema: normalizeAnthropicInputSchema(t.parameters),
+          });
+        }
+        break;
     }
   }
   return out;

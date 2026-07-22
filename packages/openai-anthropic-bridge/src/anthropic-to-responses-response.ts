@@ -1,4 +1,13 @@
 import { toResponsesCallID } from './anthropic-to-responses.js';
+import {
+  CUSTOM_TOOL_INPUT_FIELD,
+  customToolInputFromChatArguments,
+} from './codex-chat-common.js';
+import {
+  buildCodexToolContextFromRequest,
+  isCustomToolChatName,
+  type CodexToolContext,
+} from './codex-tool-context.js';
 import { jsonMarshal } from './json.js';
 import { responsesStreamEventToJSON } from './responses-stream-event-wire.js';
 import type {
@@ -19,6 +28,7 @@ import type {
 
 export function anthropicToResponsesResponse(
   resp: AnthropicResponse,
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): ResponsesResponse {
   let id = resp.id;
   if (id === '') {
@@ -61,6 +71,18 @@ export function anthropicToResponsesResponse(
         }
         break;
       case 'tool_use': {
+        const name = block.name ?? '';
+        if (isCustomToolChatName(toolContext, name)) {
+          outputs.push({
+            type: 'custom_tool_call',
+            id: generateItemId(),
+            call_id: toResponsesCallID(block.id ?? ''),
+            name,
+            input: freeformInputFromAnthropicToolUse(block.input),
+            status: 'completed',
+          });
+          break;
+        }
         let args = '{}';
         if (block.input !== undefined && block.input !== null) {
           const s =
@@ -166,9 +188,13 @@ export interface AnthropicEventToResponsesState {
   outputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
+  /** Custom freeform tool names from the original Responses request. */
+  toolContext: CodexToolContext;
 }
 
-export function newAnthropicEventToResponsesState(): AnthropicEventToResponsesState {
+export function newAnthropicEventToResponsesState(
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
+): AnthropicEventToResponsesState {
   return {
     responseId: '',
     model: '',
@@ -190,6 +216,7 @@ export function newAnthropicEventToResponsesState(): AnthropicEventToResponsesSt
     outputTokens: 0,
     cacheReadInputTokens: 0,
     cacheCreationInputTokens: 0,
+    toolContext,
   };
 }
 
@@ -333,20 +360,24 @@ function anthToResHandleContentBlockStart(
       }
       break;
 
-    case 'tool_use':
+    case 'tool_use': {
       events.push(...closeCurrentResponsesItem(state));
 
+      const toolName = evt.content_block.name ?? '';
+      const isCustom = isCustomToolChatName(state.toolContext, toolName);
       state.currentItemId = generateItemId();
-      state.currentItemType = 'function_call';
+      state.currentItemType = isCustom ? 'custom_tool_call' : 'function_call';
       state.currentCallId = toResponsesCallID(evt.content_block.id ?? '');
-      state.currentName = evt.content_block.name ?? '';
-      state.currentArguments = initialToolArguments(evt.content_block.input);
+      state.currentName = toolName;
+      state.currentArguments = isCustom
+        ? freeformInputFromAnthropicToolUse(evt.content_block.input)
+        : initialToolArguments(evt.content_block.input);
 
       events.push(
         makeResponsesEvent(state, 'response.output_item.added', {
           output_index: state.outputIndex,
           item: {
-            type: 'function_call',
+            type: state.currentItemType,
             id: state.currentItemId,
             call_id: state.currentCallId,
             name: state.currentName,
@@ -355,6 +386,7 @@ function anthToResHandleContentBlockStart(
         }),
       );
       break;
+    }
   }
 
   return events;
@@ -402,6 +434,10 @@ function anthToResHandleContentBlockDelta(
         return [];
       }
       state.currentArguments += evt.delta.partial_json ?? '';
+      // Buffer freeform custom tool JSON fragments; unwrap on content_block_stop.
+      if (state.currentItemType === 'custom_tool_call') {
+        return [];
+      }
       return [
         makeResponsesEvent(state, 'response.function_call_arguments.delta', {
           output_index: state.outputIndex,
@@ -444,6 +480,27 @@ function anthToResHandleContentBlockStop(
           call_id: state.currentCallId,
           name: state.currentName,
           arguments: completedToolArguments(state.currentArguments),
+        }),
+      ];
+      events.push(...closeCurrentResponsesItem(state));
+      return events;
+    }
+
+    case 'custom_tool_call': {
+      const input = freeformInputFromAnthropicToolUse(
+        state.currentArguments === ''
+          ? undefined
+          : (tryParseJsonObject(state.currentArguments) ?? state.currentArguments),
+      );
+      // Keep unwrapped freeform text for output_item.done.
+      state.currentArguments = input;
+      const events: ResponsesStreamEvent[] = [
+        makeResponsesEvent(state, 'response.custom_tool_call_input.done', {
+          output_index: state.outputIndex,
+          item_id: state.currentItemId,
+          call_id: state.currentCallId,
+          name: state.currentName,
+          input,
         }),
       ];
       events.push(...closeCurrentResponsesItem(state));
@@ -512,7 +569,9 @@ function closeCurrentResponsesItem(
   const reasoningSummary = state.currentReasoningSummary;
   const callId = state.currentCallId;
   const name = state.currentName;
-  const args = completedToolArguments(state.currentArguments);
+  const rawArgs = state.currentArguments;
+  const args =
+    itemType === 'custom_tool_call' ? rawArgs : completedToolArguments(rawArgs);
 
   state.currentItemType = '';
   state.currentItemId = '';
@@ -536,9 +595,16 @@ function closeCurrentResponsesItem(
           itemType === 'message'
             ? [{ type: 'output_text', text }]
             : undefined,
-        call_id: itemType === 'function_call' ? callId : undefined,
-        name: itemType === 'function_call' ? name : undefined,
+        call_id:
+          itemType === 'function_call' || itemType === 'custom_tool_call'
+            ? callId
+            : undefined,
+        name:
+          itemType === 'function_call' || itemType === 'custom_tool_call'
+            ? name
+            : undefined,
         arguments: itemType === 'function_call' ? args : undefined,
+        input: itemType === 'custom_tool_call' ? args : undefined,
         encrypted_content:
           itemType === 'reasoning' && encryptedContent !== ''
             ? encryptedContent
@@ -570,6 +636,36 @@ function initialToolArguments(input: unknown): string {
 
 function completedToolArguments(args: string): string {
   return args === '' ? '{}' : args;
+}
+
+function freeformInputFromAnthropicToolUse(input: unknown): string {
+  if (input === undefined || input === null) {
+    return '';
+  }
+  if (typeof input === 'string') {
+    return customToolInputFromChatArguments(input);
+  }
+  if (typeof input === 'object' && !Array.isArray(input)) {
+    const record = input as Record<string, unknown>;
+    const wrapped = record[CUSTOM_TOOL_INPUT_FIELD];
+    if (typeof wrapped === 'string') {
+      return wrapped;
+    }
+    // Streaming tool_use blocks often start with `{}`; keep the buffer empty so
+    // subsequent input_json_delta fragments form a single parseable JSON object.
+    if (Object.keys(record).length === 0) {
+      return '';
+    }
+  }
+  return jsonMarshal(input);
+}
+
+function tryParseJsonObject(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function makeResponsesCreatedEvent(

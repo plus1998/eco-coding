@@ -5,7 +5,6 @@ import { responsesToChatCompletionsRequest, chatCompletionsResponseToResponses }
 import { responsesToAnthropic } from '../src/responses-to-anthropic.js';
 import { chatCompletionsToResponses } from '../src/chat-completions-to-responses.js';
 import { responsesToChatCompletions } from '../src/responses-to-chat-completions.js';
-import { jsonParse } from '../src/json.js';
 import type { ChatCompletionsRequest, ResponsesRequest, ResponsesResponse } from '../src/types.js';
 
 describe('roundtrip', () => {
@@ -112,7 +111,29 @@ describe('roundtrip', () => {
     const back = responsesToAnthropicRequest(responsesReq);
     expect(back.model).toBe('claude-sonnet-4');
     expect(back.max_tokens).toBe(256);
-    expect(back.messages.length).toBeGreaterThan(0);
+    expect(back.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'Ping' }] },
+    ]);
+  });
+
+  test('consecutive Responses messages remain Anthropic content block arrays after merging', () => {
+    const anthropic = responsesToAnthropicRequest({
+      model: 'claude-sonnet-4',
+      input: [
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'first' }] },
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'second' }] },
+      ],
+    });
+
+    expect(anthropic.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'first' },
+          { type: 'text', text: 'second' },
+        ],
+      },
+    ]);
   });
 
   test('responses instructions become anthropic system prompt', () => {
@@ -146,11 +167,12 @@ describe('roundtrip', () => {
 
     const anthropic = responsesToAnthropicRequest(responsesReq);
     const toolResultMessage = anthropic.messages.find((m) => m.role === 'user');
-    const blocks = jsonParse<Array<{ type: string; content?: string }>>(
-      String(toolResultMessage?.content ?? '[]'),
-    );
+    const blocks = toolResultMessage?.content as Array<{
+      type: string;
+      content?: unknown;
+    }>;
     expect(blocks[0]?.type).toBe('tool_result');
-    expect(jsonParse(blocks[0]?.content ?? '[]')).toEqual([
+    expect(blocks[0]?.content).toEqual([
       { type: 'text', text: 'list result' },
     ]);
   });

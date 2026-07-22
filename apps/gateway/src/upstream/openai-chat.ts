@@ -33,6 +33,7 @@ import {
 } from "../usage-normalize.js";
 
 let chatUsageEventSeq = 0;
+const MAX_CHAT_OUTPUT_TOKENS = 64_000;
 
 function buildOpenAIUpstreamHeaders(
   providerApiKey: string,
@@ -103,6 +104,25 @@ export async function forwardOpenAIChat(
   const toolContext = buildCodexToolContextFromRequest(responsesBody);
   const chatBody = responsesToChatCompletionsRequest(responsesBody);
   chatBody.model = route.upstreamModelId;
+  const requestedMaxOutputTokens =
+    responsesBody.max_output_tokens ??
+    route.provider.modelMaxOutputTokens?.[route.upstreamModelId];
+  if (
+    typeof requestedMaxOutputTokens === "number" &&
+    Number.isFinite(requestedMaxOutputTokens) &&
+    requestedMaxOutputTokens > 0
+  ) {
+    const appliedMaxTokens = Math.min(Math.floor(requestedMaxOutputTokens), MAX_CHAT_OUTPUT_TOKENS);
+    chatBody.max_tokens = appliedMaxTokens;
+    delete chatBody.max_completion_tokens;
+    onLog(
+      `chat max_tokens provider=${route.provider.id} model=${route.upstreamModelId} requested=${Math.floor(requestedMaxOutputTokens)} applied=${appliedMaxTokens} source=${responsesBody.max_output_tokens !== undefined ? "request" : "model-config"}`,
+    );
+  } else {
+    onLog(
+      `chat max_tokens missing provider=${route.provider.id} model=${route.upstreamModelId}; upstream default will apply`,
+    );
+  }
   if (responsesBody.stream === true) {
     chatBody.stream = true;
     chatBody.stream_options = { include_usage: true };
@@ -157,6 +177,10 @@ export async function forwardOpenAIChat(
     const text = await upstreamResponse.text();
     try {
       const chatMessage = JSON.parse(text) as ChatCompletionsResponse;
+      const finishReason = chatMessage.choices[0]?.finish_reason;
+      onLog(
+        `chat response terminal provider=${route.provider.id} model=${route.upstreamModelId} finish_reason=${typeof finishReason === "string" && finishReason ? finishReason : "(missing)"}`,
+      );
       observeChatUsage({
         route,
         usage: normalizeChatCompletionsUsage(chatMessage.usage, chatMessage.model || route.upstreamModelId),
@@ -188,7 +212,16 @@ export async function forwardOpenAIChat(
   }
 
   if (!upstreamResponse.body) {
-    return new Response(null, { status: 200 });
+    onLog(
+      `upstream response missing body ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId}`,
+    );
+    return Response.json(
+      chatErrorToResponseError({
+        message: `Upstream provider ${route.provider.id} returned a successful response without a body.`,
+        type: "upstream_error",
+      }),
+      { status: 502 },
+    );
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -204,6 +237,7 @@ export async function forwardOpenAIChat(
       let streamStarted = false;
       let streamFailed = false;
       let usageEmitted = false;
+      let sawDone = false;
 
       const writeResponsesEvents = (events: ResponsesStreamEvent[]) => {
         if (events.length > 0) {
@@ -225,8 +259,8 @@ export async function forwardOpenAIChat(
           for (const block of blocks) {
             const parsed = parseChatSseBlock(block);
             if (parsed.done) {
-              writeResponsesEvents(finalizeChatCompletionsResponsesStream(state));
-              continue;
+              sawDone = true;
+              break;
             }
             if (parsed.eventName === "error" || parsed.chunk?.error !== undefined) {
               const errorBody = parsed.chunk ?? { error: { message: "Upstream stream error" } };
@@ -268,6 +302,9 @@ export async function forwardOpenAIChat(
               chatCompletionsChunkToResponsesEvents(parsed.chunk, state),
             );
           }
+          if (sawDone) {
+            break;
+          }
         }
 
         if (!streamFailed) {
@@ -277,7 +314,8 @@ export async function forwardOpenAIChat(
             for (const block of blocks) {
               const parsed = parseChatSseBlock(block);
               if (parsed.done) {
-                continue;
+                sawDone = true;
+                break;
               }
               if (parsed.eventName === "error" || parsed.chunk?.error !== undefined) {
                 const errorBody = parsed.chunk ?? { error: { message: "Upstream stream error" } };
@@ -322,7 +360,20 @@ export async function forwardOpenAIChat(
         }
 
         if (!streamFailed) {
-          writeResponsesEvents(finalizeChatCompletionsResponsesStream(state));
+          onLog(
+            `chat stream terminal provider=${route.provider.id} model=${route.upstreamModelId} finish_reason=${state.finishReason || "(missing)"} done=${sawDone} tool_calls=${state.toolCalls.size} text_chars=${state.text.length} reasoning_chars=${state.reasoning.length}`,
+          );
+          if (!sawDone) {
+            writeResponsesEvents(
+              failChatCompletionsResponsesStream(
+                state,
+                "Upstream stream ended before the [DONE] terminator.",
+                "stream_error",
+              ),
+            );
+          } else {
+            writeResponsesEvents(finalizeChatCompletionsResponsesStream(state));
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

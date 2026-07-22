@@ -12,7 +12,9 @@ import {
   CodexAppServerDriver,
   CodexCompactNotAvailable,
   type CodexContextSnapshotResolution,
+  type CodexCatalogManualCapabilities,
   CodexEventAdapter,
+  type CodexGatewayCatalogRoute,
   type CodexMcpServerForConfigSync,
   CodexResumeNotAvailable,
   CodexRollbackNotAvailable,
@@ -23,6 +25,7 @@ import {
   type CodexThreadStatusKind,
   CodexTurnRouteRegistry,
   clearCodexSpawnPayloadQueueSync,
+  collectCodexGatewayCatalogRoutes,
   compactCodexThreadAndWait,
   dequeueCodexSpawnPayloadMatchingSync,
   ensureCodexSkillsExtraRoots,
@@ -42,6 +45,7 @@ import {
   resumeCodexThread,
   rollbackCodexThread,
   syncCodexConfigFromEcoProviders,
+  syncEcoCodexModelCatalog,
   syncProfileAgentsToCodexRoles,
 } from "@eco/runtime";
 import type { CodexModelCatalogEntryView } from "../shared/models";
@@ -108,9 +112,25 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   run: (attempt: CodexRuntimeAttempt) => Promise<ThreadRuntimeProxyResult>;
 }
 
+export interface EcoProviderForCodexCatalog extends EcoProviderForCodexConfig {
+  defaultModel?: string;
+  models?: readonly {
+    modelId: string;
+    displayName?: string;
+    apiCompat?: EcoProviderForCodexConfig["apiCompat"];
+    manualSpec?: CodexCatalogManualCapabilities;
+  }[];
+}
+
 export interface CodexRuntimeRunDeps {
   ecoDataDir: string;
-  listProviders: () => readonly EcoProviderForCodexConfig[];
+  listProviders: () => readonly EcoProviderForCodexCatalog[];
+  /**
+   * Optional secret-free catalog expansion sources beyond provider defaults.
+   * Later prepare() calls may pass current effective routes via PrepareCodexRuntimeInput.
+   */
+  listCatalogRouteConfigs?: () => readonly CodexGatewayCatalogRoute[];
+  listCatalogOrchestrationAgents?: () => readonly CodexGatewayCatalogRoute[];
   threadMap: CodexThreadMap;
   resolveRunAttemptId?: (ecoThreadId: string) => string | undefined;
   appendThreadRunEvent: (event: ThreadRunEventInput) => void;
@@ -163,6 +183,11 @@ export interface PrepareCodexRuntimeInput {
   /** Composer-selected MCP names for this thread. Omitted means all supplied servers. */
   threadEnabledMcpServerNames?: readonly string[];
   skillConfig?: readonly { path: string; enabled: boolean }[];
+  /**
+   * Current effective runtime / agent routes for catalog alias materialization.
+   * Highest metadata priority among catalog sources.
+   */
+  effectiveCatalogRoutes?: readonly CodexGatewayCatalogRoute[];
 }
 
 export interface PreparedCodexRuntime {
@@ -201,6 +226,8 @@ export function clearPreparedCodexRuntimeForThread(ecoThreadId: string): boolean
 }
 /** Skip MCP reload when the prepared server set is unchanged (keeps warm connections). */
 let lastPreparedMcpFingerprint = "";
+/** Formal Eco model catalog fingerprint currently loaded by the running app-server. */
+let lastPreparedModelCatalogFingerprint = "";
 
 const LOCAL_CODEX_CANDIDATES: readonly string[] = [];
 
@@ -225,6 +252,7 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
   preparedRuntimeByThread.clear();
   lastPreparedRoleIds = [];
   lastPreparedMcpFingerprint = "";
+  lastPreparedModelCatalogFingerprint = "";
   globalMultiAgentSupportRequired = false;
   const resolveAttribution =
     config.resolveCodexThreadAttribution ??
@@ -783,15 +811,32 @@ async function prepareCodexRuntimeUnlocked(
     `[eco-gateway] ready providers=${gatewayProviders.map((p) => `${p.id}[${p.models.join("|")}]`).join(", ")}`,
   );
 
+  // Formal model catalog: eco_route_v1… aliases get freeform apply_patch before app-server boots.
+  const catalogRoutes = collectCatalogRoutesForPrepare(runtimeDeps, input, roleSync?.roles ?? []);
+  const catalogSync = await syncEcoCodexModelCatalog({
+    ecoDataDir: runtimeDeps.ecoDataDir,
+    codexExecutable,
+    routes: catalogRoutes,
+  });
+  runtimeDeps.onStderr?.(
+    `[eco-codex] model catalog path=${catalogSync.catalogPath} aliases=${catalogSync.aliasSlugs.length} native=${catalogSync.nativeModelCount} changed=${catalogSync.changed}`,
+  );
+
   const configSync = await syncCodexConfigFromEcoProviders({
     ecoDataDir: runtimeDeps.ecoDataDir,
     providers,
     mcpServers,
+    modelCatalogJsonPath: catalogSync.catalogPath,
     ...(globalMultiAgentSupportRequired ? { enableMultiAgent: true } : {}),
     ...(roleSync ? { agentRoles: roleSync.agentRoles } : {}),
   });
 
   const configToml = fs.readFileSync(configSync.configPath, "utf8");
+  if (!configToml.includes("model_catalog_json =")) {
+    throw new Error(
+      `Codex config sync failed: model_catalog_json was not written to ${configSync.configPath}.`,
+    );
+  }
   if (roleSync && roleSync.agentRoles.length > 0) {
     const hasStableMultiAgent =
       configToml.includes("[features]") &&
@@ -841,13 +886,29 @@ async function prepareCodexRuntimeUnlocked(
   }
 
   runtimeDeps.onStderr?.(
-    `[eco-codex] config ${configSync.configPath} gateway=${configSync.gatewayBaseUrl} providers=${configSync.providerSlugs.join(",")} mcp=${configSync.mcpServerNames.join(",") || "(none)"}`,
+    `[eco-codex] config ${configSync.configPath} gateway=${configSync.gatewayBaseUrl} providers=${configSync.providerSlugs.join(",")} mcp=${configSync.mcpServerNames.join(",") || "(none)"} catalog=${configSync.modelCatalogJsonPath ?? "(none)"}`,
   );
+
+  // Catalog is startup config: only cold-restart app-server when the fingerprint changes
+  // and every loaded thread is idle/systemError. Active turns reject this prepare.
+  const catalogNeedsRestart =
+    catalogSync.fingerprint !== lastPreparedModelCatalogFingerprint;
+  if (catalogNeedsRestart) {
+    await ensureIdleCodexAppServerRestartForCatalog(
+      runtimeDeps,
+      codexExecutable,
+      catalogSync.fingerprint,
+    );
+  }
 
   const client = await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
 
   if (!client.isInitialized) {
     throw new Error("Codex app-server client is not initialized after lifecycle start.");
+  }
+  if (!catalogNeedsRestart) {
+    // First successful prepare or unchanged catalog still pins the loaded fingerprint.
+    lastPreparedModelCatalogFingerprint = catalogSync.fingerprint;
   }
   clearCodexModelCatalogCache();
   const mcpFingerprint = fingerprintPreparedMcpServers(mcpServers);
@@ -869,6 +930,104 @@ async function prepareCodexRuntimeUnlocked(
     `[eco-codex] mcp reload servers=${configSync.mcpServerNames.join(",") || "(none)"}`,
   );
   return prepared;
+}
+
+function collectCatalogRoutesForPrepare(
+  runtimeDeps: CodexRuntimeRunDeps,
+  input: PrepareCodexRuntimeInput,
+  roleSyncRoles: readonly {
+    providerId: string;
+    modelId: string;
+    apiCompat?: EcoProviderForCodexConfig["apiCompat"];
+  }[],
+): CodexGatewayCatalogRoute[] {
+  const providers = runtimeDeps.listProviders();
+  const roleRoutes: CodexGatewayCatalogRoute[] = roleSyncRoles
+    .map((role) => {
+      const providerId = role.providerId.trim();
+      const modelId = role.modelId.trim();
+      if (!providerId || !modelId) {
+        return undefined;
+      }
+      const provider = providers.find((candidate) => candidate.id === providerId);
+      const apiCompat = role.apiCompat ?? provider?.apiCompat ?? "openai_responses";
+      return {
+        providerId,
+        modelId,
+        apiCompat,
+      } satisfies CodexGatewayCatalogRoute;
+    })
+    .filter((route): route is CodexGatewayCatalogRoute => route !== undefined);
+
+  return collectCodexGatewayCatalogRoutes({
+    providers: providers.map((provider) => {
+      const models = (provider.models ?? []).map((model) => ({
+        modelId: model.modelId,
+        ...(model.displayName ? { displayName: model.displayName } : {}),
+        ...(model.apiCompat ? { apiCompat: model.apiCompat } : {}),
+        ...(model.manualSpec ? { manualSpec: model.manualSpec } : {}),
+      }));
+      return {
+        id: provider.id,
+        name: provider.name,
+        enabled: provider.enabled,
+        ...(provider.apiCompat ? { apiCompat: provider.apiCompat } : {}),
+        ...(provider.defaultModel ? { defaultModel: provider.defaultModel } : {}),
+        ...(models.length > 0 ? { models } : {}),
+      };
+    }),
+    routeConfigs: runtimeDeps.listCatalogRouteConfigs?.() ?? [],
+    orchestrationAgents: [
+      ...(runtimeDeps.listCatalogOrchestrationAgents?.() ?? []),
+      ...roleRoutes,
+    ],
+    effectiveRoutes: input.effectiveCatalogRoutes ?? [],
+  });
+}
+
+/**
+ * Catalog content is only reloaded by app-server process start.
+ * Reject when any loaded thread is active so we never silently keep a stale catalog.
+ */
+async function ensureIdleCodexAppServerRestartForCatalog(
+  runtimeDeps: CodexRuntimeRunDeps,
+  codexExecutable: string,
+  nextFingerprint: string,
+): Promise<void> {
+  const lifecycle = getGlobalCodexRuntimeLifecycle();
+  const client = lifecycle?.getClient();
+  if (!client?.isInitialized) {
+    // Not started yet — first start after config write will load the new catalog.
+    lastPreparedModelCatalogFingerprint = nextFingerprint;
+    return;
+  }
+
+  const loaded = await client.request<{ data?: unknown }>("thread/loaded/list", {});
+  const loadedThreadIds = Array.isArray(loaded.data)
+    ? loaded.data.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  for (const loadedThreadId of loadedThreadIds) {
+    const status = await readCodexThreadStatus(client, loadedThreadId);
+    if (status === "active") {
+      throw new CodexResumeNotAvailable(
+        `Codex model catalog changed but cannot restart while thread '${loadedThreadId}' is active.`,
+        {
+          nextAction:
+            "Wait for the active Codex turn to finish, then retry so Eco can reload the freeform apply_patch catalog.",
+        },
+      );
+    }
+  }
+
+  runtimeDeps.onStderr?.(
+    `[eco-codex] cold restart app-server for model catalog fingerprint=${nextFingerprint.slice(0, 12)}`,
+  );
+  await stopGlobalCodexRuntimeLifecycle();
+  await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
+  clearCodexModelCatalogCache();
+  lastPreparedModelCatalogFingerprint = nextFingerprint;
+  // MCP processes are gone with the app-server; force a reload on the next prepare path.
+  lastPreparedMcpFingerprint = "";
 }
 
 function resolveCodexUserSkillExtraRoots(): string[] {
@@ -961,6 +1120,32 @@ export async function runThreadRequestWithRuntimeProxy(
     const threadEnabledMcpServerNames = input.resolveEnabledMcpServerKeys?.() ?? [];
     const skillConfig = input.resolveSkillConfig?.() ?? [];
     const subagentAvailability = input.resolveSubagentAvailability?.();
+    const effectiveCatalogRoutes: CodexGatewayCatalogRoute[] = [];
+    for (const route of freshConfig.routes) {
+      const providerId = route.provider.id.trim();
+      const modelId = route.modelId.trim();
+      if (!providerId || !modelId) {
+        continue;
+      }
+      effectiveCatalogRoutes.push({
+        providerId,
+        modelId,
+        apiCompat: route.apiCompat,
+        displayName: `${route.provider.name} / ${modelId}`,
+        ...(route.manualSpec
+          ? {
+              manualSpec: {
+                ...(route.manualSpec.contextTokens !== undefined
+                  ? { contextTokens: route.manualSpec.contextTokens }
+                  : {}),
+                ...(route.manualSpec.supportsImageInput !== undefined
+                  ? { supportsImageInput: route.manualSpec.supportsImageInput }
+                  : {}),
+              },
+            }
+          : {}),
+      });
+    }
     const prepared = await prepareCodexRuntime({
       agentRegistry: input.resolveAgentRegistry?.(),
       ...(input.resolveExecutionConfirmationMode
@@ -972,6 +1157,7 @@ export async function runThreadRequestWithRuntimeProxy(
       mcpServers,
       threadEnabledMcpServerNames,
       skillConfig,
+      effectiveCatalogRoutes,
     });
     // Wait for readiness AFTER prepare: reload (when it runs) restarts MCP processes.
     await input.ensureMcpReady?.();

@@ -24,6 +24,10 @@ export interface EcoProviderForGateway {
   defaultModel: string;
   /** Extra model ids that Codex may send (candidates / route models). */
   modelIds?: readonly string[];
+  models?: readonly {
+    modelId: string;
+    maxOutputTokens?: number;
+  }[];
 }
 
 export interface GatewayProviderPayload {
@@ -34,6 +38,7 @@ export interface GatewayProviderPayload {
   apiKey: string;
   upstreamModelId: string;
   models: string[];
+  modelMaxOutputTokens?: Record<string, number>;
 }
 
 export interface EcoGatewayLifecycleOptions {
@@ -180,12 +185,17 @@ export function buildGatewayProvidersFromEcoProviders(
       continue;
     }
     const ecoAlias = `eco_${id}`;
-    const upstreamModels = uniqueNonEmpty([defaultModel, ...(provider.modelIds ?? [])]);
+    const upstreamModels = uniqueNonEmpty([
+      defaultModel,
+      ...(provider.models ?? []).map((model) => model.modelId),
+      ...(provider.modelIds ?? []),
+    ]);
     const models = uniqueNonEmpty([
       ecoAlias,
       ...upstreamModels.map((modelId) => `${ecoAlias}__${modelId}`),
       ...upstreamModels,
     ]);
+    const modelMaxOutputTokens = collectModelMaxOutputTokens(provider.models);
     out.push({
       id,
       name: provider.name.trim() || id,
@@ -194,6 +204,7 @@ export function buildGatewayProvidersFromEcoProviders(
       apiKey: provider.apiKey.trim() || "local-unused",
       upstreamModelId: defaultModel,
       models,
+      ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),
     });
   }
 
@@ -204,6 +215,21 @@ export function buildGatewayProvidersFromEcoProviders(
   }
 
   return { providers: out, incompleteProviderIds };
+}
+
+function collectModelMaxOutputTokens(
+  models: EcoProviderForGateway["models"],
+): Record<string, number> | undefined {
+  const limits: Record<string, number> = {};
+  for (const model of models ?? []) {
+    const modelId = model.modelId.trim();
+    const tokens = model.maxOutputTokens;
+    if (!modelId || tokens === undefined || !Number.isFinite(tokens) || tokens <= 0) {
+      continue;
+    }
+    limits[modelId] = Math.floor(tokens);
+  }
+  return Object.keys(limits).length > 0 ? limits : undefined;
 }
 
 export function assertGatewayProvidersCover(

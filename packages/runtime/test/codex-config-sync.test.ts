@@ -336,3 +336,39 @@ test("syncCodexConfigFromEcoProviders includes provider id custom as eco_custom"
   expect(written).toContain("[model_providers.eco_custom]");
   expect(written).toContain('name = "Eco Gateway (eco_custom)"');
 });
+
+test("buildCodexConfigToml writes absolute model_catalog_json and rejects relative paths", () => {
+  const catalogPath = "/Users/me/Library/Application Support/Eco Coding/codex/eco-model-catalog.json";
+  const toml = buildCodexConfigToml({
+    ecoDataDir: "/data",
+    gatewayBaseUrl: "http://127.0.0.1:18765/v1",
+    providers: [{ id: "custom", name: "Custom", enabled: true }],
+    modelCatalogJsonPath: catalogPath,
+  });
+  expect(toml).toContain(`model_catalog_json = ${JSON.stringify(catalogPath)}`);
+  expect(toml).not.toMatch(/api[_-]?key/i);
+
+  expect(() =>
+    buildCodexConfigToml({
+      ecoDataDir: "/data",
+      providers: [{ id: "custom", name: "Custom", enabled: true }],
+      modelCatalogJsonPath: "relative/eco-model-catalog.json",
+    }),
+  ).toThrow(/absolute path/i);
+});
+
+test("syncCodexConfigFromEcoProviders persists model_catalog_json without secrets", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const catalogPath = path.join(ecoDataDir, "codex", "eco-model-catalog.json");
+  const secret = "sk-ant-catalog-secret";
+  const result = await syncCodexConfigFromEcoProviders({
+    ecoDataDir,
+    gatewayPort: 18765,
+    providers: [{ id: "anthropic-main", name: "Anthropic Main", enabled: true }],
+    modelCatalogJsonPath: catalogPath,
+  });
+  expect(result.modelCatalogJsonPath).toBe(catalogPath);
+  const written = await fs.readFile(result.configPath, "utf8");
+  expect(written).toContain(`model_catalog_json = ${JSON.stringify(catalogPath)}`);
+  expect(codexConfigContainsUpstreamSecret(written, [secret])).toBeUndefined();
+});

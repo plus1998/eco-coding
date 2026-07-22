@@ -16,6 +16,8 @@ export interface GatewayProvider {
   upstreamModelId: string;
   /** Request `model` values routed to this provider. */
   models: string[];
+  /** Per-upstream-model output limits used when Codex omits max_output_tokens. */
+  modelMaxOutputTokens?: Record<string, number>;
 }
 
 export interface ResolvedProviderRoute {

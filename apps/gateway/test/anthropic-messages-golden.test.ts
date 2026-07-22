@@ -479,4 +479,114 @@ describe("anthropic-messages golden SSE", () => {
     });
     expect(sseLines.filter(Boolean).length).toBeGreaterThan(0);
   });
+
+  test("Anthropic route wraps apply_patch custom tool and restores custom_tool_call", async () => {
+    const provider: GatewayProvider = {
+      id: "anthropic-provider",
+      name: "Anthropic mock",
+      upstreamKind: "anthropic-messages",
+      baseUrl: "https://mock.anthropic.test",
+      apiKey: "test-key",
+      upstreamModelId: "claude-sonnet",
+      models: ["claude-sonnet"],
+    };
+    const alias = buildCodexGatewayModelAlias(provider.id, "claude-sonnet", "anthropic");
+    const patch = "*** Begin Patch\n*** Add File: b.txt\n+yo\n*** End Patch";
+    let upstreamBody: {
+      tools?: { type?: string; name?: string; input_schema?: unknown }[];
+      messages?: { role?: string; content?: unknown }[];
+    } = {};
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;
+        return Response.json({
+          id: "msg_custom",
+          type: "message",
+          role: "assistant",
+          model: "claude-sonnet",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_patch",
+              name: "apply_patch",
+              input: { input: patch },
+            },
+          ],
+          stop_reason: "tool_use",
+          usage: { input_tokens: 4, output_tokens: 3 },
+        });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: alias,
+          stream: false,
+          input: [
+            {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "patch" }],
+            },
+            {
+              type: "custom_tool_call",
+              call_id: "call_previous_patch",
+              name: "apply_patch",
+              input: patch,
+            },
+            {
+              type: "custom_tool_call_output",
+              call_id: "call_previous_patch",
+              output: "ok",
+            },
+          ],
+          tools: [
+            {
+              type: "custom",
+              name: "apply_patch",
+              description: "Apply freeform patch",
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(upstreamBody.tools?.some((tool) => tool.type === "custom")).toBe(false);
+    expect(upstreamBody.tools?.[0]).toMatchObject({ name: "apply_patch" });
+    expect(JSON.stringify(upstreamBody.tools?.[0]?.input_schema)).toContain('"input"');
+    expect(upstreamBody.messages?.[1]).toEqual({
+      role: "assistant",
+      content: [
+        {
+          type: "tool_use",
+          id: "call_previous_patch",
+          name: "apply_patch",
+          input: { input: patch },
+        },
+      ],
+    });
+    expect(upstreamBody.messages?.[2]).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "call_previous_patch",
+          content: "ok",
+        },
+      ],
+    });
+    const body = (await response.json()) as {
+      output?: { type?: string; name?: string; input?: string }[];
+    };
+    expect(body.output?.[0]).toMatchObject({
+      type: "custom_tool_call",
+      name: "apply_patch",
+      input: patch,
+    });
+  });
 });

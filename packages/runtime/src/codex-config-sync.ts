@@ -68,6 +68,11 @@ export interface SyncCodexConfigFromEcoProvidersInput {
   mcpServers?: readonly CodexMcpServerForConfigSync[];
   gatewayPort?: number;
   gatewayBaseUrl?: string;
+  /**
+   * Absolute path to Eco's formal model catalog (`eco-model-catalog.json`).
+   * When set, written as `model_catalog_json` so gateway aliases receive freeform apply_patch.
+   */
+  modelCatalogJsonPath?: string;
 }
 
 export interface SyncCodexConfigResult {
@@ -77,6 +82,7 @@ export interface SyncCodexConfigResult {
   providerSlugs: string[];
   mcpServerNames: string[];
   defaultProviderSlug?: string;
+  modelCatalogJsonPath?: string;
 }
 
 export function resolveEcoGatewayPort(env: NodeJS.ProcessEnv = process.env): number {
@@ -142,6 +148,17 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
     'model_reasoning_summary = "detailed"',
     "",
   ];
+
+  const modelCatalogJsonPath = input.modelCatalogJsonPath?.trim();
+  if (modelCatalogJsonPath) {
+    if (!path.isAbsolute(modelCatalogJsonPath)) {
+      throw new Error(
+        `modelCatalogJsonPath must be an absolute path, received: ${modelCatalogJsonPath}`,
+      );
+    }
+    // Formal Eco catalog with freeform apply_patch aliases for eco_route_v1… models.
+    lines.push(`model_catalog_json = ${tomlString(modelCatalogJsonPath)}`, "");
+  }
 
   if (defaultProvider) {
     lines.push(`model_provider = "${buildCodexModelProviderSlug(defaultProvider.id)}"`, "");
@@ -222,6 +239,7 @@ export async function syncCodexConfigFromEcoProviders(
     await fs.appendFile(configPath, hook.trustTomlBlock, "utf8");
   }
 
+  const modelCatalogJsonPath = input.modelCatalogJsonPath?.trim() || undefined;
   return {
     codexHomeDir,
     configPath,
@@ -229,6 +247,7 @@ export async function syncCodexConfigFromEcoProviders(
     providerSlugs,
     mcpServerNames: mcpServers.map((server) => server.name),
     ...(providerSlugs[0] ? { defaultProviderSlug: providerSlugs[0] } : {}),
+    ...(modelCatalogJsonPath ? { modelCatalogJsonPath } : {}),
   };
 }
 

@@ -1,6 +1,7 @@
 import {
   anthropicEventToResponsesEvents,
   anthropicToResponsesResponse,
+  buildCodexToolContextFromRequest,
   finalizeAnthropicResponsesStream,
   newAnthropicEventToResponsesState,
   responsesEventToSse,
@@ -8,6 +9,7 @@ import {
   type AnthropicRequest,
   type AnthropicResponse,
   type AnthropicStreamEvent,
+  type CodexToolContext,
   type ResponsesRequest,
 } from "@eco/openai-anthropic-bridge";
 import { buildUpstreamUrl } from "../provider-router.js";
@@ -269,6 +271,7 @@ export async function forwardAnthropicMessages(
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
 ): Promise<Response> {
+  const toolContext = buildCodexToolContextFromRequest(responsesBody);
   let anthropicBody: AnthropicRequest;
   try {
     anthropicBody = responsesToAnthropicRequest(responsesBody);
@@ -294,6 +297,7 @@ export async function forwardAnthropicMessages(
     onLog,
     onUsage,
     codexTurnMetadata,
+    toolContext,
   );
 }
 
@@ -306,6 +310,7 @@ export async function forwardAnthropicMessagesBody(
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): Promise<Response> {
   const upstreamUrl = buildUpstreamUrl(route.provider, "anthropic-messages");
   const upstreamHeaders = buildAnthropicUpstreamHeaders(route.provider.apiKey, clientHeaders);
@@ -339,7 +344,7 @@ export async function forwardAnthropicMessagesBody(
     const text = await upstreamResponse.text();
     try {
       const anthropicMessage = JSON.parse(text) as AnthropicResponse;
-      const responsesJson = anthropicToResponsesResponse(anthropicMessage);
+      const responsesJson = anthropicToResponsesResponse(anthropicMessage, toolContext);
       const responseId = readNonEmptyString(anthropicMessage.id);
       const responseModelId = readNonEmptyString(anthropicMessage.model);
       const usage = responseModelId
@@ -387,7 +392,7 @@ export async function forwardAnthropicMessagesBody(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
-      const state = newAnthropicEventToResponsesState();
+      const state = newAnthropicEventToResponsesState(toolContext);
       const usageTracker = newAnthropicStreamUsageTracker();
       let sseBuffer = "";
       const utf8Decoder = createStreamUtf8Decoder();

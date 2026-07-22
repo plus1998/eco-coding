@@ -291,6 +291,7 @@ export * from "./codex-context-snapshot.js";
 export * from "./codex-event-adapter.js";
 export * from "./codex-external-agent-config.js";
 export * from "./codex-model-list.js";
+export * from "./codex-model-catalog-sync.js";
 export * from "./codex-plan-handoff.js";
 export * from "./codex-prompt-materializer.js";
 export * from "./codex-role-sync.js";

@@ -165,6 +165,8 @@ export interface ResponsesInputItem {
   call_id?: string | undefined;
   name?: string | undefined;
   arguments?: string | undefined;
+  /** Freeform custom tool payload (Responses custom_tool_call). */
+  input?: unknown | undefined;
   id?: string | undefined;
   output?: unknown | undefined;
   encrypted_content?: string | undefined;

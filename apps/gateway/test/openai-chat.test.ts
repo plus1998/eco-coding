@@ -16,6 +16,168 @@ const UPSTREAM_CHAT_SSE = [
 ].join("\n");
 
 describe("openai-chat upstream", () => {
+  test("applies configured model max_tokens and caps unsafe values", async () => {
+    const provider: GatewayProvider = {
+      id: "deepseek",
+      name: "DeepSeek mock",
+      upstreamKind: "openai-chat",
+      baseUrl: "http://mock.deepseek.test",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"],
+      modelMaxOutputTokens: { "deepseek-v4-flash": 384_000 },
+    };
+    const logs: string[] = [];
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as {
+          max_tokens?: number;
+          max_completion_tokens?: number;
+        };
+        expect(body.max_tokens).toBe(64_000);
+        expect(body.max_completion_tokens).toBeUndefined();
+        return Response.json({
+          id: "chatcmpl-limit",
+          object: "chat.completion",
+          created: 1,
+          model: "deepseek-v4-flash",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "ok" },
+              finish_reason: "stop",
+            },
+          ],
+        });
+      },
+      (message) => logs.push(message),
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "deepseek-v4-flash", input: '"ping"' }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(logs).toContainEqual(expect.stringContaining("requested=384000 applied=64000"));
+  });
+
+  test("fails a stream that ends without the [DONE] terminator", async () => {
+    const provider: GatewayProvider = {
+      id: "truncated",
+      name: "Truncated mock",
+      upstreamKind: "openai-chat",
+      baseUrl: "http://mock.truncated.test",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"],
+    };
+    const withoutDone = [
+      'data: {"id":"chatcmpl-cut","object":"chat.completion.chunk","created":1,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}',
+      "",
+      'data: {"id":"chatcmpl-cut","object":"chat.completion.chunk","created":1,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      "",
+    ].join("\n");
+    const logs: string[] = [];
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async () =>
+        new Response(withoutDone, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      (message) => logs.push(message),
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: '"ping"' }),
+      }),
+    );
+    const body = await response.text();
+
+    expect(body).toContain('"type":"response.failed"');
+    expect(body).toContain("ended before the [DONE] terminator");
+    expect(logs).toContainEqual(
+      expect.stringContaining("finish_reason=stop done=false"),
+    );
+  });
+
+  test("fails a [DONE] stream when finish_reason is missing", async () => {
+    const provider: GatewayProvider = {
+      id: "missing-finish",
+      name: "Missing finish mock",
+      upstreamKind: "openai-chat",
+      baseUrl: "http://mock.missing-finish.test",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"],
+    };
+    const missingFinish = [
+      'data: {"id":"chatcmpl-cut","object":"chat.completion.chunk","created":1,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async () =>
+        new Response(missingFinish, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: '"ping"' }),
+      }),
+    );
+    const body = await response.text();
+
+    expect(body).toContain('"type":"response.failed"');
+    expect(body).toContain('"code":"missing_finish_reason"');
+  });
+
+  test("rejects a successful streaming response without a body", async () => {
+    const provider: GatewayProvider = {
+      id: "bodyless",
+      name: "Bodyless mock",
+      upstreamKind: "openai-chat",
+      baseUrl: "http://mock.bodyless.test",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"],
+    };
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async () =>
+        new Response(null, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: '"ping"' }),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toContain("successful response without a body");
+  });
+
   test("V1 route alias overrides a Responses provider to Chat for this request", async () => {
     const provider: GatewayProvider = {
       id: "mixed-wire",
@@ -231,6 +393,100 @@ describe("openai-chat upstream", () => {
         inputTokens: 7,
         outputTokens: 2,
       },
+    });
+  });
+
+  test("Chat route wraps apply_patch custom tool and restores custom_tool_call", async () => {
+    const provider: GatewayProvider = {
+      id: "chat-provider",
+      name: "Chat mock",
+      upstreamKind: "openai-chat",
+      baseUrl: "http://mock.chat.test",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4",
+      models: ["deepseek-v4"],
+    };
+    const alias = buildCodexGatewayModelAlias(
+      provider.id,
+      "deepseek-v4",
+      "openai_chat_completions",
+    );
+    const patch = "*** Begin Patch\n*** Add File: a.txt\n+hi\n*** End Patch";
+    let upstreamBody: {
+      tools?: { type?: string; function?: { name?: string; parameters?: unknown } }[];
+      messages?: { role?: string; tool_calls?: unknown[] }[];
+    } = {};
+    const handler = createGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;
+        return Response.json({
+          id: "chatcmpl-custom",
+          object: "chat.completion",
+          created: 1,
+          model: "deepseek-v4",
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    id: "call_patch",
+                    type: "function",
+                    function: {
+                      name: "apply_patch",
+                      arguments: JSON.stringify({ input: patch }),
+                    },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: alias,
+          stream: false,
+          input: [
+            {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "patch" }],
+            },
+          ],
+          tools: [
+            {
+              type: "custom",
+              name: "apply_patch",
+              description: "Apply freeform patch",
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(upstreamBody.tools?.[0]).toMatchObject({
+      type: "function",
+      function: { name: "apply_patch" },
+    });
+    expect(JSON.stringify(upstreamBody.tools?.[0]?.function?.parameters)).toContain('"input"');
+    const body = (await response.json()) as {
+      output?: { type?: string; name?: string; input?: string }[];
+    };
+    expect(body.output?.[0]).toMatchObject({
+      type: "custom_tool_call",
+      name: "apply_patch",
+      input: patch,
     });
   });
 });

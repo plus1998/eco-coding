@@ -26,6 +26,7 @@ import type {
   ChatToolCall,
   ChatUsage,
   ResponsesContentPart,
+  ResponsesError,
   ResponsesIncompleteDetails,
   ResponsesInputTokensDetails,
   ResponsesOutput,
@@ -58,6 +59,7 @@ export function responsesToChatCompletionsRequest(
   const messages = responsesInputToChatMessages(
     req.instructions ?? '',
     req.input,
+    toolContext,
   );
 
   const out: ChatCompletionsRequest = {
@@ -101,6 +103,7 @@ export function responsesToChatCompletionsRequest(
 function responsesInputToChatMessages(
   instructions: string,
   inputRaw: unknown,
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
   if (bytesTrimSpace(instructions) !== '') {
@@ -143,7 +146,7 @@ function responsesInputToChatMessages(
     throw new Error(`parse responses input: ${msg}`);
   }
 
-  const built = buildChatMessagesFromItems(messages, rawItems);
+  const built = buildChatMessagesFromItems(messages, rawItems, toolContext);
   return normalizeChatMessages(built);
 }
 
@@ -160,6 +163,7 @@ function inputToRawJson(input: unknown): string {
 function buildChatMessagesFromItems(
   messages: ChatMessage[],
   rawItems: string[],
+  toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
 ): ChatMessage[] {
   let pendingReasoning = '';
   let pendingReasoningItem: ChatReasoningItem | undefined;
@@ -213,32 +217,34 @@ function buildChatMessagesFromItems(
             arguments: arguments_,
           },
         };
-        const n = messages.length;
-        if (n > 0 && messages[n - 1]!.role === 'assistant') {
-          const last = messages[n - 1]!;
-          last.tool_calls = [...(last.tool_calls ?? []), toolCall];
-          if ((last.reasoning_content ?? '') === '') {
-            last.reasoning_content = pendingReasoning;
-          }
-          if (pendingReasoningItem !== undefined && (last.reasoning_items?.length ?? 0) === 0) {
-            last.reasoning_items = [pendingReasoningItem];
-          }
-        } else {
-          const assistant: ChatMessage = {
-            role: 'assistant',
-            tool_calls: [toolCall],
-            reasoning_content: pendingReasoning,
-          };
-          if (pendingReasoningItem !== undefined) {
-            assistant.reasoning_items = [pendingReasoningItem];
-          }
-          messages.push(assistant);
+        appendAssistantToolCall(messages, toolCall, pendingReasoning, pendingReasoningItem);
+        pendingReasoning = '';
+        pendingReasoningItem = undefined;
+        continue;
+      }
+      case 'custom_tool_call': {
+        // Subsequent turns carry custom_tool_call history; wrap freeform input for Chat.
+        const name = rawString(item.name);
+        const input = rawString(item.input);
+        const toolCall: ChatToolCall = {
+          id: rawString(item.call_id),
+          type: 'function',
+          function: {
+            name,
+            arguments: jsonMarshal({ [CUSTOM_TOOL_INPUT_FIELD]: input }),
+          },
+        };
+        // Ensure later response conversion still classifies this name as custom.
+        if (name && !lookupChatName(toolContext, name)) {
+          toolContext.chatNameToSpec.set(name, { kind: 'custom', name });
         }
+        appendAssistantToolCall(messages, toolCall, pendingReasoning, pendingReasoningItem);
         pendingReasoning = '';
         pendingReasoningItem = undefined;
         continue;
       }
       case 'function_call_output':
+      case 'custom_tool_call_output':
         messages.push({
           role: 'tool',
           tool_call_id: rawString(item.call_id),
@@ -299,6 +305,35 @@ function buildChatMessagesFromItems(
   }
 
   return messages;
+}
+
+function appendAssistantToolCall(
+  messages: ChatMessage[],
+  toolCall: ChatToolCall,
+  pendingReasoning: string,
+  pendingReasoningItem: ChatReasoningItem | undefined,
+): void {
+  const n = messages.length;
+  if (n > 0 && messages[n - 1]!.role === 'assistant') {
+    const last = messages[n - 1]!;
+    last.tool_calls = [...(last.tool_calls ?? []), toolCall];
+    if ((last.reasoning_content ?? '') === '') {
+      last.reasoning_content = pendingReasoning;
+    }
+    if (pendingReasoningItem !== undefined && (last.reasoning_items?.length ?? 0) === 0) {
+      last.reasoning_items = [pendingReasoningItem];
+    }
+    return;
+  }
+  const assistant: ChatMessage = {
+    role: 'assistant',
+    tool_calls: [toolCall],
+    reasoning_content: pendingReasoning,
+  };
+  if (pendingReasoningItem !== undefined) {
+    assistant.reasoning_items = [pendingReasoningItem];
+  }
+  messages.push(assistant);
 }
 
 function responsesInputReasoningItemToChat(
@@ -741,6 +776,12 @@ export function chatCompletionsResponseToResponses(
 
   if (resp === null || resp === undefined) {
     out.output = [emptyResponsesMessageOutput()];
+    out.status = 'failed';
+    out.error = {
+      type: 'upstream_error',
+      code: 'invalid_response',
+      message: 'Upstream returned an empty Chat Completions response.',
+    };
     return out;
   }
   if (out.model === '') {
@@ -750,12 +791,21 @@ export function chatCompletionsResponseToResponses(
   if (resp.choices.length > 0) {
     const choice = resp.choices[0]!;
     out.output = chatMessageToResponsesOutput(choice.message, toolContext);
-    if (choice.finish_reason === 'length') {
-      out.status = 'incomplete';
-      out.incomplete_details = {
-        reason: 'max_output_tokens',
-      } satisfies ResponsesIncompleteDetails;
+    const terminal = classifyChatFinishReason(choice.finish_reason);
+    out.status = terminal.status;
+    if (terminal.incompleteReason !== undefined) {
+      out.incomplete_details = { reason: terminal.incompleteReason } satisfies ResponsesIncompleteDetails;
     }
+    if (terminal.error !== undefined) {
+      out.error = terminal.error;
+    }
+  } else {
+    out.status = 'failed';
+    out.error = {
+      type: 'upstream_error',
+      code: 'missing_choices',
+      message: 'Upstream Chat Completions response did not contain any choices.',
+    };
   }
   if ((out.output?.length ?? 0) === 0) {
     out.output = [emptyResponsesMessageOutput()];
@@ -765,6 +815,59 @@ export function chatCompletionsResponseToResponses(
     out.usage = usage;
   }
   return out;
+}
+
+interface ChatFinishClassification {
+  status: 'completed' | 'incomplete' | 'failed';
+  incompleteReason?: string;
+  error?: ResponsesError;
+}
+
+function classifyChatFinishReason(finishReason: unknown): ChatFinishClassification {
+  const reason = typeof finishReason === 'string' ? finishReason.trim().toLowerCase() : '';
+  if (reason === 'stop' || reason === 'tool_calls' || reason === 'function_call') {
+    return { status: 'completed' };
+  }
+  if (
+    reason === 'length' ||
+    reason === 'max_tokens' ||
+    reason === 'max_output_tokens' ||
+    reason === 'max_completion_tokens' ||
+    reason === 'token_limit'
+  ) {
+    return { status: 'incomplete', incompleteReason: 'max_output_tokens' };
+  }
+  if (reason === 'content_filter') {
+    return { status: 'incomplete', incompleteReason: 'content_filter' };
+  }
+  if (reason === 'insufficient_system_resource') {
+    return {
+      status: 'failed',
+      error: {
+        type: 'upstream_error',
+        code: reason,
+        message: 'Upstream generation stopped because the provider reported insufficient resources.',
+      },
+    };
+  }
+  if (reason === '') {
+    return {
+      status: 'failed',
+      error: {
+        type: 'stream_error',
+        code: 'missing_finish_reason',
+        message: 'Upstream stream ended without a finish_reason.',
+      },
+    };
+  }
+  return {
+    status: 'failed',
+    error: {
+      type: 'upstream_error',
+      code: 'unsupported_finish_reason',
+      message: `Upstream returned unsupported finish_reason: ${reason}.`,
+    },
+  };
 }
 
 function chatMessageReasoningText(message: ChatMessage): string {
@@ -1229,29 +1332,34 @@ export function finalizeChatCompletionsResponsesStream(
 
   events.push(...closeChatToolItems(state));
 
-  let status = 'completed';
-  let incompleteDetails: ResponsesIncompleteDetails | undefined;
-  if (state.finishReason === 'length') {
-    status = 'incomplete';
-    incompleteDetails = { reason: 'max_output_tokens' };
-  }
+  const terminal = classifyChatFinishReason(state.finishReason);
 
   state.completedSent = true;
+  state.failedSent = terminal.status === 'failed';
   const completedResponse: ResponsesResponse = {
     id: state.responseId,
     object: 'response',
     model: state.model,
-    status,
+    status: terminal.status,
     output: chatStreamOutput(state),
   };
   if (state.usage !== undefined) {
     completedResponse.usage = state.usage;
   }
-  if (incompleteDetails !== undefined) {
-    completedResponse.incomplete_details = incompleteDetails;
+  if (terminal.incompleteReason !== undefined) {
+    completedResponse.incomplete_details = { reason: terminal.incompleteReason };
   }
+  if (terminal.error !== undefined) {
+    completedResponse.error = terminal.error;
+  }
+  const terminalEventType =
+    terminal.status === 'completed'
+      ? 'response.completed'
+      : terminal.status === 'incomplete'
+        ? 'response.incomplete'
+        : 'response.failed';
   events.push(
-    chatToResponsesEvent(state, 'response.completed', {
+    chatToResponsesEvent(state, terminalEventType, {
       response: completedResponse,
     }),
   );
@@ -1414,11 +1522,7 @@ function closeChatToolItems(
     return [];
   }
   const events: ResponsesStreamEvent[] = [];
-  for (let i = 0; i < state.toolCalls.size; i++) {
-    const toolCall = state.toolCalls.get(i);
-    if (toolCall === undefined) {
-      continue;
-    }
+  for (const [i, toolCall] of state.toolCalls) {
     const itemID = state.toolItemIds.get(i);
     if (itemID === undefined) {
       continue;
@@ -1490,11 +1594,7 @@ function chatStreamOutput(
       status: 'completed',
     });
   }
-  for (let i = 0; i < state.toolCalls.size; i++) {
-    const toolCall = state.toolCalls.get(i);
-    if (toolCall === undefined) {
-      continue;
-    }
+  for (const [, toolCall] of state.toolCalls) {
     let arguments_ = toolCall.function.arguments ?? '';
     const toolName = toolCall.function.name ?? '';
     if (!isCustomToolChatName(state.toolContext, toolName) && bytesTrimSpace(arguments_) === '') {
