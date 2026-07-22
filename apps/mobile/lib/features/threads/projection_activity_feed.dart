@@ -284,25 +284,6 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
         sortKey: 'agent-card:${agent.agentId}',
       ),
     );
-
-    for (final item in card.displayTimeline.where(_isAgentEchoTimelineItem)) {
-      final entry = _buildProjectionFeedEntry(
-        item,
-        requestSpansById,
-        rawMainTimeline,
-        agentId: agent.agentId,
-        agentRole: role,
-      );
-      if (entry == null) continue;
-      slots.add(
-        _ProjectionFeedSlot(
-          entry: entry,
-          at: item.at,
-          sequence: item.sequence,
-          sortKey: entry.id,
-        ),
-      );
-    }
   }
 
   slots.sort((left, right) {
@@ -399,18 +380,6 @@ List<PromptImageAttachment> _promptImagePreviews(
       .map(PromptImageAttachment.fromJson)
       .where((attachment) => attachment.data.isNotEmpty)
       .toList();
-}
-
-bool _isAgentEchoTimelineItem(ThreadRunProjectionTimelineItem item) {
-  if (_projectionLiveType(item) == 'todo.updated') return false;
-  if (isSubagentMissionEnvelope(item.text)) return false;
-  if (item.eventType != 'message.delta' &&
-      item.eventType != 'message.final' &&
-      item.eventType != 'thinking.delta' &&
-      item.eventType != 'thinking.final') {
-    return false;
-  }
-  return item.text.trim().isNotEmpty;
 }
 
 List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(

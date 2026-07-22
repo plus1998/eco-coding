@@ -931,7 +931,7 @@ void main() {
     },
   );
 
-  test('buildActivityFeed does not echo attributed @mission in main feed', () {
+  test('buildActivityFeed keeps subagent content inside its mission card', () {
     const missionText =
         '@mission {"role":"explore","summary":"Gather CPU info","prompt":"Gather CPU info","agentId":"agent_explore_a"}';
     final feed = buildActivityFeed(
@@ -992,6 +992,13 @@ void main() {
             entry.kind == ActivityFeedKind.assistant &&
             entry.text == 'Checking CPU topology.',
       ),
+      isFalse,
+    );
+    final mission = feed.singleWhere(
+      (entry) => entry.kind == ActivityFeedKind.subagentMission,
+    );
+    expect(
+      mission.timeline.any((item) => item.label == 'Checking CPU topology.'),
       isTrue,
     );
   });
