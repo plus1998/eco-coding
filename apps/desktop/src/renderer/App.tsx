@@ -6287,6 +6287,11 @@ function App() {
                 .join(" ")}
               aria-label="工作区面板"
               aria-hidden={!workspaceCardsPanelOpen}
+              style={
+                {
+                  "--workspace-terminal-height": `${currentTerminalState?.open ? currentTerminalState.height : 0}px`,
+                } as CSSProperties
+              }
             >
               <WorkspaceFloatingCards
                 todos={activeThread ? coderTodos : []}

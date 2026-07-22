@@ -21380,7 +21380,9 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   z-index: 72;
   width: min(var(--workspace-cards-panel-width, 300px), calc(100% - 32px));
   height: auto;
-  max-height: calc(100% - var(--workspace-toolbar-clearance, 36px) - 24px);
+  max-height: calc(
+    100% - var(--workspace-toolbar-clearance, 36px) - var(--workspace-terminal-height, 0px) - 24px
+  );
   overflow: visible;
   border: 0;
   opacity: 0;
