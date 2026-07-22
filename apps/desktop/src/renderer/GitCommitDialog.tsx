@@ -3,20 +3,28 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  findCommitModelOptionForCandidateId,
+} from "../shared/commit-model-options";
 import type {
   CommitModelOptionView,
   GitWorkingTreeStatus,
 } from "../shared/ipc";
 import {
-  findCommitModelOptionForCandidateId,
-} from "../shared/commit-model-options";
-import {
   resolveCommitMessageCandidateModel,
 } from "../shared/resolve-commit-message-route";
 import { CommitModelPricingCompact, CommitModelProviderDot } from "./CommitModelPricingCompact";
+import {
+  beginWorkspaceGitAction,
+  clearWorkspaceGitAction,
+  planWorkspaceGitActionSettlement,
+  setWorkspaceGitActionPhase,
+  useWorkspaceGitAction,
+} from "./workspace-git-action-store";
 
 export type CommitDialogAction = "commit" | "commit-push" | "push";
 
@@ -59,10 +67,12 @@ export function GitCommitDialog({
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchError, setBranchError] = useState<string | undefined>();
   const [activeAction, setActiveAction] = useState<CommitDialogAction | null>(null);
-  const [actionPhase, setActionPhase] = useState<"committing" | "pushing" | null>(null);
-  const [generatingMessage, setGeneratingMessage] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const submitting = activeAction !== null;
+  const workspaceAction = useWorkspaceGitAction(workspacePath);
+  const actionPhase = workspaceAction?.phase ?? null;
+  const generatingMessage = actionPhase === "generating";
+  const submitting = activeAction !== null || actionPhase === "committing" || actionPhase === "pushing";
+  const operationIdRef = useRef<number | null>(null);
 
   const selectedOption = useMemo(
     () => findCommitModelOptionForCandidateId(modelOptions, selectedCandidateModelId),
@@ -78,12 +88,17 @@ export function GitCommitDialog({
       setBranchCreateMode(false);
       setNewBranchName("");
       setBranchError(undefined);
+      // Closing or unbinding the dialog must not cancel the workspace operation,
+      // but local dialog chrome should not leak into the next project.
+      if (!open) {
+        setActiveAction(null);
+      }
       return;
     }
     setMessage("");
     setIncludeUnstaged(true);
     setError(undefined);
-    setGeneratingMessage(false);
+    setActiveAction(null);
     setModelMenuOpen(false);
     setBranchMenuOpen(false);
     setBranchCreateMode(false);
@@ -176,10 +191,14 @@ export function GitCommitDialog({
   }, [onCreateBranch, newBranchName, branchBusy, closeBranchMenu]);
 
   const handleGenerateMessage = useCallback(async () => {
-    if (!window.eco || generatingMessage || submitting || busy || disabled) {
+    if (!window.eco || generatingMessage || submitting || busy || disabled || workspaceAction) {
       return;
     }
-    setGeneratingMessage(true);
+    const operationId = beginWorkspaceGitAction(workspacePath, "generating");
+    if (operationId === null) {
+      return;
+    }
+    operationIdRef.current = operationId;
     setError(undefined);
     setMessage("");
     try {
@@ -201,13 +220,17 @@ export function GitCommitDialog({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
-      setGeneratingMessage(false);
+      if (operationIdRef.current === operationId) {
+        clearWorkspaceGitAction(workspacePath, operationId);
+        operationIdRef.current = null;
+      }
     }
   }, [
     generatingMessage,
     submitting,
     busy,
     disabled,
+    workspaceAction,
     workspacePath,
     profileId,
     includeUnstaged,
@@ -216,51 +239,121 @@ export function GitCommitDialog({
 
   const runAction = useCallback(
     async (action: CommitDialogAction) => {
-      if (!window.eco || activeAction || disabled) {
+      if (!window.eco || activeAction || disabled || workspaceAction) {
         return;
       }
+
+      const operationWorkspacePath = workspacePath;
+      let operationId: number | null = null;
+      let committedSuccessfully = false;
+      const trimmed = message.trim();
+      const initialPhase =
+        action === "push" ? "pushing" : trimmed ? "committing" : "generating";
+      operationId = beginWorkspaceGitAction(operationWorkspacePath, initialPhase);
+      if (operationId === null) {
+        return;
+      }
+      operationIdRef.current = operationId;
       setActiveAction(action);
       setError(undefined);
+      let actionError: string | undefined;
       try {
-        if (action === "push") {
-          setActionPhase("pushing");
-          await window.eco.pushGitChanges({
-            workspacePath,
-            ...(gitStatus?.branch && { branch: gitStatus.branch }),
-          });
-        } else {
-          setActionPhase("committing");
-          const trimmed = message.trim();
-          const result = await window.eco.commitGitChanges({
-            workspacePath,
-            profileId,
-            includeUnstaged,
-            ...(trimmed && { message: trimmed }),
-            ...(!trimmed && selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
-          });
-          if (!trimmed && result.generated) {
-            setMessage(result.message);
-          }
-          if (action === "commit-push") {
-            setActionPhase("pushing");
+        try {
+          if (action === "push") {
             await window.eco.pushGitChanges({
-              workspacePath,
+              workspacePath: operationWorkspacePath,
               ...(gitStatus?.branch && { branch: gitStatus.branch }),
             });
+          } else {
+            let commitMessage = trimmed;
+
+            if (!trimmed) {
+              const generated = await window.eco.generateGitCommitMessage(
+                {
+                  workspacePath: operationWorkspacePath,
+                  profileId,
+                  includeUnstaged,
+                  ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
+                },
+                {
+                  onDelta: (text) => {
+                    setMessage(text);
+                  },
+                },
+              );
+              commitMessage = generated.message.trim();
+              setMessage(generated.message);
+              if (!commitMessage) {
+                throw new Error("AI 未生成有效提交信息");
+              }
+              if (!setWorkspaceGitActionPhase(operationWorkspacePath, operationId, "committing")) {
+                return;
+              }
+            }
+
+            const result = await window.eco.commitGitChanges({
+              workspacePath: operationWorkspacePath,
+              profileId,
+              includeUnstaged,
+              message: commitMessage,
+            });
+            committedSuccessfully = true;
+            if (!trimmed && result.generated) {
+              setMessage(result.message);
+            }
+            if (action === "commit-push") {
+              if (!setWorkspaceGitActionPhase(operationWorkspacePath, operationId, "pushing")) {
+                return;
+              }
+              await window.eco.pushGitChanges({
+                workspacePath: operationWorkspacePath,
+                ...(gitStatus?.branch && { branch: gitStatus.branch }),
+              });
+            }
+          }
+        } catch (caught) {
+          actionError = caught instanceof Error ? caught.message : String(caught);
+        }
+
+        const settlement = planWorkspaceGitActionSettlement({
+          ...(actionError !== undefined && { actionError }),
+          committedSuccessfully,
+        });
+
+        if (settlement.shouldRefresh) {
+          try {
+            await onSuccess();
+          } catch (successCaught) {
+            // Prefer the original git action error when both fail; otherwise surface refresh failure.
+            if (settlement.errorMessage) {
+              setError(settlement.errorMessage);
+            } else {
+              setError(successCaught instanceof Error ? successCaught.message : String(successCaught));
+            }
+            return;
           }
         }
-        await onSuccess();
-        onClose();
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : String(caught));
+
+        if (settlement.errorMessage) {
+          setError(settlement.errorMessage);
+          return;
+        }
+
+        if (settlement.shouldClose) {
+          onClose();
+        }
       } finally {
+        if (operationId !== null && operationIdRef.current === operationId) {
+          clearWorkspaceGitAction(operationWorkspacePath, operationId);
+          operationIdRef.current = null;
+        }
         setActiveAction(null);
-        setActionPhase(null);
       }
     },
     [
       activeAction,
       disabled,
+      workspaceAction,
       selectedCandidateModelId,
       message,
       workspacePath,

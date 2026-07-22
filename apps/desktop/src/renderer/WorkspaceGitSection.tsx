@@ -8,20 +8,24 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
 import type {
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
   RoutePricingHint,
+  RuntimeAgentRole,
   RuntimeRoleRouteConfig,
   SubagentEnabledSettings,
-  RuntimeAgentRole,
   WorkspaceDiffResult,
 } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { GitCommitDialog } from "./GitCommitDialog";
 import { GitPullConflictDialog } from "./GitPullConflictDialog";
 import { WorkspaceDiffDrawer } from "./WorkspaceDiffDrawer";
+import {
+  getWorkspaceGitCommitEntryLabel,
+  useWorkspaceGitAction,
+} from "./workspace-git-action-store";
 
 export interface WorkspaceGitSectionProps {
   workspacePath?: string;
@@ -80,6 +84,7 @@ export function WorkspaceGitSection({
   onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
+  const [commitDialogWorkspacePath, setCommitDialogWorkspacePath] = useState<string | undefined>();
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchCreateMode, setBranchCreateMode] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
@@ -98,6 +103,19 @@ export function WorkspaceGitSection({
   const [pullError, setPullError] = useState<string | undefined>();
   const [pullConflict, setPullConflict] = useState<string[] | undefined>();
   const [resolveConflictBusy, setResolveConflictBusy] = useState(false);
+  const latestWorkspacePathRef = useRef(workspacePath);
+  latestWorkspacePathRef.current = workspacePath;
+  const workspaceGitAction = useWorkspaceGitAction(workspacePath);
+  const commitEntryBusy = workspaceGitAction !== null;
+  const commitEntryLabel = getWorkspaceGitCommitEntryLabel(workspaceGitAction?.phase);
+
+  // Keep the dialog bound to the workspace that opened it; close on project switch.
+  useEffect(() => {
+    if (commitDialogWorkspacePath && commitDialogWorkspacePath !== workspacePath) {
+      setCommitDialogOpen(false);
+      setCommitDialogWorkspacePath(undefined);
+    }
+  }, [workspacePath, commitDialogWorkspacePath]);
 
   const showCommitEntry = Boolean(
     workspacePath &&
@@ -261,8 +279,14 @@ export function WorkspaceGitSection({
     setSelectedChangePath(undefined);
   }
 
-  async function handleCommitSuccess() {
+  async function handleCommitSuccess(operationWorkspacePath: string) {
+    if (latestWorkspacePathRef.current !== operationWorkspacePath) {
+      return;
+    }
     await onCommitSuccess?.();
+    if (latestWorkspacePathRef.current !== operationWorkspacePath) {
+      return;
+    }
     await syncWorkspaceChangesState();
   }
 
@@ -341,7 +365,7 @@ export function WorkspaceGitSection({
     setChangesError(undefined);
     try {
       await window.eco.discardWorkspaceChanges({ workspacePath, path });
-      await handleCommitSuccess();
+      await handleCommitSuccess(workspacePath);
     } catch (caught) {
       setChangesError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -361,7 +385,7 @@ export function WorkspaceGitSection({
     setChangesError(undefined);
     try {
       await window.eco.discardWorkspaceChanges({ workspacePath });
-      await handleCommitSuccess();
+      await handleCommitSuccess(workspacePath);
     } catch (caught) {
       setChangesError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -549,11 +573,21 @@ export function WorkspaceGitSection({
             <button
               type="button"
               className="thread-info-workspace-git-row-button"
-              disabled={gitBusy || commitDisabled}
-              onClick={() => setCommitDialogOpen(true)}
+              disabled={gitBusy || commitDisabled || commitEntryBusy}
+              onClick={() => {
+                if (commitEntryBusy || !workspacePath) {
+                  return;
+                }
+                setCommitDialogWorkspacePath(workspacePath);
+                setCommitDialogOpen(true);
+              }}
             >
-              <GitCommitHorizontal size={16} aria-hidden />
-              <span>提交或推送</span>
+              {commitEntryBusy ? (
+                <Loader2 size={16} className="spinning" aria-hidden />
+              ) : (
+                <GitCommitHorizontal size={16} aria-hidden />
+              )}
+              <span>{commitEntryLabel}</span>
             </button>
           </li>
         ) : null}
@@ -608,19 +642,22 @@ export function WorkspaceGitSection({
         ) : null}
       </ul>
 
-      {showCommitEntry ? (
+      {showCommitEntry && commitDialogWorkspacePath ? (
         <GitCommitDialog
-          open={commitDialogOpen}
-          workspacePath={workspacePath!}
+          open={commitDialogOpen && commitDialogWorkspacePath === workspacePath}
+          workspacePath={commitDialogWorkspacePath}
           profileId={profileId!}
-          {...(gitStatus && { gitStatus })}
+          {...(gitStatus && commitDialogWorkspacePath === workspacePath ? { gitStatus } : {})}
           {...(gitBusy !== undefined && { busy: gitBusy })}
           {...(commitDisabled !== undefined && { disabled: commitDisabled })}
           {...(onCheckoutGitBranch && { onCheckoutBranch: onCheckoutGitBranch })}
           {...(onCreateGitBranch && { onCreateBranch: onCreateGitBranch })}
-          onClose={() => setCommitDialogOpen(false)}
+          onClose={() => {
+            setCommitDialogOpen(false);
+            setCommitDialogWorkspacePath(undefined);
+          }}
           onSaveModelPreference={onSaveCommitModelPreference!}
-          onSuccess={handleCommitSuccess}
+          onSuccess={() => handleCommitSuccess(commitDialogWorkspacePath)}
         />
       ) : null}
 
