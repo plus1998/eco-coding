@@ -768,6 +768,8 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.entry.id != widget.entry.id) {
       _expanded = widget.entry.running;
+    } else if (widget.entry.running) {
+      _expanded = true;
     } else if (oldWidget.entry.running && !widget.entry.running) {
       _expanded = false;
     }
@@ -812,11 +814,13 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Semantics(
-            button: true,
+            button: !widget.entry.running,
             expanded: _expanded,
             label: widget.entry.running ? '执行过程' : '本轮执行结果',
             child: InkWell(
-              onTap: () => setState(() => _expanded = !_expanded),
+              onTap: widget.entry.running
+                  ? null
+                  : () => setState(() => _expanded = !_expanded),
               borderRadius: BorderRadius.circular(4),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),
@@ -833,17 +837,19 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                             color: eco.textMuted,
                           )?.copyWith(fontWeight: FontWeight.w500),
                         ),
-                        const SizedBox(width: 3),
-                        AnimatedRotation(
-                          turns: _expanded ? 0.25 : 0,
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOut,
-                          child: Icon(
-                            Icons.chevron_right_rounded,
-                            size: 18,
-                            color: eco.textMuted,
+                        if (!widget.entry.running) ...[
+                          const SizedBox(width: 3),
+                          AnimatedRotation(
+                            turns: _expanded ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOut,
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: eco.textMuted,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 8),

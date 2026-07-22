@@ -686,6 +686,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       });
     }
     if (event.kind == 'thread.clarification') {
+      _scheduleProjectionRefresh();
       ref.read(desktopRpcProvider)?.getPendingClarification(threadId).then((
         clarification,
       ) {
@@ -848,6 +849,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       pendingClarification: clarification,
       clearClarification: clarification == null,
     );
+    _scheduleProjectionRefresh();
   }
 }
 

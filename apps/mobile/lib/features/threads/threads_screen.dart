@@ -9,6 +9,8 @@ import '../projects/project_list_widgets.dart';
 import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
 import 'thread_menu_sheets.dart';
+import 'thread_providers.dart';
+import 'thread_search_sheet.dart';
 
 class ThreadsScreen extends ConsumerWidget {
   const ThreadsScreen({super.key});
@@ -31,8 +33,12 @@ class ThreadsScreen extends ConsumerWidget {
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('会话'),
-        actions: const [
-          ShellToolbarActions(showOpenProject: true),
+        actions: [
+          ShellToolbarActions(
+            showSearch: true,
+            showOpenProject: true,
+            onSearch: () => _openSearch(context, ref),
+          ),
         ],
       ),
       body: projectsAsync.when(
@@ -50,13 +56,15 @@ class ThreadsScreen extends ConsumerWidget {
               itemCount: projects.length,
               itemBuilder: (context, index) {
                 final project = projects[index];
-                final threads = threadsByProject[
-                        normalizeProjectPath(project.path)] ??
+                final threads =
+                    threadsByProject[normalizeProjectPath(project.path)] ??
                     const [];
-                final isCollapsed =
-                    collapsedNotifier.isProjectCollapsed(project);
+                final isCollapsed = collapsedNotifier.isProjectCollapsed(
+                  project,
+                );
 
-                final isPinned = !project.isHome &&
+                final isPinned =
+                    !project.isHome &&
                     pinnedPaths.any(
                       (path) =>
                           normalizeProjectPath(path) ==
@@ -69,17 +77,15 @@ class ThreadsScreen extends ConsumerWidget {
                   isCollapsed: isCollapsed,
                   isPinned: isPinned,
                   pinnedThreadIds: pinnedThreadIds,
-                  onHeaderTap: () =>
-                      _onProjectHeaderTap(ref, project: project),
+                  onHeaderTap: () => _onProjectHeaderTap(ref, project: project),
                   onHeaderLongPress: project.isHome
                       ? null
                       : () => showProjectActionSheet(
-                            context: context,
-                            ref: ref,
-                            project: project,
-                          ),
-                  onNewThread: () =>
-                      _openNewThread(context, ref, project.path),
+                          context: context,
+                          ref: ref,
+                          project: project,
+                        ),
+                  onNewThread: () => _openNewThread(context, ref, project.path),
                   onThreadTap: (thread) =>
                       context.push('/threads/${thread.id}'),
                   onThreadLongPress: (thread) => showThreadActionSheet(
@@ -92,9 +98,8 @@ class ThreadsScreen extends ConsumerWidget {
             ),
           );
         },
-        loading: () => const Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        loading: () =>
+            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         error: (error, _) => Center(child: Text(error.toString())),
       ),
     );
@@ -107,6 +112,35 @@ class ThreadsScreen extends ConsumerWidget {
   ) async {
     await ref.read(selectedProjectPathProvider.notifier).select(projectPath);
     if (context.mounted) context.push('/threads/new');
+  }
+
+  Future<void> _openSearch(BuildContext context, WidgetRef ref) async {
+    final threads = ref.read(threadListProvider).valueOrNull ?? const [];
+    final projects = ref.read(displayProjectsProvider).valueOrNull ?? const [];
+    final selection = await showThreadSearchSheet(
+      context: context,
+      threads: threads,
+      projects: projects,
+    );
+    if (selection == null || !context.mounted) return;
+
+    final thread = selection.thread;
+    if (thread != null) {
+      context.push('/threads/${thread.id}');
+      return;
+    }
+
+    final project = selection.project;
+    if (project == null) return;
+    try {
+      await openProjectPath(ref, project.path);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
   }
 
   Future<void> _onProjectHeaderTap(

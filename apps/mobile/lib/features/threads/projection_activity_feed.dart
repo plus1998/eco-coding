@@ -1238,6 +1238,7 @@ bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
     return true;
   }
   final liveType = _projectionLiveType(item);
+  if (liveType == 'clarification.requested') return true;
   if (liveType != null && _isThreadFollowUpLiveEvent(liveType)) return true;
   if (item.eventType == 'agent.started' ||
       item.eventType == 'agent.stopped' ||
@@ -1455,6 +1456,8 @@ bool _isProjectionInternalMessageText(String text) {
   final trimmed = text.trim();
   return isInternalActivityMessage(trimmed) ||
       trimmed.startsWith('__eco_worktree_merge__') ||
+      trimmed == '等待你的回答…' ||
+      trimmed == '回答完成。' ||
       trimmed == '执行完成。' ||
       trimmed == '执行完成，变更已写入项目目录。' ||
       trimmed == '执行完成，工作树内无相对基线的文件变更。' ||

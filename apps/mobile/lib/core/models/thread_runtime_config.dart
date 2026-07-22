@@ -133,7 +133,8 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
   }
 
   OrchestrationProfile? profile;
-  final requestedId = profileId?.trim();
+  final requestedId =
+      profileId?.trim() ?? workflow?.defaultAgentProfileId?.trim();
   if (requestedId != null && requestedId.isNotEmpty) {
     profile = agentProfileById(modelSettings, requestedId);
   }
