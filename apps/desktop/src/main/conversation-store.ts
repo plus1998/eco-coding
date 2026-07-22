@@ -446,6 +446,14 @@ const threadOwnedTables = [
   "thread_file_checkpoints",
 ] as const;
 
+const MAX_PROJECTION_EVENT_CACHE_ENTRIES = 8;
+const MAX_HOT_THREAD_RUN_EVENT_CACHE_ENTRIES = 256;
+
+interface ProjectionEventCacheEntry {
+  maxEvents: number;
+  events: ThreadRunEvent[];
+}
+
 export async function createConversationStore(dbPath: string): Promise<ConversationStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
@@ -455,9 +463,20 @@ export async function createConversationStore(dbPath: string): Promise<Conversat
 }
 
 export class ConversationStore {
+  private readonly projectionEventCache = new Map<string, ProjectionEventCacheEntry>();
+  private readonly hotThreadRunEventCache = new Map<string, ThreadRunEvent>();
+  private readonly nextThreadRunEventSequences = new Map<string, number>();
+
   constructor(private readonly db: DatabaseSyncType) {}
 
   initialize(): void {
+    this.db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA busy_timeout = 5000;
+      PRAGMA temp_store = MEMORY;
+      PRAGMA foreign_keys = ON;
+    `);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS threads (
         id TEXT PRIMARY KEY,
@@ -1753,6 +1772,7 @@ export class ConversationStore {
       }
       this.db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
       this.db.exec("COMMIT");
+      this.invalidateThreadRunEventCaches(id);
       return true;
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -2410,6 +2430,7 @@ export class ConversationStore {
         threadId,
         row.id,
       );
+    this.invalidateThreadRunEventCaches(threadId);
     return {
       id: activityLineId,
       role: "user",
@@ -2567,6 +2588,7 @@ export class ConversationStore {
         .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
         .run(new Date().toISOString(), threadId);
       this.db.exec("COMMIT");
+      this.invalidateThreadRunEventCaches(threadId);
       return {
         activityLineId,
         userMessageId,
@@ -2678,6 +2700,7 @@ export class ConversationStore {
         .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
         .run(new Date().toISOString(), threadId);
       this.db.exec("COMMIT");
+      this.invalidateThreadRunEventCaches(threadId);
       return {
         activityLineId,
         userMessageId,
@@ -2926,6 +2949,8 @@ export class ConversationStore {
           upgraded.threadId,
           upgraded.id,
         );
+      this.rememberHotThreadRunEvent(upgraded);
+      this.updateProjectionEventCache(upgraded);
       return upgraded;
     }
 
@@ -2974,6 +2999,12 @@ export class ConversationStore {
         record.metadata ? JSON.stringify(record.metadata) : null,
         record.observedAt,
       );
+    const nextSequence = this.nextThreadRunEventSequences.get(record.threadId);
+    if (nextSequence !== undefined && record.sequence >= nextSequence) {
+      this.nextThreadRunEventSequences.set(record.threadId, record.sequence + 1);
+    }
+    this.rememberHotThreadRunEvent(record);
+    this.updateProjectionEventCache(record);
     return record;
   }
 
@@ -2991,7 +3022,11 @@ export class ConversationStore {
           WHERE thread_id = ? AND request_id = ?`,
       )
       .run(to, threadId, from);
-    return Number(result.changes ?? 0);
+    const changes = Number(result.changes ?? 0);
+    if (changes > 0) {
+      this.invalidateThreadRunEventCaches(threadId);
+    }
+    return changes;
   }
 
   attributeThreadRunEventsBySdkMessageIds(
@@ -3100,6 +3135,9 @@ export class ConversationStore {
       );
       updated += Number(result.changes ?? 0);
     }
+    if (updated > 0) {
+      this.invalidateThreadRunEventCaches(threadId);
+    }
     return updated;
   }
 
@@ -3126,6 +3164,13 @@ export class ConversationStore {
       typeof maxEvents === "number" && Number.isFinite(maxEvents)
         ? Math.max(1, Math.floor(maxEvents))
         : undefined;
+    if (boundedMaxEvents !== undefined) {
+      const cached = this.projectionEventCache.get(threadId);
+      if (cached?.maxEvents === boundedMaxEvents) {
+        this.touchProjectionEventCache(threadId, cached);
+        return cached.events;
+      }
+    }
     const projectionQuery = `WITH latest_streams AS (
        SELECT event_type, stream_key, request_id, run_attempt_id, MAX(sequence) AS sequence
        FROM thread_run_events
@@ -3159,11 +3204,16 @@ export class ConversationStore {
       .all(
         ...(boundedMaxEvents ? [threadId, threadId, boundedMaxEvents] : [threadId, threadId]),
       ) as unknown as ThreadRunEventRow[];
-    return rows.map(rowToThreadRunEvent);
+    const events = rows.map(rowToThreadRunEvent);
+    if (boundedMaxEvents !== undefined) {
+      this.rememberProjectionEvents(threadId, boundedMaxEvents, events);
+    }
+    return events;
   }
 
   clearThreadRunEvents(threadId: string): void {
     this.db.prepare(`DELETE FROM thread_run_events WHERE thread_id = ?`).run(threadId);
+    this.invalidateThreadRunEventCaches(threadId);
   }
 
   upsertSubagentSessionActive(input: {
@@ -3828,6 +3878,7 @@ export class ConversationStore {
         row.id,
       );
     }
+    this.invalidateThreadRunEventCaches(threadId);
   }
 
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {
@@ -3849,6 +3900,13 @@ export class ConversationStore {
   }
 
   private getThreadRunEvent(threadId: string, eventId: string): ThreadRunEvent | undefined {
+    const cacheKey = threadRunEventCacheKey(threadId, eventId);
+    const cached = this.hotThreadRunEventCache.get(cacheKey);
+    if (cached) {
+      this.hotThreadRunEventCache.delete(cacheKey);
+      this.hotThreadRunEventCache.set(cacheKey, cached);
+      return cached;
+    }
     const row = this.db
       .prepare(
         `SELECT id, thread_id, sequence, event_type, scope, role, agent_id,
@@ -3858,10 +3916,20 @@ export class ConversationStore {
          WHERE thread_id = ? AND id = ?`,
       )
       .get(threadId, eventId) as ThreadRunEventRow | undefined;
-    return row ? rowToThreadRunEvent(row) : undefined;
+    if (!row) {
+      return undefined;
+    }
+    const event = rowToThreadRunEvent(row);
+    this.rememberHotThreadRunEvent(event);
+    return event;
   }
 
   private nextThreadRunEventSequence(threadId: string): number {
+    const cached = this.nextThreadRunEventSequences.get(threadId);
+    if (cached !== undefined) {
+      this.nextThreadRunEventSequences.set(threadId, cached + 1);
+      return cached;
+    }
     const row = this.db
       .prepare(
         `SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence
@@ -3869,8 +3937,108 @@ export class ConversationStore {
          WHERE thread_id = ?`,
       )
       .get(threadId) as { next_sequence: number } | undefined;
-    return row?.next_sequence ?? 1;
+    const next = row?.next_sequence ?? 1;
+    this.nextThreadRunEventSequences.set(threadId, next + 1);
+    return next;
   }
+
+  private rememberHotThreadRunEvent(event: ThreadRunEvent): void {
+    if (!isCollapsibleProjectionStreamEvent(event)) {
+      return;
+    }
+    const cacheKey = threadRunEventCacheKey(event.threadId, event.id);
+    this.hotThreadRunEventCache.delete(cacheKey);
+    this.hotThreadRunEventCache.set(cacheKey, event);
+    while (this.hotThreadRunEventCache.size > MAX_HOT_THREAD_RUN_EVENT_CACHE_ENTRIES) {
+      const oldestKey = this.hotThreadRunEventCache.keys().next().value;
+      if (oldestKey === undefined) {
+        break;
+      }
+      this.hotThreadRunEventCache.delete(oldestKey);
+    }
+  }
+
+  private rememberProjectionEvents(threadId: string, maxEvents: number, events: ThreadRunEvent[]): void {
+    const entry = { maxEvents, events };
+    this.touchProjectionEventCache(threadId, entry);
+    while (this.projectionEventCache.size > MAX_PROJECTION_EVENT_CACHE_ENTRIES) {
+      const oldestThreadId = this.projectionEventCache.keys().next().value;
+      if (oldestThreadId === undefined) {
+        break;
+      }
+      this.projectionEventCache.delete(oldestThreadId);
+    }
+  }
+
+  private touchProjectionEventCache(threadId: string, entry: ProjectionEventCacheEntry): void {
+    this.projectionEventCache.delete(threadId);
+    this.projectionEventCache.set(threadId, entry);
+  }
+
+  private updateProjectionEventCache(event: ThreadRunEvent): void {
+    const cached = this.projectionEventCache.get(event.threadId);
+    if (!cached) {
+      return;
+    }
+    const events = cached.events.filter((candidate) => {
+      if (candidate.id === event.id) {
+        return false;
+      }
+      return !(
+        isCollapsibleProjectionStreamEvent(event) &&
+        isCollapsibleProjectionStreamEvent(candidate) &&
+        sameProjectionStreamIdentity(candidate, event)
+      );
+    });
+    events.push(event);
+    events.sort(compareThreadRunEvents);
+    const boundedEvents =
+      events.length > cached.maxEvents ? events.slice(events.length - cached.maxEvents) : events;
+    this.touchProjectionEventCache(event.threadId, {
+      maxEvents: cached.maxEvents,
+      events: boundedEvents,
+    });
+  }
+
+  private invalidateThreadRunEventCaches(threadId: string): void {
+    this.projectionEventCache.delete(threadId);
+    this.nextThreadRunEventSequences.delete(threadId);
+    const prefix = `${threadId}\0`;
+    for (const cacheKey of this.hotThreadRunEventCache.keys()) {
+      if (cacheKey.startsWith(prefix)) {
+        this.hotThreadRunEventCache.delete(cacheKey);
+      }
+    }
+  }
+}
+
+function threadRunEventCacheKey(threadId: string, eventId: string): string {
+  return `${threadId}\0${eventId}`;
+}
+
+function isCollapsibleProjectionStreamEvent(event: ThreadRunEvent): boolean {
+  return (
+    (event.eventType === "message.delta" || event.eventType === "thinking.delta") &&
+    Boolean(event.streamKey)
+  );
+}
+
+function sameProjectionStreamIdentity(left: ThreadRunEvent, right: ThreadRunEvent): boolean {
+  return (
+    left.eventType === right.eventType &&
+    left.streamKey === right.streamKey &&
+    left.requestId === right.requestId &&
+    left.runAttemptId === right.runAttemptId
+  );
+}
+
+function compareThreadRunEvents(left: ThreadRunEvent, right: ThreadRunEvent): number {
+  const sequenceDiff = left.sequence - right.sequence;
+  if (sequenceDiff !== 0) {
+    return sequenceDiff;
+  }
+  const observedAtDiff = left.observedAt.localeCompare(right.observedAt);
+  return observedAtDiff !== 0 ? observedAtDiff : left.id.localeCompare(right.id);
 }
 
 function activityRowToThreadActivityLine(row: ActivityRow): ThreadActivityLine {

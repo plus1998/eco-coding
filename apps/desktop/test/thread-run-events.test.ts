@@ -193,3 +193,61 @@ test.skipIf(!sqliteAvailable)(
     ]);
   },
 );
+
+test.skipIf(!sqliteAvailable)(
+  "bounded projection reads are cached and updated incrementally",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-cache-"));
+    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    store.saveThread(makeThread());
+    const streamId = "tre:stream:thr_run_events:message.delta:stream_cache";
+    store.appendThreadRunEvent(makeEvent({ id: streamId, streamKey: "stream_cache", message: "一" }));
+    store.appendThreadRunEvent(
+      makeEvent({
+        id: "final_before_cache",
+        eventType: "message.final",
+        streamState: "finalized",
+        message: "第一轮完成",
+      }),
+    );
+
+    const first = store.listThreadRunEventsForProjection("thr_run_events", 10);
+    expect(store.listThreadRunEventsForProjection("thr_run_events", 10)).toBe(first);
+
+    store.appendThreadRunEvent(
+      makeEvent({
+        id: streamId,
+        streamKey: "stream_cache",
+        message: "一段增量文字",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    );
+    const afterStableUpdate = store.listThreadRunEventsForProjection("thr_run_events", 10);
+    expect(afterStableUpdate).not.toBe(first);
+    expect(afterStableUpdate.find((event) => event.id === streamId)?.message).toBe("一段增量文字");
+
+    store.appendThreadRunEvent(
+      makeEvent({
+        id: "legacy_stream_replacement",
+        streamKey: "stream_cache",
+        message: "旧格式的新累计行",
+        observedAt: "2026-01-01T00:00:04.000Z",
+      }),
+    );
+    expect(store.listThreadRunEventsForProjection("thr_run_events", 10).map((event) => event.id)).toEqual([
+      "final_before_cache",
+      "legacy_stream_replacement",
+    ]);
+  },
+);
+
+test.skipIf(!sqliteAvailable)("conversation store enables WAL mode", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-wal-"));
+  const dbPath = path.join(dir, "eco.sqlite");
+  await createConversationStore(dbPath);
+  const sqlite = await import("node:sqlite");
+  const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+  const row = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+  expect(row.journal_mode).toBe("wal");
+  db.close();
+});

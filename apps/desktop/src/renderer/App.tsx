@@ -241,6 +241,7 @@ import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import {
   clearLocalStreamUpdates,
   publishLocalStreamUpdate,
+  useLocalStreamProjection,
 } from "./local-stream-projection";
 import {
   buildThreadRunProjectionViewModel,
@@ -2781,7 +2782,8 @@ function App() {
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
   const canPasteComposerImages = plannerSupportsImages;
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
-  const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
+  const persistedRunProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
+  const runProjection = useLocalStreamProjection(persistedRunProjection);
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
   const autoCompactSuspended = isThreadAutoCompactSuspended(runProjection);
   const promptCacheInvalidated = isThreadPromptCacheInvalidated(runProjection);
@@ -6198,6 +6200,7 @@ function App() {
                           <ActivityLogView
                             {...(activeThread && { thread: activeThread })}
                             {...(runProjection && { projection: runProjection })}
+                            {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
                             {...(activeThread &&
                               billingByThread[activeThread.id] && {
                                 billing: billingByThread[activeThread.id],

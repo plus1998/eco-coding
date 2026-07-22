@@ -82,7 +82,6 @@ import {
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
 } from "./activity-log";
-import { useLocalStreamProjection } from "./local-stream-projection";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -97,6 +96,7 @@ import {
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
+  type ThreadRunProjectionViewModel,
   type ThreadRunProjectionTimelineFeedEntry,
   type ThreadRunProjectionToolGroupFeedEntry,
 } from "./thread-run-projection-view";
@@ -340,6 +340,7 @@ interface ActivityLogViewProps {
   context?: ThreadContextSnapshot;
   billing?: ThreadBillingSnapshot;
   projection?: ThreadRunProjectionSnapshot;
+  viewModel?: ThreadRunProjectionViewModel;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   subagentTimings?: ThreadSubagentSessionTiming[];
@@ -363,7 +364,7 @@ function ProjectionFeedLoading() {
 }
 
 export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogViewProps) {
-  const projection = useLocalStreamProjection(props.projection);
+  const projection = props.projection;
   if (!projection?.sourceEventCount) {
     if (props.thread?.prompt && !isThreadStoppedForFinalSummary(props.thread.status)) {
       return (
@@ -384,6 +385,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
   return (
     <ProjectionActivityLogView
       projection={projection}
+      {...(props.viewModel && { precomputedViewModel: props.viewModel })}
       {...(props.thread && { thread: props.thread })}
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}
@@ -397,6 +399,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
 
 function ProjectionActivityLogView({
   projection,
+  precomputedViewModel,
   thread,
   onRestorePrompt,
   onPlannerLayoutChange,
@@ -406,6 +409,7 @@ function ProjectionActivityLogView({
   onOpenSubagent,
 }: {
   projection: ThreadRunProjectionSnapshot;
+  precomputedViewModel?: ThreadRunProjectionViewModel;
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -420,12 +424,13 @@ function ProjectionActivityLogView({
   );
   const viewModel = useMemo(
     () =>
+      precomputedViewModel ??
       buildThreadRunProjectionViewModel(
         projection,
         thread ? { id: thread.id, prompt: thread.prompt } : undefined,
         { agentDisplayNames },
       ),
-    [agentDisplayNames, projection, thread?.id, thread?.prompt],
+    [agentDisplayNames, precomputedViewModel, projection, thread?.id, thread?.prompt],
   );
   const showThreadPrompt = viewModel.showThreadPrompt;
   const feedSections = useMemo(

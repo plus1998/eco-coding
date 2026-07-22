@@ -88,6 +88,77 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite incrementally maintains bounded projection reads in WAL mode", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-projection-cache-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createConversationStore(databasePath);
+  const threadId = "thr_projection_cache";
+  const streamId = "tre:stream:thr_projection_cache:message.delta:stream_1";
+  store.saveThread({
+    id: threadId,
+    title: "Projection cache",
+    prompt: "stream",
+    workspacePath: "/tmp/projection-cache",
+    status: "running",
+    message: "working",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const appendStream = (id: string, message: string, observedAt: string) =>
+    store.appendThreadRunEvent({
+      id,
+      threadId,
+      eventType: "message.delta",
+      scope: "agent",
+      role: "coder",
+      agentId: "agent_coder_a",
+      runAttemptId: "attempt_1",
+      requestId: "request_1",
+      streamKey: "stream_1",
+      streamState: "streaming",
+      message,
+      observedAt,
+    });
+
+  appendStream(streamId, "一", "2026-01-01T00:00:01.000Z");
+  store.appendThreadRunEvent({
+    id: "final_before_cache",
+    threadId,
+    eventType: "message.final",
+    scope: "agent",
+    role: "coder",
+    agentId: "agent_coder_a",
+    streamState: "finalized",
+    message: "第一轮完成",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+
+  const first = store.listThreadRunEventsForProjection(threadId, 10);
+  assert.strictEqual(store.listThreadRunEventsForProjection(threadId, 10), first);
+
+  appendStream(streamId, "一段增量文字", "2026-01-01T00:00:03.000Z");
+  const afterStableUpdate = store.listThreadRunEventsForProjection(threadId, 10);
+  assert.notStrictEqual(afterStableUpdate, first);
+  assert.equal(afterStableUpdate.find((event) => event.id === streamId)?.message, "一段增量文字");
+
+  appendStream("legacy_stream_replacement", "旧格式的新累计行", "2026-01-01T00:00:04.000Z");
+  assert.deepEqual(
+    store.listThreadRunEventsForProjection(threadId, 10).map((event) => event.id),
+    ["final_before_cache", "legacy_stream_replacement"],
+  );
+
+  const inspection = new DatabaseSync(databasePath, { readOnly: true });
+  const journal = inspection.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+  assert.equal(journal.journal_mode, "wal");
+  inspection.close();
+
+  store.clearThreadRunEvents(threadId);
+  assert.equal(appendStream("after_clear", "重新开始", "2026-01-01T00:00:05.000Z").sequence, 1);
+  assert.deepEqual(store.listThreadRunEventsForProjection(threadId, 10).map((event) => event.id), [
+    "after_clear",
+  ]);
+});
+
 test("Node SQLite persists composer drafts and clears deleted thread drafts", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-composer-draft-");
   const databasePath = path.join(directory, "eco-coding.sqlite");
