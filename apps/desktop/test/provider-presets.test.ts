@@ -72,3 +72,18 @@ test("provider preset select labels show free badge without model ids", () => {
   expect(label).toBe("OpenCode Zen · Free");
   expect(label).not.toContain(preset!.defaultModel);
 });
+
+
+test("matching provider preset ignores default model differences", () => {
+  const preset = FREE_TOKEN_PROVIDER_PRESETS.find((entry) => entry.id === "opencode-zen-free");
+  expect(preset).toBeDefined();
+
+  const match = findMatchingProviderPreset({
+    baseUrl: preset!.baseUrl,
+    requestPath: preset!.requestPath,
+    apiCompat: preset!.apiCompat,
+    defaultModel: "some-other-model",
+  });
+
+  expect(match?.id).toBe(preset!.id);
+});

@@ -117,9 +117,9 @@ export async function testProviderConnection(
       phase: "validate-model",
       providerId: request.providerId,
       baseUrl: resolved.baseUrl,
-      error: "请先选择默认模型。",
+      error: "请先选择要测试的模型。",
     });
-    return { ok: false, error: "请先选择默认模型。" };
+    return { ok: false, error: "请先选择要测试的模型。" };
   }
 
   const testResult = await postUpstreamCompatTest(

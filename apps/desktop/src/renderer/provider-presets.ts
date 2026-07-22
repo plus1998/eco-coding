@@ -89,14 +89,13 @@ export function findMatchingProviderPreset(
   const baseUrl = normalizeComparable(form.baseUrl);
   const requestPath = normalizeRequestPathForCompare(form.requestPath);
   const apiCompat = form.apiCompat ?? "anthropic";
-  const defaultModel = form.defaultModel.trim();
 
+  // Match on connection fields only; default model is derived from candidate models.
   return FREE_TOKEN_PROVIDER_PRESETS.find(
     (preset) =>
       normalizeComparable(preset.baseUrl) === baseUrl &&
       normalizeRequestPathForCompare(preset.requestPath) === requestPath &&
-      preset.apiCompat === apiCompat &&
-      preset.defaultModel === defaultModel,
+      preset.apiCompat === apiCompat,
   );
 }
 

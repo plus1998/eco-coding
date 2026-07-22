@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Plus, Pencil, Trash2, X, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, X, RefreshCw, Link as LinkIcon } from "lucide-react";
 import type {
   CandidateModelInput,
   CandidateModelView,
@@ -33,7 +33,9 @@ interface CandidateModelPanelProps {
   modelsDevOptions: readonly ModelsDevModelOption[];
   modelsDevLoading: boolean;
   busy: boolean | undefined;
+  testingModelKey?: string | null | undefined;
   onRefreshModels: () => void;
+  onTestModel?: ((modelId: string) => void) | undefined;
 }
 
 export interface CandidateModelPanelHandle {
@@ -88,7 +90,9 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       modelsDevOptions,
       modelsDevLoading,
       busy,
+      testingModelKey,
       onRefreshModels,
+      onTestModel,
     },
     ref,
   ) {
@@ -333,6 +337,22 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                       <CandidateModelInlineSpec candidate={candidate} />
                     </div>
                     <div className="candidate-model-actions">
+                      {onTestModel ? (
+                        <button
+                          type="button"
+                          className="mcp-icon-button"
+                          title={`连通性测试：${candidate.modelId}`}
+                          aria-label={`连通性测试：${candidate.modelId}`}
+                          disabled={busy || Boolean(testingModelKey)}
+                          onClick={() => onTestModel(candidate.modelId)}
+                        >
+                          {testingModelKey === `${providerId}::${candidate.modelId}` ? (
+                            <RefreshCw size={14} className="model-refresh-spin" />
+                          ) : (
+                            <LinkIcon size={14} />
+                          )}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="mcp-icon-button"

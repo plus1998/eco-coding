@@ -170,8 +170,11 @@ export function buildGatewayProvidersFromEcoProviders(
 
   for (const provider of enabled) {
     const id = provider.id.trim();
-    const defaultModel = provider.defaultModel.trim();
     const baseUrl = normalizeGatewayBaseUrl(provider.baseUrl);
+    const defaultModel =
+      provider.defaultModel.trim() ||
+      (provider.modelIds ?? []).map((modelId) => modelId.trim()).find(Boolean) ||
+      "";
     if (!id || !baseUrl || !defaultModel) {
       incompleteProviderIds.push(id || provider.id || "(unknown)");
       continue;
@@ -196,7 +199,7 @@ export function buildGatewayProvidersFromEcoProviders(
 
   if (out.length === 0) {
     throw new Error(
-      `No enabled providers have both baseUrl and defaultModel. Incomplete: ${incompleteProviderIds.join(", ")}. Open Settings → Providers and set Base URL / Default Model.`,
+      `No enabled providers have both baseUrl and defaultModel. Incomplete: ${incompleteProviderIds.join(", ")}. Open Settings → Providers and set Base URL, then add candidate models.`,
     );
   }
 
@@ -217,7 +220,7 @@ export function assertGatewayProvidersCover(
     }
     if (incomplete.has(id)) {
       throw new Error(
-        `Provider ${id} is missing baseUrl or defaultModel. Open Settings → Providers, edit this provider, and set Base URL (http://… or https://…) and Default Model.`,
+        `Provider ${id} is missing baseUrl or defaultModel. Open Settings → Providers, edit this provider, set Base URL (http://… or https://…), and add candidate models.`,
       );
     }
     throw new Error(

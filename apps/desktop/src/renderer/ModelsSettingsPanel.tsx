@@ -266,7 +266,7 @@ export function ModelsSettingsPanel({
       if (!provider) {
         setPresetProfileMessage({
           kind: "error",
-          message: "请先在模型服务商设置中配置至少一个启用且带默认模型的模型服务商。",
+          message: "请先在模型服务商设置中配置至少一个启用的模型服务商，并添加候选模型。",
         });
         return;
       }
@@ -534,10 +534,11 @@ export function ModelsSettingsPanel({
     }
   }
 
-  async function saveProvider() {
+  async function saveProvider(options?: { closeOnSuccess?: boolean }) {
     if (!window.eco) {
-      return;
+      return undefined;
     }
+    const closeOnSuccess = options?.closeOnSuccess ?? Boolean(providerForm.id);
     setModalError(undefined);
     onSavingChange?.(true);
     try {
@@ -553,9 +554,15 @@ export function ModelsSettingsPanel({
         delete next.__draft__;
         return next;
       });
-      closeProviderModal();
+      // Keep editor open after first create so candidate models can be added/tested immediately.
+      setProviderForm(providerToForm(provider));
+      if (closeOnSuccess) {
+        closeProviderModal();
+      }
+      return provider;
     } catch (caught) {
       setModalError(caught instanceof Error ? caught.message : String(caught));
+      return undefined;
     } finally {
       onSavingChange?.(false);
     }
@@ -672,7 +679,7 @@ export function ModelsSettingsPanel({
     }
   }
 
-  async function testProvider(target: ProviderConfigInput) {
+  async function testProvider(target: ProviderConfigInput, modelId?: string) {
     if (!window.eco?.testProviderConnection) {
       return;
     }
@@ -681,13 +688,15 @@ export function ModelsSettingsPanel({
       showProviderTestMessage("error", "请先填写 baseURL。");
       return;
     }
-    const testModel = target.defaultModel.trim();
+    const testModel = (modelId ?? target.defaultModel).trim();
     if (!testModel) {
-      showProviderTestMessage("error", "请先选择默认模型。");
+      showProviderTestMessage("error", "请先在候选模型中选择要测试的模型。");
       return;
     }
 
-    const feedbackKey = target.id ?? "__draft__";
+    const feedbackKey = modelId?.trim()
+      ? `${target.id ?? "__draft__"}::${testModel}`
+      : (target.id ?? "__draft__");
     setTestingProviderKey(feedbackKey);
 
     const startedAt = performance.now();
@@ -703,7 +712,7 @@ export function ModelsSettingsPanel({
       });
       if (result.ok) {
         const duration = formatDurationMs(performance.now() - startedAt);
-        showProviderTestMessage("success", `「${providerName}」测试成功，耗时 ${duration}`);
+        showProviderTestMessage("success", `「${providerName} / ${testModel}」测试成功，耗时 ${duration}`);
       } else {
         showProviderTestMessage("error", result.error ?? "测试失败。");
       }
@@ -990,14 +999,14 @@ export function ModelsSettingsPanel({
           modelsDevOptions={modelsDevOptions}
           modelsDevLoading={modelsDevLoading}
           error={modalError}
-          testing={testingProviderKey === modalProviderId}
+          testingModelKey={testingProviderKey}
           busy={busy}
           canDelete={settings.providers.length > 1}
           onClose={closeProviderModal}
-          onSave={() => void saveProvider()}
+          onSave={(options) => saveProvider(options)}
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
-          onTest={() => void testProvider(providerForm)}
+          onTestCandidate={(modelId) => void testProvider(providerForm, modelId)}
         />
       )}
 
@@ -1877,14 +1886,14 @@ function ProviderEditorModal({
   modelsDevOptions,
   modelsDevLoading,
   error,
-  testing,
+  testingModelKey,
   busy,
   canDelete,
   onClose,
   onSave,
   onDelete,
   onRefreshModels,
-  onTest,
+  onTestCandidate,
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
@@ -1894,25 +1903,24 @@ function ProviderEditorModal({
   modelsDevOptions: readonly ModelsDevModelOption[];
   modelsDevLoading: boolean;
   error?: string | undefined;
-  testing?: boolean | undefined;
+  testingModelKey?: string | null | undefined;
   busy?: boolean | undefined;
   canDelete: boolean;
   onClose: () => void;
-  onSave: () => void | Promise<void>;
+  onSave: (options?: { closeOnSuccess?: boolean }) => void | Promise<ProviderConfigView | undefined>;
   onDelete: () => void;
   onRefreshModels: () => void;
-  onTest: () => void;
+  onTestCandidate: (modelId: string) => void;
 }) {
   const isEditing = Boolean(form.id);
   const title = isEditing ? `编辑 ${form.name.trim() || "模型服务商"}` : "新建模型服务商";
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
-  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(false);
+  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(true);
   const [candidateSaveError, setCandidateSaveError] = useState<string | undefined>(undefined);
+  const [ensuringProvider, setEnsuringProvider] = useState(false);
   const candidatePanelRef = useRef<CandidateModelPanelHandle>(null);
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
-  const modelOptionsListId = `provider-model-options-${form.id ?? "draft"}`;
-  const canTestProvider = Boolean(!busy && !testing && form.baseUrl.trim() && form.defaultModel.trim());
 
   async function handleSaveProvider() {
     setCandidateSaveError(undefined);
@@ -1920,34 +1928,33 @@ function ProviderEditorModal({
       if (isEditing && form.id) {
         await candidatePanelRef.current?.savePendingEdits();
       }
-      await onSave();
+      await onSave({ closeOnSuccess: true });
     } catch (caught) {
       setCandidateSaveError(caught instanceof Error ? caught.message : String(caught));
     }
   }
 
-  useEffect(() => {
-    if (!isEditing || !form.id) {
-      setCandidatesPanelOpen(false);
-      return;
+  async function ensureProviderSavedForCandidates(): Promise<boolean> {
+    if (form.id) {
+      return true;
     }
-    let cancelled = false;
-    void window.eco!
-      .listCandidateModels(form.id)
-      .then((candidates) => {
-        if (!cancelled) {
-          setCandidatesPanelOpen(candidates.length === 0);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCandidatesPanelOpen(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isEditing, form.id]);
+    setCandidateSaveError(undefined);
+    setEnsuringProvider(true);
+    try {
+      const provider = await onSave({ closeOnSuccess: false });
+      return Boolean(provider?.id);
+    } catch (caught) {
+      setCandidateSaveError(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      setEnsuringProvider(false);
+    }
+  }
+
+  useEffect(() => {
+    // Candidate models are the primary place to pick/test models — keep the panel open by default.
+    setCandidatesPanelOpen(true);
+  }, [form.id]);
 
   return (
     <div className="settings-modal-backdrop">
@@ -1970,18 +1977,16 @@ function ProviderEditorModal({
             {title}
           </h2>
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            {isEditing ? (
-              <button
-                type="button"
-                className={`candidate-panel-toggle${candidatesPanelOpen ? " is-open" : ""}`}
-                onClick={() => setCandidatesPanelOpen((v) => !v)}
-                aria-expanded={candidatesPanelOpen}
-                title={candidatesPanelOpen ? "收起候选模型" : "展开候选模型"}
-              >
-                <ChevronRight size={14} className="candidate-panel-toggle-icon" aria-hidden />
-                候选模型
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className={`candidate-panel-toggle${candidatesPanelOpen ? " is-open" : ""}`}
+              onClick={() => setCandidatesPanelOpen((v) => !v)}
+              aria-expanded={candidatesPanelOpen}
+              title={candidatesPanelOpen ? "收起候选模型" : "展开候选模型"}
+            >
+              <ChevronRight size={14} className="candidate-panel-toggle-icon" aria-hidden />
+              候选模型
+            </button>
             <button
               type="button"
               className="mcp-icon-button"
@@ -2124,71 +2129,22 @@ function ProviderEditorModal({
               />
             </label>
 
-            <label className="mcp-field">
-              <span className="mcp-field-label">默认模型</span>
-              <div className="models-provider-endpoint-inline">
-                <input
-                  className="mcp-field-input"
-                  value={form.defaultModel}
-                  list={modelOptionsListId}
-                  placeholder="选择或填写模型 ID"
-                  disabled={busy}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, defaultModel: event.target.value }))
-                  }
-                />
-                <datalist id={modelOptionsListId}>
-                  {models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.displayName ?? model.id}
-                    </option>
-                  ))}
-                </datalist>
-                <button
-                  type="button"
-                  className="mcp-icon-button"
-                  disabled={busy || modelsLoading || !form.baseUrl.trim()}
-                  onClick={onRefreshModels}
-                  aria-label="刷新模型列表"
-                  title="刷新模型列表"
-                >
-                  <RefreshCw size={16} className={modelsLoading ? "model-refresh-spin" : undefined} />
-                </button>
-              </div>
-              <span className="mcp-field-hint">
-                {modelsError
-                  ? `模型列表获取失败：${modelsError}`
-                  : models.length > 0
-                    ? "从上游模型列表选择，或手动填写兼容网关支持的模型 ID"
-                    : "可先刷新模型列表，或手动填写上游模型 ID"}
-              </span>
-            </label>
-
             <label className="mcp-field models-toggle-field">
               <span className="mcp-field-label">启用此模型服务商</span>
               <label className="mcp-toggle mcp-toggle-sm" title={form.enabled ? "已启用" : "已禁用"}>
                 <input
                   type="checkbox"
                   checked={form.enabled}
-                  disabled={busy}
+                  disabled={busy || ensuringProvider}
                   onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
                 />
                 <span className="mcp-toggle-track" aria-hidden />
               </label>
             </label>
 
-            <div className="settings-editor-actions settings-form-actions">
-              <button
-                type="button"
-                className="settings-secondary-button"
-                disabled={!canTestProvider}
-                onClick={onTest}
-                title={!form.defaultModel.trim() ? "请先选择或填写默认模型" : undefined}
-              >
-                <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
-                测试连接
-              </button>
-            </div>
+            {modelsError ? (
+              <p className="mcp-field-hint settings-form-error">模型列表获取失败：{modelsError}</p>
+            ) : null}
 
             {error && <p className="settings-form-error">{error}</p>}
             {candidateSaveError ? (
@@ -2196,17 +2152,40 @@ function ProviderEditorModal({
             ) : null}
           </div>
 
-          {isEditing && form.id ? (
-            <CandidateModelPanel
-              ref={candidatePanelRef}
-              providerId={form.id}
-              models={models}
-              modelsLoading={modelsLoading}
-              modelsDevOptions={modelsDevOptions}
-              modelsDevLoading={modelsDevLoading}
-              busy={busy}
-              onRefreshModels={onRefreshModels}
-            />
+          {candidatesPanelOpen ? (
+            form.id ? (
+              <CandidateModelPanel
+                ref={candidatePanelRef}
+                providerId={form.id}
+                models={models}
+                modelsLoading={modelsLoading}
+                modelsDevOptions={modelsDevOptions}
+                modelsDevLoading={modelsDevLoading}
+                busy={busy || ensuringProvider}
+                testingModelKey={testingModelKey}
+                onRefreshModels={onRefreshModels}
+                onTestModel={onTestCandidate}
+              />
+            ) : (
+              <aside className="candidate-panel">
+                <div className="candidate-panel-header">
+                  <span className="candidate-panel-title">候选模型</span>
+                </div>
+                <div className="candidate-panel-body">
+                  <p className="candidate-models-empty">
+                    先填写并保存服务商基础信息后，可在此添加候选模型并进行连通性测试。
+                  </p>
+                  <button
+                    type="button"
+                    className="settings-secondary-button"
+                    disabled={busy || ensuringProvider || !form.baseUrl.trim() || !form.name.trim()}
+                    onClick={() => void ensureProviderSavedForCandidates()}
+                  >
+                    {ensuringProvider ? "保存中..." : "保存并添加候选模型"}
+                  </button>
+                </div>
+              </aside>
+            )
           ) : null}
         </div>
 
@@ -2216,7 +2195,7 @@ function ProviderEditorModal({
               type="button"
               className="mcp-uninstall-button"
               onClick={onDelete}
-              disabled={busy || !canDelete}
+              disabled={busy || ensuringProvider || !canDelete}
               title={canDelete ? undefined : "至少保留一个模型服务商"}
             >
               <Trash2 size={16} />
@@ -2226,13 +2205,13 @@ function ProviderEditorModal({
             <span />
           )}
           <div className="settings-modal-footer-actions">
-            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
+            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy || ensuringProvider}>
               取消
             </button>
             <button
               type="button"
               className="mcp-save-button"
-              disabled={busy}
+              disabled={busy || ensuringProvider}
               onClick={() => void handleSaveProvider()}
             >
               保存
@@ -2406,7 +2385,9 @@ function selectPresetDefaultProvider(
 ): ProviderConfigView | undefined {
   return (
     providers.find((provider) => provider.enabled && provider.defaultModel.trim()) ??
-    providers.find((provider) => provider.defaultModel.trim())
+    providers.find((provider) => provider.enabled) ??
+    providers.find((provider) => provider.defaultModel.trim()) ??
+    providers[0]
   );
 }
 

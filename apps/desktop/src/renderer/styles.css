@@ -16827,6 +16827,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   line-height: 1.6;
 }
 
+.candidate-panel-body > .settings-secondary-button {
+  align-self: center;
+}
+
+
 .candidate-models-list {
   display: flex;
   flex-direction: column;

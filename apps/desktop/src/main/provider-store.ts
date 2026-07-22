@@ -211,6 +211,7 @@ export class ProviderStore {
         now,
       );
 
+    this.syncDefaultModelFromCandidates(id);
     return providerRowToView(this.getProviderRow(id) ?? fail(`Provider ${id} was not saved`));
   }
 
@@ -704,13 +705,20 @@ export class ProviderStore {
     const savedRow = this.db
       .prepare("SELECT * FROM provider_candidate_models WHERE id = ?")
       .get(id) as unknown as CandidateModelRow;
+    this.syncDefaultModelFromCandidates(input.providerId.trim());
     return candidateRowToView(savedRow);
   }
 
   deleteCandidateModel(id: string): void {
+    const existing = this.db
+      .prepare("SELECT provider_id FROM provider_candidate_models WHERE id = ?")
+      .get(id) as { provider_id: string } | undefined;
     const result = this.db.prepare("DELETE FROM provider_candidate_models WHERE id = ?").run(id);
     if (result.changes === 0) {
       throw new Error(`找不到候选模型：${id}`);
+    }
+    if (existing?.provider_id) {
+      this.syncDefaultModelFromCandidates(existing.provider_id);
     }
   }
 
@@ -723,6 +731,7 @@ export class ProviderStore {
       const id = orderedIds[i];
       if (id) stmt.run(i, now, id, providerId);
     }
+    this.syncDefaultModelFromCandidates(providerId);
   }
 
   bulkImportCandidateModels(providerId: string, modelIds: string[]): CandidateModelView[] {
@@ -758,9 +767,30 @@ export class ProviderStore {
         .get(providerId, trimmed) as unknown as CandidateModelRow;
       if (row) results.push(candidateRowToView(row));
     }
+    this.syncDefaultModelFromCandidates(providerId);
     return results;
   }
+
+  /** Keep provider.default_model aligned with the first candidate model when present. */
+  private syncDefaultModelFromCandidates(providerId: string): void {
+    const firstCandidate = this.listCandidateModels(providerId)[0];
+    if (!firstCandidate) {
+      return;
+    }
+    const row = this.getProviderRow(providerId);
+    if (!row) {
+      return;
+    }
+    const nextDefault = firstCandidate.modelId.trim();
+    if (!nextDefault || row.default_model === nextDefault) {
+      return;
+    }
+    this.db
+      .prepare("UPDATE provider_configs SET default_model = ?, updated_at = ? WHERE id = ?")
+      .run(nextDefault, new Date().toISOString(), providerId);
+  }
 }
+
 function providerRowToView(row: ProviderRow): ProviderConfigView {
   const provider: ProviderConfigView = {
     id: row.id,

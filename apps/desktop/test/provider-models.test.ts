@@ -294,7 +294,7 @@ describe("testProviderConnection", () => {
       baseUrl: "https://api.example.com",
       defaultModel: "  ",
     });
-    expect(result).toEqual({ ok: false, error: "请先选择默认模型。" });
+    expect(result).toEqual({ ok: false, error: "请先选择要测试的模型。" });
   });
 
   test("returns upstream error details", async () => {
