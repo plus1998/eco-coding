@@ -13,6 +13,14 @@ import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/subagent_projection_feed.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
 
+List<ActivityFeedEntry> _toolActions(List<ActivityFeedEntry> entries) => [
+  for (final entry in entries)
+    if (entry.kind == ActivityFeedKind.action)
+      entry
+    else if (entry.kind == ActivityFeedKind.actionGroup)
+      ...entry.actionChildren,
+];
+
 void main() {
   test('configuredOrchestrationSubagentRoles hides unconfigured roles', () {
     const profile = OrchestrationProfile(
@@ -114,7 +122,7 @@ void main() {
 
     expect(grouped.length, 1);
     expect(grouped.first.kind, ActivityFeedKind.actionGroup);
-    expect(grouped.first.text, '已编辑 1 个文件、已读取 1 个文件和已搜索代码');
+    expect(grouped.first.text, '已读取 1 个文件、已编辑 1 个文件和已搜索代码');
     expect(grouped.first.actionIcon, ActivityActionIcon.edit);
     expect(grouped.first.actionChildren.map((entry) => entry.id), [
       'edit-1',
@@ -123,7 +131,7 @@ void main() {
     ]);
   });
 
-  test('groupActivityFeedActionEntries keeps isolated actions separate', () {
+  test('groupActivityFeedActionEntries wraps isolated actions', () {
     final grouped = groupActivityFeedActionEntries(const [
       ActivityFeedEntry(
         id: 'read-1',
@@ -139,33 +147,35 @@ void main() {
     ]);
 
     expect(grouped.map((entry) => entry.kind), [
-      ActivityFeedKind.action,
+      ActivityFeedKind.actionGroup,
       ActivityFeedKind.assistant,
     ]);
+    expect(grouped.first.text, '已读取 lib/feed.dart');
   });
 
-  test('groupActivityFeedActionEntries never merges different attempts', () {
-    final grouped = groupActivityFeedActionEntries(const [
-      ActivityFeedEntry(
-        id: 'read-attempt-1',
-        kind: ActivityFeedKind.action,
-        text: 'lib/first.dart',
-        runAttemptId: 'attempt-1',
-      ),
-      ActivityFeedEntry(
-        id: 'read-attempt-2',
-        kind: ActivityFeedKind.action,
-        text: 'lib/second.dart',
-        runAttemptId: 'attempt-2',
-      ),
-    ]);
+  test(
+    'groupActivityFeedActionEntries groups adjacent tools across attempts',
+    () {
+      final grouped = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'read-attempt-1',
+          kind: ActivityFeedKind.action,
+          text: 'lib/first.dart',
+          runAttemptId: 'attempt-1',
+        ),
+        ActivityFeedEntry(
+          id: 'read-attempt-2',
+          kind: ActivityFeedKind.action,
+          text: 'lib/second.dart',
+          runAttemptId: 'attempt-2',
+        ),
+      ]);
 
-    expect(grouped, hasLength(2));
-    expect(grouped.map((entry) => entry.runAttemptId), [
-      'attempt-1',
-      'attempt-2',
-    ]);
-  });
+      expect(grouped, hasLength(1));
+      expect(grouped.single.kind, ActivityFeedKind.actionGroup);
+      expect(grouped.single.runAttemptId, isNull);
+    },
+  );
 
   test('empty terminal thinking does not split adjacent tool summaries', () {
     final feed = buildActivityFeed(
@@ -499,57 +509,77 @@ void main() {
     expect(fontSize('正在思考'), expected);
   });
 
-  test(
-    'groupActivityFeedActionEntries keeps Bash cards out of action groups',
-    () {
-      final grouped = groupActivityFeedActionEntries(const [
-        ActivityFeedEntry(
-          id: 'read-1',
-          kind: ActivityFeedKind.action,
-          text: 'lib/feed.dart',
-          actionIcon: ActivityActionIcon.file,
+  test('groupActivityFeedActionEntries includes Bash cards in tool groups', () {
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'read-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/feed.dart',
+        actionIcon: ActivityActionIcon.file,
+      ),
+      ActivityFeedEntry(
+        id: 'edit-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/editor.dart',
+        actionIcon: ActivityActionIcon.edit,
+      ),
+      ActivityFeedEntry(
+        id: 'bash-1',
+        kind: ActivityFeedKind.action,
+        text: 'Run unit tests',
+        actionIcon: ActivityActionIcon.terminal,
+        bashRun: BashRunCardDisplay(
+          title: 'Run unit tests',
+          meta: 'npm, 1.2s',
+          command: 'npm test',
+          output: '36 pass',
         ),
-        ActivityFeedEntry(
-          id: 'edit-1',
-          kind: ActivityFeedKind.action,
-          text: 'lib/editor.dart',
-          actionIcon: ActivityActionIcon.edit,
-        ),
-        ActivityFeedEntry(
-          id: 'bash-1',
-          kind: ActivityFeedKind.action,
-          text: 'Run unit tests',
-          actionIcon: ActivityActionIcon.terminal,
-          bashRun: BashRunCardDisplay(
-            title: 'Run unit tests',
-            meta: 'npm, 1.2s',
-            command: 'npm test',
-            output: '36 pass',
-          ),
-        ),
-        ActivityFeedEntry(
-          id: 'search-1',
-          kind: ActivityFeedKind.action,
-          text: 'search ActivityFeed',
-          actionIcon: ActivityActionIcon.search,
-        ),
-        ActivityFeedEntry(
-          id: 'read-2',
-          kind: ActivityFeedKind.action,
-          text: 'lib/theme.dart',
-          actionIcon: ActivityActionIcon.file,
-        ),
-      ]);
+      ),
+      ActivityFeedEntry(
+        id: 'search-1',
+        kind: ActivityFeedKind.action,
+        text: 'search ActivityFeed',
+        actionIcon: ActivityActionIcon.search,
+      ),
+      ActivityFeedEntry(
+        id: 'read-2',
+        kind: ActivityFeedKind.action,
+        text: 'lib/theme.dart',
+        actionIcon: ActivityActionIcon.file,
+      ),
+    ]);
 
-      expect(grouped.map((entry) => entry.id), [
-        'action-group:read-1:edit-1:2',
-        'bash-1',
-        'action-group:search-1:read-2:2',
-      ]);
-      expect(grouped[1].bashRun?.command, 'npm test');
-      expect(grouped[1].bashRun?.output, '36 pass');
-    },
-  );
+    expect(grouped, hasLength(1));
+    expect(grouped.single.id, 'action-group:read-1');
+    expect(grouped.single.actionChildren, hasLength(5));
+    expect(grouped.single.actionChildren[2].bashRun?.command, 'npm test');
+    expect(grouped.single.actionChildren[2].bashRun?.output, '36 pass');
+  });
+
+  test('tool group shows the latest running action as 正在...', () {
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'read-1',
+        kind: ActivityFeedKind.action,
+        text: 'lib/feed.dart',
+        toolName: 'Read',
+        actionIcon: ActivityActionIcon.file,
+        lifecycle: ToolActionLifecycle.completed,
+      ),
+      ActivityFeedEntry(
+        id: 'bash-1',
+        kind: ActivityFeedKind.action,
+        text: 'npm test',
+        toolName: 'Bash',
+        actionIcon: ActivityActionIcon.terminal,
+        lifecycle: ToolActionLifecycle.running,
+      ),
+    ]);
+
+    expect(grouped.single.text, '正在运行 npm test');
+    expect(grouped.single.lifecycle, ToolActionLifecycle.running);
+    expect(grouped.single.id, 'action-group:read-1');
+  });
 
   test(
     'subagentMissionBorderColor uses unknown blue for non-standard roles',
@@ -621,9 +651,7 @@ void main() {
       ),
     );
 
-    final actions = feed
-        .where((entry) => entry.kind == ActivityFeedKind.action)
-        .toList();
+    final actions = _toolActions(feed);
     expect(actions.length, 1);
     expect(actions.first.text, 'Run unit tests');
     expect(actions.first.toolUseId, 'toolu_bash_1');
@@ -705,9 +733,7 @@ void main() {
         ),
       );
 
-      final actions = feed
-          .where((entry) => entry.kind == ActivityFeedKind.action)
-          .toList();
+      final actions = _toolActions(feed);
       expect(actions.length, 1);
       expect(actions.first.toolUseId, 'toolu_bash_1');
       expect(actions.first.text, 'Run unit tests');
@@ -770,9 +796,7 @@ void main() {
         ),
       );
 
-      final actions = feed
-          .where((entry) => entry.kind == ActivityFeedKind.action)
-          .toList();
+      final actions = _toolActions(feed);
       expect(actions.length, 1);
       expect(actions.first.lifecycle, ToolActionLifecycle.approvalApproved);
       expect(
@@ -1049,9 +1073,7 @@ void main() {
       ),
     );
 
-    final actions = feed
-        .where((entry) => entry.kind == ActivityFeedKind.action)
-        .toList();
+    final actions = _toolActions(feed);
     expect(actions.length, 1);
     expect(actions.first.text, 'Run unit tests');
     expect(actions.first.toolUseId, 'toolu_bash_1');

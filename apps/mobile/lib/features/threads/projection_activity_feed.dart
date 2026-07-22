@@ -1378,6 +1378,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     kind: ActivityFeedKind.action,
     text: label,
     actionIcon: iconForToolName(toolName),
+    toolName: toolName,
     lifecycle: lifecycle,
     toolUseId: bashApproval?.toolUseId ?? tool?.toolUseId,
     subagentRole: _resolveProjectionSubagentRole(item),

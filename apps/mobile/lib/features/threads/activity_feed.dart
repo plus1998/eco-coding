@@ -81,6 +81,7 @@ class ActivityFeedEntry {
     required this.kind,
     required this.text,
     this.actionIcon,
+    this.toolName,
     this.subagentRole,
     this.detail,
     this.streaming = false,
@@ -110,6 +111,7 @@ class ActivityFeedEntry {
   final ActivityFeedKind kind;
   final String text;
   final ActivityActionIcon? actionIcon;
+  final String? toolName;
   final String? subagentRole;
   final String? detail;
   final bool streaming;
@@ -166,25 +168,14 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
   var pending = <ActivityFeedEntry>[];
 
   void flush() {
-    if (pending.length > 1) {
+    if (pending.isNotEmpty) {
       grouped.add(_buildActionGroupEntry(pending));
-    } else {
-      grouped.addAll(pending);
     }
     pending = <ActivityFeedEntry>[];
   }
 
   for (final entry in entries) {
     if (entry.kind == ActivityFeedKind.action) {
-      final pendingAttemptId = pending.firstOrNull?.runAttemptId;
-      if (pending.isNotEmpty && pendingAttemptId != entry.runAttemptId) {
-        flush();
-      }
-      if (entry.bashRun != null) {
-        flush();
-        grouped.add(entry);
-        continue;
-      }
       pending.add(entry);
       continue;
     }
@@ -197,10 +188,9 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
 
 ActivityFeedEntry _buildActionGroupEntry(List<ActivityFeedEntry> entries) {
   final first = entries.first;
-  final last = entries.last;
   final summary = _summarizeActionEntries(entries);
   return ActivityFeedEntry(
-    id: 'action-group:${first.id}:${last.id}:${entries.length}',
+    id: 'action-group:${first.id}',
     kind: ActivityFeedKind.actionGroup,
     text: summary.label,
     actionIcon: summary.icon,
@@ -223,14 +213,36 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
 ({String label, ActivityActionIcon icon}) _summarizeActionEntries(
   List<ActivityFeedEntry> entries,
 ) {
+  for (final entry in entries.reversed) {
+    if (entry.lifecycle == ToolActionLifecycle.failed) {
+      return (
+        label: '工具未完成 · ${entry.text}',
+        icon: entry.actionIcon ?? ActivityActionIcon.file,
+      );
+    }
+  }
+  for (final entry in entries.reversed) {
+    if (entry.lifecycle == ToolActionLifecycle.running) {
+      return _summarizeSingleActionEntry(entry, running: true);
+    }
+  }
+  if (entries.length == 1) {
+    return _summarizeSingleActionEntry(entries.single, running: false);
+  }
+
   final editedFiles = <String>{};
   final readFiles = <String>{};
+  final writtenFiles = <String>{};
   var searches = 0;
   var commands = 0;
   var agents = 0;
   var otherTools = 0;
 
   for (final entry in entries) {
+    if (entry.toolName == 'Write') {
+      writtenFiles.add(entry.fileChange?.path ?? entry.text);
+      continue;
+    }
     if (entry.fileChange != null) {
       editedFiles.add(entry.fileChange!.path);
       continue;
@@ -262,11 +274,14 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
   }
 
   final clauses = <String>[];
-  if (editedFiles.isNotEmpty) {
-    clauses.add('已编辑 ${editedFiles.length} 个文件');
-  }
   if (readFiles.isNotEmpty) {
     clauses.add('已读取 ${readFiles.length} 个文件');
+  }
+  if (writtenFiles.isNotEmpty) {
+    clauses.add('已写入 ${writtenFiles.length} 个文件');
+  }
+  if (editedFiles.isNotEmpty) {
+    clauses.add('已编辑 ${editedFiles.length} 个文件');
   }
   if (searches > 0) {
     clauses.add(searches > 1 ? '已搜索代码 $searches 次' : '已搜索代码');
@@ -285,7 +300,7 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
     label: _joinChineseClauses(
       clauses.isEmpty ? ['已执行 ${entries.length} 个工具'] : clauses,
     ),
-    icon: editedFiles.isNotEmpty
+    icon: writtenFiles.isNotEmpty || editedFiles.isNotEmpty
         ? ActivityActionIcon.edit
         : readFiles.isNotEmpty
         ? ActivityActionIcon.file
@@ -296,6 +311,44 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
         : agents > 0
         ? ActivityActionIcon.agent
         : ActivityActionIcon.file,
+  );
+}
+
+({String label, ActivityActionIcon icon}) _summarizeSingleActionEntry(
+  ActivityFeedEntry entry, {
+  required bool running,
+}) {
+  final target = clampActivityPreviewLine(
+    entry.bashRun?.command ?? entry.fileChange?.path ?? entry.text,
+    64,
+  );
+  final suffix = target.isEmpty ? '' : ' $target';
+  final toolName = entry.toolName;
+  final verb = switch (toolName) {
+    'TaskCreate' => running ? '正在创建任务' : '已创建任务',
+    'TaskUpdate' || 'TodoWrite' => running ? '正在更新任务' : '已更新任务',
+    'Write' => running ? '正在写入' : '已写入',
+    'Edit' || 'MultiEdit' => running ? '正在编辑' : '已编辑',
+    'Read' || 'NotebookRead' => running ? '正在读取' : '已读取',
+    'Glob' || 'Grep' => running ? '正在搜索' : '已搜索',
+    'Bash' => running ? '正在运行' : '已运行',
+    'Agent' || 'Task' => running ? '正在调用子代理' : '已调用子代理',
+    _ when entry.fileChange != null => running ? '正在编辑' : '已编辑',
+    _ when entry.actionIcon == ActivityActionIcon.file =>
+      running ? '正在读取' : '已读取',
+    _ when entry.actionIcon == ActivityActionIcon.search =>
+      running ? '正在搜索' : '已搜索',
+    _
+        when entry.actionIcon == ActivityActionIcon.terminal ||
+            entry.bashRun != null =>
+      running ? '正在运行' : '已运行',
+    _ when entry.actionIcon == ActivityActionIcon.agent =>
+      running ? '正在调用子代理' : '已调用子代理',
+    _ => running ? '正在执行' : '已执行',
+  };
+  return (
+    label: '$verb$suffix',
+    icon: entry.actionIcon ?? ActivityActionIcon.file,
   );
 }
 
@@ -1385,7 +1438,6 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
             icon: widget.entry.actionIcon ?? ActivityActionIcon.file,
             lifecycle: widget.entry.lifecycle,
             expanded: _expanded,
-            count: children.length,
             onTap: () => setState(() => _expanded = !_expanded),
           ),
           if (_expanded)
@@ -1575,7 +1627,6 @@ class _ActionSummaryLine extends StatelessWidget {
     required this.icon,
     this.lifecycle,
     this.expanded = false,
-    this.count,
     this.additions = 0,
     this.deletions = 0,
     this.onTap,
@@ -1585,7 +1636,6 @@ class _ActionSummaryLine extends StatelessWidget {
   final ActivityActionIcon icon;
   final ToolActionLifecycle? lifecycle;
   final bool expanded;
-  final int? count;
   final int additions;
   final int deletions;
   final VoidCallback? onTap;
@@ -1601,41 +1651,33 @@ class _ActionSummaryLine extends StatelessWidget {
         Icon(EcoIcons.activityAction(icon), size: 15, color: iconColor),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: activityFeedBodyStyle(
-              context,
-              color: failed ? eco.statusDenyText : eco.textMuted,
-              height: 1.35,
-            )?.copyWith(fontWeight: FontWeight.w500),
-          ),
+          child: lifecycle == ToolActionLifecycle.running
+              ? ShimmerText(
+                  text: label,
+                  baseColor: eco.textMuted,
+                  highlightColor: eco.textSecondary,
+                  style: activityFeedBodyStyle(
+                    context,
+                    color: eco.textMuted,
+                    height: 1.35,
+                  )?.copyWith(fontWeight: FontWeight.w500),
+                )
+              : Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: activityFeedBodyStyle(
+                    context,
+                    color: failed ? eco.statusDenyText : eco.textMuted,
+                    height: 1.35,
+                  )?.copyWith(fontWeight: FontWeight.w500),
+                ),
         ),
         if (additions > 0 || deletions > 0) ...[
           const SizedBox(width: 8),
           _InlineDiffStats(additions: additions, deletions: deletions),
         ],
-        if (count != null) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(
-              color: eco.cardSurface,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: eco.borderSubtle),
-            ),
-            child: Text(
-              '$count',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: eco.textMuted,
-                fontSize: 10,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
-        ],
-        if (onTap != null || count != null) ...[
+        if (onTap != null) ...[
           const SizedBox(width: 4),
           AnimatedRotation(
             turns: expanded ? 0.5 : 0,
