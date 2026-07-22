@@ -5,15 +5,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
+  applyCodexExecutionConfirmation,
   assertCodexRoleProvidersAvailable,
   buildCodexMainAgentProfileAppend,
   buildCodexSubagentFollowupPrompt,
   type CodexAppServerClient,
   CodexAppServerDriver,
+  type CodexCatalogManualCapabilities,
   CodexCompactNotAvailable,
   type CodexContextSnapshotResolution,
-  type CodexCatalogManualCapabilities,
   CodexEventAdapter,
+  type CodexExecutionConfirmationMode,
   type CodexGatewayCatalogRoute,
   type CodexMcpServerForConfigSync,
   CodexResumeNotAvailable,
@@ -23,22 +25,19 @@ import {
   type CodexThreadConfigOverrides,
   type CodexThreadResumeResult,
   type CodexThreadStatusKind,
+  type CodexToolPolicy,
   CodexTurnRouteRegistry,
   clearCodexSpawnPayloadQueueSync,
   collectCodexGatewayCatalogRoutes,
   compactCodexThreadAndWait,
+  DEFAULT_CODEX_TOOL_POLICY,
   dequeueCodexSpawnPayloadMatchingSync,
-  ensureCodexSkillsExtraRoots,
   type EcoAgentRuntimeConfig,
   type EcoProviderForCodexConfig,
-  type CodexToolPolicy,
-  type CodexExecutionConfirmationMode,
-  DEFAULT_CODEX_TOOL_POLICY,
-  applyCodexExecutionConfirmation,
+  ensureCodexSkillsExtraRoots,
+  isCodexThreadConfigApplied,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
-  isCodexThreadConfigApplied,
-  withCodexSkillConfig,
   readCodexThreadStatus,
   requireCodexSubagentThreadId,
   resolveCodexHomeDir,
@@ -47,6 +46,7 @@ import {
   syncCodexConfigFromEcoProviders,
   syncEcoCodexModelCatalog,
   syncProfileAgentsToCodexRoles,
+  withCodexSkillConfig,
 } from "@eco/runtime";
 import type { CodexModelCatalogEntryView } from "../shared/models";
 import type { ThreadRunEventInput } from "../shared/thread-run-events";
@@ -58,10 +58,6 @@ import {
 } from "./codex-approval-bridge";
 import { CodexModelCatalogService } from "./codex-model-catalog";
 import {
-  readElectronResourcesPath,
-  resolvePackagedCodexExecutableCandidate,
-} from "./packaged-runtime-executables";
-import {
   CodexRuntimeLifecycle,
   ensureGlobalCodexRuntimeLifecycle,
   getGlobalCodexRuntimeLifecycle,
@@ -71,6 +67,10 @@ import type { CodexThreadMap } from "./codex-thread-map";
 import { resolveCodexThreadAttribution } from "./codex-thread-map";
 import { normalizeCodexThreadRunEventForProjection } from "./codex-thread-run-event-normalizer";
 import { ensureGlobalEcoGateway } from "./eco-gateway-lifecycle";
+import {
+  readElectronResourcesPath,
+  resolvePackagedCodexExecutableCandidate,
+} from "./packaged-runtime-executables";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutesFromRuntime, type RuntimeConfigResolution } from "./thread-runtime-routes";
 
@@ -140,10 +140,7 @@ export interface CodexRuntimeRunDeps {
    * scheduler throttles streaming projections instead of debouncing away all
    * intermediate updates while deltas keep arriving.
    */
-  scheduleThreadRunProjectionUpdated: (
-    threadId: string,
-    options?: { streaming?: boolean },
-  ) => void;
+  scheduleThreadRunProjectionUpdated: (threadId: string, options?: { streaming?: boolean }) => void;
   /**
    * Bind a Codex user item id onto the latest local user-prompt run event.
    * Returns true when the local event was updated (caller should skip appending a duplicate).
@@ -209,10 +206,7 @@ let prepareRuntimeTail: Promise<void> = Promise.resolve();
 /** Once installed, keep global hook support stable; each thread still enables/disables it explicitly. */
 let globalMultiAgentSupportRequired = false;
 
-export function bindPreparedCodexRuntimeToThread(
-  ecoThreadId: string,
-  prepared: PreparedCodexRuntime,
-): void {
+export function bindPreparedCodexRuntimeToThread(ecoThreadId: string, prepared: PreparedCodexRuntime): void {
   const threadId = ecoThreadId.trim();
   if (!threadId) {
     throw new Error("Eco thread id is required when binding prepared Codex runtime config.");
@@ -330,9 +324,7 @@ export function bindCodexThreadRunEventAttempt(
 ): ThreadRunEventInput {
   const { runAttemptId: codexTurnAsAttemptId, ...eventWithoutAttempt } = event;
   const turnId =
-    typeof event.metadata?.turnId === "string"
-      ? event.metadata.turnId.trim()
-      : codexTurnAsAttemptId?.trim();
+    typeof event.metadata?.turnId === "string" ? event.metadata.turnId.trim() : codexTurnAsAttemptId?.trim();
   const runAttemptId = ecoRunAttemptId?.trim();
   return {
     ...eventWithoutAttempt,
@@ -353,7 +345,9 @@ export function requireCodexRouteForRole(
     ? routes.find((candidate) => candidate.role === normalizedRoleId)
     : undefined;
   if (!route) {
-    throw new Error(`Codex subagent resume is missing the exact route for role '${normalizedRoleId || "unknown"}'.`);
+    throw new Error(
+      `Codex subagent resume is missing the exact route for role '${normalizedRoleId || "unknown"}'.`,
+    );
   }
   return route;
 }
@@ -375,12 +369,9 @@ export async function resumeCodexThreadForEcoThread(input: {
   const runtimeDeps = requireDeps();
   const ecoThreadId = input.ecoThreadId.trim();
   if (!ecoThreadId) {
-    throw new CodexResumeNotAvailable(
-      "Codex resume is not available because the Eco thread id is missing.",
-      {
-        nextAction: "Retry resume from a Codex-backed thread that has a persisted Eco thread id.",
-      },
-    );
+    throw new CodexResumeNotAvailable("Codex resume is not available because the Eco thread id is missing.", {
+      nextAction: "Retry resume from a Codex-backed thread that has a persisted Eco thread id.",
+    });
   }
   const codexThreadId = runtimeDeps.threadMap.getCodexThreadId(ecoThreadId);
   if (!codexThreadId) {
@@ -407,7 +398,8 @@ export async function resumeCodexThreadForEcoThread(input: {
     throw new CodexResumeNotAvailable(
       "Codex resume cannot reapply this thread's runtime policy because no prepared config is bound.",
       {
-        nextAction: "Prepare the Eco thread with its current Agent Profile and MCP selection, then retry resume.",
+        nextAction:
+          "Prepare the Eco thread with its current Agent Profile and MCP selection, then retry resume.",
       },
     );
   }
@@ -464,8 +456,7 @@ export async function resumeCodexSubagentThread(input: {
     throw new CodexResumeNotAvailable(
       "Codex subagent resume is not available because the Codex app-server client is not running.",
       {
-        nextAction:
-          "Start a Codex-backed turn to bring the app-server online, then retry subagent resume.",
+        nextAction: "Start a Codex-backed turn to bring the app-server online, then retry subagent resume.",
       },
     );
   }
@@ -518,8 +509,7 @@ export async function rollbackCodexThreadForEcoThread(input: {
     throw new CodexRollbackNotAvailable(
       "Codex rollback is not available because the target Codex item id is missing.",
       {
-        nextAction:
-          "Select a user message that has a persisted Codex item id, then retry rewind.",
+        nextAction: "Select a user message that has a persisted Codex item id, then retry rewind.",
       },
     );
   }
@@ -626,7 +616,8 @@ export async function compactCodexThreadForEcoThread(input: {
     throw new CodexCompactNotAvailable(
       `Codex compact requires an idle thread; current status is ${status}.`,
       {
-        nextAction: "Wait for the active turn to finish or continue the thread once to recover its state, then retry compact.",
+        nextAction:
+          "Wait for the active turn to finish or continue the thread once to recover its state, then retry compact.",
       },
     );
   }
@@ -712,9 +703,7 @@ export function clearCodexModelCatalogCache(): void {
   modelCatalogService?.clear();
 }
 
-export function prepareCodexRuntime(
-  input: PrepareCodexRuntimeInput = {},
-): Promise<PreparedCodexRuntime> {
+export function prepareCodexRuntime(input: PrepareCodexRuntimeInput = {}): Promise<PreparedCodexRuntime> {
   const run = prepareRuntimeTail.then(() => prepareCodexRuntimeUnlocked(input));
   prepareRuntimeTail = run.then(
     () => undefined,
@@ -723,9 +712,7 @@ export function prepareCodexRuntime(
   return run;
 }
 
-async function prepareCodexRuntimeUnlocked(
-  input: PrepareCodexRuntimeInput,
-): Promise<PreparedCodexRuntime> {
+async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Promise<PreparedCodexRuntime> {
   const runtimeDeps = requireDeps();
   const codexExecutable = resolveCodexExecutable();
   if (!codexExecutable) {
@@ -739,9 +726,7 @@ async function prepareCodexRuntimeUnlocked(
   const mcpServers = input.mcpServers ?? [];
   const registryAppend = input.agentRegistry
     ? buildCodexMainAgentProfileAppend(input.agentRegistry.profile, input.agentRegistry.templates, {
-        ...(input.subagentAvailability
-          ? { subagentAvailability: input.subagentAvailability }
-          : {}),
+        ...(input.subagentAvailability ? { subagentAvailability: input.subagentAvailability } : {}),
       })
     : undefined;
   const profileAppend = registryAppend?.trim() || undefined;
@@ -752,26 +737,24 @@ async function prepareCodexRuntimeUnlocked(
     ? applyCodexExecutionConfirmation(
         registryToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY,
         input.executionConfirmationMode,
-        input.agentRegistry?.profile.mainAgent.tools.coreOverrides?.codex?.approvalPolicy ===
-          "untrusted"
+        input.agentRegistry?.profile.mainAgent.tools.coreOverrides?.codex?.approvalPolicy === "untrusted"
           ? { minimumApprovalPolicy: "untrusted" }
           : {},
       )
     : registryToolPolicy;
-  const roleSync = input.agentRegistry && input.enableSubagents !== false
-    ? await syncProfileAgentsToCodexRoles({
-        codexHomeDir,
-        profile: input.agentRegistry.profile,
-        templates: input.agentRegistry.templates,
-        mcpServers,
-        ...(input.threadEnabledMcpServerNames
-          ? { threadEnabledMcpServers: input.threadEnabledMcpServerNames }
-          : {}),
-        ...(input.subagentAvailability
-          ? { subagentAvailability: input.subagentAvailability }
-          : {}),
-      })
-    : undefined;
+  const roleSync =
+    input.agentRegistry && input.enableSubagents !== false
+      ? await syncProfileAgentsToCodexRoles({
+          codexHomeDir,
+          profile: input.agentRegistry.profile,
+          templates: input.agentRegistry.templates,
+          mcpServers,
+          ...(input.threadEnabledMcpServerNames
+            ? { threadEnabledMcpServers: input.threadEnabledMcpServerNames }
+            : {}),
+          ...(input.subagentAvailability ? { subagentAvailability: input.subagentAvailability } : {}),
+        })
+      : undefined;
 
   if (roleSync && roleSync.roles.length > 0) {
     assertCodexRoleProvidersAvailable(roleSync.roles, providers);
@@ -802,7 +785,9 @@ async function prepareCodexRuntimeUnlocked(
   // Push ProviderStore models into in-process eco-gateway before Codex calls /v1/responses.
   const roleProviderIds = roleSync?.roles.map((role) => role.providerId) ?? [];
   const requiredProviderIds = [
-    ...new Set([...(input.requiredProviderIds ?? []), ...roleProviderIds].map((id) => id.trim()).filter(Boolean)),
+    ...new Set(
+      [...(input.requiredProviderIds ?? []), ...roleProviderIds].map((id) => id.trim()).filter(Boolean),
+    ),
   ];
   const gatewayProviders = await ensureGlobalEcoGateway({
     ...(requiredProviderIds.length > 0 ? { requiredProviderIds } : {}),
@@ -891,14 +876,9 @@ async function prepareCodexRuntimeUnlocked(
 
   // Catalog is startup config: only cold-restart app-server when the fingerprint changes
   // and every loaded thread is idle/systemError. Active turns reject this prepare.
-  const catalogNeedsRestart =
-    catalogSync.fingerprint !== lastPreparedModelCatalogFingerprint;
+  const catalogNeedsRestart = catalogSync.fingerprint !== lastPreparedModelCatalogFingerprint;
   if (catalogNeedsRestart) {
-    await ensureIdleCodexAppServerRestartForCatalog(
-      runtimeDeps,
-      codexExecutable,
-      catalogSync.fingerprint,
-    );
+    await ensureIdleCodexAppServerRestartForCatalog(runtimeDeps, codexExecutable, catalogSync.fingerprint);
   }
 
   const client = await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
@@ -926,9 +906,7 @@ async function prepareCodexRuntimeUnlocked(
     lastPreparedMcpFingerprint = "";
     throw error;
   }
-  runtimeDeps.onStderr?.(
-    `[eco-codex] mcp reload servers=${configSync.mcpServerNames.join(",") || "(none)"}`,
-  );
+  runtimeDeps.onStderr?.(`[eco-codex] mcp reload servers=${configSync.mcpServerNames.join(",") || "(none)"}`);
   return prepared;
 }
 
@@ -977,10 +955,7 @@ function collectCatalogRoutesForPrepare(
       };
     }),
     routeConfigs: runtimeDeps.listCatalogRouteConfigs?.() ?? [],
-    orchestrationAgents: [
-      ...(runtimeDeps.listCatalogOrchestrationAgents?.() ?? []),
-      ...roleRoutes,
-    ],
+    orchestrationAgents: [...(runtimeDeps.listCatalogOrchestrationAgents?.() ?? []), ...roleRoutes],
     effectiveRoutes: input.effectiveCatalogRoutes ?? [],
   });
 }
@@ -1267,7 +1242,7 @@ export function createCodexRuntimeDriver(
   const controlPlaneConfigApplied = Boolean(
     existingCodexThreadId &&
       preparedThreadConfig &&
-      controlPlaneAppliedConfigByClient.get(client)?.get(existingCodexThreadId) === preparedThreadConfig
+      controlPlaneAppliedConfigByClient.get(client)?.get(existingCodexThreadId) === preparedThreadConfig,
   );
   if (controlPlaneConfigApplied && existingCodexThreadId) {
     controlPlaneAppliedConfigByClient.get(client)?.delete(existingCodexThreadId);
@@ -1285,9 +1260,7 @@ export function createCodexRuntimeDriver(
       : {}),
     ...(profileAppend ? { profileAppend } : {}),
     ...(profileToolPolicy ? { profileToolPolicy } : {}),
-    ...(preparedThreadConfig
-      ? { threadConfig: preparedThreadConfig }
-        : {}),
+    ...(preparedThreadConfig ? { threadConfig: preparedThreadConfig } : {}),
     onThreadMapped: (ecoThreadId, codexThreadId) => {
       // Subagent resume passes parent eco id + child Codex id — never remap parent → child.
       const isSubagentCodexThread = Boolean(
@@ -1384,9 +1357,7 @@ export function registerResolvedCodexGatewayTurnRoute(
       },
       registry,
     );
-    return registered
-      ? { status: "registered" }
-      : { status: "rejected", reason: "invalid_exact_route" };
+    return registered ? { status: "registered" } : { status: "rejected", reason: "invalid_exact_route" };
   } catch (error) {
     return { status: "conflict", error };
   }

@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
-  type CoreKind,
   composeCanUseToolHandlers,
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
@@ -19,9 +18,9 @@ import {
   type EcoSubagentAttributionHooks,
   evaluateFilesystemReadConfirmation,
   evaluateFilesystemWriteConfirmation,
+  isCoreKind,
   isReadFilesystemTool,
   isWriteFilesystemTool,
-  isCoreKind,
   normalizeSdkSubagentType,
   type PlanReadyPayload,
   readFilesystemPath,
@@ -53,27 +52,23 @@ import {
   dialog,
   ipcMain,
   type NativeImage,
+  Notification,
   nativeImage,
   nativeTheme,
-  Notification,
   safeStorage,
   shell,
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
-import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
 import {
   readElectronResourcesPath,
   resolvePackagedClaudeExecutableCandidate,
 } from "./packaged-runtime-executables";
+import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
 
 ensureDesktopPath();
 
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
-import {
-  buildThreadApprovalNotificationContent,
-  buildThreadCompletionNotificationContent,
-} from "../shared/thread-completion-notification";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import {
   deriveBashApprovalRememberPrefix,
@@ -82,17 +77,6 @@ import {
 } from "../shared/bash-approval-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
-import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
-import {
-  PROMPT_IMAGE_PREVIEWS_METADATA_KEY,
-  type PromptImagePreview,
-} from "../shared/prompt-image-metadata";
-import {
-  BUILTIN_VISION_AGENT_ROLE,
-  buildPromptWithVisionAnalysis,
-  buildVisionAnalysisRequestBody,
-  readVisionAnalysisResponse,
-} from "../shared/prompt-image-vision";
 import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
   type AgentRole,
@@ -180,7 +164,6 @@ import {
   type ThreadRollbackResult,
   type ThreadRunBashApprovalMetadata,
   type ThreadRunBashApprovalPhase,
-  type ThreadRunEvent,
   type ThreadRunEventScope,
   type ThreadRunProjectionSnapshot,
   type ThreadRunToolMetadata,
@@ -209,6 +192,13 @@ import {
   resolvePromptCacheProfileLabel,
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
+import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
+import {
+  BUILTIN_VISION_AGENT_ROLE,
+  buildPromptWithVisionAnalysis,
+  buildVisionAnalysisRequestBody,
+  readVisionAnalysisResponse,
+} from "../shared/prompt-image-vision";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
@@ -218,11 +208,15 @@ import {
   resolveExplicitCodexSkillInputs,
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
-  type SkillInfo,
-  type SkillUninstallRequest,
   type SkillCatalogInstallRequest,
   type SkillCatalogSearchRequest,
+  type SkillInfo,
+  type SkillUninstallRequest,
 } from "../shared/skills";
+import {
+  buildThreadApprovalNotificationContent,
+  buildThreadCompletionNotificationContent,
+} from "../shared/thread-completion-notification";
 import {
   activityLinesBeforeRewindTarget,
   buildAgentPromptWithContext,
@@ -242,6 +236,7 @@ import {
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
 } from "../shared/thread-follow-up-drain";
+import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
 import {
   buildWorktreeMergeSummary,
   formatWorktreeMergeThreadMessage,
@@ -264,8 +259,8 @@ import {
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
-  buildResolvedBashApprovalThreadPatch,
   type BashApprovalResolution,
+  buildResolvedBashApprovalThreadPatch,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
   getPendingBashApprovalForThread,
@@ -306,6 +301,25 @@ import {
   registerPendingClarification,
   submitClarification,
 } from "./clarification-bridge";
+import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
+import {
+  CodexGatewayUsageDeduplicator,
+  resolveCodexGatewayUsageBilling,
+} from "./codex-gateway-usage-billing";
+import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
+import { stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
+import {
+  compactCodexThreadForEcoThread,
+  configureCodexApprovalBridge,
+  configureCodexRuntimeRun,
+  createCodexRuntimeDriver,
+  isCodexCliAvailable,
+  registerResolvedCodexGatewayTurnRoute,
+  rollbackCodexThreadForEcoThread,
+  runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
+} from "./codex-runtime-run";
+import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
+import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
 import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -313,28 +327,9 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
-import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
-import {
-  CodexGatewayUsageDeduplicator,
-  resolveCodexGatewayUsageBilling,
-} from "./codex-gateway-usage-billing";
-import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
-import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
-import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
-import {
-  configureCodexApprovalBridge,
-  configureCodexRuntimeRun,
-  compactCodexThreadForEcoThread,
-  createCodexRuntimeDriver,
-  isCodexCliAvailable,
-  registerResolvedCodexGatewayTurnRoute,
-  rollbackCodexThreadForEcoThread,
-  runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
-} from "./codex-runtime-run";
-import { stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
-import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
+import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
 import { GitAutoFetcher } from "./git-autofetch";
 import {
@@ -364,12 +359,12 @@ import { prepareCodexMcpServersForRuntime, prepareMcpSdkConfigForRuntime } from 
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { PackageJsonWatcher } from "./package-json-watcher";
+import { createPackageScriptArgsStore, type PackageScriptArgsStore } from "./package-script-args-store";
 import {
   listPackageScripts,
   preparePackageScriptRun,
   runPreparedPackageScriptAsBackgroundTask,
 } from "./package-scripts";
-import { createPackageScriptArgsStore, type PackageScriptArgsStore } from "./package-script-args-store";
 import {
   cancelPlanApprovalsForThread,
   getPendingPlanApprovalForThread,
@@ -377,12 +372,16 @@ import {
   registerPendingPlanApproval,
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
+import {
+  createProjectSkillsSettingsStore,
+  type ProjectSkillsSettingsStore,
+} from "./project-skills-settings-store";
 import { formatPromptCacheBreakLog, resolveClaudeMdDigest } from "./prompt-cache-fingerprint";
 import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
 import { reconcileProxyAttributionContexts } from "./proxy-attribution-context-reconciliation";
-import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
+import { ECO_PROXY_BILLING_HEADERS, ProxyBillingStampRegistry } from "./proxy-billing-stamp";
 import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
@@ -392,7 +391,6 @@ import {
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { formatUserFacingRequestError, type RequestAttemptResult } from "./request-retry";
-import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliation";
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
@@ -403,8 +401,8 @@ import {
   listSdkSessionActivityLines,
   listSdkSessionCompactionActivityLines,
   listSdkSubagentActivityLines,
+  sdkActivityLineId,
 } from "./sdk-session-activity.js";
-import { sdkActivityLineId } from "./sdk-session-activity.js";
 import { type SdkLocalStreamUpdate, SdkStreamActivityBridge } from "./sdk-stream-activity";
 import {
   resolveSdkStreamPartialBillingOrchestration,
@@ -417,14 +415,10 @@ import {
   resolveSingleUsageBillingOrchestration,
   type SingleUsageBillingRequest,
 } from "./single-usage-billing-orchestration";
+import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from "./skills-catalog";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { uninstallDiscoveredSkill } from "./skills-uninstall";
-import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from "./skills-catalog";
-import {
-  createProjectSkillsSettingsStore,
-  type ProjectSkillsSettingsStore,
-} from "./project-skills-settings-store";
 import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import {
   clearThreadSubagentLaunchRegistry,
@@ -435,11 +429,8 @@ import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconciliation.js";
-import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
-import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
 import { requireThreadCore } from "./thread-core-routing";
-import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   flushThreadMetrics,
@@ -479,7 +470,6 @@ import {
   buildThreadRunEventFromLiveEvent,
   isMetricsOnlyThreadLiveEvent,
 } from "./thread-run-event-normalizer";
-import { ECO_PROXY_BILLING_HEADERS } from "./proxy-billing-stamp";
 import {
   resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
@@ -500,6 +490,7 @@ import {
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
+import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
 import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
 import {
   buildDriverRoutes,
@@ -543,7 +534,6 @@ import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
   approvedPlanRelativePath,
   claudePlanFileExists,
-  isWorktreeGitCwdError,
   readApprovedPlanSnapshot,
   readClaudePlanFile,
   resolveWorktreePathHint,
@@ -1041,20 +1031,16 @@ app.whenReady().then(async () => {
       const persisted = conversationStore.appendThreadRunEvent(event);
       applyCodexSubagentLifecycleEvent(persisted, {
         getAgentStatus: (threadId, agentId) =>
-          conversationStore
-            .listAgentInstances(threadId)
-            .find((candidate) => candidate.agentId === agentId)?.status,
+          conversationStore.listAgentInstances(threadId).find((candidate) => candidate.agentId === agentId)
+            ?.status,
         resolvePhase: (threadId) => {
           const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
           return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
         },
         startSession: (input) => conversationStore.upsertSubagentSessionActive(input),
-        stopSession: (threadId, agentId) =>
-          conversationStore.markSubagentSessionStopped(threadId, agentId),
-        startMetrics: (threadId, input) =>
-          subagentMetricsRegistry.onSubagentStart(threadId, input),
-        stopMetrics: (threadId, input) =>
-          subagentMetricsRegistry.onSubagentStop(threadId, input),
+        stopSession: (threadId, agentId) => conversationStore.markSubagentSessionStopped(threadId, agentId),
+        startMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStart(threadId, input),
+        stopMetrics: (threadId, input) => subagentMetricsRegistry.onSubagentStop(threadId, input),
         startAgent: (input) => {
           agentLifecycle.startSubagent(input);
         },
@@ -1091,12 +1077,9 @@ app.whenReady().then(async () => {
     onCodexThreadAttributionRecorded: flushPendingCodexGatewayUsage,
     onCodexContextUpdated: (resolution) => {
       void contextMonitor
-        .updateOccupied(
-          resolution.ecoThreadId,
-          resolution.billingRole,
-          resolution.contextOccupied,
-          { limit: resolution.context.limit },
-        )
+        .updateOccupied(resolution.ecoThreadId, resolution.billingRole, resolution.contextOccupied, {
+          limit: resolution.context.limit,
+        })
         .then(() => contextScheduler.emitLiveFromMonitor(resolution.ecoThreadId))
         .catch((error) => {
           process.stderr.write(
@@ -1113,10 +1096,7 @@ app.whenReady().then(async () => {
         return;
       }
       if (!worktreePath) {
-        markThreadInterrupted(
-          ecoThreadId,
-          "Codex Plan completed without a persisted worktree path.",
-        );
+        markThreadInterrupted(ecoThreadId, "Codex Plan completed without a persisted worktree path.");
         return;
       }
       if (!runtime.ok) {
@@ -1727,11 +1707,7 @@ function registerDesktopCommand<Args extends unknown[], Result>(
 
 function parseComposerDraftContextKey(value: unknown): string {
   const key = typeof value === "string" ? value.trim() : "";
-  if (
-    !key ||
-    key.length > 4_096 ||
-    (!key.startsWith("thread:") && !key.startsWith("landing:"))
-  ) {
+  if (!key || key.length > 4_096 || (!key.startsWith("thread:") && !key.startsWith("landing:"))) {
     throw new Error("Invalid composer draft context key.");
   }
   return key;
@@ -3060,7 +3036,9 @@ function registerIpcHandlers(): void {
       throw new Error(`Unsupported Core: ${String(payload.coreKind)}`);
     }
     if (coreKind === "codex" && !isCodexCliAvailable()) {
-      throw new Error("Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。");
+      throw new Error(
+        "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
+      );
     }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
@@ -4088,13 +4066,11 @@ async function startCodexThreadRun(
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(input.thread.id, input.roleRoutes),
           resolveAgentRegistry: () => resolveAgentRuntimeConfigForThreadId(input.thread.id),
           resolveExecutionConfirmationMode: () =>
-            ensureThreadRuntimeConfig(
-              conversationStore.getThread(input.thread.id) ?? input.thread,
-            ).runtimeConfig?.bashReviewMode ?? "always",
+            ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
+              .runtimeConfig?.bashReviewMode ?? "always",
           resolveSubagentAvailability: () =>
-            ensureThreadRuntimeConfig(
-              conversationStore.getThread(input.thread.id) ?? input.thread,
-            ).runtimeConfig?.subagentEnabled,
+            ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
+              .runtimeConfig?.subagentEnabled,
           resolveMcpServers: () => {
             const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
             return prepareCodexMcpServersForRuntime(
@@ -4141,16 +4117,17 @@ async function startCodexThreadRun(
                 },
                 ...(agentRegistry ? { agentRegistry } : {}),
               };
-              const events = input.continuation && driver.runContinuation
-                ? driver.runContinuation(
-                    runInput,
-                    mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution",
-                  )
-                : mode === "plan" && driver.runPlan
-                  ? driver.runPlan(runInput)
-                  : mode === "ask" && driver.runAsk
-                    ? driver.runAsk(runInput)
-                    : driver.run(runInput);
+              const events =
+                input.continuation && driver.runContinuation
+                  ? driver.runContinuation(
+                      runInput,
+                      mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution",
+                    )
+                  : mode === "plan" && driver.runPlan
+                    ? driver.runPlan(runInput)
+                    : mode === "ask" && driver.runAsk
+                      ? driver.runAsk(runInput)
+                      : driver.run(runInput);
               for await (const event of events) {
                 if (event.type === "agent.started" || event.type === "agent.completed") {
                   process.stderr.write(`[eco-codex] ${event.type} thread=${input.thread.id}\n`);
@@ -4901,7 +4878,9 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   return threadRuntimeCoordinator.continue(thread.coreKind, input);
 }
 
-async function startClaudeThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
+async function startClaudeThreadContinuation(
+  input: StartThreadContinuationInput,
+): Promise<ThreadContinueResult> {
   const prompt = input.prompt.trim();
   const hasAttachments = Boolean(input.attachments?.length);
   if (!prompt && !hasAttachments) {
@@ -5657,13 +5636,7 @@ async function handleRunCancelled(
   message?: string,
 ): Promise<void> {
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
-  await finalizeCancelledRun(
-    threadId,
-    worktreePlan,
-    explicit,
-    createFinalizeCancelledRunDeps(),
-    message,
-  );
+  await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps(), message);
 }
 
 function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
@@ -6715,8 +6688,7 @@ function noteUsageBillingObservation(threadId: string, observation: UsageBilling
 async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsageEvent): Promise<void> {
   const resolved = resolveCodexGatewayUsageBilling({
     event,
-    resolveThreadAttribution: (codexThreadId) =>
-      resolveCodexThreadAttribution(codexThreadMap, codexThreadId),
+    resolveThreadAttribution: (codexThreadId) => resolveCodexThreadAttribution(codexThreadMap, codexThreadId),
     resolveParentCodexThreadId: (codexThreadId) =>
       codexThreadMap.getThreadAttribution(codexThreadId)?.parentThreadId,
     resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
@@ -7352,9 +7324,7 @@ async function buildSdkSessionOptions(
     (skill) => skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? true,
   );
   const enabledUserSkills = discovered.userSkills.filter(
-    (skill) =>
-      skill.sdkReady &&
-      (skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? false),
+    (skill) => skill.sdkReady && (skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? false),
   );
   const projectNames = enabledProjectSkills.map((skill) => skill.name);
   const enabledUserNames = enabledUserSkills.map((skill) => skill.name);
@@ -8254,9 +8224,7 @@ function recordUserPrompt(
   });
 }
 
-function createPromptImagePreviews(
-  attachments: readonly PromptImageAttachment[],
-): PromptImagePreview[] {
+function createPromptImagePreviews(attachments: readonly PromptImageAttachment[]): PromptImagePreview[] {
   const previews: PromptImagePreview[] = [];
   for (const attachment of attachments) {
     const image = nativeImage.createFromBuffer(Buffer.from(attachment.data, "base64"));

@@ -2,6 +2,7 @@ import { ECO_RPC_METHODS } from "@eco/shared";
 import {
   buildCenterServerWebSocketUrl,
   buildPairingQrPayload,
+  CENTER_SERVER_REAUTH_MESSAGE,
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
   type CenterServerConnectionStatus,
@@ -11,6 +12,7 @@ import {
   type CenterServerDeviceView,
   type CenterServerRegisterDesktopRequest,
   type CenterServerRegisterDesktopResult,
+  CenterServerRemoveConnectionError,
   type CenterServerRemoveConnectionOptions,
   type CenterServerRemoveConnectionResult,
   type CenterServerSettingsSnapshot,
@@ -18,10 +20,8 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
-  CENTER_SERVER_REAUTH_MESSAGE,
-  CenterServerRemoveConnectionError,
-  classifyCenterServerAuthError,
   centerServerAuthRecoveryMessage,
+  classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
 } from "../shared/center-server";
@@ -582,7 +582,11 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         });
         return refreshed.accessToken;
       } catch (error) {
-        if (!settings.deviceId || !settings.deviceSecret || !isCenterServerAuthCredentialError(errorMessage(error))) {
+        if (
+          !settings.deviceId ||
+          !settings.deviceSecret ||
+          !isCenterServerAuthCredentialError(errorMessage(error))
+        ) {
           throw error;
         }
         this.store.clearRefreshToken();
@@ -860,10 +864,7 @@ function readThreadLiveEvent(envelope: EventCenterEnvelope): ThreadLiveEvent | u
 }
 
 function isRemoteOnlyStreamDelta(event: ThreadLiveEvent): boolean {
-  return (
-    event.stream === true &&
-    (event.type === "message.delta" || event.type === "thinking.delta")
-  );
+  return event.stream === true && (event.type === "message.delta" || event.type === "thinking.delta");
 }
 
 function shouldFlushProjectionBeforeEvent(

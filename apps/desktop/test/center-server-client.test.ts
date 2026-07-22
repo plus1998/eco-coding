@@ -748,9 +748,12 @@ test("center server client removeConnection deletes remote device and clears loc
     const url = String(input);
     calls.push(`${init?.method ?? "GET"} ${url}`);
     if (url.endsWith("/v1/devices/dev_1") && init?.method === "DELETE") {
-      return new Response(JSON.stringify({ device: { id: "dev_1", disabledAt: "2030-01-01T00:00:00.000Z" } }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ device: { id: "dev_1", disabledAt: "2030-01-01T00:00:00.000Z" } }),
+        {
+          status: 200,
+        },
+      );
     }
     throw new Error(`Unexpected fetch: ${url}`);
   };
