@@ -35,19 +35,22 @@ export function buildSidebarSearchResults(
 ): SidebarSearchResult[] {
   const normalizedQuery = normalizeSearchText(query);
   const projectNames = new Map(projects.map((project) => [project.path, project.name]));
-  const threadResults = [...threads]
+  const matchingThreads = [...threads]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-    .filter((thread) => !normalizedQuery || normalizeSearchText(thread.title).includes(normalizedQuery))
-    .slice(0, MAX_THREAD_RESULTS)
-    .map(
-      (thread): SidebarSearchResult => ({
-        kind: "thread",
-        key: `thread:${thread.id}`,
-        thread,
-        projectName:
-          projectNames.get(thread.workspacePath) ?? thread.workspacePath.split("/").at(-1) ?? "项目",
-      }),
-    );
+    .filter((thread) => !normalizedQuery || normalizeSearchText(thread.title).includes(normalizedQuery));
+  const runningThreads = matchingThreads.filter((thread) => thread.status === "running");
+  const recentThreads = matchingThreads
+    .filter((thread) => thread.status !== "running")
+    .slice(0, MAX_THREAD_RESULTS);
+  const threadResults = [...runningThreads, ...recentThreads].map(
+    (thread): SidebarSearchResult => ({
+      kind: "thread",
+      key: `thread:${thread.id}`,
+      thread,
+      projectName:
+        projectNames.get(thread.workspacePath) ?? thread.workspacePath.split("/").at(-1) ?? "项目",
+    }),
+  );
   const projectResults = projects
     .filter(
       (project) =>
@@ -84,7 +87,12 @@ export function SidebarSearchDialog({
     () => buildSidebarSearchResults(threads, projects, deferredQuery),
     [deferredQuery, projects, threads],
   );
-  const threadResults = results.filter((result) => result.kind === "thread");
+  const runningThreadResults = results.filter(
+    (result) => result.kind === "thread" && result.thread.status === "running",
+  );
+  const recentThreadResults = results.filter(
+    (result) => result.kind === "thread" && result.thread.status !== "running",
+  );
   const projectResults = results.filter((result) => result.kind === "project");
   const activeResult = results[activeIndex];
 
@@ -174,10 +182,22 @@ export function SidebarSearchDialog({
             <div className="sidebar-search-empty">没有匹配的会话或项目</div>
           ) : (
             <>
-              {threadResults.length > 0 ? (
+              {runningThreadResults.length > 0 ? (
+                <SearchResultGroup
+                  label="正在运行"
+                  results={runningThreadResults}
+                  allResults={results}
+                  activeIndex={activeIndex}
+                  listboxId={listboxId}
+                  activeResultRef={activeResultRef}
+                  onActivate={setActiveIndex}
+                  onSelect={selectResult}
+                />
+              ) : null}
+              {recentThreadResults.length > 0 ? (
                 <SearchResultGroup
                   label="会话"
-                  results={threadResults}
+                  results={recentThreadResults}
                   allResults={results}
                   activeIndex={activeIndex}
                   listboxId={listboxId}

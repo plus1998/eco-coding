@@ -7,13 +7,19 @@ const projects: SidebarSearchProject[] = [
   { path: "/workspace/notes", name: "Notes" },
 ];
 
-function thread(id: string, title: string, workspacePath: string, updatedAt: string): ThreadSummary {
+function thread(
+  id: string,
+  title: string,
+  workspacePath: string,
+  updatedAt: string,
+  status: ThreadSummary["status"] = "completed",
+): ThreadSummary {
   return {
     id,
     title,
     prompt: title,
     workspacePath,
-    status: "completed",
+    status,
     createdAt: updatedAt,
     updatedAt,
     message: "",
@@ -38,6 +44,23 @@ test("empty sidebar search lists recent threads before projects", () => {
   expect(buildSidebarSearchResults(threads, projects, "").map((result) => result.key)).toEqual([
     "thread:newer",
     "thread:older",
+    "project:/workspace/eco-coding",
+    "project:/workspace/notes",
+  ]);
+});
+
+test("sidebar search puts running threads first", () => {
+  const activeThreads = [
+    ...threads,
+    thread("running", "实现搜索分组", "/workspace/eco-coding", "2026-01-01T12:00:00.000Z", "running"),
+    thread("queued", "等待执行", "/workspace/notes", "2025-12-31T12:00:00.000Z", "queued"),
+  ];
+
+  expect(buildSidebarSearchResults(activeThreads, projects, "").map((result) => result.key)).toEqual([
+    "thread:running",
+    "thread:newer",
+    "thread:older",
+    "thread:queued",
     "project:/workspace/eco-coding",
     "project:/workspace/notes",
   ]);
