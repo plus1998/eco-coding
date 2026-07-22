@@ -44,7 +44,7 @@ export function StreamingMarkdownContent({
         }
       >
         <div className="markdown-content--streaming-body">
-          <MarkdownContent text={renderText} />
+          <div className="markdown-content markdown-content--streaming-plain">{renderText}</div>
         </div>
       </div>
     );

@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { applyLocalStreamUpdatesToProjection } from "../src/renderer/local-stream-projection";
+import {
+  applyLocalStreamUpdatesToProjection,
+  clearLocalStreamUpdates,
+  LOCAL_STREAM_NOTIFY_INTERVAL_MS,
+  publishLocalStreamUpdate,
+  subscribeToLocalStreamUpdates,
+} from "../src/renderer/local-stream-projection";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
 
 function projection(): ThreadRunProjectionSnapshot {
@@ -70,4 +76,33 @@ test("overlays the latest local text onto a persisted stream item without duplic
 
   expect(result.timeline).toHaveLength(1);
   expect(result.timeline[0]?.text).toBe("逐字输出");
+});
+
+test("coalesces rapid local stream notifications and flushes final state immediately", async () => {
+  const threadId = "thr_notify";
+  let notifications = 0;
+  const unsubscribe = subscribeToLocalStreamUpdates(threadId, () => {
+    notifications += 1;
+  });
+  const baseUpdate = {
+    threadId,
+    streamKey: "stream_1",
+    role: "planner",
+    channel: "message" as const,
+    streaming: true,
+    observedAt: "2026-01-01T00:00:01.000Z",
+  };
+
+  publishLocalStreamUpdate({ ...baseUpdate, text: "一" });
+  publishLocalStreamUpdate({ ...baseUpdate, text: "一段" });
+  publishLocalStreamUpdate({ ...baseUpdate, text: "一段文字" });
+  expect(notifications).toBe(0);
+
+  await Bun.sleep(LOCAL_STREAM_NOTIFY_INTERVAL_MS + 10);
+  expect(notifications).toBe(1);
+
+  publishLocalStreamUpdate({ ...baseUpdate, text: "一段文字", streaming: false });
+  expect(notifications).toBe(2);
+  unsubscribe();
+  clearLocalStreamUpdates(threadId);
 });

@@ -1,5 +1,21 @@
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+const markdownRemarkPlugins = [remarkGfm];
+const markdownComponents: Components = {
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  ),
+  pre: ({ children }) => <pre className="markdown-pre">{children}</pre>,
+  code: ({ className: codeClassName, children }) =>
+    codeClassName ? (
+      <code className={codeClassName}>{children}</code>
+    ) : (
+      <code className="markdown-inline-code">{children}</code>
+    ),
+};
 
 interface MarkdownContentProps {
   text: string;
@@ -13,23 +29,7 @@ export function MarkdownContent({ text, className }: MarkdownContentProps) {
 
   return (
     <div className={className ? `markdown-content ${className}` : "markdown-content"}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer noopener">
-              {children}
-            </a>
-          ),
-          pre: ({ children }) => <pre className="markdown-pre">{children}</pre>,
-          code: ({ className: codeClassName, children }) =>
-            codeClassName ? (
-              <code className={codeClassName}>{children}</code>
-            ) : (
-              <code className="markdown-inline-code">{children}</code>
-            ),
-        }}
-      >
+      <ReactMarkdown remarkPlugins={markdownRemarkPlugins} components={markdownComponents}>
         {text}
       </ReactMarkdown>
     </div>

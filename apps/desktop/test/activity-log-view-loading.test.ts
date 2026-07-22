@@ -171,7 +171,8 @@ test("StreamingMarkdownContent renders an incomplete code fence without a local 
     }),
   );
 
-  expect(html).toContain("markdown-pre");
+  expect(html).toContain("markdown-content--streaming-plain");
+  expect(html).toContain("```bash");
   expect(html).toContain("echo ready");
   expect(html).not.toContain("run-log-streaming-dots");
   expect(html).not.toContain("等待代码块");

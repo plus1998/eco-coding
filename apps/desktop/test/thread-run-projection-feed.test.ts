@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   buildFeedProjectionSignature,
+  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
+  FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_TEXT_CHARS,
   filterFeedProjectionAfterSequence,
   maxFeedProjectionTimelineSequence,
@@ -101,8 +103,8 @@ test("trimProjectionForFeed truncates streaming deltas", () => {
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBe(true);
 });
 
-test("trimProjectionForFeed keeps full main timeline history", () => {
-  const items = Array.from({ length: 150 }, (_, index) => ({
+test("trimProjectionForFeed bounds main timeline history", () => {
+  const items = Array.from({ length: FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS + 50 }, (_, index) => ({
     id: `evt_${index}`,
     sequence: index + 1,
     eventType: "message.final" as const,
@@ -124,9 +126,9 @@ test("trimProjectionForFeed keeps full main timeline history", () => {
     sourceEventCount: items.length,
   });
 
-  expect(trimmed.timeline).toHaveLength(items.length);
-  expect(trimmed.timeline[0]?.id).toBe("evt_0");
-  expect(trimmed.timeline.at(-1)?.id).toBe("evt_149");
+  expect(trimmed.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
+  expect(trimmed.timeline[0]?.id).toBe("evt_50");
+  expect(trimmed.timeline.at(-1)?.id).toBe(`evt_${items.length - 1}`);
 });
 
 test("filterFeedProjectionAfterSequence keeps only uncached main and subagent timeline items", () => {
@@ -184,6 +186,17 @@ test("filterFeedProjectionAfterSequence keeps only uncached main and subagent ti
   expect(maxFeedProjectionTimelineSequence(projection)).toBe(4);
 });
 
+test("filterFeedProjectionAfterSequence keeps mutable deltas with an existing sequence", () => {
+  const projection = createProjection("streaming", { longDelegation: false });
+  projection.timeline[0] = {
+    ...projection.timeline[0]!,
+    eventType: "message.delta",
+    streamKey: "stream_1",
+  };
+
+  expect(filterFeedProjectionAfterSequence(projection, 1).timeline).toHaveLength(1);
+});
+
 test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental updates", () => {
   const items = Array.from({ length: 150 }, (_, index) => ({
     id: `agent_evt_${index}`,
@@ -204,8 +217,8 @@ test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental 
     ],
   });
 
-  expect(trimmed.agents[0]?.timeline).toHaveLength(items.length);
-  expect(trimmed.agents[0]?.timeline[0]?.id).toBe("agent_evt_0");
+  expect(trimmed.agents[0]?.timeline).toHaveLength(FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS);
+  expect(trimmed.agents[0]?.timeline[0]?.id).toBe("agent_evt_30");
   expect(trimmed.agents[0]?.timeline.at(-1)?.id).toBe("agent_evt_149");
   expect(trimmed.timeline[0]?.text).toBe("short message");
 });

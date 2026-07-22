@@ -5,8 +5,8 @@ import type {
   ThreadRunEventInput,
   ThreadRunEventScope,
   ThreadRunEventStreamState,
-  ThreadRunToolMetadata,
   ThreadRunEventType,
+  ThreadRunToolMetadata,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import {
@@ -99,9 +99,14 @@ export function buildThreadRunEventFromLiveEvent(
   });
   const streamState = resolveThreadRunEventStreamState(input);
   const requestId = input.requestId?.trim() || undefined;
+  const streamRequestKey = requestId ?? input.runAttemptId?.trim() ?? "thread";
+  const id =
+    input.streamKey && (eventType === "message.delta" || eventType === "thinking.delta")
+      ? `tre:stream:${input.threadId}:${streamRequestKey}:${eventType}:${input.streamKey}`
+      : `tre:${input.eventId}`;
 
   return {
-    id: `tre:${input.eventId}`,
+    id,
     threadId: input.threadId,
     eventType,
     scope,

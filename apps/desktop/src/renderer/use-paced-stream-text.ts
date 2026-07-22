@@ -42,9 +42,23 @@ export function revealPacedText(current: string, target: string, streaming: bool
     return target;
   }
 
-  const pendingUnits = splitStreamingTextUnits(target.slice(current.length));
+  const pendingUnits = readStreamingTextPrefixUnits(target.slice(current.length), 121);
   const revealCount = resolvePacedRevealCount(pendingUnits.length, streaming);
   return current + pendingUnits.slice(0, revealCount).join("");
+}
+
+function readStreamingTextPrefixUnits(text: string, limit: number): string[] {
+  if (!graphemeSegmenter) {
+    return Array.from(text).slice(0, limit);
+  }
+  const units: string[] = [];
+  for (const part of graphemeSegmenter.segment(text)) {
+    units.push(part.segment);
+    if (units.length >= limit) {
+      break;
+    }
+  }
+  return units;
 }
 
 /** Keeps the first received batch immediate, then smooths later append-only stream updates. */

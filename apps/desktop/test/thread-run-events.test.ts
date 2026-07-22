@@ -143,3 +143,53 @@ test.skipIf(!sqliteAvailable)("conversation store clears thread run events by th
   expect(store.listThreadRunEvents("thr_run_events")).toEqual([]);
   expect(store.appendThreadRunEvent(makeEvent({ id: "tre_evt_after_clear" })).sequence).toBe(1);
 });
+
+
+test.skipIf(!sqliteAvailable)("conversation store upserts cumulative stream text in place", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-stream-"));
+  const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+  store.saveThread(makeThread());
+  const id = "tre:stream:thr_run_events:message.delta:stream_1";
+
+  store.appendThreadRunEvent(makeEvent({ id, streamKey: "stream_1", message: "一" }));
+  store.appendThreadRunEvent(
+    makeEvent({
+      id,
+      streamKey: "stream_1",
+      message: "一段文字",
+      observedAt: "2026-01-01T00:00:02.000Z",
+    }),
+  );
+
+  const events = store.listThreadRunEvents("thr_run_events");
+  expect(events).toHaveLength(1);
+  expect(events[0]?.message).toBe("一段文字");
+  expect(events[0]?.sequence).toBe(1);
+});
+
+test.skipIf(!sqliteAvailable)(
+  "projection reads collapse legacy stream history and apply a source bound",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-projection-"));
+    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    store.saveThread(makeThread());
+    store.appendThreadRunEvent(makeEvent({ id: "legacy_1", streamKey: "legacy", message: "一" }));
+    store.appendThreadRunEvent(makeEvent({ id: "legacy_2", streamKey: "legacy", message: "一段" }));
+    store.appendThreadRunEvent(
+      makeEvent({ id: "legacy_other_request", streamKey: "legacy", requestId: "req_2", message: "新一轮" }),
+    );
+    store.appendThreadRunEvent(
+      makeEvent({ id: "final_1", eventType: "message.final", streamState: "finalized", message: "完成" }),
+    );
+
+    expect(store.listThreadRunEvents("thr_run_events")).toHaveLength(4);
+    expect(store.listThreadRunEventsForProjection("thr_run_events").map((event) => event.id)).toEqual([
+      "legacy_2",
+      "legacy_other_request",
+      "final_1",
+    ]);
+    expect(store.listThreadRunEventsForProjection("thr_run_events", 1).map((event) => event.id)).toEqual([
+      "final_1",
+    ]);
+  },
+);

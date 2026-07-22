@@ -1,8 +1,18 @@
+import { createHash } from "node:crypto";
 import type {
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
+import {
+  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
+  FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
+} from "../shared/thread-run-projection-limits";
+
+export {
+  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
+  FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
+} from "../shared/thread-run-projection-limits";
 
 export const FEED_PROJECTION_MAX_TEXT_CHARS = 1_200;
 export const FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS = 2_000;
@@ -16,8 +26,9 @@ function truncateText(text: string, maxChars: number): { text: string; truncated
 
 function trimTimeline(
   items: readonly ThreadRunProjectionTimelineItem[],
+  maxItems: number,
 ): ThreadRunProjectionTimelineItem[] {
-  return items.map(trimTimelineItem);
+  return items.slice(-maxItems).map(trimTimelineItem);
 }
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
@@ -46,7 +57,7 @@ function trimAgent(agent: ThreadRunProjectionAgent): ThreadRunProjectionAgent {
     : undefined;
   return {
     ...agent,
-    timeline: trimTimeline(agent.timeline),
+    timeline: trimTimeline(agent.timeline, FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS),
     ...(delegationPrompt?.truncated
       ? { delegationPrompt: delegationPrompt.text }
       : agent.delegationPrompt
@@ -102,12 +113,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function trimProjectionForFeed(
-  snapshot: ThreadRunProjectionSnapshot,
-): ThreadRunProjectionSnapshot {
+export function trimProjectionForFeed(snapshot: ThreadRunProjectionSnapshot): ThreadRunProjectionSnapshot {
   return {
     ...snapshot,
-    timeline: trimTimeline(snapshot.timeline),
+    timeline: trimTimeline(snapshot.timeline, FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS),
     agents: snapshot.agents.map(trimAgent),
   };
 }
@@ -121,17 +130,15 @@ export function filterFeedProjectionAfterSequence(
   }
   return {
     ...snapshot,
-    timeline: snapshot.timeline.filter((item) => item.sequence > afterSequence),
+    timeline: snapshot.timeline.filter((item) => item.sequence > afterSequence || isMutableStreamDelta(item)),
     agents: snapshot.agents.map((agent) => ({
       ...agent,
-      timeline: agent.timeline.filter((item) => item.sequence > afterSequence),
+      timeline: agent.timeline.filter((item) => item.sequence > afterSequence || isMutableStreamDelta(item)),
     })),
   };
 }
 
-export function maxFeedProjectionTimelineSequence(
-  snapshot: ThreadRunProjectionSnapshot,
-): number | undefined {
+export function maxFeedProjectionTimelineSequence(snapshot: ThreadRunProjectionSnapshot): number | undefined {
   let maxSequence: number | undefined;
   for (const timeline of [snapshot.timeline, ...snapshot.agents.map((agent) => agent.timeline)]) {
     for (const item of timeline) {
@@ -143,22 +150,56 @@ export function maxFeedProjectionTimelineSequence(
   return maxSequence;
 }
 
-export function buildFeedProjectionSignature(
-  snapshot: ThreadRunProjectionSnapshot,
-): string {
+export function buildFeedProjectionSignature(snapshot: ThreadRunProjectionSnapshot): string {
   const feed = trimProjectionForFeed(snapshot);
-  return JSON.stringify({
-    ...feed,
-    thread: {
-      ...feed.thread,
-      generatedAt: undefined,
-    },
-    agents: feed.agents.map((agent) => {
-      const isActive = agent.status === "active" || agent.status === "launching";
-      return {
-        ...agent,
-        ...(isActive ? { durationMs: undefined } : {}),
-      };
+  const hash = createHash("sha256");
+  hash.update(
+    JSON.stringify({
+      thread: {
+        ...feed.thread,
+        generatedAt: undefined,
+      },
+      attempts: feed.attempts,
+      requestSpans: feed.requestSpans,
+      diagnostics: feed.diagnostics,
+      sourceEventCount: feed.sourceEventCount,
+      historyRevision: feed.historyRevision,
+      agents: feed.agents.map((agent) => {
+        const isActive = agent.status === "active" || agent.status === "launching";
+        return {
+          ...agent,
+          timeline: undefined,
+          ...(isActive ? { durationMs: undefined } : {}),
+        };
+      }),
     }),
-  });
+  );
+  appendTimelineSignature(hash, feed.timeline);
+  for (const agent of feed.agents) {
+    hash.update(agent.agentId);
+    appendTimelineSignature(hash, agent.timeline);
+  }
+  return hash.digest("hex");
+}
+
+function isMutableStreamDelta(item: ThreadRunProjectionTimelineItem): boolean {
+  return item.eventType === "message.delta" || item.eventType === "thinking.delta";
+}
+
+function appendTimelineSignature(
+  hash: ReturnType<typeof createHash>,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): void {
+  for (const item of timeline) {
+    hash.update("\0");
+    hash.update(item.id);
+    hash.update("\0");
+    hash.update(String(item.sequence));
+    hash.update("\0");
+    hash.update(item.eventType);
+    hash.update("\0");
+    hash.update(item.text);
+    hash.update("\0");
+    hash.update(JSON.stringify(item.metadata ?? null));
+  }
 }

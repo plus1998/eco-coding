@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type {
   ThreadLocalStreamUpdate,
   ThreadRunProjectionSnapshot,
@@ -8,30 +8,85 @@ import type {
 const updatesByThread = new Map<string, Map<string, ThreadLocalStreamUpdate>>();
 const listenersByThread = new Map<string, Set<() => void>>();
 const versionsByThread = new Map<string, number>();
+const pendingNotificationsByThread = new Map<string, ReturnType<typeof setTimeout>>();
 
-export function publishLocalStreamUpdate(update: ThreadLocalStreamUpdate): void {
-  const updates = updatesByThread.get(update.threadId) ?? new Map<string, ThreadLocalStreamUpdate>();
-  if (update.streaming) {
-    updates.set(update.streamKey, update);
-    updatesByThread.set(update.threadId, updates);
-  } else {
-    updates.delete(update.streamKey);
-    if (updates.size === 0) {
-      updatesByThread.delete(update.threadId);
+export const LOCAL_STREAM_NOTIFY_INTERVAL_MS = 32;
+
+export function subscribeToLocalStreamUpdates(threadId: string, listener: () => void): () => void {
+  const listeners = listenersByThread.get(threadId) ?? new Set<() => void>();
+  listeners.add(listener);
+  listenersByThread.set(threadId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      listenersByThread.delete(threadId);
     }
-  }
-  versionsByThread.set(update.threadId, (versionsByThread.get(update.threadId) ?? 0) + 1);
-  for (const listener of listenersByThread.get(update.threadId) ?? []) {
+  };
+}
+
+function notifyThread(threadId: string): void {
+  versionsByThread.set(threadId, (versionsByThread.get(threadId) ?? 0) + 1);
+  for (const listener of listenersByThread.get(threadId) ?? []) {
     listener();
   }
 }
 
-export function clearLocalStreamUpdates(threadId: string): void {
-  if (!updatesByThread.has(threadId)) {
+function cancelPendingNotification(threadId: string): void {
+  const pending = pendingNotificationsByThread.get(threadId);
+  if (pending === undefined) {
     return;
   }
-  updatesByThread.delete(threadId);
-  versionsByThread.set(threadId, (versionsByThread.get(threadId) ?? 0) + 1);
+  clearTimeout(pending);
+  pendingNotificationsByThread.delete(threadId);
+}
+
+function scheduleThreadNotification(threadId: string): void {
+  if (pendingNotificationsByThread.has(threadId)) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    pendingNotificationsByThread.delete(threadId);
+    notifyThread(threadId);
+  }, LOCAL_STREAM_NOTIFY_INTERVAL_MS);
+  pendingNotificationsByThread.set(threadId, timer);
+}
+
+export function publishLocalStreamUpdate(update: ThreadLocalStreamUpdate): void {
+  const updates = updatesByThread.get(update.threadId) ?? new Map<string, ThreadLocalStreamUpdate>();
+  if (update.streaming) {
+    const current = updates.get(update.streamKey);
+    if (
+      current?.text === update.text &&
+      current.role === update.role &&
+      current.channel === update.channel &&
+      current.agentId === update.agentId
+    ) {
+      return;
+    }
+    updates.set(update.streamKey, update);
+    updatesByThread.set(update.threadId, updates);
+    scheduleThreadNotification(update.threadId);
+  } else {
+    const changed = updates.delete(update.streamKey);
+    if (updates.size === 0) {
+      updatesByThread.delete(update.threadId);
+    }
+    if (!changed) {
+      return;
+    }
+    cancelPendingNotification(update.threadId);
+    notifyThread(update.threadId);
+  }
+}
+
+export function clearLocalStreamUpdates(threadId: string): void {
+  const hadUpdates = updatesByThread.delete(threadId);
+  const hadPendingNotification = pendingNotificationsByThread.has(threadId);
+  cancelPendingNotification(threadId);
+  if (!hadUpdates && !hadPendingNotification && !versionsByThread.has(threadId)) {
+    return;
+  }
+  versionsByThread.delete(threadId);
   for (const listener of listenersByThread.get(threadId) ?? []) {
     listener();
   }
@@ -46,26 +101,21 @@ export function useLocalStreamProjection(
       if (!threadId) {
         return () => undefined;
       }
-      const listeners = listenersByThread.get(threadId) ?? new Set<() => void>();
-      listeners.add(listener);
-      listenersByThread.set(threadId, listeners);
-      return () => {
-        listeners.delete(listener);
-        if (listeners.size === 0) {
-          listenersByThread.delete(threadId);
-        }
-      };
+      return subscribeToLocalStreamUpdates(threadId, listener);
     },
     [threadId],
   );
   const getSnapshot = useCallback(() => (threadId ? (versionsByThread.get(threadId) ?? 0) : 0), [threadId]);
-  useSyncExternalStore(subscribe, getSnapshot, () => 0);
-  if (!projection || !threadId) {
-    return projection;
-  }
-  return applyLocalStreamUpdatesToProjection(projection, [
-    ...(updatesByThread.get(threadId)?.values() ?? []),
-  ]);
+  const localVersion = useSyncExternalStore(subscribe, getSnapshot, () => 0);
+  return useMemo(() => {
+    void localVersion;
+    if (!projection || !threadId) {
+      return projection;
+    }
+    return applyLocalStreamUpdatesToProjection(projection, [
+      ...(updatesByThread.get(threadId)?.values() ?? []),
+    ]);
+  }, [localVersion, projection, threadId]);
 }
 
 export function applyLocalStreamUpdatesToProjection(

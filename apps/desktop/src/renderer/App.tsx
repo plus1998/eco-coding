@@ -115,6 +115,7 @@ import {
   isHomeProjectPath,
 } from "../shared/home-project";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
+import { serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import {
   deriveSkillsEnabled,
   type ProjectSkillsSettingsSnapshot,
@@ -1068,7 +1069,7 @@ function App() {
         ) {
           return;
         }
-        void window.eco.getThreadRunProjection(threadId).then((projection) => {
+        void window.eco.getThreadRunProjection({ threadId, mode: "feed" }).then((projection) => {
           if (!projection || selectedThreadIdRef.current !== threadId) {
             return;
           }
@@ -1411,15 +1412,17 @@ function App() {
     let cancelled = false;
 
     if (typeof window.eco.getThreadRunProjection === "function") {
-      void window.eco.getThreadRunProjection(selectedThreadId).then((projection) => {
-        if (cancelled || !projection) {
-          return;
-        }
-        setRunProjectionByThread((current) => ({
-          ...current,
-          [selectedThreadId]: mergeThreadRunProjectionUpdate(current[selectedThreadId], projection),
-        }));
-      });
+      void window.eco
+        .getThreadRunProjection({ threadId: selectedThreadId, mode: "feed" })
+        .then((projection) => {
+          if (cancelled || !projection) {
+            return;
+          }
+          setRunProjectionByThread((current) => ({
+            ...current,
+            [selectedThreadId]: mergeThreadRunProjectionUpdate(current[selectedThreadId], projection),
+          }));
+        });
     }
 
     // Preload may be stale until Electron restarts; skip rather than throw.
@@ -2524,13 +2527,20 @@ function App() {
   }, [buildComposerDefaultConfig]);
 
   useEffect(() => {
+    const updateComposerRuntimeConfig = (next: ThreadRuntimeConfig) => {
+      setComposerRuntimeConfig((current) =>
+        current && serializeThreadRuntimeConfig(current) === serializeThreadRuntimeConfig(next)
+          ? current
+          : next,
+      );
+    };
     if (activeThread?.runtimeConfig) {
-      setComposerRuntimeConfig(activeThread.runtimeConfig);
+      updateComposerRuntimeConfig(activeThread.runtimeConfig);
       return;
     }
     const defaults = buildComposerDefaultConfig();
     if (defaults) {
-      setComposerRuntimeConfig(defaults);
+      updateComposerRuntimeConfig(defaults);
     }
   }, [
     activeThread?.id,
@@ -3724,7 +3734,7 @@ function App() {
       usageSnapshot,
     ] = await Promise.all([
       typeof window.eco.getThreadRunProjection === "function"
-        ? window.eco.getThreadRunProjection(threadId)
+        ? window.eco.getThreadRunProjection({ threadId, mode: "feed" })
         : Promise.resolve(undefined),
       typeof window.eco.listSubagentSessions === "function"
         ? window.eco.listSubagentSessions(threadId)

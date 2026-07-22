@@ -8799,6 +8799,10 @@ button.sidebar-core-heading {
   min-width: 0;
 }
 
+.markdown-content--streaming-plain {
+  white-space: pre-wrap;
+}
+
 .run-log-streaming-dots {
   display: inline-flex;
   align-items: baseline;

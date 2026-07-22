@@ -115,7 +115,7 @@ type ToolGroupDetailBlock = Extract<ActivityDetailBlock, { kind: "action" | "too
 
 const SUBAGENT_DETAIL_STICK_THRESHOLD_PX = 96;
 const SUBAGENT_DETAIL_USER_SCROLL_DELTA_PX = 2;
-const LIVE_DURATION_TICK_MS = 100;
+const LIVE_DURATION_TICK_MS = 1_000;
 const TOOL_RUNNING_MIN_VISIBLE_MS = 1_000;
 
 function distanceFromBottom(element: HTMLElement): number {
@@ -634,9 +634,13 @@ function useTurnDurationMs(startedAt: string, endedAt: string | undefined, runni
   const [durationMs, setDurationMs] = useState(resolve);
 
   useEffect(() => {
-    setDurationMs(resolve());
+    const update = () => {
+      const next = resolve();
+      setDurationMs((current) => (current === next ? current : next));
+    };
+    update();
     if (!running) return;
-    const timer = setInterval(() => setDurationMs(resolve()), LIVE_DURATION_TICK_MS);
+    const timer = setInterval(update, LIVE_DURATION_TICK_MS);
     return () => clearInterval(timer);
   }, [resolve, running]);
 
@@ -664,9 +668,13 @@ function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean
   const [durationMs, setDurationMs] = useState(resolve);
 
   useEffect(() => {
-    setDurationMs(resolve());
+    const update = () => {
+      const next = resolve();
+      setDurationMs((current) => (current === next ? current : next));
+    };
+    update();
     if (!running) return;
-    const timer = setInterval(() => setDurationMs(resolve()), LIVE_DURATION_TICK_MS);
+    const timer = setInterval(update, LIVE_DURATION_TICK_MS);
     return () => clearInterval(timer);
   }, [resolve, running]);
 

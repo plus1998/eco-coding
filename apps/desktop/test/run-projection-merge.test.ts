@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { mergeThreadRunProjectionUpdate } from "../src/renderer/run-projection-merge";
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
+import { FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS } from "../src/shared/thread-run-projection-limits";
 
 function requireValue<T>(value: T | undefined, label: string): T {
   if (value === undefined) {
@@ -428,4 +429,33 @@ test("mergeThreadRunProjectionUpdate ignores active subagent duration-only refre
   };
 
   expect(mergeThreadRunProjectionUpdate(current, incoming)).toBe(current);
+});
+
+
+test("mergeThreadRunProjectionUpdate bounds renderer timeline memory", () => {
+  const makeItems = (start: number, count: number): ThreadRunProjectionTimelineItem[] =>
+    Array.from({ length: count }, (_, offset) => {
+      const sequence = start + offset;
+      return {
+        id: `evt_${sequence}`,
+        sequence,
+        eventType: "message.final",
+        scope: "main",
+        text: `line ${sequence}`,
+        at: "2026-01-01T00:00:00.000Z",
+      };
+    });
+  const current = makeProjection({
+    sourceEventCount: 180,
+    timeline: makeItems(1, 180),
+  });
+  const incoming = makeProjection({
+    sourceEventCount: 260,
+    timeline: makeItems(181, 80),
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+  expect(merged.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
+  expect(merged.timeline[0]?.id).toBe("evt_61");
+  expect(merged.timeline.at(-1)?.id).toBe("evt_260");
 });

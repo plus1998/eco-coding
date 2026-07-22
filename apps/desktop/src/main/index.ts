@@ -82,6 +82,7 @@ import {
 } from "../shared/bash-approval-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
+import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
 import {
   PROMPT_IMAGE_PREVIEWS_METADATA_KEY,
   type PromptImagePreview,
@@ -2211,7 +2212,9 @@ function registerIpcHandlers(): void {
     if (!request.threadId) {
       return undefined;
     }
-    const projection = buildCurrentThreadRunProjection(request.threadId);
+    const projection = buildCurrentThreadRunProjection(request.threadId, {
+      fullHistory: request.mode !== "feed",
+    });
     if (!projection) {
       return undefined;
     }
@@ -2226,7 +2229,7 @@ function registerIpcHandlers(): void {
     if (!request) {
       return undefined;
     }
-    const projection = buildCurrentThreadRunProjection(request.threadId);
+    const projection = buildCurrentThreadRunProjection(request.threadId, { fullHistory: true });
     if (!projection) {
       return undefined;
     }
@@ -8069,7 +8072,10 @@ function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPha
   return normalizeThreadFollowUpRunPhase(value) !== undefined;
 }
 
-function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionSnapshot | undefined {
+function buildCurrentThreadRunProjection(
+  threadId: string,
+  options?: { fullHistory?: boolean },
+): ThreadRunProjectionSnapshot | undefined {
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
     return undefined;
@@ -8089,7 +8095,10 @@ function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionS
     message: thread.message,
     attempts: conversationStore.listRunAttempts(threadId),
     agents: conversationStore.listAgentInstances(threadId),
-    events: conversationStore.listThreadRunEvents(threadId),
+    events: conversationStore.listThreadRunEventsForProjection(
+      threadId,
+      ...(options?.fullHistory ? [] : [FEED_PROJECTION_MAX_SOURCE_EVENTS]),
+    ),
     ...(billing && { billing }),
     ...(context && { context }),
     subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),

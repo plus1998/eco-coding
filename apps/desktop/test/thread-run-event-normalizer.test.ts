@@ -126,6 +126,29 @@ test("buildThreadRunEventFromLiveEvent keeps stable streamKey separate from uniq
   });
 });
 
+test("buildThreadRunEventFromLiveEvent reuses a stable id for cumulative stream deltas", () => {
+  const makeDelta = (eventId: string, message: string, requestId = "request_1") =>
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId,
+      liveType: "message.delta",
+      role: "planner",
+      stream: true,
+      message,
+      streamKey: "thr_1:planner:text:0",
+      requestId,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    });
+
+  expect(makeDelta("live_1", "一")?.id).toBe(
+    "tre:stream:thr_1:request_1:message.delta:thr_1:planner:text:0",
+  );
+  expect(makeDelta("live_2", "一段")?.id).toBe(makeDelta("live_1", "一")?.id);
+  expect(makeDelta("live_3", "新一轮", "request_2")?.id).not.toBe(
+    makeDelta("live_1", "一")?.id,
+  );
+});
+
 test("buildThreadRunEventFromLiveEvent maps SDK request status to request span", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

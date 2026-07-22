@@ -744,6 +744,11 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_agent
         ON thread_run_events(thread_id, agent_id, sequence);
+
+      CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_stream_latest_v2
+        ON thread_run_events(
+          thread_id, event_type, stream_key, request_id, run_attempt_id, sequence DESC
+        );
     `);
     this.migrateSchema();
   }
@@ -1062,6 +1067,11 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_agent
         ON thread_run_events(thread_id, agent_id, sequence);
+
+      CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_stream_latest_v2
+        ON thread_run_events(
+          thread_id, event_type, stream_key, request_id, run_attempt_id, sequence DESC
+        );
 
       CREATE TABLE IF NOT EXISTS thread_file_checkpoints (
         thread_id TEXT NOT NULL,
@@ -2895,10 +2905,20 @@ export class ConversationStore {
       this.db
         .prepare(
           `UPDATE thread_run_events
-              SET stream_state = ?, message = ?, metadata_json = ?, observed_at = ?
+              SET scope = ?, role = ?, agent_id = ?, parent_agent_id = ?,
+                  parent_tool_use_id = ?, run_attempt_id = ?, request_id = ?, stream_key = ?,
+                  stream_state = ?, message = ?, metadata_json = ?, observed_at = ?
             WHERE thread_id = ? AND id = ?`,
         )
         .run(
+          upgraded.scope,
+          upgraded.role ?? null,
+          upgraded.agentId ?? null,
+          upgraded.parentAgentId ?? null,
+          upgraded.parentToolUseId ?? null,
+          upgraded.runAttemptId ?? null,
+          upgraded.requestId ?? null,
+          upgraded.streamKey ?? null,
           upgraded.streamState,
           upgraded.message,
           upgraded.metadata ? JSON.stringify(upgraded.metadata) : null,
@@ -3094,6 +3114,51 @@ export class ConversationStore {
          ORDER BY sequence ASC, observed_at ASC, id ASC`,
       )
       .all(threadId) as unknown as ThreadRunEventRow[];
+    return rows.map(rowToThreadRunEvent);
+  }
+
+  /**
+   * Projection reads collapse legacy cumulative stream rows. New streams are upserted in place,
+   * while this query keeps existing large databases responsive without destructive migration.
+   */
+  listThreadRunEventsForProjection(threadId: string, maxEvents?: number): ThreadRunEvent[] {
+    const boundedMaxEvents =
+      typeof maxEvents === "number" && Number.isFinite(maxEvents)
+        ? Math.max(1, Math.floor(maxEvents))
+        : undefined;
+    const projectionQuery = `WITH latest_streams AS (
+       SELECT event_type, stream_key, request_id, run_attempt_id, MAX(sequence) AS sequence
+       FROM thread_run_events
+       WHERE thread_id = ?
+         AND event_type IN ('message.delta', 'thinking.delta')
+         AND stream_key IS NOT NULL
+       GROUP BY event_type, stream_key, request_id, run_attempt_id
+     )
+     SELECT event.id, event.thread_id, event.sequence, event.event_type, event.scope, event.role,
+            event.agent_id, event.parent_agent_id, event.parent_tool_use_id,
+            event.run_attempt_id, event.request_id, event.stream_key, event.stream_state,
+            event.message, event.metadata_json, event.observed_at
+     FROM thread_run_events AS event
+     LEFT JOIN latest_streams AS latest
+       ON latest.event_type = event.event_type
+      AND latest.stream_key = event.stream_key
+      AND latest.request_id IS event.request_id
+      AND latest.run_attempt_id IS event.run_attempt_id
+     WHERE event.thread_id = ?
+       AND (
+         event.event_type NOT IN ('message.delta', 'thinking.delta')
+         OR event.stream_key IS NULL
+         OR event.sequence = latest.sequence
+       )`;
+    const sql = boundedMaxEvents
+      ? `SELECT * FROM (${projectionQuery} ORDER BY event.sequence DESC, event.observed_at DESC, event.id DESC LIMIT ?)
+         ORDER BY sequence ASC, observed_at ASC, id ASC`
+      : `${projectionQuery} ORDER BY event.sequence ASC, event.observed_at ASC, event.id ASC`;
+    const rows = this.db
+      .prepare(sql)
+      .all(
+        ...(boundedMaxEvents ? [threadId, threadId, boundedMaxEvents] : [threadId, threadId]),
+      ) as unknown as ThreadRunEventRow[];
     return rows.map(rowToThreadRunEvent);
   }
 
@@ -4033,9 +4098,17 @@ function mergeRicherThreadRunEvent(
   }
   const updated: ThreadRunEvent = {
     ...existing,
+    scope: incoming.scope,
     streamState: incoming.streamState,
     message: incoming.message,
     observedAt: incoming.observedAt,
+    ...(incoming.role?.trim() && { role: incoming.role.trim() }),
+    ...(incoming.agentId?.trim() && { agentId: incoming.agentId.trim() }),
+    ...(incoming.parentAgentId?.trim() && { parentAgentId: incoming.parentAgentId.trim() }),
+    ...(incoming.parentToolUseId?.trim() && { parentToolUseId: incoming.parentToolUseId.trim() }),
+    ...(incoming.runAttemptId?.trim() && { runAttemptId: incoming.runAttemptId.trim() }),
+    ...(incoming.requestId?.trim() && { requestId: incoming.requestId.trim() }),
+    ...(incoming.streamKey?.trim() && { streamKey: incoming.streamKey.trim() }),
   };
   const metadata = mergeThreadRunEventMetadata(existing.metadata, incoming.metadata);
   if (metadata) {
@@ -4054,6 +4127,17 @@ function shouldUpgradeThreadRunEvent(existing: ThreadRunEvent, incoming: ThreadR
   const existingTool = readThreadRunToolMetadata(existing.metadata);
   const incomingTool = readThreadRunToolMetadata(incoming.metadata);
   if (isRicherThreadRunToolMetadata(existingTool, incomingTool)) {
+    return true;
+  }
+
+  if (
+    (existing.eventType === "message.delta" || existing.eventType === "thinking.delta") &&
+    existing.id.startsWith("tre:stream:") &&
+    existing.streamKey &&
+    existing.streamKey === incoming.streamKey &&
+    incoming.observedAt >= existing.observedAt &&
+    (incoming.message !== existing.message || incoming.streamState !== existing.streamState)
+  ) {
     return true;
   }
 
