@@ -467,7 +467,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                 crossAxisCount: 4,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
-                childAspectRatio: 0.9,
+                childAspectRatio: 1.25,
               ),
               itemCount: categories.length,
               itemBuilder: (context, index) {
@@ -896,24 +896,37 @@ class _ComposerRouteCategoryTile extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    icon,
-                    size: 19,
-                    color: selected ? colors.accent : colors.textSecondary,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 17,
+                        color: selected ? colors.accent : colors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: selected
+                                    ? colors.accent
+                                    : colors.textPrimary,
+                                fontSize: 12,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                letterSpacing: 0,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 5),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: selected ? colors.accent : colors.textPrimary,
-                      fontSize: 12,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
                   Text(
                     summary,
                     maxLines: 1,
