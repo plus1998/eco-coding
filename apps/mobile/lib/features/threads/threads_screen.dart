@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/project_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/widgets/adaptive_nav_bar.dart';
+import '../../core/widgets/adaptive_toolbar_icon.dart';
 import '../../core/widgets/shell_toolbar_actions.dart';
 import '../projects/project_list_widgets.dart';
 import '../projects/project_menu_sheets.dart';
@@ -32,11 +34,22 @@ class ThreadsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
+        leadingWidth: 64,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: AdaptiveToolbarIcon(
+            tooltip: '切换 PC',
+            icon: EcoIcons.desktop,
+            size: sessionToolbarButtonSize,
+            onPressed: () => context.push('/connect'),
+          ),
+        ),
         title: const Text('会话'),
         actions: [
           ShellToolbarActions(
             showSearch: true,
             showOpenProject: true,
+            showSwitchPc: false,
             onSearch: () => _openSearch(context, ref),
           ),
         ],

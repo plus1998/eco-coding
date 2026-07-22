@@ -13,11 +13,13 @@ class ShellToolbarActions extends ConsumerWidget {
     super.key,
     this.showOpenProject = false,
     this.showSearch = false,
+    this.showSwitchPc = true,
     this.onSearch,
   });
 
   final bool showOpenProject;
   final bool showSearch;
+  final bool showSwitchPc;
   final VoidCallback? onSearch;
 
   @override
@@ -32,6 +34,7 @@ class ShellToolbarActions extends ConsumerWidget {
               tooltip: '搜索会话和项目',
               icon: EcoIcons.search,
               size: sessionToolbarButtonSize,
+              iconSize: 18,
               onPressed: onSearch,
             ),
             const SizedBox(width: sessionToolbarButtonGap),
@@ -43,14 +46,15 @@ class ShellToolbarActions extends ConsumerWidget {
               size: sessionToolbarButtonSize,
               onPressed: () => showOpenProjectSheet(context: context, ref: ref),
             ),
-            const SizedBox(width: sessionToolbarButtonGap),
+            if (showSwitchPc) const SizedBox(width: sessionToolbarButtonGap),
           ],
-          AdaptiveToolbarIcon(
-            tooltip: '切换 PC',
-            icon: EcoIcons.desktop,
-            size: sessionToolbarButtonSize,
-            onPressed: () => context.push('/connect'),
-          ),
+          if (showSwitchPc)
+            AdaptiveToolbarIcon(
+              tooltip: '切换 PC',
+              icon: EcoIcons.desktop,
+              size: sessionToolbarButtonSize,
+              onPressed: () => context.push('/connect'),
+            ),
         ],
       ),
     );

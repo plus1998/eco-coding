@@ -388,7 +388,11 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
       (
         value: _ComposerRouteCategory.agent,
         label: 'Agent',
-        summary: coreKind == 'codex' ? 'Codex' : 'Claude Code',
+        summary: switch (coreKind) {
+          'codex' => 'Codex',
+          'claude' => 'Claude Code',
+          _ => '未提供',
+        },
         icon: EcoIcons.agent,
       ),
       (
@@ -453,17 +457,24 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 76,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+            child: GridView.builder(
+              shrinkWrap: true,
+              primary: false,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.9,
+              ),
               itemCount: categories.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
                 final category = categories[index];
                 return _ComposerRouteCategoryTile(
                   label: category.label,
+                  summary: category.summary,
                   icon: category.icon,
                   selected: category.value == _selectedCategory,
                   onTap: () {
@@ -843,12 +854,14 @@ class _ComposerRouteEmptyState extends StatelessWidget {
 class _ComposerRouteCategoryTile extends StatelessWidget {
   const _ComposerRouteCategoryTile({
     required this.label,
+    required this.summary,
     required this.icon,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+  final String summary;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -867,7 +880,7 @@ class _ComposerRouteCategoryTile extends StatelessWidget {
         child: Material(
           color: selected ? colors.accentSoft : colors.cardSurface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(8),
             side: BorderSide(
               width: 0.5,
               color: selected
@@ -878,34 +891,42 @@ class _ComposerRouteCategoryTile extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
-            child: SizedBox(
-              width: 74,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 20,
-                      color: selected ? colors.accent : colors.textSecondary,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 19,
+                    color: selected ? colors.accent : colors.textSecondary,
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: selected ? colors.accent : colors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      letterSpacing: 0,
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: selected ? colors.accent : colors.textPrimary,
-                        fontSize: 12,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        letterSpacing: 0,
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 0,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

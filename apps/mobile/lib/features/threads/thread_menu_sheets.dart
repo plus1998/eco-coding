@@ -111,9 +111,9 @@ class _SheetHeader extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               subtitle!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
             ),
           ],
         ],
@@ -217,7 +217,8 @@ class _TodoRow extends StatelessWidget {
     final eco = ecoColors(context);
     final icon = _todoIcon(todo.status);
     final label = _todoStatusLabel(todo.status);
-    final displayTitle = todo.status == 'running' &&
+    final displayTitle =
+        todo.status == 'running' &&
             todo.detail.trim().isNotEmpty &&
             todo.detail != todo.title
         ? todo.detail
@@ -242,17 +243,17 @@ class _TodoRow extends StatelessWidget {
                   Text(
                     '#${todo.position + 1} $displayTitle',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                          letterSpacing: -0.15,
-                        ),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      letterSpacing: -0.15,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     label,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
               ),
@@ -592,7 +593,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                           controller: widget.scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                           children: [
-                            _SheetHeader(title: 'npm scripts', subtitle: subtitle),
+                            _SheetHeader(
+                              title: 'npm scripts',
+                              subtitle: subtitle,
+                            ),
                             if (_errorMessage != null) ...[
                               const SizedBox(height: 12),
                               _PackageScriptErrorNotice(
@@ -601,17 +605,8 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                     setState(() => _errorMessage = null),
                               ),
                             ],
-                            if (_activeTask != null) ...[
-                              const SizedBox(height: 12),
-                              _PackageScriptProgressCard(
-                                scriptName: _activeScriptName ?? '',
-                                task: _activeTask!,
-                                stopping: _stopping,
-                                onStop: _stopActiveTask,
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            if (!listing.hasPackageJson || listing.scripts.isEmpty)
+                            if (!listing.hasPackageJson ||
+                                listing.scripts.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 24),
                                 child: Center(
@@ -622,142 +617,151 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                 ),
                               )
                             else
-                              ...listing.scripts.map(
-                                (script) {
-                                  final savedArgs =
-                                      _scriptArgsByName[script.name] ?? '';
-                                  final isEditingArgs =
-                                      _editingScript == script.name;
-                                  final displayCommand = savedArgs.isNotEmpty
-                                      ? formatRunCommand(
-                                          listing.packageManager,
-                                          script.name,
-                                          savedArgs,
-                                        )
-                                      : script.command;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        color: eco.cardSurface,
-                                        borderRadius: BorderRadius.circular(12),
+                              ...listing.scripts.map((script) {
+                                final savedArgs =
+                                    _scriptArgsByName[script.name] ?? '';
+                                final isEditingArgs =
+                                    _editingScript == script.name;
+                                final displayCommand = savedArgs.isNotEmpty
+                                    ? formatRunCommand(
+                                        listing.packageManager,
+                                        script.name,
+                                        savedArgs,
+                                      )
+                                    : script.command;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: eco.cardSurface,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        14,
+                                        12,
+                                        8,
+                                        12,
                                       ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          14,
-                                          12,
-                                          8,
-                                          12,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    script.name,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .titleSmall,
-                                                  ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  script.name,
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleSmall,
                                                 ),
-                                                IconButton(
-                                                  tooltip: savedArgs.isNotEmpty
-                                                      ? '附加参数：$savedArgs'
-                                                      : '附加参数',
-                                                  icon: Icon(
-                                                    EcoIcons.rename,
-                                                    size: 18,
-                                                    color: savedArgs.isNotEmpty ||
-                                                            isEditingArgs
-                                                        ? eco.accent
-                                                        : eco.textMuted,
-                                                  ),
-                                                  onPressed: isRunning
-                                                      ? null
-                                                      : () {
-                                                          if (isEditingArgs) {
-                                                            _commitScriptArgs(
-                                                              script.name,
-                                                              _argsInputController
-                                                                  .text,
-                                                            );
-                                                            return;
-                                                          }
-                                                          _openArgsEditor(
+                                              ),
+                                              IconButton(
+                                                tooltip: savedArgs.isNotEmpty
+                                                    ? '附加参数：$savedArgs'
+                                                    : '附加参数',
+                                                icon: Icon(
+                                                  EcoIcons.rename,
+                                                  size: 18,
+                                                  color:
+                                                      savedArgs.isNotEmpty ||
+                                                          isEditingArgs
+                                                      ? eco.accent
+                                                      : eco.textMuted,
+                                                ),
+                                                onPressed: isRunning
+                                                    ? null
+                                                    : () {
+                                                        if (isEditingArgs) {
+                                                          _commitScriptArgs(
                                                             script.name,
+                                                            _argsInputController
+                                                                .text,
                                                           );
-                                                        },
+                                                          return;
+                                                        }
+                                                        _openArgsEditor(
+                                                          script.name,
+                                                        );
+                                                      },
+                                              ),
+                                              IconButton(
+                                                tooltip: '运行',
+                                                icon: Icon(
+                                                  Icons.play_arrow_rounded,
+                                                  size: 22,
+                                                  color: eco.accent,
                                                 ),
-                                                IconButton(
-                                                  tooltip: '运行',
-                                                  icon: Icon(
-                                                    Icons.play_arrow_rounded,
-                                                    size: 22,
-                                                    color: eco.accent,
-                                                  ),
-                                                  onPressed: isRunning
-                                                      ? null
-                                                      : () => _runScript(
-                                                            script,
-                                                            packageManager:
-                                                                listing
-                                                                    .packageManager,
-                                                            args: savedArgs
-                                                                    .isNotEmpty
-                                                                ? savedArgs
-                                                                : null,
-                                                          ),
-                                                ),
-                                              ],
-                                            ),
-                                            if (isEditingArgs)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 8,
-                                                ),
-                                                child: TextField(
-                                                  controller: _argsInputController,
-                                                  autofocus: true,
-                                                  decoration:
-                                                      const InputDecoration(
-                                                    isDense: true,
-                                                    hintText: '附加参数',
-                                                  ),
-                                                  enabled: !isRunning,
-                                                  onSubmitted: (value) =>
-                                                      _commitScriptArgs(
-                                                    script.name,
-                                                    value,
-                                                  ),
-                                                ),
-                                              )
-                                            else
-                                              Text(
-                                                displayCommand,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(
-                                                      color: eco.textMuted,
-                                                      fontSize: 12,
+                                                onPressed: isRunning
+                                                    ? null
+                                                    : () => _runScript(
+                                                        script,
+                                                        packageManager: listing
+                                                            .packageManager,
+                                                        args:
+                                                            savedArgs.isNotEmpty
+                                                            ? savedArgs
+                                                            : null,
+                                                      ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (isEditingArgs)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 8,
+                                              ),
+                                              child: TextField(
+                                                controller:
+                                                    _argsInputController,
+                                                autofocus: true,
+                                                decoration:
+                                                    const InputDecoration(
+                                                      isDense: true,
+                                                      hintText: '附加参数',
+                                                    ),
+                                                enabled: !isRunning,
+                                                onSubmitted: (value) =>
+                                                    _commitScriptArgs(
+                                                      script.name,
+                                                      value,
                                                     ),
                                               ),
-                                          ],
-                                        ),
+                                            )
+                                          else
+                                            Text(
+                                              displayCommand,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color: eco.textMuted,
+                                                    fontSize: 12,
+                                                  ),
+                                            ),
+                                        ],
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
+                                  ),
+                                );
+                              }),
                           ],
                         ),
                       ),
                     ),
+                    if (_activeTask != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: _PackageScriptProgressCard(
+                          scriptName: _activeScriptName ?? '',
+                          task: _activeTask!,
+                          stopping: _stopping,
+                          onStop: _stopActiveTask,
+                        ),
+                      ),
                   ],
                 );
               },
@@ -801,9 +805,9 @@ class _PackageScriptErrorNotice extends StatelessWidget {
               child: Text(
                 message,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: eco.danger,
-                      height: 1.35,
-                    ),
+                  color: eco.danger,
+                  height: 1.35,
+                ),
               ),
             ),
             IconButton(
@@ -833,21 +837,20 @@ class _PackageScriptProgressCard extends StatelessWidget {
   final VoidCallback onStop;
 
   String get _statusLabel => switch (task.status) {
-        'starting' => '启动中',
-        'running' => '运行中',
-        'exited' => '已完成',
-        'failed' => '执行失败',
-        'stopped' => '已停止',
-        _ => task.status,
-      };
+    'starting' => '启动中',
+    'running' => '运行中',
+    'exited' => '已完成',
+    'failed' => '执行失败',
+    'stopped' => '已停止',
+    _ => task.status,
+  };
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final output = stripAnsi(task.output)
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .trimRight();
+    final output = stripAnsi(
+      task.output,
+    ).replaceAll('\r\n', '\n').replaceAll('\r', '\n').trimRight();
     final statusColor = switch (task.status) {
       'exited' => Colors.green,
       'failed' => eco.danger,
@@ -872,8 +875,8 @@ class _PackageScriptProgressCard extends StatelessWidget {
                   child: Text(
                     scriptName,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 Text(
@@ -881,9 +884,9 @@ class _PackageScriptProgressCard extends StatelessWidget {
                       ? _statusLabel
                       : '$_statusLabel · ${task.exitCode}',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (task.isActive) ...[
                   const SizedBox(width: 8),
@@ -904,9 +907,9 @@ class _PackageScriptProgressCard extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
-                    fontFamily: 'monospace',
-                  ),
+                color: eco.textMuted,
+                fontFamily: 'monospace',
+              ),
             ),
             const SizedBox(height: 10),
             Container(
@@ -921,10 +924,10 @@ class _PackageScriptProgressCard extends StatelessWidget {
                 child: SelectableText(
                   output.isEmpty ? '等待 Desktop 返回命令输出…' : output,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: output.isEmpty ? eco.textMuted : eco.textPrimary,
-                        fontFamily: 'monospace',
-                        height: 1.35,
-                      ),
+                    color: output.isEmpty ? eco.textMuted : eco.textPrimary,
+                    fontFamily: 'monospace',
+                    height: 1.35,
+                  ),
                 ),
               ),
             ),
@@ -932,9 +935,9 @@ class _PackageScriptProgressCard extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 '输出过长，已仅保留最近内容',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: eco.textMuted,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
               ),
             ],
           ],
@@ -949,7 +952,9 @@ Future<void> showThreadActionSheet({
   required WidgetRef ref,
   required ThreadSummary thread,
 }) {
-  final isPinned = ref.read(pinnedThreadIdsProvider.notifier).isPinned(thread.id);
+  final isPinned = ref
+      .read(pinnedThreadIdsProvider.notifier)
+      .isPinned(thread.id);
 
   return showEcoActionSheet<void>(
     context: context,
