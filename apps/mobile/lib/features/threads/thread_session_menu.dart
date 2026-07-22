@@ -178,7 +178,7 @@ Future<void> handleThreadSessionMenuAction({
           ref: ref,
           workspacePath: workspacePath,
           runtimeConfig: runtimeConfig,
-          branch: gitStatus?.branch,
+          gitStatus: gitStatus,
         );
       case 'pull':
         if (workspacePath.isEmpty) return;
@@ -217,7 +217,7 @@ Future<void> openCommitPushFromMenu({
   required WidgetRef ref,
   required String workspacePath,
   required ThreadRuntimeConfigInput runtimeConfig,
-  String? branch,
+  GitWorkingTreeStatus? gitStatus,
 }) async {
   if (workspacePath.isEmpty) return;
   final profileId =
@@ -234,6 +234,13 @@ Future<void> openCommitPushFromMenu({
   final rpc = ref.read(desktopRpcProvider);
   if (rpc == null) return;
 
+  GitWorkingTreeStatus resolvedGitStatus;
+  try {
+    resolvedGitStatus = await rpc.getGitStatus(workspacePath);
+  } catch (_) {
+    if (gitStatus == null) rethrow;
+    resolvedGitStatus = gitStatus;
+  }
   final diff = await rpc.getWorkspaceDiff(workspacePath);
   if (!context.mounted) return;
 
@@ -243,13 +250,19 @@ Future<void> openCommitPushFromMenu({
     workspacePath: workspacePath,
     profileId: profileId,
     diff: diff,
-    branch: branch,
+    gitStatus: resolvedGitStatus,
   );
 
   if (committed != null && context.mounted) {
     refreshWorkspaceChanges(ref, workspacePath);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(committed == 'commit-push' ? '已提交并推送到远程' : '已提交')),
+      SnackBar(
+        content: Text(switch (committed) {
+          'commit-push' => '已提交并推送到远程',
+          'push' => '已推送到远程',
+          _ => '已提交',
+        }),
+      ),
     );
   }
 }

@@ -18,10 +18,8 @@ class BashApprovalPanel extends StatefulWidget {
 
   final BashApprovalRequest request;
   final bool busy;
-  final Future<void> Function({
-    required String decision,
-    String? feedback,
-  }) onResolve;
+  final Future<void> Function({required String decision, String? feedback})
+  onResolve;
   final Future<void> Function() onSkip;
 
   @override
@@ -114,7 +112,9 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
             ),
             boxShadow: [
               BoxShadow(
-                color: colors.shadowScrim.withValues(alpha: isDark ? 0.28 : 0.04),
+                color: colors.shadowScrim.withValues(
+                  alpha: isDark ? 0.28 : 0.04,
+                ),
                 blurRadius: isDark ? 20 : 14,
                 offset: const Offset(0, 6),
               ),
@@ -131,16 +131,17 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w400,
-                        height: 1.5,
-                      ),
+                    fontWeight: FontWeight.w400,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _CodePreview(
                   text: detail,
                   expanded: _codeExpanded,
                   surfaceColor: colors.composerContextBg,
-                  onToggle: () => setState(() => _codeExpanded = !_codeExpanded),
+                  onToggle: () =>
+                      setState(() => _codeExpanded = !_codeExpanded),
                 ),
                 const SizedBox(height: 8),
                 for (var i = 0; i < _choices.length; i++)
@@ -164,16 +165,19 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                     ),
                     const Spacer(),
                     FilledButton(
-                      onPressed: widget.busy ||
+                      onPressed:
+                          widget.busy ||
                               (_denyHighlighted &&
                                   _denyController.text.trim().isEmpty)
                           ? null
                           : _submitHighlighted,
                       style: FilledButton.styleFrom(
-                        backgroundColor:
-                            isDark ? colors.composerSendBg : const Color(0xFF0D0D0D),
-                        foregroundColor:
-                            isDark ? colors.composerSendText : Colors.white,
+                        backgroundColor: isDark
+                            ? colors.composerSendBg
+                            : const Color(0xFF0D0D0D),
+                        foregroundColor: isDark
+                            ? colors.composerSendText
+                            : Colors.white,
                         minimumSize: const Size(0, 34),
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         shape: const StadiumBorder(),
@@ -211,56 +215,55 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
     final colors = ecoColors(context);
 
     if (choice == BashApprovalChoice.deny) {
-      return Material(
-        color: highlighted
-            ? colors.textHeading.withValues(alpha: 0.05)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 20,
-                child: Icon(Icons.edit_outlined, size: 14, color: colors.textMuted),
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 20,
+              child: Icon(
+                Icons.edit_outlined,
+                size: 14,
+                color: colors.textMuted,
               ),
-              Expanded(
-                child: TextField(
-                  controller: _denyController,
-                  focusNode: _denyFocusNode,
-                  enabled: !widget.busy,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 14,
-                        height: 1.45,
-                      ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    isCollapsed: true,
-                    hintText: bashApprovalDenyOptionLabel,
-                    hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 14,
-                          height: 1.45,
-                          color: colors.textMuted,
-                        ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
+            ),
+            Expanded(
+              child: TextField(
+                controller: _denyController,
+                focusNode: _denyFocusNode,
+                enabled: !widget.busy,
+                maxLines: 1,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 14, height: 1.45),
+                decoration: InputDecoration(
+                  isDense: true,
+                  isCollapsed: true,
+                  filled: false,
+                  fillColor: Colors.transparent,
+                  hintText: bashApprovalDenyOptionLabel,
+                  hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: colors.textMuted,
                   ),
-                  onTap: () => setState(() => _highlightIndex = index),
-                  onChanged: (_) => setState(() {}),
-                  onSubmitted: (value) {
-                    if (value.trim().isNotEmpty) {
-                      _submitChoice(BashApprovalChoice.deny);
-                    }
-                  },
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
                 ),
+                onTap: () => setState(() => _highlightIndex = index),
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (value) {
+                  if (value.trim().isNotEmpty) {
+                    _submitChoice(BashApprovalChoice.deny);
+                  }
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
@@ -290,23 +293,25 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                         ? _circledMarkers[index]
                         : '${index + 1}.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.textMuted,
-                          fontSize: 13,
-                          height: 1.2,
-                        ),
+                      color: colors.textMuted,
+                      fontSize: 13,
+                      height: 1.2,
+                    ),
                   ),
                 ),
                 Expanded(
                   child: Text.rich(
                     TextSpan(
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontSize: 14,
-                            height: 1.45,
-                          ),
+                        fontSize: 14,
+                        height: 1.45,
+                      ),
                       children: [
                         TextSpan(text: bashApprovalRememberPrefixIntro),
                         TextSpan(
-                          text: formatBashApprovalRememberPrefix(rememberCommand),
+                          text: formatBashApprovalRememberPrefix(
+                            rememberCommand,
+                          ),
                           style: TextStyle(
                             fontFamily: 'monospace',
                             fontSize: 13,
@@ -350,10 +355,10 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                       ? _circledMarkers[index]
                       : '${index + 1}.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colors.textMuted,
-                        fontSize: 13,
-                        height: 1.2,
-                      ),
+                    color: colors.textMuted,
+                    fontSize: 13,
+                    height: 1.2,
+                  ),
                 ),
               ),
               const Expanded(child: Text('是')),
@@ -404,10 +409,7 @@ class _CodePreview extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    surfaceColor.withValues(alpha: 0),
-                    surfaceColor,
-                  ],
+                  colors: [surfaceColor.withValues(alpha: 0), surfaceColor],
                   stops: const [0.0, 0.78],
                 ),
               ),
@@ -418,8 +420,12 @@ class _CodePreview extends StatelessWidget {
                   style: TextButton.styleFrom(
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 0,
+                    ),
                     foregroundColor: colors.textMuted,
+                    textStyle: const TextStyle(fontSize: 11),
                   ),
                   child: const Text('展开'),
                 ),
@@ -436,6 +442,7 @@ class _CodePreview extends StatelessWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 foregroundColor: colors.textMuted,
+                textStyle: const TextStyle(fontSize: 11),
               ),
               child: const Text('收起'),
             ),

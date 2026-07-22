@@ -14,7 +14,7 @@ Future<String?> showCommitPushSheet({
   required String workspacePath,
   required String profileId,
   required WorkspaceDiffResult diff,
-  String? branch,
+  required GitWorkingTreeStatus gitStatus,
 }) {
   return showEcoModalBottomSheet<String>(
     context: context,
@@ -32,7 +32,7 @@ Future<String?> showCommitPushSheet({
         workspacePath: workspacePath,
         profileId: profileId,
         diff: diff,
-        branch: branch,
+        gitStatus: gitStatus,
         scrollController: scrollController,
       ),
     ),
@@ -45,21 +45,21 @@ class CommitPushSheet extends ConsumerStatefulWidget {
     required this.workspacePath,
     required this.profileId,
     required this.diff,
-    this.branch,
+    required this.gitStatus,
     required this.scrollController,
   });
 
   final String workspacePath;
   final String profileId;
   final WorkspaceDiffResult diff;
-  final String? branch;
+  final GitWorkingTreeStatus gitStatus;
   final ScrollController scrollController;
 
   @override
   ConsumerState<CommitPushSheet> createState() => _CommitPushSheetState();
 }
 
-enum _CommitPushAction { commit, commitPush }
+enum _CommitPushAction { commit, commitPush, push }
 
 enum _CommitPushPhase { committing, pushing }
 
@@ -69,15 +69,21 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
   _CommitPushAction? _activeAction;
   _CommitPushPhase? _phase;
   bool _loadingModels = false;
+  bool _includeUnstaged = true;
+  bool _branchBusy = false;
   String? _error;
   List<CommitModelOptionView> _modelOptions = [];
   String? _selectedCandidateModelId;
+  late GitWorkingTreeStatus _gitStatus;
+  late WorkspaceDiffResult _diff;
 
   bool get _busy => _activeAction != null;
 
   @override
   void initState() {
     super.initState();
+    _gitStatus = widget.gitStatus;
+    _diff = widget.diff;
     _loadModelOptions();
   }
 
@@ -94,15 +100,23 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
     if (rpc == null) return;
     setState(() => _loadingModels = true);
     try {
-      final result = await rpc.listCommitModelOptions(profileId: widget.profileId);
+      final result = await rpc.listCommitModelOptions(
+        profileId: widget.profileId,
+      );
       String? selectedId;
       if (result.savedCandidateModelId != 'auto') {
         selectedId = result.savedCandidateModelId;
       }
-      selectedId ??= result.options.isNotEmpty ? result.options.first.candidateModelId : null;
+      selectedId ??= result.options.isNotEmpty
+          ? result.options.first.candidateModelId
+          : null;
       if (selectedId != null &&
-          result.options.every((option) => option.candidateModelId != selectedId)) {
-        selectedId = result.options.isNotEmpty ? result.options.first.candidateModelId : null;
+          result.options.every(
+            (option) => option.candidateModelId != selectedId,
+          )) {
+        selectedId = result.options.isNotEmpty
+            ? result.options.first.candidateModelId
+            : null;
       }
       if (!mounted) return;
       setState(() {
@@ -130,7 +144,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   Future<void> _generateMessage() async {
     final rpc = _rpc;
-    if (rpc == null || _generating) return;
+    if (rpc == null || _generating || _busy || _branchBusy) return;
     setState(() {
       _generating = true;
       _error = null;
@@ -139,6 +153,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       final result = await rpc.generateCommitMessage(
         workspacePath: widget.workspacePath,
         profileId: widget.profileId,
+        includeUnstaged: _includeUnstaged,
         candidateModelId: _selectedCandidateModelId,
       );
       _messageController.text = result.message;
@@ -157,24 +172,38 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       _phase = _CommitPushPhase.committing;
       _error = null;
     });
+    var committed = false;
     try {
       final message = _messageController.text.trim();
       await rpc.commitChanges(
         workspacePath: widget.workspacePath,
         profileId: widget.profileId,
+        includeUnstaged: _includeUnstaged,
         message: message.isEmpty ? null : message,
         candidateModelId: message.isEmpty ? _selectedCandidateModelId : null,
       );
-      if (!mounted) return;
-      setState(() => _phase = _CommitPushPhase.pushing);
+      committed = true;
+      if (mounted) {
+        refreshWorkspaceChanges(ref, widget.workspacePath);
+        setState(() => _phase = _CommitPushPhase.pushing);
+      }
       await rpc.pushChanges(
         workspacePath: widget.workspacePath,
-        branch: widget.branch,
+        branch: _gitStatus.branch,
       );
-      refreshWorkspaceChanges(ref, widget.workspacePath);
-      if (mounted) Navigator.of(context).pop('commit-push');
+      if (mounted) {
+        refreshWorkspaceChanges(ref, widget.workspacePath);
+        Navigator.of(context).pop('commit-push');
+      }
     } catch (error) {
-      setState(() => _error = error.toString());
+      if (committed && mounted) {
+        await _refreshGitState();
+      }
+      if (mounted) {
+        setState(
+          () => _error = committed ? '提交已完成，但推送失败：$error' : error.toString(),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -198,11 +227,14 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       await rpc.commitChanges(
         workspacePath: widget.workspacePath,
         profileId: widget.profileId,
+        includeUnstaged: _includeUnstaged,
         message: message.isEmpty ? null : message,
         candidateModelId: message.isEmpty ? _selectedCandidateModelId : null,
       );
-      refreshWorkspaceChanges(ref, widget.workspacePath);
-      if (mounted) Navigator.of(context).pop('commit');
+      if (mounted) {
+        refreshWorkspaceChanges(ref, widget.workspacePath);
+        Navigator.of(context).pop('commit');
+      }
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {
@@ -212,6 +244,174 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
           _phase = null;
         });
       }
+    }
+  }
+
+  Future<void> _pushOnly() async {
+    final rpc = _rpc;
+    if (rpc == null || _busy) return;
+    setState(() {
+      _activeAction = _CommitPushAction.push;
+      _phase = _CommitPushPhase.pushing;
+      _error = null;
+    });
+    try {
+      await rpc.pushChanges(
+        workspacePath: widget.workspacePath,
+        branch: _gitStatus.branch,
+      );
+      if (mounted) {
+        refreshWorkspaceChanges(ref, widget.workspacePath);
+        Navigator.of(context).pop('push');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() {
+          _activeAction = null;
+          _phase = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshGitState() async {
+    final rpc = _rpc;
+    if (rpc == null) return;
+    try {
+      final status = await rpc.getGitStatus(widget.workspacePath);
+      final diff = await rpc.getWorkspaceDiff(widget.workspacePath);
+      if (!mounted) return;
+      setState(() {
+        _gitStatus = status;
+        _diff = diff;
+      });
+    } catch (_) {
+      // The original git action error remains the useful message.
+    }
+  }
+
+  Future<void> _pickBranch() async {
+    if (_branchBusy || _busy || _generating) return;
+    final selection = await showEcoModalBottomSheet<String>(
+      context: context,
+      backgroundColor: ecoColors(context).bgMenu,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Text('提交到', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final branch in _gitStatus.branches)
+                    ListTile(
+                      leading: const Icon(EcoIcons.branch, size: 18),
+                      title: Text(branch),
+                      trailing: branch == _gitStatus.branch
+                          ? const Icon(EcoIcons.check, size: 18)
+                          : null,
+                      onTap: () => Navigator.pop(sheetContext, branch),
+                    ),
+                  ListTile(
+                    leading: const Icon(EcoIcons.add, size: 18),
+                    title: const Text('新分支'),
+                    onTap: () => Navigator.pop(sheetContext, ''),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selection == null || !mounted) return;
+    if (selection.isEmpty) {
+      await _createBranch();
+      return;
+    }
+    if (selection == _gitStatus.branch) return;
+
+    final rpc = _rpc;
+    if (rpc == null) return;
+    setState(() {
+      _branchBusy = true;
+      _error = null;
+    });
+    try {
+      final status = await rpc.checkoutGitBranch(
+        workspacePath: widget.workspacePath,
+        branch: selection,
+      );
+      final diff = await rpc.getWorkspaceDiff(widget.workspacePath);
+      if (!mounted) return;
+      setState(() {
+        _gitStatus = status;
+        _diff = diff;
+      });
+      refreshWorkspaceChanges(ref, widget.workspacePath);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _branchBusy = false);
+    }
+  }
+
+  Future<void> _createBranch() async {
+    final controller = TextEditingController();
+    final branch = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('新建分支'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(hintText: '分支名称'),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (branch == null || branch.isEmpty || !mounted) return;
+
+    final rpc = _rpc;
+    if (rpc == null) return;
+    setState(() {
+      _branchBusy = true;
+      _error = null;
+    });
+    try {
+      final status = await rpc.createGitBranch(
+        workspacePath: widget.workspacePath,
+        branch: branch,
+      );
+      final diff = await rpc.getWorkspaceDiff(widget.workspacePath);
+      if (!mounted) return;
+      setState(() {
+        _gitStatus = status;
+        _diff = diff;
+      });
+      refreshWorkspaceChanges(ref, widget.workspacePath);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _branchBusy = false);
     }
   }
 
@@ -237,16 +437,25 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                   itemCount: _modelOptions.length,
                   itemBuilder: (context, index) {
                     final option = _modelOptions[index];
-                    final isActive = option.candidateModelId == _selectedCandidateModelId;
+                    final isActive =
+                        option.candidateModelId == _selectedCandidateModelId;
                     return ListTile(
                       leading: CircleAvatar(
                         radius: 6,
                         backgroundColor: _parseColor(option.providerColor),
                       ),
                       title: Text(option.modelLabel),
-                      subtitle: Text(option.providerName),
+                      subtitle: Text(
+                        [
+                          option.providerName,
+                          if (option.hint?.pricingLabel?.trim().isNotEmpty ==
+                              true)
+                            option.hint!.pricingLabel!.trim(),
+                        ].join(' · '),
+                      ),
                       trailing: isActive ? const Icon(Icons.check) : null,
-                      onTap: () => Navigator.of(context).pop(option.candidateModelId),
+                      onTap: () =>
+                          Navigator.of(context).pop(option.candidateModelId),
                     );
                   },
                 ),
@@ -275,9 +484,12 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final diff = widget.diff;
+    final diff = _diff;
     final showModelPicker = _messageController.text.trim().isEmpty;
     final selectedModel = _selectedModelOption;
+    final canCommit = _gitStatus.canCommit;
+    final canPushOnly = _gitStatus.isGitRepository && _gitStatus.aheadCount > 0;
+    final controlsBusy = _busy || _generating || _branchBusy;
 
     return SafeArea(
       child: Column(
@@ -307,17 +519,30 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                       Text(
                         '${diff.fileCount} 个文件 · +${diff.totalAdditions} -${diff.totalDeletions}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: ecoColors(context).textMuted,
-                            ),
+                          color: ecoColors(context).textMuted,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (widget.branch != null && widget.branch!.isNotEmpty)
-                  Chip(
-                    label: Text(widget.branch!),
-                    visualDensity: VisualDensity.compact,
+                OutlinedButton.icon(
+                  onPressed: controlsBusy ? null : _pickBranch,
+                  icon: _branchBusy
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(EcoIcons.branch, size: 16),
+                  label: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 128),
+                    child: Text(
+                      _gitStatus.branch ?? 'detached',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                ),
               ],
             ),
           ),
@@ -326,42 +551,13 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
               controller: widget.scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                ...diff.files.map(
-                  (file) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(
-                      file.path,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '+${file.additions}',
-                          style: TextStyle(
-                            color: ecoColors(context).success,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '-${file.deletions}',
-                          style: TextStyle(
-                            color: ecoColors(context).danger,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
                 if (showModelPicker) ...[
                   const SizedBox(height: 8),
                   OutlinedButton(
-                    onPressed: _loadingModels || _modelOptions.isEmpty ? null : _pickModel,
+                    onPressed:
+                        controlsBusy || _loadingModels || _modelOptions.isEmpty
+                        ? null
+                        : _pickModel,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -370,8 +566,8 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                             _loadingModels
                                 ? '加载模型…'
                                 : selectedModel == null
-                                    ? '未配置模型'
-                                    : '${selectedModel.providerName} · ${selectedModel.modelLabel}',
+                                ? '未配置模型'
+                                : '${selectedModel.providerName} · ${selectedModel.modelLabel}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -386,6 +582,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                   controller: _messageController,
                   minLines: 3,
                   maxLines: 6,
+                  enabled: !controlsBusy,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: '提交信息（留空则 AI 生成）',
@@ -393,7 +590,9 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     suffixIcon: IconButton(
-                      onPressed: _generating ? null : _generateMessage,
+                      onPressed: controlsBusy || !canCommit
+                          ? null
+                          : _generateMessage,
                       icon: _generating
                           ? const SizedBox(
                               width: 18,
@@ -405,11 +604,24 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                     ),
                   ),
                 ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('包含未暂存的更改'),
+                  value: _includeUnstaged,
+                  onChanged: controlsBusy
+                      ? null
+                      : (value) =>
+                            setState(() => _includeUnstaged = value ?? true),
+                ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     _error!,
-                    style: TextStyle(color: ecoColors(context).statusDenyText, fontSize: 13),
+                    style: TextStyle(
+                      color: ecoColors(context).statusDenyText,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -422,8 +634,21 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
               children: [
                 SizedBox(
                   width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: controlsBusy || !canCommit ? null : _commitOnly,
+                    icon: const Icon(EcoIcons.commitPush, size: 18),
+                    label: Text(
+                      _activeAction == _CommitPushAction.commit ? '提交中…' : '提交',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: _busy ? null : _commitAndPush,
+                    onPressed: controlsBusy || !canCommit
+                        ? null
+                        : _commitAndPush,
                     icon: _activeAction == _CommitPushAction.commitPush
                         ? SizedBox(
                             width: 16,
@@ -436,21 +661,34 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                         : const Icon(EcoIcons.cloudUpload),
                     label: Text(
                       _activeAction == _CommitPushAction.commitPush
-                          ? (_phase == _CommitPushPhase.pushing ? '推送中…' : '提交中…')
+                          ? (_phase == _CommitPushPhase.pushing
+                                ? '推送中…'
+                                : '提交中…')
                           : '提交并推送',
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: _busy ? null : _commitOnly,
-                    child: Text(
-                      _activeAction == _CommitPushAction.commit ? '提交中…' : '仅提交',
+                if (canPushOnly) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: controlsBusy ? null : _pushOnly,
+                      icon: _activeAction == _CommitPushAction.push
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(EcoIcons.cloudUpload, size: 18),
+                      label: Text(
+                        _activeAction == _CommitPushAction.push
+                            ? '推送中…'
+                            : '仅推送（领先 ${_gitStatus.aheadCount}）',
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

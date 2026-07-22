@@ -44,6 +44,24 @@ TextStyle? activityFeedBodyStyle(
   );
 }
 
+String _formatTurnDurationMs(int ms) {
+  final totalSeconds = (ms ~/ 1000).clamp(0, 1 << 31);
+  final hours = totalSeconds ~/ 3600;
+  final minutes = (totalSeconds % 3600) ~/ 60;
+  final seconds = totalSeconds % 60;
+  final parts = <String>[];
+  if (hours > 0) {
+    parts.add('${hours}h');
+  }
+  if (minutes > 0) {
+    parts.add('${minutes}m');
+  }
+  if (seconds > 0 || parts.isEmpty) {
+    parts.add('${seconds}s');
+  }
+  return parts.join(' ');
+}
+
 enum ActivityFeedKind {
   turn,
   user,
@@ -804,7 +822,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final duration = _durationMs > 0 ? formatDurationMs(_durationMs) : '';
+    final duration = _durationMs > 0 ? _formatTurnDurationMs(_durationMs) : '';
     final status = widget.entry.running ? '处理中' : '已处理';
     final process = widget.entry.processEntries;
 

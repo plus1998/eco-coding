@@ -510,6 +510,34 @@ class DesktopRpc {
     return WorkspaceDiffResult.fromJson(result);
   }
 
+  Future<GitWorkingTreeStatus> checkoutGitBranch({
+    required String workspacePath,
+    required String branch,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:checkout-branch',
+      [
+        {'workspacePath': workspacePath, 'branch': branch},
+      ],
+    );
+    return GitWorkingTreeStatus.fromJson(result);
+  }
+
+  Future<GitWorkingTreeStatus> createGitBranch({
+    required String workspacePath,
+    required String branch,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:create-branch',
+      [
+        {'workspacePath': workspacePath, 'branch': branch},
+      ],
+    );
+    return GitWorkingTreeStatus.fromJson(result);
+  }
+
   Future<GitListCommitModelOptionsResult> listCommitModelOptions({
     required String profileId,
   }) async {

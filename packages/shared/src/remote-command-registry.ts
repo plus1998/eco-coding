@@ -121,6 +121,12 @@ export const REMOTE_COMMAND_DEFINITIONS = [
 
   command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),
   command("git:get-workspace-diff", "Get workspace diff", "read", RPC_INVOKE, [stringArg()]),
+  command("git:checkout-branch", "Checkout git branch", "execute", RPC_INVOKE, [
+    objectArg(["workspacePath", "branch"]),
+  ]),
+  command("git:create-branch", "Create git branch", "execute", RPC_INVOKE, [
+    objectArg(["workspacePath", "branch"]),
+  ]),
   command("git:generate-commit-message", "Generate commit message", "read", RPC_INVOKE, [
     objectArg(["workspacePath", "profileId", "includeUnstaged"]),
   ]),
