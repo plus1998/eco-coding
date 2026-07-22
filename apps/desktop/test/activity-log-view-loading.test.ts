@@ -7,6 +7,7 @@ import {
   resolveActiveSubagentDurationMs,
   resolveMinimumVisibleToolRunningState,
 } from "../src/renderer/ActivityLogView";
+import { formatDuration } from "../src/renderer/activity-log";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
@@ -50,6 +51,12 @@ function requestSpan(
     ...(input.error && { error: input.error }),
   };
 }
+
+test("feed durations use whole units without decimals", () => {
+  expect(formatDuration(4_900)).toBe("4s");
+  expect(formatDuration(81_900)).toBe("1m 21s");
+  expect(formatDuration(3_723_900)).toBe("1h 2m 3s");
+});
 
 test("tool running status remains visible for at least one second", () => {
   const running = resolveMinimumVisibleToolRunningState({
@@ -378,7 +385,7 @@ test("ActivityLogView separates a completed attempt process from its final outpu
     }),
   );
 
-  expect(html).toContain("已处理 4.0s");
+  expect(html).toContain("已处理 4s");
   expect(html).toContain('class="run-log-turn is-completed is-collapsed"');
   expect(html).toContain('class="run-log-turn-process"');
   expect(html).toContain('aria-label="执行过程" aria-hidden="true"');
@@ -414,6 +421,8 @@ test("ActivityLogView keeps a running attempt process expanded without final out
 
   expect(html).toContain("处理中");
   expect(html).toContain('class="run-log-turn is-running is-expanded"');
+  expect(html).toContain('class="run-log-turn-toggle" disabled=""');
+  expect(html).not.toContain("run-log-turn-chevron");
   expect(html).toContain('aria-label="执行过程" aria-hidden="false"');
   expect(html).not.toContain('class="run-log-turn-final"');
 });

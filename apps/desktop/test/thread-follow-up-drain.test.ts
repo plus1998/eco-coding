@@ -61,6 +61,18 @@ test("shouldBlockThreadFollowUpDrain while plan or clarification awaits user", (
   ).toBe(false);
 });
 
+test("shouldBlockThreadFollowUpDrain while a queued message is being edited", () => {
+  expect(
+    shouldBlockThreadFollowUpDrain({
+      hasPendingBridgeApproval: false,
+      hasPendingClarification: false,
+      hasEditingFollowUp: true,
+      threadStatus: "completed",
+      hasStoredPendingPlan: false,
+    }),
+  ).toBe(true);
+});
+
 test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
   expect(shouldDrainThreadFollowUps("completed")).toBe(true);
   expect(shouldDrainThreadFollowUps("failed")).toBe(true);

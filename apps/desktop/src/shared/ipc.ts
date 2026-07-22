@@ -69,6 +69,7 @@ export const IPC_CHANNELS = {
   threadContinue: "thread:continue",
   threadFollowUpEnqueue: "thread:follow-up-enqueue",
   threadFollowUpEscalate: "thread:follow-up-escalate",
+  threadFollowUpEditing: "thread:follow-up-editing",
   threadFollowUpUpdate: "thread:follow-up-update",
   threadFollowUpReorder: "thread:follow-up-reorder",
   threadFollowUpList: "thread:follow-up-list",
@@ -1030,6 +1031,15 @@ export interface ThreadFollowUpEscalateRequest {
 export interface ThreadFollowUpCancelRequest {
   threadId: string;
   followUpId: string;
+}
+
+export interface ThreadFollowUpEditingRequest {
+  threadId: string;
+  followUpId?: string;
+}
+
+export interface ThreadFollowUpEditingResult {
+  editing: boolean;
 }
 
 export interface ThreadFollowUpUpdateRequest {

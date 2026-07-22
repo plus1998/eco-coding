@@ -2768,7 +2768,9 @@ function App() {
       (selectedRuntimeProfile.preset !== "coding" || areCodingRoutesReady(activeRoutes, providerById))
     : areCodingRoutesReady(activeRoutes, providerById);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
-  const composerFollowUpMode = Boolean(activeThread && isLiveFollowUpThreadStatus(activeThread.status));
+  const composerFollowUpMode = Boolean(
+    activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
+  );
   const showBashApproval = Boolean(pendingBashApproval);
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
@@ -3886,14 +3888,33 @@ function App() {
     [activeThread?.id],
   );
 
-  function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
-    setEditingFollowUpId(followUp.id);
-    setPrompt(followUp.prompt);
-    setComposerAttachments(fromPromptImageAttachments(followUp.attachments ?? []));
-    setComposerImageNotice(undefined);
-    setComposerRewindTarget(undefined);
+  async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
+    if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
+      setError("当前桌面预加载 API 不包含后续消息编辑锁，请重启应用后再试。");
+      return;
+    }
+    setFollowUpBusy(true);
     setError(undefined);
-    composerRef.current?.focus();
+    try {
+      await window.eco.setThreadFollowUpEditing({
+        threadId: followUp.threadId,
+        followUpId: followUp.id,
+      });
+      if (selectedThreadIdRef.current !== followUp.threadId) {
+        await window.eco.setThreadFollowUpEditing({ threadId: followUp.threadId });
+        return;
+      }
+      setEditingFollowUpId(followUp.id);
+      setPrompt(followUp.prompt);
+      setComposerAttachments(fromPromptImageAttachments(followUp.attachments ?? []));
+      setComposerImageNotice(undefined);
+      setComposerRewindTarget(undefined);
+      composerRef.current?.focus();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setFollowUpBusy(false);
+    }
   }
 
   function cancelEditingFollowUp() {
@@ -3902,6 +3923,16 @@ function App() {
     setComposerAttachments([]);
     setComposerImageNotice(undefined);
   }
+
+  useEffect(() => {
+    if (!editingFollowUpId || !activeThread || !window.eco?.setThreadFollowUpEditing) {
+      return undefined;
+    }
+    const threadId = activeThread.id;
+    return () => {
+      void window.eco?.setThreadFollowUpEditing?.({ threadId }).catch(() => undefined);
+    };
+  }, [activeThread?.id, editingFollowUpId]);
 
   async function sendComposerMessage() {
     if (!currentProjectPath || !window.eco || (!prompt.trim() && composerAttachments.length === 0)) {
@@ -5625,13 +5656,13 @@ function App() {
                   ? "当前对话不可发送"
                   : "尽管问";
   const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
-  const composerActionMode = canStopThread
-    ? composerHasContent
-      ? editingFollowUpId
-        ? "save-follow-up"
-        : "queue"
-      : "stop"
-    : "send";
+  const composerActionMode = editingFollowUpId
+    ? "save-follow-up"
+    : canStopThread
+      ? composerHasContent
+        ? "queue"
+        : "stop"
+      : "send";
   const composerActionBusy = composerActionMode === "stop" ? cancelBusy : isStarting || followUpBusy;
   const composerActionDisabled = composerActionMode === "stop" ? cancelBusy : !canSend;
   const composerActionLabel =

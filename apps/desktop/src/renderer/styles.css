@@ -370,15 +370,8 @@ button.sidebar-core-heading {
 
 .sidebar-core-heading.is-editable svg {
   flex-shrink: 0;
-  opacity: 0;
-  color: var(--text-muted);
-  transition: opacity 120ms ease;
-}
-
-.sidebar-core-heading.is-editable:hover svg,
-.sidebar-core-heading.is-editable:focus-visible svg,
-.sidebar-core-heading.is-editable[aria-expanded="true"] svg {
   opacity: 1;
+  color: var(--text-muted);
 }
 
 .sidebar-core-heading.is-editable:focus-visible {
@@ -9118,7 +9111,22 @@ button.sidebar-core-heading {
   transition: transform 0.16s ease;
 }
 
-.run-log-tool-group-chevron.open,
+.run-log-tool-group-chevron {
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    transform 0.16s ease;
+}
+
+.run-log-tool-group-trigger:hover .run-log-tool-group-chevron,
+.run-log-tool-group-trigger:focus-visible .run-log-tool-group-chevron {
+  opacity: 1;
+}
+
+.run-log-tool-group-chevron.open {
+  transform: rotate(90deg);
+}
+
 .run-log-action-chevron.open {
   transform: rotate(180deg);
 }
@@ -17741,6 +17749,12 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: var(--codex-log-text);
 }
 
+.codex-main:not(.codex-main-landing) .run-log-turn-toggle:disabled {
+  color: var(--codex-log-muted);
+  cursor: default;
+  opacity: 1;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-turn-toggle:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
   outline-offset: 3px;
@@ -17750,7 +17764,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-turn-status {
   flex: 0 0 auto;
   font-size: var(--codex-feed-font-size);
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.4;
 }
 
@@ -18530,14 +18544,14 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-content {
-  --run-log-user-prompt-bg: var(--codex-log-chip);
+  --run-log-user-prompt-bg: color-mix(in srgb, var(--codex-log-chip) 94%, white 6%);
   --run-log-user-prompt-fg: var(--codex-log-chip-text);
   --run-log-user-prompt-muted: color-mix(in srgb, var(--codex-log-chip-text) 62%, transparent);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-body,
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-expand {
-  background: var(--codex-log-chip);
+  background: var(--run-log-user-prompt-bg);
   color: var(--codex-log-chip-text);
   font-size: 13px;
   line-height: 1.55;

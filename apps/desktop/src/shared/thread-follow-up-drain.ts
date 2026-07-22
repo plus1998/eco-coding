@@ -10,10 +10,11 @@ export function shouldDrainThreadFollowUps(status: ThreadStatus): boolean {
 export function shouldBlockThreadFollowUpDrain(input: {
   hasPendingBridgeApproval: boolean;
   hasPendingClarification: boolean;
+  hasEditingFollowUp?: boolean;
   threadStatus?: ThreadStatus;
   hasStoredPendingPlan: boolean;
 }): boolean {
-  if (input.hasPendingBridgeApproval || input.hasPendingClarification) {
+  if (input.hasPendingBridgeApproval || input.hasPendingClarification || input.hasEditingFollowUp) {
     return true;
   }
   return input.threadStatus === "awaiting_plan" && input.hasStoredPendingPlan;

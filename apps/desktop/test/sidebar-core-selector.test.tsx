@@ -24,6 +24,7 @@ test("draft Core heading is switchable", () => {
   expect(markup).toContain("Claude Code");
   expect(markup).toContain('aria-haspopup="menu"');
   expect(markup).toContain('aria-expanded="false"');
+  expect(markup).toContain("lucide-chevron-down");
   expect(markup).toContain('aria-label="搜索会话和项目"');
 });
 

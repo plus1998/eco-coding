@@ -163,6 +163,7 @@ import {
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadFollowUpCancelRequest,
+  type ThreadFollowUpEditingRequest,
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
   type ThreadFollowUpMutationResult,
@@ -659,6 +660,7 @@ const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadFollowUpDrainInFlight = new Set<string>();
+const editingThreadFollowUpByThread = new Map<string, string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const proxyBillingStampRegistry = new ProxyBillingStampRegistry();
 const codexGatewayUsageDeduplicator = new CodexGatewayUsageDeduplicator();
@@ -3407,6 +3409,23 @@ function registerIpcHandlers(): void {
     return { followUps: conversationStore.listThreadFollowUps(id) };
   });
 
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpEditing, async (payload: unknown) => {
+    const request = parseThreadFollowUpEditingRequest(payload);
+    if (request.followUpId) {
+      const followUp = conversationStore.getThreadFollowUp(request.threadId, request.followUpId);
+      if (!followUp || followUp.status !== "queued") {
+        throw new Error("Pending follow-up was not found or can no longer be edited.");
+      }
+      editingThreadFollowUpByThread.set(request.threadId, request.followUpId);
+      return { editing: true };
+    }
+    const released = editingThreadFollowUpByThread.delete(request.threadId);
+    if (released) {
+      void drainQueuedThreadFollowUpsAfterRun(request.threadId);
+    }
+    return { editing: false };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpCancel, async (payload: unknown) => {
     const request = parseThreadFollowUpCancelRequest(payload);
     const followUp = conversationStore.cancelThreadFollowUp(request.threadId, request.followUpId);
@@ -3428,9 +3447,6 @@ function registerIpcHandlers(): void {
     const thread = conversationStore.getThread(request.threadId);
     if (!thread) {
       throw new Error("Thread was not found.");
-    }
-    if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
-      throw new Error("Thread is not accepting queued follow-up messages.");
     }
     if (contextMonitor.isCompactInFlight(thread.id)) {
       throw new Error("上下文正在压缩中，请稍候。");
@@ -3845,6 +3861,7 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
     shouldBlockThreadFollowUpDrain({
       hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
       hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+      hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
       ...(thread?.status && { threadStatus: thread.status }),
       hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
     })
@@ -5075,6 +5092,17 @@ function parseThreadFollowUpCancelRequest(payload: unknown): ThreadFollowUpCance
   return {
     threadId: readRequiredString(payload.threadId, "Thread id is required."),
     followUpId: readRequiredString(payload.followUpId, "Follow-up id is required."),
+  };
+}
+
+function parseThreadFollowUpEditingRequest(payload: unknown): ThreadFollowUpEditingRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up editing payload.");
+  }
+  const followUpId = readOptionalString(payload.followUpId);
+  return {
+    threadId: readRequiredString(payload.threadId, "Thread id is required."),
+    ...(followUpId ? { followUpId } : {}),
   };
 }
 

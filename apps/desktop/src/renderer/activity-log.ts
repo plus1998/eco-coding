@@ -111,13 +111,21 @@ export function thinkingPreviewLine(text: string, max = 120): string {
 }
 
 export function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, ms / 1000);
-  if (totalSeconds < 60) {
-    return `${totalSeconds.toFixed(1)}s`;
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (hours > 0) {
+    parts.push(`${hours}h`);
   }
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  if (minutes > 0) {
+    parts.push(`${minutes}m`);
+  }
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds}s`);
+  }
+  return parts.join(" ");
 }
 
 type ToolCategory = "read" | "search" | "edit" | "run" | "agent";

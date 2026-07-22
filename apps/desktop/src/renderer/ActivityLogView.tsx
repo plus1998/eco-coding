@@ -570,7 +570,9 @@ function ProjectionTurnFeedSection({
   const contentId = `turn-process-${section.attempt.attemptId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   useEffect(() => {
-    if (previousRunningRef.current && !section.running) {
+    if (section.running) {
+      setExpanded(true);
+    } else if (previousRunningRef.current) {
       setExpanded(false);
     }
     previousRunningRef.current = section.running;
@@ -595,6 +597,7 @@ function ProjectionTurnFeedSection({
         type="button"
         className="run-log-turn-toggle"
         onClick={() => setExpanded((value) => !value)}
+        disabled={section.running}
         aria-expanded={expanded}
         aria-controls={contentId}
       >
@@ -603,7 +606,7 @@ function ProjectionTurnFeedSection({
             {section.running ? "处理中" : "已处理"}
             {durationMs > 0 ? ` ${formatDuration(durationMs)}` : ""}
           </span>
-          <ChevronRight size={15} className="run-log-turn-chevron" aria-hidden />
+          {!section.running ? <ChevronRight size={15} className="run-log-turn-chevron" aria-hidden /> : null}
         </span>
         <span className="run-log-turn-divider" aria-hidden />
       </button>
@@ -833,7 +836,7 @@ function ProjectionToolGroupEntry({
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
-        <ChevronDown
+        <ChevronRight
           size={15}
           className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
           aria-hidden
