@@ -38,7 +38,7 @@ String mergeStreamText(String previous, String incoming) {
   if (previous.isEmpty) {
     return incoming;
   }
-  if (incoming == previous && incoming.length > 1) {
+  if (incoming == previous) {
     return previous;
   }
   if (incoming.startsWith(previous) && incoming.length > previous.length) {

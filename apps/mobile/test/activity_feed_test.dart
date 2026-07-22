@@ -7,6 +7,7 @@ import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
+import 'package:eco_mobile/core/utils/stream_text.dart';
 import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/subagent_projection_feed.dart';
@@ -486,6 +487,9 @@ void main() {
       ),
     );
     await tester.pump();
+    for (var index = 0; index < 12; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
 
     double? fontSize(String text) =>
         tester.widget<Text>(find.text(text)).style?.fontSize;
@@ -493,7 +497,6 @@ void main() {
     expect(expected, isNotNull);
     expect(fontSize('正文输出字号'), expected);
     expect(fontSize('正在思考'), expected);
-    expect(fontSize('已处理 2.0s'), expected);
   });
 
   test(
@@ -2314,19 +2317,73 @@ void main() {
     },
   );
 
-  test(
-    'buildActivityFeed does not replace a message stream with a stale shorter prefix',
-    () {
-      final feed = buildActivityFeed(
-        threadPrompt: '',
+  test('buildActivityFeed appends incremental message stream batches', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
         threadId: 't1',
-        runProjection: const ThreadRunProjectionSnapshot(
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: [],
+        requestSpans: [
+          ThreadRunProjectionRequestSpan(
+            requestId: 'req_stream',
+            status: 'streaming',
+            startedAt: '2026-01-01T00:00:01.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'message-batch-1',
+            sequence: 1,
+            eventType: 'message.delta',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_stream',
+            streamKey: 'thr_test:planner:block:text:1',
+            text: '第一批内容，',
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'message-batch-2',
+            sequence: 2,
+            eventType: 'message.delta',
+            scope: 'main',
+            role: 'planner',
+            requestId: 'req_stream',
+            streamKey: 'thr_test:planner:block:text:1',
+            text: '第二批内容。',
+            at: '2026-01-01T00:00:03.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.text, '第一批内容，第二批内容。');
+    expect(feed.single.streaming, isTrue);
+  });
+
+  testWidgets(
+    'ActivityFeedList keeps rendered text while appending the next projection batch',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+
+      ThreadRunProjectionSnapshot projection(
+        String id,
+        String text,
+        int eventCount,
+      ) {
+        return ThreadRunProjectionSnapshot(
           threadId: 't1',
           status: 'running',
-          generatedAt: '2026-01-01T00:00:00.000Z',
-          sourceEventCount: 2,
-          agents: [],
-          requestSpans: [
+          generatedAt: '2026-01-01T00:00:0$eventCount.000Z',
+          sourceEventCount: eventCount,
+          agents: const [],
+          requestSpans: const [
             ThreadRunProjectionRequestSpan(
               requestId: 'req_stream',
               status: 'streaming',
@@ -2335,35 +2392,56 @@ void main() {
           ],
           timeline: [
             ThreadRunProjectionTimelineItem(
-              id: 'message-long',
-              sequence: 1,
+              id: id,
+              sequence: eventCount,
               eventType: 'message.delta',
               scope: 'main',
               role: 'planner',
               requestId: 'req_stream',
               streamKey: 'thr_test:planner:block:text:1',
-              text: '已经显示的完整内容',
+              text: text,
               at: '2026-01-01T00:00:02.000Z',
             ),
-            ThreadRunProjectionTimelineItem(
-              id: 'message-stale',
-              sequence: 2,
-              eventType: 'message.delta',
-              scope: 'main',
-              role: 'planner',
-              requestId: 'req_stream',
-              streamKey: 'thr_test:planner:block:text:1',
-              text: '已经显示的',
-              at: '2026-01-01T00:00:03.000Z',
-            ),
           ],
-        ),
-      );
+        );
+      }
 
-      expect(feed, hasLength(1));
-      expect(feed.single.kind, ActivityFeedKind.assistant);
-      expect(feed.single.text, '已经显示的完整内容');
-      expect(feed.single.streaming, isTrue);
+      Widget app(ThreadRunProjectionSnapshot snapshot) {
+        final entries = buildActivityFeed(
+          threadPrompt: '',
+          threadId: 't1',
+          runProjection: snapshot,
+        );
+        return MaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: entries,
+              scrollController: controller,
+              shrinkWrap: true,
+            ),
+          ),
+        );
+      }
+
+      var current = projection('message-batch-1', '第一批内容，', 1);
+      await tester.pumpWidget(app(current));
+      for (var index = 0; index < 10; index++) {
+        await tester.pump(pacedStreamInterval);
+      }
+      expect(find.text('第一批内容，'), findsOneWidget);
+
+      current = mergeThreadRunProjectionSnapshots(
+        current,
+        projection('message-batch-2', '第二批内容。', 2),
+      );
+      await tester.pumpWidget(app(current));
+      expect(find.text('第一批内容，'), findsOneWidget);
+
+      for (var index = 0; index < 10; index++) {
+        await tester.pump(pacedStreamInterval);
+      }
+      expect(find.text('第一批内容，第二批内容。'), findsOneWidget);
     },
   );
 

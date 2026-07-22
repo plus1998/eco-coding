@@ -16,30 +16,31 @@ void main() {
     );
   }
 
-  testWidgets('shows the first batch immediately and paces later batches', (
+  testWidgets('paces the first batch and appends later incremental batches', (
     tester,
   ) async {
-    await tester.pumpWidget(app('', streaming: true));
     await tester.pumpWidget(app('首批', streaming: true));
+    expect(find.text(''), findsOneWidget);
+
+    await tester.pump(pacedStreamInterval);
+    expect(find.text('首'), findsOneWidget);
+
+    await tester.pump(pacedStreamInterval);
     expect(find.text('首批'), findsOneWidget);
 
     await tester.pumpWidget(app('首批这是第二批', streaming: true));
-    expect(find.text('首批'), findsOneWidget);
-
     await tester.pump(pacedStreamInterval);
     expect(find.text('首批这'), findsOneWidget);
-
-    await tester.pump(pacedStreamInterval);
-    expect(find.text('首批这是'), findsOneWidget);
   });
 
   testWidgets('quickly drains remaining text when streaming finishes', (
     tester,
   ) async {
     await tester.pumpWidget(app('开始', streaming: true));
+    await tester.pump(pacedStreamInterval);
     await tester.pumpWidget(app('开始这是一段等待排空的最终文本', streaming: false));
 
-    expect(find.text('开始'), findsOneWidget);
+    expect(find.text('开'), findsOneWidget);
     for (var index = 0; index < 10; index++) {
       await tester.pump(pacedStreamInterval);
     }
@@ -48,6 +49,9 @@ void main() {
 
   testWidgets('ignores a stale shorter streaming snapshot', (tester) async {
     await tester.pumpWidget(app('已经显示的完整内容', streaming: true));
+    for (var index = 0; index < 10; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
     expect(find.text('已经显示的完整内容'), findsOneWidget);
 
     await tester.pumpWidget(app('已经显示的', streaming: true));

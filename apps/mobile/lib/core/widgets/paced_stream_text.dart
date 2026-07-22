@@ -31,30 +31,19 @@ class _PacedStreamTextState extends State<PacedStreamText> {
   @override
   void initState() {
     super.initState();
-    _displayText = widget.text;
     _targetText = widget.text;
+    _displayText = widget.streaming ? '' : _targetText;
+    _scheduleNextReveal();
   }
 
   @override
   void didUpdateWidget(covariant PacedStreamText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_targetText.startsWith(widget.text)) {
+      _scheduleNextReveal();
       return;
     }
-    if (!widget.text.startsWith(_targetText)) {
-      _timer?.cancel();
-      _timer = null;
-      _targetText = widget.text;
-      _displayText = widget.text;
-      return;
-    }
-    _targetText = widget.text;
-    if (_displayText.isEmpty && _targetText.isNotEmpty) {
-      _timer?.cancel();
-      _timer = null;
-      _displayText = _targetText;
-      return;
-    }
+    _targetText = mergeStreamText(_targetText, widget.text);
     _scheduleNextReveal();
   }
 

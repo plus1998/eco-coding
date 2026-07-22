@@ -3,6 +3,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
+import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import 'activity_feed.dart';
 
@@ -800,6 +801,13 @@ bool _shouldResetThinkingStreamMerge(
   if (_hasUserPromptBetween(timeline, current, item)) {
     return true;
   }
+  final currentStreamKey = current.streamKey?.trim();
+  final itemStreamKey = item.streamKey?.trim();
+  if (currentStreamKey != null &&
+      currentStreamKey.isNotEmpty &&
+      currentStreamKey == itemStreamKey) {
+    return false;
+  }
   if (current.id != item.id &&
       item.text.trim().isEmpty &&
       current.text.trim().isNotEmpty &&
@@ -832,14 +840,8 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
   final isThinkingStream =
       item.eventType == 'thinking.delta' || item.eventType == 'thinking.final';
   if (!isThinkingStream) {
-    final currentText = current.text;
-    final itemText = item.text;
-    if (itemText.isNotEmpty &&
-        (itemText.length >= currentText.length ||
-            !currentText.startsWith(itemText))) {
-      return item;
-    }
-    if (currentText.isEmpty) {
+    final mergedText = mergeStreamText(current.text, item.text);
+    if (mergedText == item.text) {
       return item;
     }
     return ThreadRunProjectionTimelineItem(
@@ -847,7 +849,7 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
       sequence: item.sequence,
       eventType: item.eventType,
       scope: item.scope,
-      text: currentText,
+      text: mergedText,
       at: item.at,
       role: item.role,
       agentId: item.agentId,
@@ -860,13 +862,7 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
   if (_shouldResetThinkingStreamMerge(current, item, timeline)) {
     return item;
   }
-  final preservedText = item.text.trim().isEmpty
-      ? current.text
-      : current.text.trim().isEmpty
-      ? item.text
-      : item.text.length >= current.text.length
-      ? item.text
-      : current.text;
+  final preservedText = mergeStreamText(current.text, item.text);
   if (preservedText == item.text) {
     return item;
   }
