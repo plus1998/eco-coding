@@ -847,6 +847,11 @@ void main() {
     );
   });
 
+  test('Bash metadata hides zero duration and keeps real duration', () {
+    expect(formatBashRunMeta('npm test', durationMs: 0), 'npm');
+    expect(formatBashRunMeta('npm test', durationMs: 1250), 'npm, 1.3s');
+  });
+
   test('subagent mission card gets duration and timeline from projection', () {
     final feed = buildActivityFeed(
       threadPrompt: '实现登录',
@@ -2306,6 +2311,59 @@ void main() {
       expect(feed.first.kind, ActivityFeedKind.assistant);
       expect(feed.first.text, '已流式输出的正文。');
       expect(feed.first.streaming, isFalse);
+    },
+  );
+
+  test(
+    'buildActivityFeed does not replace a message stream with a stale shorter prefix',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceEventCount: 2,
+          agents: [],
+          requestSpans: [
+            ThreadRunProjectionRequestSpan(
+              requestId: 'req_stream',
+              status: 'streaming',
+              startedAt: '2026-01-01T00:00:01.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'message-long',
+              sequence: 1,
+              eventType: 'message.delta',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_stream',
+              streamKey: 'thr_test:planner:block:text:1',
+              text: '已经显示的完整内容',
+              at: '2026-01-01T00:00:02.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'message-stale',
+              sequence: 2,
+              eventType: 'message.delta',
+              scope: 'main',
+              role: 'planner',
+              requestId: 'req_stream',
+              streamKey: 'thr_test:planner:block:text:1',
+              text: '已经显示的',
+              at: '2026-01-01T00:00:03.000Z',
+            ),
+          ],
+        ),
+      );
+
+      expect(feed, hasLength(1));
+      expect(feed.single.kind, ActivityFeedKind.assistant);
+      expect(feed.single.text, '已经显示的完整内容');
+      expect(feed.single.streaming, isTrue);
     },
   );
 

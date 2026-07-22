@@ -12,6 +12,8 @@ import '../composer/commit_push_sheet.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
 
+final _openingCommitPushWorkspaces = <String>{};
+
 String resolveGitRemoteSyncAction(int behindCount) {
   return behindCount > 0 ? 'pull' : 'fetch';
 }
@@ -233,37 +235,79 @@ Future<void> openCommitPushFromMenu({
 
   final rpc = ref.read(desktopRpcProvider);
   if (rpc == null) return;
+  if (!_openingCommitPushWorkspaces.add(workspacePath)) return;
 
-  GitWorkingTreeStatus resolvedGitStatus;
+  var loadingDialogOpen = false;
   try {
-    resolvedGitStatus = await rpc.getGitStatus(workspacePath);
-  } catch (_) {
-    if (gitStatus == null) rethrow;
-    resolvedGitStatus = gitStatus;
-  }
-  final diff = await rpc.getWorkspaceDiff(workspacePath);
-  if (!context.mounted) return;
-
-  final committed = await showCommitPushSheet(
-    context: context,
-    ref: ref,
-    workspacePath: workspacePath,
-    profileId: profileId,
-    diff: diff,
-    gitStatus: resolvedGitStatus,
-  );
-
-  if (committed != null && context.mounted) {
-    refreshWorkspaceChanges(ref, workspacePath);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(switch (committed) {
-          'commit-push' => '已提交并推送到远程',
-          'push' => '已推送到远程',
-          _ => '已提交',
-        }),
+    if (!context.mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('正在加载提交信息…'),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
+    loadingDialogOpen = true;
+
+    Future<GitWorkingTreeStatus> loadGitStatus() async {
+      try {
+        return await rpc.getGitStatus(workspacePath);
+      } catch (_) {
+        if (gitStatus == null) rethrow;
+        return gitStatus;
+      }
+    }
+
+    final results = await Future.wait<Object>([
+      loadGitStatus(),
+      rpc.getWorkspaceDiff(workspacePath),
+    ]);
+    if (!context.mounted) return;
+
+    Navigator.of(context, rootNavigator: true).pop();
+    loadingDialogOpen = false;
+
+    final committed = await showCommitPushSheet(
+      context: context,
+      ref: ref,
+      workspacePath: workspacePath,
+      profileId: profileId,
+      diff: results[1] as WorkspaceDiffResult,
+      gitStatus: results[0] as GitWorkingTreeStatus,
+    );
+
+    if (committed != null && context.mounted) {
+      refreshWorkspaceChanges(ref, workspacePath);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(switch (committed) {
+            'commit-push' => '已提交并推送到远程',
+            'push' => '已推送到远程',
+            _ => '已提交',
+          }),
+        ),
+      );
+    }
+  } finally {
+    if (loadingDialogOpen && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    _openingCommitPushWorkspaces.remove(workspacePath);
   }
 }
 

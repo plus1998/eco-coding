@@ -45,4 +45,15 @@ void main() {
     }
     expect(find.text('开始这是一段等待排空的最终文本'), findsOneWidget);
   });
+
+  testWidgets('ignores a stale shorter streaming snapshot', (tester) async {
+    await tester.pumpWidget(app('已经显示的完整内容', streaming: true));
+    expect(find.text('已经显示的完整内容'), findsOneWidget);
+
+    await tester.pumpWidget(app('已经显示的', streaming: true));
+    await tester.pump(pacedStreamInterval);
+
+    expect(find.text('已经显示的完整内容'), findsOneWidget);
+    expect(find.text('已经显示的'), findsNothing);
+  });
 }

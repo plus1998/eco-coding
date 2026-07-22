@@ -730,7 +730,7 @@ ParsedActivityToolInvocation? parseActivityToolInvocation(String raw) {
 String formatBashRunMeta(String command, {int? durationMs}) {
   final trimmed = command.trim();
   if (trimmed.isEmpty) {
-    if (durationMs == null) return '';
+    if (durationMs == null || durationMs <= 0) return '';
     final seconds = durationMs / 1000;
     return seconds < 60
         ? '${seconds.toStringAsFixed(1)}s'
@@ -742,7 +742,7 @@ String formatBashRunMeta(String command, {int? durationMs}) {
   final parts = <String>[];
   if (metaToken.isNotEmpty) parts.add(metaToken);
   if (segments.length > 1) parts.add('${segments.length - 1}+');
-  if (durationMs != null) {
+  if (durationMs != null && durationMs > 0) {
     final seconds = durationMs / 1000;
     parts.add(
       seconds < 60

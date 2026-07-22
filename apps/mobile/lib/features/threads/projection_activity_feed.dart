@@ -832,7 +832,30 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
   final isThinkingStream =
       item.eventType == 'thinking.delta' || item.eventType == 'thinking.final';
   if (!isThinkingStream) {
-    return item;
+    final currentText = current.text;
+    final itemText = item.text;
+    if (itemText.isNotEmpty &&
+        (itemText.length >= currentText.length ||
+            !currentText.startsWith(itemText))) {
+      return item;
+    }
+    if (currentText.isEmpty) {
+      return item;
+    }
+    return ThreadRunProjectionTimelineItem(
+      id: item.id,
+      sequence: item.sequence,
+      eventType: item.eventType,
+      scope: item.scope,
+      text: currentText,
+      at: item.at,
+      role: item.role,
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      requestId: item.requestId,
+      streamKey: item.streamKey,
+      metadata: item.metadata,
+    );
   }
   if (_shouldResetThinkingStreamMerge(current, item, timeline)) {
     return item;
