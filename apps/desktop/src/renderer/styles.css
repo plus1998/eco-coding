@@ -9184,6 +9184,19 @@ button.sidebar-core-heading {
   border-left: 1px solid var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
 }
 
+.run-log-tool-group-child {
+  width: 100%;
+  min-width: 0;
+}
+
+.run-log-tool-group-child-trigger {
+  min-height: 22px;
+}
+
+.run-log-tool-group-child-details {
+  margin: 7px 0 0 22px;
+}
+
 .run-log-action-trigger {
   display: flex;
   align-items: center;

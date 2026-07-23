@@ -811,7 +811,7 @@ void main() {
   );
 
   testWidgets(
-    'ActivityFeedList shows Bash output inline instead of opening tool details',
+    'ActivityFeedList expands Bash title before showing command and output',
     (tester) async {
       final scrollController = ScrollController();
       addTearDown(scrollController.dispose);
@@ -848,13 +848,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('36 pass'), findsOneWidget);
-      expect(find.text('npm test'), findsOneWidget);
-      expect(find.text('Run unit tests'), findsOneWidget);
+      expect(find.text('已运行 Run unit tests'), findsOneWidget);
+      expect(find.text('36 pass'), findsNothing);
+      expect(find.text('npm test'), findsNothing);
 
-      await tester.tap(find.text('Run unit tests').first);
+      await tester.tap(find.text('已运行 Run unit tests'));
       await tester.pumpAndSettle();
 
+      expect(find.text('36 pass'), findsOneWidget);
+      expect(find.text('npm test'), findsOneWidget);
       expect(detailOpenCount, 0);
     },
   );

@@ -977,6 +977,10 @@ function ProjectionToolGroupChildEntry({
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
 }) {
+  const block = projectionItemToDetailBlock(entry.item);
+  if (block?.kind === "action" && block.bashRun) {
+    return <ProjectionToolGroupBashChild block={block} />;
+  }
   if (entry.kind === "timeline") {
     return (
       <ProjectionTimelineEntry
@@ -989,6 +993,64 @@ function ProjectionToolGroupChildEntry({
   }
   return (
     <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} forceActionDetailsExpanded />
+  );
+}
+
+function ProjectionToolGroupBashChild({
+  block,
+}: {
+  block: Extract<ActivityDetailBlock, { kind: "action" }>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const bashRun = block.bashRun;
+  if (!bashRun) {
+    return null;
+  }
+  const hasDetails = Boolean(bashRun.command || bashRun.output);
+  const summary =
+    block.lifecycle === "running"
+      ? summarizeRunningActionBlock(block)
+      : summarizeCompletedActionBlock(block);
+  const Icon = actionIcons[block.icon];
+
+  return (
+    <div className={`run-log-tool-group-child${expanded ? " is-expanded" : ""}`}>
+      <button
+        type="button"
+        className={[
+          "run-log-tool-group-trigger",
+          "run-log-tool-group-child-trigger",
+          block.lifecycle === "running" ? "is-running" : "",
+          block.lifecycle === "failed" ? "is-failed" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => hasDetails && setExpanded((value) => !value)}
+        aria-expanded={hasDetails ? expanded : undefined}
+      >
+        <span className="run-log-action-icon-wrap" aria-hidden>
+          <Icon size={14} className="run-log-action-icon" />
+        </span>
+        <span className="run-log-tool-group-summary">
+          {block.lifecycle === "running" ? <ShimmerText>{summary}</ShimmerText> : summary}
+        </span>
+        {hasDetails ? (
+          <ChevronRight
+            size={15}
+            className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
+            aria-hidden
+          />
+        ) : null}
+      </button>
+      {expanded ? (
+        <div className="run-log-tool-group-child-details">
+          <RunLogBashTerminal
+            {...(bashRun.command && { command: bashRun.command })}
+            {...(bashRun.output && { output: bashRun.output })}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

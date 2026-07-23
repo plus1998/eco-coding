@@ -1509,22 +1509,6 @@ class _ActionTileState extends State<_ActionTile> {
   var _expanded = false;
 
   @override
-  void initState() {
-    super.initState();
-    _expanded = widget.bashRun != null;
-  }
-
-  @override
-  void didUpdateWidget(covariant _ActionTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.bashRun == null && widget.bashRun != null) {
-      _expanded = true;
-    } else if (oldWidget.bashRun != null && widget.bashRun == null) {
-      _expanded = false;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final fileChange = widget.fileChange;
     final bashRun = widget.bashRun;
@@ -1570,7 +1554,27 @@ class _ActionTileState extends State<_ActionTile> {
     if (bashRun != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-        child: _BashRunCard(display: bashRun, lifecycle: widget.lifecycle),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ActionSummaryLine(
+              label: _bashActionSummaryLabel(bashRun, widget.lifecycle),
+              icon: ActivityActionIcon.terminal,
+              lifecycle: widget.lifecycle,
+              expanded: _expanded,
+              onTap: () => setState(() => _expanded = !_expanded),
+            ),
+            if (_expanded)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _BashRunCard(
+                  display: bashRun,
+                  lifecycle: widget.lifecycle,
+                  showHeader: false,
+                ),
+              ),
+          ],
+        ),
       );
     }
     final content = Row(
@@ -1619,6 +1623,22 @@ class _ActionTileState extends State<_ActionTile> {
 
   IconData _materialIcon(ActivityActionIcon icon) =>
       EcoIcons.activityAction(icon);
+}
+
+String _bashActionSummaryLabel(
+  BashRunCardDisplay display,
+  ToolActionLifecycle? lifecycle,
+) {
+  final title = display.title.trim();
+  final command = display.command?.trim() ?? '';
+  final target = title.isNotEmpty && title != 'Shell' ? title : command;
+  final suffix = target.isEmpty ? '' : ' $target';
+  if (lifecycle == ToolActionLifecycle.failed) {
+    return '运行失败$suffix';
+  }
+  return lifecycle == ToolActionLifecycle.running
+      ? '正在运行$suffix'
+      : '已运行$suffix';
 }
 
 class _ActionSummaryLine extends StatelessWidget {
@@ -1748,10 +1768,15 @@ class _InlineDiffStats extends StatelessWidget {
 }
 
 class _BashRunCard extends StatefulWidget {
-  const _BashRunCard({required this.display, this.lifecycle});
+  const _BashRunCard({
+    required this.display,
+    this.lifecycle,
+    this.showHeader = true,
+  });
 
   final BashRunCardDisplay display;
   final ToolActionLifecycle? lifecycle;
+  final bool showHeader;
 
   @override
   State<_BashRunCard> createState() => _BashRunCardState();
@@ -1810,19 +1835,20 @@ class _BashRunCardState extends State<_BashRunCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ActivityFeedBlockHeader(
-                icon: EcoIcons.terminal,
-                title: display.title,
-                meta: display.meta,
-                iconColor: failed ? eco.danger : eco.textMuted,
-                titleColor: failed ? eco.danger : null,
-                expanded: canExpand ? _bodyExpanded : null,
-                trailing: failed
-                    ? const ActivityFeedStatusChip(label: '失败', danger: true)
-                    : null,
-              ),
+              if (widget.showHeader)
+                ActivityFeedBlockHeader(
+                  icon: EcoIcons.terminal,
+                  title: display.title,
+                  meta: display.meta,
+                  iconColor: failed ? eco.danger : eco.textMuted,
+                  titleColor: failed ? eco.danger : null,
+                  expanded: canExpand ? _bodyExpanded : null,
+                  trailing: failed
+                      ? const ActivityFeedStatusChip(label: '失败', danger: true)
+                      : null,
+                ),
               if (command.isNotEmpty || output.isNotEmpty) ...[
-                const ActivityFeedBlockDivider(),
+                if (widget.showHeader) const ActivityFeedBlockDivider(),
                 if (command.isNotEmpty)
                   _BashCommandBody(
                     command: command,
