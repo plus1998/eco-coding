@@ -147,6 +147,11 @@ test("Node SQLite incrementally maintains bounded projection reads in WAL mode",
     store.listThreadRunEventsForProjection(threadId, 10).map((event) => event.id),
     ["final_before_cache", "legacy_stream_replacement"],
   );
+  assert.equal(store.compactLegacyThreadRunStreamEvents(), 1);
+  assert.deepEqual(
+    store.listThreadRunEvents(threadId).map((event) => event.id),
+    ["final_before_cache", "legacy_stream_replacement"],
+  );
 
   const inspection = new DatabaseSync(databasePath, { readOnly: true });
   const journal = inspection.prepare("PRAGMA journal_mode").get() as { journal_mode: string };

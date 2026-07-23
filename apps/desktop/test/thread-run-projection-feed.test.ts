@@ -328,6 +328,23 @@ test("buildFeedProjectionSignature ignores active agent duration", () => {
   expect(buildFeedProjectionSignature(changed)).toBe(buildFeedProjectionSignature(activeProjection));
 });
 
+test("buildFeedProjectionSignature ignores projection diagnostics", () => {
+  const projection = createProjection("short message", { longDelegation: false });
+  const changed: ThreadRunProjectionSnapshot = {
+    ...projection,
+    diagnostics: [
+      {
+        code: "orphan_stream_finalize",
+        message: "bounded history omitted the start",
+        eventId: "event_1001",
+        requestId: "request_1",
+      },
+    ],
+  };
+
+  expect(buildFeedProjectionSignature(changed)).toBe(buildFeedProjectionSignature(projection));
+});
+
 test("buildFeedProjectionSignature changes when feed-visible content changes", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const projectionAgent = requireValue(projection.agents[0], "projection agent");

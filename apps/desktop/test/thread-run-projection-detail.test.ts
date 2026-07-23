@@ -127,3 +127,32 @@ test("buildThreadRunProjectionDetail returns tool timeline from main and agent s
   expect(detail?.timeline.map((entry) => entry.id)).toEqual(["tool_1", "approval_1"]);
   expect(detail?.hasMore).toBe(false);
 });
+
+test("buildThreadRunProjectionDetail returns the newest agent page and an earlier cursor", () => {
+  const detail = buildThreadRunProjectionDetail(projection(), {
+    threadId: "thr_1",
+    kind: "agent",
+    key: "agent_1",
+    tail: true,
+    limit: 2,
+  });
+
+  expect(detail?.timeline.map((entry) => entry.id)).toEqual(["agent_evt_5", "approval_1"]);
+  expect(detail?.hasEarlier).toBe(true);
+  expect(detail?.previousBeforeSequence).toBe(5);
+  expect(detail?.hasMore).toBe(false);
+});
+
+test("buildThreadRunProjectionDetail pages older agent history before a cursor", () => {
+  const detail = buildThreadRunProjectionDetail(projection(), {
+    threadId: "thr_1",
+    kind: "agent",
+    key: "agent_1",
+    beforeSequence: 5,
+    tail: true,
+    limit: 2,
+  });
+
+  expect(detail?.timeline.map((entry) => entry.id)).toEqual(["agent_evt_3", "agent_evt_4"]);
+  expect(detail?.hasEarlier).toBe(true);
+});

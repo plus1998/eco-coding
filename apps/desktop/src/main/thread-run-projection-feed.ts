@@ -171,7 +171,6 @@ export function buildFeedProjectionSignature(snapshot: ThreadRunProjectionSnapsh
       },
       attempts: feed.attempts,
       requestSpans: feed.requestSpans,
-      diagnostics: feed.diagnostics,
       sourceEventCount: feed.sourceEventCount,
       historyRevision: feed.historyRevision,
       agents: feed.agents.map((agent) => {

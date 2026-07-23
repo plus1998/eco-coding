@@ -97,6 +97,25 @@ test("syncProfileAgentsToCodexRoles writes role toml for explore and enabled age
   await expect(fs.stat(path.join(result.agentsDir, "architect.toml"))).rejects.toThrow();
 });
 
+test("syncProfileAgentsToCodexRoles keeps bundles outside discovery and removes legacy Eco roles", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
+  const legacyRolePath = path.join(codexHomeDir, "agents", "eco", "old-bundle", "coder.toml");
+  await fs.mkdir(path.dirname(legacyRolePath), { recursive: true });
+  await fs.writeFile(legacyRolePath, 'name = "coder"\n', "utf8");
+
+  const result = await syncProfileAgentsToCodexRoles({
+    codexHomeDir,
+    profile: buildProfile(),
+    templates: [researchTemplate, codingTemplate],
+  });
+
+  expect(result.agentsDir.startsWith(path.join(codexHomeDir, "eco-agent-bundles"))).toBe(true);
+  expect(result.agentsDir.startsWith(path.join(codexHomeDir, "agents"))).toBe(false);
+  await expect(fs.stat(path.join(codexHomeDir, "agents", "eco"))).rejects.toThrow();
+  expect(await fs.stat(path.join(result.agentsDir, "coder.toml"))).toBeTruthy();
+});
+
 test("syncProfileAgentsToCodexRoles reads Explore from the editable roster", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const profile = buildProfile();

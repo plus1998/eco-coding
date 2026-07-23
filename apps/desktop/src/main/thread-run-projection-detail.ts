@@ -22,12 +22,15 @@ export function parseThreadRunProjectionDetailRequest(
     return undefined;
   }
   const afterSequence = readOptionalNumber(payload.afterSequence);
+  const beforeSequence = readOptionalNumber(payload.beforeSequence);
   const limit = readOptionalNumber(payload.limit);
   return {
     threadId,
     kind,
     key,
     ...(afterSequence !== undefined ? { afterSequence } : {}),
+    ...(beforeSequence !== undefined ? { beforeSequence } : {}),
+    ...(payload.tail === true ? { tail: true } : {}),
     ...(limit !== undefined ? { limit } : {}),
   };
 }
@@ -44,14 +47,20 @@ export function buildThreadRunProjectionDetail(
     return undefined;
   }
 
-  const afterSequence = request.afterSequence ?? -Infinity;
   const limit = clampLimit(request.limit);
   const filtered = sourceTimeline
-    .filter((item) => item.sequence > afterSequence)
+    .filter(
+      (item) =>
+        item.sequence > (request.afterSequence ?? -Infinity) &&
+        item.sequence < (request.beforeSequence ?? Infinity),
+    )
     .sort(compareTimelineItems);
-  const page = filtered.slice(0, limit);
-  const hasMore = filtered.length > page.length;
+  const tail = request.tail === true && request.afterSequence === undefined;
+  const page = tail ? filtered.slice(-limit) : filtered.slice(0, limit);
+  const hasMore = tail ? false : filtered.length > page.length;
+  const hasEarlier = tail && filtered.length > page.length;
   const nextAfterSequence = page.at(-1)?.sequence;
+  const previousBeforeSequence = page[0]?.sequence;
   const agent =
     request.kind === "agent"
       ? projection.agents.find((candidate) => candidate.agentId === request.key)
@@ -65,7 +74,9 @@ export function buildThreadRunProjectionDetail(
     timeline: page,
     sourceEventCount: projection.sourceEventCount,
     hasMore,
+    hasEarlier,
     ...(nextAfterSequence !== undefined ? { nextAfterSequence } : {}),
+    ...(previousBeforeSequence !== undefined ? { previousBeforeSequence } : {}),
     ...(agent ? { agent: { ...agent, timeline: [] } } : {}),
   };
 }

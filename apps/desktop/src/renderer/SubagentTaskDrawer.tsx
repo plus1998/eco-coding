@@ -12,11 +12,12 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BackgroundTerminalTask,
   ThreadPendingPlan,
   ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
   ThreadStatus,
   WorkspaceDiffResult,
 } from "../shared/ipc";
@@ -33,6 +34,15 @@ export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
 export const TASK_PANEL_PLAN_TAB_ID = "__plan__";
 
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
+
+type SubagentDetailState = {
+  threadId: string;
+  agentId: string;
+  agent: ThreadRunProjectionSubagentCard["agent"];
+  timeline: ThreadRunProjectionTimelineItem[];
+  hasEarlier: boolean;
+  beforeSequence?: number;
+};
 
 const emptyRequestSpansById = new Map<string, ProjectionRequestSpan>();
 
@@ -202,6 +212,218 @@ function useStableSubagentRequestSpansById(
     return spansById;
   }
   return snapshot.spansById;
+}
+
+function mergeDetailTimeline(
+  current: readonly ThreadRunProjectionTimelineItem[],
+  incoming: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const byId = new Map(current.map((item) => [item.id, item]));
+  for (const item of incoming) {
+    byId.set(item.id, item);
+  }
+  return [...byId.values()].sort(
+    (left, right) => left.sequence - right.sequence || left.at.localeCompare(right.at),
+  );
+}
+
+function SubagentProjectionDetail({
+  card,
+  projection,
+  requestSpansById,
+  threadActive,
+}: {
+  card: ThreadRunProjectionSubagentCard;
+  projection?: ThreadRunProjectionSnapshot;
+  requestSpansById: Map<string, ProjectionRequestSpan>;
+  threadActive: boolean;
+}) {
+  const threadId = projection?.thread.threadId;
+  const [detail, setDetail] = useState<SubagentDetailState>();
+  const [loading, setLoading] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [error, setError] = useState<string>();
+  const detailRef = useRef<SubagentDetailState | undefined>(undefined);
+  const refreshInFlightRef = useRef(false);
+  const feedSequence = useMemo(() => {
+    if (!projection) return undefined;
+    let maximum: number | undefined;
+    for (const item of [
+      ...projection.timeline,
+      ...projection.agents.flatMap((agent) => agent.timeline),
+    ]) {
+      maximum = maximum === undefined ? item.sequence : Math.max(maximum, item.sequence);
+    }
+    return maximum;
+  }, [projection]);
+  const detailSequence = detail?.timeline.at(-1)?.sequence;
+
+  useEffect(() => {
+    detailRef.current = detail;
+  }, [detail]);
+
+  useEffect(() => {
+    if (!threadId || !window.eco?.getThreadRunProjectionDetail) {
+      setDetail(undefined);
+      setError(threadId ? "当前桌面桥接未提供子代理详情接口。" : undefined);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+    void window.eco
+      .getThreadRunProjectionDetail({
+        threadId,
+        kind: "agent",
+        key: card.agent.agentId,
+        tail: true,
+        limit: 500,
+      })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result?.agent) {
+          setDetail(undefined);
+          setError("未找到该子代理的完整投影数据。");
+          return;
+        }
+        setDetail({
+          threadId,
+          agentId: card.agent.agentId,
+          agent: result.agent,
+          timeline: result.timeline,
+          hasEarlier: result.hasEarlier === true,
+          ...(result.previousBeforeSequence !== undefined
+            ? { beforeSequence: result.previousBeforeSequence }
+            : {}),
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setDetail(undefined);
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card.agent.agentId, threadId]);
+
+  useEffect(() => {
+    void detailSequence;
+    void feedSequence;
+    const current = detailRef.current;
+    if (
+      !threadId ||
+      !current ||
+      current.threadId !== threadId ||
+      current.agentId !== card.agent.agentId ||
+      refreshInFlightRef.current ||
+      !window.eco?.getThreadRunProjectionDetail
+    ) {
+      return;
+    }
+    const afterSequence = current.timeline.at(-1)?.sequence;
+    if (afterSequence === undefined) return;
+    refreshInFlightRef.current = true;
+    void window.eco
+      .getThreadRunProjectionDetail({
+        threadId,
+        kind: "agent",
+        key: card.agent.agentId,
+        afterSequence,
+        limit: 500,
+      })
+      .then((result) => {
+        if (!result?.agent || result.timeline.length === 0) return;
+        const resultAgent = result.agent;
+        setDetail((previous) =>
+          previous && previous.threadId === threadId && previous.agentId === card.agent.agentId
+            ? {
+                ...previous,
+                agent: resultAgent,
+                timeline: mergeDetailTimeline(previous.timeline, result.timeline),
+              }
+            : previous,
+        );
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        refreshInFlightRef.current = false;
+      });
+  }, [card.agent.agentId, detailSequence, feedSequence, threadId]);
+
+  const loadEarlier = useCallback(() => {
+    const current = detailRef.current;
+    if (
+      !current?.hasEarlier ||
+      current.beforeSequence === undefined ||
+      !window.eco?.getThreadRunProjectionDetail
+    ) {
+      return;
+    }
+    setLoadingEarlier(true);
+    setError(undefined);
+    void window.eco
+      .getThreadRunProjectionDetail({
+        threadId: current.threadId,
+        kind: "agent",
+        key: current.agentId,
+        beforeSequence: current.beforeSequence,
+        tail: true,
+        limit: 500,
+      })
+      .then((result) => {
+        if (!result?.agent) {
+          setError("无法读取更早的子代理历史。");
+          return;
+        }
+        const resultAgent = result.agent;
+        setDetail((previous) =>
+          previous
+            ? {
+                ...previous,
+                agent: resultAgent,
+                timeline: mergeDetailTimeline(result.timeline, previous.timeline),
+                hasEarlier: result.hasEarlier === true,
+                ...(result.previousBeforeSequence !== undefined
+                  ? { beforeSequence: result.previousBeforeSequence }
+                  : {}),
+              }
+            : previous,
+        );
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setLoadingEarlier(false));
+  }, []);
+
+  const resolvedAgent = detail
+    ? { ...card.agent, ...detail.agent, timeline: detail.timeline }
+    : card.agent;
+
+  return (
+    <>
+      {detail?.hasEarlier ? (
+        <button type="button" className="task-panel-load-earlier" disabled={loadingEarlier} onClick={loadEarlier}>
+          {loadingEarlier ? "正在加载…" : "加载更早记录"}
+        </button>
+      ) : null}
+      {loading ? <div className="subagent-task-detail-status">正在加载完整记录…</div> : null}
+      {error ? <div className="subagent-task-detail-status is-error">{error}</div> : null}
+      <ProjectionSubagentDetailFeed
+        agent={resolvedAgent}
+        missionText={card.missionText}
+        requestSpansById={requestSpansById}
+        threadActive={threadActive}
+      />
+    </>
+  );
 }
 
 function taskStatusLabel(status: BackgroundTerminalTask["status"]): string {
@@ -556,9 +778,9 @@ export function SubagentTaskDrawer({
             role="tabpanel"
           >
             <div className="subagent-task-detail">
-              <ProjectionSubagentDetailFeed
-                agent={activeSubagentCard.agent}
-                missionText={activeSubagentCard.missionText}
+              <SubagentProjectionDetail
+                card={activeSubagentCard}
+                {...(projection && { projection })}
                 requestSpansById={requestSpansById}
                 threadActive={isThreadActive(threadStatus ?? projection?.thread.status)}
               />

@@ -4499,6 +4499,9 @@ function App() {
       setReviewSelectedPath((current) =>
         current && diff.files.some((file) => file.path === current) ? current : diff.files[0]?.path,
       );
+      if (!currentProjectPath || !window.eco) {
+        return;
+      }
       const current = gitStatusByWorkspaceRef.current[currentProjectPath]?.status;
       if (current) {
         storeGitStatus(currentProjectPath, {
@@ -4508,9 +4511,6 @@ function App() {
           dirtyFileCount: diff.fileCount,
           canCommit: diff.fileCount > 0,
         });
-      }
-      if (!currentProjectPath || !window.eco) {
-        return;
       }
       const workspace = await window.eco.inspectWorkspace(currentProjectPath);
       setProjectWorkspace(workspace);

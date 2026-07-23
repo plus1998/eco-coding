@@ -3221,6 +3221,34 @@ export class ConversationStore {
     return events;
   }
 
+  /** Removes legacy cumulative stream prefixes now that stream rows are updated in place. */
+  compactLegacyThreadRunStreamEvents(): number {
+    const result = this.db
+      .prepare(
+        `DELETE FROM thread_run_events AS stale
+         WHERE stale.event_type IN ('message.delta', 'thinking.delta')
+           AND stale.stream_key IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM thread_run_events AS newer
+             WHERE newer.thread_id = stale.thread_id
+               AND newer.event_type = stale.event_type
+               AND newer.stream_key = stale.stream_key
+               AND newer.request_id IS stale.request_id
+               AND newer.run_attempt_id IS stale.run_attempt_id
+               AND newer.sequence > stale.sequence
+           )`,
+      )
+      .run();
+    const removed = Number(result.changes ?? 0);
+    if (removed > 0) {
+      this.hotThreadRunEventCache.clear();
+      this.projectionEventCache.clear();
+      this.nextThreadRunEventSequences.clear();
+    }
+    return removed;
+  }
+
   clearThreadRunEvents(threadId: string): void {
     this.db.prepare(`DELETE FROM thread_run_events WHERE thread_id = ?`).run(threadId);
     this.invalidateThreadRunEventCaches(threadId);

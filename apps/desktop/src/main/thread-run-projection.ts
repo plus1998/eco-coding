@@ -31,6 +31,8 @@ export interface BuildThreadRunProjectionInput {
   context?: ThreadContextSnapshot;
   subagentTimings?: readonly ThreadSubagentSessionTiming[];
   nowMs?: number;
+  /** False when events are a bounded tail and earlier lifecycle events may be absent. */
+  historyComplete?: boolean;
 }
 
 interface MutableRequestSpan {
@@ -212,7 +214,13 @@ export function buildThreadRunProjection(
     });
   }
 
-  const requestSpans = buildRequestSpans(events, input.status, diagnostics, input.agents);
+  const requestSpans = buildRequestSpans(
+    events,
+    input.status,
+    diagnostics,
+    input.agents,
+    input.historyComplete ?? true,
+  );
   const mainTimeline = timeline.filter((item) => item.scope === "main" || item.scope === "both");
 
   return {
@@ -531,6 +539,7 @@ function buildRequestSpans(
   threadStatus: string,
   diagnostics: ThreadRunProjectionDiagnostic[],
   agents: readonly AgentInstanceRecord[] = [],
+  historyComplete = true,
 ): ThreadRunProjectionRequestSpan[] {
   const spans = new Map<string, MutableRequestSpan>();
   const seenStreamingKeys = new Set<string>();
@@ -542,7 +551,7 @@ function buildRequestSpans(
     }
     const span = spans.get(requestId) ?? createRequestSpan(event, requestId);
     spans.set(requestId, span);
-    applyEventToRequestSpan(span, event, diagnostics, seenStreamingKeys);
+    applyEventToRequestSpan(span, event, diagnostics, seenStreamingKeys, historyComplete);
   }
 
   closeRequestSpansForTerminalAgents(spans, agents);
@@ -551,7 +560,11 @@ function buildRequestSpans(
   const terminalAt = events[events.length - 1]?.observedAt;
   const output: ThreadRunProjectionRequestSpan[] = [];
   for (const span of spans.values()) {
-    if (terminalThread && (span.status === "waiting_first_token" || span.status === "streaming")) {
+    if (
+      historyComplete &&
+      terminalThread &&
+      (span.status === "waiting_first_token" || span.status === "streaming")
+    ) {
       diagnostics.push({
         code: "request_span_left_open",
         message: `Request span ${span.requestId} is still open after terminal thread status ${threadStatus}.`,
@@ -638,6 +651,7 @@ function applyEventToRequestSpan(
   event: ThreadRunEvent,
   diagnostics: ThreadRunProjectionDiagnostic[],
   seenStreamingKeys: Set<string>,
+  historyComplete: boolean,
 ): void {
   if (!span.ownerAgentId && event.agentId) {
     span.ownerAgentId = event.agentId;
@@ -672,7 +686,7 @@ function applyEventToRequestSpan(
     seenStreamingKeys.add(span.requestId);
   }
   if (event.streamState === "finalized") {
-    if (!span.sawStreamStart && !seenStreamingKeys.has(span.requestId)) {
+    if (historyComplete && !span.sawStreamStart && !seenStreamingKeys.has(span.requestId)) {
       diagnostics.push({
         code: "orphan_stream_finalize",
         message: `Stream finalized without a prior stream start for ${span.requestId}.`,

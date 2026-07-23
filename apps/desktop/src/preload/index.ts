@@ -129,6 +129,8 @@ import {
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
   type ThreadRollbackResult,
+  type ThreadRunProjectionDetailRequest,
+  type ThreadRunProjectionDetailResult,
   type ThreadRunProjectionSnapshot,
   type ThreadSessionBootstrapResult,
   type ThreadStartRequest,
@@ -649,6 +651,11 @@ const api = {
     threadIdOrRequest: string | { threadId: string; mode?: "feed" | "full" },
   ): Promise<ThreadRunProjectionSnapshot | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionGet, threadIdOrRequest);
+  },
+  getThreadRunProjectionDetail(
+    request: ThreadRunProjectionDetailRequest,
+  ): Promise<ThreadRunProjectionDetailResult | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionDetailGet, request);
   },
   listSubagentSessions(threadId: string): Promise<ThreadSubagentSessionTiming[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentSessionsList, threadId);

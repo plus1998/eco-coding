@@ -1495,8 +1495,13 @@ function emit(ctx: AdapterContext, input: EmitInput): void {
   }
   const turnId = input.turnId?.trim();
   const itemId = input.itemId?.trim();
+  const stableStreamEventId =
+    (input.eventType === "message.delta" || input.eventType === "thinking.delta") && itemId
+      ? ["tre:codex", input.eventType, input.codexThreadId, turnId ?? "turn", itemId].join(":")
+      : undefined;
   const eventId =
     input.stableEventId?.trim() ||
+    stableStreamEventId ||
     [
       "tre:codex",
       input.eventType,

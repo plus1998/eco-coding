@@ -436,6 +436,11 @@ export function buildMainAgentStrategySummary(profile: EcoOrchestrationProfileCo
   ].join("\n");
 }
 
+const ORCHESTRATION_CONVERGENCE_POLICY = [
+  "Orchestration has finite time, token, cost, and subagent budgets enforced by the host.",
+  "Never treat subagents as free or unlimited. Reuse active agents, avoid repeated delegation rounds, and converge once the requested result is verified.",
+].join("\n");
+
 export function buildMainAgentProfileAppend(
   profile: EcoOrchestrationProfileConfig,
   _templates: readonly EcoAgentTemplateConfig[],
@@ -443,6 +448,7 @@ export function buildMainAgentProfileAppend(
   return [
     `Eco orchestration profile: ${profile.name} (${profile.preset}).`,
     buildMainAgentStrategySummary(profile),
+    ORCHESTRATION_CONVERGENCE_POLICY,
   ].join("\n\n");
 }
 
@@ -470,7 +476,7 @@ export function buildCodexMainAgentProfileAppend(
         'When calling spawn_agent with agent_type, always set fork_turns to "none" so the selected custom agent configuration is applied.',
       ].join("\n")
     : "";
-  return [customPrompt, subagentProtocol].filter(Boolean).join("\n\n");
+  return [customPrompt, subagentProtocol, ORCHESTRATION_CONVERGENCE_POLICY].filter(Boolean).join("\n\n");
 }
 
 export function buildMainAgentSystemPrompt(

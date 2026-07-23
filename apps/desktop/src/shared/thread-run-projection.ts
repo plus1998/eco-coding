@@ -127,6 +127,9 @@ export interface ThreadRunProjectionDetailRequest {
   kind: ThreadRunProjectionDetailKind;
   key: string;
   afterSequence?: number;
+  beforeSequence?: number;
+  /** Return the newest page when no forward cursor is supplied. */
+  tail?: boolean;
   limit?: number;
 }
 
@@ -140,4 +143,6 @@ export interface ThreadRunProjectionDetailResult {
   agent?: ThreadRunProjectionAgent;
   hasMore: boolean;
   nextAfterSequence?: number;
+  hasEarlier?: boolean;
+  previousBeforeSequence?: number;
 }

@@ -23,6 +23,7 @@ export function createSubagentSessionHooks(
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
     onTimingChanged?: () => void;
+    onSubagentStarted?: (agentId: string) => void;
     onProxyAttributionSettled?: (input: {
       agentId: string;
       role: RuntimeAgentRole;
@@ -57,6 +58,7 @@ export function createSubagentSessionHooks(
       const prompt = input.prompt?.trim() ?? "";
       const todoId = input.todoId?.trim() || undefined;
       const missionKey = role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
+      options?.onSubagentStarted?.(input.agentId);
       store.upsertSubagentSessionActive({
         threadId,
         role,

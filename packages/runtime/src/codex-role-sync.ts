@@ -28,6 +28,7 @@ import { isThreadSubagentRoleEnabledForCodex } from "./subagent-availability.js"
 /** Codex role id for Profile `builtinAgents.explore` (plan §6.2.1). */
 export const CODEX_EXPLORE_ROLE_ID = "explore";
 const CODEX_EXPLORE_TEMPLATE_ID = "builtin.coding.explore";
+const ECO_ROLE_BUNDLES_DIRNAME = "eco-agent-bundles";
 
 const BUILTIN_EXPLORE_TOOL_POLICY: EcoToolPolicy = {
   sandboxMode: "read-only",
@@ -119,6 +120,8 @@ interface CodexRoleDraft extends BuiltCodexRole {
  * Sync enabled Profile agents into a content-addressed immutable directory.
  * Codex reads a role file only when spawn_agent runs, so mutable shared paths
  * would let a concurrent thread replace another thread's permissions.
+ * Bundles stay outside `$CODEX_HOME/agents`, where Codex recursively discovers
+ * standalone roles and would see duplicate names across immutable bundles.
  *
  * @see docs/codex-integration-plan.md §6.2.2, §6.4
  */
@@ -232,9 +235,10 @@ export async function syncProfileAgentsToCodexRoles(
   }
 
   const bundleFingerprint = await fingerprintRoleBundle(drafts);
-  const agentsDir = path.join(input.codexHomeDir, "agents", "eco", bundleFingerprint);
+  const agentsDir = path.join(input.codexHomeDir, ECO_ROLE_BUNDLES_DIRNAME, bundleFingerprint);
   const roles: SyncedCodexRole[] = [];
 
+  await removeLegacyDiscoveredEcoRoles(input.codexHomeDir);
   await fs.mkdir(agentsDir, { recursive: true });
 
   for (const draft of drafts) {
@@ -283,6 +287,10 @@ export async function syncProfileAgentsToCodexRoles(
     threadConfig,
     roleThreadConfigs,
   };
+}
+
+async function removeLegacyDiscoveredEcoRoles(codexHomeDir: string): Promise<void> {
+  await fs.rm(path.join(codexHomeDir, "agents", "eco"), { recursive: true, force: true });
 }
 
 /**

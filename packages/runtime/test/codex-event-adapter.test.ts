@@ -403,6 +403,7 @@ test("dispatch merges agentMessage deltas on stable streamKey (itemId)", () => {
   const finalMessage = events.find((event) => event.eventType === "message.final");
 
   expect(deltas).toHaveLength(2);
+  expect(deltas[0]?.id).toBe(deltas[1]?.id);
   expect(deltas[0]?.message).toBe("Hello ");
   expect(deltas[1]?.message).toBe("Hello world");
   expect(deltas.every((event) => event.streamKey === "item_agent_001")).toBe(true);

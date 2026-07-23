@@ -939,3 +939,27 @@ test("buildThreadRunProjection ignores persisted metrics-only usage events", () 
   expect(projection.diagnostics).toEqual([]);
   expect(projection.agents).toEqual([]);
 });
+
+test("buildThreadRunProjection does not diagnose missing prefixes in bounded history", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_partial_history",
+    status: "idle",
+    attempts: [],
+    agents: [],
+    historyComplete: false,
+    events: [
+      event({
+        id: "thinking-final-tail",
+        sequence: 1001,
+        eventType: "thinking.final",
+        scope: "main",
+        requestId: "request_before_window",
+        streamState: "finalized",
+        message: "",
+      }),
+    ],
+  });
+
+  expect(projection.diagnostics).toEqual([]);
+  expect(projection.requestSpans[0]?.status).toBe("completed");
+});

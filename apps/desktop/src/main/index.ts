@@ -268,6 +268,7 @@ import {
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
 import type { UsageBillingObservation } from "./billing-orchestration";
+import { usageBillingObservationKey } from "./usage-billing-observations";
 import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
@@ -328,6 +329,10 @@ import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./co
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
+import {
+  OrchestrationRunBudgetGuard,
+  resolveOrchestrationRunBudget,
+} from "./orchestration-run-budget";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
@@ -647,6 +652,26 @@ function scheduleWorkspaceGitStatusPublishForThread(threadId: string): void {
 
 const activeRunRuntimeState = new ActiveRunRuntimeStateStore();
 const activeRunBillingState = new ActiveRunBillingStateStore();
+const orchestrationRunBudgetGuard = new OrchestrationRunBudgetGuard(
+  resolveOrchestrationRunBudget(),
+  (event) => {
+    if (!activeRunRuntimeState.abortRun(event.threadId, `orchestration budget exceeded: ${event.kind}`)) {
+      return;
+    }
+    const message = `编排已触发硬熔断：${event.message}`;
+    updateThread(event.threadId, { status: "running", message: `${message} 正在停止…` });
+    cancelClarificationsForThread(event.threadId, message);
+    cancelBashApprovalsForThread(event.threadId, message);
+    cancelPlanApprovalsForThreadWithStoreCleanup(event.threadId, message);
+    emitThreadEvent(event.threadId, "thread.orchestration_budget_exceeded", message, "system");
+    logEcoDiag("orchestration.budget_exceeded", {
+      threadId: shortThreadId(event.threadId),
+      kind: event.kind,
+      observed: event.observed,
+      limit: event.limit,
+    });
+  },
+);
 const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
@@ -805,6 +830,7 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
   clearRequestStartedPersisted(threadId);
   activeRunRuntimeState.startRun(threadId, run);
   activeRunBillingState.startRun(threadId);
+  orchestrationRunBudgetGuard.start(threadId);
 }
 
 function finishActiveRun(threadId: string): void {
@@ -818,6 +844,7 @@ function finishActiveRun(threadId: string): void {
   }
   activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
+  orchestrationRunBudgetGuard.finish(threadId);
   clearRequestStartedPersisted(threadId);
   threadLiveRequestRegistry.clearThread(threadId);
   proxyBillingStampRegistry.clearThread(threadId);
@@ -879,6 +906,12 @@ app.whenReady().then(async () => {
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
+  const compactedLegacyStreamEvents = conversationStore.compactLegacyThreadRunStreamEvents();
+  if (compactedLegacyStreamEvents > 0) {
+    logEcoDiag("thread_run_events.legacy_streams_compacted", {
+      removed: compactedLegacyStreamEvents,
+    });
+  }
   codexFileCheckpointStore = new CodexFileCheckpointStore(
     path.join(app.getPath("userData"), "codex-file-checkpoints"),
   );
@@ -1026,6 +1059,9 @@ app.whenReady().then(async () => {
         throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
       }
       const persisted = conversationStore.appendThreadRunEvent(event);
+      if (persisted.eventType === "agent.started" && persisted.agentId) {
+        orchestrationRunBudgetGuard.observeSubagent(persisted.threadId, persisted.agentId);
+      }
       applyCodexSubagentLifecycleEvent(persisted, {
         getAgentStatus: (threadId, agentId) =>
           conversationStore.listAgentInstances(threadId).find((candidate) => candidate.agentId === agentId)
@@ -1283,6 +1319,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  settleActiveRunsBeforeQuit();
   flushAllThreadMetrics();
   codexGatewayUsagePending.dispose();
   codexGatewayUsageDeduplicator.clear();
@@ -1291,6 +1328,26 @@ app.on("will-quit", () => {
   void stopGlobalCodexRuntimeLifecycle();
   void stopGlobalEcoGateway();
 });
+
+function settleActiveRunsBeforeQuit(): void {
+  for (const thread of conversationStore?.listThreads?.() ?? []) {
+    const runtimeActive = activeRunRuntimeState.hasRun(thread.id);
+    const persistedActive = thread.status === "running" || thread.status === "queued";
+    if (!runtimeActive && !persistedActive) continue;
+
+    activeRunRuntimeState.abortRun(thread.id, "application quitting");
+    cancelClarificationsForThread(thread.id, "application quitting");
+    cancelBashApprovalsForThread(thread.id, "application quitting");
+    cancelPlanApprovalsForThreadWithStoreCleanup(thread.id, "application quitting");
+    settleRecoveredLifecycleRecords(thread.id, "cancelled");
+    updateThread(thread.id, {
+      status: "idle",
+      message: "应用退出时已停止运行。可在本对话继续发送消息。",
+    });
+    emitThreadEvent(thread.id, "thread.idle", "应用退出时已停止运行。", "system");
+    finishActiveRun(thread.id);
+  }
+}
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
   return {
@@ -5258,13 +5315,27 @@ function settleRecoveredLifecycleRecords(
   threadId: string,
   runStatus: Exclude<RunAttemptStatus, "running">,
 ): void {
+  let subagentSessionsSettled = 0;
+  for (const session of conversationStore.listSubagentSessions(threadId)) {
+    if (session.status !== "active") continue;
+    conversationStore.markSubagentSessionStopped(threadId, session.agentId);
+    subagentMetricsRegistry.onSubagentStop(threadId, {
+      agentId: session.agentId,
+      role: session.role,
+    });
+    subagentSessionsSettled += 1;
+  }
   const result = agentLifecycle.settleRecoveredThread({
     threadId,
     attempts: conversationStore.listRunAttempts(threadId),
     agents: conversationStore.listAgentInstances(threadId),
     runStatus,
   });
-  if (result.runAttemptsSettled === 0 && result.agentInstancesSettled === 0) {
+  if (
+    result.runAttemptsSettled === 0 &&
+    result.agentInstancesSettled === 0 &&
+    subagentSessionsSettled === 0
+  ) {
     return;
   }
   for (const runAttemptId of result.settledRunAttemptIds) {
@@ -5277,6 +5348,7 @@ function settleRecoveredLifecycleRecords(
     runStatus,
     runAttemptsSettled: result.runAttemptsSettled,
     agentInstancesSettled: result.agentInstancesSettled,
+    subagentSessionsSettled,
   });
 }
 
@@ -5633,7 +5705,17 @@ async function handleRunCancelled(
   message?: string,
 ): Promise<void> {
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
-  await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps(), message);
+  const budgetExceeded = orchestrationRunBudgetGuard.exceeded(threadId);
+  const resolvedMessage =
+    message ??
+    (budgetExceeded ? `已自动停止：编排触发硬熔断。${budgetExceeded.message}` : undefined);
+  await finalizeCancelledRun(
+    threadId,
+    worktreePlan,
+    explicit,
+    createFinalizeCancelledRunDeps(),
+    resolvedMessage,
+  );
 }
 
 function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
@@ -5676,6 +5758,7 @@ function buildSdkHookContextExtras(
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
     attribution: subagentAttribution,
+    onSubagentStarted: (agentId) => orchestrationRunBudgetGuard.observeSubagent(threadId, agentId),
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
     onProxyAttributionSettled: ({ agentId, role, parentToolUseId }) => {
       usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, {
@@ -6679,7 +6762,13 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
 }
 
 function noteUsageBillingObservation(threadId: string, observation: UsageBillingObservation): void {
-  activeRunBillingState.appendObservation(threadId, observation);
+  if (activeRunBillingState.appendObservation(threadId, observation)) {
+    orchestrationRunBudgetGuard.observeUsage(
+      threadId,
+      usageBillingObservationKey(observation),
+      observation.usage,
+    );
+  }
 }
 
 async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsageEvent): Promise<void> {
@@ -6899,6 +6988,10 @@ function usageBillingEffectsServices() {
 function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): void {
   const threadStatus = conversationStore.getThread(event.threadId)?.status;
   const billing = enrichBillingDisplaySource(event.payload.billing, threadStatus);
+  orchestrationRunBudgetGuard.observeCost(
+    event.threadId,
+    Math.max(billing.sourceReportedCostUsd, billing.ecoCostUsd),
+  );
   emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, {
     ...event.payload,
     billing,
@@ -8101,6 +8194,7 @@ function buildCurrentThreadRunProjection(
     ...(billing && { billing }),
     ...(context && { context }),
     subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
+    historyComplete: options?.fullHistory === true,
   });
   projection.historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   logThreadRunProjectionDiagnostics(projection);
@@ -8130,7 +8224,7 @@ function logThreadRunProjectionDiagnostics(projection: ThreadRunProjectionSnapsh
     if (diagnostic.code === "request_span_left_open") {
       continue;
     }
-    const identity = diagnostic.eventId ?? diagnostic.agentId ?? diagnostic.requestId ?? "thread";
+    const identity = diagnostic.requestId ?? diagnostic.agentId ?? "thread";
     logEcoDiagThrottled(
       `thread-run-projection:${projection.thread.threadId}:${diagnostic.code}:${identity}`,
       "thread_run_projection.diagnostic",
@@ -8299,6 +8393,7 @@ async function resolvePromptImagesForMainContext(input: {
     phase,
     missionKey: `prompt-images:${attachments.length}`,
   });
+  orchestrationRunBudgetGuard.observeSubagent(input.threadId, agentId);
   subagentMetricsRegistry.onSubagentStart(input.threadId, {
     agentId,
     role: BUILTIN_VISION_AGENT_ROLE,
