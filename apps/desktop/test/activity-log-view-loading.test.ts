@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ActivityLogView,
+  ProjectionToolGroupEntry,
   ProjectionSubagentDetailFeed,
   resolveActiveSubagentDurationMs,
   resolveMinimumVisibleToolRunningState,
@@ -10,6 +11,7 @@ import {
 import { formatDuration } from "../src/renderer/activity-log";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
+import { buildThreadRunProjectionViewModel } from "../src/renderer/thread-run-projection-view";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
   ThreadRunProjectionAgent,
@@ -955,37 +957,100 @@ test("ActivityLogView collapses a single completed tool behind the shared summar
   }
 });
 
-test("ActivityLogView collapses incomplete Bash details behind a neutral summary", () => {
+test("ProjectionToolGroupEntry merges a single Bash summary with its expanded details", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "single-bash-expanded",
+          eventType: "tool.completed",
+          text: "Tool: Bash · bun test",
+          metadata: {
+            tool: {
+              name: "Bash",
+              detail: "bun test",
+              toolUseId: "toolu_single_bash_expanded",
+              status: "completed",
+              output: "2 pass",
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("single Bash tool group missing");
+  }
+
+  const html = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(html.match(/已运行 bun test/g)?.length).toBe(1);
+  expect(html).not.toContain("run-log-tool-group-child-trigger");
+  expect(html).toContain("run-log-bash-command");
+  expect(html).toContain("run-log-bash-output");
+  expect(html).toContain("2 pass");
+});
+
+test("ActivityLogView flattens a failed Bash command behind a subtle status dot", () => {
+  const failedProjection = projection({
+    status: "failed",
+    timeline: [
+      item({
+        id: "bash-failed",
+        eventType: "tool.failed",
+        text: "Tool: Bash · bun test",
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: "bun test",
+            toolUseId: "toolu_bash_failed",
+            status: "failed",
+            output: "1 test failed",
+          },
+        },
+      }),
+    ],
+  });
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
-      projection: projection({
-        status: "failed",
-        timeline: [
-          item({
-            id: "bash-failed",
-            eventType: "tool.failed",
-            text: "Tool: Bash · bun test",
-            metadata: {
-              tool: {
-                name: "Bash",
-                detail: "bun test",
-                toolUseId: "toolu_bash_failed",
-                status: "failed",
-                output: "1 test failed",
-              },
-            },
-          }),
-        ],
-      }),
+      projection: failedProjection,
     }),
   );
 
   expect(html).toContain("run-log-tool-group-trigger");
-  expect(html).toContain("工具未完成 · Bash");
+  expect(html).toContain("已运行 bun test");
+  expect(html).toContain("run-log-tool-status-dot");
+  expect(html).not.toContain("工具未完成");
   expect(html).not.toContain("run-log-tool-group-trigger is-failed");
   expect(html).not.toContain("run-log-bash-command");
   expect(html).not.toContain("run-log-bash-output");
   expect(html).not.toContain("1 test failed");
+
+  const entry = buildThreadRunProjectionViewModel(failedProjection).mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("failed Bash tool group missing");
+  }
+  const expandedHtml = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(expandedHtml.match(/已运行 bun test/g)?.length).toBe(1);
+  expect(expandedHtml).not.toContain("run-log-tool-group-child-trigger");
+  expect(expandedHtml).toContain("run-log-bash-command");
+  expect(expandedHtml).toContain("run-log-bash-output");
+  expect(expandedHtml).toContain("1 test failed");
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {

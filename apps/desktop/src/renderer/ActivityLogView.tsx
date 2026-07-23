@@ -96,9 +96,9 @@ import {
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionAgentEchoFeedEntry,
   type ThreadRunProjectionMainFeedEntry,
-  type ThreadRunProjectionViewModel,
   type ThreadRunProjectionTimelineFeedEntry,
   type ThreadRunProjectionToolGroupFeedEntry,
+  type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
 import {
   buildThreadRunTurnFeedSections,
@@ -774,14 +774,16 @@ function isTightAgentEchoEntry(
   return block ? isTightFeedDetailBlock(block) : false;
 }
 
-function ProjectionToolGroupEntry({
+export function ProjectionToolGroupEntry({
   entry,
   requestSpansById,
+  defaultExpanded = false,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const blocks = useMemo(
     () =>
       entry.entries
@@ -812,6 +814,19 @@ function ProjectionToolGroupEntry({
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
   const statusLabel = approvalLifecycle ? lifecycleStatusLabels[approvalLifecycle] : undefined;
+  const onlyBlock = blocks.length === 1 ? blocks[0] : undefined;
+  const singleBashBlock =
+    onlyBlock?.kind === "action" && onlyBlock.bashRun
+      ? onlyBlock
+      : onlyBlock?.kind === "tool-failed" &&
+          onlyBlock.tool.trim().toLowerCase() === "bash" &&
+          !onlyBlock.recoveredResult &&
+          (onlyBlock.command || onlyBlock.error)
+        ? onlyBlock
+        : undefined;
+  const hasFailedTool = blocks.some(
+    (block) => block.kind === "tool-failed" && !block.recoveredResult,
+  );
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -841,6 +856,9 @@ function ProjectionToolGroupEntry({
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
+        {hasFailedTool ? (
+          <span className="run-log-tool-status-dot" title="运行未完成" aria-hidden />
+        ) : null}
         <ChevronRight
           size={15}
           className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
@@ -849,13 +867,28 @@ function ProjectionToolGroupEntry({
       </button>
       {expanded ? (
         <div className="run-log-tool-group-details">
-          {entry.entries.map((child) => (
-            <ProjectionToolGroupChildEntry
-              key={child.key}
-              entry={child}
-              requestSpansById={requestSpansById}
+          {singleBashBlock ? (
+            <RunLogBashTerminal
+              {...(singleBashBlock.kind === "action" && singleBashBlock.bashRun?.command && {
+                command: singleBashBlock.bashRun.command,
+              })}
+              {...(singleBashBlock.kind === "action" && singleBashBlock.bashRun?.output && {
+                output: singleBashBlock.bashRun.output,
+              })}
+              {...(singleBashBlock.kind === "tool-failed" &&
+                singleBashBlock.command && { command: singleBashBlock.command })}
+              {...(singleBashBlock.kind === "tool-failed" &&
+                singleBashBlock.error && { output: singleBashBlock.error })}
             />
-          ))}
+          ) : (
+            entry.entries.map((child) => (
+              <ProjectionToolGroupChildEntry
+                key={child.key}
+                entry={child}
+                requestSpansById={requestSpansById}
+              />
+            ))
+          )}
         </div>
       ) : null}
     </div>
@@ -1062,7 +1095,9 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
     const block = blocks[index];
     if (block?.kind === "tool-failed") {
       return {
-        label: block.recoveredResult ? "补丁已应用 · 检查通过" : `工具未完成 · ${block.tool}`,
+        label: block.recoveredResult
+          ? "补丁已应用 · 检查通过"
+          : summarizeFailedTool(block.tool, block.command),
         icon: iconForToolName(block.tool),
       };
     }
@@ -1267,6 +1302,11 @@ function summarizeCompletedActionBlock(
     return `已调用子代理${suffix}`;
   }
   return `已执行${suffix || ` ${block.toolName ?? "工具"}`}`;
+}
+
+function summarizeFailedTool(tool: string, command?: string): string {
+  const target = clampActivityPreviewLine(command || tool, 64);
+  return `已运行${target ? ` ${target}` : ""}`;
 }
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
@@ -2919,7 +2959,10 @@ function ToolFailedBlock({
       <span
         className={`run-log-tool-failed-label${recoveredResult ? " is-recovered" : ""}`}
       >
-        {recoveredResult ? "补丁已应用 · 检查通过" : `工具未完成 · ${tool}`}
+        <span>{recoveredResult ? "补丁已应用 · 检查通过" : summarizeFailedTool(tool, command)}</span>
+        {!recoveredResult ? (
+          <span className="run-log-tool-status-dot" title="运行未完成" aria-hidden />
+        ) : null}
       </span>
       {isBash && (command || (!recoveredResult && error)) ? (
         <RunLogBashTerminal

@@ -8464,6 +8464,10 @@ button.sidebar-core-heading {
 }
 
 .run-log-tool-failed-label {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
@@ -9145,6 +9149,14 @@ button.sidebar-core-heading {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.run-log-tool-status-dot {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger, #ef4444) 58%, transparent);
 }
 
 .run-log-tool-group-chevron,
