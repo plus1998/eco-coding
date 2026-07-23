@@ -6,6 +6,7 @@ import {
   ECO_RPC_METHODS,
   type EcoJsonRpcMessage,
 } from "@eco/shared";
+import type { MongoStore } from "../src/db/mongo-store";
 import { MemoryPresenceStore } from "../src/presence/presence-store";
 import { MemoryRpcBus, MemoryRpcBusHub } from "../src/rpc/rpc-bus";
 import { RpcGateway, type RpcPeer } from "../src/rpc/rpc-gateway";
@@ -250,6 +251,53 @@ test("publishes mobile presence changes to bound desktops", async () => {
   expectPresenceNotification(context.desktopMessages, context.mobilePeer.deviceId, false);
 
   await closeTestMongoStore(context.store);
+});
+
+test("does not publish mobile presence to bindings without event read access", async () => {
+  const store = {
+    touchDevice: async () => undefined,
+    updateDeviceProfile: async () => undefined,
+    listActiveBindingsForDesktop: async () => [],
+    listActiveBindingsForMobile: async () => [
+      {
+        id: "bind_1",
+        userId: "usr_1",
+        desktopDeviceId: "dev_desktop",
+        mobileDeviceId: "dev_mobile",
+        capabilities: ["rpc:invoke"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        revokedAt: null,
+      },
+    ],
+  } as unknown as MongoStore;
+  const gateway = new RpcGateway({
+    store,
+    presence: new MemoryPresenceStore(),
+    rpcTimeoutMs: 1000,
+    now: () => new Date("2026-01-01T00:00:00.000Z"),
+  });
+  const desktopMessages: EcoJsonRpcMessage[] = [];
+  const desktopPeer = createPeer({
+    userId: "usr_1",
+    deviceId: "dev_desktop",
+    deviceKind: "desktop",
+    sessionId: "sess_desktop",
+    capabilities: ["events:publish", "rpc:receive", "device:pair"],
+    messages: desktopMessages,
+  });
+  const mobilePeer = createPeer({
+    userId: "usr_1",
+    deviceId: "dev_mobile",
+    deviceKind: "mobile",
+    sessionId: "sess_mobile",
+    capabilities: ["rpc:invoke"],
+    messages: [],
+  });
+
+  await gateway.connect(desktopPeer);
+  await gateway.connect(mobilePeer);
+
+  expect(desktopMessages).toHaveLength(0);
 });
 
 test("routes mobile invokes across server instances", async () => {

@@ -23,9 +23,9 @@ import {
   isEcoJsonRpcResponse,
   type RemoteCommandDefinition,
 } from "@eco/shared";
+import { normalizeIpAddress } from "../client-ip";
 import type { MongoStore } from "../db/mongo-store";
 import type { PresenceStore } from "../presence/presence-store";
-import { normalizeIpAddress } from "../client-ip";
 import { type InvokeAuthorization, PolicyEngine } from "./policy";
 import type { RpcBus, RpcBusMessage } from "./rpc-bus";
 
@@ -644,6 +644,9 @@ export class RpcGateway {
 
     const bindings = await this.store.listActiveBindingsForMobile(peer.userId, peer.deviceId);
     for (const binding of bindings) {
+      if (!binding.capabilities.includes("events:read")) {
+        continue;
+      }
       await this.sendNotificationToDevice(peer.userId, binding.desktopDeviceId, notification);
     }
   }

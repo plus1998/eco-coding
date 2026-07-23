@@ -486,6 +486,7 @@ import {
 import {
   buildFeedProjectionSignature,
   filterFeedProjectionAfterSequence,
+  filterFeedProjectionForClient,
   maxFeedProjectionTimelineSequence,
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
@@ -919,10 +920,6 @@ app.whenReady().then(async () => {
     eventCenter: desktopEventCenter,
     log: (message) => process.stderr.write(message),
     onStatusChange: emitCenterServerStatus,
-    resolveThreadProjection: (threadId) => {
-      const projection = buildCurrentThreadRunProjection(threadId);
-      return projection ? trimProjectionForFeed(projection) : undefined;
-    },
   });
   agentLifecycle = new AgentLifecycleService(conversationStore);
   codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
@@ -2203,7 +2200,7 @@ function registerIpcHandlers(): void {
     if (request.mode !== "feed") {
       return projection;
     }
-    return filterFeedProjectionAfterSequence(trimProjectionForFeed(projection), request.afterSequence);
+    return filterFeedProjectionForClient(trimProjectionForFeed(projection), request);
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadRunProjectionDetailGet, async (payload: unknown) => {

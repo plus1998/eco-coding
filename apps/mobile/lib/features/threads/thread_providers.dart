@@ -367,12 +367,10 @@ class ThreadSessionState {
   }
 }
 
-final threadSessionProvider =
-    StateNotifierProvider.family<
-      ThreadSessionNotifier,
-      ThreadSessionState,
-      String
-    >((ref, threadId) => ThreadSessionNotifier(threadId, ref));
+final threadSessionProvider = StateNotifierProvider.autoDispose
+    .family<ThreadSessionNotifier, ThreadSessionState, String>(
+      (ref, threadId) => ThreadSessionNotifier(threadId, ref),
+    );
 
 class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   ThreadSessionNotifier(this.threadId, this.ref)
@@ -382,32 +380,19 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   final String threadId;
   final Ref ref;
-  Timer? _projectionRefreshTimer;
+  bool _centerConnectionWasInterrupted = false;
+  bool _selectedDesktopWasOffline = false;
+  bool _projectionSynchronized = false;
+  Future<ThreadRunProjectionSnapshot?>? _projectionRequestInFlight;
   final _loadedProjectionDetailKeys = <String>{};
 
-  void _scheduleProjectionRefresh() {
-    _projectionRefreshTimer?.cancel();
-    _projectionRefreshTimer = Timer(const Duration(milliseconds: 150), () {
-      unawaited(_refreshProjectionFromRpc());
-    });
-  }
-
-  Future<void> _refreshProjectionFromRpc() async {
+  Future<void> recoverProjection() async {
     if (!mounted) {
       return;
     }
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) {
-      return;
-    }
     try {
-      final projection = await rpc.getRunProjection(
-        threadId,
-        mode: 'feed',
-        afterSequence: _projectionMainTimelineCachedAfterSequence(
-          state.runProjection,
-        ),
-      );
+      final projection = await _requestProjection();
+      _projectionSynchronized = true;
       if (!mounted || projection == null) {
         return;
       }
@@ -415,6 +400,35 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         runProjection: _pickNewerProjection(state.runProjection, projection),
       );
     } catch (_) {}
+  }
+
+  Future<ThreadRunProjectionSnapshot?> _requestProjection({
+    bool initial = false,
+  }) async {
+    final pending = _projectionRequestInFlight;
+    if (pending != null) {
+      return pending;
+    }
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      return null;
+    }
+    final request = rpc.getRunProjection(
+      threadId,
+      mode: 'feed',
+      afterSequence: initial
+          ? null
+          : _projectionCachedAfterSequence(state.runProjection),
+      historyRevision: initial ? null : state.runProjection?.historyRevision,
+    );
+    _projectionRequestInFlight = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_projectionRequestInFlight, request)) {
+        _projectionRequestInFlight = null;
+      }
+    }
   }
 
   Future<ThreadRunProjectionDetailResult?> loadProjectionDetail({
@@ -468,28 +482,28 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
   }
 
-  @override
-  void dispose() {
-    _projectionRefreshTimer?.cancel();
-    super.dispose();
-  }
-
   Future<void> _init() async {
     ref.listen(ecoEventsProvider, (previous, next) {
       next.whenData(_handleEvent);
     });
 
-    ref.listen(connectionStatusProvider, (previous, next) {
+    ref.listen(connectionStatusProvider, (_, next) {
       next.whenData((status) {
+        if (status.state == EcoConnectionState.disconnected ||
+            status.state == EcoConnectionState.error) {
+          _centerConnectionWasInterrupted = true;
+          _projectionSynchronized = false;
+          return;
+        }
         if (status.state != EcoConnectionState.connected) {
           return;
         }
-        final wasConnected =
-            previous?.valueOrNull?.state == EcoConnectionState.connected;
-        if (wasConnected) {
+        if (!_centerConnectionWasInterrupted && _projectionSynchronized) {
           return;
         }
+        _centerConnectionWasInterrupted = false;
         unawaited(_refreshFollowUpsFromRpc());
+        unawaited(recoverProjection());
       });
     });
 
@@ -507,10 +521,11 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     try {
       final results = await Future.wait([
         rpc.sessionBootstrap(threadId),
-        rpc.getRunProjection(threadId, mode: 'feed'),
+        _requestProjection(initial: true),
       ]);
       final bootstrap = results[0] as ThreadSessionBootstrapResult;
       final projection = results[1] as ThreadRunProjectionSnapshot?;
+      _projectionSynchronized = true;
       final thread =
           bootstrap.thread ?? cachedThread ?? await rpc.getThread(threadId);
       final loadedFollowUps = _mergeThreadFollowUps(
@@ -544,19 +559,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   void _handleEvent(EcoEventEnvelope event) {
     final payload = event.payload;
     if (payload is! Map<String, dynamic>) return;
+    if (_handleSelectedDesktopPresenceEvent(event, payload)) {
+      return;
+    }
     final live = ThreadLiveEvent.fromJson(payload);
     final eventThreadId = resolveThreadEventThreadId(
       envelopeThreadId: event.threadId,
       payloadThreadId: live.threadId,
     );
     if (eventThreadId != threadId) return;
-
-    final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
-    final isActiveThread = _isActiveThreadStatus(state.thread?.status);
-
-    if (isActiveThread && !isMetricsOnlyEvent && live.projection == null) {
-      _scheduleProjectionRefresh();
-    }
 
     if (isFollowUpThreadLiveEvent(
       kind: event.kind,
@@ -607,8 +618,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
             live.projection,
           ),
         );
-      } else {
-        _scheduleProjectionRefresh();
       }
     }
     if (live.type == 'thread.subagent_timing_updated') {
@@ -621,9 +630,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           if (!mounted) return;
           state = state.copyWith(subagentSessions: sessions);
         });
-      }
-      if (_isActiveThreadStatus(state.thread?.status)) {
-        _scheduleProjectionRefresh();
       }
     }
 
@@ -686,7 +692,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       });
     }
     if (event.kind == 'thread.clarification') {
-      _scheduleProjectionRefresh();
       ref.read(desktopRpcProvider)?.getPendingClarification(threadId).then((
         clarification,
       ) {
@@ -734,6 +739,30 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         state = state.copyWith(thread: thread);
       });
     }
+  }
+
+  bool _handleSelectedDesktopPresenceEvent(
+    EcoEventEnvelope event,
+    Map<String, dynamic> payload,
+  ) {
+    if (event.kind != presenceDeviceEventKind) {
+      return false;
+    }
+    final selectedDesktopId = ref.read(selectedDesktopIdProvider);
+    if (selectedDesktopId == null || payload['deviceId'] != selectedDesktopId) {
+      return false;
+    }
+    if (payload['online'] != true) {
+      _selectedDesktopWasOffline = true;
+      _projectionSynchronized = false;
+      return true;
+    }
+    if (_selectedDesktopWasOffline || !_projectionSynchronized) {
+      _selectedDesktopWasOffline = false;
+      unawaited(_refreshFollowUpsFromRpc());
+      unawaited(recoverProjection());
+    }
+    return true;
   }
 
   Future<void> _refreshFollowUpsFromRpc() async {
@@ -849,7 +878,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       pendingClarification: clarification,
       clearClarification: clarification == null,
     );
-    _scheduleProjectionRefresh();
   }
 }
 
@@ -859,6 +887,9 @@ ThreadRunProjectionSnapshot? _pickNewerProjection(
 ) {
   if (current == null) return incoming;
   if (incoming == null) return current;
+  if (current.historyRevision != incoming.historyRevision) {
+    return mergeThreadRunProjectionSnapshots(current, incoming);
+  }
   final incomingIsNewer =
       incoming.generatedAt.compareTo(current.generatedAt) >= 0 ||
       incoming.sourceEventCount >= current.sourceEventCount;
@@ -946,30 +977,19 @@ ThreadRunProjectionDetailResult _appendProjectionDetailPage(
   );
 }
 
-int? _projectionMainTimelineCachedAfterSequence(
-  ThreadRunProjectionSnapshot? projection,
-) {
+int? _projectionCachedAfterSequence(ThreadRunProjectionSnapshot? projection) {
   if (projection == null) return null;
   int? maxSequence;
-  for (final item in projection.timeline) {
+  final timeline = [
+    ...projection.timeline,
+    for (final agent in projection.agents) ...agent.timeline,
+  ];
+  for (final item in timeline) {
     if (maxSequence == null || item.sequence > maxSequence) {
       maxSequence = item.sequence;
     }
   }
   return maxSequence;
-}
-
-bool _isMetricsOnlyThreadLiveEvent(String liveType) {
-  return liveType == 'thread.usage_updated' ||
-      liveType == 'thread.context_updated' ||
-      liveType == 'thread.subagent_timing_updated' ||
-      liveType == 'thread.todos_updated' ||
-      liveType == 'thread.title_updated' ||
-      liveType == 'thread.run_projection_updated';
-}
-
-bool _isActiveThreadStatus(String? status) {
-  return status == 'running' || status == 'awaiting_plan';
 }
 
 bool _shouldRefreshThreadListFromLiveEvent(ThreadLiveEvent live) {

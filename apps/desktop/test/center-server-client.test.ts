@@ -93,6 +93,7 @@ test("center server client refreshes tokens and forwards events over websocket",
   expect(fetchCalls.some((url) => url.endsWith("/v1/auth/refresh"))).toBe(true);
   expect(client.getSnapshot().status.state).toBe("connected");
   expect(FakeWebSocket.instances[0]?.url).toContain("/v1/rpc?access_token=fresh_access");
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
 
   eventCenter.publishSettingsUpdated({
     threadId: "settings",
@@ -121,7 +122,7 @@ test("center server client refreshes tokens and forwards events over websocket",
   client.dispose();
 });
 
-test("center server client throttles mobile streaming projections and sends only the latest snapshot", async () => {
+test("center server client batches mobile projection deltas and keeps the latest version per item", async () => {
   const store = createConnectedCenterServerStore();
   const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
   const client = new CenterServerDesktopClient({
@@ -145,8 +146,412 @@ test("center server client throttles mobile streaming projections and sends only
 
   expect(FakeWebSocket.instances[0]?.sent).toHaveLength(0);
   await Bun.sleep(30);
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(0);
+
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  eventCenter.publishThreadLiveEvent(projectionEvent("first", "message.delta"));
+  eventCenter.publishThreadLiveEvent(projectionEvent("latest", "message.delta"));
+  await Bun.sleep(30);
   expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
   expect(FakeWebSocket.instances[0]?.sent[0]).toContain("latest");
+  expect(FakeWebSocket.instances[0]?.sent[0]).not.toContain('"text":"first"');
+  client.dispose();
+});
+
+test("center server client cancels a pending projection when the last mobile disconnects", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  eventCenter.publishThreadLiveEvent(projectionEvent("not sent", "message.delta"));
+  receiveMobilePresence(FakeWebSocket.instances[0], false);
+  await Bun.sleep(30);
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(0);
+
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  eventCenter.publishThreadLiveEvent(projectionEvent("current", "message.final"));
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("current");
+  client.dispose();
+});
+
+test("center server client keeps publishing while another mobile remains online", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true, "dev_mobile_1");
+  receiveMobilePresence(FakeWebSocket.instances[0], true, "dev_mobile_2");
+  eventCenter.publishThreadLiveEvent(projectionEvent("batched", "message.delta"));
+  receiveMobilePresence(FakeWebSocket.instances[0], false, "dev_mobile_1");
+  await Bun.sleep(30);
+
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("batched");
+
+  receiveMobilePresence(FakeWebSocket.instances[0], false, "dev_mobile_2");
+  eventCenter.publishThreadLiveEvent(projectionEvent("not sent", "message.final"));
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  client.dispose();
+});
+
+test("center server client initializes mobile presence after connecting", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  let presenceRequested = false;
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/presence")) {
+      presenceRequested = true;
+      return new Response(
+        JSON.stringify({
+          devices: [
+            {
+              id: "dev_mobile_already_online",
+              userId: "user_1",
+              kind: "mobile",
+              name: "Mobile",
+              createdAt: fixedNow().toISOString(),
+              lastSeenAt: fixedNow().toISOString(),
+              disabledAt: null,
+              online: true,
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.endsWith("/v1/bindings")) {
+      return new Response(
+        JSON.stringify({
+          bindings: [
+            {
+              id: "binding_1",
+              userId: "user_1",
+              desktopDeviceId: "dev_1",
+              mobileDeviceId: "dev_mobile_already_online",
+              capabilities: ["events:read", "rpc:invoke"],
+              createdAt: fixedNow().toISOString(),
+              revokedAt: null,
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.includes("/v1/devices/dev_1")) {
+      return new Response(JSON.stringify({}), { status: 200 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+  });
+
+  await client.start();
+  for (let attempt = 0; attempt < 20 && !presenceRequested; attempt += 1) {
+    await Bun.sleep(1);
+  }
+  await Bun.sleep(0);
+  eventCenter.publishSettingsUpdated({
+    threadId: "settings",
+    type: "settings.updated",
+    message: "settings saved",
+  });
+
+  expect(presenceRequested).toBe(true);
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  client.dispose();
+});
+
+test("center server client merges presence updates that arrive during its initial snapshot", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  let resolvePresence: ((response: Response) => void) | undefined;
+  let resolveBindings: ((response: Response) => void) | undefined;
+  const presenceResponse = new Promise<Response>((resolve) => {
+    resolvePresence = resolve;
+  });
+  const bindingsResponse = new Promise<Response>((resolve) => {
+    resolveBindings = resolve;
+  });
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/presence")) return presenceResponse;
+    if (url.endsWith("/v1/bindings")) return bindingsResponse;
+    if (url.includes("/v1/devices/dev_1")) {
+      return new Response(JSON.stringify({}), { status: 200 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+  });
+
+  await client.start();
+  await Bun.sleep(0);
+  receiveMobilePresence(FakeWebSocket.instances[0], true, "dev_mobile_new");
+  resolvePresence?.(
+    new Response(
+      JSON.stringify({
+        devices: [
+          {
+            id: "dev_mobile_existing",
+            userId: "user_1",
+            kind: "mobile",
+            name: "Existing Mobile",
+            createdAt: fixedNow().toISOString(),
+            lastSeenAt: fixedNow().toISOString(),
+            disabledAt: null,
+            online: true,
+          },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  resolveBindings?.(
+    new Response(
+      JSON.stringify({
+        bindings: [
+          {
+            id: "binding_existing",
+            userId: "user_1",
+            desktopDeviceId: "dev_1",
+            mobileDeviceId: "dev_mobile_existing",
+            capabilities: ["events:read"],
+            createdAt: fixedNow().toISOString(),
+            revokedAt: null,
+          },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  await Bun.sleep(0);
+
+  receiveMobilePresence(FakeWebSocket.instances[0], false, "dev_mobile_new");
+  eventCenter.publishThreadLiveEvent(projectionEvent("still sent", "message.final"));
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("still sent");
+  client.dispose();
+});
+
+test("center server client keeps distinct projection items emitted in the same throttle window", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  eventCenter.publishThreadLiveEvent(projectionEvent("first item", "message.delta", "stream_1", 1));
+  eventCenter.publishThreadLiveEvent(projectionEvent("second item", "message.delta", "stream_2", 2));
+
+  await Bun.sleep(30);
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("first item");
+  expect(FakeWebSocket.instances[0]?.sent[0]).toContain("second item");
+  client.dispose();
+});
+
+test("center server client does not truncate distinct items in a projection batch", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 50,
+  });
+
+  await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  for (let sequence = 1; sequence <= 1_001; sequence += 1) {
+    eventCenter.publishThreadLiveEvent(
+      projectionEvent(`item ${sequence}`, "message.delta", `stream_${sequence}`, sequence),
+    );
+  }
+  await Bun.sleep(60);
+
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(sentProjection(FakeWebSocket.instances[0]?.sent[0]).timeline).toHaveLength(1_001);
+  client.dispose();
+});
+
+test("center server client batches agent items and keeps latest attempt and request span state", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  const first = projectionEvent("unused", "message.delta");
+  first.projection.timeline = [];
+  first.projection.agents = [projectionAgent("agent item one", "agent_item_1", 1)];
+  first.projection.attempts = [
+    {
+      attemptId: "attempt_1",
+      phase: "execution",
+      retryIndex: 0,
+      status: "running",
+      startedAt: fixedNow().toISOString(),
+    },
+  ];
+  first.projection.requestSpans = [
+    {
+      requestId: "request_1",
+      status: "streaming",
+      startedAt: fixedNow().toISOString(),
+    },
+  ];
+  const second = projectionEvent("unused", "message.delta");
+  second.projection.timeline = [];
+  second.projection.agents = [projectionAgent("agent item two", "agent_item_2", 2)];
+  second.projection.attempts = [
+    {
+      attemptId: "attempt_1",
+      phase: "execution",
+      retryIndex: 0,
+      status: "completed",
+      startedAt: fixedNow().toISOString(),
+      endedAt: fixedNow().toISOString(),
+    },
+  ];
+  second.projection.requestSpans = [
+    {
+      requestId: "request_1",
+      status: "completed",
+      startedAt: fixedNow().toISOString(),
+      endedAt: fixedNow().toISOString(),
+    },
+  ];
+
+  eventCenter.publishThreadLiveEvent(first);
+  eventCenter.publishThreadLiveEvent(second);
+  await Bun.sleep(30);
+
+  const projection = sentProjection(FakeWebSocket.instances[0]?.sent[0]);
+  expect(projection.agents[0]?.timeline.map((item) => item.id)).toEqual(["agent_item_1", "agent_item_2"]);
+  expect(projection.attempts[0]?.status).toBe("completed");
+  expect(projection.requestSpans[0]?.status).toBe("completed");
+  client.dispose();
+});
+
+test("center server client drops pending items from an older history revision", async () => {
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    mobileStreamingProjectionThrottleMs: 20,
+  });
+
+  await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
+  const oldProjection = projectionEvent("old item", "message.delta", "old_item", 10);
+  oldProjection.projection.historyRevision = 1;
+  const newProjection = projectionEvent("new item", "message.delta", "new_item", 1);
+  newProjection.projection.historyRevision = 2;
+  eventCenter.publishThreadLiveEvent(oldProjection);
+  eventCenter.publishThreadLiveEvent(newProjection);
+  await Bun.sleep(30);
+
+  const projection = sentProjection(FakeWebSocket.instances[0]?.sent[0]);
+  expect(projection.historyRevision).toBe(2);
+  expect(projection.timeline.map((item) => item.id)).toEqual(["new_item"]);
+  client.dispose();
+});
+
+test("center server client drops projections while mobile presence is unknown", async () => {
+  class ManualQueueWebSocket {
+    static OPEN = 1;
+    static instances: ManualQueueWebSocket[] = [];
+    readyState = 0;
+    onopen: ((event: unknown) => void) | null = null;
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
+    readonly sent: string[] = [];
+
+    constructor(_url: string) {
+      ManualQueueWebSocket.instances.push(this);
+    }
+
+    send(data: string): void {
+      this.sent.push(data);
+    }
+
+    open(): void {
+      this.readyState = ManualQueueWebSocket.OPEN;
+      this.onopen?.({});
+    }
+
+    receive(data: string): void {
+      this.onmessage?.({ data });
+    }
+
+    close(): void {}
+  }
+
+  const store = createConnectedCenterServerStore();
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: ManualQueueWebSocket as unknown as new (url: string) => ManualQueueWebSocket,
+    now: fixedNow,
+  });
+
+  const startPromise = client.start();
+  await Promise.resolve();
+  eventCenter.publishThreadLiveEvent(projectionEvent("first item", "message.final", "item_1", 1));
+  eventCenter.publishThreadLiveEvent(projectionEvent("second item", "message.final", "item_2", 2));
+  ManualQueueWebSocket.instances[0]?.open();
+  await startPromise;
+
+  expect(ManualQueueWebSocket.instances[0]?.sent).toHaveLength(0);
+  receiveMobilePresence(ManualQueueWebSocket.instances[0], true);
+  eventCenter.publishThreadLiveEvent(projectionEvent("current item", "message.final", "item_3", 3));
+  expect(ManualQueueWebSocket.instances[0]?.sent).toHaveLength(1);
+  expect(sentProjection(ManualQueueWebSocket.instances[0]?.sent[0]).timeline[0]?.id).toBe("item_3");
   client.dispose();
 });
 
@@ -162,6 +567,7 @@ test("center server client flushes a final projection without waiting for the mo
   });
 
   await client.start();
+  receiveMobilePresence(FakeWebSocket.instances[0], true);
   eventCenter.publishThreadLiveEvent(projectionEvent("streaming", "message.delta"));
   eventCenter.publishThreadLiveEvent(projectionEvent("complete", "message.final"));
 
@@ -977,6 +1383,8 @@ function createConnectedCenterServerStore(): CenterServerStore {
 function projectionEvent(
   text: string,
   eventType: "message.delta" | "message.final",
+  itemId = "stream_item",
+  sequence = 1,
 ): {
   threadId: string;
   type: "thread.run_projection_updated";
@@ -1002,8 +1410,8 @@ function projectionEvent(
       requestSpans: [],
       timeline: [
         {
-          id: "stream_item",
-          sequence: 1,
+          id: itemId,
+          sequence,
           eventType,
           scope: "main",
           text,
@@ -1015,6 +1423,74 @@ function projectionEvent(
       sourceEventCount: 1,
     },
   };
+}
+
+function projectionAgent(
+  text: string,
+  itemId: string,
+  sequence: number,
+): ThreadRunProjectionSnapshot["agents"][number] {
+  return {
+    agentId: "agent_1",
+    role: "coder",
+    kind: "subagent",
+    status: "active",
+    startedAt: fixedNow().toISOString(),
+    durationMs: 1,
+    timeline: [
+      {
+        id: itemId,
+        sequence,
+        eventType: "message.delta",
+        scope: "agent",
+        text,
+        at: fixedNow().toISOString(),
+        role: "coder",
+        agentId: "agent_1",
+      },
+    ],
+  };
+}
+
+function sentProjection(value: string | undefined): ThreadRunProjectionSnapshot {
+  if (!value) {
+    throw new Error("Expected a projection notification.");
+  }
+  const notification = JSON.parse(value) as {
+    params?: { payload?: { projection?: ThreadRunProjectionSnapshot } };
+  };
+  const projection = notification.params?.payload?.projection;
+  if (!projection) {
+    throw new Error("Notification does not contain a projection.");
+  }
+  return projection;
+}
+
+function receiveMobilePresence(
+  socket: { receive(data: string): void } | undefined,
+  online: boolean,
+  deviceId = "dev_mobile_1",
+): void {
+  socket?.receive(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: ECO_RPC_METHODS.event,
+      params: {
+        protocolVersion: 1,
+        id: `evt_presence_${deviceId}_${online ? "online" : "offline"}`,
+        kind: "presence.device",
+        source: "center-server",
+        occurredAt: fixedNow().toISOString(),
+        payload: {
+          type: online ? "device.online" : "device.offline",
+          deviceId,
+          deviceKind: "mobile",
+          online,
+          lastSeenAt: fixedNow().toISOString(),
+        },
+      },
+    }),
+  );
 }
 
 function normalizeFakeSettings(settings: CenterServerSettingsSecret): CenterServerSettingsSecret {

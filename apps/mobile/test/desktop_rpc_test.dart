@@ -29,6 +29,20 @@ void main() {
     },
   );
 
+  test('getRunProjection encodes the incremental history revision', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.getRunProjection(
+      'thr:1',
+      mode: 'feed',
+      afterSequence: 42,
+      historyRevision: 3,
+    );
+
+    expect(client.args, ['feed:thr%3A1?afterSequence=42&historyRevision=3']);
+  });
+
   test('getRunProjectionDetail sends object request', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');

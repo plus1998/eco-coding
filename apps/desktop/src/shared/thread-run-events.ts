@@ -1,10 +1,6 @@
 export type ThreadRunEventScope = "main" | "agent" | "both";
 
-export type ThreadRunEventStreamState =
-  | "none"
-  | "placeholder"
-  | "streaming"
-  | "finalized";
+export type ThreadRunEventStreamState = "none" | "placeholder" | "streaming" | "finalized";
 
 export type ThreadRunEventType =
   | "thread.status"
@@ -73,6 +69,7 @@ export interface ThreadRunBashApprovalMetadata {
 export interface ThreadRunEvent {
   id: string;
   threadId: string;
+  /** Timeline order and incremental sync version; advances when cumulative stream content changes. */
   sequence: number;
   eventType: ThreadRunEventType;
   scope: ThreadRunEventScope;

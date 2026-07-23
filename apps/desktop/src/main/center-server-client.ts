@@ -65,7 +65,6 @@ export interface CenterServerDesktopClientOptions {
   mobileStreamingProjectionThrottleMs?: number;
   log?: (message: string) => void;
   onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
-  resolveThreadProjection?: (threadId: string) => ThreadRunProjectionSnapshot | undefined;
 }
 
 interface TokenResponse {
@@ -97,13 +96,32 @@ interface AccountAuthResponse {
 }
 
 const WS_OPEN = 1;
-const MAX_QUEUED_EVENTS = 100;
+const MAX_QUEUED_NON_PROJECTION_EVENTS = 100;
 const KEEPALIVE_INTERVAL_MS = 25_000;
 const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 1_000;
 
 interface PendingMobileProjection {
   notification: EventCenterJsonRpcNotification;
+  batch: MobileProjectionBatch;
   timer: ReturnType<typeof setTimeout>;
+}
+
+interface QueuedMobileProjection {
+  notification: EventCenterJsonRpcNotification;
+  batch: MobileProjectionBatch;
+}
+
+interface MobileProjectionAgentBatch {
+  agent: ThreadRunProjectionSnapshot["agents"][number];
+  timelineById: Map<string, ThreadRunProjectionSnapshot["timeline"][number]>;
+}
+
+interface MobileProjectionBatch {
+  projection: ThreadRunProjectionSnapshot;
+  attemptsById: Map<string, ThreadRunProjectionSnapshot["attempts"][number]>;
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  timelineById: Map<string, ThreadRunProjectionSnapshot["timeline"][number]>;
+  agentsById: Map<string, MobileProjectionAgentBatch>;
 }
 
 export class CenterServerDesktopClient implements DesktopEventCenterSink {
@@ -117,9 +135,6 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly mobileStreamingProjectionThrottleMs: number;
   private readonly log: (message: string) => void;
   private readonly onStatusChange: ((snapshot: CenterServerSettingsSnapshot) => void) | undefined;
-  private readonly resolveThreadProjection:
-    | ((threadId: string) => ThreadRunProjectionSnapshot | undefined)
-    | undefined;
   private readonly unsubscribe: () => void;
   private socket: WebSocketLike | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -127,7 +142,12 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private connectInFlight: Promise<void> | undefined;
   private intentionallyStopped = true;
   private status: CenterServerConnectionStatus = { state: "disabled" };
+  private readonly onlineMobileDeviceIds = new Set<string>();
+  private mobilePresenceVersion = 0;
+  private readonly mobilePresenceVersionByDeviceId = new Map<string, number>();
+  private mobileDeliveryGeneration = 0;
   private readonly queuedEvents: EventCenterJsonRpcNotification[] = [];
+  private readonly queuedMobileProjections = new Map<string, QueuedMobileProjection>();
   private readonly pendingMobileProjections = new Map<string, PendingMobileProjection>();
 
   constructor(options: CenterServerDesktopClientOptions) {
@@ -142,13 +162,15 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       options.mobileStreamingProjectionThrottleMs ?? MOBILE_STREAMING_PROJECTION_THROTTLE_MS;
     this.log = options.log ?? (() => {});
     this.onStatusChange = options.onStatusChange;
-    this.resolveThreadProjection = options.resolveThreadProjection;
     this.unsubscribe = this.eventCenter.subscribe(this);
   }
 
   publish(envelope: EventCenterEnvelope, notification: EventCenterJsonRpcNotification): void {
     const settings = this.store.getSettingsWithSecrets();
     if (!settings.enabled) {
+      return;
+    }
+    if (this.onlineMobileDeviceIds.size === 0) {
       return;
     }
 
@@ -180,7 +202,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
   stop(): void {
     this.intentionallyStopped = true;
-    this.clearPendingMobileProjections();
+    this.resetMobileDeliveryState();
     this.clearReconnectTimer();
     this.clearKeepalive();
     this.socket?.close(1000, "Desktop center server client stopped.");
@@ -378,7 +400,16 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       method: "DELETE",
       bearerToken: accessToken,
     });
-    return response.binding;
+    const binding = response.binding;
+    if (binding.revokedAt) {
+      this.mobileDeliveryGeneration += 1;
+      this.onlineMobileDeviceIds.delete(binding.mobileDeviceId);
+      if (this.onlineMobileDeviceIds.size === 0) {
+        this.clearMobileDeliveryBuffers();
+      }
+      void this.refreshOnlineMobilePresence();
+    }
+    return binding;
   }
 
   async syncDeviceProfile(): Promise<void> {
@@ -461,6 +492,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private async connectOnce(): Promise<void> {
     const settings = this.store.getSettingsWithSecrets();
     this.clearReconnectTimer();
+    this.resetMobileDeliveryState();
     if (!settings.serverUrl.trim()) {
       const message = "Center server URL is required.";
       this.failConnection(message);
@@ -507,6 +539,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
           this.setStatus({ state: "connected", connectedAt });
           this.flushQueuedEvents();
           this.startKeepalive();
+          void this.refreshOnlineMobilePresence();
           void this.syncDeviceProfile().catch((error) => {
             this.log(`[eco] center server profile sync failed: ${errorMessage(error)}\n`);
           });
@@ -529,6 +562,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
         socket.onclose = (event) => {
           this.clearKeepalive();
+          this.resetMobileDeliveryState();
           if (this.socket === socket) {
             this.socket = undefined;
           }
@@ -703,8 +737,76 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     if (!isRecord(params) || params.kind !== "presence.device") {
       return false;
     }
+    this.updateOnlineMobilePresence(params.payload);
     this.notePresenceChanged();
     return true;
+  }
+
+  private async refreshOnlineMobilePresence(): Promise<void> {
+    const generation = this.mobileDeliveryGeneration;
+    const version = this.mobilePresenceVersion;
+    try {
+      const [devices, bindings] = await Promise.all([this.listPresence(), this.listBindings()]);
+      if (this.intentionallyStopped || generation !== this.mobileDeliveryGeneration) {
+        return;
+      }
+      const readableMobileIds = new Set(
+        bindings
+          .filter((binding) => !binding.revokedAt && binding.capabilities.includes("events:read"))
+          .map((binding) => binding.mobileDeviceId),
+      );
+      const nextOnlineMobileDeviceIds = new Set<string>();
+      for (const device of devices) {
+        if (
+          device.kind === "mobile" &&
+          device.online === true &&
+          !device.disabledAt &&
+          readableMobileIds.has(device.id)
+        ) {
+          nextOnlineMobileDeviceIds.add(device.id);
+        }
+      }
+
+      for (const [deviceId, deviceVersion] of this.mobilePresenceVersionByDeviceId) {
+        if (deviceVersion <= version) {
+          continue;
+        }
+        if (this.onlineMobileDeviceIds.has(deviceId)) {
+          nextOnlineMobileDeviceIds.add(deviceId);
+        } else {
+          nextOnlineMobileDeviceIds.delete(deviceId);
+        }
+      }
+      this.onlineMobileDeviceIds.clear();
+      for (const deviceId of nextOnlineMobileDeviceIds) {
+        this.onlineMobileDeviceIds.add(deviceId);
+      }
+      if (this.onlineMobileDeviceIds.size === 0) {
+        this.clearMobileDeliveryBuffers();
+      }
+    } catch (error) {
+      this.log(`[eco] center server presence refresh failed: ${errorMessage(error)}\n`);
+    }
+  }
+
+  private updateOnlineMobilePresence(payload: unknown): void {
+    if (!isRecord(payload) || payload.deviceKind !== "mobile") {
+      return;
+    }
+    const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
+    if (!deviceId) {
+      return;
+    }
+    this.mobilePresenceVersion += 1;
+    this.mobilePresenceVersionByDeviceId.set(deviceId, this.mobilePresenceVersion);
+    if (payload.online === true) {
+      this.onlineMobileDeviceIds.add(deviceId);
+      return;
+    }
+    this.onlineMobileDeviceIds.delete(deviceId);
+    if (this.onlineMobileDeviceIds.size === 0) {
+      this.clearMobileDeliveryBuffers();
+    }
   }
 
   private notePresenceChanged(): void {
@@ -725,6 +827,14 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         this.socket.send(JSON.stringify(event));
       }
     }
+    for (const [threadId, queued] of this.queuedMobileProjections) {
+      this.socket.send(
+        JSON.stringify(
+          replaceProjectionNotification(queued.notification, materializeMobileProjectionBatch(queued.batch)),
+        ),
+      );
+      this.queuedMobileProjections.delete(threadId);
+    }
   }
 
   private publishMobileProjection(
@@ -744,7 +854,12 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       if (pending) {
         clearTimeout(pending.timer);
         this.pendingMobileProjections.delete(threadId);
-        this.sendOrQueue(this.resolveProjectionNotification(threadId, notification));
+        this.sendOrQueue(
+          replaceProjectionNotification(
+            notification,
+            materializeMobileProjectionBatch(appendMobileProjectionBatch(pending.batch, projection)),
+          ),
+        );
       } else {
         this.sendOrQueue(notification);
       }
@@ -753,16 +868,20 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
     if (pending) {
       pending.notification = notification;
+      pending.batch = appendMobileProjectionBatch(pending.batch, projection);
       return;
     }
 
     const entry: PendingMobileProjection = {
       notification,
+      batch: createMobileProjectionBatch(projection),
       timer: setTimeout(() => {
         const latest = this.pendingMobileProjections.get(threadId);
         if (!latest) return;
         this.pendingMobileProjections.delete(threadId);
-        this.sendOrQueue(this.resolveProjectionNotification(threadId, latest.notification));
+        this.sendOrQueue(
+          replaceProjectionNotification(latest.notification, materializeMobileProjectionBatch(latest.batch)),
+        );
       }, this.mobileStreamingProjectionThrottleMs),
     };
     this.pendingMobileProjections.set(threadId, entry);
@@ -773,7 +892,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     if (!pending) return;
     clearTimeout(pending.timer);
     this.pendingMobileProjections.delete(threadId);
-    this.sendOrQueue(this.resolveProjectionNotification(threadId, pending.notification));
+    this.sendOrQueue(
+      replaceProjectionNotification(pending.notification, materializeMobileProjectionBatch(pending.batch)),
+    );
   }
 
   private clearPendingMobileProjections(): void {
@@ -783,23 +904,48 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     this.pendingMobileProjections.clear();
   }
 
+  private clearMobileDeliveryBuffers(): void {
+    this.clearPendingMobileProjections();
+    this.queuedMobileProjections.clear();
+    this.queuedEvents.length = 0;
+  }
+
+  private resetMobileDeliveryState(): void {
+    this.mobileDeliveryGeneration += 1;
+    this.mobilePresenceVersion = 0;
+    this.mobilePresenceVersionByDeviceId.clear();
+    this.onlineMobileDeviceIds.clear();
+    this.clearMobileDeliveryBuffers();
+  }
+
   private sendOrQueue(notification: EventCenterJsonRpcNotification): void {
+    if (this.onlineMobileDeviceIds.size === 0) {
+      return;
+    }
     if (this.socket?.readyState === WS_OPEN) {
       this.socket.send(JSON.stringify(notification));
       return;
     }
+
+    const projectionEntry = readProjectionNotification(notification);
+    if (projectionEntry) {
+      const queued = this.queuedMobileProjections.get(projectionEntry.threadId);
+      if (queued) {
+        queued.notification = notification;
+        queued.batch = appendMobileProjectionBatch(queued.batch, projectionEntry.projection);
+      } else {
+        this.queuedMobileProjections.set(projectionEntry.threadId, {
+          notification,
+          batch: createMobileProjectionBatch(projectionEntry.projection),
+        });
+      }
+      return;
+    }
+
     this.queuedEvents.push(notification);
-    if (this.queuedEvents.length > MAX_QUEUED_EVENTS) {
+    if (this.queuedEvents.length > MAX_QUEUED_NON_PROJECTION_EVENTS) {
       this.queuedEvents.shift();
     }
-  }
-
-  private resolveProjectionNotification(
-    threadId: string,
-    fallback: EventCenterJsonRpcNotification,
-  ): EventCenterJsonRpcNotification {
-    const projection = this.resolveThreadProjection?.(threadId);
-    return projection ? replaceProjectionNotification(fallback, projection) : fallback;
   }
 
   private failConnection(message: string): void {
@@ -897,6 +1043,95 @@ function isStreamingProjection(projection: ThreadRunProjectionSnapshot): boolean
   );
 }
 
+function createMobileProjectionBatch(projection: ThreadRunProjectionSnapshot): MobileProjectionBatch {
+  return {
+    projection,
+    attemptsById: new Map(projection.attempts.map((attempt) => [attempt.attemptId, attempt])),
+    requestSpansById: new Map(projection.requestSpans.map((span) => [span.requestId, span])),
+    timelineById: new Map(projection.timeline.map((item) => [item.id, item])),
+    agentsById: new Map(
+      projection.agents.map((agent) => [
+        agent.agentId,
+        {
+          agent,
+          timelineById: new Map(agent.timeline.map((item) => [item.id, item])),
+        },
+      ]),
+    ),
+  };
+}
+
+function appendMobileProjectionBatch(
+  current: MobileProjectionBatch,
+  incoming: ThreadRunProjectionSnapshot,
+): MobileProjectionBatch {
+  const currentRevision = projectionHistoryRevision(current);
+  const incomingRevision = projectionHistoryRevision(incoming);
+  if (incomingRevision !== currentRevision) {
+    return incomingRevision > currentRevision ? createMobileProjectionBatch(incoming) : current;
+  }
+
+  const sourceEventCount = Math.max(current.projection.sourceEventCount, incoming.sourceEventCount);
+  current.projection = { ...incoming, sourceEventCount };
+  mergeProjectionRecordsInto(current.attemptsById, incoming.attempts, (attempt) => attempt.attemptId);
+  mergeProjectionRecordsInto(current.requestSpansById, incoming.requestSpans, (span) => span.requestId);
+  mergeProjectionRecordsInto(current.timelineById, incoming.timeline, (item) => item.id);
+  for (const agent of incoming.agents) {
+    const existing = current.agentsById.get(agent.agentId);
+    if (existing) {
+      existing.agent = agent;
+      mergeProjectionRecordsInto(existing.timelineById, agent.timeline, (item) => item.id);
+    } else {
+      current.agentsById.set(agent.agentId, {
+        agent,
+        timelineById: new Map(agent.timeline.map((item) => [item.id, item])),
+      });
+    }
+  }
+  return current;
+}
+
+function materializeMobileProjectionBatch(batch: MobileProjectionBatch): ThreadRunProjectionSnapshot {
+  return {
+    ...batch.projection,
+    attempts: [...batch.attemptsById.values()],
+    requestSpans: [...batch.requestSpansById.values()],
+    timeline: sortProjectionTimeline([...batch.timelineById.values()]),
+    agents: [...batch.agentsById.values()].map(({ agent, timelineById }) => ({
+      ...agent,
+      timeline: sortProjectionTimeline([...timelineById.values()]),
+    })),
+  };
+}
+
+function projectionHistoryRevision(projection: ThreadRunProjectionSnapshot | MobileProjectionBatch): number {
+  const revision =
+    "projection" in projection ? projection.projection.historyRevision : projection.historyRevision;
+  return typeof revision === "number" && Number.isFinite(revision) ? revision : 0;
+}
+
+function sortProjectionTimeline(
+  timeline: ThreadRunProjectionSnapshot["timeline"],
+): ThreadRunProjectionSnapshot["timeline"] {
+  timeline.sort((left, right) => {
+    const sequenceDiff = left.sequence - right.sequence;
+    if (sequenceDiff !== 0) return sequenceDiff;
+    const timeDiff = left.at.localeCompare(right.at);
+    return timeDiff !== 0 ? timeDiff : left.id.localeCompare(right.id);
+  });
+  return timeline;
+}
+
+function mergeProjectionRecordsInto<T>(
+  current: Map<string, T>,
+  incoming: readonly T[],
+  readId: (item: T) => string,
+): void {
+  for (const item of incoming) {
+    current.set(readId(item), item);
+  }
+}
+
 function replaceProjectionNotification(
   notification: EventCenterJsonRpcNotification,
   projection: ThreadRunProjectionSnapshot,
@@ -912,6 +1147,17 @@ function replaceProjectionNotification(
       },
     },
   };
+}
+
+function readProjectionNotification(
+  notification: EventCenterJsonRpcNotification,
+): { threadId: string; projection: ThreadRunProjectionSnapshot } | undefined {
+  const envelope = notification.params as EventCenterEnvelope;
+  if (envelope.kind !== "thread.projection") return undefined;
+  const event = readThreadLiveEvent(envelope);
+  const threadId = envelope.threadId ?? event?.threadId;
+  if (!threadId || !event?.projection) return undefined;
+  return { threadId, projection: event.projection };
 }
 
 function resolveWebSocketConstructor(): WebSocketConstructorLike {

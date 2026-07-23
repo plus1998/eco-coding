@@ -5,6 +5,7 @@ import {
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_TEXT_CHARS,
   filterFeedProjectionAfterSequence,
+  filterFeedProjectionForClient,
   maxFeedProjectionTimelineSequence,
   trimProjectionForFeed,
 } from "../src/main/thread-run-projection-feed";
@@ -186,15 +187,30 @@ test("filterFeedProjectionAfterSequence keeps only uncached main and subagent ti
   expect(maxFeedProjectionTimelineSequence(projection)).toBe(4);
 });
 
-test("filterFeedProjectionAfterSequence keeps mutable deltas with an existing sequence", () => {
+test("filterFeedProjectionAfterSequence does not resend an acknowledged mutable delta", () => {
   const projection = createProjection("streaming", { longDelegation: false });
   projection.timeline[0] = {
-    ...projection.timeline[0]!,
+    ...requireValue(projection.timeline[0], "streaming timeline item"),
     eventType: "message.delta",
     streamKey: "stream_1",
   };
 
-  expect(filterFeedProjectionAfterSequence(projection, 1).timeline).toHaveLength(1);
+  expect(filterFeedProjectionAfterSequence(projection, 1).timeline).toHaveLength(0);
+});
+
+test("filterFeedProjectionForClient returns the current feed after a history revision change", () => {
+  const projection = {
+    ...createProjection("current history", { longDelegation: false }),
+    historyRevision: 2,
+  };
+
+  const filtered = filterFeedProjectionForClient(projection, {
+    afterSequence: 100,
+    historyRevision: 1,
+  });
+
+  expect(filtered.timeline.map((item) => item.id)).toEqual(["evt_main"]);
+  expect(filtered.agents[0]?.timeline.map((item) => item.id)).toEqual(["evt_1"]);
 });
 
 test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental updates", () => {
@@ -211,7 +227,7 @@ test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental 
     ...projection,
     agents: [
       {
-        ...projection.agents[0]!,
+        ...requireValue(projection.agents[0], "projection agent"),
         timeline: items,
       },
     ],
@@ -293,7 +309,7 @@ test("buildFeedProjectionSignature ignores active agent duration", () => {
     ...projection,
     agents: [
       {
-        ...projection.agents[0]!,
+        ...requireValue(projection.agents[0], "projection agent"),
         status: "active",
         durationMs: 1,
       },
@@ -303,7 +319,7 @@ test("buildFeedProjectionSignature ignores active agent duration", () => {
     ...activeProjection,
     agents: [
       {
-        ...activeProjection.agents[0]!,
+        ...requireValue(activeProjection.agents[0], "active projection agent"),
         durationMs: 10_000,
       },
     ],
@@ -335,7 +351,7 @@ test("buildFeedProjectionSignature changes when feed-visible content changes", (
       ...projection,
       timeline: [
         {
-          ...projection.timeline[0]!,
+          ...requireValue(projection.timeline[0], "projection timeline item"),
           text: "changed message",
         },
       ],

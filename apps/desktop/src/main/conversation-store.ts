@@ -39,6 +39,7 @@ import type {
   SubagentSessionStatus,
   ThreadSubagentSessionRecord,
 } from "./subagent-session-types.js";
+import { shouldAdvanceThreadRunEventSequence } from "./thread-run-event-sequence";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 import {
   type AgentInstanceKind,
@@ -1928,7 +1929,9 @@ export class ConversationStore {
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      followUpIds.forEach((followUpId, index) => statement.run(index, now, threadId, followUpId));
+      followUpIds.forEach((followUpId, index) => {
+        statement.run(index, now, threadId, followUpId);
+      });
       this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
       this.db.exec("COMMIT");
     } catch (error) {
@@ -2925,33 +2928,40 @@ export class ConversationStore {
       if (!upgraded) {
         return existing;
       }
+      const versioned = shouldAdvanceThreadRunEventSequence(existing)
+        ? {
+            ...upgraded,
+            sequence: this.nextThreadRunEventSequence(event.threadId),
+          }
+        : upgraded;
       this.db
         .prepare(
           `UPDATE thread_run_events
-              SET scope = ?, role = ?, agent_id = ?, parent_agent_id = ?,
+              SET sequence = ?, scope = ?, role = ?, agent_id = ?, parent_agent_id = ?,
                   parent_tool_use_id = ?, run_attempt_id = ?, request_id = ?, stream_key = ?,
                   stream_state = ?, message = ?, metadata_json = ?, observed_at = ?
             WHERE thread_id = ? AND id = ?`,
         )
         .run(
-          upgraded.scope,
-          upgraded.role ?? null,
-          upgraded.agentId ?? null,
-          upgraded.parentAgentId ?? null,
-          upgraded.parentToolUseId ?? null,
-          upgraded.runAttemptId ?? null,
-          upgraded.requestId ?? null,
-          upgraded.streamKey ?? null,
-          upgraded.streamState,
-          upgraded.message,
-          upgraded.metadata ? JSON.stringify(upgraded.metadata) : null,
-          upgraded.observedAt,
-          upgraded.threadId,
-          upgraded.id,
+          versioned.sequence,
+          versioned.scope,
+          versioned.role ?? null,
+          versioned.agentId ?? null,
+          versioned.parentAgentId ?? null,
+          versioned.parentToolUseId ?? null,
+          versioned.runAttemptId ?? null,
+          versioned.requestId ?? null,
+          versioned.streamKey ?? null,
+          versioned.streamState,
+          versioned.message,
+          versioned.metadata ? JSON.stringify(versioned.metadata) : null,
+          versioned.observedAt,
+          versioned.threadId,
+          versioned.id,
         );
-      this.rememberHotThreadRunEvent(upgraded);
-      this.updateProjectionEventCache(upgraded);
-      return upgraded;
+      this.rememberHotThreadRunEvent(versioned);
+      this.updateProjectionEventCache(versioned);
+      return versioned;
     }
 
     const record: ThreadRunEvent = {
@@ -3540,9 +3550,7 @@ export class ConversationStore {
     const row = this.db
       .prepare(`SELECT context_key, prompt, updated_at FROM composer_drafts WHERE context_key = ?`)
       .get(key) as { context_key: string; prompt: string; updated_at: string } | undefined;
-    return row
-      ? { contextKey: row.context_key, prompt: row.prompt, updatedAt: row.updated_at }
-      : undefined;
+    return row ? { contextKey: row.context_key, prompt: row.prompt, updatedAt: row.updated_at } : undefined;
   }
 
   saveComposerDraft(contextKey: string, prompt: string): ComposerDraftRecord | undefined {
@@ -4018,8 +4026,7 @@ function threadRunEventCacheKey(threadId: string, eventId: string): string {
 
 function isCollapsibleProjectionStreamEvent(event: ThreadRunEvent): boolean {
   return (
-    (event.eventType === "message.delta" || event.eventType === "thinking.delta") &&
-    Boolean(event.streamKey)
+    (event.eventType === "message.delta" || event.eventType === "thinking.delta") && Boolean(event.streamKey)
   );
 }
 

@@ -212,6 +212,7 @@ class ThreadRunProjectionSnapshot {
     this.timeline = const [],
     this.requestSpans = const [],
     this.attempts = const [],
+    this.historyRevision = 0,
   });
 
   factory ThreadRunProjectionSnapshot.fromJson(Map<String, dynamic> json) {
@@ -225,6 +226,7 @@ class ThreadRunProjectionSnapshot {
       status: thread['status'] as String? ?? '',
       generatedAt: thread['generatedAt'] as String? ?? '',
       sourceEventCount: (json['sourceEventCount'] as num?)?.toInt() ?? 0,
+      historyRevision: (json['historyRevision'] as num?)?.toInt() ?? 0,
       agents: agentsRaw
           .map(
             (entry) => ThreadRunProjectionAgent.fromJson(
@@ -260,6 +262,7 @@ class ThreadRunProjectionSnapshot {
   final String status;
   final String generatedAt;
   final int sourceEventCount;
+  final int historyRevision;
   final List<ThreadRunProjectionAgent> agents;
   final List<ThreadRunProjectionTimelineItem> timeline;
   final List<ThreadRunProjectionRequestSpan> requestSpans;
@@ -273,6 +276,11 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(
   ThreadRunProjectionSnapshot incoming,
 ) {
   if (current == null) return incoming;
+  if (current.historyRevision != incoming.historyRevision) {
+    return incoming.generatedAt.compareTo(current.generatedAt) >= 0
+        ? incoming
+        : current;
+  }
   final useIncomingHeader =
       incoming.generatedAt.compareTo(current.generatedAt) >= 0;
   return ThreadRunProjectionSnapshot(
@@ -282,6 +290,7 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(
     sourceEventCount: incoming.sourceEventCount > current.sourceEventCount
         ? incoming.sourceEventCount
         : current.sourceEventCount,
+    historyRevision: incoming.historyRevision,
     timeline: _mergeProjectionTimeline(current.timeline, incoming.timeline),
     agents: _mergeProjectionAgents(current.agents, incoming.agents),
     requestSpans: _mergeProjectionRequestSpans(

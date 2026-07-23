@@ -120,7 +120,7 @@ test("Node SQLite incrementally maintains bounded projection reads in WAL mode",
       observedAt,
     });
 
-  appendStream(streamId, "一", "2026-01-01T00:00:01.000Z");
+  const initialStream = appendStream(streamId, "一", "2026-01-01T00:00:01.000Z");
   store.appendThreadRunEvent({
     id: "final_before_cache",
     threadId,
@@ -136,7 +136,8 @@ test("Node SQLite incrementally maintains bounded projection reads in WAL mode",
   const first = store.listThreadRunEventsForProjection(threadId, 10);
   assert.strictEqual(store.listThreadRunEventsForProjection(threadId, 10), first);
 
-  appendStream(streamId, "一段增量文字", "2026-01-01T00:00:03.000Z");
+  const updatedStream = appendStream(streamId, "一段增量文字", "2026-01-01T00:00:03.000Z");
+  assert.ok(updatedStream.sequence > initialStream.sequence);
   const afterStableUpdate = store.listThreadRunEventsForProjection(threadId, 10);
   assert.notStrictEqual(afterStableUpdate, first);
   assert.equal(afterStableUpdate.find((event) => event.id === streamId)?.message, "一段增量文字");
@@ -154,9 +155,10 @@ test("Node SQLite incrementally maintains bounded projection reads in WAL mode",
 
   store.clearThreadRunEvents(threadId);
   assert.equal(appendStream("after_clear", "重新开始", "2026-01-01T00:00:05.000Z").sequence, 1);
-  assert.deepEqual(store.listThreadRunEventsForProjection(threadId, 10).map((event) => event.id), [
-    "after_clear",
-  ]);
+  assert.deepEqual(
+    store.listThreadRunEventsForProjection(threadId, 10).map((event) => event.id),
+    ["after_clear"],
+  );
 });
 
 test("Node SQLite persists composer drafts and clears deleted thread drafts", async (t) => {
@@ -208,7 +210,10 @@ test("Node SQLite persists reordered follow-ups", async (t) => {
 
   const reordered = store.reorderQueuedThreadFollowUps("thr_followup_reorder", [second.id, first.id]);
 
-  assert.deepEqual(reordered.map((item) => item.id), [second.id, first.id]);
+  assert.deepEqual(
+    reordered.map((item) => item.id),
+    [second.id, first.id],
+  );
   assert.deepEqual(
     store.listThreadFollowUps("thr_followup_reorder", { statuses: ["queued"] }).map((item) => item.id),
     [second.id, first.id],
@@ -243,7 +248,10 @@ test("Node SQLite claims queued follow-ups one at a time by default", async (t) 
     deliveryBoundary: "safe_boundary",
   });
 
-  assert.deepEqual(claimed.map((item) => item.id), [first.id]);
+  assert.deepEqual(
+    claimed.map((item) => item.id),
+    [first.id],
+  );
   assert.equal(store.getThreadFollowUp("thr_followup_queue", first.id)?.status, "delivered");
   assert.equal(store.getThreadFollowUp("thr_followup_queue", second.id)?.status, "queued");
 });

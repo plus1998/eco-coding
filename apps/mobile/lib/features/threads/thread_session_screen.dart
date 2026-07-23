@@ -103,6 +103,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshFollowUps());
+      unawaited(
+        ref
+            .read(threadSessionProvider(widget.threadId).notifier)
+            .recoverProjection(),
+      );
       final workspacePath =
           ref
               .read(threadSessionProvider(widget.threadId))

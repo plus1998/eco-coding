@@ -1,7 +1,21 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/build", "!**/.eco", "!**/worktrees", "!bun.lock"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/release",
+      "!**/.dart_tool",
+      "!**/.symlinks",
+      "!**/Pods",
+      "!**/.git-fixtures",
+      "!**/.codex-ref",
+      "!**/.eco",
+      "!**/worktrees",
+      "!bun.lock"
+    ]
   },
   "formatter": {
     "enabled": true,

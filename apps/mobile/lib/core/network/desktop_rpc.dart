@@ -111,12 +111,14 @@ class DesktopRpc {
     String threadId, {
     String mode = 'full',
     int? afterSequence,
+    int? historyRevision,
   }) async {
     // Remote registry accepts a single string arg; encode feed mode in the string.
     final arg = _encodeRunProjectionArg(
       threadId,
       mode: mode,
       afterSequence: afterSequence,
+      historyRevision: historyRevision,
     );
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
@@ -742,13 +744,18 @@ String _encodeRunProjectionArg(
   String threadId, {
   required String mode,
   int? afterSequence,
+  int? historyRevision,
 }) {
   if (mode != 'feed') {
     return threadId;
   }
-  if (afterSequence == null) {
+  if (afterSequence == null && historyRevision == null) {
     return 'feed:$threadId';
   }
   final encodedThreadId = Uri.encodeComponent(threadId);
-  return 'feed:$encodedThreadId?afterSequence=$afterSequence';
+  final query = <String>[
+    if (afterSequence != null) 'afterSequence=$afterSequence',
+    if (historyRevision != null) 'historyRevision=$historyRevision',
+  ].join('&');
+  return 'feed:$encodedThreadId?$query';
 }

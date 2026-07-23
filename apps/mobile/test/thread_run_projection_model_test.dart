@@ -110,6 +110,51 @@ void main() {
     expect(merged.timeline.single.text.length, 1500);
   });
 
+  test(
+    'mergeThreadRunProjectionSnapshots resets cached items after history rewind',
+    () {
+      final current = _projection(
+        sourceEventCount: 10,
+        historyRevision: 1,
+        timeline: [_item('old_evt', 10, scope: 'main', text: 'old')],
+      );
+      final incoming = _projection(
+        sourceEventCount: 1,
+        historyRevision: 2,
+        generatedAt: '2026-01-01T00:00:01.000Z',
+        timeline: [_item('new_evt', 1, scope: 'main', text: 'new')],
+      );
+
+      final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+
+      expect(merged.historyRevision, 2);
+      expect(merged.timeline.map((item) => item.id), ['new_evt']);
+      expect(merged.sourceEventCount, 1);
+    },
+  );
+
+  test(
+    'mergeThreadRunProjectionSnapshots accepts a reset revision after desktop restart',
+    () {
+      final current = _projection(
+        sourceEventCount: 10,
+        historyRevision: 2,
+        timeline: [_item('old_evt', 10, scope: 'main', text: 'old')],
+      );
+      final incoming = _projection(
+        sourceEventCount: 1,
+        historyRevision: 0,
+        generatedAt: '2026-01-01T00:00:01.000Z',
+        timeline: [_item('new_evt', 1, scope: 'main', text: 'new')],
+      );
+
+      final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+
+      expect(merged.historyRevision, 0);
+      expect(merged.timeline.map((item) => item.id), ['new_evt']);
+    },
+  );
+
   test('mergeThreadRunProjectionSnapshots preserves cached tool detail', () {
     final current = _projection(
       sourceEventCount: 2,
@@ -194,6 +239,7 @@ void main() {
 
 ThreadRunProjectionSnapshot _projection({
   int sourceEventCount = 1,
+  int historyRevision = 0,
   String generatedAt = '2026-01-01T00:00:00.000Z',
   List<ThreadRunProjectionTimelineItem> timeline = const [],
   List<ThreadRunProjectionAgent> agents = const [],
@@ -204,6 +250,7 @@ ThreadRunProjectionSnapshot _projection({
     generatedAt: generatedAt,
     agents: agents,
     sourceEventCount: sourceEventCount,
+    historyRevision: historyRevision,
     timeline: timeline,
   );
 }

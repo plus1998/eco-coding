@@ -130,12 +130,22 @@ export function filterFeedProjectionAfterSequence(
   }
   return {
     ...snapshot,
-    timeline: snapshot.timeline.filter((item) => item.sequence > afterSequence || isMutableStreamDelta(item)),
+    timeline: snapshot.timeline.filter((item) => item.sequence > afterSequence),
     agents: snapshot.agents.map((agent) => ({
       ...agent,
-      timeline: agent.timeline.filter((item) => item.sequence > afterSequence || isMutableStreamDelta(item)),
+      timeline: agent.timeline.filter((item) => item.sequence > afterSequence),
     })),
   };
+}
+
+export function filterFeedProjectionForClient(
+  snapshot: ThreadRunProjectionSnapshot,
+  cursor: { afterSequence?: number; historyRevision?: number },
+): ThreadRunProjectionSnapshot {
+  if (cursor.historyRevision !== undefined && cursor.historyRevision !== (snapshot.historyRevision ?? 0)) {
+    return snapshot;
+  }
+  return filterFeedProjectionAfterSequence(snapshot, cursor.afterSequence);
 }
 
 export function maxFeedProjectionTimelineSequence(snapshot: ThreadRunProjectionSnapshot): number | undefined {
@@ -180,10 +190,6 @@ export function buildFeedProjectionSignature(snapshot: ThreadRunProjectionSnapsh
     appendTimelineSignature(hash, agent.timeline);
   }
   return hash.digest("hex");
-}
-
-function isMutableStreamDelta(item: ThreadRunProjectionTimelineItem): boolean {
-  return item.eventType === "message.delta" || item.eventType === "thinking.delta";
 }
 
 function appendTimelineSignature(

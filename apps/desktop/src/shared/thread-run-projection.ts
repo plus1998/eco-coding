@@ -1,18 +1,10 @@
-import type { ThreadRunEvent, ThreadRunEventScope, ThreadRunEventType } from "./thread-run-events";
+import type { ThreadRunEventScope, ThreadRunEventType } from "./thread-run-events";
 
 export type ThreadRunProjectionAgentKind = "planner" | "subagent";
 
-export type ThreadRunProjectionAgentStatus =
-  | "launching"
-  | "active"
-  | "stopped"
-  | "abandoned";
+export type ThreadRunProjectionAgentStatus = "launching" | "active" | "stopped" | "abandoned";
 
-export type ThreadRunProjectionAttemptStatus =
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type ThreadRunProjectionAttemptStatus = "running" | "completed" | "failed" | "cancelled";
 
 export type ThreadRunProjectionRequestStatus =
   | "waiting_first_token"
@@ -46,6 +38,7 @@ export interface ThreadRunProjectionContext {
 
 export interface ThreadRunProjectionTimelineItem {
   id: string;
+  /** Timeline order and incremental sync version; newer versions replace the same id on clients. */
   sequence: number;
   eventType: ThreadRunEventType;
   scope: ThreadRunEventScope;
