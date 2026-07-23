@@ -1,6 +1,16 @@
 // Types
 export type * from './types.js';
 
+export {
+  hasCodexIntegerToolArguments,
+  newResponsesToolArgumentStreamState,
+  normalizeCodexIntegerToolSchemas,
+  normalizeCodexToolArguments,
+  normalizeResponsesStreamToolArguments,
+  normalizeResponsesToolArguments,
+  type ResponsesToolArgumentStreamState,
+} from './codex-tool-arguments.js';
+
 // Anthropic ↔ Responses
 export {
   anthropicToResponses,

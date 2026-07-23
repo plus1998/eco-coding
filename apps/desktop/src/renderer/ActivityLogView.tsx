@@ -89,6 +89,7 @@ import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import {
   buildThreadRunProjectionViewModel,
+  collapseProjectionTimelineStreamsForDetail,
   isProjectionRequestActive,
   isProjectionUserPromptItem,
   projectionItemToDetailBlock,
@@ -1818,7 +1819,9 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   const liveDurationMs = useSubagentDurationMs(agent, running);
   const visibleTimeline = useMemo(
     () =>
-      agent.timeline.filter((item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText))),
+      collapseProjectionTimelineStreamsForDetail(agent.timeline).filter(
+        (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText)),
+      ),
     [agent.timeline, missionText],
   );
   const finalResultItem = useMemo(

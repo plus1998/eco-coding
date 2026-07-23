@@ -1,4 +1,8 @@
-import type { ResponsesRequest, ResponsesUsage } from "@eco/openai-anthropic-bridge";
+import {
+  normalizeCodexIntegerToolSchemas,
+  type ResponsesRequest,
+  type ResponsesUsage,
+} from "@eco/openai-anthropic-bridge";
 import {
   CODEX_TURN_METADATA_HEADER,
   parseCodexTurnMetadataHeader,
@@ -10,6 +14,11 @@ import {
   resolveProviderRoute,
 } from "../provider-router.js";
 import type { GatewayLogFn } from "../server.js";
+import {
+  codexToolArgumentFailureCircuitBreaker,
+  normalizeResponsesToolArgumentResponse,
+  toolArgumentCircuitBreakResponse,
+} from "../tool-argument-guard.js";
 import type {
   GatewayCodexTurnMetadata,
   GatewayConfig,
@@ -49,6 +58,20 @@ export async function handlePostResponses(
     `POST /v1/responses model=${requestedModel} stream=${body.stream === true} providers=${config.providers.map((p) => p.id).join(",")}`,
   );
 
+  const failureObservation = codexToolArgumentFailureCircuitBreaker.observe({
+    ...(codexTurnMetadata?.threadId ? { threadId: codexTurnMetadata.threadId } : {}),
+    ...(codexTurnMetadata?.turnId ? { turnId: codexTurnMetadata.turnId } : {}),
+    responsesInput: body.input,
+  });
+  if (failureObservation?.tripped) {
+    onLog(
+      `tool argument parse loop stopped thread=${codexTurnMetadata?.threadId ?? "(unknown)"} ` +
+        `turn=${codexTurnMetadata?.turnId ?? "(unknown)"} count=${failureObservation.count}`,
+    );
+    return toolArgumentCircuitBreakResponse(body.stream === true, failureObservation.count);
+  }
+  body = normalizeCodexIntegerToolSchemas(body);
+
   let route: ResolvedProviderRoute;
   try {
     route = resolveProviderRoute(body.model, config.providers);
@@ -81,9 +104,10 @@ export async function handlePostResponses(
     `route hit provider=${route.provider.id} kind=${route.upstreamKind} upstreamModel=${route.upstreamModelId} → ${upstreamUrl}`,
   );
 
+  let upstreamResponse: Response;
   switch (route.upstreamKind) {
     case "anthropic-messages":
-      return forwardAnthropicMessages(
+      upstreamResponse = await forwardAnthropicMessages(
         route,
         body,
         request.headers,
@@ -92,9 +116,10 @@ export async function handlePostResponses(
         onUsage,
         codexTurnMetadata,
       );
+      break;
     case "responses":
     case "gateway-delegated":
-      return forwardResponsesPassthrough(
+      upstreamResponse = await forwardResponsesPassthrough(
         route,
         body,
         request.headers,
@@ -103,8 +128,9 @@ export async function handlePostResponses(
         onUsage,
         codexTurnMetadata,
       );
+      break;
     case "openai-chat":
-      return forwardOpenAIChat(
+      upstreamResponse = await forwardOpenAIChat(
         route,
         body,
         request.headers,
@@ -113,11 +139,13 @@ export async function handlePostResponses(
         onUsage,
         codexTurnMetadata,
       );
+      break;
     default: {
       const _exhaustive: never = route.upstreamKind;
       return _exhaustive;
     }
   }
+  return normalizeResponsesToolArgumentResponse(upstreamResponse);
 }
 
 /**

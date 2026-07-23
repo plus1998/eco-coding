@@ -3,8 +3,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ActivityLogView,
-  ProjectionToolGroupEntry,
   ProjectionSubagentDetailFeed,
+  ProjectionToolGroupEntry,
   resolveActiveSubagentDurationMs,
   resolveMinimumVisibleToolRunningState,
 } from "../src/renderer/ActivityLogView";
@@ -761,6 +761,46 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("检查完成，问题在 role fallback。");
   expect(html).toContain("subagent-conversation-result");
   expect(html).toContain("执行结果");
+});
+
+test("ProjectionSubagentDetailFeed collapses a thinking delta prefix into its final item", () => {
+  const subagent = agent({
+    agentId: "agent_thinking_stream",
+    status: "active",
+    timeline: [
+      item({
+        id: "thinking-delta",
+        sequence: 1,
+        eventType: "thinking.delta",
+        scope: "agent",
+        role: "thinking",
+        requestId: "request-1",
+        streamKey: "thinking-stream-1",
+        text: "The",
+      }),
+      item({
+        id: "thinking-final",
+        sequence: 2,
+        eventType: "thinking.final",
+        scope: "agent",
+        role: "thinking",
+        requestId: "request-1",
+        streamKey: "thinking-stream-1",
+        text: "The tool result needs closer inspection.",
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: subagent,
+      missionText: "检查工具输出",
+      requestSpansById: new Map(),
+      threadActive: true,
+    }),
+  );
+
+  expect(html).toContain("The tool result needs closer inspection.");
+  expect(html).not.toMatch(/>The</);
 });
 
 test("ProjectionSubagentDetailFeed marks only the last completed summary as result and removes its phase echo", () => {

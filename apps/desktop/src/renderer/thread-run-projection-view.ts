@@ -500,6 +500,61 @@ function filterProjectionTimelineForDetailFeed(
   );
 }
 
+/**
+ * Full-history detail payloads contain both live deltas and their terminal row.
+ * Collapse only explicit streams that actually contain a delta; final-only rows
+ * are separate conversation entries and must remain visible.
+ */
+export function collapseProjectionTimelineStreamsForDetail(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const latestByStream = new Map<string, { latest: ThreadRunProjectionTimelineItem; hasDelta: boolean }>();
+  for (const item of timeline) {
+    const key = explicitProjectionDetailStreamKey(item);
+    if (!key) {
+      continue;
+    }
+    const current = latestByStream.get(key);
+    const isDelta = item.eventType === "message.delta" || item.eventType === "thinking.delta";
+    if (!current) {
+      latestByStream.set(key, { latest: item, hasDelta: isDelta });
+      continue;
+    }
+    latestByStream.set(key, {
+      latest:
+        compareTimelineItems(current.latest, item) <= 0
+          ? mergeStreamDisplayTimelineItem(current.latest, item, timeline)
+          : current.latest,
+      hasDelta: current.hasDelta || isDelta,
+    });
+  }
+
+  return timeline.flatMap((item) => {
+    const key = explicitProjectionDetailStreamKey(item);
+    if (!key) {
+      return [item];
+    }
+    const stream = latestByStream.get(key);
+    if (!stream?.hasDelta) {
+      return [item];
+    }
+    return stream.latest.id === item.id ? [stream.latest] : [];
+  });
+}
+
+function explicitProjectionDetailStreamKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (!isStreamingRequestDisplayItem(item)) {
+    return undefined;
+  }
+  const streamKey = item.streamKey?.trim();
+  if (!streamKey) {
+    return undefined;
+  }
+  const channel =
+    item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
+  return [channel, item.agentId ?? "", item.requestId ?? "", streamKey].join(":");
+}
+
 function isEmptyTerminalThinkingItem(item: ThreadRunProjectionTimelineItem): boolean {
   return item.eventType === "thinking.final" && item.text.trim().length === 0;
 }
