@@ -239,6 +239,11 @@ import {
 } from "./thread-follow-up-ui";
 import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import {
+  cacheWorkspaceGitStatus,
+  shouldRefreshWorkspaceGitStatus,
+  type WorkspaceGitStatusCache,
+} from "./workspace-git-status-cache";
+import {
   clearLocalStreamUpdates,
   publishLocalStreamUpdate,
   useLocalStreamProjection,
@@ -923,10 +928,13 @@ function App() {
   const [composerModelsLoading, setComposerModelsLoading] = useState(false);
   const [composerModelsError, setComposerModelsError] = useState<string>();
   const [composerModelsRefreshNonce, setComposerModelsRefreshNonce] = useState(0);
-  const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
+  const [gitStatusByWorkspace, setGitStatusByWorkspace] = useState<WorkspaceGitStatusCache>({});
+  const gitStatusByWorkspaceRef = useRef<WorkspaceGitStatusCache>({});
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
-  const [gitStatusLoading, setGitStatusLoading] = useState(false);
-  const gitStatusRequestRef = useRef(0);
+  const [gitStatusLoadingByWorkspace, setGitStatusLoadingByWorkspace] = useState<
+    Record<string, boolean>
+  >({});
+  const gitStatusRequestRef = useRef(new Map<string, number>());
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
@@ -1775,6 +1783,12 @@ function App() {
     const project = projects.find((item) => item.path === currentProjectPath);
     return project?.name ?? pathToName(currentProjectPath);
   }, [currentProjectPath, projects]);
+  const gitStatus = currentProjectPath
+    ? gitStatusByWorkspace[currentProjectPath]?.status
+    : undefined;
+  const gitStatusLoading = currentProjectPath
+    ? gitStatusLoadingByWorkspace[currentProjectPath] === true
+    : false;
   const currentTerminalState = useMemo(() => {
     if (!currentProjectPath) {
       return undefined;
@@ -2050,39 +2064,54 @@ function App() {
     };
   }, [currentProjectPath]);
 
+  const storeGitStatus = useCallback(
+    (workspacePath: string, status: GitWorkingTreeStatus) => {
+      setGitStatusByWorkspace((current) => {
+        const next = cacheWorkspaceGitStatus(current, workspacePath, status, Date.now());
+        gitStatusByWorkspaceRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
+
   const refreshGitStatus = useCallback(
-    async (workspacePath?: string) => {
+    async (workspacePath?: string, options: { force?: boolean } = {}) => {
       const path = workspacePath ?? currentProjectPath;
       if (!path || !window.eco) {
-        setGitStatus(undefined);
-        setGitStatusLoading(false);
         return;
       }
-      const requestId = gitStatusRequestRef.current + 1;
-      gitStatusRequestRef.current = requestId;
-      setGitStatusLoading(true);
+      if (
+        !shouldRefreshWorkspaceGitStatus(
+          gitStatusByWorkspaceRef.current,
+          path,
+          Date.now(),
+          options.force,
+        )
+      ) {
+        return;
+      }
+      const requestId = (gitStatusRequestRef.current.get(path) ?? 0) + 1;
+      gitStatusRequestRef.current.set(path, requestId);
+      setGitStatusLoadingByWorkspace((current) => ({ ...current, [path]: true }));
       try {
         const status = await window.eco.getGitStatus(path);
-        if (requestId === gitStatusRequestRef.current) {
-          setGitStatus(status);
+        if (requestId === gitStatusRequestRef.current.get(path)) {
+          storeGitStatus(path, status);
         }
       } catch {
-        if (requestId === gitStatusRequestRef.current) {
-          setGitStatus(undefined);
-        }
       } finally {
-        if (requestId === gitStatusRequestRef.current) {
-          setGitStatusLoading(false);
+        if (requestId === gitStatusRequestRef.current.get(path)) {
+          setGitStatusLoadingByWorkspace((current) => ({ ...current, [path]: false }));
         }
       }
     },
-    [currentProjectPath],
+    [currentProjectPath, storeGitStatus],
   );
 
   useEffect(() => {
-    setGitStatus(undefined);
     void refreshGitStatus();
-  }, [currentProjectPath, refreshGitStatus]);
+  }, [currentProjectPath, activeThread?.id, refreshGitStatus]);
 
   const refreshPackageScripts = useCallback(async () => {
     if (!currentProjectPath || !window.eco) {
@@ -2149,8 +2178,9 @@ function App() {
     }
     if (shouldRefresh) {
       void refreshPackageScripts();
+      void refreshGitStatus(currentProjectPath, { force: true });
     }
-  }, [threads, currentProjectPath, refreshPackageScripts]);
+  }, [threads, currentProjectPath, refreshGitStatus, refreshPackageScripts]);
 
   const showPackageScriptsEntry = Boolean(
     packageScripts?.hasPackageJson && packageScripts.scripts.length > 0,
@@ -2433,7 +2463,7 @@ function App() {
     }
     return window.eco.onGitRemoteFetched((workspacePath) => {
       if (workspacePath === currentProjectPath) {
-        void refreshGitStatus();
+        void refreshGitStatus(workspacePath, { force: true });
       }
     });
   }, [currentProjectPath, refreshGitStatus]);
@@ -4425,7 +4455,7 @@ function App() {
         workspacePath: currentProjectPath,
         branch,
       });
-      setGitStatus(status);
+      storeGitStatus(currentProjectPath, status);
       const workspace = await window.eco.inspectWorkspace(currentProjectPath);
       setProjectWorkspace(workspace);
     } catch (caught) {
@@ -4445,7 +4475,7 @@ function App() {
         workspacePath: currentProjectPath,
         branch,
       });
-      setGitStatus(status);
+      storeGitStatus(currentProjectPath, status);
       const workspace = await window.eco.inspectWorkspace(currentProjectPath);
       setProjectWorkspace(workspace);
     } finally {
@@ -4457,7 +4487,7 @@ function App() {
     if (!currentProjectPath || !window.eco) {
       return;
     }
-    await refreshGitStatus();
+    await refreshGitStatus(undefined, { force: true });
     const workspace = await window.eco.inspectWorkspace(currentProjectPath);
     setProjectWorkspace(workspace);
   }
@@ -4469,25 +4499,23 @@ function App() {
       setReviewSelectedPath((current) =>
         current && diff.files.some((file) => file.path === current) ? current : diff.files[0]?.path,
       );
-      setGitStatus((current) => {
-        if (!current) {
-          return current;
-        }
-        return {
+      const current = gitStatusByWorkspaceRef.current[currentProjectPath]?.status;
+      if (current) {
+        storeGitStatus(currentProjectPath, {
           ...current,
           insertions: diff.totalAdditions,
           deletions: diff.totalDeletions,
           dirtyFileCount: diff.fileCount,
           canCommit: diff.fileCount > 0,
-        };
-      });
+        });
+      }
       if (!currentProjectPath || !window.eco) {
         return;
       }
       const workspace = await window.eco.inspectWorkspace(currentProjectPath);
       setProjectWorkspace(workspace);
     },
-    [currentProjectPath],
+    [currentProjectPath, storeGitStatus],
   );
 
   const handleChangesDiffLoadingChange = useCallback((loading: boolean) => {
@@ -5467,6 +5495,11 @@ function App() {
   const showWorkspacePanel = Boolean(currentProjectPath);
   const workspaceCardsLayoutMode = workspacePanelLayoutForMode(activityWorkspaceLayoutMode);
   const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && workspacePanelResolvedOpen);
+  useEffect(() => {
+    if (showWorkspacePanel) {
+      void refreshGitStatus();
+    }
+  }, [showWorkspacePanel, workspaceCardsPanelOpen, activeThread?.id, refreshGitStatus]);
   const workspaceCardsDockedLayout = Boolean(
     workspaceCardsPanelOpen && !showLanding && workspaceCardsLayoutMode === "docked",
   );
@@ -6341,6 +6374,9 @@ function App() {
                 onPullSuccess={() => void handleGitPullSuccess()}
                 onResolveConflictsWithAgent={(conflictFiles) =>
                   void handleGitPullConflictsWithAgent(conflictFiles)
+                }
+                onRefreshGitStatus={(force = false) =>
+                  refreshGitStatus(undefined, { force })
                 }
                 {...(showPackageScriptsEntry && {
                   onOpenScriptsDialog: () => {

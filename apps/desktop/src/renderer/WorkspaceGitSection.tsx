@@ -50,6 +50,7 @@ export interface WorkspaceGitSectionProps {
   onChangesDiffError?: (error?: string) => void;
   onPullSuccess?: () => void | Promise<void>;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
+  onRefreshGitStatus?: (force?: boolean) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
 }
@@ -80,6 +81,7 @@ export function WorkspaceGitSection({
   onChangesDiffError,
   onPullSuccess,
   onResolveConflictsWithAgent,
+  onRefreshGitStatus,
   scriptsDisabled,
   onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
@@ -342,6 +344,7 @@ export function WorkspaceGitSection({
     if (!workspacePath || !window.eco || changesLoading) {
       return;
     }
+    await onRefreshGitStatus?.(true);
     if (onOpenChangesReview) {
       setChangesDrawerOpen(false);
       onOpenChangesReview();
@@ -578,6 +581,7 @@ export function WorkspaceGitSection({
                 if (commitEntryBusy || !workspacePath) {
                   return;
                 }
+                void onRefreshGitStatus?.(true);
                 setCommitDialogWorkspacePath(workspacePath);
                 setCommitDialogOpen(true);
               }}
@@ -657,6 +661,9 @@ export function WorkspaceGitSection({
             setCommitDialogWorkspacePath(undefined);
           }}
           onSaveModelPreference={onSaveCommitModelPreference!}
+          {...(onRefreshGitStatus && {
+            onBeforeAction: () => onRefreshGitStatus(true),
+          })}
           onSuccess={() => handleCommitSuccess(commitDialogWorkspacePath)}
         />
       ) : null}

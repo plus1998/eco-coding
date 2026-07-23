@@ -69,6 +69,7 @@ export interface WorkspaceFloatingCardsProps {
   onChangesDiffError?: (error?: string) => void;
   onPullSuccess?: () => void | Promise<void>;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
+  onRefreshGitStatus?: (force?: boolean) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
   todos?: CoderTodoItem[];
@@ -117,6 +118,7 @@ function WorkspacePanelSection({
   defaultExpanded = true,
   persistExpanded = true,
   maxBodyHeight = 360,
+  onExpandedChange,
 }: {
   id: string;
   title: string;
@@ -125,6 +127,7 @@ function WorkspacePanelSection({
   defaultExpanded?: boolean;
   persistExpanded?: boolean;
   maxBodyHeight?: number;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(() =>
     persistExpanded ? readCardExpanded(id, defaultExpanded) : defaultExpanded,
@@ -137,6 +140,7 @@ function WorkspacePanelSection({
       if (persistExpanded) {
         persistCardExpanded(id, next);
       }
+      onExpandedChange?.(next);
       return next;
     });
   }
@@ -262,6 +266,7 @@ export function WorkspaceFloatingCards({
   onChangesDiffError,
   onPullSuccess,
   onResolveConflictsWithAgent,
+  onRefreshGitStatus,
   scriptsDisabled,
   onOpenScriptsDialog,
   todos = [],
@@ -337,6 +342,7 @@ export function WorkspaceFloatingCards({
               </span>
             </>
           }
+          onExpandedChange={() => void onRefreshGitStatus?.(false)}
         >
           <WorkspaceGitSection
             {...(workspacePath && { workspacePath })}
@@ -357,6 +363,7 @@ export function WorkspaceFloatingCards({
             {...(onChangesDiffError && { onChangesDiffError })}
             onPullSuccess={() => void handlePullSuccess()}
             {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
+            {...(onRefreshGitStatus && { onRefreshGitStatus })}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}
             {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
           />

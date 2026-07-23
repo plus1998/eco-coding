@@ -39,6 +39,7 @@ interface GitCommitDialogProps {
   onCreateBranch?: (branch: string) => void | Promise<void>;
   onClose: () => void;
   onSaveModelPreference: (candidateModelId: string) => void | Promise<void>;
+  onBeforeAction?: () => void | Promise<void>;
   onSuccess: () => void | Promise<void>;
 }
 
@@ -53,6 +54,7 @@ export function GitCommitDialog({
   onCreateBranch,
   onClose,
   onSaveModelPreference,
+  onBeforeAction,
   onSuccess,
 }: GitCommitDialogProps) {
   const [message, setMessage] = useState("");
@@ -243,6 +245,7 @@ export function GitCommitDialog({
         return;
       }
 
+      await onBeforeAction?.();
       const operationWorkspacePath = workspacePath;
       let operationId: number | null = null;
       let committedSuccessfully = false;
@@ -360,6 +363,7 @@ export function GitCommitDialog({
       profileId,
       includeUnstaged,
       gitStatus?.branch,
+      onBeforeAction,
       onSuccess,
       onClose,
     ],
