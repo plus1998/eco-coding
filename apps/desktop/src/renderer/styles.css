@@ -7821,7 +7821,7 @@ button.sidebar-core-heading {
 }
 
 .subagent-run-row-wrap.is-running .subagent-run-row {
-  border-color: color-mix(in srgb, var(--subagent-accent-border) 55%, #333);
+  border-color: var(--card-surface-border, #333);
 }
 
 .subagent-run-row {
@@ -7831,7 +7831,7 @@ button.sidebar-core-heading {
   width: 100%;
   margin: 0;
   padding: 11px 13px;
-  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 42%, #333);
+  border: 1px solid var(--card-surface-border, #333);
   border-radius: 10px;
   background:
     linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%), rgba(255, 255, 255, 0.025);
@@ -7847,7 +7847,7 @@ button.sidebar-core-heading {
 }
 
 .subagent-run-row:hover {
-  border-color: color-mix(in srgb, var(--subagent-accent-border) 58%, #444);
+  border-color: var(--card-surface-border-active, #444);
   background:
     linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 62%), rgba(255, 255, 255, 0.04);
 }
@@ -18321,7 +18321,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .subagent-run-row {
   gap: 12px;
   padding: 11px 13px;
-  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 40%, var(--codex-log-line));
+  border: 1px solid var(--codex-log-line);
   border-radius: 10px;
   background: linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%), transparent;
   --run-log-expandable-fade: color-mix(
@@ -18334,12 +18334,12 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap.is-running .subagent-run-row {
-  border-color: color-mix(in srgb, var(--subagent-accent-border) 52%, var(--codex-log-line));
+  border-color: var(--codex-log-line);
   box-shadow: none;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row:hover {
-  border-color: color-mix(in srgb, var(--subagent-accent-border) 62%, var(--codex-log-line));
+  border-color: var(--border-strong, var(--codex-log-line));
   background:
     linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 62%),
     var(--card-surface-bg-hover, rgba(0, 0, 0, 0.02));
@@ -18560,7 +18560,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap.is-running .subagent-run-row,
 .codex-main:not(.codex-main-landing) .subagent-run-row.run-log-feed-surface:hover {
-  border-color: color-mix(in srgb, var(--subagent-accent-border) 42%, var(--codex-log-line));
+  border-color: var(--codex-log-line);
   background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
 }
 

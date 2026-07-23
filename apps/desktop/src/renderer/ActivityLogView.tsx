@@ -2152,7 +2152,7 @@ function SubagentRunCardButton({
     >
       <span className="subagent-run-leading" aria-hidden>
         <span className="subagent-run-kind-badge">{kindBadge}</span>
-        <Sparkles size={15} className="subagent-run-icon" />
+        <Bot size={16} className="subagent-run-icon" />
       </span>
       <div className="subagent-run-main">
         <div className="subagent-run-title-row">
