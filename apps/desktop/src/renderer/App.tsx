@@ -80,6 +80,7 @@ import {
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
   type ProxyBridgeSettingsSnapshot,
+  type ProjectMcpSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
   resolveThreadAgentProfile,
@@ -853,6 +854,8 @@ function App() {
     });
   }, []);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
+  const [projectMcpSettings, setProjectMcpSettings] =
+    useState<ProjectMcpSettingsSnapshot>();
   const [projectSkillsSettings, setProjectSkillsSettings] =
     useState<ProjectSkillsSettingsSnapshot>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
@@ -2491,13 +2494,31 @@ function App() {
 
   useEffect(() => {
     if (!window.eco || !currentProjectPath) {
+      setProjectMcpSettings(undefined);
       setProjectSkillsSettings(undefined);
       return;
     }
+    let cancelled = false;
+    setProjectMcpSettings(undefined);
+    void window.eco
+      .getProjectMcpSettings(currentProjectPath)
+      .then((snapshot) => {
+        if (!cancelled) setProjectMcpSettings(snapshot);
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
     void window.eco
       .getProjectSkillsSettings(currentProjectPath)
-      .then(setProjectSkillsSettings)
-      .catch((caught) => setError(errorMessage(caught)));
+      .then((snapshot) => {
+        if (!cancelled) setProjectSkillsSettings(snapshot);
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [currentProjectPath]);
 
   useEffect(() => {
@@ -2588,6 +2609,14 @@ function App() {
       }
       try {
         const defaults = options?.workflowDefaults ?? workflowSettings;
+        const projectMcpServersEnabled =
+          projectMcpSettings?.workspacePath === currentProjectPath
+            ? projectMcpSettings?.enabledByServer
+            : undefined;
+        const rememberedMcpServersEnabled =
+          projectMcpServersEnabled && Object.keys(projectMcpServersEnabled).length > 0
+            ? projectMcpServersEnabled
+            : defaults.mcpServersEnabled;
         const preserveCurrentProfile = options?.preserveCurrentProfile !== false;
         const agentProfileId =
           (preserveCurrentProfile
@@ -2596,10 +2625,18 @@ function App() {
         const routeProfileId = preserveCurrentProfile ? composerRuntimeConfig?.routeProfileId : undefined;
         const workflowDefaults =
           options?.planModeOverride === undefined
-            ? defaults
+            ? {
+                ...defaults,
+                ...(rememberedMcpServersEnabled
+                  ? { mcpServersEnabled: rememberedMcpServersEnabled }
+                  : {}),
+              }
             : {
                 ...defaults,
                 sessionMode: options.planModeOverride ? ("plan" as const) : ("agent" as const),
+                ...(rememberedMcpServersEnabled
+                  ? { mcpServersEnabled: rememberedMcpServersEnabled }
+                  : {}),
               };
         return buildThreadRuntimeConfigFromDefaults({
           settings,
@@ -2618,6 +2655,8 @@ function App() {
       composerRuntimeConfig?.routeProfileId,
       workflowSettings,
       mcpSettings.servers,
+      currentProjectPath,
+      projectMcpSettings,
     ],
   );
 
@@ -2662,20 +2701,28 @@ function App() {
     if (availableServerKeys.length === 0) {
       return {};
     }
-    if (composerRuntimeConfig?.mcpServersEnabled) {
-      return deriveMcpServersEnabled(availableServerKeys, {
-        existing: composerRuntimeConfig.mcpServersEnabled,
-      });
-    }
+    const projectMcpServersEnabled =
+      projectMcpSettings?.workspacePath === currentProjectPath
+        ? projectMcpSettings?.enabledByServer
+        : undefined;
+    const projectRemembered =
+      projectMcpServersEnabled && Object.keys(projectMcpServersEnabled).length > 0
+        ? projectMcpServersEnabled
+        : workflowSettings.mcpServersEnabled;
     return deriveMcpServersEnabled(availableServerKeys, {
+      ...(composerRuntimeConfig?.mcpServersEnabled
+        ? { existing: composerRuntimeConfig.mcpServersEnabled }
+        : {}),
       profileAssignedServers: selectedRuntimeProfile
         ? collectProfileAssignedMcpServers(selectedRuntimeProfile, settings.agentTemplates)
         : [],
-      ...(workflowSettings.mcpServersEnabled ? { remembered: workflowSettings.mcpServersEnabled } : {}),
+      ...(projectRemembered ? { remembered: projectRemembered } : {}),
     });
   }, [
     composerRuntimeConfig?.mcpServersEnabled,
+    currentProjectPath,
     mcpSettings.servers,
+    projectMcpSettings,
     selectedRuntimeProfile,
     settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
@@ -2688,9 +2735,12 @@ function App() {
             ...(Object.keys(composerSkillsEnabled).length > 0
               ? { skillsEnabled: composerSkillsEnabled }
               : {}),
+            ...(Object.keys(composerMcpSettings).length > 0
+              ? { mcpServersEnabled: composerMcpSettings }
+              : {}),
           }
         : null,
-    [composerRuntimeConfig, composerSkillsEnabled],
+    [composerRuntimeConfig, composerMcpSettings, composerSkillsEnabled],
   );
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
     if (!selectedRuntimeProfile) {
@@ -4651,6 +4701,10 @@ function App() {
       mainAgentSystemPromptPresetOverride: _previousSystemPromptPresetOverride,
       ...baseRuntimeConfig
     } = composerRuntimeConfig;
+    const projectMcpServersEnabled =
+      projectMcpSettings?.workspacePath === currentProjectPath
+        ? projectMcpSettings?.enabledByServer
+        : undefined;
     const next: ThreadRuntimeConfig = {
       ...baseRuntimeConfig,
       routeProfileId: agentProfileId,
@@ -4669,8 +4723,10 @@ function App() {
               ...(composerRuntimeConfig.mcpServersEnabled
                 ? { existing: composerRuntimeConfig.mcpServersEnabled }
                 : {}),
-              ...(workflowSettings.mcpServersEnabled
-                ? { remembered: workflowSettings.mcpServersEnabled }
+              ...(projectMcpServersEnabled && Object.keys(projectMcpServersEnabled).length > 0
+                ? { remembered: projectMcpServersEnabled }
+                : workflowSettings.mcpServersEnabled
+                  ? { remembered: workflowSettings.mcpServersEnabled }
                 : {}),
             }),
           }
@@ -4723,7 +4779,7 @@ function App() {
   }
 
   async function toggleComposerMcpServer(serverKey: string, enabled: boolean) {
-    if (!composerRuntimeConfig) {
+    if (!composerRuntimeConfig || !currentProjectPath) {
       return;
     }
     const nextMcpServersEnabled = { ...composerMcpSettings, [serverKey]: enabled };
@@ -4732,15 +4788,15 @@ function App() {
       mcpServersEnabled: nextMcpServersEnabled,
     };
     await persistComposerRuntimeConfig(next, { persistWhileRunning: true });
-    if (!window.eco?.saveWorkflowSettings) {
+    if (!window.eco) {
       return;
     }
     try {
-      const saved = await window.eco.saveWorkflowSettings({
-        ...workflowSettings,
-        mcpServersEnabled: nextMcpServersEnabled,
+      const saved = await window.eco.saveProjectMcpSettings({
+        workspacePath: currentProjectPath,
+        enabledByServer: nextMcpServersEnabled,
       });
-      setWorkflowSettings(saved);
+      setProjectMcpSettings(saved);
     } catch (caught) {
       setError(errorMessage(caught));
     }

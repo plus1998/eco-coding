@@ -378,6 +378,10 @@ import {
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
 import {
+  createProjectMcpSettingsStore,
+  type ProjectMcpSettingsStore,
+} from "./project-mcp-settings-store";
+import {
   createProjectSkillsSettingsStore,
   type ProjectSkillsSettingsStore,
 } from "./project-skills-settings-store";
@@ -627,6 +631,7 @@ let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let codexThreadMap: CodexThreadMap;
 let workflowSettingsStore: WorkflowSettingsStore;
+let projectMcpSettingsStore: ProjectMcpSettingsStore;
 let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
@@ -939,6 +944,7 @@ app.whenReady().then(async () => {
     },
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
+  projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
   projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
   packageScriptArgsStore = createPackageScriptArgsStore(
@@ -2766,6 +2772,27 @@ function registerIpcHandlers(): void {
       workspacePath: payload.workspacePath,
       enabledByPath: Object.fromEntries(
         Object.entries(payload.enabledByPath).filter(
+          (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+        ),
+      ),
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.projectMcpSettingsGet, async (payload: unknown) => {
+    if (typeof payload !== "string" || !payload.trim()) {
+      throw new Error("Invalid project MCP settings workspace path.");
+    }
+    return projectMcpSettingsStore.get(payload);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.projectMcpSettingsSave, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.workspacePath !== "string" || !isRecord(payload.enabledByServer)) {
+      throw new Error("Invalid project MCP settings.");
+    }
+    return projectMcpSettingsStore.save({
+      workspacePath: payload.workspacePath,
+      enabledByServer: Object.fromEntries(
+        Object.entries(payload.enabledByServer).filter(
           (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
         ),
       ),

@@ -3,6 +3,11 @@ import type { McpServerConfigView } from "./ipc";
 
 export type McpServersEnabledSettings = Record<string, boolean>;
 
+export interface ProjectMcpSettingsSnapshot {
+  workspacePath: string;
+  enabledByServer: McpServersEnabledSettings;
+}
+
 export function listEnabledGlobalMcpServerKeys(servers: readonly McpServerConfigView[]): string[] {
   return servers
     .filter((server) => server.enabled && server.name.trim())

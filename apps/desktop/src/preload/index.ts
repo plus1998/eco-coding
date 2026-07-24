@@ -92,6 +92,7 @@ import {
   type SkillCatalogSearchRequest,
   type SkillCatalogSearchResult,
   type ProjectSkillsSettingsSnapshot,
+  type ProjectMcpSettingsSnapshot,
   type StartPackageScriptResult,
   type TerminalInputRequest,
   type TerminalListRequest,
@@ -403,6 +404,14 @@ const api = {
     snapshot: ProjectSkillsSettingsSnapshot,
   ): Promise<ProjectSkillsSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectSkillsSettingsSave, snapshot);
+  },
+  getProjectMcpSettings(workspacePath: string): Promise<ProjectMcpSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectMcpSettingsGet, workspacePath);
+  },
+  saveProjectMcpSettings(
+    snapshot: ProjectMcpSettingsSnapshot,
+  ): Promise<ProjectMcpSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectMcpSettingsSave, snapshot);
   },
   getWorkflowSettings(): Promise<WorkflowSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsGet);

@@ -109,6 +109,8 @@ export const IPC_CHANNELS = {
   skillsCatalogInstall: "skills:catalog-install",
   projectSkillsSettingsGet: "project-skills-settings:get",
   projectSkillsSettingsSave: "project-skills-settings:save",
+  projectMcpSettingsGet: "project-mcp-settings:get",
+  projectMcpSettingsSave: "project-mcp-settings:save",
   workflowSettingsGet: "workflow-settings:get",
   workflowSettingsSave: "workflow-settings:save",
   proxyBridgeSettingsGet: "proxy-bridge-settings:get",
@@ -661,6 +663,7 @@ export type {
   ToolPolicy,
 } from "./agent-orchestration";
 export type { ProviderTokenCountMode, UpstreamApiCompat };
+export type { ProjectMcpSettingsSnapshot } from "./composer-mcp";
 export type { ProjectSkillsSettingsSnapshot } from "./composer-skills-settings";
 
 export interface ProviderConfigInput {

@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { createConversationStore } from "../src/main/conversation-store";
+import { createProjectMcpSettingsStore } from "../src/main/project-mcp-settings-store";
 import { createProjectSkillsSettingsStore } from "../src/main/project-skills-settings-store";
 import type { ThreadSummary } from "../src/shared/ipc";
 
@@ -27,6 +28,19 @@ test("Node SQLite remembers Skills independently for each project", async (t) =>
 
   assert.deepEqual(store.get(projectA).enabledByPath, { "user:a": true });
   assert.deepEqual(store.get(projectB).enabledByPath, { "user:a": false });
+});
+
+test("Node SQLite remembers MCP switches independently for each project", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-project-mcp-");
+  const store = await createProjectMcpSettingsStore(path.join(directory, "eco-coding.sqlite"));
+  const projectA = path.join(directory, "a");
+  const projectB = path.join(directory, "b");
+
+  store.save({ workspacePath: projectA, enabledByServer: { github: true, browser: false } });
+  store.save({ workspacePath: projectB, enabledByServer: { github: false, browser: true } });
+
+  assert.deepEqual(store.get(projectA).enabledByServer, { github: true, browser: false });
+  assert.deepEqual(store.get(projectB).enabledByServer, { github: false, browser: true });
 });
 
 test("Node SQLite persists an Eco thread and Claude session binding", async (t) => {
