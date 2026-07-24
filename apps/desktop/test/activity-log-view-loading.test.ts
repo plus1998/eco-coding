@@ -1221,6 +1221,60 @@ test("ProjectionSubagentDetailFeed groups adjacent subagent tool rows in the app
   expect(html.match(/class="run-log-action(?:\s|")/g)?.length ?? 0).toBe(0);
 });
 
+test("ProjectionSubagentDetailFeed replaces a running tool row with its completed state", () => {
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    status: "active",
+    timeline: [
+      item({
+        id: "bash-started",
+        sequence: 1,
+        eventType: "tool.started",
+        scope: "agent",
+        role: "coder",
+        text: "Tool: Bash · bun test",
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: "bun test",
+            toolUseId: "toolu_bash",
+            status: "started",
+          },
+        },
+      }),
+      item({
+        id: "bash-completed",
+        sequence: 2,
+        eventType: "tool.completed",
+        scope: "agent",
+        role: "coder",
+        text: "Tool: Bash · bun test",
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: "bun test",
+            toolUseId: "toolu_bash",
+            status: "completed",
+            durationMs: 250,
+          },
+        },
+      }),
+    ],
+  });
+
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: subagent,
+      missionText: "运行测试",
+      requestSpansById: new Map(),
+      threadActive: true,
+    }),
+  );
+
+  expect(html).toContain("已运行 bun test");
+  expect(html).not.toContain("正在运行 bun test");
+});
+
 test("SubagentTaskDrawer renders grouped subagent tool calls in its standalone panel", () => {
   const subagent = agent({
     agentId: "agent_coder_1",

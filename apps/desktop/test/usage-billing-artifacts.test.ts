@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ModelPricingLookup, ParsedUsage } from "@eco/runtime";
-import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
 import {
   resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
@@ -111,6 +111,36 @@ test("resolveSingleUsageBillingArtifacts keeps proxy billing role without modelI
     role: "reviewer",
     source: "proxy",
     modelId: "haiku",
+  });
+});
+
+test("resolveSingleUsageBillingArtifacts prices an untyped Codex child through routeRole", async () => {
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_codex_general",
+    role: "general",
+    routeRole: "coder",
+    source: "codex",
+    usage: usage(),
+    runtimeRoutes: routes,
+    lookupPricing,
+    modelId: "haiku",
+    requestKey: "codex:general:req_1",
+    agentId: "codex_child",
+  });
+
+  expect(artifacts.billingRole).toBe("general");
+  expect(artifacts.resolvedModelId).toBe("haiku");
+  expect(artifacts.requestBilling.ecoCostUsd).toBeCloseTo(0.012, 6);
+  expect(artifacts.ledgerEvent).toMatchObject({
+    role: "general",
+    source: "codex",
+    agentId: "codex_child",
+    modelId: "haiku",
+  });
+  expect(artifacts.contextUpdate).toMatchObject({
+    role: "general",
+    modelId: "haiku",
+    providerBaseUrl: "https://api.example.test",
   });
 });
 

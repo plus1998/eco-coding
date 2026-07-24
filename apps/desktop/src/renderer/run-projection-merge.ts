@@ -356,7 +356,9 @@ export function mergeThreadRunProjectionUpdate(
       return mergeIncomingProjection(current, incoming);
     }
     if (incoming.timeline.length < current.timeline.length) {
-      return current;
+      return incoming.thread.generatedAt >= current.thread.generatedAt
+        ? mergeTrimmedIncomingProjection(current, incoming)
+        : current;
     }
     if (incoming.thread.generatedAt >= current.thread.generatedAt) {
       return mergeIncomingProjection(current, incoming);

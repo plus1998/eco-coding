@@ -1076,9 +1076,17 @@ app.whenReady().then(async () => {
         orchestrationRunBudgetGuard.observeSubagent(persisted.threadId, persisted.agentId);
       }
       applyCodexSubagentLifecycleEvent(persisted, {
-        getAgentStatus: (threadId, agentId) =>
-          conversationStore.listAgentInstances(threadId).find((candidate) => candidate.agentId === agentId)
-            ?.status,
+        getAgentState: (threadId, agentId) => {
+          const agent = conversationStore
+            .listAgentInstances(threadId)
+            .find((candidate) => candidate.agentId === agentId);
+          return agent
+            ? {
+                status: agent.status,
+                ...(agent.parentToolUseId && { parentToolUseId: agent.parentToolUseId }),
+              }
+            : undefined;
+        },
         resolvePhase: (threadId) => {
           const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
           return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";

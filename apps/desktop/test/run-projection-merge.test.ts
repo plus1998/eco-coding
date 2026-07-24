@@ -39,27 +39,77 @@ function makeProjection(
   };
 }
 
-test("mergeThreadRunProjectionUpdate keeps fuller timeline when event count matches", () => {
-  const full = makeProjection({ sourceEventCount: 100, timeline: Array.from({ length: 120 }, (_, i) => ({
-    id: `evt_${i}`,
-    kind: "narrative" as const,
-    text: `line ${i}`,
-    role: "planner" as const,
-    observedAt: new Date().toISOString(),
-  })) });
-  const trimmed = makeProjection({ sourceEventCount: 100, timeline: Array.from({ length: 80 }, (_, i) => ({
-    id: `evt_${i + 40}`,
-    kind: "narrative" as const,
-    text: `line ${i + 40}`,
-    role: "planner" as const,
-    observedAt: new Date().toISOString(),
-  })) });
+test("mergeThreadRunProjectionUpdate keeps fuller timeline for an older update with matching event count", () => {
+  const full = makeProjection({
+    generatedAt: "2026-01-01T00:00:01.000Z",
+    sourceEventCount: 100,
+    timeline: Array.from({ length: 120 }, (_, i) => ({
+      id: `evt_${i}`,
+      kind: "narrative" as const,
+      text: `line ${i}`,
+      role: "planner" as const,
+      observedAt: new Date().toISOString(),
+    })),
+  });
+  const trimmed = makeProjection({
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    sourceEventCount: 100,
+    timeline: Array.from({ length: 80 }, (_, i) => ({
+      id: `evt_${i + 40}`,
+      kind: "narrative" as const,
+      text: `line ${i + 40}`,
+      role: "planner" as const,
+      observedAt: new Date().toISOString(),
+    })),
+  });
 
   expect(mergeThreadRunProjectionUpdate(full, trimmed)).toBe(full);
   const mergedFromTrimmed = mergeThreadRunProjectionUpdate(trimmed, full);
   expect(mergedFromTrimmed.timeline).toHaveLength(120);
   expect(mergedFromTrimmed.timeline.some((item) => item.id === "evt_0")).toBe(true);
   expect(mergedFromTrimmed.timeline.some((item) => item.id === "evt_119")).toBe(true);
+});
+
+test("mergeThreadRunProjectionUpdate accepts final output after source event count is capped", () => {
+  const current = makeProjection({
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    sourceEventCount: 1_000,
+    timeline: Array.from({ length: FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS }, (_, index) => ({
+      id: `evt_${index + 1}`,
+      sequence: index + 1,
+      eventType: "tool.completed" as const,
+      scope: "main" as const,
+      text: `line ${index + 1}`,
+      at: "2026-01-01T00:00:00.000Z",
+    })),
+  });
+  const incoming = makeProjection({
+    generatedAt: "2026-01-01T00:00:01.000Z",
+    sourceEventCount: 1_000,
+    thread: {
+      threadId: "thr_1",
+      status: "completed",
+      generatedAt: "2026-01-01T00:00:01.000Z",
+      message: "执行完成。",
+    },
+    timeline: [
+      {
+        id: "final_message",
+        sequence: 1_001,
+        eventType: "message.final",
+        scope: "main",
+        text: "最终结果",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ],
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+
+  expect(merged.thread.status).toBe("completed");
+  expect(merged.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
+  expect(merged.timeline.at(-1)?.id).toBe("final_message");
+  expect(merged.timeline.at(-1)?.text).toBe("最终结果");
 });
 
 test("mergeThreadRunProjectionUpdate replaces history after a rewind and ignores stale updates", () => {
@@ -109,20 +159,26 @@ test("mergeThreadRunProjectionUpdate replaces history after a rewind and ignores
 });
 
 test("mergeThreadRunProjectionUpdate merges trimmed newer feed without dropping history", () => {
-  const full = makeProjection({ sourceEventCount: 100, timeline: Array.from({ length: 120 }, (_, i) => ({
-    id: `evt_${i}`,
-    kind: "narrative" as const,
-    text: `line ${i}`,
-    role: "planner" as const,
-    observedAt: new Date().toISOString(),
-  })) });
-  const trimmed = makeProjection({ sourceEventCount: 101, timeline: Array.from({ length: 80 }, (_, i) => ({
-    id: `evt_${i + 40}`,
-    kind: "narrative" as const,
-    text: `updated ${i + 40}`,
-    role: "planner" as const,
-    observedAt: new Date().toISOString(),
-  })) });
+  const full = makeProjection({
+    sourceEventCount: 100,
+    timeline: Array.from({ length: 120 }, (_, i) => ({
+      id: `evt_${i}`,
+      kind: "narrative" as const,
+      text: `line ${i}`,
+      role: "planner" as const,
+      observedAt: new Date().toISOString(),
+    })),
+  });
+  const trimmed = makeProjection({
+    sourceEventCount: 101,
+    timeline: Array.from({ length: 80 }, (_, i) => ({
+      id: `evt_${i + 40}`,
+      kind: "narrative" as const,
+      text: `updated ${i + 40}`,
+      role: "planner" as const,
+      observedAt: new Date().toISOString(),
+    })),
+  });
 
   const merged = mergeThreadRunProjectionUpdate(full, trimmed, { preserveHistory: false });
   expect(merged.timeline).toHaveLength(120);
@@ -430,7 +486,6 @@ test("mergeThreadRunProjectionUpdate ignores active subagent duration-only refre
 
   expect(mergeThreadRunProjectionUpdate(current, incoming)).toBe(current);
 });
-
 
 test("mergeThreadRunProjectionUpdate bounds renderer timeline memory", () => {
   const makeItems = (start: number, count: number): ThreadRunProjectionTimelineItem[] =>

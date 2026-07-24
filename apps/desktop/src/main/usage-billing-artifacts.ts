@@ -6,33 +6,28 @@ import {
   type ParsedUsage,
   type RequestBillingDelta,
 } from "@eco/runtime";
-import type {
-  BillingUsageSource,
-  ModelsDevMapping,
-  RouteManualSpec,
-  RuntimeAgentRole,
-} from "../shared/ipc";
+import type { BillingUsageSource, ModelsDevMapping, RouteManualSpec, RuntimeAgentRole } from "../shared/ipc";
 import {
   buildPlannerModelLabel,
+  type ResolvedUsageRoute,
+  type RuntimeRoute,
   resolvePublicModelId,
   resolveRatesForRoute,
   resolveUsageRoute,
-  type ResolvedUsageRoute,
-  type RuntimeRoute,
 } from "./billing-resolver";
-import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
-import { buildUsageRequestKey } from "./thread-usage-accumulator";
-import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
-import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
 import {
   PROXY_PENDING_ATTRIBUTION_REASON,
   PROXY_PENDING_PARENT_UNMAPPED_REASON,
-  USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
-  USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
   USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY,
-  USAGE_LEDGER_PROVIDER_ID_METADATA_KEY,
+  USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
   USAGE_LEDGER_CONTEXT_UPDATE_METADATA_KEY,
+  USAGE_LEDGER_PROVIDER_ID_METADATA_KEY,
+  USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
 } from "./proxy-usage-pending-settlement";
+import { buildUsageRequestKey } from "./thread-usage-accumulator";
+import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
+import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
+import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
 
 export interface UsageBillingPricingRoute {
   provider: { baseUrl: string };
@@ -117,10 +112,10 @@ export async function resolveSingleUsageBillingArtifacts(
         }
       : undefined;
   } else {
-    usageRoute = resolveUsageRoute(input.role, input.modelId, input.runtimeRoutes);
-    resolvedModelId =
-      resolvePublicModelId(input.role, input.modelId, input.runtimeRoutes) ?? input.modelId;
-    billingRole = usageRoute?.role ?? input.role;
+    const pricingRole = input.routeRole ?? input.role;
+    usageRoute = resolveUsageRoute(pricingRole, input.modelId, input.runtimeRoutes);
+    resolvedModelId = resolvePublicModelId(pricingRole, input.modelId, input.runtimeRoutes) ?? input.modelId;
+    billingRole = input.routeRole ? input.role : (usageRoute?.role ?? input.role);
   }
 
   const actualLookup = usageRoute ? await input.lookupPricing(usageRoute) : null;
@@ -352,6 +347,7 @@ function resolveSingleUsageContextUpdate(input: {
   const monitorModelId = input.usageRoute?.modelId ?? input.plannerRoute?.modelId ?? input.resolvedModelId;
   const monitorBaseUrl = input.usageRoute?.provider.baseUrl ?? input.plannerRoute?.provider.baseUrl;
   const monitorRoute = resolveUsageRoute(input.billingRole, input.resolvedModelId, input.runtimeRoutes);
+  const contextRoute = monitorRoute ?? input.usageRoute;
   const modelId = monitorRoute?.modelId ?? monitorModelId;
   const providerBaseUrl = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
   if (!modelId || !providerBaseUrl) {
@@ -361,12 +357,15 @@ function resolveSingleUsageContextUpdate(input: {
     role: input.billingRole,
     modelId,
     providerBaseUrl,
-    ...(monitorRoute?.modelsDevMapping && { modelsDevMapping: monitorRoute.modelsDevMapping }),
-    ...(monitorRoute?.manualSpec && { manualSpec: monitorRoute.manualSpec }),
+    ...(contextRoute?.modelsDevMapping && { modelsDevMapping: contextRoute.modelsDevMapping }),
+    ...(contextRoute?.manualSpec && { manualSpec: contextRoute.manualSpec }),
   };
 }
 
-function contextUpdateFromRoute(role: RuntimeAgentRole, route: ResolvedUsageRoute): UsageBillingContextUpdate {
+function contextUpdateFromRoute(
+  role: RuntimeAgentRole,
+  route: ResolvedUsageRoute,
+): UsageBillingContextUpdate {
   return {
     role,
     modelId: route.modelId,

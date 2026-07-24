@@ -246,6 +246,7 @@ import {
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
+import { shouldClearPendingBashApproval } from "./approval-ui-state";
 import {
   cacheWorkspaceGitStatus,
   shouldRefreshWorkspaceGitStatus,
@@ -1379,16 +1380,7 @@ function App() {
           ),
         );
       }
-      if (
-        event.type === "bash_approval.approved" ||
-        event.type === "bash_approval.rejected" ||
-        event.type === "bash_approval.denied" ||
-        event.type === "plan_approval.denied" ||
-        event.type === "thread.completed" ||
-        event.type === "thread.failed" ||
-        event.type === "thread.idle" ||
-        event.type === "thread.stopped"
-      ) {
+      if (shouldClearPendingBashApproval(event.type)) {
         clearPendingBashApprovalForThread(event.threadId);
       }
       if (event.type === "plan_approval.denied") {

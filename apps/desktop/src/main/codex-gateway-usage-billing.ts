@@ -1,15 +1,16 @@
-import {
-  computeWindowOccupancy,
-  parseCodexGatewayModelAlias,
-  type CodexThreadAttribution,
-  type ParsedUsage,
-} from "@eco/runtime";
 import type { GatewayCodexRequestKind, GatewayUsageEvent } from "@eco/gateway";
+import {
+  type CodexThreadAttribution,
+  computeWindowOccupancy,
+  type ParsedUsage,
+  parseCodexGatewayModelAlias,
+} from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
-import type { RuntimeRoute } from "./billing-resolver";
+import { resolvePriceMultiplier } from "../shared/manual-spec-pricing";
 import type { UsageBillingObservation } from "./billing-orchestration";
-import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
+import type { RuntimeRoute } from "./billing-resolver";
 import type { SingleUsageBillingRequest } from "./single-usage-billing-orchestration";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 
 export interface ResolveCodexGatewayUsageBillingInput {
   event: GatewayUsageEvent;
@@ -83,10 +84,7 @@ export function resolveCodexGatewayUsageBilling(
   const alias = parseCodexGatewayModelAlias(requestedModel);
   const eventUpstreamModelId = input.event.upstreamModelId.trim();
   const modelId =
-    alias?.upstreamModelId ||
-    eventUpstreamModelId ||
-    input.event.usage.modelId?.trim() ||
-    requestedModel;
+    alias?.upstreamModelId || eventUpstreamModelId || input.event.usage.modelId?.trim() || requestedModel;
 
   if (
     !providerId ||
@@ -123,9 +121,7 @@ export function resolveCodexGatewayUsageBilling(
     !persistedParentThreadId ||
     declaredParentThreadId !== persistedParentThreadId ||
     subagentAgentId !== codexThreadId;
-  if (
-    attribution.isSubagentThread ? childAttributionMismatch : rootAttributionMismatch
-  ) {
+  if (attribution.isSubagentThread ? childAttributionMismatch : rootAttributionMismatch) {
     return {
       status: "rejected",
       reason: "thread_attribution_mismatch",
@@ -271,6 +267,10 @@ function selectExactPricingRoute(
     return { status: "resolved", route };
   }
   if (roleMatches.length > 1) {
+    const route = selectEquivalentPricingRoute(roleMatches);
+    if (route) {
+      return { status: "resolved", route };
+    }
     return {
       status: "rejected",
       reason: "ambiguous_route",
@@ -284,11 +284,48 @@ function selectExactPricingRoute(
     }
     return { status: "resolved", route };
   }
+  const equivalentRoute = selectEquivalentPricingRoute(matchingRoutes);
+  if (equivalentRoute) {
+    return { status: "resolved", route: equivalentRoute };
+  }
   return {
     status: "rejected",
     reason: "ambiguous_route",
     matchedRouteCount: matchingRoutes.length,
   };
+}
+
+function selectEquivalentPricingRoute(routes: readonly RuntimeRoute[]): RuntimeRoute | undefined {
+  const first = routes[0];
+  if (!first) {
+    return undefined;
+  }
+  const signature = pricingRouteSignature(first);
+  return routes.every((route) => pricingRouteSignature(route) === signature) ? first : undefined;
+}
+
+function pricingRouteSignature(route: RuntimeRoute): string {
+  const manualSpec = route.manualSpec;
+  const hasManualRates = manualSpec?.inputPerM !== undefined && manualSpec.outputPerM !== undefined;
+  return JSON.stringify({
+    providerBaseUrl: route.provider.baseUrl.trim(),
+    modelId: route.modelId.trim(),
+    modelsDevMapping: route.modelsDevMapping
+      ? {
+          providerKey: route.modelsDevMapping.providerKey.trim(),
+          modelId: route.modelsDevMapping.modelId.trim(),
+        }
+      : null,
+    manualRates: hasManualRates
+      ? {
+          inputPerM: manualSpec.inputPerM,
+          outputPerM: manualSpec.outputPerM,
+          cacheReadPerM: manualSpec.cacheReadPerM ?? null,
+          cacheWritePerM: manualSpec.cacheWritePerM ?? null,
+        }
+      : null,
+    priceMultiplier: resolvePriceMultiplier(manualSpec),
+  });
 }
 
 function routeMatchesGatewayUsage(

@@ -1840,6 +1840,26 @@ function compareProjectionToolDisplayItems(
   return compareTimelineItems(left, right);
 }
 
+export function collapseProjectionToolLifecycleItemsForDetail(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const latestByLifecycleKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  for (const item of timeline) {
+    const key = projectionToolLifecycleKey(item);
+    if (!key) {
+      continue;
+    }
+    const current = latestByLifecycleKey.get(key);
+    if (!current || compareProjectionLifecycleDisplayItems(item, current) > 0) {
+      latestByLifecycleKey.set(key, item);
+    }
+  }
+  return timeline.filter((item) => {
+    const key = projectionToolLifecycleKey(item);
+    return !key || latestByLifecycleKey.get(key)?.id === item.id;
+  });
+}
+
 function projectionToolDisplayRichness(item: ThreadRunProjectionTimelineItem): number {
   const metadataTool = readProjectionToolMetadata(item);
   if (!metadataTool) {

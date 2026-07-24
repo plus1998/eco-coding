@@ -3,7 +3,10 @@ import type { ThreadRunEvent } from "../shared/thread-run-events";
 import type { SubagentRunPhase } from "./subagent-session-types";
 
 export interface CodexSubagentLifecycleServices {
-  getAgentStatus: (threadId: string, agentId: string) => string | undefined;
+  getAgentState: (
+    threadId: string,
+    agentId: string,
+  ) => { status: string; parentToolUseId?: string } | undefined;
   resolvePhase: (threadId: string) => SubagentRunPhase;
   startSession: (input: {
     threadId: string;
@@ -12,11 +15,14 @@ export interface CodexSubagentLifecycleServices {
     phase: SubagentRunPhase;
   }) => void;
   stopSession: (threadId: string, agentId: string) => void;
-  startMetrics: (threadId: string, input: {
-    agentId: string;
-    role: RuntimeAgentRole;
-    parentToolUseId?: string;
-  }) => void;
+  startMetrics: (
+    threadId: string,
+    input: {
+      agentId: string;
+      role: RuntimeAgentRole;
+      parentToolUseId?: string;
+    },
+  ) => void;
   stopMetrics: (threadId: string, input: { agentId: string; role: RuntimeAgentRole }) => void;
   startAgent: (input: {
     threadId: string;
@@ -38,12 +44,13 @@ export function applyCodexSubagentLifecycleEvent(
     return false;
   }
 
-  if (event.eventType === "agent.started") {
-    const existingStatus = services.getAgentStatus(event.threadId, agentId);
-    if (existingStatus === "active" || existingStatus === "launching") {
+  if (event.eventType === "agent.started" || event.eventType === "request.started") {
+    const existingAgent = services.getAgentState(event.threadId, agentId);
+    if (existingAgent?.status === "active" || existingAgent?.status === "launching") {
       return false;
     }
-    const parentToolUseId = event.parentToolUseId?.trim() || undefined;
+    const parentToolUseId =
+      event.parentToolUseId?.trim() || existingAgent?.parentToolUseId?.trim() || undefined;
     services.startSession({
       threadId: event.threadId,
       role,

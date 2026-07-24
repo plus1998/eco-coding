@@ -38,11 +38,7 @@ function usageEvent(overrides: Partial<GatewayUsageEvent> = {}): GatewayUsageEve
     source: "responses",
     sourceEventId: "responses:provider_test:response:resp_1",
     providerId: "provider_test",
-    requestedModel: buildCodexGatewayModelAlias(
-      "provider_test",
-      "gpt-test",
-      "openai_responses",
-    ),
+    requestedModel: buildCodexGatewayModelAlias("provider_test", "gpt-test", "openai_responses"),
     upstreamModelId: "gpt-test",
     usage: {
       inputTokens: 120,
@@ -97,6 +93,100 @@ describe("Codex Gateway usage billing", () => {
         runAttemptId: "attempt_1",
         plannerAgentId: "planner_1",
       },
+    });
+  });
+
+  test("resolves an untyped Codex child through equivalent shared-model pricing routes", () => {
+    const sharedRoutes: RuntimeRoute[] = [
+      {
+        role: "planner",
+        provider,
+        modelId: "gpt-test",
+        apiCompat: "openai_responses",
+        manualSpec: {
+          maxOutputTokens: 128_000,
+          inputPerM: 0.5,
+          outputPerM: 3,
+          cacheReadPerM: 0.05,
+        },
+      },
+      {
+        role: "vision",
+        provider,
+        modelId: "gpt-test",
+        apiCompat: "openai_responses",
+        manualSpec: {
+          maxOutputTokens: 1_600,
+          inputPerM: 0.5,
+          outputPerM: 3,
+          cacheReadPerM: 0.05,
+        },
+      },
+    ];
+    const result = resolveCodexGatewayUsageBilling({
+      event: usageEvent({
+        codexTurnMetadata: {
+          threadId: "codex_child",
+          parentThreadId: "codex_root",
+          turnId: "turn_child",
+          requestKind: "turn",
+        },
+      }),
+      resolveThreadAttribution: () => ({
+        ecoThreadId: "thr_1",
+        billingRole: "general",
+        isSubagentThread: true,
+        agentId: "codex_child",
+      }),
+      resolveParentCodexThreadId: () => "codex_root",
+      resolveRuntimeRoutes: () => sharedRoutes,
+    });
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") return;
+    expect(result).toMatchObject({
+      billingRole: "general",
+      routeRole: "planner",
+      subagentAgentId: "codex_child",
+      billingInput: {
+        role: "general",
+        routeRole: "planner",
+        agentId: "codex_child",
+      },
+    });
+  });
+
+  test("keeps shared-model routes ambiguous when their pricing inputs differ", () => {
+    const baseRoute = routes[0];
+    if (!baseRoute) {
+      throw new Error("Expected the test pricing route.");
+    }
+    const result = resolveCodexGatewayUsageBilling({
+      event: usageEvent({
+        codexTurnMetadata: {
+          threadId: "codex_child",
+          parentThreadId: "codex_root",
+          turnId: "turn_child",
+          requestKind: "turn",
+        },
+      }),
+      resolveThreadAttribution: () => ({
+        ecoThreadId: "thr_1",
+        billingRole: "general",
+        isSubagentThread: true,
+        agentId: "codex_child",
+      }),
+      resolveParentCodexThreadId: () => "codex_root",
+      resolveRuntimeRoutes: () => [
+        { ...baseRoute, role: "explore", manualSpec: { inputPerM: 0.25, outputPerM: 0.5 } },
+        { ...baseRoute, role: "coder", manualSpec: { inputPerM: 0.5, outputPerM: 1 } },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: "rejected",
+      reason: "ambiguous_route",
+      matchedRouteCount: 2,
     });
   });
 
