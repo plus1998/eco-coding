@@ -8266,22 +8266,26 @@ function buildCurrentThreadRunProjection(
     ledgerBilling ??
     (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined);
   const context = contextScheduler.getDisplaySnapshot(threadId);
+  const events = conversationStore.listThreadRunEventsForProjection(
+    threadId,
+    ...(options?.fullHistory ? [] : [FEED_PROJECTION_MAX_SOURCE_EVENTS]),
+  );
   const projection = buildThreadRunProjection({
     threadId,
     status: thread.status,
     message: thread.message,
     attempts: conversationStore.listRunAttempts(threadId),
     agents: conversationStore.listAgentInstances(threadId),
-    events: conversationStore.listThreadRunEventsForProjection(
-      threadId,
-      ...(options?.fullHistory ? [] : [FEED_PROJECTION_MAX_SOURCE_EVENTS]),
-    ),
+    events,
     ...(billing && { billing }),
     ...(context && { context }),
     subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
     historyComplete: options?.fullHistory === true,
   });
   projection.historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
+  if (!options?.fullHistory && events.length >= FEED_PROJECTION_MAX_SOURCE_EVENTS) {
+    projection.hasEarlier = true;
+  }
   logThreadRunProjectionDiagnostics(projection);
   return projection;
 }

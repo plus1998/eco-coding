@@ -146,6 +146,15 @@ import {
 } from "../shared/thread-failure-message";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import { ActivityLogView } from "./ActivityLogView";
+import {
+  ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
+  ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
+  createFeedEarlierHistoryState,
+  type FeedEarlierHistoryState,
+  mergeFeedTimelineById,
+  resolveFeedEarlierBeforeSequence,
+  shouldLoadFeedEarlier,
+} from "./feed-earlier-history";
 import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
@@ -555,6 +564,7 @@ const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
+const ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD = ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
 const COMPOSER_DRAFT_SAVE_DEBOUNCE_MS = 250;
 const WORKSPACE_CARDS_PANEL_WIDTH_PX = 300;
@@ -959,6 +969,17 @@ function App() {
   const [runProjectionByThread, setRunProjectionByThread] = useState<
     Record<string, ThreadRunProjectionSnapshot>
   >({});
+  const [feedEarlierByThread, setFeedEarlierByThread] = useState<
+    Record<string, FeedEarlierHistoryState>
+  >({});
+  const [loadingFeedEarlier, setLoadingFeedEarlier] = useState(false);
+  const loadingFeedEarlierRef = useRef(false);
+  const feedEarlierByThreadRef = useRef(feedEarlierByThread);
+  feedEarlierByThreadRef.current = feedEarlierByThread;
+  const loadFeedEarlierRef = useRef<() => void>(() => {});
+  const feedEarlierScrollAnchorRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(
+    null,
+  );
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
@@ -2902,6 +2923,21 @@ function App() {
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
   const persistedRunProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const runProjection = useLocalStreamProjection(persistedRunProjection);
+  const runProjectionRef = useRef(runProjection);
+  runProjectionRef.current = runProjection;
+  const activeFeedEarlier = activeThread ? feedEarlierByThread[activeThread.id] : undefined;
+  const displayProjection = useMemo(() => {
+    if (!runProjection) {
+      return undefined;
+    }
+    if (!activeFeedEarlier?.timeline.length) {
+      return runProjection;
+    }
+    return {
+      ...runProjection,
+      timeline: mergeFeedTimelineById(activeFeedEarlier.timeline, runProjection.timeline),
+    };
+  }, [activeFeedEarlier?.timeline, runProjection]);
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
   const autoCompactSuspended = isThreadAutoCompactSuspended(runProjection);
   const promptCacheInvalidated = isThreadPromptCacheInvalidated(runProjection);
@@ -3148,14 +3184,14 @@ function App() {
   );
   const activeProjectionViewModel = useMemo(
     () =>
-      runProjection
+      displayProjection
         ? buildThreadRunProjectionViewModel(
-            runProjection,
+            displayProjection,
             activeThread ? { id: activeThread.id, prompt: activeThread.prompt } : undefined,
             { agentDisplayNames: activeRuntimeAgentDisplayNames },
           )
         : undefined,
-    [activeRuntimeAgentDisplayNames, activeThread?.id, activeThread?.prompt, runProjection],
+    [activeRuntimeAgentDisplayNames, activeThread?.id, activeThread?.prompt, displayProjection],
   );
   const activeSubagentCards = useMemo(
     () => activeProjectionViewModel?.subagentCards ?? [],
@@ -3676,6 +3712,7 @@ function App() {
         if (activityMessagesRef.current) {
           syncActivityFeedScrollJump(activityMessagesRef.current);
         }
+        loadFeedEarlierRef.current();
       });
     });
   }, [syncActivityFeedScrollJump]);
@@ -3702,6 +3739,154 @@ function App() {
     },
     [clampActivityFeedOverscroll, flushActivityFeedLayoutScroll, scheduleActivityFeedLayoutScroll],
   );
+
+  useEffect(() => {
+    const threadId = activeThread?.id;
+    if (!threadId || !runProjection) {
+      return;
+    }
+    const historyRevision = runProjection.historyRevision ?? 0;
+    const hasEarlier = runProjection.hasEarlier === true;
+    setFeedEarlierByThread((current) => {
+      const existing = current[threadId];
+      if (existing && existing.historyRevision === historyRevision) {
+        if (existing.timeline.length === 0 && hasEarlier && !existing.hasEarlier) {
+          return {
+            ...current,
+            [threadId]: { ...existing, hasEarlier: true },
+          };
+        }
+        return current;
+      }
+      return {
+        ...current,
+        [threadId]: createFeedEarlierHistoryState(threadId, {
+          historyRevision,
+          hasEarlier,
+        }),
+      };
+    });
+  }, [activeThread?.id, runProjection?.hasEarlier, runProjection?.historyRevision, runProjection]);
+
+  const loadFeedEarlier = useCallback(() => {
+    const threadId = selectedThreadIdRef.current;
+    const liveProjection = runProjectionRef.current;
+    if (
+      !threadId ||
+      !liveProjection ||
+      loadingFeedEarlierRef.current ||
+      typeof window.eco?.getThreadRunProjectionDetail !== "function"
+    ) {
+      return;
+    }
+    const earlier = feedEarlierByThreadRef.current[threadId];
+    const hasEarlier = earlier ? earlier.hasEarlier : liveProjection.hasEarlier === true;
+    if (!hasEarlier) {
+      return;
+    }
+    const beforeSequence = resolveFeedEarlierBeforeSequence(earlier, liveProjection.timeline);
+    if (beforeSequence === undefined) {
+      return;
+    }
+    const container = activityMessagesRef.current;
+    if (container) {
+      feedEarlierScrollAnchorRef.current = {
+        prevScrollHeight: container.scrollHeight,
+        prevScrollTop: container.scrollTop,
+      };
+    }
+    userDetachedFromBottomRef.current = true;
+    loadingFeedEarlierRef.current = true;
+    setLoadingFeedEarlier(true);
+    const historyRevision = earlier?.historyRevision ?? liveProjection.historyRevision ?? 0;
+    void window.eco
+      .getThreadRunProjectionDetail({
+        threadId,
+        kind: "main",
+        key: threadId,
+        beforeSequence,
+        tail: true,
+        limit: ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
+      })
+      .then((result) => {
+        if (selectedThreadIdRef.current !== threadId) {
+          return;
+        }
+        if (!result) {
+          setFeedEarlierByThread((current) => {
+            const existing = current[threadId];
+            if (!existing) {
+              return current;
+            }
+            return {
+              ...current,
+              [threadId]: { ...existing, hasEarlier: false },
+            };
+          });
+          return;
+        }
+        setFeedEarlierByThread((current) => {
+          const existing =
+            current[threadId] ??
+            createFeedEarlierHistoryState(threadId, {
+              historyRevision,
+              hasEarlier: true,
+            });
+          if (existing.historyRevision !== historyRevision) {
+            return current;
+          }
+          const timeline = mergeFeedTimelineById(result.timeline, existing.timeline);
+          return {
+            ...current,
+            [threadId]: {
+              ...existing,
+              timeline,
+              hasEarlier: result.hasEarlier === true,
+              ...(result.previousBeforeSequence !== undefined
+                ? { beforeSequence: result.previousBeforeSequence }
+                : timeline[0]?.sequence !== undefined
+                  ? { beforeSequence: timeline[0].sequence }
+                  : {}),
+            },
+          };
+        });
+      })
+      .catch(() => {
+        feedEarlierScrollAnchorRef.current = null;
+      })
+      .finally(() => {
+        loadingFeedEarlierRef.current = false;
+        setLoadingFeedEarlier(false);
+      });
+  }, []);
+  loadFeedEarlierRef.current = loadFeedEarlier;
+
+  useLayoutEffect(() => {
+    const pending = feedEarlierScrollAnchorRef.current;
+    const container = activityMessagesRef.current;
+    if (!pending || !container) {
+      return;
+    }
+    // Wait until earlier items are present (or loading finished with no growth).
+    if (loadingFeedEarlier) {
+      return;
+    }
+    const delta = container.scrollHeight - pending.prevScrollHeight;
+    feedEarlierScrollAnchorRef.current = null;
+    if (delta === 0) {
+      return;
+    }
+    programmaticActivityFeedScrollRef.current = true;
+    container.scrollTop = pending.prevScrollTop + delta;
+    activityFeedScrollTopRef.current = container.scrollTop;
+    requestAnimationFrame(() => {
+      programmaticActivityFeedScrollRef.current = false;
+      const el = activityMessagesRef.current;
+      if (el) {
+        activityFeedScrollTopRef.current = el.scrollTop;
+      }
+    });
+  }, [activeFeedEarlier?.timeline, loadingFeedEarlier]);
 
   useEffect(() => {
     const container = activityMessagesRef.current;
@@ -3735,6 +3920,23 @@ function App() {
       if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
         activityFeedUserScrollDirectionRef.current = null;
       }
+      const threadId = selectedThreadIdRef.current;
+      const earlier = threadId ? feedEarlierByThreadRef.current[threadId] : undefined;
+      const liveProjection = runProjectionRef.current;
+      const hasEarlier = earlier
+        ? earlier.hasEarlier
+        : liveProjection?.hasEarlier === true;
+      if (
+        shouldLoadFeedEarlier({
+          scrollTop,
+          hasEarlier,
+          loadingEarlier: loadingFeedEarlierRef.current,
+          programmaticScroll: false,
+          thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
+        })
+      ) {
+        loadFeedEarlier();
+      }
       syncActivityFeedScrollJump(container);
       syncActivityUserMessageNavigator(container);
     };
@@ -3745,6 +3947,7 @@ function App() {
   }, [
     activeThread?.id,
     distanceFromActivityFeedBottom,
+    loadFeedEarlier,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
   ]);
@@ -5366,6 +5569,7 @@ function App() {
       setComposerRewindTarget(undefined);
     }
     setRunProjectionByThread((current) => removeRecordKey(current, threadId));
+    setFeedEarlierByThread((current) => removeRecordKey(current, threadId));
     setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
     setSubagentMetricsByThread((current) => removeRecordKey(current, threadId));
     setUsageByThread((current) => removeRecordKey(current, threadId));
@@ -6324,9 +6528,14 @@ function App() {
                           onJump={jumpToActivityUserMessage}
                         />
                         <div ref={activityMessagesRef} className="activity-messages">
+                          {loadingFeedEarlier ? (
+                            <div className="activity-feed-loading-earlier" aria-live="polite">
+                              {t("feed.loadingEarlier")}
+                            </div>
+                          ) : null}
                           <ActivityLogView
                             {...(activeThread && { thread: activeThread })}
-                            {...(runProjection && { projection: runProjection })}
+                            {...(displayProjection && { projection: displayProjection })}
                             {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
                             {...(activeThread &&
                               billingByThread[activeThread.id] && {

@@ -156,3 +156,68 @@ test("buildThreadRunProjectionDetail pages older agent history before a cursor",
   expect(detail?.timeline.map((entry) => entry.id)).toEqual(["agent_evt_3", "agent_evt_4"]);
   expect(detail?.hasEarlier).toBe(true);
 });
+
+test("parseThreadRunProjectionDetailRequest accepts main kind", () => {
+  expect(
+    parseThreadRunProjectionDetailRequest({
+      threadId: "thr_1",
+      kind: "main",
+      key: "thr_1",
+      beforeSequence: 10,
+      tail: true,
+      limit: 100,
+    }),
+  ).toEqual({
+    threadId: "thr_1",
+    kind: "main",
+    key: "thr_1",
+    beforeSequence: 10,
+    tail: true,
+    limit: 100,
+  });
+});
+
+test("buildThreadRunProjectionDetail pages older main timeline history", () => {
+  const items = Array.from({ length: 6 }, (_, index) =>
+    item(`main_${index + 1}`, index + 1, { scope: "main" }),
+  );
+  const snapshot: ThreadRunProjectionSnapshot = {
+    ...projection(),
+    timeline: items,
+    sourceEventCount: items.length,
+  };
+  const newest = buildThreadRunProjectionDetail(snapshot, {
+    threadId: "thr_1",
+    kind: "main",
+    key: "thr_1",
+    tail: true,
+    limit: 2,
+  });
+  expect(newest?.timeline.map((entry) => entry.id)).toEqual(["main_5", "main_6"]);
+  expect(newest?.hasEarlier).toBe(true);
+  expect(newest?.previousBeforeSequence).toBe(5);
+
+  const earlier = buildThreadRunProjectionDetail(snapshot, {
+    threadId: "thr_1",
+    kind: "main",
+    key: "thr_1",
+    beforeSequence: 5,
+    tail: true,
+    limit: 2,
+  });
+  expect(earlier?.timeline.map((entry) => entry.id)).toEqual(["main_3", "main_4"]);
+  expect(earlier?.hasEarlier).toBe(true);
+  expect(earlier?.previousBeforeSequence).toBe(3);
+});
+
+test("buildThreadRunProjectionDetail rejects main kind for mismatched thread key", () => {
+  expect(
+    buildThreadRunProjectionDetail(projection(), {
+      threadId: "thr_1",
+      kind: "main",
+      key: "thr_other",
+      tail: true,
+      limit: 2,
+    }),
+  ).toBeUndefined();
+});

@@ -114,10 +114,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function trimProjectionForFeed(snapshot: ThreadRunProjectionSnapshot): ThreadRunProjectionSnapshot {
+  const timeline = trimTimeline(snapshot.timeline, FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
+  const timelineTruncated = snapshot.timeline.length > timeline.length;
+  const hasEarlier = timelineTruncated || snapshot.hasEarlier === true;
   return {
     ...snapshot,
-    timeline: trimTimeline(snapshot.timeline, FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS),
+    timeline,
     agents: snapshot.agents.map(trimAgent),
+    ...(hasEarlier ? { hasEarlier: true } : {}),
   };
 }
 

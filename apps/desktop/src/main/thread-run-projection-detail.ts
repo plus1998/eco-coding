@@ -40,9 +40,11 @@ export function buildThreadRunProjectionDetail(
   request: ThreadRunProjectionDetailRequest,
 ): ThreadRunProjectionDetailResult | undefined {
   const sourceTimeline =
-    request.kind === "agent"
-      ? timelineForAgent(projection, request.key)
-      : timelineForTool(projection, request.key);
+    request.kind === "main"
+      ? timelineForMain(projection, request.key)
+      : request.kind === "agent"
+        ? timelineForAgent(projection, request.key)
+        : timelineForTool(projection, request.key);
   if (!sourceTimeline) {
     return undefined;
   }
@@ -79,6 +81,16 @@ export function buildThreadRunProjectionDetail(
     ...(previousBeforeSequence !== undefined ? { previousBeforeSequence } : {}),
     ...(agent ? { agent: { ...agent, timeline: [] } } : {}),
   };
+}
+
+function timelineForMain(
+  projection: ThreadRunProjectionSnapshot,
+  threadId: string,
+): ThreadRunProjectionTimelineItem[] | undefined {
+  if (projection.thread.threadId !== threadId) {
+    return undefined;
+  }
+  return [...projection.timeline];
 }
 
 function timelineForAgent(
@@ -143,7 +155,7 @@ function clampLimit(value: number | undefined): number {
 }
 
 function readDetailKind(value: unknown): ThreadRunProjectionDetailKind | undefined {
-  return value === "agent" || value === "tool" ? value : undefined;
+  return value === "agent" || value === "tool" || value === "main" ? value : undefined;
 }
 
 function readOptionalNumber(value: unknown): number | undefined {

@@ -130,6 +130,20 @@ test("trimProjectionForFeed bounds main timeline history", () => {
   expect(trimmed.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
   expect(trimmed.timeline[0]?.id).toBe("evt_50");
   expect(trimmed.timeline.at(-1)?.id).toBe(`evt_${items.length - 1}`);
+  expect(trimmed.hasEarlier).toBe(true);
+});
+
+test("trimProjectionForFeed clears hasEarlier when timeline fits the feed window", () => {
+  const trimmed = trimProjectionForFeed(createProjection("short", { longDelegation: false }));
+  expect(trimmed.hasEarlier).toBeUndefined();
+});
+
+test("trimProjectionForFeed preserves hasEarlier from a bounded source window", () => {
+  const trimmed = trimProjectionForFeed({
+    ...createProjection("short", { longDelegation: false }),
+    hasEarlier: true,
+  });
+  expect(trimmed.hasEarlier).toBe(true);
 });
 
 test("filterFeedProjectionAfterSequence keeps only uncached main and subagent timeline items", () => {

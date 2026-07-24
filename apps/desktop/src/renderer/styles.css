@@ -2807,6 +2807,14 @@ button.sidebar-core-heading {
   -webkit-app-region: no-drag;
 }
 
+.activity-feed-loading-earlier {
+  padding: 10px 16px 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted-foreground, #8b929a);
+  text-align: center;
+}
+
 .run-log-narrative-body,
 .markdown-content,
 .markdown-content *,
@@ -10786,10 +10794,7 @@ button.sidebar-core-heading {
   display: flex;
   flex-direction: column;
   gap: 0;
-  overflow: hidden;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .context-card-subagent-row {

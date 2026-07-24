@@ -116,11 +116,13 @@ export interface ThreadRunProjectionSnapshot {
   timeline: ThreadRunProjectionTimelineItem[];
   diagnostics: ThreadRunProjectionDiagnostic[];
   sourceEventCount: number;
+  /** True when older main-timeline history exists beyond the current feed window. */
+  hasEarlier?: boolean;
   /** Increments when the conversation history is intentionally rewound. */
   historyRevision?: number;
 }
 
-export type ThreadRunProjectionDetailKind = "agent" | "tool";
+export type ThreadRunProjectionDetailKind = "agent" | "tool" | "main";
 
 export interface ThreadRunProjectionDetailRequest {
   threadId: string;
