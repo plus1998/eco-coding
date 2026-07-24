@@ -66,7 +66,7 @@ class _ThreadSessionConversationLayoutState
         : _floatingComposerHeight;
     final feedBottomInset =
         _composerHeight + floatingComposerHeight + threadSessionComposerGap;
-    final controlsBottomInset = _composerHeight;
+    final controlsBottomInset = _composerHeight + floatingComposerHeight;
 
     return Stack(
       clipBehavior: Clip.none,

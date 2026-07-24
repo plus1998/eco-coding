@@ -135,21 +135,15 @@ export function formatClarificationAnswersSummary(
 ): string {
   const parts = request.questions.map((question, index) => {
     const selected = answers.selections[index] ?? [];
-    const preview =
-      question.question.length > 48 ? `${question.question.slice(0, 45)}…` : question.question;
     if (selected.length === 0) {
-      return `${preview} → （未选择）`;
+      return `${question.question} → （未选择）`;
     }
-    return `${preview} → ${selected.join("、")}`;
+    return `${question.question} → ${selected.join("、")}`;
   });
   return `澄清回答：${parts.join("；")}`;
 }
 
-function readRawAskUserQuestionKey(
-  rawQuestions: unknown,
-  index: number,
-  fallback: string,
-): string {
+function readRawAskUserQuestionKey(rawQuestions: unknown, index: number, fallback: string): string {
   if (!Array.isArray(rawQuestions)) {
     return fallback;
   }

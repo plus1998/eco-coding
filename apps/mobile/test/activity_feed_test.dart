@@ -148,6 +148,48 @@ void main() {
     expect(feed.map((entry) => entry.text), ['开始处理任务。']);
   });
 
+  test(
+    'buildActivityFeed hides plan execution transition and empty processed turn',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'completed',
+          generatedAt: '2026-01-01T00:00:05.000Z',
+          sourceEventCount: 1,
+          attempts: [
+            ThreadRunProjectionAttempt(
+              attemptId: 'attempt-planning',
+              phase: 'planning',
+              retryIndex: 0,
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:00.000Z',
+              endedAt: '2026-01-01T00:00:05.000Z',
+            ),
+          ],
+          agents: [],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'plan-cleared',
+              sequence: 1,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'system',
+              runAttemptId: 'attempt-planning',
+              text: '计划已进入执行阶段。',
+              at: '2026-01-01T00:00:05.000Z',
+              metadata: {'liveType': 'thread.plan_cleared'},
+            ),
+          ],
+        ),
+      );
+
+      expect(feed, isEmpty);
+    },
+  );
+
   test('parseToolActionDisplayLabel normalizes tool lines', () {
     expect(
       parseToolActionDisplayLabel(
@@ -1034,114 +1076,112 @@ void main() {
     },
   );
 
-  testWidgets(
-    'ActivityFeedList flattens a single Bash tool group',
-    (tester) async {
-      final scrollController = ScrollController();
-      addTearDown(scrollController.dispose);
-      final entries = groupActivityFeedActionEntries(const [
-        ActivityFeedEntry(
-          id: 'single-bash-group',
-          kind: ActivityFeedKind.action,
-          text: 'Run unit tests',
-          toolName: 'Bash',
-          actionIcon: ActivityActionIcon.terminal,
-          lifecycle: ToolActionLifecycle.completed,
-          bashRun: BashRunCardDisplay(
-            title: 'Run unit tests',
-            meta: 'npm, 1.2s',
-            command: 'npm test',
-            output: '36 pass',
+  testWidgets('ActivityFeedList flattens a single Bash tool group', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    final entries = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'single-bash-group',
+        kind: ActivityFeedKind.action,
+        text: 'Run unit tests',
+        toolName: 'Bash',
+        actionIcon: ActivityActionIcon.terminal,
+        lifecycle: ToolActionLifecycle.completed,
+        bashRun: BashRunCardDisplay(
+          title: 'Run unit tests',
+          meta: 'npm, 1.2s',
+          command: 'npm test',
+          output: '36 pass',
+        ),
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: entries,
+            scrollController: scrollController,
           ),
         ),
-      ]);
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.pumpWidget(
-        _localizedMaterialApp(
-          theme: buildEcoDarkTheme(),
-          home: Scaffold(
-            body: ActivityFeedList(
-              entries: entries,
-              scrollController: scrollController,
-            ),
+    expect(find.text('已运行 npm test'), findsOneWidget);
+    expect(find.text('已运行 Run unit tests'), findsNothing);
+    expect(find.text('npm test'), findsNothing);
+
+    await tester.tap(find.text('已运行 npm test'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已运行 npm test'), findsOneWidget);
+    expect(find.text('已运行 Run unit tests'), findsNothing);
+    expect(find.text('npm test'), findsOneWidget);
+    expect(find.text('36 pass'), findsOneWidget);
+  });
+
+  testWidgets('ActivityFeedList shows failed Bash as ran with a subtle dot', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    final entries = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'failed-bash-group',
+        kind: ActivityFeedKind.action,
+        text: 'Run unit tests',
+        toolName: 'Bash',
+        actionIcon: ActivityActionIcon.terminal,
+        lifecycle: ToolActionLifecycle.failed,
+        bashRun: BashRunCardDisplay(
+          title: 'Run unit tests',
+          meta: 'npm, 1.2s',
+          command: 'npm test',
+          output: '1 test failed',
+        ),
+      ),
+    ]);
+
+    expect(entries.single.text, '已运行 npm test');
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: entries,
+            scrollController: scrollController,
           ),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('已运行 npm test'), findsOneWidget);
-      expect(find.text('已运行 Run unit tests'), findsNothing);
-      expect(find.text('npm test'), findsNothing);
+    expect(find.text('已运行 npm test'), findsOneWidget);
+    expect(find.textContaining('工具未完成'), findsNothing);
+    expect(find.textContaining('运行失败'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('activity-tool-failure-dot')),
+      findsOneWidget,
+    );
+    expect(find.text('npm test'), findsNothing);
 
-      await tester.tap(find.text('已运行 npm test'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('已运行 npm test'));
+    await tester.pumpAndSettle();
 
-      expect(find.text('已运行 npm test'), findsOneWidget);
-      expect(find.text('已运行 Run unit tests'), findsNothing);
-      expect(find.text('npm test'), findsOneWidget);
-      expect(find.text('36 pass'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'ActivityFeedList shows failed Bash as ran with a subtle dot',
-    (tester) async {
-      final scrollController = ScrollController();
-      addTearDown(scrollController.dispose);
-      final entries = groupActivityFeedActionEntries(const [
-        ActivityFeedEntry(
-          id: 'failed-bash-group',
-          kind: ActivityFeedKind.action,
-          text: 'Run unit tests',
-          toolName: 'Bash',
-          actionIcon: ActivityActionIcon.terminal,
-          lifecycle: ToolActionLifecycle.failed,
-          bashRun: BashRunCardDisplay(
-            title: 'Run unit tests',
-            meta: 'npm, 1.2s',
-            command: 'npm test',
-            output: '1 test failed',
-          ),
-        ),
-      ]);
-
-      expect(entries.single.text, '已运行 npm test');
-
-      await tester.pumpWidget(
-        _localizedMaterialApp(
-          theme: buildEcoDarkTheme(),
-          home: Scaffold(
-            body: ActivityFeedList(
-              entries: entries,
-              scrollController: scrollController,
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('已运行 npm test'), findsOneWidget);
-      expect(find.textContaining('工具未完成'), findsNothing);
-      expect(find.textContaining('运行失败'), findsNothing);
-      expect(
-        find.byKey(const ValueKey('activity-tool-failure-dot')),
-        findsOneWidget,
-      );
-      expect(find.text('npm test'), findsNothing);
-
-      await tester.tap(find.text('已运行 npm test'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('已运行 npm test'), findsOneWidget);
-      expect(find.text('已运行 Run unit tests'), findsNothing);
-      expect(find.text('npm test'), findsOneWidget);
-      expect(find.text('1 test failed'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('activity-tool-failure-dot')),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(find.text('已运行 npm test'), findsOneWidget);
+    expect(find.text('已运行 Run unit tests'), findsNothing);
+    expect(find.text('npm test'), findsOneWidget);
+    expect(find.text('1 test failed'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('activity-tool-failure-dot')),
+      findsOneWidget,
+    );
+  });
 
   test('Bash title uses description or Shell without command fallback', () {
     expect(

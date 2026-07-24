@@ -291,7 +291,7 @@ function filterMainTimelineForFeed(
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
   const displayTimeline = filterProjectionTimelineForDetailFeed(timeline, requestSpansById);
-  const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item));
+  const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item, displayTimeline));
   return filterCompactionTimelineForFeed(normalizePlanDismissalTimeline(requestFiltered));
 }
 
@@ -663,9 +663,15 @@ function buildLatestActiveRequestStartedByOwner(
   return latestByOwner;
 }
 
-function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {
+function isMainTimelineNoiseItem(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
   if (isProjectionUserPromptItem(item)) {
     return false;
+  }
+  if (isSupersededClarificationWaitingItem(item, timeline)) {
+    return true;
   }
   if (isRequestFailureFeedNoiseItem(item)) {
     return true;
@@ -677,6 +683,7 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   if (
     liveType === "plan.ready" ||
     liveType === "thread.awaiting_plan" ||
+    liveType === "thread.plan_cleared" ||
     liveType === "clarification.requested"
   ) {
     return true;
@@ -701,6 +708,19 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   const text = item.text.trim();
   return (
     !text || text === "状态已更新" || isProjectionLifecycleText(text) || isProjectionUsageNoiseText(text)
+  );
+}
+
+function isSupersededClarificationWaitingItem(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  if (item.eventType !== "thread.status" || item.text.trim() !== "等待你的回答…") {
+    return false;
+  }
+  return timeline.some(
+    (candidate) =>
+      projectionLiveType(candidate) === "clarification.answered" && compareTimelineItems(item, candidate) < 0,
   );
 }
 
@@ -731,9 +751,12 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "执行已结束，但无法确认文件变更。" ||
     trimmed === "计划已生成，等待确认。" ||
     trimmed === "计划已生成，请确认是否执行。" ||
+    trimmed === "计划已进入执行阶段。" ||
+    trimmed === "计划已进入执行阶段" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||
     /^正在启动 Codex/u.test(trimmed) ||
     trimmed === "正在继续 Codex 会话…" ||
+    trimmed === "正在继续处理…" ||
     /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||
     /^Working in project directory:/u.test(trimmed) ||
     /^Local model router ready:/u.test(trimmed) ||
@@ -2105,9 +2128,7 @@ export function projectionItemToDetailBlock(
       ...(output && { output }),
       ...(metadataTool?.exitCode !== undefined && { exitCode: metadataTool.exitCode }),
     });
-    const commandMessage = command
-      ? i18n.t("projection.bashCommand", { command })
-      : undefined;
+    const commandMessage = command ? i18n.t("projection.bashCommand", { command }) : undefined;
     const error = recoveredResult ? "" : output || (text !== commandMessage ? text : "");
     return {
       kind: "tool-failed",

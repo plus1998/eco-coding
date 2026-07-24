@@ -9,9 +9,9 @@ import {
   resolveMinimumVisibleToolRunningState,
 } from "../src/renderer/ActivityLogView";
 import { formatDuration } from "../src/renderer/activity-log";
+import { i18n } from "../src/renderer/i18n";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
-import { i18n } from "../src/renderer/i18n";
 import { buildThreadRunProjectionViewModel } from "../src/renderer/thread-run-projection-view";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
@@ -287,9 +287,7 @@ test("ActivityLogView hides the conversation tail while a request is waiting for
     createElement(ActivityLogView, {
       projection: projection({
         status: "running",
-        requestSpans: [
-          requestSpan({ requestId: "req-waiting", status: "waiting_first_token" }),
-        ],
+        requestSpans: [requestSpan({ requestId: "req-waiting", status: "waiting_first_token" })],
         timeline: [
           item({
             id: "user-before-request",
@@ -315,6 +313,73 @@ test("ActivityLogView hides the conversation tail while a request is waiting for
   expect(html).not.toContain("run-log-conversation-tail");
 });
 
+test("ActivityLogView replaces answered clarification waiting with its question and answer", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "clarification-waiting",
+            sequence: 1,
+            eventType: "thread.status",
+            role: "system",
+            text: "等待你的回答…",
+            metadata: { liveType: "thread.running" },
+          }),
+          item({
+            id: "clarification-answer",
+            sequence: 2,
+            eventType: "message.final",
+            role: "planner",
+            text: "澄清回答：应该使用哪种部署方式？ → 蓝绿部署",
+            metadata: { liveType: "clarification.answered" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).not.toContain("等待你的回答");
+  expect(html).toContain("应该使用哪种部署方式？");
+  expect(html).toContain("蓝绿部署");
+  expect(html).toContain("clarification-answer-card");
+});
+
+test("ActivityLogView hides the plan execution transition and its empty processed section", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        attempts: [
+          {
+            attemptId: "attempt-planning",
+            phase: "planning",
+            status: "completed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            endedAt: "2026-01-01T00:00:05.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "plan-cleared",
+            sequence: 1,
+            eventType: "thread.status",
+            role: "system",
+            runAttemptId: "attempt-planning",
+            text: "计划已进入执行阶段。",
+            metadata: { liveType: "thread.plan_cleared" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).not.toContain("计划已进入执行阶段");
+  expect(html).not.toContain("run-log-turn");
+  expect(html).not.toContain("已处理");
+});
+
 test("ActivityLogView renders prompt images above the user text", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -327,9 +392,7 @@ test("ActivityLogView renders prompt images above the user text", () => {
             text: "分析这张图片",
             metadata: {
               liveType: "thread.user_prompt",
-              promptImagePreviews: [
-                { id: "preview-1", mediaType: "image/jpeg", data: "YWJj" },
-              ],
+              promptImagePreviews: [{ id: "preview-1", mediaType: "image/jpeg", data: "YWJj" }],
             },
           }),
         ],
@@ -622,7 +685,7 @@ test("ActivityLogView switches command groups from live action back to completed
       },
     }),
   );
-  const latestCommand = '/bin/zsh -lc "sed -n \'1,180p\' src/services/very-long-tool-status-file.ts"';
+  const latestCommand = "/bin/zsh -lc \"sed -n '1,180p' src/services/very-long-tool-status-file.ts\"";
   const runningCommand = item({
     id: "bash-running-7",
     sequence: 7,

@@ -1298,7 +1298,10 @@ bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
     return true;
   }
   final liveType = _projectionLiveType(item);
-  if (liveType == 'clarification.requested') return true;
+  if (liveType == 'clarification.requested' ||
+      liveType == 'thread.plan_cleared') {
+    return true;
+  }
   if (liveType != null && _isThreadFollowUpLiveEvent(liveType)) return true;
   if (item.eventType == 'agent.started' ||
       item.eventType == 'agent.stopped' ||
@@ -1524,11 +1527,14 @@ bool _isProjectionInternalMessageText(String text) {
   return isInternalActivityMessage(trimmed) ||
       trimmed.startsWith('__eco_worktree_merge__') ||
       trimmed == '等待你的回答…' ||
+      trimmed == '正在继续处理…' ||
       trimmed == '回答完成。' ||
       trimmed == '执行完成。' ||
       trimmed == '执行完成，变更已写入项目目录。' ||
       trimmed == '执行完成，工作树内无相对基线的文件变更。' ||
       trimmed == '执行已结束，但无法确认文件变更。' ||
+      trimmed == '计划已进入执行阶段。' ||
+      trimmed == '计划已进入执行阶段' ||
       RegExp(r'^正在启动 Claude Agent SDK').hasMatch(trimmed) ||
       RegExp(r'^正在启动\s*Codex').hasMatch(trimmed) ||
       RegExp(r'^Codex\s*已连接(?:\s*·|$)').hasMatch(trimmed) ||

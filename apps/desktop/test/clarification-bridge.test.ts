@@ -17,10 +17,7 @@ const request: ClarificationRequest = {
   questions: [
     {
       question: "新标记为客服主体时是否自动参与分配？",
-      options: [
-        { label: "自动启用", recommended: true },
-        { label: "仅标记，不自动启用" },
-      ],
+      options: [{ label: "自动启用", recommended: true }, { label: "仅标记，不自动启用" }],
     },
     {
       question: "导出范围",
@@ -80,6 +77,7 @@ test("formatClarificationAnswersSummary renders readable activity text", () => {
     selections: [["自动启用"], ["已启用", "备选"]],
   });
   expect(summary).toContain("澄清回答：");
+  expect(summary).toContain("新标记为客服主体时是否自动参与分配？");
   expect(summary).toContain("→ 自动启用");
   expect(summary).toContain("→ 已启用、备选");
 });
@@ -91,9 +89,9 @@ test("pending clarification stays isolated until submitted or cancelled", async 
 
   expect(getPendingClarificationForThread("thr_pending")?.toolUseId).toBe("tool_pending");
   expect(getPendingClarificationByToolUseId("tool_pending")?.threadId).toBe("thr_pending");
-  expect(submitClarification("tool_pending", { toolUseId: "tool_pending", selections: [["自动启用"], []] })).toBe(
-    true,
-  );
+  expect(
+    submitClarification("tool_pending", { toolUseId: "tool_pending", selections: [["自动启用"], []] }),
+  ).toBe(true);
   await expect(pending).resolves.toEqual({
     toolUseId: "tool_pending",
     selections: [["自动启用"], []],

@@ -389,6 +389,44 @@ test("buildThreadRunProjectionViewModel hides clarification request narration fr
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt"]);
 });
 
+test("buildThreadRunProjectionViewModel replaces clarification waiting with the answered summary", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "clarification-waiting",
+          sequence: 1,
+          eventType: "thread.status",
+          role: "system",
+          text: "等待你的回答…",
+          metadata: { liveType: "thread.running" },
+        }),
+        item({
+          id: "clarification-resuming",
+          sequence: 2,
+          eventType: "thread.status",
+          role: "system",
+          text: "正在继续处理…",
+          metadata: { liveType: "thread.running" },
+        }),
+        item({
+          id: "clarification-answer",
+          sequence: 3,
+          eventType: "message.final",
+          role: "planner",
+          text: "澄清回答：应该使用哪种部署方式？ → 蓝绿部署",
+          metadata: { liveType: "clarification.answered" },
+        }),
+      ],
+    }),
+  );
+
+  const timelineTexts = view.mainFeedEntries.flatMap((entry) =>
+    entry.kind === "timeline" ? [entry.item.text] : [],
+  );
+  expect(timelineTexts).toEqual(["澄清回答：应该使用哪种部署方式？ → 蓝绿部署"]);
+});
+
 test("buildProjectionDisplayTimelineItems merges approval and tool execution by toolUseId", () => {
   const timeline = [
     item({

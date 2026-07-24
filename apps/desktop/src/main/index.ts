@@ -336,10 +336,7 @@ import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./co
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
-import {
-  OrchestrationRunBudgetGuard,
-  resolveOrchestrationRunBudget,
-} from "./orchestration-run-budget";
+import { OrchestrationRunBudgetGuard, resolveOrchestrationRunBudget } from "./orchestration-run-budget";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
@@ -384,10 +381,7 @@ import {
   registerPendingPlanApproval,
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
-import {
-  createProjectMcpSettingsStore,
-  type ProjectMcpSettingsStore,
-} from "./project-mcp-settings-store";
+import { createProjectMcpSettingsStore, type ProjectMcpSettingsStore } from "./project-mcp-settings-store";
 import {
   createProjectSkillsSettingsStore,
   type ProjectSkillsSettingsStore,
@@ -1192,7 +1186,20 @@ app.whenReady().then(async () => {
     getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
-    emitThreadLive: (event) => desktopEventCenter.publishThreadLiveEvent(event),
+    emitThreadLive: (event) => {
+      if (event.type.startsWith("clarification.")) {
+        emitThreadEvent(
+          event.threadId,
+          event.type,
+          event.message,
+          event.role ?? "system",
+          event.stream ?? false,
+          event.clarification ? { clarification: event.clarification } : undefined,
+        );
+        return;
+      }
+      desktopEventCenter.publishThreadLiveEvent(event);
+    },
     updateThreadStatus: (threadId, patch) =>
       updateThread(threadId, {
         status: patch.status as ThreadSummary["status"],
@@ -2834,7 +2841,11 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.projectMcpSettingsSave, async (payload: unknown) => {
-    if (!isRecord(payload) || typeof payload.workspacePath !== "string" || !isRecord(payload.enabledByServer)) {
+    if (
+      !isRecord(payload) ||
+      typeof payload.workspacePath !== "string" ||
+      !isRecord(payload.enabledByServer)
+    ) {
       throw new Error("Invalid project MCP settings.");
     }
     return projectMcpSettingsStore.save({
@@ -5782,8 +5793,7 @@ async function handleRunCancelled(
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
   const budgetExceeded = orchestrationRunBudgetGuard.exceeded(threadId);
   const resolvedMessage =
-    message ??
-    (budgetExceeded ? `已自动停止：编排触发硬熔断。${budgetExceeded.message}` : undefined);
+    message ?? (budgetExceeded ? `已自动停止：编排触发硬熔断。${budgetExceeded.message}` : undefined);
   await finalizeCancelledRun(
     threadId,
     worktreePlan,

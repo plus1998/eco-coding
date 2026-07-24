@@ -3,23 +3,6 @@ import {
   CODEX_JSON_RPC_METHOD_NOT_FOUND,
   CodexAppServerRequestError,
 } from "@eco/runtime";
-import {
-  cancelBashApprovalsForThread,
-  getPendingBashApprovalForThread,
-  registerPendingBashApproval,
-  resolvePendingBashApproval,
-  type BashApprovalResolution,
-} from "./bash-approval-bridge";
-import {
-  cancelClarificationsForThread,
-  registerPendingClarification,
-  submitClarification,
-} from "./clarification-bridge";
-import {
-  cancelPlanApprovalsForThread,
-  registerPendingPlanApproval,
-} from "./plan-approval-bridge";
-import { applyThreadPlanReadyEffects, type ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
 import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
 import type {
   BashApprovalRequest,
@@ -28,6 +11,21 @@ import type {
   PlanApprovalRequest,
   ThreadLiveEvent,
 } from "../shared/ipc";
+import {
+  type BashApprovalResolution,
+  cancelBashApprovalsForThread,
+  getPendingBashApprovalForThread,
+  registerPendingBashApproval,
+  resolvePendingBashApproval,
+} from "./bash-approval-bridge";
+import {
+  cancelClarificationsForThread,
+  formatClarificationAnswersSummary,
+  registerPendingClarification,
+  submitClarification,
+} from "./clarification-bridge";
+import { cancelPlanApprovalsForThread, registerPendingPlanApproval } from "./plan-approval-bridge";
+import { applyThreadPlanReadyEffects, type ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
 
 export const CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL = "item/commandExecution/requestApproval";
 export const CODEX_FILE_CHANGE_REQUEST_APPROVAL = "item/fileChange/requestApproval";
@@ -131,13 +129,8 @@ async function handleCommandExecutionRequestApproval(
   }
 
   const command = resolveCommandExecutionLabel(params);
-  const cwd =
-    readString(params, "cwd") ??
-    deps.getWorktreePath(ecoThreadId) ??
-    thread.workspacePath;
-  const reason =
-    readString(params, "reason") ??
-    "Codex requires your approval before running this command.";
+  const cwd = readString(params, "cwd") ?? deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath;
+  const reason = readString(params, "reason") ?? "Codex requires your approval before running this command.";
   const plannerAgentId = deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`;
   const isNetwork = Boolean(params.networkApprovalContext);
   const proposedExecpolicyAmendment = readStringArray(
@@ -156,9 +149,7 @@ async function handleCommandExecutionRequestApproval(
     description: reason,
     kind: isNetwork ? "network" : "command",
     ...(proposedExecpolicyAmendment.length > 0 ? { proposedExecpolicyAmendment } : {}),
-    ...(proposedNetworkPolicyAmendments.length > 0
-      ? { proposedNetworkPolicyAmendments }
-      : {}),
+    ...(proposedNetworkPolicyAmendments.length > 0 ? { proposedNetworkPolicyAmendments } : {}),
   };
 
   emitBashApprovalRequested(deps, approvalRequest, command);
@@ -183,9 +174,7 @@ async function handleFileChangeRequestApproval(
   }
 
   const grantRoot = readString(params, "grantRoot");
-  const reason =
-    readString(params, "reason") ??
-    "Codex requires your approval before applying file changes.";
+  const reason = readString(params, "reason") ?? "Codex requires your approval before applying file changes.";
   const filesystemPath = grantRoot ?? thread.workspacePath;
   const command = grantRoot ? `write under ${grantRoot}` : "apply file changes";
   const plannerAgentId = deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`;
@@ -282,11 +271,7 @@ async function handleMcpServerElicitationRequest(
     "threadId",
   );
   const ecoThreadId = deps.resolveEcoThreadId(codexThreadId);
-  const serverName = requireNonEmptyRequestString(
-    CODEX_MCP_SERVER_ELICITATION_REQUEST,
-    params,
-    "serverName",
-  );
+  const serverName = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "serverName");
   const mode = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "mode");
   const message = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
   validateNullableStringFields(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, ["turnId"]);
@@ -326,13 +311,7 @@ async function handleMcpServerElicitationRequest(
   const toolUseId = createMcpElicitationToolUseId(serverName);
   let mapped: MappedMcpElicitationForm;
   try {
-    mapped = mapMcpElicitationForm(
-      ecoThreadId,
-      toolUseId,
-      serverName,
-      message,
-      params.requestedSchema,
-    );
+    mapped = mapMcpElicitationForm(ecoThreadId, toolUseId, serverName, message, params.requestedSchema);
   } catch (error) {
     if (deps.getThread(ecoThreadId)) {
       emitMcpElicitationMappingFailure(deps, ecoThreadId, serverName, error);
@@ -424,10 +403,14 @@ async function handleToolRequestUserInput(
       clearTimeout(autoResolutionTimer);
     }
   });
+  deps.updateThreadStatus(ecoThreadId, {
+    status: "running",
+    message: "正在继续处理…",
+  });
   deps.emitThreadLive({
     threadId: ecoThreadId,
     type: "clarification.answered",
-    message: formatClarificationAnsweredMessage(mappedClarification.request, answers),
+    message: formatClarificationAnswersSummary(mappedClarification.request, answers),
     role: "planner",
   });
 
@@ -525,11 +508,7 @@ function invalidServerRequestParams(method: string, detail: string): CodexAppSer
   );
 }
 
-function requireRequestString(
-  method: string,
-  params: Record<string, unknown>,
-  key: string,
-): string {
+function requireRequestString(method: string, params: Record<string, unknown>, key: string): string {
   const value = params[key];
   if (typeof value !== "string") {
     throw invalidServerRequestParams(method, `${key} must be a string.`);
@@ -537,11 +516,7 @@ function requireRequestString(
   return value;
 }
 
-function requireNonEmptyRequestString(
-  method: string,
-  params: Record<string, unknown>,
-  key: string,
-): string {
+function requireNonEmptyRequestString(method: string, params: Record<string, unknown>, key: string): string {
   const value = requireRequestString(method, params, key).trim();
   if (!value) {
     throw invalidServerRequestParams(method, `${key} must be a non-empty string.`);
@@ -549,11 +524,7 @@ function requireNonEmptyRequestString(
   return value;
 }
 
-function requireOwnRequestField(
-  method: string,
-  params: Record<string, unknown>,
-  key: string,
-): unknown {
+function requireOwnRequestField(method: string, params: Record<string, unknown>, key: string): unknown {
   if (!Object.hasOwn(params, key)) {
     throw invalidServerRequestParams(method, `${key} is required.`);
   }
@@ -590,13 +561,7 @@ function validateApprovalRequestEnvelope(
 
 function validateCommandExecutionRequestParams(params: Record<string, unknown>): void {
   const method = CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL;
-  validateNullableStringFields(method, params, [
-    "approvalId",
-    "command",
-    "cwd",
-    "environmentId",
-    "reason",
-  ]);
+  validateNullableStringFields(method, params, ["approvalId", "command", "cwd", "environmentId", "reason"]);
   if (typeof params.approvalId === "string" && !params.approvalId.trim()) {
     throw invalidServerRequestParams(method, "approvalId must be null or a non-empty string.");
   }
@@ -620,8 +585,7 @@ function validateCommandExecutionRequestParams(params: Record<string, unknown>):
     params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment,
     "proposedExecpolicyAmendment",
   );
-  const amendments =
-    params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments;
+  const amendments = params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments;
   if (amendments !== undefined && amendments !== null) {
     if (
       !Array.isArray(amendments) ||
@@ -643,10 +607,7 @@ function validateCommandActions(value: unknown): void {
     return;
   }
   if (!Array.isArray(value) || !value.every(isValidCommandAction)) {
-    throw invalidServerRequestParams(
-      CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL,
-      "commandActions is invalid.",
-    );
+    throw invalidServerRequestParams(CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL, "commandActions is invalid.");
   }
 }
 
@@ -693,10 +654,7 @@ function validateAutoResolutionMs(value: unknown): number | undefined {
 
 function validateToolRequestUserInputQuestions(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value) || value.length === 0) {
-    throw invalidServerRequestParams(
-      CODEX_TOOL_REQUEST_USER_INPUT,
-      "questions must be a non-empty array.",
-    );
+    throw invalidServerRequestParams(CODEX_TOOL_REQUEST_USER_INPUT, "questions must be a non-empty array.");
   }
   const questionIds = new Set<string>();
   return value.map((question, index) => {
@@ -922,11 +880,7 @@ function formatRequestedPermissions(permissions: Record<string, unknown>): strin
   return JSON.stringify(permissions, null, 2);
 }
 
-function emitMcpElicitationDeclined(
-  deps: CodexApprovalBridgeDeps,
-  threadId: string,
-  message: string,
-): void {
+function emitMcpElicitationDeclined(deps: CodexApprovalBridgeDeps, threadId: string, message: string): void {
   deps.emitThreadLive({
     threadId,
     type: "thread.mcp_elicitation_declined",
@@ -974,10 +928,7 @@ const OMIT_MCP_FORM_VALUE = Symbol("omit-mcp-form-value");
 interface MappedMcpElicitationField {
   key: string;
   question: ClarificationRequest["questions"][number];
-  decode: (
-    selection: readonly string[],
-    fromCustomInput: boolean,
-  ) => unknown | typeof OMIT_MCP_FORM_VALUE;
+  decode: (selection: readonly string[], fromCustomInput: boolean) => unknown | typeof OMIT_MCP_FORM_VALUE;
 }
 
 interface MappedMcpElicitationForm {
@@ -1015,7 +966,10 @@ function mapMcpElicitationForm(
   }
 
   const propertyEntries = Object.entries(rawSchema.properties);
-  const required = normalizeRequiredPropertyNames(rawSchema.required, new Set(propertyEntries.map(([key]) => key)));
+  const required = normalizeRequiredPropertyNames(
+    rawSchema.required,
+    new Set(propertyEntries.map(([key]) => key)),
+  );
   if (propertyEntries.length === 0) {
     const request: ClarificationRequest = {
       toolUseId,
@@ -1025,10 +979,7 @@ function mapMcpElicitationForm(
           header: serverName,
           question: message,
           allowCustom: false,
-          options: [
-            { label: "同意并继续" },
-            { label: "拒绝" },
-          ],
+          options: [{ label: "同意并继续" }, { label: "拒绝" }],
         },
       ],
     };
@@ -1070,10 +1021,7 @@ function mapMcpElicitationForm(
       const customInputIndices = normalizeCustomInputIndices(answers.customInputIndices, fields.length);
       const contentEntries: Array<[string, unknown]> = [];
       fields.forEach((field, index) => {
-        const value = field.decode(
-          answers.selections[index] ?? [],
-          customInputIndices.has(index),
-        );
+        const value = field.decode(answers.selections[index] ?? [], customInputIndices.has(index));
         if (value !== OMIT_MCP_FORM_VALUE) {
           contentEntries.push([field.key, value]);
         }
@@ -1170,7 +1118,10 @@ function mapMcpStringField(
     "maxLength",
   ]);
   if (schema.format !== undefined && schema.format !== null) {
-    throw unsupportedMcpFormProperty(key, `string format ${String(schema.format)} is not losslessly validated`);
+    throw unsupportedMcpFormProperty(
+      key,
+      `string format ${String(schema.format)} is not losslessly validated`,
+    );
   }
   const minLength = readOptionalNonNegativeInteger(schema.minLength, key, "minLength");
   const maxLength = readOptionalNonNegativeInteger(schema.maxLength, key, "maxLength");
@@ -1254,14 +1205,7 @@ function mapMcpNumberField(
   required: boolean,
   message: string,
 ): MappedMcpElicitationField {
-  assertMcpPropertyKeys(key, schema, [
-    "type",
-    "title",
-    "description",
-    "default",
-    "minimum",
-    "maximum",
-  ]);
+  assertMcpPropertyKeys(key, schema, ["type", "title", "description", "default", "minimum", "maximum"]);
   const integer = schema.type === "integer";
   const minimum = readOptionalFiniteNumber(schema.minimum, key, "minimum");
   const maximum = readOptionalFiniteNumber(schema.maximum, key, "maximum");
@@ -1399,7 +1343,10 @@ function mapMcpMultiSelectField(
   if (defaultValues?.some((value) => !enumOptions.some((option) => option.value === value))) {
     throw unsupportedMcpFormProperty(key, "default contains a value outside the enum");
   }
-  if (defaultValues && (defaultValues.length < minItems || (maxItems !== undefined && defaultValues.length > maxItems))) {
+  if (
+    defaultValues &&
+    (defaultValues.length < minItems || (maxItems !== undefined && defaultValues.length > maxItems))
+  ) {
     throw unsupportedMcpFormProperty(key, "default does not satisfy minItems/maxItems");
   }
   const choices = createMcpChoices(required);
@@ -1434,7 +1381,10 @@ function mapMcpMultiSelectField(
         const known = choices.decodeLabel(selected);
         if (known.matched) {
           if (known.value === OMIT_MCP_FORM_VALUE || Array.isArray(known.value)) {
-            throw invalidMcpFormAnswer(key, "skip/default/empty choices cannot be combined with other values");
+            throw invalidMcpFormAnswer(
+              key,
+              "skip/default/empty choices cannot be combined with other values",
+            );
           }
           values.push(String(known.value));
         } else if (enumOptions.some((option) => option.value === selected)) {
@@ -1486,9 +1436,9 @@ function createMcpChoices(required: boolean): McpChoiceLookup {
     add,
     decodeKnown: (selection) => {
       if (selection.length !== 1) return { matched: false };
-      return values.has(selection[0]!)
-        ? { matched: true, value: values.get(selection[0]!) }
-        : { matched: false };
+      const selected = selection[0];
+      if (selected === undefined) return { matched: false };
+      return values.has(selected) ? { matched: true, value: values.get(selected) } : { matched: false };
     },
     decodeLabel: (label) =>
       values.has(label) ? { matched: true, value: values.get(label) } : { matched: false },
@@ -1599,11 +1549,7 @@ function readOptionalStringArrayDefault(value: unknown, key: string): string[] |
   return [...value];
 }
 
-function readOptionalNonNegativeInteger(
-  value: unknown,
-  key: string,
-  name: string,
-): number | undefined {
+function readOptionalNonNegativeInteger(value: unknown, key: string, name: string): number | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw unsupportedMcpFormProperty(key, `${name} must be a non-negative integer`);
@@ -1691,7 +1637,10 @@ function emitBashApprovalRequested(
   });
 }
 
-function resolveEcoThread(deps: CodexApprovalBridgeDeps, params: Record<string, unknown>): string | undefined {
+function resolveEcoThread(
+  deps: CodexApprovalBridgeDeps,
+  params: Record<string, unknown>,
+): string | undefined {
   const codexThreadId = readString(params, "threadId");
   if (!codexThreadId) {
     return undefined;
@@ -1815,8 +1764,7 @@ function readStringArray(value: unknown): string[] {
 function readNetworkPolicyAmendments(
   params: Record<string, unknown>,
 ): NonNullable<BashApprovalRequest["proposedNetworkPolicyAmendments"]> {
-  const raw =
-    params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments;
+  const raw = params.proposedNetworkPolicyAmendments ?? params.proposed_network_policy_amendments;
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -1899,21 +1847,6 @@ function mapClarificationAnswersToCodexToolResponse(
   return { answers: Object.fromEntries(answerEntries) };
 }
 
-function formatClarificationAnsweredMessage(
-  request: ClarificationRequest,
-  answers: ClarificationAnswers,
-): string {
-  const parts = request.questions.map((question, index) => {
-    const selected = answers.selections[index] ?? [];
-    const preview = question.question.length > 48 ? `${question.question.slice(0, 45)}…` : question.question;
-    if (selected.length === 0) {
-      return `${preview} → （未选择）`;
-    }
-    return `${preview} → ${selected.join("、")}`;
-  });
-  return `澄清回答：${parts.join("；")}`;
-}
-
 function readString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -1927,6 +1860,9 @@ export function getPendingCodexBashApprovalForThread(threadId: string): BashAppr
   return getPendingBashApprovalForThread(threadId);
 }
 
-export function resolvePendingCodexBashApproval(toolUseId: string, resolution: BashApprovalResolution): boolean {
+export function resolvePendingCodexBashApproval(
+  toolUseId: string,
+  resolution: BashApprovalResolution,
+): boolean {
   return resolvePendingBashApproval(toolUseId, resolution);
 }
