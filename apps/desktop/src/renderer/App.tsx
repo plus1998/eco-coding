@@ -845,7 +845,7 @@ function App() {
         label: t("settings.group.integrations"),
         sections: [
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
-          { id: "mcp", label: "MCP", icon: Plug },
+          { id: "mcp", label: t("settings.mcp.title"), icon: Plug },
           { id: "centerServer", label: t("settings.connection"), icon: Cloud },
         ],
       },
@@ -854,7 +854,7 @@ function App() {
         sections: [
           { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
           { id: "models", label: t("settings.agentBuilder"), icon: SlidersHorizontal },
-          { id: "skills", label: "Skills", icon: Sparkles },
+          { id: "skills", label: t("settings.skills.store"), icon: Sparkles },
           { id: "git", label: "Git", icon: GitBranch },
         ],
       },

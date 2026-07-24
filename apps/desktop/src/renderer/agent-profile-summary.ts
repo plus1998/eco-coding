@@ -201,7 +201,7 @@ function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
     labels.push(i18n.t("agentProfile.risk.network"));
   }
   if ((policy.mcp?.allowedServers.length ?? 0) > 0 || (policy.mcp?.allowedTools.length ?? 0) > 0) {
-    labels.push("MCP");
+    labels.push("连接器");
   }
   return dedupeRiskLabels(labels);
 }
