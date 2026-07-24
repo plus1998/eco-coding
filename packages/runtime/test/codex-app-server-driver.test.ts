@@ -212,6 +212,59 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
   driver.dispose();
 });
 
+test("CodexAppServerDriver serializes new thread creation on a shared app-server client", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const client = new CodexAppServerClient(stdin, stdout);
+  const mapped: Array<{ ecoThreadId: string; codexThreadId: string }> = [];
+  const driverA = new CodexAppServerDriver({
+    client,
+    onThreadMapped: (ecoThreadId, codexThreadId) => mapped.push({ ecoThreadId, codexThreadId }),
+  });
+  const driverB = new CodexAppServerDriver({
+    client,
+    onThreadMapped: (ecoThreadId, codexThreadId) => mapped.push({ ecoThreadId, codexThreadId }),
+  });
+
+  const handshake = client.initialize();
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 1, result: { codexHome: "/tmp/codex" } });
+  await handshake;
+
+  const input = (threadId: string) => ({
+    threadId,
+    prompt: "start",
+    workspacePath: "/repo",
+    worktreePath: "/repo",
+    routes: [plannerRoute()],
+    signal: new AbortController().signal,
+  });
+  const runs = [driverA.run(input("thr_eco_a")), driverB.run(input("thr_eco_b"))];
+  const firstEvents = runs.map((run) => run.next());
+
+  await Bun.sleep(0);
+  const firstRequests = readRpcMessages(stdin);
+  expect(firstRequests.filter((request) => request.method === "thread/start")).toHaveLength(1);
+
+  writeResponse(stdout, { id: 2, result: { thread: { id: "thr_codex_a" } } });
+  await expect(firstEvents[0]).resolves.toMatchObject({ value: { type: "agent.started" } });
+
+  await Bun.sleep(0);
+  const secondRequests = readRpcMessages(stdin);
+  expect(secondRequests.filter((request) => request.method === "thread/start")).toHaveLength(1);
+
+  writeResponse(stdout, { id: 3, result: { thread: { id: "thr_codex_b" } } });
+  await expect(firstEvents[1]).resolves.toMatchObject({ value: { type: "agent.started" } });
+  expect(mapped).toEqual([
+    { ecoThreadId: "thr_eco_a", codexThreadId: "thr_codex_a" },
+    { ecoThreadId: "thr_eco_b", codexThreadId: "thr_codex_b" },
+  ]);
+
+  await Promise.all(runs.map((run) => run.return?.()));
+  driverA.dispose();
+  driverB.dispose();
+});
+
 test("CodexAppServerDriver handles turn response, usage, and completion in one stdout chunk", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();

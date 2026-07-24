@@ -1,5 +1,5 @@
-import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import path from "node:path";
+import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import {
   type CodexAppServerClient,
   type CodexAppServerNotificationHandler,
@@ -114,6 +114,35 @@ export interface CodexDriverTurnOverrides {
   turnOptions?: CodexTurnOptions;
   existingCodexThreadId?: string;
   forkThread?: boolean;
+}
+
+// Codex app-server can return the same thread id for overlapping thread/start
+// requests. Serialize only creation per client; turns on distinct threads stay parallel.
+const threadStartTailByClient = new WeakMap<CodexAppServerClient, Promise<void>>();
+
+async function startCodexThreadSerially<T>(
+  client: CodexAppServerClient,
+  start: () => Promise<T>,
+): Promise<T> {
+  const previous = threadStartTailByClient.get(client) ?? Promise.resolve();
+  let releaseCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+  threadStartTailByClient.set(
+    client,
+    previous.then(
+      () => current,
+      () => current,
+    ),
+  );
+
+  await previous.catch(() => {});
+  try {
+    return await start();
+  } finally {
+    releaseCurrent();
+  }
 }
 
 export class CodexAppServerDriver implements AgentRuntimeDriver {
@@ -313,15 +342,17 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         payload: { codexThreadId, resumed: true },
       });
     } else {
-      const thread = await this.client.request<CodexThreadStartResult>(
-        "thread/start",
-        {
-          cwd,
-          model: codexGatewayModel,
-          modelProvider,
-          ...(this.threadConfig ? { config: this.threadConfig } : {}),
-        } satisfies CodexThreadStartParams,
-        { timeoutMs: turnStartTimeoutMs },
+      const thread = await startCodexThreadSerially(this.client, () =>
+        this.client.request<CodexThreadStartResult>(
+          "thread/start",
+          {
+            cwd,
+            model: codexGatewayModel,
+            modelProvider,
+            ...(this.threadConfig ? { config: this.threadConfig } : {}),
+          } satisfies CodexThreadStartParams,
+          { timeoutMs: turnStartTimeoutMs },
+        ),
       );
       codexThreadId = thread.thread.id;
       if (this.threadConfig) {
