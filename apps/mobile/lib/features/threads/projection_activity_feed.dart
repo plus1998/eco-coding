@@ -1733,7 +1733,14 @@ String? _projectionStreamDisplayKey(
   final streamKey = item.streamKey?.trim();
   final hasExplicitStreamBlockKey =
       streamKey != null && streamKey.contains(':block:');
-  if (streamKey != null && streamKey.isNotEmpty && hasExplicitStreamBlockKey) {
+  final hasExplicitLogicalItemKey =
+      streamKey != null &&
+      streamKey.isNotEmpty &&
+      (item.metadata?['logicalEntityId'] == streamKey ||
+          item.metadata?['itemId'] == streamKey);
+  if (streamKey != null &&
+      streamKey.isNotEmpty &&
+      (hasExplicitStreamBlockKey || hasExplicitLogicalItemKey)) {
     return _appendStreamScopeSuffix('$channel:sk:$streamKey', item, requestId);
   }
   if (requestId != null) {

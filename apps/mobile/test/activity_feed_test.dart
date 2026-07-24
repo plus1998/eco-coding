@@ -29,6 +29,7 @@ ThreadRunProjectionTimelineItem _toolTimelineItem({
   required String toolUseId,
   required String toolName,
   required String detail,
+  required String requestId,
 }) {
   final status = eventType == 'tool.completed' ? 'completed' : 'running';
   return ThreadRunProjectionTimelineItem(
@@ -37,6 +38,7 @@ ThreadRunProjectionTimelineItem _toolTimelineItem({
     eventType: eventType,
     scope: 'main',
     role: 'tool',
+    requestId: requestId,
     text: 'Tool: $toolName · $detail',
     at: at,
     metadata: {
@@ -47,6 +49,33 @@ ThreadRunProjectionTimelineItem _toolTimelineItem({
         'toolUseId': toolUseId,
         'status': status,
       },
+    },
+  );
+}
+
+ThreadRunProjectionTimelineItem _codexMessageTimelineItem({
+  required String id,
+  required int sequence,
+  required String at,
+  required String text,
+  required String requestId,
+}) {
+  final streamKey = 'msg_$id';
+  return ThreadRunProjectionTimelineItem(
+    id: id,
+    sequence: sequence,
+    eventType: 'message.final',
+    scope: 'main',
+    role: 'assistant',
+    text: text,
+    at: at,
+    requestId: requestId,
+    streamKey: streamKey,
+    metadata: {
+      'codexMethod': 'item/completed',
+      'logicalEntityId': streamKey,
+      'itemId': streamKey,
+      'itemType': 'agentMessage',
     },
   );
 }
@@ -184,15 +213,14 @@ void main() {
   });
 
   test('buildActivityFeed keeps tool groups between assistant text blocks', () {
+    const requestId = 'req_planner';
     final timeline = <ThreadRunProjectionTimelineItem>[
-      const ThreadRunProjectionTimelineItem(
+      _codexMessageTimelineItem(
         id: 'body-1',
         sequence: 1,
-        eventType: 'message.final',
-        scope: 'main',
-        role: 'planner',
         text: '正文输出1',
         at: '2026-01-01T00:00:01.000Z',
+        requestId: requestId,
       ),
       for (var index = 0; index < 3; index++)
         _toolTimelineItem(
@@ -203,15 +231,14 @@ void main() {
           toolName: 'Bash',
           detail: 'bash${index + 1}',
           at: '2026-01-01T00:00:0${2 + index}.000Z',
+          requestId: requestId,
         ),
-      const ThreadRunProjectionTimelineItem(
+      _codexMessageTimelineItem(
         id: 'body-2',
         sequence: 5,
-        eventType: 'message.final',
-        scope: 'main',
-        role: 'planner',
         text: '正文输出2',
         at: '2026-01-01T00:00:05.000Z',
+        requestId: requestId,
       ),
       for (var index = 0; index < 3; index++)
         _toolTimelineItem(
@@ -222,15 +249,14 @@ void main() {
           toolName: 'Edit',
           detail: 'lib/file_${index + 1}.dart',
           at: '2026-01-01T00:00:0${6 + index}.000Z',
+          requestId: requestId,
         ),
-      const ThreadRunProjectionTimelineItem(
+      _codexMessageTimelineItem(
         id: 'body-3',
         sequence: 9,
-        eventType: 'message.final',
-        scope: 'main',
-        role: 'planner',
         text: '正文输出3',
         at: '2026-01-01T00:00:09.000Z',
+        requestId: requestId,
       ),
       for (var index = 0; index < 3; index++)
         _toolTimelineItem(
@@ -241,6 +267,7 @@ void main() {
           toolName: 'Bash',
           detail: 'bash${index + 1}',
           at: '2026-01-01T00:00:${10 + index}.000Z',
+          requestId: requestId,
         ),
       for (var index = 0; index < 3; index++)
         _toolTimelineItem(
@@ -251,6 +278,7 @@ void main() {
           toolName: 'Edit',
           detail: 'lib/file_${index + 1}.dart',
           at: '2026-01-01T00:00:${13 + index}.000Z',
+          requestId: requestId,
         ),
     ];
 
@@ -263,6 +291,14 @@ void main() {
         generatedAt: '2026-01-01T00:00:16.000Z',
         sourceEventCount: timeline.length,
         agents: const [],
+        requestSpans: const [
+          ThreadRunProjectionRequestSpan(
+            requestId: requestId,
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:16.000Z',
+          ),
+        ],
         timeline: timeline,
       ),
     );
