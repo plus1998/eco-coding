@@ -1,6 +1,7 @@
 import type { File } from "gitdiff-parser";
 import { Columns2, FileCode2, Rows3, ScanLine } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Diff, Hunk, markEdits, parseDiff, tokenize } from "react-diff-view";
 import refractor from "refractor/core";
 import bash from "refractor/lang/bash";
@@ -26,16 +27,6 @@ for (const language of [tsx, css, json, bash, python, rust, go, java, yaml, mark
 
 type DiffViewPreference = "auto" | "unified" | "split";
 type DiffViewType = "unified" | "split";
-
-const diffViewOptions: ReadonlyArray<{
-  value: DiffViewPreference;
-  label: string;
-  icon: typeof ScanLine;
-}> = [
-  { value: "auto", label: "自适应", icon: ScanLine },
-  { value: "unified", label: "单栏", icon: Rows3 },
-  { value: "split", label: "并排", icon: Columns2 },
-];
 
 const languageByExtension: Readonly<Record<string, string>> = {
   bash: "bash",
@@ -86,7 +77,8 @@ export function resolveDiffFilePath(file: File): string {
   return diffFilePath(file);
 }
 
-export function GitDiffViewer({ patch, selectedPath, emptyLabel = "无变更内容" }: GitDiffViewerProps) {
+export function GitDiffViewer({ patch, selectedPath, emptyLabel }: GitDiffViewerProps) {
+  const { t } = useTranslation();
   const files = useMemo(() => {
     const trimmed = patch.trim();
     if (!trimmed) {
@@ -107,11 +99,15 @@ export function GitDiffViewer({ patch, selectedPath, emptyLabel = "无变更内�
   }, [files, selectedPath]);
 
   if (!patch.trim()) {
-    return <p className="workspace-diff-empty">{emptyLabel}</p>;
+    return (
+      <p className="workspace-diff-empty">
+        {emptyLabel ?? t("workspace.diff.noChanges")}
+      </p>
+    );
   }
 
   if (visibleFiles.length === 0) {
-    return <p className="workspace-diff-empty">无法解析 diff 内容</p>;
+    return <p className="workspace-diff-empty">{t("workspace.diff.parseFailed")}</p>;
   }
 
   return (
@@ -124,6 +120,16 @@ export function GitDiffViewer({ patch, selectedPath, emptyLabel = "无变更内�
 }
 
 const DiffFileReview = memo(function DiffFileReview({ file }: { file: File }) {
+  const { t } = useTranslation();
+  const diffViewOptions: ReadonlyArray<{
+    value: DiffViewPreference;
+    label: string;
+    icon: typeof ScanLine;
+  }> = [
+    { value: "auto", label: t("workspace.diff.auto"), icon: ScanLine },
+    { value: "unified", label: t("workspace.diff.unified"), icon: Rows3 },
+    { value: "split", label: t("workspace.diff.split"), icon: Columns2 },
+  ];
   const reviewRef = useRef<HTMLElement>(null);
   const [viewPreference, setViewPreference] = useState<DiffViewPreference>("auto");
   const [autoViewType, setAutoViewType] = useState<DiffViewType>("unified");
@@ -173,10 +179,10 @@ const DiffFileReview = memo(function DiffFileReview({ file }: { file: File }) {
         </div>
         <div className="workspace-diff-file-toolbar-meta">
           {language ? <span>{language}</span> : null}
-          <span>{changeCount} 行变更</span>
+          <span>{t("workspace.diff.changedRows", { count: changeCount })}</span>
         </div>
         <fieldset className="workspace-diff-view-segmented">
-          <legend>代码对比布局</legend>
+          <legend>{t("workspace.diff.layout")}</legend>
           {diffViewOptions.map((option) => {
             const Icon = option.icon;
             const selected = viewPreference === option.value;

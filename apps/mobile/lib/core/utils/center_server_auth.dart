@@ -1,5 +1,3 @@
-const centerServerReauthMessage = '登录已失效，请重新登录。';
-
 enum CenterServerAuthRecovery {
   network,
   deviceInactive,
@@ -13,7 +11,8 @@ CenterServerAuthRecovery classifyCenterServerAuthError(String? message) {
   if (trimmed == null || trimmed.isEmpty) {
     return CenterServerAuthRecovery.unknown;
   }
-  if (trimmed == centerServerReauthMessage) {
+  // Legacy app/server text is retained only for compatibility classification.
+  if (trimmed == '登录已失效，请重新登录。') {
     return CenterServerAuthRecovery.relogin;
   }
   final lower = trimmed.toLowerCase();
@@ -58,19 +57,4 @@ bool shouldStopCenterServerReconnect(CenterServerAuthRecovery recovery) {
   return recovery == CenterServerAuthRecovery.relogin ||
       recovery == CenterServerAuthRecovery.deviceInactive ||
       recovery == CenterServerAuthRecovery.accountUnusable;
-}
-
-String centerServerAuthRecoveryMessage(CenterServerAuthRecovery recovery) {
-  switch (recovery) {
-    case CenterServerAuthRecovery.network:
-      return '无法连接服务端，请检查网络后重试。';
-    case CenterServerAuthRecovery.deviceInactive:
-      return '设备已在服务端注销或禁用，请重新配置连接。';
-    case CenterServerAuthRecovery.accountUnusable:
-      return '账号已停用，请联系管理员。';
-    case CenterServerAuthRecovery.relogin:
-      return centerServerReauthMessage;
-    case CenterServerAuthRecovery.unknown:
-      return '连接失败，请稍后重试。';
-  }
 }

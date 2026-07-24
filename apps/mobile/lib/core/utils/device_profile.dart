@@ -31,7 +31,10 @@ class DeviceProfile {
 
     if (Platform.isIOS) {
       final ios = await deviceInfo.iosInfo;
-      final model = _cleanLabel(ios.utsname.machine) ?? _cleanLabel(ios.model) ?? 'iPhone';
+      final model =
+          _cleanLabel(ios.utsname.machine) ??
+          _cleanLabel(ios.model) ??
+          'iPhone';
       final name = _cleanLabel(ios.name);
       return DeviceProfile(
         displayName: name != null && name != model ? '$name ($model)' : model,
@@ -45,7 +48,9 @@ class DeviceProfile {
       final android = await deviceInfo.androidInfo;
       final manufacturer = _cleanLabel(android.manufacturer);
       final model = _cleanLabel(android.model) ?? 'Android';
-      final label = manufacturer != null && !model.toLowerCase().contains(manufacturer.toLowerCase())
+      final label =
+          manufacturer != null &&
+              !model.toLowerCase().contains(manufacturer.toLowerCase())
           ? '$manufacturer $model'
           : model;
       return DeviceProfile(

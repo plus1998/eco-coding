@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export interface ExpandablePreBlockProps {
   text: string;
@@ -22,9 +23,12 @@ export function ExpandablePreBlock({
   hintClassName,
   maxCollapsedHeight = 160,
   singleLine = false,
-  collapsedLabel = "展开",
-  expandedLabel = "收起",
+  collapsedLabel,
+  expandedLabel,
 }: ExpandablePreBlockProps) {
+  const { t } = useTranslation();
+  const resolvedCollapsedLabel = collapsedLabel ?? t("common.expand");
+  const resolvedExpandedLabel = expandedLabel ?? t("common.collapse");
   const bodyRef = useRef<HTMLPreElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [canToggle, setCanToggle] = useState(false);
@@ -87,13 +91,13 @@ export function ExpandablePreBlock({
         </pre>
         {canToggle && !expanded && !singleLine ? (
           <span className={fadeClassName} aria-hidden>
-            <span className={hintClassName}>{collapsedLabel}</span>
+            <span className={hintClassName}>{resolvedCollapsedLabel}</span>
           </span>
         ) : null}
       </button>
       {canToggle && expanded ? (
         <button type="button" className={hintClassName} onClick={() => setExpanded(false)}>
-          {expandedLabel}
+          {resolvedExpandedLabel}
         </button>
       ) : null}
     </div>

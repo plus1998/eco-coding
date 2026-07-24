@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -11,6 +11,7 @@ import {
 import { formatDuration } from "../src/renderer/activity-log";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
+import { i18n } from "../src/renderer/i18n";
 import { buildThreadRunProjectionViewModel } from "../src/renderer/thread-run-projection-view";
 import { WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
 import type {
@@ -19,6 +20,18 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../src/shared/ipc";
+import { renderLocalized } from "./i18n-test";
+
+let previousLanguage = "zh-CN";
+
+beforeEach(async () => {
+  previousLanguage = i18n.resolvedLanguage ?? i18n.language;
+  await i18n.changeLanguage("zh-CN");
+});
+
+afterEach(async () => {
+  await i18n.changeLanguage(previousLanguage);
+});
 
 function item(
   input: Partial<ThreadRunProjectionTimelineItem> & { id: string },
@@ -706,26 +719,28 @@ test("WorkspaceFloatingCards lists subagents without mounting unselected detail 
       }),
     ],
   });
-  const html = renderToStaticMarkup(
-    createElement(WorkspaceFloatingCards, {
-      hasActiveThread: true,
-      subagentRunCards: [
-        {
-          key: subagent.agentId,
-          agent: subagent,
-          timelineIds: subagent.timeline.map((entry) => entry.id),
-          running: false,
-          missionText: "实现抽屉",
-        },
-      ],
-      onOpenSubagent: () => undefined,
-    }),
-  );
+  const element = createElement(WorkspaceFloatingCards, {
+    hasActiveThread: true,
+    subagentRunCards: [
+      {
+        key: subagent.agentId,
+        agent: subagent,
+        timelineIds: subagent.timeline.map((entry) => entry.id),
+        running: false,
+        missionText: "实现抽屉",
+      },
+    ],
+    onOpenSubagent: () => undefined,
+  });
+  const chineseHtml = renderLocalized(element, "zh-CN");
+  const englishHtml = renderLocalized(element, "en-US");
 
-  expect(html).toContain("workspace-subagent-runs-list");
-  expect(html).toContain("子智能体");
-  expect(html).toContain("实现抽屉");
-  expect(html).not.toContain("这段详情不应该默认挂载");
+  expect(chineseHtml).toContain("workspace-subagent-runs-list");
+  expect(chineseHtml).toContain("子智能体");
+  expect(chineseHtml).toContain("实现抽屉");
+  expect(chineseHtml).not.toContain("这段详情不应该默认挂载");
+  expect(englishHtml).toContain("Subagents");
+  expect(englishHtml).not.toContain("这段详情不应该默认挂载");
 });
 
 test("ProjectionSubagentDetailFeed renders subagent details as a conversation", () => {

@@ -1,4 +1,5 @@
 import type { ThreadPendingFollowUp, ThreadStatus } from "../shared/ipc";
+import { i18n } from "./i18n";
 
 export function isLiveFollowUpThreadStatus(status?: ThreadStatus): boolean {
   return status === "running" || status === "queued";
@@ -29,13 +30,14 @@ export function formatThreadFollowUpPreview(followUp: ThreadPendingFollowUp): st
   const prompt = followUp.prompt.trim();
   const imageCount = followUp.attachments?.length ?? 0;
   const clipped = prompt.length > 120 ? `${prompt.slice(0, 117)}...` : prompt;
+  const imageLabel = i18n.t("thread.followUpImages", { count: imageCount });
   if (clipped && imageCount > 0) {
-    return `${clipped} (${imageCount} 张图片)`;
+    return `${clipped} (${imageLabel})`;
   }
   if (clipped) {
     return clipped;
   }
-  return imageCount > 0 ? `${imageCount} 张图片` : "空后续消息";
+  return imageCount > 0 ? imageLabel : i18n.t("thread.followUpEmpty");
 }
 
 function compareThreadFollowUps(left: ThreadPendingFollowUp, right: ThreadPendingFollowUp): number {

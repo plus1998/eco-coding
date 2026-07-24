@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/locale/app_localizations_ext.dart';
 import 'core/models/eco_types.dart';
+import 'core/providers/app_locale_provider.dart';
 import 'core/providers/app_providers.dart';
 import 'core/providers/app_session.dart';
 import 'core/providers/app_theme_provider.dart';
@@ -15,6 +18,7 @@ import 'features/settings/settings_screen.dart';
 import 'features/threads/new_thread_screen.dart';
 import 'features/threads/thread_session_screen.dart';
 import 'features/threads/threads_screen.dart';
+import 'l10n/generated/app_localizations.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -128,14 +132,14 @@ class MainShell extends ConsumerWidget {
               child: AdaptiveNavBar(
                 selectedIndex: navigationShell.currentIndex,
                 onDestinationSelected: navigationShell.goBranch,
-                destinations: const [
+                destinations: [
                   AdaptiveNavDestination(
                     icon: EcoIcons.sessions,
-                    label: '会话',
+                    label: context.l10n.navSessions,
                   ),
                   AdaptiveNavDestination(
                     icon: EcoIcons.settings,
-                    label: '设置',
+                    label: context.l10n.navSettings,
                   ),
                 ],
               ),
@@ -155,8 +159,17 @@ class EcoApp extends ConsumerWidget {
     ref.watch(appSessionProvider);
     final router = ref.watch(appRouterProvider);
     final themePreference = ref.watch(appThemePreferenceProvider);
+    final localePreference = ref.watch(appLocalePreferenceProvider);
     return MaterialApp.router(
-      title: 'Eco',
+      onGenerateTitle: (context) => context.l10n.appTitle,
+      locale: localePreference.locale,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: buildEcoLightTheme(),
       darkTheme: buildEcoDarkTheme(),
       themeMode: themePreference.themeMode,
@@ -200,21 +213,26 @@ class _ConnectionStatusNoticeState
       return;
     }
 
+    final l10n = context.l10n;
     final message = switch (status.state) {
       EcoConnectionState.connecting =>
         previous == EcoConnectionState.error ||
                 previous == EcoConnectionState.disconnected
-            ? '正在重连 Center Server…'
+            ? l10n.connectionReconnecting
             : null,
       EcoConnectionState.connected =>
-        previous == EcoConnectionState.connected ? null : '连接成功',
+        previous == EcoConnectionState.connected
+            ? null
+            : l10n.connectionConnected,
       EcoConnectionState.error =>
         previous == EcoConnectionState.connected ||
                 previous == EcoConnectionState.connecting
-            ? '连接断开，正在重连…'
+            ? l10n.connectionLostReconnecting
             : null,
       EcoConnectionState.disconnected =>
-        previous == EcoConnectionState.connected ? '实时通道已断开' : null,
+        previous == EcoConnectionState.connected
+            ? l10n.connectionLiveChannelDisconnected
+            : null,
     };
     if (message == null) {
       return;

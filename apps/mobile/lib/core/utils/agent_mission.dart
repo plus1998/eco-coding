@@ -42,8 +42,12 @@ SubagentMissionPayload? parseSubagentMissionMessage(String message) {
     return SubagentMissionPayload(
       role: normalizedRole,
       summary: summary.trim(),
-      prompt: parsed['prompt'] is String ? (parsed['prompt'] as String).trim() : '',
-      agentId: agentId is String && agentId.trim().isNotEmpty ? agentId.trim() : null,
+      prompt: parsed['prompt'] is String
+          ? (parsed['prompt'] as String).trim()
+          : '',
+      agentId: agentId is String && agentId.trim().isNotEmpty
+          ? agentId.trim()
+          : null,
     );
   } catch (_) {
     return null;

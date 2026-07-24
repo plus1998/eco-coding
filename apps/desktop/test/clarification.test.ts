@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { ClarificationPanel } from "../src/renderer/ClarificationPanel";
 import {
   CLARIFICATION_CUSTOM_OPTION_LABEL,
@@ -8,6 +7,7 @@ import {
   optionRequiresCustomExplanation,
   resolveClarificationQuestionAnswer,
 } from "../src/shared/clarification";
+import { renderLocalized } from "./i18n-test";
 
 test("optionRequiresCustomExplanation detects explanation-style labels", () => {
   expect(optionRequiresCustomExplanation("否，请说明希望如何调整")).toBe(true);
@@ -39,7 +39,7 @@ test("isClarificationQuestionReady requires custom option and text for free-form
 });
 
 test("ClarificationPanel renders the AskUserQuestion surface as a Composer dock", () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderLocalized(
     createElement(ClarificationPanel, {
       request: {
         threadId: "thread-1",
@@ -56,6 +56,7 @@ test("ClarificationPanel renders the AskUserQuestion surface as a Composer dock"
       onSubmit: () => {},
       onDismiss: () => {},
     }),
+    "zh-CN",
   );
 
   expect(markup).toContain("clarification-dock-shell");
@@ -69,7 +70,7 @@ test("ClarificationPanel renders the AskUserQuestion surface as a Composer dock"
 });
 
 test("ClarificationPanel advances intermediate single-choice questions without a next button", () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderLocalized(
     createElement(ClarificationPanel, {
       request: {
         threadId: "thread-1",
@@ -91,6 +92,7 @@ test("ClarificationPanel advances intermediate single-choice questions without a
       onSubmit: () => {},
       onDismiss: () => {},
     }),
+    "zh-CN",
   );
 
   expect(markup).toContain("跳过");
@@ -99,7 +101,7 @@ test("ClarificationPanel advances intermediate single-choice questions without a
 });
 
 test("ClarificationPanel normalizes Codex full-width recommended labels", () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderLocalized(
     createElement(ClarificationPanel, {
       request: {
         threadId: "thread-1",
@@ -116,6 +118,7 @@ test("ClarificationPanel normalizes Codex full-width recommended labels", () => 
       onSubmit: () => {},
       onDismiss: () => {},
     }),
+    "zh-CN",
   );
 
   expect(markup).toContain("（推荐）");

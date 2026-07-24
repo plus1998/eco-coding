@@ -30,8 +30,7 @@ class AdaptiveGlassActionButton extends StatelessWidget {
         ? eco.textHeading
         : eco.textHeading.withValues(alpha: 0.38);
 
-    final borderRadius =
-        BorderRadius.circular(isStadium ? height / 2 : 16);
+    final borderRadius = BorderRadius.circular(isStadium ? height / 2 : 16);
 
     final row = Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -41,7 +40,7 @@ class AdaptiveGlassActionButton extends StatelessWidget {
           Icon(icon, size: 20, color: color),
           const SizedBox(width: 8),
         ],
-          Text(
+        Text(
           label,
           style: TextStyle(
             fontSize: 17,
@@ -61,9 +60,7 @@ class AdaptiveGlassActionButton extends StatelessWidget {
           type: MaterialType.transparency,
           child: InkWell(
             onTap: onPressed,
-            customBorder: RoundedRectangleBorder(
-              borderRadius: borderRadius,
-            ),
+            customBorder: RoundedRectangleBorder(borderRadius: borderRadius),
             child: SizedBox(
               height: height,
               child: Center(child: row),

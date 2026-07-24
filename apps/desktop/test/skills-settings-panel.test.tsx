@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import {
   isCatalogSkillInstalled,
   SkillsSettingsPanel,
 } from "../src/renderer/SkillsSettingsPanel";
 import type { SkillCatalogEntry, SkillInfo } from "../src/shared/skills";
+import { renderLocalized } from "./i18n-test";
 
 function userSkill(name: string, layout: SkillInfo["layout"], sdkReady: boolean): SkillInfo {
   const directory = `/Users/test/.${layout}/skills/${name}`;
@@ -22,7 +22,7 @@ function userSkill(name: string, layout: SkillInfo["layout"], sdkReady: boolean)
 }
 
 test("Skills settings groups sources into counted tabs", () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderLocalized(
     createElement(SkillsSettingsPanel, {
       snapshot: {
         userSkills: [
@@ -48,6 +48,7 @@ test("Skills settings groups sources into counted tabs", () => {
       }),
       onInstallCatalog: async () => undefined,
     }),
+    "zh-CN",
   );
 
   expect(markup).toContain("Agents 1");

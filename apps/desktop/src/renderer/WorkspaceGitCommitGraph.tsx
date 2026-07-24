@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { GitCommitRecord } from "../shared/ipc";
 
 const COMMITS_PAGE_SIZE = 5;
@@ -16,6 +17,7 @@ export function WorkspaceGitCommitGraph({
   refreshToken = "",
   embedded = false,
 }: WorkspaceGitCommitGraphProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(embedded);
   const [commits, setCommits] = useState<GitCommitRecord[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -42,7 +44,8 @@ export function WorkspaceGitCommitGraph({
         setCommits((current) => (replace ? result.commits : [...current, ...result.commits]));
         setHasMore(result.hasMore);
       } catch (loadError) {
-        const message = loadError instanceof Error ? loadError.message : "无法读取提交记录";
+        const message =
+          loadError instanceof Error ? loadError.message : t("workspaceGit.historyLoadFailed");
         setError(message);
         if (replace) {
           setCommits([]);
@@ -53,7 +56,7 @@ export function WorkspaceGitCommitGraph({
         setLoading(false);
       }
     },
-    [workspacePath],
+    [t, workspacePath],
   );
 
   useEffect(() => {
@@ -94,7 +97,7 @@ export function WorkspaceGitCommitGraph({
     <div ref={graphBodyRef} className="thread-info-workspace-git-graph-body">
       {error ? <p className="thread-info-workspace-git-graph-error">{error}</p> : null}
       {commits.length === 0 && !loading && !error ? (
-        <p className="thread-info-workspace-git-graph-empty">暂无提交记录</p>
+        <p className="thread-info-workspace-git-graph-empty">{t("workspaceGit.historyEmpty")}</p>
       ) : (
         <ol className="thread-info-workspace-git-graph-list">
           {commits.map((commit, index) => (
@@ -129,13 +132,15 @@ export function WorkspaceGitCommitGraph({
           ))}
           {hasMore ? (
             <li ref={sentinelRef} className="thread-info-workspace-git-graph-sentinel" aria-hidden>
-              {loading ? <span className="thread-info-workspace-git-graph-loading">加载中…</span> : null}
+              {loading ? (
+                <span className="thread-info-workspace-git-graph-loading">{t("common.loading")}</span>
+              ) : null}
             </li>
           ) : null}
         </ol>
       )}
       {loading && commits.length === 0 ? (
-        <p className="thread-info-workspace-git-graph-loading">加载中…</p>
+        <p className="thread-info-workspace-git-graph-loading">{t("common.loading")}</p>
       ) : null}
     </div>
   );
@@ -156,7 +161,7 @@ export function WorkspaceGitCommitGraph({
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
       >
-        <span className="thread-info-workspace-git-graph-title">图形</span>
+        <span className="thread-info-workspace-git-graph-title">{t("workspaceGit.graph")}</span>
         <ChevronDown
           size={13}
           className={expanded ? "thread-info-workspace-git-chevron open" : "thread-info-workspace-git-chevron"}

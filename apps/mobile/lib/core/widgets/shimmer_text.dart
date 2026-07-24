@@ -52,13 +52,18 @@ class _ShimmerTextState extends State<ShimmerText>
 
   @override
   Widget build(BuildContext context) {
-    final highlight = widget.highlightColor ??
-        Color.lerp(widget.baseColor, ecoColors(context).shimmerHighlight, 0.55)!;
+    final highlight =
+        widget.highlightColor ??
+        Color.lerp(
+          widget.baseColor,
+          ecoColors(context).shimmerHighlight,
+          0.55,
+        )!;
     final resolvedStyle =
         (widget.style ?? Theme.of(context).textTheme.bodySmall)?.copyWith(
-              color: widget.baseColor,
-              fontWeight: FontWeight.w500,
-            );
+          color: widget.baseColor,
+          fontWeight: FontWeight.w500,
+        );
 
     return AnimatedBuilder(
       animation: _controller,
@@ -70,11 +75,7 @@ class _ShimmerTextState extends State<ShimmerText>
             return LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: [
-                widget.baseColor,
-                highlight,
-                widget.baseColor,
-              ],
+              colors: [widget.baseColor, highlight, widget.baseColor],
               stops: [
                 (slide - 0.35).clamp(0.0, 1.0),
                 slide.clamp(0.0, 1.0),

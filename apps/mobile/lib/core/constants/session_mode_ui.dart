@@ -1,4 +1,5 @@
 import 'session_mode.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 class SessionModeUiOption {
   const SessionModeUiOption({
@@ -12,27 +13,27 @@ class SessionModeUiOption {
   final String description;
 }
 
-const sessionModeUiOptions = [
+List<SessionModeUiOption> sessionModeUiOptions(AppLocalizations l10n) => [
   SessionModeUiOption(
     value: 'agent',
     title: 'Agent',
-    description: '代理直接处理任务，并按需要调用已启用的子代理。',
+    description: l10n.sessionModeAgentDescription,
   ),
   SessionModeUiOption(
     value: 'plan',
     title: 'Plan',
-    description: '先生成计划并等待确认，批准后再进入执行。',
+    description: l10n.sessionModePlanDescription,
   ),
   SessionModeUiOption(
     value: 'ask',
     title: 'Ask',
-    description: '只读回答与代码探索，不修改文件、不执行命令。',
+    description: l10n.sessionModeAskDescription,
   ),
 ];
 
-SessionModeUiOption sessionModeUi(SessionMode mode) {
-  return sessionModeUiOptions.firstWhere(
+SessionModeUiOption sessionModeUi(SessionMode mode, AppLocalizations l10n) {
+  return sessionModeUiOptions(l10n).firstWhere(
     (entry) => entry.value == mode,
-    orElse: () => sessionModeUiOptions.first,
+    orElse: () => sessionModeUiOptions(l10n).first,
   );
 }

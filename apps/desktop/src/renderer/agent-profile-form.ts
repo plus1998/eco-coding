@@ -22,6 +22,7 @@ import {
   type ToolCapabilityFieldValues,
   toolPolicyToCapabilityFields,
 } from "./tool-capability-groups";
+import { i18n } from "./i18n";
 
 export type AgentProfileAgentCapabilityFields = Omit<ToolCapabilityFieldValues, "allowDelegation">;
 
@@ -181,10 +182,13 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
   });
   return {
     id: createUniqueProfileId("user.custom.profile", options.existingIds ?? []),
-    name: createUniqueProfileName("自定义智能体配置", options.existingNames ?? []),
+    name: createUniqueProfileName(
+      i18n.t("agentProfile.customProfileName"),
+      options.existingNames ?? [],
+    ),
     preset: "custom",
     source: "user",
-    mainName: "Main Agent",
+    mainName: i18n.t("settings.models.mainAgent"),
     mainProviderId: provider?.id ?? "",
     mainModelId: provider?.defaultModel ?? "",
     mainThinkingEffort: "",
@@ -289,18 +293,18 @@ export function buildOrchestrationProfileFromForm(
   const id = form.id.trim();
   const name = form.name.trim();
   if (!id) {
-    throw new Error("智能体配置 id 不能为空。");
+    throw new Error(i18n.t("agentProfile.validation.idRequired"));
   }
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
-    throw new Error("智能体配置 id 只能包含字母、数字、点、下划线和短横线。");
+    throw new Error(i18n.t("agentProfile.validation.idFormat"));
   }
   if (id.startsWith("builtin.")) {
-    throw new Error("内置智能体配置 id 不可用于用户配置。");
+    throw new Error(i18n.t("agentProfile.validation.reservedId"));
   }
   if (!name) {
-    throw new Error("智能体配置名称不能为空。");
+    throw new Error(i18n.t("agentProfile.validation.nameRequired"));
   }
-  assertCandidateModelSelected("主 Agent", form.mainCandidateModelId);
+  assertCandidateModelSelected(i18n.t("settings.models.mainAgent"), form.mainCandidateModelId);
   const mainModelRef = buildModelRef(form.mainProviderId, form.mainModelId, {
     thinkingEffort: form.mainThinkingEffort,
     apiCompat: form.mainApiCompat,
@@ -317,12 +321,14 @@ export function buildOrchestrationProfileFromForm(
       agentForm.templateId === CODING_AGENT_TEMPLATE_IDS.explore,
     );
     if (agentKeys.has(agentKey)) {
-      throw new Error(`Agent key 重复：${agentKey}`);
+      throw new Error(i18n.t("agentProfile.validation.duplicateKey", { key: agentKey }));
     }
     agentKeys.add(agentKey);
     const template = templateById.get(agentForm.templateId);
     if (!template) {
-      throw new Error(`找不到 Agent 模板：${agentForm.templateId}`);
+      throw new Error(
+        i18n.t("agentProfile.validation.templateNotFound", { id: agentForm.templateId }),
+      );
     }
     const existingAgent = existingAgentByKey.get(agentForm.agentKey.trim());
     const displayName = agentForm.displayName.trim() || existingAgent?.displayName || template.name;
@@ -361,7 +367,7 @@ export function buildOrchestrationProfileFromForm(
     preset: form.preset,
     mainAgent: {
       agentKey: "main",
-      name: form.mainName.trim() || "Main Agent",
+      name: form.mainName.trim() || i18n.t("settings.models.mainAgent"),
       domain: form.preset,
       systemPromptPreset: form.mainSystemPromptPreset,
       prompt: form.mainPrompt.trim() || "Coordinate the task and produce the final answer.",
@@ -452,7 +458,7 @@ function mainCapabilityToProfileFormFields(
 
 function assertCandidateModelSelected(label: string, candidateModelId: string): void {
   if (!candidateModelId.trim()) {
-    throw new Error(`${label} 必须选择候选模型。`);
+    throw new Error(i18n.t("agentProfile.validation.candidateRequired", { label }));
   }
 }
 
@@ -481,7 +487,7 @@ function buildModelRef(
   const provider = providerId.trim();
   const model = modelId.trim();
   if (!provider || !model) {
-    throw new Error("智能体配置中的每个 Agent 都必须配置 provider 和模型。");
+    throw new Error(i18n.t("agentProfile.validation.providerAndModelRequired"));
   }
   const thinkingEffort = options?.thinkingEffort?.trim();
   const apiCompat = options?.apiCompat?.trim();
@@ -507,13 +513,13 @@ export { tryFormToManualSpec } from "./agent-profile-manual-spec-form";
 function normalizeAgentKey(raw: string, allowExplore = false): string {
   const agentKey = raw.trim();
   if (!agentKey) {
-    throw new Error("Agent key 不能为空。");
+    throw new Error(i18n.t("agentProfile.validation.keyRequired"));
   }
   if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(agentKey)) {
-    throw new Error("Agent key 只能包含字母、数字、下划线和短横线，并且必须以字母开头。");
+    throw new Error(i18n.t("agentProfile.validation.keyFormat"));
   }
   if (RESERVED_AGENT_KEYS.has(agentKey.toLowerCase()) && !(allowExplore && agentKey === "explore")) {
-    throw new Error(`Agent key ${agentKey} 是系统保留名称。`);
+    throw new Error(i18n.t("agentProfile.validation.keyReserved", { key: agentKey }));
   }
   return agentKey;
 }

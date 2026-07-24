@@ -1,7 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/utils/thread_follow_up_ui.dart';
+import 'package:eco_mobile/l10n/generated/app_localizations.dart';
+
+final _zh = lookupAppLocalizations(const Locale('zh'));
 
 ThreadPendingFollowUp followUp(
   String id, {
@@ -104,6 +108,7 @@ void main() {
   test('formatThreadFollowUpPreview clips long prompts', () {
     final preview = formatThreadFollowUpPreview(
       followUp('long', prompt: 'a' * 130),
+      _zh,
     );
 
     expect(preview.length, 120);
@@ -122,6 +127,6 @@ void main() {
       ],
     );
 
-    expect(formatThreadFollowUpPreview(item), '看一下 (1 张图片)');
+    expect(formatThreadFollowUpPreview(item, _zh), '看一下 (1 张图片)');
   });
 }

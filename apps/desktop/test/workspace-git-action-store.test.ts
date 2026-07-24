@@ -9,6 +9,7 @@ import {
   setWorkspaceGitActionPhase,
   subscribeWorkspaceGitAction,
 } from "../src/renderer/workspace-git-action-store";
+import { i18n } from "../src/renderer/i18n";
 
 function requireOperationId(operationId: number | null): number {
   if (operationId === null) {
@@ -17,16 +18,17 @@ function requireOperationId(operationId: number | null): number {
   return operationId;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en-US");
   resetWorkspaceGitActionStore();
 });
 
 test("labels map phases for the work panel entry", () => {
-  expect(getWorkspaceGitCommitEntryLabel(undefined)).toBe("提交或推送");
-  expect(getWorkspaceGitCommitEntryLabel(null)).toBe("提交或推送");
-  expect(getWorkspaceGitCommitEntryLabel("generating")).toBe("正在生成提交");
-  expect(getWorkspaceGitCommitEntryLabel("committing")).toBe("正在提交");
-  expect(getWorkspaceGitCommitEntryLabel("pushing")).toBe("正在推送");
+  expect(getWorkspaceGitCommitEntryLabel(undefined)).toBe("Commit or push");
+  expect(getWorkspaceGitCommitEntryLabel(null)).toBe("Commit or push");
+  expect(getWorkspaceGitCommitEntryLabel("generating")).toBe("Generating commit");
+  expect(getWorkspaceGitCommitEntryLabel("committing")).toBe("Committing");
+  expect(getWorkspaceGitCommitEntryLabel("pushing")).toBe("Pushing");
 });
 
 test("stores action phase per workspace path", () => {

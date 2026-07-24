@@ -1,21 +1,28 @@
 import '../models/thread_run_projection.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 int computeSubagentSessionDurationMs(
   ThreadSubagentSessionTiming timing, {
   int? nowMs,
 }) {
   final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-  final lastActiveMs = DateTime.tryParse(timing.lastActiveAt)?.millisecondsSinceEpoch;
+  final lastActiveMs = DateTime.tryParse(
+    timing.lastActiveAt,
+  )?.millisecondsSinceEpoch;
   final activeSegmentMs = timing.isActive && lastActiveMs != null
       ? (now - lastActiveMs).clamp(0, 1 << 31)
       : 0;
   return (timing.accumulatedMs + activeSegmentMs).clamp(0, 1 << 31);
 }
 
-String formatSubagentDuration(int ms, {required bool running}) {
+String formatSubagentDuration(
+  int ms, {
+  required bool running,
+  required AppLocalizations l10n,
+}) {
   if (ms <= 0) return '';
   final label = formatDurationMs(ms);
-  return running ? label : '用时 $label';
+  return running ? label : l10n.subagentElapsed(label);
 }
 
 String formatDurationMs(int ms) {

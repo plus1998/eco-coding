@@ -20,14 +20,8 @@ enum AppThemePreference {
   String get storageValue => name;
 
   ThemeMode get themeMode => switch (this) {
-        AppThemePreference.system => ThemeMode.system,
-        AppThemePreference.dark => ThemeMode.dark,
-        AppThemePreference.light => ThemeMode.light,
-      };
-
-  String get label => switch (this) {
-        AppThemePreference.system => '跟随',
-        AppThemePreference.dark => '深色',
-        AppThemePreference.light => '浅色',
-      };
+    AppThemePreference.system => ThemeMode.system,
+    AppThemePreference.dark => ThemeMode.dark,
+    AppThemePreference.light => ThemeMode.light,
+  };
 }

@@ -11,10 +11,7 @@ void main() {
       threadStatusFromLiveEvent('thread.execution_failed', 'running'),
       'awaiting_plan',
     );
-    expect(
-      threadStatusFromLiveEvent('thread.running', 'idle'),
-      'running',
-    );
+    expect(threadStatusFromLiveEvent('thread.running', 'idle'), 'running');
   });
 
   test('resolveThreadMessageFromLiveEvent prefixes execution failures', () {
@@ -22,10 +19,7 @@ void main() {
       resolveThreadMessageFromLiveEvent('thread.execution_failed', '模型超时'),
       '执行失败，已回退更改。模型超时',
     );
-    expect(
-      extractPlanFailureMessage('执行失败，已回退更改。模型超时'),
-      '模型超时',
-    );
+    expect(extractPlanFailureMessage('执行失败，已回退更改。模型超时'), '模型超时');
   });
 
   test('shouldUpdateThreadSummaryFromLiveEvent ignores telemetry events', () {

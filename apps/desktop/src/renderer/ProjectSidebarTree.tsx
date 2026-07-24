@@ -10,7 +10,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { type DragEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ThreadSummary } from "../shared/ipc";
+import type { AppLocale } from "../shared/locale";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
 import { formatRelativeTime } from "./relative-time";
 
@@ -81,6 +83,8 @@ export function ProjectSidebarTree({
   deletingThreadId,
   onDeleteThread,
 }: ProjectSidebarTreeProps) {
+  const { t, i18n } = useTranslation();
+  const locale = (i18n.resolvedLanguage ?? i18n.language) as AppLocale;
   const [fileDropActive, setFileDropActive] = useState(false);
   const [draggingPath, setDraggingPath] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ path: string; position: ProjectReorderPosition }>();
@@ -291,7 +295,7 @@ export function ProjectSidebarTree({
       <li key={project.path} className="project-group">
         <div className={rowClassNames.join(" ")}>
           <fieldset
-            aria-label={`${project.name} 拖拽排序区域`}
+            aria-label={t("projectTree.dragArea", { name: project.name })}
             className={projectMainClassNames.join(" ")}
             data-project-path={project.path}
             draggable={!project.isHome}
@@ -304,11 +308,15 @@ export function ProjectSidebarTree({
               type="button"
               className="project-group-toggle"
               aria-expanded={!collapsed}
-              aria-label={collapsed ? `展开项目 ${project.name}` : `折叠项目 ${project.name}`}
+              aria-label={
+                collapsed
+                  ? t("projectTree.expandProject", { name: project.name })
+                  : t("projectTree.collapseProject", { name: project.name })
+              }
               onClick={() => onToggleProjectCollapsed(project.path)}
             >
               {project.pinned && !project.isHome ? (
-                <span className="project-pin-indicator" title="已置顶" aria-hidden>
+                <span className="project-pin-indicator" title={t("projectTree.pinned")} aria-hidden>
                   <Pin size={14} />
                 </span>
               ) : null}
@@ -331,8 +339,8 @@ export function ProjectSidebarTree({
                     <button
                       type="button"
                       className="project-menu-trigger"
-                      title={`${project.name} 操作`}
-                      aria-label={`${project.name} 操作`}
+                      title={t("projectTree.actions", { name: project.name })}
+                      aria-label={t("projectTree.actions", { name: project.name })}
                       aria-haspopup="menu"
                       aria-expanded={openMenuPath === project.path}
                       onClick={(event) => {
@@ -362,7 +370,9 @@ export function ProjectSidebarTree({
                           ) : (
                             <Pin size={16} aria-hidden />
                           )}
-                          <span>{project.pinned ? "取消置顶" : "置顶"}</span>
+                          <span>
+                            {project.pinned ? t("projectTree.unpin") : t("projectTree.pin")}
+                          </span>
                         </button>
                         <button
                           type="button"
@@ -374,7 +384,7 @@ export function ProjectSidebarTree({
                           }}
                         >
                           <Trash2 size={16} aria-hidden />
-                          <span>移除</span>
+                          <span>{t("projectTree.remove")}</span>
                         </button>
                       </div>
                     ) : null}
@@ -383,8 +393,8 @@ export function ProjectSidebarTree({
               <button
                 type="button"
                 className="project-new-chat"
-                title={`在 ${project.name} 中新建对话`}
-                aria-label={`在 ${project.name} 中新建对话`}
+                title={t("projectTree.newThread", { name: project.name })}
+                aria-label={t("projectTree.newThread", { name: project.name })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSwitchProject(project.path);
@@ -430,8 +440,11 @@ export function ProjectSidebarTree({
                       {hasThreadStatusIndicator ? (
                         <span className="chat-item-meta">
                           {isThreadAwaitingApproval ? (
-                            <span className="chat-item-approval" title={thread.message || "等待批准"}>
-                              等待批准
+                            <span
+                              className="chat-item-approval"
+                              title={thread.message || t("projectTree.awaitingApproval")}
+                            >
+                              {t("projectTree.awaitingApproval")}
                             </span>
                           ) : isThreadBusy ? (
                             <span
@@ -445,9 +458,9 @@ export function ProjectSidebarTree({
                           ) : isThreadUnread ? (
                             <span
                               className="chat-item-unread-dot"
-                              title="任务已完成，尚未查看"
+                              title={t("projectTree.completedUnread")}
                               role="status"
-                              aria-label="任务已完成，尚未查看"
+                              aria-label={t("projectTree.completedUnread")}
                             />
                           ) : (
                             <span className={`status-dot ${thread.status}`} title={thread.status} />
@@ -470,7 +483,7 @@ export function ProjectSidebarTree({
                             </span>
                           ) : (
                             <span className="chat-item-time">
-                              {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                              {formatRelativeTime(thread.updatedAt ?? thread.createdAt, Date.now(), locale)}
                             </span>
                           )}
                         </span>
@@ -480,8 +493,12 @@ export function ProjectSidebarTree({
                           <button
                             type="button"
                             className="chat-item-row-action"
-                            title={isThreadPinned ? "取消置顶" : "置顶"}
-                            aria-label={isThreadPinned ? `取消置顶 ${thread.title}` : `置顶 ${thread.title}`}
+                            title={isThreadPinned ? t("projectTree.unpin") : t("projectTree.pin")}
+                            aria-label={
+                              isThreadPinned
+                                ? t("projectTree.unpinNamed", { name: thread.title })
+                                : t("projectTree.pinNamed", { name: thread.title })
+                            }
                             onClick={(event) => {
                               event.stopPropagation();
                               if (isThreadPinned) {
@@ -502,8 +519,8 @@ export function ProjectSidebarTree({
                           <button
                             type="button"
                             className="chat-item-row-action chat-item-row-action-danger"
-                            title="删除对话"
-                            aria-label={`删除对话 ${thread.title}`}
+                            title={t("projectTree.deleteThread")}
+                            aria-label={t("projectTree.deleteThreadNamed", { name: thread.title })}
                             disabled={deletingThreadId === thread.id}
                             onClick={(event) => {
                               event.stopPropagation();
@@ -528,12 +545,12 @@ export function ProjectSidebarTree({
                   className="project-expand"
                   onClick={() => onExpandProjectThreads(project.path)}
                 >
-                  展开显示
+                  {t("projectTree.showMore")}
                 </button>
               ) : null}
             </>
           ) : (
-            <p className="project-empty">暂无对话</p>
+            <p className="project-empty">{t("projectTree.noThreads")}</p>
           )
         ) : null}
       </li>
@@ -555,7 +572,7 @@ export function ProjectSidebarTree({
   return (
     <div
       ref={treeRef}
-      aria-label="项目列表"
+      aria-label={t("projectTree.list")}
       className={treeClassNames.join(" ")}
       onDragEnter={handleTreeDragEnter}
       onDragOver={handleTreeDragOver}
@@ -563,8 +580,10 @@ export function ProjectSidebarTree({
       onDrop={handleTreeDrop}
       role="tree"
     >
-      {projectTree.length === 0 ? <p className="project-tree-empty-drop">将文件夹拖到此处打开项目</p> : null}
-      {renderProjectSection("项目", displayProjectTree)}
+      {projectTree.length === 0 ? (
+        <p className="project-tree-empty-drop">{t("projectTree.dropFolder")}</p>
+      ) : null}
+      {renderProjectSection(t("nav.projects"), displayProjectTree)}
     </div>
   );
 }
@@ -573,5 +592,6 @@ export function isThreadWaitingForApproval(thread: ThreadSummary): boolean {
   if (thread.status !== "running") {
     return false;
   }
+  // Compatibility matcher for persisted Chinese/English runtime status text.
   return /等待.*(批准|确认)|approval/i.test(thread.message);
 }

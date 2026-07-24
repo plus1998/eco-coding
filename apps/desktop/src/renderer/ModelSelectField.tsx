@@ -1,5 +1,6 @@
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { UpstreamModelOption } from "../shared/models";
 
 interface ModelSelectFieldProps {
@@ -21,6 +22,7 @@ export function ModelSelectField({
   disabled,
   onRefresh,
 }: ModelSelectFieldProps) {
+  const { t } = useTranslation();
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,7 +107,7 @@ export function ModelSelectField({
             className="mcp-field-input model-combobox-input"
             value={value}
             disabled={disabled}
-            placeholder="输入或选择模型"
+            placeholder={t("modelSelect.placeholder")}
             role="combobox"
             aria-expanded={open}
             aria-controls={listboxId}
@@ -127,7 +129,7 @@ export function ModelSelectField({
           <button
             type="button"
             className="model-combobox-toggle"
-            aria-label={open ? "收起模型列表" : "展开远程模型列表"}
+            aria-label={open ? t("modelSelect.collapse") : t("modelSelect.expand")}
             aria-expanded={open}
             aria-controls={listboxId}
             disabled={disabled || loading}
@@ -143,7 +145,7 @@ export function ModelSelectField({
           <button
             type="button"
             className="model-refresh-button"
-            aria-label="从上游刷新模型列表"
+            aria-label={t("modelSelect.refresh")}
             disabled={disabled || loading}
             onClick={onRefresh}
           >
@@ -155,7 +157,7 @@ export function ModelSelectField({
       {open && (
         <div id={listboxId} className="model-combobox-menu" role="listbox">
           {loading ? (
-            <div className="model-combobox-menu-status">加载模型…</div>
+            <div className="model-combobox-menu-status">{t("modelSelect.loading")}</div>
           ) : filteredModels.length > 0 ? (
             filteredModels.map((model) => (
               <div key={model.id}>
@@ -173,18 +175,18 @@ export function ModelSelectField({
               </div>
             ))
           ) : models.length > 0 ? (
-            <div className="model-combobox-menu-status">没有匹配的模型</div>
+            <div className="model-combobox-menu-status">{t("modelSelect.noMatch")}</div>
           ) : error ? (
-            <div className="model-combobox-menu-status">列表获取失败，可直接输入模型 ID，或点击刷新重试</div>
+            <div className="model-combobox-menu-status">{t("modelSelect.loadFailedHint")}</div>
           ) : (
-            <div className="model-combobox-menu-status">暂无可用模型，请刷新列表或直接输入模型 ID</div>
+            <div className="model-combobox-menu-status">{t("modelSelect.emptyHint")}</div>
           )}
         </div>
       )}
 
       {error ? (
         <p className="model-select-hint error">
-          获取模型列表失败：{error}。可直接输入模型 ID，或点击刷新重试。
+          {t("modelSelect.errorDetail", { error })}
         </p>
       ) : null}
     </div>

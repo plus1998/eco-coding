@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import {
   findCommitModelOptionForCandidateId,
 } from "../shared/commit-model-options";
@@ -57,6 +58,7 @@ export function GitCommitDialog({
   onBeforeAction,
   onSuccess,
 }: GitCommitDialogProps) {
+  const { t } = useTranslation();
   const [message, setMessage] = useState("");
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const [modelOptions, setModelOptions] = useState<CommitModelOptionView[]>([]);
@@ -81,7 +83,9 @@ export function GitCommitDialog({
     [modelOptions, selectedCandidateModelId],
   );
 
-  const modelLabel = selectedOption?.modelLabel ?? (modelOptionsLoading ? "加载模型…" : "未配置模型");
+  const modelLabel =
+    selectedOption?.modelLabel ??
+    (modelOptionsLoading ? t("git.commit.loadingModels") : t("git.commit.noModel"));
 
   useEffect(() => {
     if (!open || !window.eco) {
@@ -287,7 +291,7 @@ export function GitCommitDialog({
               commitMessage = generated.message.trim();
               setMessage(generated.message);
               if (!commitMessage) {
-                throw new Error("AI 未生成有效提交信息");
+                throw new Error(t("git.commit.noGeneratedMessage"));
               }
               if (!setWorkspaceGitActionPhase(operationWorkspacePath, operationId, "committing")) {
                 return;
@@ -423,7 +427,7 @@ export function GitCommitDialog({
       <div
         className="git-commit-popover"
         role="dialog"
-        aria-label="提交或推送"
+        aria-label={t("git.commit.dialog")}
         onMouseDown={(event) => {
           event.stopPropagation();
           if (!(event.target as HTMLElement).closest(".git-commit-model-select-wrap")) {
@@ -445,7 +449,7 @@ export function GitCommitDialog({
                     disabled={branchPickerDisabled}
                     aria-expanded={branchMenuOpen}
                     aria-haspopup="listbox"
-                    aria-label="切换分支"
+                    aria-label={t("git.commit.switchBranch")}
                     onClick={() => {
                       setModelMenuOpen(false);
                       setBranchMenuOpen((current) => {
@@ -469,14 +473,14 @@ export function GitCommitDialog({
                     />
                   </button>
                   {branchMenuOpen ? (
-                    <div className="git-commit-branch-menu" role="listbox" aria-label="提交到">
+                    <div className="git-commit-branch-menu" role="listbox" aria-label={t("git.commit.commitTo")}>
                       {branchCreateMode ? (
                         <div className="git-commit-branch-create">
-                          <div className="git-commit-branch-menu-header">新分支</div>
+                          <div className="git-commit-branch-menu-header">{t("git.commit.newBranch")}</div>
                           <input
                             className="git-commit-branch-create-input"
                             value={newBranchName}
-                            placeholder="分支名称…"
+                            placeholder={t("git.commit.branchPlaceholder")}
                             disabled={branchBusy}
                             autoFocus
                             onChange={(event) => {
@@ -501,7 +505,7 @@ export function GitCommitDialog({
                         </div>
                       ) : (
                         <>
-                          <div className="git-commit-branch-menu-header">提交到</div>
+                          <div className="git-commit-branch-menu-header">{t("git.commit.commitTo")}</div>
                           <ul className="git-commit-branch-menu-list">
                             {gitStatus!.branches.map((branch) => {
                               const isActive = branch === gitStatus?.branch;
@@ -535,7 +539,7 @@ export function GitCommitDialog({
                                   }}
                                 >
                                   <Plus size={14} strokeWidth={2} aria-hidden />
-                                  <span className="git-commit-branch-menu-label">新分支</span>
+                                  <span className="git-commit-branch-menu-label">{t("git.commit.newBranch")}</span>
                                 </button>
                               </li>
                             ) : null}
@@ -554,7 +558,7 @@ export function GitCommitDialog({
               )}
             </div>
 
-            <div className="git-commit-popover-stats" aria-label="变更行数">
+            <div className="git-commit-popover-stats" aria-label={t("git.commit.changedLines")}>
               <span className="git-commit-stat-add">+{insertions}</span>
               <span className="git-commit-stat-del">-{deletions}</span>
             </div>
@@ -569,7 +573,7 @@ export function GitCommitDialog({
                   disabled={modelPickerDisabled}
                   aria-expanded={modelMenuOpen}
                   aria-haspopup="listbox"
-                  aria-label="生成模型"
+                  aria-label={t("git.commit.generationModel")}
                   onClick={() => {
                     closeBranchMenu();
                     setModelMenuOpen((current) => !current);
@@ -589,7 +593,7 @@ export function GitCommitDialog({
                   />
                 </button>
                 {modelMenuOpen ? (
-                  <ul className="git-commit-model-menu" role="listbox" aria-label="生成模型">
+                  <ul className="git-commit-model-menu" role="listbox" aria-label={t("git.commit.generationModel")}>
                     {modelOptions.map((option) => {
                       const isActive = option.candidateModelId === selectedCandidateModelId;
                       return (
@@ -622,7 +626,7 @@ export function GitCommitDialog({
             <textarea
               className="git-commit-popover-message"
               value={message}
-              placeholder="提交信息（留空则 AI 生成）"
+              placeholder={t("git.commit.messagePlaceholder")}
               rows={3}
               disabled={messageFieldDisabled}
               onChange={(event) => {
@@ -637,8 +641,8 @@ export function GitCommitDialog({
             <button
               type="button"
               className="git-commit-popover-message-generate"
-              aria-label="AI 生成提交信息"
-              title="AI 生成提交信息"
+              aria-label={t("git.commit.generate")}
+              title={t("git.commit.generate")}
               disabled={messageFieldDisabled || !canCommit}
               onClick={() => void handleGenerateMessage()}
             >
@@ -657,7 +661,7 @@ export function GitCommitDialog({
               disabled={messageFieldDisabled}
               onChange={(event) => setIncludeUnstaged(event.target.checked)}
             />
-            <span>包含未暂存的更改</span>
+            <span>{t("git.commit.includeUnstaged")}</span>
           </label>
 
           {error ? <p className="git-commit-popover-error">{error}</p> : null}
@@ -673,7 +677,9 @@ export function GitCommitDialog({
             >
               <GitCommitHorizontal size={16} strokeWidth={1.75} aria-hidden />
               <span>
-                {activeAction === "commit" && actionPhase === "committing" ? "提交中…" : "提交"}
+                {activeAction === "commit" && actionPhase === "committing"
+                  ? t("git.commit.committing")
+                  : t("git.commit.commit")}
               </span>
             </button>
           </li>
@@ -688,9 +694,9 @@ export function GitCommitDialog({
               <span>
                 {activeAction === "commit-push"
                   ? actionPhase === "pushing"
-                    ? "推送中…"
-                    : "提交中…"
-                  : "提交并推送"}
+                    ? t("git.commit.pushing")
+                    : t("git.commit.committing")
+                  : t("git.commit.commitPush")}
               </span>
             </button>
           </li>
@@ -704,7 +710,9 @@ export function GitCommitDialog({
               >
                 <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
                 <span>
-                  {activeAction === "push" && actionPhase === "pushing" ? "推送中…" : "仅推送"}
+                  {activeAction === "push" && actionPhase === "pushing"
+                    ? t("git.commit.pushing")
+                    : t("git.commit.pushOnly")}
                 </span>
               </button>
             </li>

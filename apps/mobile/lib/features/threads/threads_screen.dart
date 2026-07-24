@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/project_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/widgets/adaptive_nav_bar.dart';
@@ -38,13 +40,13 @@ class ThreadsScreen extends ConsumerWidget {
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: AdaptiveToolbarIcon(
-            tooltip: '切换 PC',
+            tooltip: context.l10n.toolbarSwitchPc,
             icon: EcoIcons.desktop,
             size: sessionToolbarButtonSize,
             onPressed: () => context.push('/connect'),
           ),
         ),
-        title: const Text('会话'),
+        title: Text(context.l10n.threadsTitle),
         actions: [
           ShellToolbarActions(
             showSearch: true,
@@ -149,9 +151,9 @@ class ThreadsScreen extends ConsumerWidget {
       await openProjectPath(ref, project.path);
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
+        );
       }
     }
   }

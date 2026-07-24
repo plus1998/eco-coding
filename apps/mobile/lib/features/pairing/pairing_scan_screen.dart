@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/network/eco_center_client.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -58,15 +59,12 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
-        title: const Text('扫描配对码'),
+        title: Text(context.l10n.pairingScanTitle),
       ),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-          ),
+          MobileScanner(controller: _controller, onDetect: _onDetect),
           IgnorePointer(
             child: CustomPaint(
               painter: _ScanOverlayPainter(
@@ -84,12 +82,12 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
                   child: Text(
-                    '将 Desktop「连接」页的二维码放入框内',
+                    context.l10n.pairingScanHint,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.82),
-                          height: 1.5,
-                        ),
+                      color: Colors.white.withValues(alpha: 0.82),
+                      height: 1.5,
+                    ),
                   ),
                 ),
                 const Spacer(flex: 2),
@@ -99,8 +97,12 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _ScanActionChip(
-                        icon: _torchOn ? EcoIcons.flashlightOn : EcoIcons.flashlight,
-                        label: _torchOn ? '关闭灯光' : '打开灯光',
+                        icon: _torchOn
+                            ? EcoIcons.flashlightOn
+                            : EcoIcons.flashlight,
+                        label: _torchOn
+                            ? context.l10n.pairingTorchOff
+                            : context.l10n.pairingTorchOn,
                         onTap: _toggleTorch,
                       ),
                     ],
@@ -144,9 +146,9 @@ class _ScanActionChip extends StatelessWidget {
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontWeight: FontWeight.w500,
-                    ),
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),
@@ -157,10 +159,7 @@ class _ScanActionChip extends StatelessWidget {
 }
 
 class _ScanOverlayPainter extends CustomPainter {
-  const _ScanOverlayPainter({
-    required this.scanSize,
-    required this.accent,
-  });
+  const _ScanOverlayPainter({required this.scanSize, required this.accent});
 
   final double scanSize;
   final Color accent;
@@ -177,9 +176,12 @@ class _ScanOverlayPainter extends CustomPainter {
 
     final overlayPath = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
-    final holePath = Path()
-      ..addRRect(RRect.fromRectAndRadius(rect, radius));
-    final maskPath = Path.combine(PathOperation.difference, overlayPath, holePath);
+    final holePath = Path()..addRRect(RRect.fromRectAndRadius(rect, radius));
+    final maskPath = Path.combine(
+      PathOperation.difference,
+      overlayPath,
+      holePath,
+    );
 
     canvas.drawPath(
       maskPath,

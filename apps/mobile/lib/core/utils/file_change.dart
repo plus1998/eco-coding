@@ -57,16 +57,16 @@ class FileChangeDiffPalette {
   }
 
   Color gutterFor(FileChangePreviewLineKind kind) => switch (kind) {
-        FileChangePreviewLineKind.add => addGutter,
-        FileChangePreviewLineKind.remove => removeGutter,
-        FileChangePreviewLineKind.context => Colors.transparent,
-      };
+    FileChangePreviewLineKind.add => addGutter,
+    FileChangePreviewLineKind.remove => removeGutter,
+    FileChangePreviewLineKind.context => Colors.transparent,
+  };
 
   Color backgroundFor(FileChangePreviewLineKind kind) => switch (kind) {
-        FileChangePreviewLineKind.add => addBackground,
-        FileChangePreviewLineKind.remove => removeBackground,
-        FileChangePreviewLineKind.context => Colors.transparent,
-      };
+    FileChangePreviewLineKind.add => addBackground,
+    FileChangePreviewLineKind.remove => removeBackground,
+    FileChangePreviewLineKind.context => Colors.transparent,
+  };
 }
 
 class FileChangeCardDisplay {
@@ -87,7 +87,8 @@ class FileChangeCardDisplay {
 
 const _fileChangeTools = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit'};
 
-bool isFileChangeToolName(String toolName) => _fileChangeTools.contains(toolName);
+bool isFileChangeToolName(String toolName) =>
+    _fileChangeTools.contains(toolName);
 
 ThreadRunFileChangeMetadata? resolveFileChangeFromToolInput(
   String toolName,
@@ -113,7 +114,8 @@ ThreadRunFileChangeMetadata? resolveFileChangeFromToolInput(
     return null;
   }
 
-  final filePath = _readString(input['file_path']) ??
+  final filePath =
+      _readString(input['file_path']) ??
       _readString(input['path']) ??
       _readString(input['notebook_path']);
   if (filePath == null) return null;
@@ -143,7 +145,8 @@ ThreadRunFileChangeMetadata? enrichFileChangeFromToolOutput(
   final record = _parseToolOutputRecord(output);
   if (record == null) return existing;
 
-  final filePath = _readString(record['filePath']) ??
+  final filePath =
+      _readString(record['filePath']) ??
       _readString(record['file_path']) ??
       _readString(record['notebook_path']) ??
       existing?.path;
@@ -156,10 +159,16 @@ ThreadRunFileChangeMetadata? enrichFileChangeFromToolOutput(
       : null;
 
   final additions = gitDiff is Map
-      ? (gitDiff['additions'] as num?)?.toInt() ?? fromPatch?.additions ?? existing?.additions ?? 0
+      ? (gitDiff['additions'] as num?)?.toInt() ??
+            fromPatch?.additions ??
+            existing?.additions ??
+            0
       : fromPatch?.additions ?? existing?.additions ?? 0;
   final deletions = gitDiff is Map
-      ? (gitDiff['deletions'] as num?)?.toInt() ?? fromPatch?.deletions ?? existing?.deletions ?? 0
+      ? (gitDiff['deletions'] as num?)?.toInt() ??
+            fromPatch?.deletions ??
+            existing?.deletions ??
+            0
       : fromPatch?.deletions ?? existing?.deletions ?? 0;
   final previewLines = fromPatch != null && fromPatch.previewLines.isNotEmpty
       ? fromPatch.previewLines
@@ -215,8 +224,18 @@ ThreadRunFileChangeMetadata? _buildEditFileChange(
   final oldLines = _splitContentLines(oldString ?? '');
   final newLines = _splitContentLines(newString ?? '');
   final previewLines = <FileChangePreviewLine>[
-    ...oldLines.map((text) => FileChangePreviewLine(kind: FileChangePreviewLineKind.remove, text: text)),
-    ...newLines.map((text) => FileChangePreviewLine(kind: FileChangePreviewLineKind.add, text: text)),
+    ...oldLines.map(
+      (text) => FileChangePreviewLine(
+        kind: FileChangePreviewLineKind.remove,
+        text: text,
+      ),
+    ),
+    ...newLines.map(
+      (text) => FileChangePreviewLine(
+        kind: FileChangePreviewLineKind.add,
+        text: text,
+      ),
+    ),
   ];
   if (previewLines.isEmpty) return null;
   return ThreadRunFileChangeMetadata(
@@ -227,7 +246,10 @@ ThreadRunFileChangeMetadata? _buildEditFileChange(
   );
 }
 
-ThreadRunFileChangeMetadata? _buildWriteFileChange(String filePath, String content) {
+ThreadRunFileChangeMetadata? _buildWriteFileChange(
+  String filePath,
+  String content,
+) {
   final lines = _splitContentLines(content);
   if (lines.isEmpty) return null;
   return ThreadRunFileChangeMetadata(
@@ -235,7 +257,12 @@ ThreadRunFileChangeMetadata? _buildWriteFileChange(String filePath, String conte
     additions: lines.length,
     deletions: 0,
     previewLines: lines
-        .map((text) => FileChangePreviewLine(kind: FileChangePreviewLineKind.add, text: text))
+        .map(
+          (text) => FileChangePreviewLine(
+            kind: FileChangePreviewLineKind.add,
+            text: text,
+          ),
+        )
         .toList(),
   );
 }
@@ -268,12 +295,27 @@ _PatchSummary _fileChangeFromStructuredPatch(List<dynamic> patch) {
       switch (marker) {
         case '+':
           additions += 1;
-          previewLines.add(FileChangePreviewLine(kind: FileChangePreviewLineKind.add, text: text));
+          previewLines.add(
+            FileChangePreviewLine(
+              kind: FileChangePreviewLineKind.add,
+              text: text,
+            ),
+          );
         case '-':
           deletions += 1;
-          previewLines.add(FileChangePreviewLine(kind: FileChangePreviewLineKind.remove, text: text));
+          previewLines.add(
+            FileChangePreviewLine(
+              kind: FileChangePreviewLineKind.remove,
+              text: text,
+            ),
+          );
         case ' ':
-          previewLines.add(FileChangePreviewLine(kind: FileChangePreviewLineKind.context, text: text));
+          previewLines.add(
+            FileChangePreviewLine(
+              kind: FileChangePreviewLineKind.context,
+              text: text,
+            ),
+          );
       }
     }
   }

@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   BackgroundTerminalTask,
   ThreadPendingPlan,
@@ -28,6 +29,7 @@ import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtim
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
 import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
+import { i18n } from "./i18n";
 
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
@@ -238,6 +240,7 @@ function SubagentProjectionDetail({
   requestSpansById: Map<string, ProjectionRequestSpan>;
   threadActive: boolean;
 }) {
+  const { t } = useTranslation();
   const threadId = projection?.thread.threadId;
   const [detail, setDetail] = useState<SubagentDetailState>();
   const [loading, setLoading] = useState(false);
@@ -265,7 +268,7 @@ function SubagentProjectionDetail({
   useEffect(() => {
     if (!threadId || !window.eco?.getThreadRunProjectionDetail) {
       setDetail(undefined);
-      setError(threadId ? "当前桌面桥接未提供子代理详情接口。" : undefined);
+      setError(threadId ? t("task.detailUnavailable") : undefined);
       return;
     }
     let cancelled = false;
@@ -283,7 +286,7 @@ function SubagentProjectionDetail({
         if (cancelled) return;
         if (!result?.agent) {
           setDetail(undefined);
-          setError("未找到该子代理的完整投影数据。");
+          setError(t("task.detailNotFound"));
           return;
         }
         setDetail({
@@ -379,7 +382,7 @@ function SubagentProjectionDetail({
       })
       .then((result) => {
         if (!result?.agent) {
-          setError("无法读取更早的子代理历史。");
+          setError(t("task.earlierFailed"));
           return;
         }
         const resultAgent = result.agent;
@@ -411,10 +414,12 @@ function SubagentProjectionDetail({
     <>
       {detail?.hasEarlier ? (
         <button type="button" className="task-panel-load-earlier" disabled={loadingEarlier} onClick={loadEarlier}>
-          {loadingEarlier ? "正在加载…" : "加载更早记录"}
+          {loadingEarlier ? t("task.loadingEarlier") : t("task.loadEarlier")}
         </button>
       ) : null}
-      {loading ? <div className="subagent-task-detail-status">正在加载完整记录…</div> : null}
+      {loading ? (
+        <div className="subagent-task-detail-status">{t("task.loadingFull")}</div>
+      ) : null}
       {error ? <div className="subagent-task-detail-status is-error">{error}</div> : null}
       <ProjectionSubagentDetailFeed
         agent={resolvedAgent}
@@ -429,15 +434,15 @@ function SubagentProjectionDetail({
 function taskStatusLabel(status: BackgroundTerminalTask["status"]): string {
   switch (status) {
     case "running":
-      return "运行中";
+      return i18n.t("task.status.running");
     case "starting":
-      return "启动中";
+      return i18n.t("task.status.starting");
     case "exited":
-      return "已退出";
+      return i18n.t("task.status.exited");
     case "failed":
-      return "失败";
+      return i18n.t("task.status.failed");
     case "stopped":
-      return "已停止";
+      return i18n.t("task.status.stopped");
   }
 }
 
@@ -464,16 +469,17 @@ export function BackgroundTerminalTasksPanel({
   onOpenTask: (task: BackgroundTerminalTask) => void;
   onStopTask: (task: BackgroundTerminalTask) => void;
 }) {
+  const { t } = useTranslation();
   if (tasks.length === 0) {
     return null;
   }
 
   return (
-    <section className="background-terminal-tasks" aria-label="后台终端任务">
+    <section className="background-terminal-tasks" aria-label={t("task.background")}>
       <div className="subagent-task-section-head">
         <span className="subagent-task-section-title">
           <Terminal size={14} aria-hidden />
-          后台终端
+          {t("task.backgroundLabel")}
         </span>
         <span className="subagent-task-section-count">{tasks.length}</span>
       </div>
@@ -503,8 +509,8 @@ export function BackgroundTerminalTasksPanel({
                 className="background-terminal-task-stop"
                 onClick={() => onStopTask(task)}
                 disabled={!running}
-                title={running ? "停止后台终端" : "任务已结束"}
-                aria-label={`停止 ${task.label}`}
+                title={running ? t("task.stopBackground") : t("task.ended")}
+                aria-label={t("task.stopNamed", { name: task.label })}
               >
                 <Square size={12} aria-hidden />
               </button>
@@ -517,35 +523,36 @@ export function BackgroundTerminalTasksPanel({
 }
 
 function PlanDetailPanel({ plan }: { plan: ThreadPendingPlan }) {
+  const { t } = useTranslation();
   const planPath = plan.planFilePath?.trim();
   const userPrompt = plan.userPrompt.trim();
   const analysis = plan.analysis.trim();
 
   return (
-    <section className="task-plan-detail" aria-label="完整实施计划">
+    <section className="task-plan-detail" aria-label={t("task.fullPlan")}>
       <header className="task-plan-detail-header">
         <span className="task-plan-detail-kicker">
           <FileText size={14} aria-hidden />
-          实施计划
+          {t("task.implementationPlan")}
         </span>
         {planPath ? <span className="task-plan-detail-path">{planPath}</span> : null}
       </header>
       <div className="task-plan-detail-body">
         {userPrompt ? (
           <section className="task-plan-detail-section">
-            <h3>用户目标</h3>
+            <h3>{t("task.userGoal")}</h3>
             <p>{userPrompt}</p>
           </section>
         ) : null}
         <section className="task-plan-detail-section">
-          <h3>计划</h3>
+          <h3>{t("task.plan")}</h3>
           <div className="task-plan-detail-markdown">
             <MarkdownContent text={plan.plan} />
           </div>
         </section>
         {analysis ? (
           <section className="task-plan-detail-section task-plan-detail-section--analysis">
-            <h3>分析</h3>
+            <h3>{t("task.analysis")}</h3>
             <pre>{analysis}</pre>
           </section>
         ) : null}
@@ -605,6 +612,7 @@ export function SubagentTaskDrawer({
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
 }) {
+  const { t } = useTranslation();
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
@@ -635,10 +643,10 @@ export function SubagentTaskDrawer({
       className={["subagent-task-side-panel", "is-open", fullscreen ? "is-fullscreen" : ""]
         .filter(Boolean)
         .join(" ")}
-      aria-label={fullscreen ? "全屏任务面板" : "任务面板"}
+      aria-label={fullscreen ? t("app.taskPanelFullscreen") : t("app.taskPanel")}
     >
       <header className="subagent-task-panel-topbar">
-        <div className="subagent-task-panel-tabs" role="tablist" aria-label="任务标签">
+        <div className="subagent-task-panel-tabs" role="tablist" aria-label={t("task.tabs")}>
           <button
             type="button"
             className={`subagent-task-panel-tab subagent-task-panel-tab--review${reviewSelected ? " is-active" : ""}`}
@@ -648,7 +656,7 @@ export function SubagentTaskDrawer({
             onClick={onSelectReview}
           >
             <ListChecks size={15} aria-hidden />
-            <span>审查</span>
+            <span>{t("task.review")}</span>
           </button>
           {plan ? (
             <button
@@ -660,14 +668,16 @@ export function SubagentTaskDrawer({
               onClick={onSelectPlan}
             >
               <FileText size={15} aria-hidden />
-              <span>计划</span>
+              <span>{t("task.plan")}</span>
             </button>
           ) : null}
           {openSubagentCards.map((card) => {
             const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
             const modelId = card.agent.usage?.modelId ?? card.agent.context?.modelId;
             const modelShort = modelId ? shortenModelId(modelId) : undefined;
-            const runningStatusText = card.running ? card.statusText?.trim() || "处理中" : undefined;
+            const runningStatusText = card.running
+              ? card.statusText?.trim() || t("task.processing")
+              : undefined;
             const tabTitle = [roleLabel, modelShort, runningStatusText].filter(Boolean).join(" · ");
             const isActive = activeTab === card.key;
             return (
@@ -701,8 +711,8 @@ export function SubagentTaskDrawer({
                 <button
                   type="button"
                   className="subagent-task-panel-tab-close"
-                  aria-label={`关闭 ${roleLabel} 标签`}
-                  title="关闭标签"
+                  aria-label={t("task.closeTab", { label: roleLabel })}
+                  title={t("task.closeTabTitle")}
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseAgent(card.key);
@@ -723,14 +733,14 @@ export function SubagentTaskDrawer({
               onClick={onSelectBackgroundTasks}
             >
               <Terminal size={15} aria-hidden />
-              <span>终端</span>
+              <span>{t("task.terminal")}</span>
             </button>
           ) : null}
           <button
             type="button"
             className="subagent-task-panel-tab-add"
-            aria-label="添加标签"
-            title="添加标签"
+            aria-label={t("task.addTab")}
+            title={t("task.addTab")}
             disabled
           >
             <Plus size={17} aria-hidden />
@@ -741,8 +751,12 @@ export function SubagentTaskDrawer({
           className={["subagent-task-panel-fullscreen", fullscreen ? "is-active" : ""]
             .filter(Boolean)
             .join(" ")}
-          aria-label={fullscreen ? "退出全屏任务面板" : "全屏显示任务面板"}
-          title={fullscreen ? "退出全屏" : "全屏显示任务面板"}
+          aria-label={
+            fullscreen ? t("task.exitFullscreen") : t("task.enterFullscreen")
+          }
+          title={
+            fullscreen ? t("task.exitFullscreenTitle") : t("task.enterFullscreen")
+          }
           aria-pressed={fullscreen}
           onClick={onToggleFullscreen}
         >

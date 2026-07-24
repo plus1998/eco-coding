@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
@@ -34,7 +35,7 @@ Future<void> showPlanApprovalSheet({
                     await onDismiss();
                     if (context.mounted) Navigator.pop(context);
                   },
-                  child: const Text('驳回'),
+                  child: Text(context.l10n.approvalReject),
                 ),
               ),
               const SizedBox(width: 10),
@@ -44,7 +45,7 @@ Future<void> showPlanApprovalSheet({
                     await onApprove();
                     if (context.mounted) Navigator.pop(context);
                   },
-                  child: const Text('批准执行'),
+                  child: Text(context.l10n.approvalApproveExecution),
                 ),
               ),
             ],
@@ -54,17 +55,26 @@ Future<void> showPlanApprovalSheet({
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '计划审批',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                context.l10n.approvalPlanTitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 20),
-              _ApprovalField(label: '用户请求', body: Text(plan.userPrompt)),
+              _ApprovalField(
+                label: context.l10n.approvalUserRequest,
+                body: Text(plan.userPrompt),
+              ),
               const SizedBox(height: 16),
-              _ApprovalField(label: '分析', body: Text(plan.analysis)),
+              _ApprovalField(
+                label: context.l10n.approvalAnalysis,
+                body: Text(plan.analysis),
+              ),
               const SizedBox(height: 16),
-              _ApprovalField(label: '计划', body: EcoMarkdown(text: plan.plan)),
+              _ApprovalField(
+                label: context.l10n.approvalPlan,
+                body: EcoMarkdown(text: plan.plan),
+              ),
             ],
           ),
         ),
@@ -82,13 +92,11 @@ Future<void> showBashApprovalSheet({
     description: request.description,
     reason: request.reason,
     filesystemTool: request.filesystemTool,
+    l10n: context.l10n,
   );
   final detail = request.filesystemTool != null
       ? '${request.filesystemTool}: ${request.filesystemPath}'
       : request.command;
-  final panelLabel =
-      request.filesystemTool != null ? '工具读取确认' : 'Bash 执行确认';
-
   return showEcoModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -105,7 +113,7 @@ Future<void> showBashApprovalSheet({
                   await onResolve('denied');
                   if (context.mounted) Navigator.pop(context);
                 },
-                child: const Text('拒绝'),
+                child: Text(context.l10n.approvalReject),
               ),
             ),
             const SizedBox(width: 10),
@@ -115,7 +123,7 @@ Future<void> showBashApprovalSheet({
                   await onResolve('approved');
                   if (context.mounted) Navigator.pop(context);
                 },
-                child: const Text('批准'),
+                child: Text(context.l10n.approvalApprove),
               ),
             ),
           ],
@@ -125,11 +133,13 @@ Future<void> showBashApprovalSheet({
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              panelLabel,
+              request.filesystemTool != null
+                  ? context.l10n.approvalToolReadTitle
+                  : context.l10n.approvalBashTitle,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: ecoColors(context).textMuted,
-                    letterSpacing: 0.2,
-                  ),
+                color: ecoColors(context).textMuted,
+                letterSpacing: 0.2,
+              ),
             ),
             const SizedBox(height: 8),
             Row(
@@ -141,9 +151,9 @@ Future<void> showBashApprovalSheet({
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          height: 1.3,
-                        ),
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
                   ),
                 ),
                 if (request.filesystemTool == null) ...[
@@ -191,19 +201,18 @@ class _ApprovalField extends StatelessWidget {
         Text(
           label.toUpperCase(),
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: eco.textMuted,
-                letterSpacing: 0.2,
-              ),
+            color: eco.textMuted,
+            letterSpacing: 0.2,
+          ),
         ),
         const SizedBox(height: 8),
         EcoGroupedSurface(
           margin: EdgeInsets.zero,
           padding: const EdgeInsets.all(14),
           child: DefaultTextStyle.merge(
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  height: 1.4,
-                  letterSpacing: -0.15,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(height: 1.4, letterSpacing: -0.15),
             child: body,
           ),
         ),
@@ -213,10 +222,7 @@ class _ApprovalField extends StatelessWidget {
 }
 
 class _BashRiskBadge extends StatelessWidget {
-  const _BashRiskBadge({
-    required this.level,
-    required this.score,
-  });
+  const _BashRiskBadge({required this.level, required this.score});
 
   final String level;
   final int score;
@@ -231,10 +237,10 @@ class _BashRiskBadge extends StatelessWidget {
       _ => colors.severityDefault,
     };
     final label = switch (level) {
-      'critical' => '严重',
-      'high' => '高',
-      'low' => '低',
-      _ => '中',
+      'critical' => context.l10n.approvalSeverityCritical,
+      'high' => context.l10n.approvalSeverityHigh,
+      'low' => context.l10n.approvalSeverityLow,
+      _ => context.l10n.approvalSeverityMedium,
     };
 
     return DecoratedBox(
@@ -250,18 +256,18 @@ class _BashRiskBadge extends StatelessWidget {
             Text(
               label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(width: 4),
             Text(
               '$score',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    fontWeight: FontWeight.w700,
-                  ),
+                color: color,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ),
@@ -314,17 +320,17 @@ Future<void> showClarificationSheet({
                         color: ecoColors(context).onAccent,
                       ),
                     )
-                  : const Text('提交'),
+                  : Text(context.l10n.commonSubmit),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '需要澄清',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  context.l10n.approvalNeedsClarification,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
                 for (var i = 0; i < request.questions.length; i++) ...[
@@ -429,9 +435,9 @@ class _ClarificationQuestionCard extends StatelessWidget {
           if (question.header != null) ...[
             Text(
               question.header!,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: eco.textMuted,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
             ),
             const SizedBox(height: 6),
           ],

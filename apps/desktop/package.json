@@ -34,8 +34,10 @@
     "fix-path": "^5.0.0",
     "ghostty-web": "^0.4.0",
     "gitdiff-parser": "^0.3.1",
+    "i18next": "^25.3.2",
     "node-pty": "^1.0.0",
     "react-diff-view": "^3.3.3",
+    "react-i18next": "^15.6.1",
     "zod": "^4.4.3"
   },
   "optionalDependencies": {

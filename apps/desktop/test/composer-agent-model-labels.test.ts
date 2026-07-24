@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildComposerAgentModelLabels } from "../src/renderer/composer-agent-model-labels";
+import { i18n } from "../src/renderer/i18n";
 import type { OrchestrationProfile, ToolPolicy } from "../src/shared/ipc";
 
 const tools: ToolPolicy = { allowed: [], disallowed: [] };
@@ -35,7 +36,8 @@ const profile: OrchestrationProfile = {
   source: "user",
 };
 
-test("buildComposerAgentModelLabels keeps legacy coding labels", () => {
+test("buildComposerAgentModelLabels localizes legacy coding labels", async () => {
+  await i18n.changeLanguage("en-US");
   const labels = buildComposerAgentModelLabels({
     routes: [
       { role: "planner", providerId: "p1", modelId: "main-model" },
@@ -45,19 +47,20 @@ test("buildComposerAgentModelLabels keeps legacy coding labels", () => {
 
   expect(labels[0]).toMatchObject({
     role: "planner",
-    displayName: "主代理",
+    displayName: "Main agent",
     main: true,
     modelId: "main-model",
   });
   expect(labels.find((label) => label.role === "coder")).toMatchObject({
-    displayName: "编码",
+    displayName: "Coder",
     subagentRole: "coder",
     modelId: "coder-model",
   });
   expect(labels.find((label) => label.role === "coder")).not.toHaveProperty("required");
 });
 
-test("buildComposerAgentModelLabels renders dynamic Agent Profile labels", () => {
+test("buildComposerAgentModelLabels renders dynamic Agent Profile labels", async () => {
+  await i18n.changeLanguage("en-US");
   const labels = buildComposerAgentModelLabels({
     profile,
     routes: [
@@ -72,7 +75,7 @@ test("buildComposerAgentModelLabels renders dynamic Agent Profile labels", () =>
       role: "planner",
       displayName: "Research Captain",
       modelId: "main-model",
-      title: "主代理 · main-model",
+      title: "Research Captain · main-model",
       main: true,
     },
     {

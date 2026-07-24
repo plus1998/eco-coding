@@ -5,7 +5,10 @@ List<String> buildRunCommand(
 ) {
   final trimmedArgs = args?.trim();
   final tokens = trimmedArgs != null && trimmedArgs.isNotEmpty
-      ? trimmedArgs.split(RegExp(r'\s+')).where((token) => token.isNotEmpty).toList()
+      ? trimmedArgs
+            .split(RegExp(r'\s+'))
+            .where((token) => token.isNotEmpty)
+            .toList()
       : <String>[];
   switch (packageManager) {
     case 'bun':
@@ -36,10 +39,6 @@ List<String> buildRunCommand(
   }
 }
 
-String formatRunCommand(
-  String packageManager,
-  String script,
-  String? args,
-) {
+String formatRunCommand(String packageManager, String script, String? args) {
   return buildRunCommand(packageManager, script, args).join(' ');
 }

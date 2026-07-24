@@ -1,6 +1,8 @@
+import { i18n } from "./i18n";
+
 export function getRuntimePlatformLabel(): string {
   if (typeof navigator === "undefined") {
-    return "当前系统";
+    return i18n.t("settings.theme.currentSystem");
   }
 
   const platform = navigator.platform ?? "";
@@ -17,5 +19,5 @@ export function getRuntimePlatformLabel(): string {
   }
 
   const trimmed = platform.trim();
-  return trimmed.length > 0 ? trimmed : "当前系统";
+  return trimmed.length > 0 ? trimmed : i18n.t("settings.theme.currentSystem");
 }

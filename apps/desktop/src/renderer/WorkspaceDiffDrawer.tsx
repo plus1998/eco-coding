@@ -1,7 +1,9 @@
 import { FileCode2, RotateCcw, X } from "lucide-react";
 import { Component, lazy, type ReactNode, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { WorkspaceDiffResult } from "../shared/ipc";
+import { i18n } from "./i18n";
 import { clearVitePreloadRecovery } from "./vite-preload-recovery";
 
 const GitDiffViewer = lazy(() =>
@@ -31,9 +33,9 @@ class DiffViewerErrorBoundary extends Component<
     }
     return (
       <div className="workspace-diff-viewer-error" role="alert">
-        <span>代码审查器加载失败</span>
+        <span>{i18n.t("workspace.diff.viewerFailed")}</span>
         <button type="button" onClick={() => window.location.reload()}>
-          重新加载
+          {i18n.t("workspace.diff.reload")}
         </button>
       </div>
     );
@@ -42,7 +44,11 @@ class DiffViewerErrorBoundary extends Component<
 
 function DiffViewerLoading() {
   return (
-    <div className="workspace-diff-code-loading" role="status" aria-label="正在加载代码审查器">
+    <div
+      className="workspace-diff-code-loading"
+      role="status"
+      aria-label={i18n.t("workspace.diff.loadingViewer")}
+    >
       <span />
       <span />
       <span />
@@ -92,6 +98,7 @@ export function WorkspaceDiffPanel({
   onDiscardAll,
   onClose,
 }: WorkspaceDiffPanelProps) {
+  const { t } = useTranslation();
   const files = diff?.files ?? [];
   const activePath = selectedPath ?? files[0]?.path;
 
@@ -100,12 +107,14 @@ export function WorkspaceDiffPanel({
       {showHeader ? (
         <header className="workspace-diff-drawer-header">
           <div className="workspace-diff-drawer-header-main">
-            <h3 className="workspace-diff-drawer-title">变更</h3>
+            <h3 className="workspace-diff-drawer-title">{t("workspace.diff.changes")}</h3>
             {diff ? (
-              <span className="workspace-diff-drawer-meta" title="变更行数">
+              <span className="workspace-diff-drawer-meta" title={t("git.commit.changedLines")}>
                 <span className="diff-stat-add">+{formatDiffStat(diff.totalAdditions)}</span>
                 <span className="diff-stat-del">-{formatDiffStat(diff.totalDeletions)}</span>
-                <span className="workspace-diff-drawer-file-count">{diff.fileCount} 个文件</span>
+                <span className="workspace-diff-drawer-file-count">
+                  {t("workspace.diff.fileCount", { count: diff.fileCount })}
+                </span>
               </span>
             ) : null}
           </div>
@@ -117,7 +126,7 @@ export function WorkspaceDiffPanel({
                 disabled={discardBusy || files.length === 0}
                 onClick={() => void onDiscardAll()}
               >
-                全部撤掉
+                {t("workspace.diff.discardAll")}
               </button>
             ) : null}
             {onClose ? (
@@ -125,7 +134,7 @@ export function WorkspaceDiffPanel({
                 type="button"
                 className="workspace-diff-drawer-close"
                 onClick={onClose}
-                aria-label="关闭"
+                aria-label={t("common.close")}
               >
                 <X size={16} aria-hidden />
               </button>
@@ -135,7 +144,7 @@ export function WorkspaceDiffPanel({
       ) : null}
 
       {loading ? (
-        <div className="workspace-diff-drawer-state">加载变更中…</div>
+        <div className="workspace-diff-drawer-state">{t("workspace.diff.loading")}</div>
       ) : error ? (
         <div className="workspace-diff-drawer-state workspace-diff-drawer-error" role="alert">
           {error}
@@ -143,9 +152,11 @@ export function WorkspaceDiffPanel({
       ) : (
         <div className="workspace-diff-drawer-body">
           <div className="workspace-diff-drawer-files">
-            <div className="workspace-diff-drawer-files-header">文件</div>
+            <div className="workspace-diff-drawer-files-header">{t("workspace.diff.files")}</div>
             {files.length === 0 ? (
-              <p className="workspace-diff-drawer-files-empty">工作区没有未提交变更</p>
+              <p className="workspace-diff-drawer-files-empty">
+                {t("workspace.diff.emptyWorkspace")}
+              </p>
             ) : (
               <ul className="workspace-diff-drawer-file-list">
                 {files.map((file) => {
@@ -174,8 +185,8 @@ export function WorkspaceDiffPanel({
                         <button
                           type="button"
                           className="workspace-diff-drawer-file-discard"
-                          aria-label={`撤掉 ${file.path}`}
-                          title="撤掉此文件"
+                          aria-label={t("workspace.diff.discardFile", { path: file.path })}
+                          title={t("workspace.diff.discardFileTitle")}
                           disabled={discardBusy}
                           onClick={() => void onDiscardPath(file.path)}
                         >
@@ -191,7 +202,7 @@ export function WorkspaceDiffPanel({
           <div className="workspace-diff-drawer-preview">
             {diff?.patchTruncated ? (
               <p className="workspace-diff-drawer-truncated" role="status">
-                diff 内容过长，已截断显示
+                {t("workspace.diff.truncated")}
               </p>
             ) : null}
             {activePath && diff?.patch ? (
@@ -201,7 +212,7 @@ export function WorkspaceDiffPanel({
                 </Suspense>
               </DiffViewerErrorBoundary>
             ) : (
-              <p className="workspace-diff-empty">选择文件查看 diff</p>
+              <p className="workspace-diff-empty">{t("workspace.diff.selectFile")}</p>
             )}
           </div>
         </div>
@@ -222,6 +233,7 @@ export function WorkspaceDiffDrawer({
   onDiscardAll,
   onClose,
 }: WorkspaceDiffDrawerProps) {
+  const { t } = useTranslation();
   useEffect(() => {
     if (!open) {
       return;
@@ -244,10 +256,10 @@ export function WorkspaceDiffDrawer({
       <button
         type="button"
         className="workspace-diff-drawer-backdrop"
-        aria-label="关闭变更面板"
+        aria-label={t("workspace.diff.closePanel")}
         onClick={onClose}
       />
-      <aside className="workspace-diff-drawer" aria-label="工作区变更">
+      <aside className="workspace-diff-drawer" aria-label={t("workspace.diff.workspaceChanges")}>
         <WorkspaceDiffPanel
           loading={loading}
           discardBusy={discardBusy}

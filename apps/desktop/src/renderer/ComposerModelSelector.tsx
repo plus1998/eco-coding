@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type {
   CandidateModelView,
   MainAgentModelOverride,
@@ -27,13 +28,13 @@ import { composerFloatingStyleForAnchor } from "./composer-floating";
 export { formatComposerModelName, formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
 
 const THINKING_EFFORT_OPTIONS = [
-  { value: "off", label: "关闭" },
-  { value: "low", label: "低" },
-  { value: "medium", label: "中" },
-  { value: "high", label: "高" },
-  { value: "xhigh", label: "极高" },
-  { value: "max", label: "最大" },
-] as const satisfies readonly { value: ThinkingEffort; label: string }[];
+  { value: "off" },
+  { value: "low" },
+  { value: "medium" },
+  { value: "high" },
+  { value: "xhigh" },
+  { value: "max" },
+] as const satisfies readonly { value: ThinkingEffort }[];
 
 const ROOT_MODEL_INDEX = 0;
 const ROOT_EFFORT_INDEX = 1;
@@ -277,6 +278,7 @@ export function ComposerModelSelector({
   onOpen,
   onChange,
 }: ComposerModelSelectorProps) {
+  const { t } = useTranslation();
   const rootMenuId = useId();
   const modelMenuId = useId();
   const effortMenuId = useId();
@@ -724,7 +726,7 @@ export function ComposerModelSelector({
       ref={submenuRef}
       className={`composer-codex-popover composer-model-submenu${submenuLayout.overlay ? " is-overlay" : ""}`}
       role="menu"
-      aria-label={activeMenu === "models" ? "模型" : "推理强度"}
+      aria-label={activeMenu === "models" ? t("composer.model.model") : t("composer.model.effort")}
       style={submenuLayout.style}
     >
       <div className="composer-model-submenu-header">
@@ -732,7 +734,7 @@ export function ComposerModelSelector({
           ref={submenuBackRef}
           type="button"
           className="composer-model-submenu-back"
-          aria-label="返回"
+          aria-label={t("settings.back")}
           onFocus={() => setFocusSurface("submenu")}
           onClick={() => {
             const rootIndex = activeMenu === "models" ? ROOT_MODEL_INDEX : ROOT_EFFORT_INDEX;
@@ -742,7 +744,9 @@ export function ComposerModelSelector({
         >
           <ChevronLeft size={14} aria-hidden />
         </button>
-        <span>{activeMenu === "models" ? "模型" : "推理强度"}</span>
+        <span>
+          {activeMenu === "models" ? t("composer.model.model") : t("composer.model.effort")}
+        </span>
       </div>
 
       {activeMenu === "models" ? (
@@ -782,14 +786,14 @@ export function ComposerModelSelector({
           </ul>
           {loading ? (
             <p className="composer-model-menu-status" role="status">
-              正在加载模型…
+              {t("composer.model.loading")}
             </p>
           ) : options.length === 0 ? (
-            <p className="composer-model-menu-status">未配置候选模型</p>
+            <p className="composer-model-menu-status">{t("composer.model.noCandidates")}</p>
           ) : null}
           {currentOverrideMissing ? (
             <p className="composer-model-menu-status is-warning" role="status">
-              当前模型不在候选列表中
+              {t("composer.model.overrideMissing")}
             </p>
           ) : null}
           {error ? (
@@ -825,14 +829,16 @@ export function ComposerModelSelector({
                     onKeyDown={(event) => handleEffortKeyDown(event, index, option.value, unavailable)}
                     onClick={() => commitEffort(option.value)}
                   >
-                    <span>{option.label}</span>
+                    <span>{formatComposerThinkingEffortLabel(option.value)}</span>
                     {selected ? <Check size={15} strokeWidth={2} aria-hidden /> : null}
                   </button>
                 </li>
               );
             })}
           </ul>
-          {reasoningUnavailable ? <p className="composer-model-menu-status">此模型仅支持关闭</p> : null}
+          {reasoningUnavailable ? (
+            <p className="composer-model-menu-status">{t("composer.model.reasoningUnavailable")}</p>
+          ) : null}
         </>
       )}
     </div>
@@ -847,7 +853,7 @@ export function ComposerModelSelector({
           ref={rootPanelRef}
           className="composer-codex-popover composer-model-root-menu"
           role="menu"
-          aria-label="主代理模型设置"
+          aria-label={t("composer.model.settings")}
           style={rootPanelStyle}
         >
           <button
@@ -871,7 +877,7 @@ export function ComposerModelSelector({
             onKeyDown={(event) => handleRootKeyDown(event, ROOT_MODEL_INDEX)}
             onClick={() => openSubmenu("models", false)}
           >
-            <span className="composer-model-root-label">模型</span>
+            <span className="composer-model-root-label">{t("composer.model.model")}</span>
             <span className="composer-model-root-value" title={currentModelName}>
               {currentModelName}
             </span>
@@ -899,7 +905,7 @@ export function ComposerModelSelector({
             onKeyDown={(event) => handleRootKeyDown(event, ROOT_EFFORT_INDEX)}
             onClick={() => openSubmenu("efforts", false)}
           >
-            <span className="composer-model-root-label">推理强度</span>
+            <span className="composer-model-root-label">{t("composer.model.effort")}</span>
             <span className="composer-model-root-value">{currentEffortLabel}</span>
             <ChevronRight size={15} aria-hidden />
           </button>
@@ -925,7 +931,7 @@ export function ComposerModelSelector({
                 onClick={clearOverride}
               >
                 <RotateCcw size={14} aria-hidden />
-                <span className="composer-model-root-label">恢复模板默认</span>
+                <span className="composer-model-root-label">{t("composer.model.restoreDefault")}</span>
               </button>
             </>
           ) : null}
@@ -944,12 +950,16 @@ export function ComposerModelSelector({
           .filter(Boolean)
           .join(" ")}
         disabled={interactionDisabled}
-        aria-label={`主代理模型：${triggerLabel}`}
+        aria-label={t("composer.model.triggerAria", { label: triggerLabel })}
         aria-haspopup="menu"
         aria-controls={rootMenuId}
         aria-expanded={open}
         aria-busy={loading || undefined}
-        title={value ? `${triggerLabel} · 临时覆盖` : `${triggerLabel} · 模板默认`}
+        title={
+          value
+            ? t("composer.model.temporaryOverride", { label: triggerLabel })
+            : t("composer.model.templateDefault", { label: triggerLabel })
+        }
         onKeyDown={(event) => {
           if (!open && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
             event.preventDefault();

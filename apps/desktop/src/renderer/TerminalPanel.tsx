@@ -1,5 +1,6 @@
 import { Clock3, Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { GhosttyTerminal, type TerminalDimensions } from "./GhosttyTerminal";
 import {
   clampTerminalHeight,
@@ -50,6 +51,7 @@ export function TerminalPanel({
   injectedSessionId,
   onInjectedSessionConsumed,
 }: TerminalPanelProps) {
+  const { t } = useTranslation();
   const dragStateRef = useRef<{ startY: number; startHeight: number } | undefined>(undefined);
   const [sessionsByTabId, setSessionsByTabId] = useState<Record<string, string>>(() =>
     state.open
@@ -360,20 +362,20 @@ export function TerminalPanel({
       id={isCurrentProject ? "terminal-panel" : undefined}
       className={["terminal-panel", isOpen ? "is-open" : ""].filter(Boolean).join(" ")}
       style={{ height: isOpen ? state.height : 0 }}
-      aria-label="终端"
+      aria-label={t("terminal.title")}
       aria-hidden={!isOpen}
     >
       <div
         className="terminal-panel-resize-handle"
         role="separator"
         aria-orientation="horizontal"
-        aria-label="调整终端高度"
+        aria-label={t("terminal.resize")}
         onPointerDown={handleResizePointerDown}
         onPointerMove={handleResizePointerMove}
         onPointerUp={handleResizePointerUp}
         onPointerCancel={handleResizePointerUp}
       />
-      <div className="terminal-panel-tabs" role="tablist" aria-label="终端标签">
+      <div className="terminal-panel-tabs" role="tablist" aria-label={t("terminal.tabs")}>
         {state.tabs.map((tab) => {
           const isActive = tab.id === state.activeTabId;
           return (
@@ -395,7 +397,7 @@ export function TerminalPanel({
               <button
                 type="button"
                 className="terminal-panel-tab-close"
-                aria-label={`关闭 ${tab.label}`}
+                aria-label={t("terminal.closeTab", { label: tab.label })}
                 onClick={() => handleCloseTab(tab)}
               >
                 <X size={10} strokeWidth={2.5} aria-hidden />
@@ -406,7 +408,7 @@ export function TerminalPanel({
         <button
           type="button"
           className="terminal-panel-tab-add"
-          aria-label="新建终端标签"
+          aria-label={t("terminal.newTab")}
           onClick={handleAddTab}
         >
           <Plus size={14} aria-hidden />
@@ -432,7 +434,7 @@ export function TerminalPanel({
               {busy ? (
                 <div className="terminal-panel-loading" aria-live="polite">
                   <Loader2 size={16} className="terminal-panel-spinner" aria-hidden />
-                  <span>正在启动 shell…</span>
+                  <span>{t("terminal.starting")}</span>
                 </div>
               ) : null}
               {error ? (
@@ -465,13 +467,13 @@ export function TerminalPanel({
               {autoClose ? (
                 <div className="terminal-panel-auto-close" role="status" aria-live="polite">
                   <Clock3 size={13} strokeWidth={1.8} aria-hidden />
-                  <span>{autoClose.remainingSeconds} 秒后自动关闭</span>
+                  <span>{t("terminal.autoClose", { count: autoClose.remainingSeconds })}</span>
                   <button
                     type="button"
                     className="terminal-panel-auto-close-cancel"
                     onClick={() => cancelAutoClose(tab.id)}
                   >
-                    取消
+                    {t("common.cancel")}
                   </button>
                 </div>
               ) : null}

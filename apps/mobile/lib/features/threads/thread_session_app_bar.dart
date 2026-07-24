@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../../core/locale/app_localizations_ext.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -19,12 +21,15 @@ import 'thread_session_menu.dart';
 const threadSessionToolbarHeight = 52.0;
 const sessionTopFrostBlurSigma = 20.0;
 const sessionTopFrostTintOpacity = 0.52;
+
 /// Pull the first content row slightly under the frosted header fade.
 const sessionContentTopOverlap = 46.0;
 
 double _sessionTopFrostTintAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  return isDark ? sessionTopFrostTintOpacity : sessionTopFrostTintOpacity + 0.04;
+  return isDark
+      ? sessionTopFrostTintOpacity
+      : sessionTopFrostTintOpacity + 0.04;
 }
 
 double sessionContentTopPadding(BuildContext context) {
@@ -125,7 +130,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
                 children: [
                   SessionToolbarIconButton(
                     icon: EcoIcons.chevronLeft,
-                    tooltip: '返回',
+                    tooltip: context.l10n.commonBack,
                     onPressed: () => context.pop(),
                   ),
                   const SizedBox(width: 12),
@@ -140,7 +145,8 @@ PreferredSizeWidget buildThreadSessionAppBar(
                             title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.w600,
                                   height: 1.15,
                                 ),
@@ -153,15 +159,22 @@ PreferredSizeWidget buildThreadSessionAppBar(
                                       Clipboard.setData(
                                         ClipboardData(text: workspacePath),
                                       );
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('工作目录已复制')),
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            context.l10n.threadWorkspaceCopied,
+                                          ),
+                                        ),
                                       );
                                     },
                               child: Text(
                                 subtitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
                                       color: ecoColors(context).textMuted,
                                       height: 1.2,
                                     ),
@@ -174,7 +187,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
                   if (showNewThreadAction) ...[
                     SessionToolbarIconButton(
                       icon: EcoIcons.newThread,
-                      tooltip: '新建会话',
+                      tooltip: context.l10n.threadNew,
                       onPressed: workspacePath.isEmpty
                           ? null
                           : () async {

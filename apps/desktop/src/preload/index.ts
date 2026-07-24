@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { AppLocalePreference } from "../shared/locale";
 import {
   type AgentTemplate,
   type AgentTemplateExportRequest,
@@ -163,6 +164,11 @@ const api = {
     themeSource: "dark" | "light" | "system",
   ): Promise<{ themeSource: "dark" | "light" | "system" }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetThemeSource, themeSource);
+  },
+  setLocalePreference(
+    localePreference: AppLocalePreference,
+  ): Promise<{ localePreference: AppLocalePreference }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appSetLocale, localePreference);
   },
   showThreadCompletionNotification(threadId: string): Promise<ThreadCompletionNotificationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadCompletionNotification, threadId);

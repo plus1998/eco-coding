@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/theme/eco_theme.dart';
 
 /// Typeless-inspired floating voice bar shown while system speech recognition runs.
@@ -34,13 +35,10 @@ class _VoiceDictationOverlayState extends State<VoiceDictationOverlay>
       duration: const Duration(milliseconds: 2200),
     )..repeat();
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.18),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _enterController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.18), end: Offset.zero).animate(
+          CurvedAnimation(parent: _enterController, curve: Curves.easeOutCubic),
+        );
     _fadeAnimation = CurvedAnimation(
       parent: _enterController,
       curve: Curves.easeOut,
@@ -79,7 +77,12 @@ class _VoiceDictationOverlayState extends State<VoiceDictationOverlay>
             child: SlideTransition(
               position: _slideAnimation,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, safeBottom + bottomInset + 18),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  0,
+                  20,
+                  safeBottom + bottomInset + 18,
+                ),
                 child: _VoiceDictationBar(
                   pulse: _pulseController,
                   onStop: _handleStop,
@@ -94,10 +97,7 @@ class _VoiceDictationOverlayState extends State<VoiceDictationOverlay>
 }
 
 class _VoiceDictationBar extends StatelessWidget {
-  const _VoiceDictationBar({
-    required this.pulse,
-    required this.onStop,
-  });
+  const _VoiceDictationBar({required this.pulse, required this.onStop});
 
   final Animation<double> pulse;
   final VoidCallback onStop;
@@ -114,9 +114,7 @@ class _VoiceDictationBar extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
             color: eco.composerContextBg.withValues(alpha: 0.88),
-            border: Border.all(
-              color: eco.accent.withValues(alpha: 0.22),
-            ),
+            border: Border.all(color: eco.accent.withValues(alpha: 0.22)),
             boxShadow: [
               BoxShadow(
                 color: eco.accent.withValues(alpha: 0.16),
@@ -148,20 +146,20 @@ class _VoiceDictationBar extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '正在聆听',
+                  context.l10n.voiceListening,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: eco.textHeading,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ),
+                    color: eco.textHeading,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '说完后轻触任意处停止',
+                  context.l10n.voiceTapToStop,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: eco.textMuted,
-                        letterSpacing: 0.15,
-                      ),
+                    color: eco.textMuted,
+                    letterSpacing: 0.15,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -169,11 +167,14 @@ class _VoiceDictationBar extends StatelessWidget {
                   style: TextButton.styleFrom(
                     foregroundColor: eco.accentText,
                     backgroundColor: eco.accentSoft.withValues(alpha: 0.55),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 6,
+                    ),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('停止'),
+                  child: Text(context.l10n.voiceStop),
                 ),
               ],
             ),
@@ -267,10 +268,7 @@ class _VoiceListeningOrb extends StatelessWidget {
 }
 
 class _VoiceWaveform extends StatelessWidget {
-  const _VoiceWaveform({
-    required this.pulse,
-    required this.mirror,
-  });
+  const _VoiceWaveform({required this.pulse, required this.mirror});
 
   final Animation<double> pulse;
   final bool mirror;

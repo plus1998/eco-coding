@@ -410,10 +410,14 @@ class EcoColors extends ThemeExtension<EcoColors> {
       composerPillText: blend(composerPillText, other.composerPillText),
       composerSendBg: blend(composerSendBg, other.composerSendBg),
       composerSendText: blend(composerSendText, other.composerSendText),
-      composerSendDisabledBg:
-          blend(composerSendDisabledBg, other.composerSendDisabledBg),
-      composerSendDisabledText:
-          blend(composerSendDisabledText, other.composerSendDisabledText),
+      composerSendDisabledBg: blend(
+        composerSendDisabledBg,
+        other.composerSendDisabledBg,
+      ),
+      composerSendDisabledText: blend(
+        composerSendDisabledText,
+        other.composerSendDisabledText,
+      ),
       online: blend(online, other.online),
       offline: blend(offline, other.offline),
       assistantBubble: blend(assistantBubble, other.assistantBubble),
@@ -581,8 +585,9 @@ ThemeData _buildEcoTheme(EcoColors colors) {
       scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
-      systemOverlayStyle:
-          isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      systemOverlayStyle: isDark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
       titleTextStyle: TextStyle(
         color: colors.textHeading,
         fontSize: 17,
@@ -622,9 +627,7 @@ ThemeData _buildEcoTheme(EcoColors colors) {
       color: colors.cardSurface,
       elevation: 0,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -733,7 +736,9 @@ ThemeData _buildEcoTheme(EcoColors colors) {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: isDark ? const Color(0xFF2C2C2E) : const Color(0xFF3A3A3C),
+      backgroundColor: isDark
+          ? const Color(0xFF2C2C2E)
+          : const Color(0xFF3A3A3C),
       contentTextStyle: const TextStyle(
         color: Color(0xFFFFFFFF),
         fontSize: 15,

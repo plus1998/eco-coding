@@ -60,6 +60,26 @@ test("builds plan approval notification from the pending plan", () => {
   });
 });
 
+test("localizes approval notification framing while preserving raw detail", () => {
+  const detail = "Run git status && printf raw-output";
+  const content = buildThreadApprovalNotificationContent(
+    { title: "Review command" },
+    "bash",
+    {
+      threadId: "thread-1",
+      toolUseId: "tool-1",
+      command: detail,
+      description: "",
+      reason: "",
+      riskLevel: "low",
+      riskScore: 0,
+    },
+    "en-US",
+  );
+
+  expect(content?.body).toBe(`Waiting for action approval: ${detail}`);
+});
+
 test("builds operation approval notification from Bash and filesystem requests", () => {
   const bashBase = {
     toolUseId: "bash-1",

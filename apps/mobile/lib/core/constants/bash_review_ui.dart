@@ -1,3 +1,5 @@
+import '../../l10n/generated/app_localizations.dart';
+
 class BashReviewUiOption {
   const BashReviewUiOption({
     required this.value,
@@ -10,27 +12,27 @@ class BashReviewUiOption {
   final String description;
 }
 
-const bashReviewUiOptions = [
+List<BashReviewUiOption> bashReviewUiOptions(AppLocalizations l10n) => [
   BashReviewUiOption(
     value: 'always',
-    title: '每次确认',
-    description: '执行命令或访问工作区外路径前都询问',
+    title: l10n.bashReviewAlways,
+    description: l10n.bashReviewAlwaysDescription,
   ),
   BashReviewUiOption(
     value: 'auto',
-    title: '风险时确认',
-    description: '低风险自动执行；高风险命令或外路径访问仍询问',
+    title: l10n.bashReviewAuto,
+    description: l10n.bashReviewAutoDescription,
   ),
   BashReviewUiOption(
     value: 'allow_all',
-    title: '自动执行',
-    description: '跳过确认（仍受当前模式、Profile 与安全策略限制）',
+    title: l10n.bashReviewAllowAll,
+    description: l10n.bashReviewAllowAllDescription,
   ),
 ];
 
-BashReviewUiOption bashReviewUi(String mode) {
-  return bashReviewUiOptions.firstWhere(
+BashReviewUiOption bashReviewUi(String mode, AppLocalizations l10n) {
+  return bashReviewUiOptions(l10n).firstWhere(
     (entry) => entry.value == mode,
-    orElse: () => bashReviewUiOptions.first,
+    orElse: () => bashReviewUiOptions(l10n).first,
   );
 }

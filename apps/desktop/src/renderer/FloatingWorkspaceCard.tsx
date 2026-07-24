@@ -1,5 +1,6 @@
 import { ChevronDown, Minus } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
 
 export interface FloatingWorkspaceCardProps {
@@ -23,6 +24,7 @@ export function FloatingWorkspaceCard({
   headerAction,
   maxBodyHeight = 360,
 }: FloatingWorkspaceCardProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(() => readCardExpanded(id, defaultExpanded));
 
   const toggleExpanded = useCallback(() => {
@@ -43,7 +45,7 @@ export function FloatingWorkspaceCard({
       <button
         type="button"
         className={["floating-workspace-card", "is-collapsed", className].filter(Boolean).join(" ")}
-        aria-label={`展开${title}`}
+        aria-label={t("workspaceCards.expandNamed", { title })}
         aria-expanded={false}
         onClick={toggleExpanded}
       >
@@ -66,8 +68,8 @@ export function FloatingWorkspaceCard({
             type="button"
             className="floating-workspace-card-collapse"
             onClick={collapse}
-            aria-label={`收起${title}`}
-            title="收起"
+            aria-label={t("workspaceCards.collapseNamed", { title })}
+            title={t("common.collapse")}
           >
             <Minus size={14} aria-hidden />
           </button>

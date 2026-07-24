@@ -4,7 +4,10 @@ import '../../core/theme/eco_theme.dart';
 
 const composerStackHorizontalPadding = 12.0;
 const composerStackItemGap = 8.0;
-const composerStackRowPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 8);
+const composerStackRowPadding = EdgeInsets.symmetric(
+  horizontal: 12,
+  vertical: 8,
+);
 const composerStackOuterPadding = EdgeInsets.fromLTRB(
   composerStackHorizontalPadding,
   0,
@@ -35,9 +38,7 @@ class ComposerStackCard extends StatelessWidget {
         ? const Color(0x123C3C43) // ~7%
         : eco.composerPillBorder.withValues(alpha: 0.35);
     final shape = stadium
-        ? StadiumBorder(
-            side: BorderSide(color: borderColor, width: 0.5),
-          )
+        ? StadiumBorder(side: BorderSide(color: borderColor, width: 0.5))
         : RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: borderColor, width: 0.5),

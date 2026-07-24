@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolveGitRemoteSyncAction } from "../src/renderer/WorkspaceGitSection";
 import { getWorkspaceGitCommitEntryLabel } from "../src/renderer/workspace-git-action-store";
+import { i18n } from "../src/renderer/i18n";
 
 test("remote sync fetches until the local branch is behind", () => {
   expect(resolveGitRemoteSyncAction(0)).toBe("fetch");
@@ -9,9 +10,10 @@ test("remote sync fetches until the local branch is behind", () => {
   expect(resolveGitRemoteSyncAction(3)).toBe("pull");
 });
 
-test("work panel commit entry labels stay project-progress oriented", () => {
-  expect(getWorkspaceGitCommitEntryLabel(undefined)).toBe("提交或推送");
-  expect(getWorkspaceGitCommitEntryLabel("generating")).toBe("正在生成提交");
-  expect(getWorkspaceGitCommitEntryLabel("committing")).toBe("正在提交");
-  expect(getWorkspaceGitCommitEntryLabel("pushing")).toBe("正在推送");
+test("work panel commit entry labels stay project-progress oriented", async () => {
+  await i18n.changeLanguage("en-US");
+  expect(getWorkspaceGitCommitEntryLabel(undefined)).toBe("Commit or push");
+  expect(getWorkspaceGitCommitEntryLabel("generating")).toBe("Generating commit");
+  expect(getWorkspaceGitCommitEntryLabel("committing")).toBe("Committing");
+  expect(getWorkspaceGitCommitEntryLabel("pushing")).toBe("Pushing");
 });

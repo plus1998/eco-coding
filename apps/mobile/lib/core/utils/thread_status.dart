@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/thread_models.dart';
 import '../theme/eco_theme.dart';
 
+// Historical Desktop event prefix used to extract the raw failure detail.
 const planExecutionFailurePrefix = '执行失败，已回退更改。';
 
 bool isThreadWaitingForApproval(ThreadSummary thread) {

@@ -1,5 +1,7 @@
-import { Laptop, Minus, Moon, Plus, Sun } from "lucide-react";
+import { Languages, Laptop, Minus, Moon, Plus, Sun } from "lucide-react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import type { AppLocalePreference } from "../shared/locale";
 import { getRuntimePlatformLabel } from "./runtime-platform";
 import type { AppTheme } from "./theme";
 import {
@@ -13,6 +15,8 @@ interface GeneralSettingsPanelProps {
   onThemeChange: (theme: AppTheme) => void;
   typography: TypographyPreferences;
   onTypographyChange: (preferences: TypographyPreferences) => void;
+  localePreference: AppLocalePreference;
+  onLocalePreferenceChange: (preference: AppLocalePreference) => void;
 }
 
 interface FontSizeControlProps {
@@ -25,6 +29,7 @@ interface FontSizeControlProps {
 }
 
 function FontSizeControl({ label, description, value, min, max, onChange }: FontSizeControlProps) {
+  const { t } = useTranslation();
   return (
     <li className="typography-settings-row">
       <span className="settings-row-main">
@@ -35,8 +40,8 @@ function FontSizeControl({ label, description, value, min, max, onChange }: Font
         <button
           type="button"
           className="font-size-stepper-button"
-          aria-label={`减小${label}`}
-          title={`减小${label}`}
+          aria-label={t("settings.decrease", { label })}
+          title={t("settings.decrease", { label })}
           disabled={value <= min}
           onClick={() => onChange(value - 1)}
         >
@@ -49,8 +54,8 @@ function FontSizeControl({ label, description, value, min, max, onChange }: Font
         <button
           type="button"
           className="font-size-stepper-button"
-          aria-label={`增大${label}`}
-          title={`增大${label}`}
+          aria-label={t("settings.increase", { label })}
+          title={t("settings.increase", { label })}
           disabled={value >= max}
           onClick={() => onChange(value + 1)}
         >
@@ -66,46 +71,54 @@ export function GeneralSettingsPanel({
   onThemeChange,
   typography,
   onTypographyChange,
+  localePreference,
+  onLocalePreferenceChange,
 }: GeneralSettingsPanelProps) {
+  const { t } = useTranslation();
   const themeOptions = useMemo(() => {
     const platformLabel = getRuntimePlatformLabel();
     return [
       {
         id: "system" as const,
-        label: "系统",
-        description: `跟随${platformLabel}外观设置自动切换。`,
+        label: t("common.system"),
+        description: t("settings.theme.systemDescription", { platform: platformLabel }),
         icon: Laptop,
       },
       {
         id: "dark" as const,
-        label: "深色",
-        description: "适合低光环境，减轻眼睛疲劳。",
+        label: t("settings.theme.dark"),
+        description: t("settings.theme.darkDescription"),
         icon: Moon,
       },
       {
         id: "light" as const,
-        label: "浅色",
-        description: "明亮清爽的浅色界面。",
+        label: t("settings.theme.light"),
+        description: t("settings.theme.lightDescription"),
         icon: Sun,
       },
     ];
-  }, []);
+  }, [t]);
+  const languageOptions = [
+    { id: "system" as const, label: t("settings.language.system") },
+    { id: "zh-CN" as const, label: t("settings.language.zh") },
+    { id: "en-US" as const, label: t("settings.language.en") },
+  ];
 
   return (
     <>
       <header className="settings-page-header">
-        <h1>外观</h1>
+        <h1>{t("settings.general")}</h1>
       </header>
 
       <section className="settings-section">
         <div className="settings-section-head">
           <div>
-            <span className="settings-section-label">主题</span>
-            <p className="settings-section-subtitle">主界面与设置页使用同一套配色。</p>
+            <span className="settings-section-label">{t("settings.theme")}</span>
+            <p className="settings-section-subtitle">{t("settings.themeSubtitle")}</p>
           </div>
         </div>
 
-        <div className="theme-picker" role="radiogroup" aria-label="应用主题">
+        <div className="theme-picker" role="radiogroup" aria-label={t("settings.themeAria")}>
           {themeOptions.map((option) => {
             const Icon = option.icon;
             const selected = theme === option.id;
@@ -135,23 +148,47 @@ export function GeneralSettingsPanel({
       <section className="settings-section">
         <div className="settings-section-head">
           <div>
-            <span className="settings-section-label">字体</span>
-            <p className="settings-section-subtitle">分别调整界面文字与等宽代码内容。</p>
+            <span className="settings-section-label">{t("settings.language")}</span>
+            <p className="settings-section-subtitle">{t("settings.languageSubtitle")}</p>
+          </div>
+        </div>
+        <div className="settings-segmented-control" role="radiogroup" aria-label={t("settings.language")}>
+          <Languages size={16} aria-hidden />
+          {languageOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={localePreference === option.id}
+              className={localePreference === option.id ? "active" : undefined}
+              onClick={() => onLocalePreferenceChange(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head">
+          <div>
+            <span className="settings-section-label">{t("settings.fonts")}</span>
+            <p className="settings-section-subtitle">{t("settings.fontsSubtitle")}</p>
           </div>
         </div>
 
         <ul className="settings-rows">
           <FontSizeControl
-            label="UI 字号"
-            description="项目、会话、Feed 与工作面板的基础字号。"
+            label={t("settings.uiFontSize")}
+            description={t("settings.uiFontDescription")}
             value={typography.uiFontSize}
             min={UI_FONT_SIZE_RANGE.min}
             max={UI_FONT_SIZE_RANGE.max}
             onChange={(uiFontSize) => onTypographyChange({ ...typography, uiFontSize })}
           />
           <FontSizeControl
-            label="代码字体大小"
-            description="代码审查、文件变更、Bash 与终端内容的基础字号。"
+            label={t("settings.codeFontSize")}
+            description={t("settings.codeFontDescription")}
             value={typography.codeFontSize}
             min={CODE_FONT_SIZE_RANGE.min}
             max={CODE_FONT_SIZE_RANGE.max}

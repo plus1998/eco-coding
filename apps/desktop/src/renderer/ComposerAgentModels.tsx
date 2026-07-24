@@ -2,6 +2,7 @@ import { shortenModelId } from "@eco/runtime/usage";
 import { ChevronDown, Users } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
@@ -69,6 +70,7 @@ function SubagentSwitchRows({
   subagentSaving,
   onToggleSubagent,
 }: ComposerAgentModelsProps) {
+  const { t } = useTranslation();
   const subagentLabels = labels.filter((label) => !label.main);
 
   return (
@@ -77,7 +79,7 @@ function SubagentSwitchRows({
         const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
         const clickable = Boolean(canEditSubagents && subagentRole && subagentSettings && onToggleSubagent);
         const hasSwitch = Boolean(subagentRole);
-        const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
+        const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : t("common.notConfigured");
 
         return (
           <div key={role} className="composer-mcp-row">
@@ -88,19 +90,25 @@ function SubagentSwitchRows({
             {hasSwitch && subagentRole ? (
               <label
                 className="composer-switch"
-                title={enabled ? `${displayName} · 已启用` : `${displayName} · 已停用`}
+                title={t(enabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+                  name: displayName,
+                })}
               >
                 <input
                   type="checkbox"
                   checked={enabled}
                   disabled={subagentSaving || !clickable}
-                  aria-label={`${displayName} ${enabled ? "已启用" : "已停用"}`}
+                  aria-label={t(enabled ? "composer.enabledAria" : "composer.disabledAria", {
+                    name: displayName,
+                  })}
                   onChange={() => onToggleSubagent?.(subagentRole, !enabled)}
                 />
                 <span className="composer-switch-track" aria-hidden />
               </label>
             ) : (
-              <span className="composer-mcp-row-status">{enabled ? "启用" : "停用"}</span>
+              <span className="composer-mcp-row-status">
+                {enabled ? t("composer.enabled") : t("composer.disabled")}
+              </span>
             )}
           </div>
         );
@@ -116,16 +124,25 @@ function AgentModelRows({
   subagentSaving,
   onToggleSubagent,
 }: ComposerAgentModelsProps) {
+  const { t } = useTranslation();
   return (
     <>
       {labels.map(({ role, displayName, modelId, title, main, subagentRole }) => {
         const subagent = !main;
         const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
         const clickable = Boolean(canEditSubagents && subagentRole && subagentSettings && onToggleSubagent);
-        const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
+        const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : t("common.notConfigured");
         const className = rowClassName({ subagent, enabled, clickable, planner: main });
-        const status = main ? "主 Agent" : enabled ? "启用" : "停用";
-        const action = clickable ? (enabled ? "点击停用" : "点击启用") : undefined;
+        const status = main
+          ? t("settings.models.mainAgent")
+          : enabled
+            ? t("composer.enabled")
+            : t("composer.disabled");
+        const action = clickable
+          ? enabled
+            ? t("composer.clickDisable")
+            : t("composer.clickEnable")
+          : undefined;
         const content = (
           <AgentRowContent
             displayName={displayName}
@@ -138,8 +155,8 @@ function AgentModelRows({
           ? title
           : clickable
             ? enabled
-              ? `${title} · 点击停用`
-              : `${title} · 点击启用`
+              ? t("composer.clickDisableNamed", { name: title })
+              : t("composer.clickEnableNamed", { name: title })
             : title;
 
         if (clickable && subagentRole) {
@@ -169,6 +186,7 @@ function AgentModelRows({
 }
 
 export function ComposerAgentModelsCardBody(props: ComposerAgentModelsProps) {
+  const { t } = useTranslation();
   if (props.embedded) {
     return (
       <div className="composer-agent-models-card-body is-embedded">
@@ -189,7 +207,7 @@ export function ComposerAgentModelsCardBody(props: ComposerAgentModelsProps) {
   return (
     <div className="composer-agent-models-card-body">
       <div className="composer-agents-popover-header">
-        <span>子代理</span>
+        <span>{t("composer.subagents")}</span>
         <span>{summary}</span>
       </div>
       <div className="composer-agents-list">
@@ -207,6 +225,7 @@ export function ComposerAgentModels({
   compact,
   onToggleSubagent,
 }: ComposerAgentModelsProps) {
+  const { t } = useTranslation();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -280,11 +299,11 @@ export function ComposerAgentModels({
         ref={panelRef}
         className="composer-codex-popover composer-agents-popover"
         role="dialog"
-        aria-label="子代理详情"
+        aria-label={t("composer.subagentDetails")}
         style={panelStyle}
       >
         <div className="composer-agents-popover-header">
-          <span>子代理</span>
+          <span>{t("composer.subagents")}</span>
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
@@ -313,7 +332,7 @@ export function ComposerAgentModels({
         ]
           .filter(Boolean)
           .join(" ")}
-        aria-label={`查看子代理详情，已启用 ${summary}`}
+        aria-label={t("composer.subagentDetailsSummary", { summary })}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -331,7 +350,9 @@ export function ComposerAgentModels({
           aria-hidden
           className="composer-context-trigger-icon"
         />
-        <span className="composer-context-trigger-label">{compact ? summary : "编排"}</span>
+        <span className="composer-context-trigger-label">
+          {compact ? summary : t("composer.orchestration")}
+        </span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}

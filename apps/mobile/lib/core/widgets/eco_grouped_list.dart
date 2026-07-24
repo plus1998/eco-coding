@@ -11,11 +11,7 @@ const ecoGroupedHorizontalInset = 16.0;
 
 /// Section label above an inset group.
 class EcoGroupedSectionHeader extends StatelessWidget {
-  const EcoGroupedSectionHeader({
-    super.key,
-    required this.label,
-    this.caption,
-  });
+  const EcoGroupedSectionHeader({super.key, required this.label, this.caption});
 
   final String label;
   final String? caption;
@@ -36,22 +32,22 @@ class EcoGroupedSectionHeader extends StatelessWidget {
           Text(
             label.toUpperCase(),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: eco.textMuted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.2,
-                  height: 1.2,
-                ),
+              color: eco.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.2,
+              height: 1.2,
+            ),
           ),
           if (caption != null) ...[
             const SizedBox(height: 4),
             Text(
               caption!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted.withValues(alpha: 0.85),
-                    height: 1.35,
-                    letterSpacing: -0.08,
-                  ),
+                color: eco.textMuted.withValues(alpha: 0.85),
+                height: 1.35,
+                letterSpacing: -0.08,
+              ),
             ),
           ],
         ],
@@ -65,7 +61,9 @@ class EcoGroupedSurface extends StatelessWidget {
   const EcoGroupedSurface({
     super.key,
     required this.child,
-    this.margin = const EdgeInsets.symmetric(horizontal: ecoGroupedHorizontalInset),
+    this.margin = const EdgeInsets.symmetric(
+      horizontal: ecoGroupedHorizontalInset,
+    ),
     this.padding,
     this.clipBehavior = Clip.antiAlias,
   });
@@ -89,7 +87,9 @@ class EcoGroupedSurface extends StatelessWidget {
           borderRadius: BorderRadius.circular(ecoGroupedCornerRadius),
         ),
         clipBehavior: clipBehavior,
-        child: padding == null ? child : Padding(padding: padding!, child: child),
+        child: padding == null
+            ? child
+            : Padding(padding: padding!, child: child),
       ),
     );
   }
@@ -97,10 +97,7 @@ class EcoGroupedSurface extends StatelessWidget {
 
 /// Divider between rows inside [EcoGroupedSurface] — inset like iOS separators.
 class EcoGroupedDivider extends StatelessWidget {
-  const EcoGroupedDivider({
-    super.key,
-    this.indent = 16,
-  });
+  const EcoGroupedDivider({super.key, this.indent = 16});
 
   final double indent;
 
@@ -210,10 +207,10 @@ class EcoGroupedSection extends StatelessWidget {
             child: Text(
               footer!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted.withValues(alpha: 0.85),
-                    height: 1.35,
-                    letterSpacing: -0.08,
-                  ),
+                color: eco.textMuted.withValues(alpha: 0.85),
+                height: 1.35,
+                letterSpacing: -0.08,
+              ),
             ),
           ),
       ],

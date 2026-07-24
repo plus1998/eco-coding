@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 export interface StopThreadConfirmDialogProps {
   changedFiles: string[];
   busy: boolean;
@@ -13,6 +15,7 @@ export function StopThreadConfirmDialog({
   onConfirm,
   onDismiss,
 }: StopThreadConfirmDialogProps) {
+  const { t } = useTranslation();
   const visibleFiles = changedFiles.slice(0, MAX_VISIBLE_FILES);
   const hiddenCount = changedFiles.length - visibleFiles.length;
 
@@ -34,12 +37,12 @@ export function StopThreadConfirmDialog({
       >
         <header className="settings-modal-header">
           <h2 id="stop-thread-confirm-title" className="settings-modal-title">
-            停止运行？
+            {t("dialog.stop.title")}
           </h2>
         </header>
         <div className="settings-modal-body">
           <p className="stop-thread-confirm-lead">
-            工作区中有 {changedFiles.length} 个文件相对基线有变更。停止后可在活动日志用检查点回滚文件。
+            {t("dialog.stop.changedFiles", { count: changedFiles.length })}
           </p>
           <ul className="stop-thread-confirm-files">
             {visibleFiles.map((file) => (
@@ -47,7 +50,11 @@ export function StopThreadConfirmDialog({
                 <code>{file}</code>
               </li>
             ))}
-            {hiddenCount > 0 ? <li className="stop-thread-confirm-more">…另有 {hiddenCount} 个文件</li> : null}
+            {hiddenCount > 0 ? (
+              <li className="stop-thread-confirm-more">
+                {t("dialog.stop.moreFiles", { count: hiddenCount })}
+              </li>
+            ) : null}
           </ul>
         </div>
         <footer className="settings-modal-footer stop-thread-confirm-footer">
@@ -57,7 +64,7 @@ export function StopThreadConfirmDialog({
             onClick={onDismiss}
             disabled={busy}
           >
-            继续运行
+            {t("dialog.stop.continue")}
           </button>
           <div className="settings-modal-footer-actions stop-thread-confirm-actions">
             <button
@@ -66,7 +73,7 @@ export function StopThreadConfirmDialog({
               onClick={onConfirm}
               disabled={busy}
             >
-              {busy ? "正在停止…" : "停止"}
+              {busy ? t("dialog.stop.stopping") : t("dialog.stop.confirm")}
             </button>
           </div>
         </footer>

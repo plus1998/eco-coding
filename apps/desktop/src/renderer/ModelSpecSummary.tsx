@@ -9,6 +9,7 @@ import {
   Maximize2,
   Save,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { CandidateModelView, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import type { ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
 import {
@@ -141,6 +142,7 @@ export function ModelSpecSummary({
   overriddenFields?: Set<ManualSpecOverrideField>;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   if (!capability && !pricing) {
     return null;
   }
@@ -163,54 +165,54 @@ export function ModelSpecSummary({
       {hasContext ? (
         <span
           className={chipClass("model-spec-chip model-spec-chip-capability", "contextTokens", overrides)}
-          title="上下文窗口"
+          title={t("modelSpec.contextWindow")}
         >
           <Layers size={13} strokeWidth={2} />
           <span className="model-spec-chip-value">{formatTokenCount(cap!.contextTokens!)}</span>
-          {!compact ? <span className="model-spec-chip-caption">上下文</span> : null}
-          {overrides.has("contextTokens") ? <span className="model-spec-chip-badge">手动</span> : null}
+          {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.context")}</span> : null}
+          {overrides.has("contextTokens") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
         </span>
       ) : null}
       {hasOutput ? (
         <span
           className={chipClass("model-spec-chip model-spec-chip-capability", "maxOutputTokens", overrides)}
-          title="最大输出"
+          title={t("modelSpec.maxOutput")}
         >
           <Maximize2 size={13} strokeWidth={2} />
           <span className="model-spec-chip-value">{formatTokenCount(cap!.maxOutputTokens!)}</span>
-          {!compact ? <span className="model-spec-chip-caption">输出</span> : null}
-          {overrides.has("maxOutputTokens") ? <span className="model-spec-chip-badge">手动</span> : null}
+          {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.output")}</span> : null}
+          {overrides.has("maxOutputTokens") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
         </span>
       ) : null}
       {hasImage ? (
         <span
           className={chipClass("model-spec-chip model-spec-chip-capability", "supportsImageInput", overrides)}
-          title="支持图像输入"
+          title={t("modelSpec.imageInput")}
         >
           <Image size={13} strokeWidth={2} />
-          {!compact ? <span className="model-spec-chip-caption">多模态</span> : null}
-          {overrides.has("supportsImageInput") ? <span className="model-spec-chip-badge">手动</span> : null}
+          {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.multimodal")}</span> : null}
+          {overrides.has("supportsImageInput") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
         </span>
       ) : null}
       {hasReasoning ? (
         <span
           className={chipClass("model-spec-chip model-spec-chip-capability", "supportsReasoning", overrides)}
-          title="支持推理"
+          title={t("modelSpec.reasoningSupported")}
         >
           <Brain size={13} strokeWidth={2} />
-          {!compact ? <span className="model-spec-chip-caption">推理</span> : null}
-          {overrides.has("supportsReasoning") ? <span className="model-spec-chip-badge">手动</span> : null}
+          {!compact ? <span className="model-spec-chip-caption">{t("modelSpec.reasoning")}</span> : null}
+          {overrides.has("supportsReasoning") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
         </span>
       ) : null}
       {hasPricing ? (
         <>
           <span
             className={chipClass("model-spec-chip model-spec-chip-price model-spec-chip-price-in", "inputPerM", overrides)}
-            title="输入价格 /M tokens"
+            title={t("modelSpec.inputPrice")}
           >
             <ArrowUp size={13} strokeWidth={2} />
             <span className="model-spec-chip-value">{formatRatePerMillion(rates!.inputPerM)}</span>
-            {overrides.has("inputPerM") ? <span className="model-spec-chip-badge">手动</span> : null}
+            {overrides.has("inputPerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
           </span>
           <span
             className={chipClass(
@@ -218,11 +220,11 @@ export function ModelSpecSummary({
               "outputPerM",
               overrides,
             )}
-            title="输出价格 /M tokens"
+            title={t("modelSpec.outputPrice")}
           >
             <ArrowDown size={13} strokeWidth={2} />
             <span className="model-spec-chip-value">{formatRatePerMillion(rates!.outputPerM)}</span>
-            {overrides.has("outputPerM") ? <span className="model-spec-chip-badge">手动</span> : null}
+            {overrides.has("outputPerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
           </span>
         </>
       ) : null}
@@ -236,11 +238,11 @@ export function ModelSpecSummary({
                   "cacheReadPerM",
                   overrides,
                 )}
-                title="缓存读取价格 /M tokens"
+                title={t("modelSpec.cacheReadPrice")}
               >
                 <HardDrive size={13} strokeWidth={2} />
                 <span className="model-spec-chip-value">{formatRatePerMillion(rates!.cacheReadPerM!)}</span>
-                {overrides.has("cacheReadPerM") ? <span className="model-spec-chip-badge">手动</span> : null}
+                {overrides.has("cacheReadPerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
               </span>
             ) : null,
             rates?.cacheWritePerM !== undefined ? (
@@ -251,11 +253,11 @@ export function ModelSpecSummary({
                   "cacheWritePerM",
                   overrides,
                 )}
-                title="缓存写入价格 /M tokens"
+                title={t("modelSpec.cacheWritePrice")}
               >
                 <Save size={13} strokeWidth={2} />
                 <span className="model-spec-chip-value">{formatRatePerMillion(rates!.cacheWritePerM!)}</span>
-                {overrides.has("cacheWritePerM") ? <span className="model-spec-chip-badge">手动</span> : null}
+                {overrides.has("cacheWritePerM") ? <span className="model-spec-chip-badge">{t("modelSpec.manual")}</span> : null}
               </span>
             ) : null,
           ].filter(Boolean)
@@ -275,6 +277,7 @@ export function ModelsDevCatalogReferencePanel({
   mappingLabel?: string;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const catalogCapability = catalogCapabilityHint(capability);
   const catalogPricing = catalogPricingHint(pricing);
   const hasData = Boolean(catalogCapability || catalogPricing);
@@ -284,9 +287,9 @@ export function ModelsDevCatalogReferencePanel({
       className={`model-manual-spec-catalog-ref${hasData ? "" : " model-manual-spec-catalog-ref-empty"}${compact ? " model-manual-spec-catalog-ref-compact" : ""}`}
     >
       <div className="model-manual-spec-catalog-ref-header">
-        <span className="model-manual-spec-catalog-ref-title">Models.dev 参考</span>
+        <span className="model-manual-spec-catalog-ref-title">{t("modelSpec.modelsDevReference")}</span>
         {mappingLabel ? (
-          <span className="model-manual-spec-catalog-ref-mapping" title="models.dev 映射">
+          <span className="model-manual-spec-catalog-ref-mapping" title={t("modelSpec.modelsDevMapping")}>
             {mappingLabel}
           </span>
         ) : null}
@@ -299,7 +302,7 @@ export function ModelsDevCatalogReferencePanel({
         />
       ) : (
         <p className="model-manual-spec-catalog-ref-hint">
-          选择 models.dev 映射后显示 catalog 正价与规格。
+          {t("modelSpec.selectMappingHint")}
         </p>
       )}
     </div>
@@ -307,14 +310,15 @@ export function ModelsDevCatalogReferencePanel({
 }
 
 export function CandidateModelSpecPanel({ candidate }: { candidate?: CandidateModelView }) {
+  const { t } = useTranslation();
   if (!candidate) {
     return (
       <div className="candidate-model-spec-panel candidate-model-spec-panel-empty">
         <div className="candidate-model-spec-panel-header">
           <Layers size={15} strokeWidth={2} className="candidate-model-spec-panel-icon" />
-          <span className="candidate-model-spec-panel-title">模型规格</span>
+          <span className="candidate-model-spec-panel-title">{t("modelSpec.title")}</span>
         </div>
-        <p className="candidate-model-spec-panel-hint">请选择候选模型以查看规格信息。</p>
+        <p className="candidate-model-spec-panel-hint">{t("modelSpec.selectCandidate")}</p>
       </div>
     );
   }
@@ -329,20 +333,20 @@ export function CandidateModelSpecPanel({ candidate }: { candidate?: CandidateMo
     <div className="candidate-model-spec-panel">
       <div className="candidate-model-spec-panel-header">
         <Layers size={15} strokeWidth={2} className="candidate-model-spec-panel-icon" />
-        <span className="candidate-model-spec-panel-title">模型规格</span>
+        <span className="candidate-model-spec-panel-title">{t("modelSpec.title")}</span>
         {mappingLabel ? (
-          <span className="candidate-model-spec-panel-mapping" title="models.dev 映射">
+          <span className="candidate-model-spec-panel-mapping" title={t("modelSpec.modelsDevMapping")}>
             {mappingLabel}
           </span>
         ) : (
           <span className="candidate-model-spec-panel-mapping candidate-model-spec-panel-mapping-unresolved">
-            未映射
+            {t("modelSpec.unmapped")}
           </span>
         )}
       </div>
       {!mappingLabel ? (
         <p className="candidate-model-spec-panel-hint candidate-model-spec-panel-hint-warn">
-          请在模型服务商候选模型中配置 models.dev 映射。
+          {t("modelSpec.configureMapping")}
         </p>
       ) : null}
       {hasSummary ? (
@@ -352,7 +356,7 @@ export function CandidateModelSpecPanel({ candidate }: { candidate?: CandidateMo
           {...(overriddenFields ? { overriddenFields } : {})}
         />
       ) : (
-        <p className="candidate-model-spec-panel-hint">暂无规格数据。</p>
+        <p className="candidate-model-spec-panel-hint">{t("modelSpec.noData")}</p>
       )}
     </div>
   );

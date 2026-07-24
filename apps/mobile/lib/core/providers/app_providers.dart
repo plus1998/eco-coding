@@ -44,7 +44,8 @@ final ecoEventsProvider = StreamProvider<EcoEventEnvelope>((ref) {
 final selectedDesktopIdProvider = StateProvider<String?>((ref) => null);
 
 final selectedDesktopLabelProvider = Provider<String?>((ref) {
-  final credentials = ref.watch(credentialsProvider).valueOrNull ??
+  final credentials =
+      ref.watch(credentialsProvider).valueOrNull ??
       ref.read(ecoCenterClientProvider).credentials;
   final selectedId =
       ref.watch(selectedDesktopIdProvider) ?? credentials.selectedDesktopId;

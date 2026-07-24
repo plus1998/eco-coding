@@ -62,7 +62,7 @@ class SystemSpeechRecognizer {
 class SystemSpeechRecognitionException implements Exception {
   const SystemSpeechRecognitionException({
     required this.code,
-    required this.message,
+    this.nativeMessage,
   });
 
   factory SystemSpeechRecognitionException.fromPlatformException(
@@ -70,26 +70,14 @@ class SystemSpeechRecognitionException implements Exception {
   ) {
     return SystemSpeechRecognitionException(
       code: error.code,
-      message: _messageForCode(error.code, error.message),
+      nativeMessage: error.message?.trim(),
     );
   }
 
   final String code;
-  final String message;
+  final String? nativeMessage;
 
   @override
-  String toString() => message;
-}
-
-String _messageForCode(String code, String? fallback) {
-  final nativeMessage = fallback?.trim();
-  return switch (code) {
-    'permission_denied' => '需要麦克风与语音识别权限',
-    'unavailable' =>
-      nativeMessage?.isNotEmpty == true ? nativeMessage! : '当前设备没有可用的系统语音识别',
-    'busy' => '正在识别上一段语音',
-    'no_match' => '未识别到语音内容',
-    'network' => '系统语音识别服务暂时不可用',
-    _ => nativeMessage?.isNotEmpty == true ? nativeMessage! : '语音识别失败',
-  };
+  String toString() =>
+      nativeMessage?.isNotEmpty == true ? nativeMessage! : code;
 }

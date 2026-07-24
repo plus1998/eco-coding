@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { IPC_CHANNELS, isKnownIpcChannel, isTerminalStreamEvent } from "../src/shared/ipc";
 
 test("declares the core desktop IPC channels", () => {
+  expect(IPC_CHANNELS.appSetLocale).toBe("app:set-locale");
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
   expect(IPC_CHANNELS.workspacePrepareGit).toBe("workspace:prepare-git");
   expect(IPC_CHANNELS.workspaceListPackageScripts).toBe("workspace:list-package-scripts");

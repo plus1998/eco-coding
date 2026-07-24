@@ -14,7 +14,8 @@ final appSessionProvider = FutureProvider<void>((ref) async {
   if (creds.selectedDesktopId != null && creds.selectedDesktopId!.isNotEmpty) {
     final current = ref.read(selectedDesktopIdProvider);
     if (current == null || current.isEmpty) {
-      ref.read(selectedDesktopIdProvider.notifier).state = creds.selectedDesktopId;
+      ref.read(selectedDesktopIdProvider.notifier).state =
+          creds.selectedDesktopId;
     }
   }
 

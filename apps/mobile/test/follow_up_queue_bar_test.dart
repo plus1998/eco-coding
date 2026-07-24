@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/features/composer/follow_up_queue_bar.dart';
+import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 
 void main() {
   testWidgets('follow-up queue uses compact mobile spacing', (tester) async {
@@ -25,6 +27,14 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomCenter,

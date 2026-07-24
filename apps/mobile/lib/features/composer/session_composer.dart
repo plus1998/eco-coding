@@ -4,6 +4,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/platform/system_speech_recognizer.dart';
@@ -144,7 +146,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         await recognizer.stop();
       } catch (error) {
         if (mounted) {
-          _showSnack(error.toString());
+          _showSnack(localizedAppError(error, context.l10n));
         }
       }
       return;
@@ -162,7 +164,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       );
       if (!mounted) return;
       if (text.isEmpty) {
-        _showSnack('未识别到语音内容');
+        _showSnack(context.l10n.composerNoSpeech);
         return;
       }
       final merged = mergeRecognizedSpeechText(
@@ -177,7 +179,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       _focusNode.requestFocus();
     } catch (error) {
       if (mounted) {
-        _showSnack(error.toString());
+        _showSnack(localizedAppError(error, context.l10n));
       }
     } finally {
       if (mounted) {
@@ -277,8 +279,10 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         hintText:
                             widget.inputHint ??
                             (widget.followUpMode
-                                ? '要求后续变更'
-                                : (widget.hasActivity ? '跟进' : '发送消息…')),
+                                ? context.l10n.composerRequestChanges
+                                : (widget.hasActivity
+                                      ? context.l10n.composerFollowUp
+                                      : context.l10n.composerSendHint)),
                         filled: false,
                         fillColor: Colors.transparent,
                         border: InputBorder.none,
@@ -309,7 +313,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                       children: [
                         ComposerToolbarIconButton(
                           onPressed: widget.onPickImage,
-                          tooltip: '添加图片',
+                          tooltip: context.l10n.composerAddImage,
                           icon: ComposerToolbarIcon(
                             icon: EcoIcons.add,
                             color: ecoColors(context).textSecondary,
@@ -342,7 +346,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         if (showSpeechInput) ...[
                           ComposerToolbarIconButton(
                             onPressed: _handleSpeechInput,
-                            tooltip: _speechBusy ? '停止语音输入' : '语音输入',
+                            tooltip: _speechBusy
+                                ? context.l10n.composerStopVoiceInput
+                                : context.l10n.composerVoiceInput,
                             color: _speechBusy
                                 ? ecoColors(context).accent
                                 : null,
@@ -403,7 +409,7 @@ class _PendingImagePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return Semantics(
-      label: '待发送图片 ${index + 1}',
+      label: context.l10n.composerPendingImage(index + 1),
       child: SizedBox.square(
         dimension: 72,
         child: Stack(
@@ -433,7 +439,7 @@ class _PendingImagePreview extends StatelessWidget {
               right: 4,
               child: Semantics(
                 button: true,
-                label: '移除图片 ${index + 1}',
+                label: context.l10n.composerRemoveImage(index + 1),
                 child: Material(
                   color: Colors.black.withValues(alpha: 0.62),
                   shape: const CircleBorder(),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/theme/eco_icons.dart';
@@ -201,7 +202,9 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       }
       if (mounted) {
         setState(
-          () => _error = committed ? '提交已完成，但推送失败：$error' : error.toString(),
+          () => _error = committed
+              ? context.l10n.commitPushFailed(error.toString())
+              : error.toString(),
         );
       }
     } finally {
@@ -302,7 +305,10 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 12),
-            Text('提交到', style: Theme.of(context).textTheme.titleSmall),
+            Text(
+              context.l10n.commitDestination,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
             const SizedBox(height: 8),
             Flexible(
               child: ListView(
@@ -319,7 +325,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                     ),
                   ListTile(
                     leading: const Icon(EcoIcons.add, size: 18),
-                    title: const Text('新分支'),
+                    title: Text(context.l10n.commitNewBranch),
                     onTap: () => Navigator.pop(sheetContext, ''),
                   ),
                 ],
@@ -366,23 +372,23 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
     final branch = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('新建分支'),
+        title: Text(context.l10n.commitCreateBranch),
         content: TextField(
           controller: controller,
           autofocus: true,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(hintText: '分支名称'),
+          decoration: InputDecoration(hintText: context.l10n.commitBranchName),
           onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () =>
                 Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('创建'),
+            child: Text(context.l10n.commonCreate),
           ),
         ],
       ),
@@ -429,7 +435,10 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              Text('选择生成模型', style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                context.l10n.commitSelectModel,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: 8),
               Flexible(
                 child: ListView.builder(
@@ -512,12 +521,16 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '提交变更',
+                        context.l10n.commitChanges,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${diff.fileCount} 个文件 · +${diff.totalAdditions} -${diff.totalDeletions}',
+                        context.l10n.commitFilesSummary(
+                          diff.fileCount, // count
+                          diff.totalAdditions, // additions
+                          diff.totalDeletions, // deletions
+                        ),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: ecoColors(context).textMuted,
                         ),
@@ -564,9 +577,9 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                         Expanded(
                           child: Text(
                             _loadingModels
-                                ? '加载模型…'
+                                ? context.l10n.commitLoadingModels
                                 : selectedModel == null
-                                ? '未配置模型'
+                                ? context.l10n.commitNoModel
                                 : '${selectedModel.providerName} · ${selectedModel.modelLabel}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -585,7 +598,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                   enabled: !controlsBusy,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
-                    hintText: '提交信息（留空则 AI 生成）',
+                    hintText: context.l10n.commitMessageHint,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -600,14 +613,14 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(EcoIcons.sparkles, size: 20),
-                      tooltip: 'AI 生成提交信息',
+                      tooltip: context.l10n.commitGenerateMessage,
                     ),
                   ),
                 ),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text('包含未暂存的更改'),
+                  title: Text(context.l10n.commitIncludeUnstaged),
                   value: _includeUnstaged,
                   onChanged: controlsBusy
                       ? null
@@ -638,7 +651,9 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                     onPressed: controlsBusy || !canCommit ? null : _commitOnly,
                     icon: const Icon(EcoIcons.commitPush, size: 18),
                     label: Text(
-                      _activeAction == _CommitPushAction.commit ? '提交中…' : '提交',
+                      _activeAction == _CommitPushAction.commit
+                          ? context.l10n.commitCommitting
+                          : context.l10n.commonSubmit,
                     ),
                   ),
                 ),
@@ -662,9 +677,9 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                     label: Text(
                       _activeAction == _CommitPushAction.commitPush
                           ? (_phase == _CommitPushPhase.pushing
-                                ? '推送中…'
-                                : '提交中…')
-                          : '提交并推送',
+                                ? context.l10n.commitPushing
+                                : context.l10n.commitCommitting)
+                          : context.l10n.commitAndPush,
                     ),
                   ),
                 ),
@@ -683,8 +698,10 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                           : const Icon(EcoIcons.cloudUpload, size: 18),
                       label: Text(
                         _activeAction == _CommitPushAction.push
-                            ? '推送中…'
-                            : '仅推送（领先 ${_gitStatus.aheadCount}）',
+                            ? context.l10n.commitPushing
+                            : context.l10n.commitPushOnlyAhead(
+                                _gitStatus.aheadCount,
+                              ),
                       ),
                     ),
                   ),

@@ -1,4 +1,5 @@
 import type { SkillInfo } from "../shared/skills";
+import { useTranslation } from "react-i18next";
 
 interface SkillUninstallConfirmDialogProps {
   skill: SkillInfo;
@@ -15,6 +16,7 @@ export function SkillUninstallConfirmDialog({
   onConfirm,
   onDismiss,
 }: SkillUninstallConfirmDialogProps) {
+  const { t } = useTranslation();
   return (
     <div
       className="settings-modal-backdrop"
@@ -33,21 +35,21 @@ export function SkillUninstallConfirmDialog({
       >
         <header className="settings-modal-header">
           <h2 id="skill-uninstall-title" className="settings-modal-title">
-            卸载 {skill.name}？
+            {t("settings.skills.uninstallTitle", { name: skill.name })}
           </h2>
         </header>
         <div className="settings-modal-body">
-          <p className="skill-uninstall-lead">将删除此来源中的 Skill 目录或链接，此操作无法撤销。</p>
+          <p className="skill-uninstall-lead">{t("settings.skills.uninstallDescription")}</p>
           <code className="skill-uninstall-path">{skill.directory}</code>
           {error ? <p className="settings-form-error">{error}</p> : null}
         </div>
         <footer className="settings-modal-footer">
           <button type="button" className="settings-modal-cancel" onClick={onDismiss} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </button>
           <div className="settings-modal-footer-actions">
             <button type="button" className="settings-danger-button" onClick={onConfirm} disabled={busy}>
-              {busy ? "正在卸载…" : "卸载"}
+              {busy ? t("settings.skills.uninstalling") : t("settings.mcp.uninstall")}
             </button>
           </div>
         </footer>

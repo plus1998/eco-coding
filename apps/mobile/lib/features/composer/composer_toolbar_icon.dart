@@ -143,11 +143,7 @@ class ComposerBashReviewToolbarIcon extends StatelessWidget {
           Icon(icon, size: composerToolbarGlyphSize(icon), color: color),
           Positioned(
             bottom: size * 0.14,
-            child: Icon(
-              EcoIcons.terminal,
-              size: size * 0.36,
-              color: color,
-            ),
+            child: Icon(EcoIcons.terminal, size: size * 0.36, color: color),
           ),
         ],
       ),

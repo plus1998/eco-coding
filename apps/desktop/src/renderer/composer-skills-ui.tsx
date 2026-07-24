@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import type { SkillInfo, SkillSource } from "../shared/skills";
 import { formatSkillDisplayName } from "./composer-skills";
+import { i18n } from "./i18n";
 
 const PANEL_GAP = 8;
 const VIEWPORT_MARGIN = 8;
@@ -22,7 +23,7 @@ const SKILL_MENU_PREFERRED_MAX_HEIGHT =
   SKILL_MENU_VISIBLE_ROWS * SKILL_MENU_ROW_HEIGHT + SKILL_MENU_PADDING;
 
 export function skillScopeLabel(source: SkillSource): string {
-  return source === "project" ? "项目" : "个人";
+  return i18n.t(source === "project" ? "composer.skills.scope.project" : "composer.skills.scope.personal");
 }
 
 export function layoutSkillPanel(

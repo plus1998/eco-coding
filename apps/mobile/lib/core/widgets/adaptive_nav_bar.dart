@@ -11,8 +11,10 @@ import 'eco_pressable.dart';
 
 const adaptiveNavBarHeight = 56.0;
 const adaptiveNavHorizontalPadding = 16.0;
+
 /// Native iOS 26 UITabBar intrinsic content height (home indicator handled by native).
 const adaptiveNavBarNativeHeight = 50.0;
+
 /// Lift tab bar slightly above the screen edge (above home-indicator strip).
 const adaptiveNavBottomLift = 10.0;
 
@@ -165,10 +167,7 @@ class _FloatingCapsuleTabBar extends StatelessWidget {
     );
 
     if (PlatformInfo.isAndroid) {
-      return EcoAndroidGlassSurface(
-        borderRadius: radius,
-        child: row,
-      );
+      return EcoAndroidGlassSurface(borderRadius: radius, child: row);
     }
 
     // Pre-iOS26: translucent frosted capsule (not liquid glass native).
@@ -179,9 +178,7 @@ class _FloatingCapsuleTabBar extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: radius,
-            color: isDark
-                ? const Color(0xCC1C1C1E)
-                : const Color(0xE6F2F2F7),
+            color: isDark ? const Color(0xCC1C1C1E) : const Color(0xE6F2F2F7),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.08)

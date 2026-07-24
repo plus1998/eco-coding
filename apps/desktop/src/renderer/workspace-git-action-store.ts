@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
+import { i18n } from "./i18n";
 
 export type WorkspaceGitActionPhase = "generating" | "committing" | "pushing";
 
@@ -20,13 +21,13 @@ function notify(workspacePath: string): void {
 export function getWorkspaceGitCommitEntryLabel(phase: WorkspaceGitActionPhase | null | undefined): string {
   switch (phase) {
     case "generating":
-      return "正在生成提交";
+      return i18n.t("workspaceGit.action.generating");
     case "committing":
-      return "正在提交";
+      return i18n.t("workspaceGit.action.committing");
     case "pushing":
-      return "正在推送";
+      return i18n.t("workspaceGit.action.pushing");
     default:
-      return "提交或推送";
+      return i18n.t("workspaceGit.action.commitOrPush");
   }
 }
 

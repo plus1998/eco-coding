@@ -5,6 +5,8 @@ import type {
   ThreadApprovalNotificationKind,
   ThreadSummary,
 } from "./ipc";
+import { translateCatalog } from "./i18n-catalogs";
+import type { AppLocale } from "./locale";
 
 const NOTIFICATION_BODY_MAX_LENGTH = 600;
 
@@ -17,6 +19,7 @@ export function buildThreadApprovalNotificationContent(
   thread: Pick<ThreadSummary, "title">,
   kind: ThreadApprovalNotificationKind,
   approval: PlanApprovalRequest | BashApprovalRequest,
+  locale: AppLocale = "zh-CN",
 ): ThreadCompletionNotificationContent | undefined {
   const title = thread.title.trim();
   if (!title) {
@@ -28,7 +31,11 @@ export function buildThreadApprovalNotificationContent(
     return undefined;
   }
   const body = normalizeNotificationBody(
-    kind === "plan" ? `等待计划审批：${detail}` : `等待操作审批：${detail}`,
+    translateCatalog(
+      locale,
+      kind === "plan" ? "notification.planApproval" : "notification.bashApproval",
+      { detail },
+    ),
   );
   return body ? { title, body } : undefined;
 }

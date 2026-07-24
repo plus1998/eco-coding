@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import type {
@@ -225,6 +226,7 @@ function SubagentRunsCardBody({
 }
 
 function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; onOpenPlan?: () => void }) {
+  const { t } = useTranslation();
   const preview = thinkingPreviewLine(resolveMissionDisplayText(plan.plan), 150);
   const planPath = plan.planFilePath?.trim();
 
@@ -234,12 +236,14 @@ function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; 
       className="workspace-plan-card-trigger"
       onClick={onOpenPlan}
       disabled={!onOpenPlan}
-      title="在右侧面板查看完整计划"
+      title={t("workspaceCards.openFullPlan")}
     >
       <span className="workspace-plan-card-main">
-        <span className="workspace-plan-card-title">已批准计划</span>
+        <span className="workspace-plan-card-title">{t("workspaceCards.approvedPlan")}</span>
         {planPath ? <span className="workspace-plan-card-path">{planPath}</span> : null}
-        <span className="workspace-plan-card-preview">{preview || "打开右侧面板查看完整实施计划"}</span>
+        <span className="workspace-plan-card-preview">
+          {preview || t("workspaceCards.openPlanPreview")}
+        </span>
       </span>
       <PanelRightOpen size={15} className="workspace-plan-card-icon" aria-hidden />
     </button>
@@ -291,11 +295,12 @@ export function WorkspaceFloatingCards({
   agentThemes,
   onOpenSubagent,
 }: WorkspaceFloatingCardsProps) {
+  const { t } = useTranslation();
   const projectLabel =
     workspaceLabel?.trim() ||
     workspacePath?.split("/").filter(Boolean).pop() ||
     workspace?.name ||
-    "未打开项目";
+    t("workspaceCards.noProject");
   const showProgress = hasProgressInfo(todos);
   const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
   const showCommitGraph = Boolean(workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits);
@@ -326,11 +331,14 @@ export function WorkspaceFloatingCards({
   }
 
   return (
-    <section className="workspace-floating-cards" aria-label={`${projectLabel} 工作区面板`}>
+    <section
+      className="workspace-floating-cards"
+      aria-label={t("workspaceCards.workspacePanels", { project: projectLabel })}
+    >
       <div className="workspace-floating-cards-sections">
         <WorkspacePanelSection
           id="workspace-env"
-          title="环境信息"
+          title={t("workspaceCards.environment")}
           defaultExpanded
           summary={
             <>
@@ -372,7 +380,7 @@ export function WorkspaceFloatingCards({
         {hasActiveThread && subagentRunCards.length > 0 ? (
           <WorkspacePanelSection
             id="workspace-subagent-runs"
-            title="子智能体"
+            title={t("workspaceCards.subagents")}
             defaultExpanded
             summary={
               <>
@@ -395,12 +403,12 @@ export function WorkspaceFloatingCards({
         {approvedPlan ? (
           <WorkspacePanelSection
             id="workspace-approved-plan"
-            title="实施计划"
+            title={t("workspaceCards.plan")}
             defaultExpanded
             summary={
               <>
                 <FileText size={14} aria-hidden />
-                <span>已批准</span>
+                <span>{t("workspaceCards.approved")}</span>
               </>
             }
             maxBodyHeight={220}
@@ -412,12 +420,12 @@ export function WorkspaceFloatingCards({
         {showProgress ? (
           <WorkspacePanelSection
             id="workspace-progress"
-            title="任务进度"
+            title={t("workspaceCards.progress")}
             defaultExpanded
             summary={
               <>
                 <ListTodo size={14} aria-hidden />
-                <span>{countRunningTodos(todos)} 项进行中</span>
+                <span>{t("workspaceCards.runningTodos", { count: countRunningTodos(todos) })}</span>
               </>
             }
             maxBodyHeight={280}
@@ -429,7 +437,7 @@ export function WorkspaceFloatingCards({
         {hasActiveThread && subagentLabels.length > 0 ? (
           <WorkspacePanelSection
             id="workspace-agents"
-            title="智能体编排"
+            title={t("workspaceCards.orchestration")}
             defaultExpanded={!exploreOnlyEnabled}
             summary={
               <>
@@ -455,7 +463,7 @@ export function WorkspaceFloatingCards({
         {hasActiveThread && enabledMcpServers.length > 0 && composerMcpSettings ? (
           <WorkspacePanelSection
             id="workspace-mcp"
-            title="MCP"
+            title={t("settings.mcp.title")}
             defaultExpanded={enabledMcpCount > 0}
             summary={
               <>
@@ -480,7 +488,7 @@ export function WorkspaceFloatingCards({
         {hasActiveThread && skills.length > 0 && composerSkillsEnabled ? (
           <WorkspacePanelSection
             id="workspace-skills"
-            title="Skills"
+            title={t("composer.skills.title")}
             defaultExpanded={enabledSkillsCount > 0}
             summary={
               <>
@@ -505,7 +513,7 @@ export function WorkspaceFloatingCards({
         {showCommitGraph && workspacePath ? (
           <WorkspacePanelSection
             id="workspace-git-graph"
-            title="Git 图形"
+            title={t("workspaceCards.gitGraph")}
             defaultExpanded={false}
             persistExpanded={false}
             summary={

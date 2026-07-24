@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
 import {
   type MainAgentSystemPromptPreset,
@@ -69,6 +70,7 @@ export function ComposerRoutePopover({
   onSelectSystemPromptPreset,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
+  const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const selectedOptionRef = useRef<HTMLButtonElement>(null);
@@ -204,17 +206,17 @@ export function ComposerRoutePopover({
       ref={panelRef}
       className="composer-codex-popover composer-route-popover"
       role="dialog"
-      aria-label="切换智能体配置"
+      aria-label={t("composer.route.switch")}
       style={panelStyle}
     >
       <header className="composer-route-popover-header">
-        <p className="composer-codex-popover-title">智能体配置</p>
+        <p className="composer-codex-popover-title">{t("composer.route.profiles")}</p>
         <button
           type="button"
           className="composer-route-builder-button"
           disabled={busy}
-          title="打开智能体构建器"
-          aria-label="打开智能体构建器"
+          title={t("composer.route.openBuilder")}
+          aria-label={t("composer.route.openBuilder")}
           onClick={() => {
             onClose();
             onOpenFullSettings();
@@ -244,7 +246,7 @@ export function ComposerRoutePopover({
         ))}
       </ul>
       {profileSummaries.length === 0 ? (
-        <p className="composer-route-popover-empty">尚未配置可运行的智能体配置</p>
+        <p className="composer-route-popover-empty">{t("composer.route.empty")}</p>
       ) : null}
       {selectedSystemPromptPreset ? (
         <SystemPromptPresetControl
@@ -275,6 +277,7 @@ export function ComposerRouteCardBody({
   onSelectSystemPromptPreset: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
   onOpenFullSettings: () => void;
 }) {
+  const { t } = useTranslation();
   const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
   const selectedProfile = settings.orchestrationProfiles.find(
     (profile) => profile.id === (runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId),
@@ -302,7 +305,7 @@ export function ComposerRouteCardBody({
         ))}
       </ul>
       {profileSummaries.length === 0 ? (
-        <p className="composer-route-popover-empty">尚未配置可运行的智能体配置</p>
+        <p className="composer-route-popover-empty">{t("composer.route.empty")}</p>
       ) : null}
       {selectedSystemPromptPreset ? (
         <SystemPromptPresetControl
@@ -316,12 +319,12 @@ export function ComposerRouteCardBody({
           type="button"
           className="composer-route-builder-button"
           disabled={busy}
-          title="打开智能体构建器"
-          aria-label="打开智能体构建器"
+          title={t("composer.route.openBuilder")}
+          aria-label={t("composer.route.openBuilder")}
           onClick={onOpenFullSettings}
         >
           <Settings2 size={15} strokeWidth={1.75} aria-hidden />
-          <span>智能体构建器</span>
+          <span>{t("settings.models.builder")}</span>
         </button>
       </div>
     </div>
@@ -337,11 +340,12 @@ function SystemPromptPresetControl({
   disabled?: boolean | undefined;
   onChange: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="composer-route-prompt-control">
-      <span className="composer-route-prompt-label">主 Agent 提示词</span>
-      <div className="composer-route-prompt-segments" role="radiogroup" aria-label="主 Agent 提示词">
-        <label className={value === "core_native" ? "active" : undefined} title="跟随当前 Agent 的内置提示词">
+      <span className="composer-route-prompt-label">{t("composer.route.mainPrompt")}</span>
+      <div className="composer-route-prompt-segments" role="radiogroup" aria-label={t("composer.route.mainPrompt")}>
+        <label className={value === "core_native" ? "active" : undefined} title={t("composer.route.followPromptHint")}>
           <input
             type="radio"
             name="composer-main-agent-system-prompt"
@@ -350,9 +354,9 @@ function SystemPromptPresetControl({
             disabled={disabled}
             onChange={() => void onChange("core_native")}
           />
-          <span>跟随 Agent</span>
+          <span>{t("settings.models.editor.followAgent")}</span>
         </label>
-        <label className={value === "custom_append" ? "active" : undefined} title="追加当前智能体配置的自定义指令">
+        <label className={value === "custom_append" ? "active" : undefined} title={t("composer.route.customPromptHint")}>
           <input
             type="radio"
             name="composer-main-agent-system-prompt"
@@ -361,7 +365,7 @@ function SystemPromptPresetControl({
             disabled={disabled}
             onChange={() => void onChange("custom_append")}
           />
-          <span>配置指令</span>
+          <span>{t("composer.route.profileInstructions")}</span>
         </label>
       </div>
     </div>
@@ -381,6 +385,7 @@ function AgentProfileOption({
   disabled?: boolean | undefined;
   onSelect: () => void;
 }) {
+  const { t } = useTranslation();
   const subagentPreview = summary.enabledAgents.slice(0, 2);
   const hiddenSubagentCount = Math.max(0, summary.enabledAgents.length - subagentPreview.length);
   const riskPreview = summary.highRiskLabels.slice(0, 2);
@@ -388,7 +393,7 @@ function AgentProfileOption({
   const modelRows = [
     {
       key: "main",
-      role: "主 Agent",
+      role: t("settings.models.mainAgent"),
       modelId: summary.main.modelId,
       thinkingEffort: summary.main.thinkingEffort,
     },
@@ -401,7 +406,15 @@ function AgentProfileOption({
   ];
   const riskText =
     riskPreview.length > 0
-      ? `高风险 · ${riskPreview.join("、")}${hiddenRiskCount > 0 ? ` 等 ${riskPreview.length + hiddenRiskCount} 项` : ""}`
+      ? t("composer.route.highRisk", {
+          risks: riskPreview.join(t("composer.route.listSeparator")),
+          more:
+            hiddenRiskCount > 0
+              ? t("composer.route.moreRiskItems", {
+                  count: riskPreview.length + hiddenRiskCount,
+                })
+              : "",
+        })
       : null;
 
   return (
@@ -418,7 +431,10 @@ function AgentProfileOption({
           <span className="composer-route-profile-head">
             <span className="composer-route-popover-item-name">{summary.name}</span>
             <span className="composer-route-profile-meta">
-              {summary.presetLabel} · {summary.enabledAgents.length} 个子代理
+              {t("composer.route.profileMeta", {
+                preset: summary.presetLabel,
+                count: summary.enabledAgents.length,
+              })}
             </span>
           </span>
 
@@ -438,7 +454,9 @@ function AgentProfileOption({
             {hiddenSubagentCount > 0 ? (
               <span className="composer-route-profile-model-row is-more">
                 <span className="composer-route-profile-model-role" aria-hidden />
-                <span className="composer-route-profile-model-name">+{hiddenSubagentCount} 个子代理</span>
+                <span className="composer-route-profile-model-name">
+                  {t("composer.route.moreSubagents", { count: hiddenSubagentCount })}
+                </span>
               </span>
             ) : null}
           </span>
@@ -474,7 +492,8 @@ export function ComposerRoutePopoverTrigger({
   compact?: boolean | undefined;
   onToggle: () => void;
 }) {
-  const label = profileName?.trim() || "选择方案";
+  const { t } = useTranslation();
+  const label = profileName?.trim() || t("composer.route.selectProfile");
 
   return (
     <button
@@ -490,8 +509,16 @@ export function ComposerRoutePopoverTrigger({
         .join(" ")}
       onClick={onToggle}
       disabled={disabled}
-      title={profileName ? `当前方案：${profileName}` : "切换智能体配置"}
-      aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换智能体配置"}
+      title={
+        profileName
+          ? t("composer.route.currentProfile", { name: profileName })
+          : t("composer.route.switch")
+      }
+      aria-label={
+        profileName
+          ? t("composer.route.currentProfileSwitch", { name: profileName })
+          : t("composer.route.switch")
+      }
       aria-expanded={open}
     >
       <LayoutTemplate

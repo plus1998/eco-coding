@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import 'setup_status.dart';
@@ -31,7 +32,7 @@ class SetupStatusCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '连接进度',
+                    context.l10n.setupProgressTitle,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -45,14 +46,17 @@ class SetupStatusCard extends StatelessWidget {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(EcoIcons.refresh),
-                    tooltip: '刷新状态',
+                    tooltip: context.l10n.commonRefresh,
                   ),
               ],
             ),
             if (overview.setupComplete) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: eco.statusAllowBg,
                   borderRadius: BorderRadius.circular(8),
@@ -60,12 +64,19 @@ class SetupStatusCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(EcoIcons.checkCircle, color: eco.statusAllowText, size: 20),
+                    Icon(
+                      EcoIcons.checkCircle,
+                      color: eco.statusAllowText,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '已连接，选择 PC 后可进入主界面',
-                        style: TextStyle(color: eco.statusAllowText, fontSize: 13),
+                        context.l10n.setupConnectedReady,
+                        style: TextStyle(
+                          color: eco.statusAllowText,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ],
@@ -105,18 +116,18 @@ class _SetupStepRow extends StatelessWidget {
                 Text(
                   step.title,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: step.state == SetupStepState.inProgress
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                      ),
+                    fontWeight: step.state == SetupStepState.inProgress
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                  ),
                 ),
                 if (step.subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     step.subtitle!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
                 if (step.hint != null) ...[
@@ -124,10 +135,10 @@ class _SetupStepRow extends StatelessWidget {
                   Text(
                     step.hint!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: step.state == SetupStepState.error
-                              ? eco.statusDenyText
-                              : eco.textSecondary,
-                        ),
+                      color: step.state == SetupStepState.error
+                          ? eco.statusDenyText
+                          : eco.textSecondary,
+                    ),
                   ),
                 ],
               ],

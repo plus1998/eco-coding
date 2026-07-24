@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Info, Loader2, Pencil, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   CLARIFICATION_CUSTOM_OPTION_LABEL,
   isClarificationQuestionReady,
@@ -32,6 +33,7 @@ export function ClarificationPanel({
   onSubmit,
   onDismiss,
 }: ClarificationPanelProps) {
+  const { t } = useTranslation();
   const total = request.questions.length;
   const [questionIndex, setQuestionIndex] = useState(0);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -52,9 +54,12 @@ export function ClarificationPanel({
     }
     return [
       ...question.options,
-      { label: CLARIFICATION_CUSTOM_OPTION_LABEL, description: "在下方输入框填写你的说明" },
+      {
+        label: CLARIFICATION_CUSTOM_OPTION_LABEL,
+        description: t("approval.clarification.customDescription"),
+      },
     ];
-  }, [question]);
+  }, [question, t]);
 
   const optionCount = displayOptions.length;
 
@@ -258,7 +263,7 @@ export function ClarificationPanel({
                 className="clarification-page-btn"
                 disabled={busy || questionIndex === 0}
                 onClick={() => setQuestionIndex((index) => index - 1)}
-                aria-label="上一题"
+                aria-label={t("approval.clarification.previous")}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -270,7 +275,7 @@ export function ClarificationPanel({
                 className="clarification-page-btn"
                 disabled={busy || questionIndex >= total - 1 || !questionReady}
                 onClick={() => setQuestionIndex((index) => index + 1)}
-                aria-label="下一题"
+                aria-label={t("approval.clarification.next")}
               >
                 <ChevronRight size={16} />
               </button>
@@ -282,7 +287,7 @@ export function ClarificationPanel({
               className="clarification-close"
               disabled={busy}
               onClick={onDismiss}
-              aria-label="关闭问题"
+              aria-label={t("approval.clarification.close")}
             >
               <X size={18} />
             </button>
@@ -290,7 +295,7 @@ export function ClarificationPanel({
         </div>
       </header>
 
-      <ul className="clarification-option-list" aria-label="选项">
+      <ul className="clarification-option-list" aria-label={t("approval.clarification.options")}>
         {displayOptions.map((option, optionIndex) => {
           const selected = currentSelection.includes(option.label);
           const highlighted = highlightIndex === optionIndex;
@@ -321,7 +326,11 @@ export function ClarificationPanel({
                 <span className="clarification-option-body">
                   <span className="clarification-option-label">
                     {formatOptionLabel(option.label)}
-                    {recommended ? <span className="clarification-recommended">（推荐）</span> : null}
+                    {recommended ? (
+                      <span className="clarification-recommended">
+                        {t("approval.clarification.recommended")}
+                      </span>
+                    ) : null}
                   </span>
                   {option.description ? (
                     <span className="clarification-option-desc">{option.description}</span>
@@ -344,9 +353,11 @@ export function ClarificationPanel({
       {showCustomInput ? (
         <div className="clarification-custom">
           <label className="clarification-custom-label" htmlFor={`clarification-custom-${request.toolUseId}`}>
-            自定义说明
+            {t("approval.clarification.customLabel")}
             {!currentCustomText.trim() ? (
-              <span className="clarification-custom-required">（必填）</span>
+              <span className="clarification-custom-required">
+                {t("approval.clarification.required")}
+              </span>
             ) : null}
           </label>
           <textarea
@@ -355,7 +366,7 @@ export function ClarificationPanel({
             className="clarification-custom-input"
             disabled={busy}
             rows={3}
-            placeholder="在此输入你的说明。"
+            placeholder={t("approval.clarification.placeholder")}
             value={currentCustomText}
             onChange={(event) => {
               const value = event.target.value;
@@ -367,7 +378,7 @@ export function ClarificationPanel({
             }}
           />
           <p className="clarification-custom-hint">
-            提交时将使用此处文字作为回答（不会提交「其他」字样本身）。
+            {t("approval.clarification.customHint")}
           </p>
         </div>
       ) : null}
@@ -383,10 +394,10 @@ export function ClarificationPanel({
             {busy ? (
               <>
                 <Loader2 size={14} className="spinning" aria-hidden />
-                提交中…
+                {t("approval.clarification.submitting")}
               </>
             ) : (
-              "确认"
+              t("common.confirm")
             )}
           </button>
         ) : (
@@ -395,13 +406,13 @@ export function ClarificationPanel({
               {busy ? (
                 <>
                   <Loader2 size={14} className="spinning" aria-hidden />
-                  处理中…
+                  {t("common.processing")}
                 </>
               ) : docked ? (
-                "跳过"
+                t("common.skip")
               ) : (
                 <>
-                  忽略 <kbd>ESC</kbd>
+                  {t("common.dismiss")} <kbd>ESC</kbd>
                 </>
               )}
             </button>
@@ -412,7 +423,7 @@ export function ClarificationPanel({
                 disabled={busy || !questionReady}
                 onClick={completeCurrentQuestion}
               >
-                完成选择
+                {t("approval.clarification.completeSelection")}
               </button>
             ) : null}
           </>
@@ -424,7 +435,7 @@ export function ClarificationPanel({
   if (docked) {
     return (
       <div className="codex-composer is-compact clarification-dock-shell">
-        <section className="composer-primary clarification-dock-inner" aria-label="澄清问题">
+        <section className="composer-primary clarification-dock-inner" aria-label={t("approval.clarification.label")}>
           {panelBody}
         </section>
       </div>
@@ -432,7 +443,7 @@ export function ClarificationPanel({
   }
 
   return (
-    <section className="clarification-panel codex-style" aria-label="澄清问题">
+    <section className="clarification-panel codex-style" aria-label={t("approval.clarification.label")}>
       {panelBody}
     </section>
   );

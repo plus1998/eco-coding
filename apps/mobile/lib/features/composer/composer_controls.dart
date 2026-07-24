@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
@@ -15,6 +16,7 @@ import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
 import 'composer_context_ring.dart';
@@ -43,13 +45,15 @@ class ComposerTemporaryModelOption {
   final bool? supportsReasoning;
 }
 
-const _thinkingEffortOptions = [
-  (value: 'off', label: '关闭'),
-  (value: 'low', label: '低'),
-  (value: 'medium', label: '中'),
-  (value: 'high', label: '高'),
-  (value: 'xhigh', label: '极高'),
-  (value: 'max', label: '最大'),
+List<({String value, String label})> _thinkingEffortOptions(
+  AppLocalizations l10n,
+) => [
+  (value: 'off', label: l10n.composerReasoningOff),
+  (value: 'low', label: l10n.composerReasoningLow),
+  (value: 'medium', label: l10n.composerReasoningMedium),
+  (value: 'high', label: l10n.composerReasoningHigh),
+  (value: 'xhigh', label: l10n.composerReasoningExtraHigh),
+  (value: 'max', label: l10n.composerReasoningMaximum),
 ];
 
 List<ComposerTemporaryModelOption> buildComposerTemporaryModelOptions({
@@ -234,7 +238,7 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Text(
-          '当前方案未配置子代理',
+          context.l10n.composerNoSubagents,
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: ecoColors(context).textMuted),
@@ -260,10 +264,10 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
               return EcoSheetSwitchTile(
                 title: _subagentRoleLabels[role] ?? role,
                 subtitle: !configured
-                    ? 'Profile 未配置'
+                    ? context.l10n.composerProfileNotConfigured
                     : enabled
-                    ? '已启用'
-                    : '已停用',
+                    ? context.l10n.commonEnabled
+                    : context.l10n.commonDisabled,
                 value: enabled,
                 enabled: toggleable,
                 onChanged: !toggleable
@@ -387,19 +391,19 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     final categories = [
       (
         value: _ComposerRouteCategory.agent,
-        label: 'Agent',
+        label: context.l10n.composerAgent,
         summary: switch (coreKind) {
           'codex' => 'Codex',
           'claude' => 'Claude Code',
-          _ => '未提供',
+          _ => context.l10n.commonUnavailable,
         },
         icon: EcoIcons.agent,
       ),
       (
         value: _ComposerRouteCategory.model,
-        label: '模型',
+        label: context.l10n.composerModel,
         summary: templateModel == null
-            ? '未配置'
+            ? context.l10n.commonNotConfigured
             : shortenModelId(
                 runtimeConfig.mainAgentModelOverride?.modelId ??
                     templateModel.modelId,
@@ -408,41 +412,46 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
       ),
       (
         value: _ComposerRouteCategory.thinking,
-        label: '推理',
+        label: context.l10n.composerReasoning,
         summary: templateModel == null
-            ? '未配置'
+            ? context.l10n.commonNotConfigured
             : _thinkingEffortLabel(
                 composerTemporaryModelEffort(
                   runtimeConfig.mainAgentModelOverride,
                   templateModel,
                 ),
+                context.l10n,
               ),
         icon: EcoIcons.sparkles,
       ),
       (
         value: _ComposerRouteCategory.mcp,
-        label: 'MCP',
+        label: context.l10n.composerMcp,
         summary:
             '${mcpEnabledSettings.values.where((value) => value).length}/${enabledMcpServers.length}',
         icon: EcoIcons.mcp,
       ),
       (
         value: _ComposerRouteCategory.skills,
-        label: 'Skills',
+        label: context.l10n.composerSkills,
         summary:
             '${skillsEnabled.values.where((value) => value).length}/${skills.length}',
         icon: EcoIcons.todos,
       ),
       (
         value: _ComposerRouteCategory.profile,
-        label: '方案',
-        summary: profile?.name ?? '未配置',
+        label: context.l10n.composerProfile,
+        summary: profile?.name ?? context.l10n.commonNotConfigured,
         icon: EcoIcons.profile,
       ),
       (
         value: _ComposerRouteCategory.subagents,
-        label: '子代理',
-        summary: _firstEnabledSubagentLabel(runtimeConfig, profile),
+        label: context.l10n.composerSubagents,
+        summary: _firstEnabledSubagentLabel(
+          runtimeConfig,
+          profile,
+          context.l10n,
+        ),
         icon: EcoIcons.subagents,
       ),
     ];
@@ -451,8 +460,8 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     );
 
     return EcoSheetScaffold(
-      title: '方案与编排',
-      subtitle: '配置仅作用于当前会话',
+      title: context.l10n.composerProfileOrchestration,
+      subtitle: context.l10n.composerSessionOnly,
       maxHeightFactor: 0.86,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -528,9 +537,11 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                   if (_selectedCategory == _ComposerRouteCategory.agent &&
                       coreKind != null)
                     EcoGroupedSection(
-                      label: '运行核心',
+                      label: context.l10n.composerRuntimeCore,
                       topSpacing: 4,
-                      footer: onCoreKindChanged == null ? '当前会话的运行核心已锁定' : null,
+                      footer: onCoreKindChanged == null
+                          ? context.l10n.composerRuntimeCoreLocked
+                          : null,
                       child: Column(
                         children: [
                           for (var i = 0; i < _coreOptions.length; i++) ...[
@@ -559,7 +570,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                   if (_selectedCategory == _ComposerRouteCategory.profile &&
                       profiles.isNotEmpty)
                     EcoGroupedSection(
-                      label: '方案',
+                      label: context.l10n.composerProfile,
                       topSpacing: coreKind == null ? 4 : 20,
                       child: Column(
                         children: [
@@ -610,9 +621,11 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                     ),
                   if (_selectedCategory == _ComposerRouteCategory.subagents)
                     EcoGroupedSection(
-                      label: '子代理',
+                      label: context.l10n.composerSubagents,
                       topSpacing: profiles.isEmpty && coreKind == null ? 4 : 20,
-                      footer: canEdit ? null : '当前会话不可编辑编排',
+                      footer: canEdit
+                          ? null
+                          : context.l10n.composerOrchestrationLocked,
                       child: Column(
                         children: [
                           EcoGroupedTile(
@@ -625,7 +638,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '主 Agent',
+                                        context.l10n.composerMainAgent,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodyLarge
@@ -636,7 +649,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        '始终启用',
+                                        context.l10n.composerAlwaysEnabled,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodySmall
@@ -660,7 +673,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                                       vertical: 4,
                                     ),
                                     child: Text(
-                                      '启用',
+                                      context.l10n.commonEnable,
                                       style: TextStyle(
                                         color: ecoColors(
                                           context,
@@ -688,9 +701,11 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                   if (_selectedCategory == _ComposerRouteCategory.mcp &&
                       enabledMcpServers.isNotEmpty)
                     EcoGroupedSection(
-                      label: 'MCP',
+                      label: context.l10n.composerMcp,
                       topSpacing: 20,
-                      footer: canEdit ? '关闭后当前会话不再调用该服务器工具' : null,
+                      footer: canEdit
+                          ? context.l10n.composerMcpDisabledHint
+                          : null,
                       child: Column(
                         children: [
                           for (
@@ -741,30 +756,40 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                     ),
                   if (_selectedCategory == _ComposerRouteCategory.agent &&
                       coreKind == null)
-                    const _ComposerRouteEmptyState(
-                      message: '当前会话未提供可切换的 Agent',
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoSwitchableAgent,
                     ),
                   if (_selectedCategory == _ComposerRouteCategory.model &&
                       (templateModel == null || modelProvider?.enabled != true))
-                    const _ComposerRouteEmptyState(message: '当前方案未配置可切换模型'),
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoSwitchableModel,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.thinking &&
                       (templateModel == null || modelProvider?.enabled != true))
-                    const _ComposerRouteEmptyState(message: '当前方案未配置推理强度'),
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoReasoningOptions,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.profile &&
                       profiles.isEmpty)
-                    const _ComposerRouteEmptyState(message: '暂无可用方案'),
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoProfiles,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.mcp &&
                       enabledMcpServers.isEmpty)
-                    const _ComposerRouteEmptyState(message: '未配置 MCP 服务器'),
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoMcpServers,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.skills &&
                       skills.isEmpty)
-                    const _ComposerRouteEmptyState(message: '当前项目没有可用 Skills'),
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoSkills,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.skills &&
                       skills.isNotEmpty)
                     EcoGroupedSection(
-                      label: 'Skills',
+                      label: context.l10n.composerSkills,
                       topSpacing: 20,
-                      footer: canEdit ? '按需启用当前项目可用的 Skills' : null,
+                      footer: canEdit ? context.l10n.composerSkillsHint : null,
                       child: Column(
                         children: [
                           for (var i = 0; i < skills.length; i++) ...[
@@ -777,8 +802,12 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                                 return EcoSheetSwitchTile(
                                   title: skill.name,
                                   subtitle: skill.source == 'project'
-                                      ? '项目 · ${skill.layout}'
-                                      : '用户 · ${skill.layout}',
+                                      ? context.l10n.composerProjectSkill(
+                                          skill.layout,
+                                        )
+                                      : context.l10n.composerUserSkill(
+                                          skill.layout,
+                                        ),
                                   value: enabled,
                                   enabled: canEdit,
                                   onChanged: !canEdit
@@ -949,9 +978,9 @@ class _ComposerRouteCategoryTile extends StatelessWidget {
   }
 }
 
-String _thinkingEffortLabel(String? effort) {
+String _thinkingEffortLabel(String? effort, AppLocalizations l10n) {
   final value = effort ?? 'off';
-  for (final option in _thinkingEffortOptions) {
+  for (final option in _thinkingEffortOptions(l10n)) {
     if (option.value == value) return option.label;
   }
   return value;
@@ -960,13 +989,14 @@ String _thinkingEffortLabel(String? effort) {
 String _firstEnabledSubagentLabel(
   ThreadRuntimeConfigInput runtimeConfig,
   OrchestrationProfile? profile,
+  AppLocalizations l10n,
 ) {
   for (final role in configuredOrchestrationSubagentRoles(profile)) {
     if (isRuntimeSubagentEnabled(runtimeConfig.subagentEnabled, role)) {
       return _subagentRoleLabels[role] ?? role;
     }
   }
-  return '未启用';
+  return l10n.composerNotEnabled;
 }
 
 class _ComposerTemporaryModelSection extends ConsumerWidget {
@@ -1047,13 +1077,15 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
       children: [
         if (showModel)
           EcoGroupedSection(
-            label: '模型',
+            label: context.l10n.composerModel,
             topSpacing: 20,
-            footer: canEdit ? '仅显示当前方案 Provider 的候选模型' : '当前会话不可切换模型',
+            footer: canEdit
+                ? context.l10n.composerModelCandidatesHint
+                : context.l10n.composerModelLocked,
             child: Column(
               children: [
                 EcoSheetOptionTile(
-                  title: '跟随方案',
+                  title: context.l10n.composerFollowProfile,
                   subtitle: templateModel.modelId,
                   selected: override == null,
                   enabled: canEdit,
@@ -1071,7 +1103,7 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
                   const EcoGroupedDivider(indent: 16),
                   EcoGroupedTile(
                     child: Text(
-                      '候选模型加载失败',
+                      context.l10n.composerModelLoadFailed,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: ecoColors(context).danger,
                       ),
@@ -1116,29 +1148,41 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
           ),
         if (showThinking)
           EcoGroupedSection(
-            label: '推理强度',
+            label: context.l10n.composerReasoning,
             topSpacing: 20,
-            footer: reasoningUnavailable ? '当前模型不支持推理' : '仅影响当前会话',
+            footer: reasoningUnavailable
+                ? context.l10n.composerReasoningUnsupported
+                : context.l10n.composerSessionReasoningOnly,
             child: Column(
               children: [
-                for (var i = 0; i < _thinkingEffortOptions.length; i++) ...[
+                for (
+                  var i = 0;
+                  i < _thinkingEffortOptions(context.l10n).length;
+                  i++
+                ) ...[
                   if (i > 0) const EcoGroupedDivider(indent: 16),
                   EcoSheetOptionTile(
-                    title: _thinkingEffortOptions[i].label,
-                    selected: selectedEffort == _thinkingEffortOptions[i].value,
+                    title: _thinkingEffortOptions(context.l10n)[i].label,
+                    selected:
+                        selectedEffort ==
+                        _thinkingEffortOptions(context.l10n)[i].value,
                     enabled:
                         canEdit &&
                         (!reasoningUnavailable ||
-                            _thinkingEffortOptions[i].value == 'off'),
+                            _thinkingEffortOptions(context.l10n)[i].value ==
+                                'off'),
                     onTap:
                         !canEdit ||
                             (reasoningUnavailable &&
-                                _thinkingEffortOptions[i].value != 'off')
+                                _thinkingEffortOptions(context.l10n)[i].value !=
+                                    'off')
                         ? null
                         : () => selectOverride(
                             buildComposerTemporaryModelOverride(
                               model: currentModel!,
-                              thinkingEffort: _thinkingEffortOptions[i].value,
+                              thinkingEffort: _thinkingEffortOptions(
+                                context.l10n,
+                              )[i].value,
                               templateModel: templateModel,
                             ),
                           ),
@@ -1338,9 +1382,12 @@ class ComposerProfileControl extends ConsumerWidget {
         for (final profile in settings?.orchestrationProfiles ?? []) {
           if (profile.id == profileId) return profile.name;
         }
-        return profileId.isEmpty ? '选择方案' : profileId;
+        return profileId.isEmpty
+            ? context.l10n.composerSelectProfile
+            : profileId;
       },
-      orElse: () => profileId.isEmpty ? '选择方案' : profileId,
+      orElse: () =>
+          profileId.isEmpty ? context.l10n.composerSelectProfile : profileId,
     );
 
     return ComposerContextTrigger(
@@ -1380,14 +1427,14 @@ class ComposerProfileControl extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (context) => EcoSheetScaffold(
-        title: '选择智能体配置',
+        title: context.l10n.composerSelectAgentProfile,
         maxHeightFactor: 0.7,
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.only(bottom: 8),
           children: [
             EcoGroupedSection(
-              label: '方案',
+              label: context.l10n.composerProfile,
               topSpacing: 4,
               child: Column(
                 children: [
@@ -1450,7 +1497,9 @@ class ComposerOrchestrationControl extends ConsumerWidget {
 
     return ComposerContextTrigger(
       icon: EcoIcons.subagents,
-      label: compact ? summary : '编排 $summary',
+      label: compact
+          ? summary
+          : context.l10n.composerOrchestrationSummary(summary),
       enabled: canEdit,
       compact: compact,
       onTap: canEdit
@@ -1478,15 +1527,15 @@ class ComposerOrchestrationControl extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (context) => EcoSheetScaffold(
-        title: '子代理编排',
-        subtitle: '控制当前会话可调用的子代理',
+        title: context.l10n.composerSubagentOrchestration,
+        subtitle: context.l10n.composerSubagentOrchestrationSubtitle,
         maxHeightFactor: 0.7,
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.only(bottom: 8),
           children: [
             EcoGroupedSection(
-              label: '代理',
+              label: context.l10n.composerAgents,
               topSpacing: 4,
               child: Column(
                 children: [
@@ -1499,7 +1548,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '主 Agent',
+                                context.l10n.composerMainAgent,
                                 style: Theme.of(context).textTheme.bodyLarge
                                     ?.copyWith(
                                       fontSize: 17,
@@ -1508,7 +1557,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '始终启用',
+                                context.l10n.composerAlwaysEnabled,
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: ecoColors(context).textMuted,
@@ -1528,7 +1577,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                               vertical: 4,
                             ),
                             child: Text(
-                              '启用',
+                              context.l10n.commonEnable,
                               style: TextStyle(
                                 color: ecoColors(context).statusAllowText,
                                 fontSize: 12,
@@ -1574,7 +1623,7 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final current = sessionModeUi(runtimeConfig.sessionMode);
+    final current = sessionModeUi(runtimeConfig.sessionMode, context.l10n);
 
     return ComposerToolbarIconButton(
       onPressed: !canEdit
@@ -1605,41 +1654,47 @@ Future<void> showComposerSessionModeSheet(
   await showEcoActionSheet<void>(
     context: context,
     builder: (context) => EcoSheetScaffold(
-      title: '工作模式',
-      subtitle: '选择当前会话的运行方式',
+      title: context.l10n.composerWorkMode,
+      subtitle: context.l10n.composerWorkModeSubtitle,
       maxHeightFactor: 0.55,
       child: ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.only(bottom: 8),
         children: [
           EcoGroupedSection(
-            label: '模式',
+            label: context.l10n.composerMode,
             topSpacing: 4,
             child: Column(
               children: [
-                for (var i = 0; i < sessionModeUiOptions.length; i++) ...[
+                for (
+                  var i = 0;
+                  i < sessionModeUiOptions(context.l10n).length;
+                  i++
+                ) ...[
                   if (i > 0) const EcoGroupedDivider(indent: 52),
                   EcoSheetOptionTile(
                     leading: SessionModeIcon(
-                      mode: sessionModeUiOptions[i].value,
+                      mode: sessionModeUiOptions(context.l10n)[i].value,
                       size: 22,
                       color:
-                          sessionModeUiOptions[i].value ==
+                          sessionModeUiOptions(context.l10n)[i].value ==
                               runtimeConfig.sessionMode
                           ? ecoColors(context).accent
                           : ecoColors(context).textMuted,
                     ),
-                    title: sessionModeUiOptions[i].title,
-                    subtitle: sessionModeUiOptions[i].description,
+                    title: sessionModeUiOptions(context.l10n)[i].title,
+                    subtitle: sessionModeUiOptions(context.l10n)[i].description,
                     selected:
-                        sessionModeUiOptions[i].value ==
+                        sessionModeUiOptions(context.l10n)[i].value ==
                         runtimeConfig.sessionMode,
                     onTap: () {
                       persistRuntimeConfig(
                         ref,
                         threadId: threadId,
                         config: runtimeConfig.copyWith(
-                          sessionMode: sessionModeUiOptions[i].value,
+                          sessionMode: sessionModeUiOptions(
+                            context.l10n,
+                          )[i].value,
                         ),
                         onChanged: onChanged,
                       );
@@ -1694,9 +1749,12 @@ class ComposerRouteSummary extends ConsumerWidget {
         for (final profile in settings?.orchestrationProfiles ?? []) {
           if (profile.id == profileId) return profile.name;
         }
-        return profileId.isEmpty ? '选择方案' : profileId;
+        return profileId.isEmpty
+            ? context.l10n.composerSelectProfile
+            : profileId;
       },
-      orElse: () => profileId.isEmpty ? '选择方案' : profileId,
+      orElse: () =>
+          profileId.isEmpty ? context.l10n.composerSelectProfile : profileId,
     );
     final plannerContext = contextSnapshot == null
         ? null
@@ -1719,7 +1777,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               threadStatus: threadStatus,
               agentProfile: agentProfile,
             ),
-            tooltip: '上下文',
+            tooltip: context.l10n.composerContext,
             icon: ComposerContextRing(
               pct: occupancyPct ?? 0,
               size: kComposerToolbarIconSize,
@@ -1784,41 +1842,47 @@ Future<void> showComposerBashReviewSheet(
   return showEcoActionSheet<void>(
     context: context,
     builder: (context) => EcoSheetScaffold(
-      title: 'Bash 审批',
-      subtitle: '控制命令执行前的确认方式',
+      title: context.l10n.composerBashApproval,
+      subtitle: context.l10n.composerBashApprovalSubtitle,
       maxHeightFactor: 0.55,
       child: ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.only(bottom: 8),
         children: [
           EcoGroupedSection(
-            label: '模式',
+            label: context.l10n.composerMode,
             topSpacing: 4,
             child: Column(
               children: [
-                for (var i = 0; i < bashReviewUiOptions.length; i++) ...[
+                for (
+                  var i = 0;
+                  i < bashReviewUiOptions(context.l10n).length;
+                  i++
+                ) ...[
                   if (i > 0) const EcoGroupedDivider(indent: 52),
                   EcoSheetOptionTile(
                     leading: ComposerBashReviewToolbarIcon(
-                      mode: bashReviewUiOptions[i].value,
+                      mode: bashReviewUiOptions(context.l10n)[i].value,
                       size: 22,
                       color:
-                          bashReviewUiOptions[i].value ==
+                          bashReviewUiOptions(context.l10n)[i].value ==
                               runtimeConfig.bashReviewMode
                           ? ecoColors(context).accent
                           : ecoColors(context).textMuted,
                     ),
-                    title: bashReviewUiOptions[i].title,
-                    subtitle: bashReviewUiOptions[i].description,
+                    title: bashReviewUiOptions(context.l10n)[i].title,
+                    subtitle: bashReviewUiOptions(context.l10n)[i].description,
                     selected:
-                        bashReviewUiOptions[i].value ==
+                        bashReviewUiOptions(context.l10n)[i].value ==
                         runtimeConfig.bashReviewMode,
                     onTap: () {
                       persistRuntimeConfig(
                         ref,
                         threadId: threadId,
                         config: runtimeConfig.copyWith(
-                          bashReviewMode: bashReviewUiOptions[i].value,
+                          bashReviewMode: bashReviewUiOptions(
+                            context.l10n,
+                          )[i].value,
                         ),
                         onChanged: onChanged,
                       );
@@ -1860,7 +1924,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
         threadId: threadId,
         onChanged: onChanged,
       ),
-      tooltip: bashReviewUi(mode).title,
+      tooltip: bashReviewUi(mode, context.l10n).title,
       icon: ComposerBashReviewToolbarIcon(
         mode: mode,
         color: accent
@@ -1885,7 +1949,7 @@ class ComposerBashReviewControl extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final current = bashReviewUi(runtimeConfig.bashReviewMode);
+    final current = bashReviewUi(runtimeConfig.bashReviewMode, context.l10n);
     final icon = switch (runtimeConfig.bashReviewMode) {
       'auto' => EcoIcons.shieldAuto,
       'allow_all' => EcoIcons.shieldAllowAll,

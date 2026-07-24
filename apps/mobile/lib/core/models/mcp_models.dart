@@ -27,9 +27,8 @@ class McpSettingsSnapshot {
       McpSettingsSnapshot(
         servers: (json['servers'] as List<dynamic>? ?? [])
             .map(
-              (entry) => McpServerConfigView.fromJson(
-                entry as Map<String, dynamic>,
-              ),
+              (entry) =>
+                  McpServerConfigView.fromJson(entry as Map<String, dynamic>),
             )
             .toList(),
       );

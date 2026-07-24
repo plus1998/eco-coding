@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
@@ -10,6 +11,7 @@ import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/eco_pressable.dart';
 import '../../core/utils/thread_usage_display.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 Future<void> showThreadBillingSheet({
   required BuildContext context,
@@ -20,10 +22,8 @@ Future<void> showThreadBillingSheet({
     context: context,
     isScrollControlled: true,
     builder: (context) => EcoSheetScaffold(
-      title: '计费',
-      subtitle: billing == null
-          ? null
-          : '本会话累计 · Eco 编排后费用',
+      title: context.l10n.billingTitle,
+      subtitle: billing == null ? null : context.l10n.billingSessionTotal,
       maxHeightFactor: 0.82,
       child: ListView(
         padding: const EdgeInsets.only(bottom: 8),
@@ -32,39 +32,46 @@ Future<void> showThreadBillingSheet({
             Padding(
               padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
               child: Text(
-                billingEmptyHint(threadStatus),
+                billingEmptyHint(threadStatus, context.l10n),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: ecoColors(context).textMuted,
-                      height: 1.4,
-                    ),
+                  color: ecoColors(context).textMuted,
+                  height: 1.4,
+                ),
               ),
             )
           else ...[
             _BillingHero(billing: billing),
             EcoGroupedSection(
-              label: '费用对比',
+              label: context.l10n.billingComparison,
               topSpacing: 20,
               child: Column(
                 children: [
                   _InsetMetricTile(
-                    label: '未编排',
-                    subtitle: billing.plannerModelLabel?.trim().isNotEmpty == true
-                        ? '按 ${billing.plannerModelLabel} 单价估算'
-                        : '按主模型单价估算',
+                    label: context.l10n.billingUnorchestrated,
+                    subtitle:
+                        billing.plannerModelLabel?.trim().isNotEmpty == true
+                        ? context.l10n.billingPlannerEstimate(
+                            billing.plannerModelLabel!,
+                          )
+                        : context.l10n.billingMainModelEstimate,
                     value: formatCostUsd(billing.plannerTokenCostUsd),
                   ),
                   const EcoGroupedDivider(indent: 16),
                   _InsetMetricTile(
-                    label: '经济编程',
-                    subtitle: 'Eco 编排后的实际费用',
+                    label: context.l10n.billingEco,
+                    subtitle: context.l10n.billingEcoSubtitle,
                     value: formatCostUsd(billing.ecoCostUsd),
                     emphasized: true,
                   ),
                   const EcoGroupedDivider(indent: 16),
                   _InsetMetricTile(
-                    label: '节省',
-                    value: formatSavingsLine(billing.savedUsd, billing.savedPct),
+                    label: context.l10n.billingSavings,
+                    value: formatSavingsLine(
+                      billing.savedUsd,
+                      billing.savedPct,
+                      context.l10n,
+                    ),
                     valueColor: billing.savedUsd >= 0
                         ? ecoColors(context).success
                         : ecoColors(context).danger,
@@ -73,30 +80,30 @@ Future<void> showThreadBillingSheet({
               ),
             ),
             EcoGroupedSection(
-              label: 'Token 用量',
+              label: context.l10n.billingTokenUsage,
               topSpacing: 20,
               child: Column(
                 children: [
                   _InsetMetricTile(
-                    label: '输入',
+                    label: context.l10n.billingInput,
                     value: _formatTokenCount(billing.inputTokens),
                   ),
                   const EcoGroupedDivider(indent: 16),
                   _InsetMetricTile(
-                    label: '输出',
+                    label: context.l10n.billingOutput,
                     value: _formatTokenCount(billing.outputTokens),
                   ),
                   if (billing.cacheReadTokens > 0) ...[
                     const EcoGroupedDivider(indent: 16),
                     _InsetMetricTile(
-                      label: '缓存读取',
+                      label: context.l10n.billingCacheRead,
                       value: _formatTokenCount(billing.cacheReadTokens),
                     ),
                   ],
                   if (billing.cacheCreationTokens > 0) ...[
                     const EcoGroupedDivider(indent: 16),
                     _InsetMetricTile(
-                      label: '缓存写入',
+                      label: context.l10n.billingCacheWrite,
                       value: _formatTokenCount(billing.cacheCreationTokens),
                     ),
                   ],
@@ -105,7 +112,7 @@ Future<void> showThreadBillingSheet({
             ),
             if (billing.byModel.isNotEmpty)
               EcoGroupedSection(
-                label: '按模型',
+                label: context.l10n.billingByModel,
                 topSpacing: 20,
                 child: Column(
                   children: [
@@ -140,10 +147,10 @@ Future<void> showThreadContextSheet({
           ? null
           : resolvePlannerContext(contextSnapshot);
       return EcoSheetScaffold(
-        title: '上下文',
+        title: context.l10n.billingContext,
         subtitle: planner == null
             ? null
-            : formatRoleModelLabel(planner.role, planner.modelId),
+            : formatRoleModelLabel(planner.role, planner.modelId, context.l10n),
         maxHeightFactor: 0.88,
         child: ListView(
           padding: const EdgeInsets.only(bottom: 8),
@@ -152,24 +159,25 @@ Future<void> showThreadContextSheet({
               Padding(
                 padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
                 child: Text(
-                  contextCardPlaceholder(threadStatus),
+                  contextCardPlaceholder(threadStatus, context.l10n),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: ecoColors(context).textMuted,
-                        height: 1.4,
-                      ),
+                    color: ecoColors(context).textMuted,
+                    height: 1.4,
+                  ),
                 ),
               )
             else ...[
               _ContextHero(role: planner!),
               EcoGroupedSection(
-                label: '构成',
+                label: context.l10n.billingComposition,
                 topSpacing: 20,
                 child: _ContextSegmentList(role: planner),
               ),
               ..._buildSubagentSections(
                 contextSnapshot,
                 agentProfile: agentProfile,
+                l10n: context.l10n,
               ),
             ],
           ],
@@ -182,10 +190,12 @@ Future<void> showThreadContextSheet({
 List<Widget> _buildSubagentSections(
   ThreadContextSnapshot snapshot, {
   OrchestrationProfile? agentProfile,
+  required AppLocalizations l10n,
 }) {
   final rows = buildFlatSubagentContextRows(
     snapshot,
     profile: agentProfile,
+    l10n: l10n,
   );
   if (rows.isEmpty) return const [];
 
@@ -234,13 +244,13 @@ class ThreadUsageFloatButtons extends StatelessWidget {
         ? eco.success
         : eco.textSecondary;
     final costStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: costColor,
-          fontSize: 12,
-          height: 1.1,
-          letterSpacing: -0.1,
-          fontFeatures: const [FontFeature.tabularFigures()],
-          fontWeight: FontWeight.w600,
-        );
+      color: costColor,
+      fontSize: 12,
+      height: 1.1,
+      letterSpacing: -0.1,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      fontWeight: FontWeight.w600,
+    );
 
     void openBillingSheet() {
       showThreadBillingSheet(
@@ -257,7 +267,7 @@ class ThreadUsageFloatButtons extends StatelessWidget {
 
     if (PlatformInfo.isIOS && isDark) {
       return Tooltip(
-        message: '计费',
+        message: context.l10n.billingTitle,
         child: AdaptiveButton.child(
           onPressed: openBillingSheet,
           style: AdaptiveButtonStyle.glass,
@@ -271,7 +281,7 @@ class ThreadUsageFloatButtons extends StatelessWidget {
     }
 
     return Tooltip(
-      message: '计费',
+      message: context.l10n.billingTitle,
       child: EcoPressable(
         onTap: openBillingSheet,
         borderRadius: BorderRadius.circular(999),
@@ -320,22 +330,26 @@ class _BillingHero extends StatelessWidget {
           Text(
             formatCostUsd(billing.ecoCostUsd),
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  fontSize: 40,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -1.2,
-                  height: 1.05,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+              fontSize: 40,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -1.2,
+              height: 1.05,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             savedPositive
-                ? formatSavingsLine(billing.savedUsd, billing.savedPct)
-                : '相对未编排估算',
+                ? formatSavingsLine(
+                    billing.savedUsd,
+                    billing.savedPct,
+                    context.l10n,
+                  )
+                : context.l10n.billingVsUnorchestrated,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: savedPositive ? eco.success : eco.textMuted,
-                  fontWeight: savedPositive ? FontWeight.w500 : FontWeight.w400,
-                ),
+              color: savedPositive ? eco.success : eco.textMuted,
+              fontWeight: savedPositive ? FontWeight.w500 : FontWeight.w400,
+            ),
           ),
         ],
       ),
@@ -379,7 +393,8 @@ class _ContextHero extends StatelessWidget {
                   children: [
                     Text(
                       '${role.occupancyPct}',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.8,
                             height: 1,
@@ -388,9 +403,9 @@ class _ContextHero extends StatelessWidget {
                     ),
                     Text(
                       '%',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: eco.textMuted,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelMedium?.copyWith(color: eco.textMuted),
                     ),
                   ],
                 ),
@@ -399,19 +414,19 @@ class _ContextHero extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            formatOccupancyLabel(role.occupancyPct),
+            formatOccupancyLabel(role.occupancyPct, context.l10n),
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: pctColor,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: pctColor,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)} tokens',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: eco.textMuted,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+              color: eco.textMuted,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ],
       ),
@@ -420,10 +435,7 @@ class _ContextHero extends StatelessWidget {
 }
 
 class _ContextOccupancyTile extends StatelessWidget {
-  const _ContextOccupancyTile({
-    required this.role,
-    this.accentColor,
-  });
+  const _ContextOccupancyTile({required this.role, this.accentColor});
 
   final ThreadRoleContextSnapshot role;
   final Color? accentColor;
@@ -431,7 +443,11 @@ class _ContextOccupancyTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final pctColor = _occupancyColor(eco, role.occupancyPct, accent: accentColor);
+    final pctColor = _occupancyColor(
+      eco,
+      role.occupancyPct,
+      accent: accentColor,
+    );
     final ratio = role.limit > 0
         ? (role.occupied / role.limit).clamp(0.0, 1.0)
         : 0.0;
@@ -456,21 +472,21 @@ class _ContextOccupancyTile extends StatelessWidget {
               ],
               Expanded(
                 child: Text(
-                  formatOccupancyLabel(role.occupancyPct),
+                  formatOccupancyLabel(role.occupancyPct, context.l10n),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 17,
-                        letterSpacing: -0.2,
-                        color: pctColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontSize: 17,
+                    letterSpacing: -0.2,
+                    color: pctColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(
                 '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: eco.textMuted,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                  color: eco.textMuted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ],
           ),
@@ -502,16 +518,17 @@ class _ContextSegmentList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final segments =
-        role.segments.where((segment) => segment.tokens > 0).toList();
+    final segments = role.segments
+        .where((segment) => segment.tokens > 0)
+        .toList();
     if (segments.isEmpty) {
       return EcoGroupedTile(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Text(
-          '暂无构成明细',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: eco.textMuted,
-              ),
+          context.l10n.billingNoComposition,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: eco.textMuted),
         ),
       );
     }
@@ -528,17 +545,17 @@ class _ContextSegmentList extends StatelessWidget {
                   child: Text(
                     segments[i].label,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontSize: 17,
-                          letterSpacing: -0.2,
-                        ),
+                      fontSize: 17,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
                 Text(
                   formatContextK(segments[i].tokens),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: eco.textMuted,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
+                    color: eco.textMuted,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ],
             ),
@@ -579,19 +596,18 @@ class _InsetMetricTile extends StatelessWidget {
                 Text(
                   label,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 17,
-                        letterSpacing: -0.2,
-                        fontWeight:
-                            emphasized ? FontWeight.w600 : FontWeight.w400,
-                      ),
+                    fontSize: 17,
+                    letterSpacing: -0.2,
+                    fontWeight: emphasized ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
               ],
@@ -601,13 +617,12 @@ class _InsetMetricTile extends StatelessWidget {
           Text(
             value,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontSize: 17,
-                  letterSpacing: -0.2,
-                  color: valueColor ??
-                      (emphasized ? eco.success : eco.textPrimary),
-                  fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+              fontSize: 17,
+              letterSpacing: -0.2,
+              color: valueColor ?? (emphasized ? eco.success : eco.textPrimary),
+              fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ],
       ),
@@ -615,11 +630,7 @@ class _InsetMetricTile extends StatelessWidget {
   }
 }
 
-Color _occupancyColor(
-  EcoColors eco,
-  int pct, {
-  Color? accent,
-}) {
+Color _occupancyColor(EcoColors eco, int pct, {Color? accent}) {
   if (pct >= 95) return eco.danger;
   if (pct >= 85) return eco.warnAccent;
   return accent ?? eco.accent;

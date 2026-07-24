@@ -1,6 +1,7 @@
 import type { ToolPolicy } from "../shared/ipc";
 import { materializeEcoToolPolicy } from "@eco/runtime/tool-permission-policy";
 import { parseList, uniqueValues } from "./agent-template-form-utils";
+import { i18n } from "./i18n";
 
 export const DELEGATION_TOOL_NAMES = ["Agent", "Task", "TaskList", "TaskOutput"] as const;
 export const FILESYSTEM_READ_TOOL_NAMES = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
@@ -64,20 +65,20 @@ export function diagnoseCoreCapabilities(
 
   if (values.writeCodebase && !values.bash) {
     codexSupport = "unsupported";
-    codexMessages.push("Codex 无法在允许写入时单独禁用 shell。请启用运行命令或关闭修改代码库。");
+    codexMessages.push(i18n.t("agent.capability.codexWriteNeedsShell"));
   } else {
     if (values.readCodebase && values.readScope === "extra_dirs") {
       if (codexSupport === "native") codexSupport = "adapted";
-      codexMessages.push("扩展目录读取由 Codex 审批桥处理。");
+      codexMessages.push(i18n.t("agent.capability.codexExtraDirs"));
     }
     if (values.taskProgress) {
       if (codexSupport === "native") codexSupport = "adapted";
-      codexMessages.push("执行进度映射到 Codex plan 事件。");
+      codexMessages.push(i18n.t("agent.capability.codexProgress"));
     }
   }
 
   if (parseList(values.advancedDisallowedTools).length > 0) {
-    claudeMessages.push("已应用 Claude Code 专属工具禁用项。");
+    claudeMessages.push(i18n.t("agent.capability.claudeDisabled"));
   }
   return [
     { core: "claude", support: "native", messages: claudeMessages },
@@ -88,8 +89,12 @@ export function diagnoseCoreCapabilities(
 export const TOOL_CAPABILITY_PRESETS: ToolCapabilityPreset[] = [
   {
     id: "readonly",
-    label: "只读探索",
-    hint: "读文件和搜索代码，不写入、不运行命令。",
+    get label() {
+      return i18n.t("agent.preset.readonly");
+    },
+    get hint() {
+      return i18n.t("agent.preset.readonlyHint");
+    },
     values: {
       readCodebase: true,
       readScope: "workspace",
@@ -103,8 +108,12 @@ export const TOOL_CAPABILITY_PRESETS: ToolCapabilityPreset[] = [
   },
   {
     id: "research",
-    label: "研究检索",
-    hint: "读本地上下文，也允许联网检索。",
+    get label() {
+      return i18n.t("agent.preset.research");
+    },
+    get hint() {
+      return i18n.t("agent.preset.researchHint");
+    },
     values: {
       readCodebase: true,
       readScope: "workspace",
@@ -118,8 +127,12 @@ export const TOOL_CAPABILITY_PRESETS: ToolCapabilityPreset[] = [
   },
   {
     id: "coding",
-    label: "代码执行",
-    hint: "允许读写、编辑、命令和任务进度。",
+    get label() {
+      return i18n.t("agent.preset.coding");
+    },
+    get hint() {
+      return i18n.t("agent.preset.codingHint");
+    },
     values: {
       readCodebase: true,
       readScope: "workspace",
@@ -133,8 +146,12 @@ export const TOOL_CAPABILITY_PRESETS: ToolCapabilityPreset[] = [
   },
   {
     id: "review",
-    label: "评审验证",
-    hint: "可读文件并运行验证命令，不允许修改文件。",
+    get label() {
+      return i18n.t("agent.preset.review");
+    },
+    get hint() {
+      return i18n.t("agent.preset.reviewHint");
+    },
     values: {
       readCodebase: true,
       readScope: "workspace",
@@ -243,7 +260,7 @@ export function toolPolicyToCapabilityFields(
 
 export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues): ToolPolicy {
   if (values.writeCodebase && !values.bash) {
-    throw new Error("Codex 无法表达“允许修改代码库但禁用命令”。请同时启用运行命令，或关闭修改代码库。");
+    throw new Error(i18n.t("agent.capability.invalidWriteWithoutShell"));
   }
   const disallowed = new Set<string>();
 
@@ -380,35 +397,54 @@ export function buildCapabilityPermissionChips(
   const chips: Array<{ label: string; tone: "allow" | "deny" | "neutral" }> = [
     {
       label: values.readCodebase
-        ? `读 ${values.readScope === "extra_dirs" ? "工作区+扩展" : "工作区"}`
-        : "读 禁用",
+        ? i18n.t("agent.chip.read", {
+            scope:
+              values.readScope === "extra_dirs"
+                ? i18n.t("capability.workspaceExtra")
+                : i18n.t("capability.workspace"),
+          })
+        : i18n.t("agent.chip.readDisabled"),
       tone: values.readCodebase ? "allow" : "deny",
     },
     {
-      label: values.writeCodebase ? "写 工作区" : "写 禁用",
+      label: values.writeCodebase
+        ? i18n.t("agent.chip.write")
+        : i18n.t("agent.chip.writeDisabled"),
       tone: values.writeCodebase ? "allow" : "deny",
     },
     {
-      label: values.bash ? "Bash" : "Bash 禁用",
+      label: values.bash ? "Bash" : i18n.t("agent.chip.bashDisabled"),
       tone: values.bash ? "allow" : "deny",
     },
     {
-      label: values.network ? "联网" : "联网关闭",
+      label: values.network
+        ? i18n.t("agent.chip.network")
+        : i18n.t("agent.chip.networkDisabled"),
       tone: values.network ? "allow" : "deny",
     },
     {
       label:
         mcpServerCount > 0 || mcpToolCount > 0
-          ? `MCP ${mcpServerCount} 个服务${mcpToolCount > 0 ? `/${mcpToolCount} 个工具` : ""}`
-          : "MCP 关闭",
+          ? i18n.t("agent.chip.mcp", {
+              servers: mcpServerCount,
+              tools:
+                mcpToolCount > 0
+                  ? i18n.t("agent.chip.mcpTools", { count: mcpToolCount })
+                  : "",
+            })
+          : i18n.t("agent.chip.mcpDisabled"),
       tone: mcpServerCount > 0 || mcpToolCount > 0 ? "allow" : "neutral",
     },
     {
-      label: values.taskProgress ? "可更新进度" : "进度关闭",
+      label: values.taskProgress
+        ? i18n.t("agent.chip.progress")
+        : i18n.t("agent.chip.progressDisabled"),
       tone: values.taskProgress ? "allow" : "deny",
     },
     {
-      label: values.allowDelegation ? "可委派" : "委派关闭",
+      label: values.allowDelegation
+        ? i18n.t("agent.chip.delegation")
+        : i18n.t("agent.chip.delegationDisabled"),
       tone: values.allowDelegation ? "allow" : "deny",
     },
   ];
@@ -417,12 +453,14 @@ export function buildCapabilityPermissionChips(
     chips.push({ label: "Skill", tone: "allow" });
   }
   if (values.askUser) {
-    chips.push({ label: "询问用户", tone: "allow" });
+    chips.push({ label: i18n.t("agent.chip.askUser"), tone: "allow" });
   }
   const advanced = parseList(values.advancedDisallowedTools);
   if (advanced.length > 0) {
     const visible = advanced.slice(0, 3).join("/");
-    const label = advanced.length > 3 ? `高级禁用 ${visible}+${advanced.length - 3}` : `高级禁用 ${visible}`;
+    const label = i18n.t("agent.chip.advancedDisabled", {
+      tools: advanced.length > 3 ? `${visible}+${advanced.length - 3}` : visible,
+    });
     chips.push({ label, tone: "deny" });
   }
   return chips;

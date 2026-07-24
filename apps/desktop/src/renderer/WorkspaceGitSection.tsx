@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type {
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
@@ -85,6 +86,7 @@ export function WorkspaceGitSection({
   scriptsDisabled,
   onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
+  const { t } = useTranslation();
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitDialogWorkspacePath, setCommitDialogWorkspacePath] = useState<string | undefined>();
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -131,10 +133,10 @@ export function WorkspaceGitSection({
   const deletions = changesDiff?.totalDeletions ?? gitStatus?.deletions ?? 0;
   const isGitStatusPending = Boolean(workspacePath && !gitStatus);
   const branchLabel = isGitStatusPending
-    ? "获取中…"
+    ? t("workspaceGit.fetching")
     : gitStatus?.isGitRepository
       ? gitStatus.branch ?? "detached"
-      : "非 Git 仓库";
+      : t("workspaceGit.notRepository");
   const showBranchPicker = Boolean(
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
   );
@@ -311,7 +313,9 @@ export function WorkspaceGitSection({
       });
       if (result.conflicted) {
         setPullConflict(
-          result.conflictFiles.length > 0 ? result.conflictFiles : ["（未能自动识别冲突文件，请查看 git status）"],
+          result.conflictFiles.length > 0
+            ? result.conflictFiles
+            : [t("workspaceGit.unknownConflictFiles")],
         );
         await onPullSuccess?.();
         await syncWorkspaceChangesState();
@@ -380,7 +384,9 @@ export function WorkspaceGitSection({
     if (!workspacePath || !window.eco || discardBusy || !changesDiff?.fileCount) {
       return;
     }
-    const confirmed = window.confirm(`确定撤掉全部 ${changesDiff.fileCount} 个文件的未提交变更？此操作不可恢复。`);
+    const confirmed = window.confirm(
+      t("workspaceGit.confirmDiscardAll", { count: changesDiff.fileCount }),
+    );
     if (!confirmed) {
       return;
     }
@@ -412,12 +418,12 @@ export function WorkspaceGitSection({
             disabled={!workspacePath || gitBusy}
             aria-expanded={changesDrawerOpen}
             aria-haspopup="dialog"
-            aria-label="查看工作区变更"
+            aria-label={t("workspaceGit.viewChanges")}
             onClick={() => void openChangesDrawer()}
           >
             <PlusSquare size={16} aria-hidden />
-            <span>变更</span>
-            <span className="thread-info-workspace-git-stats" aria-label="变更行数">
+            <span>{t("workspace.diff.changes")}</span>
+            <span className="thread-info-workspace-git-stats" aria-label={t("workspaceGit.changedLines")}>
               {gitBusy ? (
                 <Loader2 size={12} className="spinning thread-info-workspace-git-stats-busy" aria-hidden />
               ) : (
@@ -447,7 +453,7 @@ export function WorkspaceGitSection({
                 disabled={branchPickerDisabled}
                 aria-expanded={branchMenuOpen}
                 aria-haspopup="listbox"
-                aria-label="切换分支"
+                aria-label={t("workspaceGit.switchBranch")}
                 onClick={() => {
                   setBranchMenuOpen((current) => {
                     const next = !current;
@@ -478,17 +484,19 @@ export function WorkspaceGitSection({
                     <div
                       className="thread-info-workspace-git-branch-menu"
                       role="listbox"
-                      aria-label="切换分支"
+                      aria-label={t("workspaceGit.switchBranch")}
                       style={branchMenuStyle}
                     >
                       {branchCreateMode ? (
                         <div className="thread-info-workspace-git-branch-menu-body">
                           <div className="thread-info-workspace-git-branch-create">
-                            <div className="thread-info-workspace-git-branch-menu-header">新分支</div>
+                            <div className="thread-info-workspace-git-branch-menu-header">
+                              {t("workspaceGit.newBranch")}
+                            </div>
                             <input
                               className="thread-info-workspace-git-branch-create-input"
                               value={newBranchName}
-                              placeholder="分支名称…"
+                              placeholder={t("workspaceGit.branchName")}
                               disabled={branchBusy}
                               autoFocus
                               onChange={(event) => {
@@ -516,7 +524,9 @@ export function WorkspaceGitSection({
                         </div>
                       ) : (
                         <>
-                          <div className="thread-info-workspace-git-branch-menu-header">分支</div>
+                          <div className="thread-info-workspace-git-branch-menu-header">
+                            {t("workspaceGit.branches")}
+                          </div>
                           <div className="thread-info-workspace-git-branch-menu-body">
                             <ul className="thread-info-workspace-git-branch-menu-list">
                               {gitStatus!.branches.map((branch) => {
@@ -553,7 +563,9 @@ export function WorkspaceGitSection({
                                     }}
                                   >
                                     <Plus size={14} aria-hidden />
-                                    <span className="thread-info-workspace-git-branch-menu-label">新分支</span>
+                                    <span className="thread-info-workspace-git-branch-menu-label">
+                                      {t("workspaceGit.newBranch")}
+                                    </span>
                                   </button>
                                 </li>
                               ) : null}
@@ -605,21 +617,21 @@ export function WorkspaceGitSection({
               onClick={() => void handleRemoteSync()}
               title={
                 !canPull
-                  ? "未配置远程跟踪分支"
+                  ? t("workspaceGit.noUpstream")
                   : hasRemoteUpdates
-                    ? `落后远程 ${gitStatus?.behindCount ?? 0} 个提交`
-                    : "抓取远程更新"
+                    ? t("workspaceGit.behind", { count: gitStatus?.behindCount ?? 0 })
+                    : t("workspaceGit.fetchUpdates")
               }
             >
               <CloudDownload size={16} aria-hidden />
               <span>
                 {remoteSyncOperation
                   ? remoteSyncOperation === "pull"
-                    ? "拉取中…"
-                    : "抓取中…"
+                    ? t("workspaceGit.pulling")
+                    : t("workspaceGit.fetching")
                   : hasRemoteUpdates
-                    ? "拉取"
-                    : "抓取"}
+                    ? t("workspaceGit.pull")
+                    : t("workspaceGit.fetch")}
               </span>
             </button>
           </li>
@@ -640,7 +652,7 @@ export function WorkspaceGitSection({
               onClick={onOpenScriptsDialog}
             >
               <Play size={16} aria-hidden />
-              <span>脚本</span>
+              <span>{t("dialog.scripts.title")}</span>
             </button>
           </li>
         ) : null}

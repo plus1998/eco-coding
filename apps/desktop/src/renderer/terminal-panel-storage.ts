@@ -1,3 +1,5 @@
+import { i18n } from "./i18n";
+
 const STORAGE_KEY = "eco.terminal";
 const DEFAULT_HEIGHT = 280;
 const MIN_HEIGHT = 120;
@@ -27,7 +29,7 @@ export function createTerminalTabId(): string {
 export function createTerminalTab(label: string): TerminalTabRecord {
   return {
     id: createTerminalTabId(),
-    label: label.trim() || "终端",
+    label: label.trim() || i18n.t("terminal.title"),
   };
 }
 
@@ -56,7 +58,10 @@ function normalizeTab(value: unknown): TerminalTabRecord | undefined {
   if (typeof record.id !== "string" || !record.id.trim()) {
     return undefined;
   }
-  const label = typeof record.label === "string" && record.label.trim() ? record.label.trim() : "终端";
+  const label =
+    typeof record.label === "string" && record.label.trim()
+      ? record.label.trim()
+      : i18n.t("terminal.title");
   return { id: record.id.trim(), label };
 }
 
@@ -134,7 +139,7 @@ export function clampTerminalHeight(height: number): number {
 }
 
 export function nextTerminalTabLabel(workspaceLabel: string, existingTabs: TerminalTabRecord[]): string {
-  const base = workspaceLabel.trim() || "终端";
+  const base = workspaceLabel.trim() || i18n.t("terminal.title");
   const taken = new Set(existingTabs.map((tab) => tab.label));
   if (!taken.has(base)) {
     return base;

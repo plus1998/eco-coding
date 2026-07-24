@@ -1,6 +1,7 @@
 import { Folder, Search } from "lucide-react";
 import { type RefObject, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { ThreadSummary } from "../shared/ipc";
 
 export interface SidebarSearchProject {
@@ -77,6 +78,7 @@ export function SidebarSearchDialog({
   onSelectThread,
   onSelectProject,
 }: SidebarSearchDialogProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const deferredQuery = useDeferredValue(query);
@@ -135,19 +137,19 @@ export function SidebarSearchDialog({
       <button
         type="button"
         className="sidebar-search-backdrop-close"
-        aria-label="关闭搜索"
+        aria-label={t("dialog.search.closeAria")}
         tabIndex={-1}
         onClick={onClose}
       />
-      <section className="sidebar-search-dialog" role="dialog" aria-modal="true" aria-label="搜索会话和项目">
+      <section className="sidebar-search-dialog" role="dialog" aria-modal="true" aria-label={t("nav.search")}>
         <div className="sidebar-search-input-wrap">
           <Search size={19} aria-hidden />
           <input
             ref={inputRef}
             type="search"
             value={query}
-            placeholder="搜索会话标题或项目"
-            aria-label="搜索会话标题或项目"
+            placeholder={t("nav.searchPlaceholder")}
+            aria-label={t("nav.searchPlaceholder")}
             role="combobox"
             aria-expanded="true"
             aria-autocomplete="list"
@@ -177,14 +179,14 @@ export function SidebarSearchDialog({
           <kbd>esc</kbd>
         </div>
 
-        <div id={listboxId} className="sidebar-search-results" role="listbox" aria-label="搜索结果">
+        <div id={listboxId} className="sidebar-search-results" role="listbox" aria-label={t("nav.searchResults")}>
           {results.length === 0 ? (
-            <div className="sidebar-search-empty">没有匹配的会话或项目</div>
+            <div className="sidebar-search-empty">{t("nav.noSearchResults")}</div>
           ) : (
             <>
               {runningThreadResults.length > 0 ? (
                 <SearchResultGroup
-                  label="正在运行"
+                  label={t("nav.running")}
                   results={runningThreadResults}
                   allResults={results}
                   activeIndex={activeIndex}
@@ -196,7 +198,7 @@ export function SidebarSearchDialog({
               ) : null}
               {recentThreadResults.length > 0 ? (
                 <SearchResultGroup
-                  label="会话"
+                  label={t("nav.threads")}
                   results={recentThreadResults}
                   allResults={results}
                   activeIndex={activeIndex}
@@ -208,7 +210,7 @@ export function SidebarSearchDialog({
               ) : null}
               {projectResults.length > 0 ? (
                 <SearchResultGroup
-                  label="项目"
+                  label={t("nav.projects")}
                   results={projectResults}
                   allResults={results}
                   activeIndex={activeIndex}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../locale/app_localizations_ext.dart';
 import '../theme/eco_icons.dart';
 import '../theme/eco_theme.dart';
 import 'eco_grouped_list.dart';
@@ -80,9 +81,9 @@ class EcoSheetHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.25,
-                ),
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.25,
+            ),
           ),
           if (subtitle != null && subtitle!.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -92,9 +93,9 @@ class EcoSheetHeader extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
-                    height: 1.35,
-                  ),
+                color: eco.textMuted,
+                height: 1.35,
+              ),
             ),
           ],
         ],
@@ -122,12 +123,12 @@ class EcoActionSheetActions extends StatelessWidget {
   const EcoActionSheetActions({
     super.key,
     required this.items,
-    this.cancelLabel = '取消',
+    this.cancelLabel,
     this.onCancel,
   });
 
   final List<EcoActionSheetItem> items;
-  final String cancelLabel;
+  final String? cancelLabel;
   final VoidCallback? onCancel;
 
   @override
@@ -163,13 +164,13 @@ class EcoActionSheetActions extends StatelessWidget {
                 height: 52,
                 child: Center(
                   child: Text(
-                    cancelLabel,
+                    cancelLabel ?? context.l10n.commonCancel,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: eco.accent,
-                          fontSize: 17,
-                          letterSpacing: -0.2,
-                        ),
+                      fontWeight: FontWeight.w600,
+                      color: eco.accent,
+                      fontSize: 17,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
               ),
@@ -206,10 +207,10 @@ class _ActionRow extends StatelessWidget {
             child: Text(
               item.label,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: color,
-                    fontSize: 17,
-                    letterSpacing: -0.2,
-                  ),
+                color: color,
+                fontSize: 17,
+                letterSpacing: -0.2,
+              ),
             ),
           ),
         ],
@@ -285,10 +286,7 @@ class EcoSheetOptionTile extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
       child: Row(
         children: [
-          if (leading != null) ...[
-            leading!,
-            const SizedBox(width: 14),
-          ],
+          if (leading != null) ...[leading!, const SizedBox(width: 14)],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,12 +295,11 @@ class EcoSheetOptionTile extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 17,
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                        letterSpacing: -0.2,
-                        color: enabled ? eco.textPrimary : eco.textMuted,
-                      ),
+                    fontSize: 17,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    letterSpacing: -0.2,
+                    color: enabled ? eco.textPrimary : eco.textMuted,
+                  ),
                 ),
                 if (subtitle != null && subtitle!.isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -311,9 +308,9 @@ class EcoSheetOptionTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                          height: 1.3,
-                        ),
+                      color: eco.textMuted,
+                      height: 1.3,
+                    ),
                   ),
                 ],
               ],
@@ -361,18 +358,18 @@ class EcoSheetSwitchTile extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 17,
-                        letterSpacing: -0.2,
-                        color: enabled ? eco.textPrimary : eco.textMuted,
-                      ),
+                    fontSize: 17,
+                    letterSpacing: -0.2,
+                    color: enabled ? eco.textPrimary : eco.textMuted,
+                  ),
                 ),
                 if (subtitle != null && subtitle!.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
               ],

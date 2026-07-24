@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AgentTemplateCapabilityOption } from "./agent-template-form";
 import { parseList, toggleAgentTemplateAdvancedDisallowedTool, toggleAgentTemplateListValue } from "./agent-template-form";
 import {
@@ -32,6 +33,7 @@ export function ToolCapabilityPanel({
   showPresets = true,
   onChange,
 }: ToolCapabilityPanelProps) {
+  const { t } = useTranslation();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const activePresetId = useMemo(
     () => TOOL_CAPABILITY_PRESETS.find((preset) => matchesToolCapabilityPreset(values, preset))?.id,
@@ -64,10 +66,10 @@ export function ToolCapabilityPanel({
               <strong>{diagnostic.core === "claude" ? "Claude Code" : "Codex"}</strong>
               <span>
                 {diagnostic.support === "native"
-                  ? "原生支持"
+                  ? t("capability.native")
                   : diagnostic.support === "adapted"
-                    ? "包含适配"
-                    : "存在不支持配置"}
+                    ? t("capability.adapted")
+                    : t("capability.unsupported")}
               </span>
             </div>
             {diagnostic.messages.map((message) => <small key={message}>{message}</small>)}
@@ -98,15 +100,15 @@ export function ToolCapabilityPanel({
 
       <div className="models-tool-capability-list">
         <CapabilityToggle
-          label="读取代码库"
-          description="浏览与搜索仓库文件（Read、Glob、Grep 等）。"
+          label={t("capability.read")}
+          description={t("capability.readDescription")}
           checked={values.readCodebase}
           disabled={disabled}
           onChange={(readCodebase) => onChange({ readCodebase })}
         />
 
         <label className="mcp-field models-tool-capability-subfield">
-          <span className="mcp-field-label">执行确认</span>
+          <span className="mcp-field-label">{t("capability.confirmation")}</span>
           <select
             className="mcp-field-input"
             value={values.confirmation}
@@ -115,14 +117,14 @@ export function ToolCapabilityPanel({
               onChange({ confirmation: event.target.value as ToolCapabilityFieldValues["confirmation"] })
             }
           >
-            <option value="always">始终确认</option>
-            <option value="on_risk">按风险确认</option>
-            <option value="never">不确认</option>
+            <option value="always">{t("capability.confirm.always")}</option>
+            <option value="on_risk">{t("capability.confirm.risk")}</option>
+            <option value="never">{t("capability.confirm.never")}</option>
           </select>
         </label>
         {values.readCodebase ? (
           <label className="mcp-field models-tool-capability-subfield">
-            <span className="mcp-field-label">读取范围</span>
+            <span className="mcp-field-label">{t("capability.readScope")}</span>
             <select
               className="mcp-field-input"
               value={values.readScope}
@@ -133,30 +135,30 @@ export function ToolCapabilityPanel({
                 })
               }
             >
-              <option value="workspace">工作区</option>
-              <option value="extra_dirs">工作区+扩展</option>
+              <option value="workspace">{t("capability.workspace")}</option>
+              <option value="extra_dirs">{t("capability.workspaceExtra")}</option>
             </select>
           </label>
         ) : null}
 
         <CapabilityToggle
-          label="修改代码库"
-          description="创建和编辑文件（Write、Edit 等）。"
+          label={t("capability.write")}
+          description={t("capability.writeDescription")}
           checked={values.writeCodebase}
           disabled={disabled}
           onChange={(writeCodebase) => onChange({ writeCodebase })}
         />
 
         <CapabilityToggle
-          label="运行命令"
-          description="执行 Bash 命令。"
+          label={t("capability.bash")}
+          description={t("capability.bashDescription")}
           checked={values.bash}
           disabled={disabled}
           onChange={(bash) => onChange({ bash })}
         />
         <CapabilityToggle
-          label="联网检索"
-          description="Web 搜索与网页抓取。"
+          label={t("capability.network")}
+          description={t("capability.networkDescription")}
           checked={values.network}
           disabled={disabled}
           onChange={(network) => onChange({ network })}
@@ -164,8 +166,8 @@ export function ToolCapabilityPanel({
 
         {showTaskProgress ? (
           <CapabilityToggle
-            label="更新执行进度"
-            description="同步 Composer 任务列表（TaskCreate、TaskUpdate）。"
+            label={t("capability.progress")}
+            description={t("capability.progressDescription")}
             checked={values.taskProgress}
             disabled={disabled}
             onChange={(taskProgress) => onChange({ taskProgress })}
@@ -174,8 +176,8 @@ export function ToolCapabilityPanel({
 
         {showDelegation ? (
           <CapabilityToggle
-            label="继续委派"
-            description="调用其他子代理（Agent、Task 等）。"
+            label={t("capability.delegate")}
+            description={t("capability.delegateDescription")}
             checked={values.allowDelegation}
             disabled={disabled}
             onChange={(allowDelegation) => onChange({ allowDelegation })}
@@ -183,16 +185,16 @@ export function ToolCapabilityPanel({
         ) : null}
 
         <CapabilityToggle
-          label="加载 Skill"
-          description="加载当前 Core 已配置的 Skill。"
+          label={t("capability.skill")}
+          description={t("capability.skillDescription")}
           checked={values.skill}
           disabled={disabled}
           onChange={(skill) => onChange({ skill })}
         />
 
         <CapabilityToggle
-          label="询问用户"
-          description="向用户发起选择题或补充信息请求。"
+          label={t("capability.ask")}
+          description={t("capability.askDescription")}
           checked={values.askUser}
           disabled={disabled}
           onChange={(askUser) => onChange({ askUser })}
@@ -204,7 +206,7 @@ export function ToolCapabilityPanel({
         options={capabilityOptions.mcpServers}
         selectedValues={selectedMcpServers}
         disabled={disabled}
-        emptyText="当前模板库没有可选 MCP Server。"
+        emptyText={t("capability.noMcpServers")}
         onToggle={(value, checked) =>
           onChange({ mcpServers: toggleAgentTemplateListValue(values.mcpServers, value, checked) })
         }
@@ -214,7 +216,7 @@ export function ToolCapabilityPanel({
         options={capabilityOptions.mcpTools}
         selectedValues={mcpTools}
         disabled={disabled}
-        emptyText="当前模板库没有可选 MCP Tool。"
+        emptyText={t("capability.noMcpTools")}
         onToggle={(value, checked) =>
           onChange({ mcpTools: toggleAgentTemplateListValue(values.mcpTools, value, checked) })
         }
@@ -227,19 +229,21 @@ export function ToolCapabilityPanel({
         onClick={() => setAdvancedOpen((open) => !open)}
       >
         {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <span>高级：按工具细调</span>
-        {advancedDisallowed.length > 0 ? <small>{advancedDisallowed.length} 项禁用</small> : null}
+        <span>{t("capability.advanced")}</span>
+        {advancedDisallowed.length > 0 ? (
+          <small>{t("capability.disabledCount", { count: advancedDisallowed.length })}</small>
+        ) : null}
       </button>
 
       {advancedOpen ? (
         <div className="models-core-overrides">
           <SelectableTokenGroup
-            label="Claude Code 专属禁用工具"
+            label={t("capability.claudeDisabled")}
             tone="danger"
             options={capabilityOptions.tools}
             selectedValues={advancedDisallowed}
             disabled={disabled}
-            emptyText="没有可单独细调的 Claude Code 工具。"
+            emptyText={t("capability.noClaudeTools")}
             onToggle={(value, checked) =>
               onChange({
                 advancedDisallowedTools: toggleAgentTemplateAdvancedDisallowedTool(
@@ -251,17 +255,19 @@ export function ToolCapabilityPanel({
             }
           />
           <div className="models-agent-token-group">
-            <div className="models-agent-token-group-head"><span>Codex 专属收紧</span></div>
+            <div className="models-agent-token-group-head">
+              <span>{t("capability.codexTightening")}</span>
+            </div>
             <CapabilityToggle
-              label="收紧为只读"
-              description="无论通用策略是否允许写入，Codex 都使用 read-only sandbox。"
+              label={t("capability.readOnly")}
+              description={t("capability.readOnlyDescription")}
               checked={values.codexSandboxOverride === "read-only"}
               disabled={disabled}
               onChange={(checked) => onChange({ codexSandboxOverride: checked ? "read-only" : "" })}
             />
             <CapabilityToggle
-              label="严格确认"
-              description="将 Codex 审批策略收紧为 untrusted。"
+              label={t("capability.strictApproval")}
+              description={t("capability.strictApprovalDescription")}
               checked={values.codexApprovalOverride === "untrusted"}
               disabled={disabled}
               onChange={(checked) => onChange({ codexApprovalOverride: checked ? "untrusted" : "" })}
@@ -286,13 +292,17 @@ function CapabilityToggle({
 	  disabled?: boolean | undefined;
 	  onChange: (checked: boolean) => void;
 	}) {
+  const { t } = useTranslation();
   return (
     <div className="models-agent-template-delegation-card">
       <span>
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
-      <label className="mcp-toggle" title={checked ? "已启用" : "已禁用"}>
+      <label
+        className="mcp-toggle"
+        title={checked ? t("common.enabled") : t("common.disabled")}
+      >
         <input
           type="checkbox"
           checked={checked}
@@ -311,7 +321,7 @@ function SelectableTokenGroup({
   selectedValues,
   disabled,
   tone,
-  emptyText = "暂无可选项。",
+  emptyText,
   onToggle,
 }: {
   label: string;
@@ -322,15 +332,17 @@ function SelectableTokenGroup({
   emptyText?: string;
   onToggle: (value: string, checked: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const selected = new Set(selectedValues);
+  const resolvedEmptyText = emptyText ?? t("capability.empty");
   return (
     <section className="models-agent-token-group">
       <div className="models-agent-token-group-head">
         <span>{label}</span>
-        <small>{selectedValues.length} 已选</small>
+        <small>{t("capability.selectedCount", { count: selectedValues.length })}</small>
       </div>
       {options.length === 0 ? (
-        <p className="models-agent-token-empty">{emptyText}</p>
+        <p className="models-agent-token-empty">{resolvedEmptyText}</p>
       ) : (
         <div className="models-agent-token-options">
           {options.map((option) => {

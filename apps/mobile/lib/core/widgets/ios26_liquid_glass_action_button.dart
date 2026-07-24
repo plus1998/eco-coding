@@ -127,13 +127,13 @@ class _IOS26LiquidGlassActionButtonState
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-          Icon(
-            widget.sfSymbol == 'arrow.right.circle'
-                ? CupertinoIcons.arrow_right_circle
-                : CupertinoIcons.qrcode,
-            size: 22,
-            color: widget.foregroundColor,
-          ),
+            Icon(
+              widget.sfSymbol == 'arrow.right.circle'
+                  ? CupertinoIcons.arrow_right_circle
+                  : CupertinoIcons.qrcode,
+              size: 22,
+              color: widget.foregroundColor,
+            ),
             const SizedBox(height: 3),
             Text(
               widget.label,

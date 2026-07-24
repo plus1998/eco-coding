@@ -31,9 +31,9 @@ double _menuWidthForEntries(
   BuildContext context,
   List<ComposerContextMenuEntry> entries,
 ) {
-  final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-        fontWeight: FontWeight.w500,
-      );
+  final textStyle = Theme.of(
+    context,
+  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500);
   final painter = TextPainter(
     textDirection: Directionality.of(context),
     maxLines: 1,
@@ -92,9 +92,9 @@ void showComposerContextMenu({
                 onTap: () => entry.remove(),
                 behavior: HitTestBehavior.opaque,
                 child: ColoredBox(
-                  color: ecoColors(overlayContext).shadowScrim.withValues(
-                        alpha: 0.08,
-                      ),
+                  color: ecoColors(
+                    overlayContext,
+                  ).shadowScrim.withValues(alpha: 0.08),
                 ),
               ),
             ),
@@ -141,7 +141,9 @@ class _ComposerContextMenuCard extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: eco.shadowScrim.withValues(
-                alpha: Theme.of(context).brightness == Brightness.dark ? 0.28 : 0.14,
+                alpha: Theme.of(context).brightness == Brightness.dark
+                    ? 0.28
+                    : 0.14,
               ),
               blurRadius: 24,
               offset: const Offset(0, 8),
@@ -151,7 +153,9 @@ class _ComposerContextMenuCard extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(_menuBorderRadius),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: _menuCardVerticalPadding),
+            padding: const EdgeInsets.symmetric(
+              vertical: _menuCardVerticalPadding,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -171,10 +175,7 @@ class _ComposerContextMenuCard extends StatelessWidget {
 }
 
 class _ComposerContextMenuRow extends StatelessWidget {
-  const _ComposerContextMenuRow({
-    required this.entry,
-    required this.onTap,
-  });
+  const _ComposerContextMenuRow({required this.entry, required this.onTap});
 
   final ComposerContextMenuEntry entry;
   final VoidCallback? onTap;
@@ -206,9 +207,9 @@ class _ComposerContextMenuRow extends StatelessWidget {
               Text(
                 entry.label,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: color,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  color: color,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),

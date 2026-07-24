@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eco_mobile/l10n/generated/app_localizations.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:eco_mobile/core/models/git_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
@@ -148,7 +150,10 @@ void main() {
 
   test('parseToolActionDisplayLabel normalizes tool lines', () {
     expect(
-      parseToolActionDisplayLabel('Tool: Read · lib/main.dart'),
+      parseToolActionDisplayLabel(
+        'Tool: Read · lib/main.dart',
+        lookupAppLocalizations(const Locale('zh')),
+      ),
       'lib/main.dart',
     );
     expect(isUsageNoiseMessage('Usage recorded'), isTrue);
@@ -550,7 +555,7 @@ void main() {
       final controller = ScrollController();
       addTearDown(controller.dispose);
       await tester.pumpWidget(
-        MaterialApp(
+        _localizedMaterialApp(
           theme: buildEcoDarkTheme(),
           home: Scaffold(
             body: ActivityFeedList(
@@ -598,7 +603,7 @@ void main() {
     final controller = ScrollController();
     addTearDown(controller.dispose);
     await tester.pumpWidget(
-      MaterialApp(
+      _localizedMaterialApp(
         theme: buildEcoDarkTheme(),
         home: Scaffold(
           body: ActivityFeedList(
@@ -629,7 +634,7 @@ void main() {
     final controller = ScrollController();
     addTearDown(controller.dispose);
     await tester.pumpWidget(
-      MaterialApp(
+      _localizedMaterialApp(
         theme: buildEcoDarkTheme(),
         home: Scaffold(
           body: ActivityFeedList(
@@ -986,7 +991,7 @@ void main() {
       var detailOpenCount = 0;
 
       await tester.pumpWidget(
-        MaterialApp(
+        _localizedMaterialApp(
           theme: buildEcoDarkTheme(),
           home: Scaffold(
             body: ActivityFeedList(
@@ -1026,6 +1031,115 @@ void main() {
       expect(find.text('36 pass'), findsOneWidget);
       expect(find.text('npm test'), findsOneWidget);
       expect(detailOpenCount, 0);
+    },
+  );
+
+  testWidgets(
+    'ActivityFeedList flattens a single Bash tool group',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      final entries = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'single-bash-group',
+          kind: ActivityFeedKind.action,
+          text: 'Run unit tests',
+          toolName: 'Bash',
+          actionIcon: ActivityActionIcon.terminal,
+          lifecycle: ToolActionLifecycle.completed,
+          bashRun: BashRunCardDisplay(
+            title: 'Run unit tests',
+            meta: 'npm, 1.2s',
+            command: 'npm test',
+            output: '36 pass',
+          ),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: entries,
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('已运行 npm test'), findsOneWidget);
+      expect(find.text('已运行 Run unit tests'), findsNothing);
+      expect(find.text('npm test'), findsNothing);
+
+      await tester.tap(find.text('已运行 npm test'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已运行 npm test'), findsOneWidget);
+      expect(find.text('已运行 Run unit tests'), findsNothing);
+      expect(find.text('npm test'), findsOneWidget);
+      expect(find.text('36 pass'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'ActivityFeedList shows failed Bash as ran with a subtle dot',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      final entries = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'failed-bash-group',
+          kind: ActivityFeedKind.action,
+          text: 'Run unit tests',
+          toolName: 'Bash',
+          actionIcon: ActivityActionIcon.terminal,
+          lifecycle: ToolActionLifecycle.failed,
+          bashRun: BashRunCardDisplay(
+            title: 'Run unit tests',
+            meta: 'npm, 1.2s',
+            command: 'npm test',
+            output: '1 test failed',
+          ),
+        ),
+      ]);
+
+      expect(entries.single.text, '已运行 npm test');
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: entries,
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('已运行 npm test'), findsOneWidget);
+      expect(find.textContaining('工具未完成'), findsNothing);
+      expect(find.textContaining('运行失败'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('activity-tool-failure-dot')),
+        findsOneWidget,
+      );
+      expect(find.text('npm test'), findsNothing);
+
+      await tester.tap(find.text('已运行 npm test'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已运行 npm test'), findsOneWidget);
+      expect(find.text('已运行 Run unit tests'), findsNothing);
+      expect(find.text('npm test'), findsOneWidget);
+      expect(find.text('1 test failed'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('activity-tool-failure-dot')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -1753,7 +1867,7 @@ void main() {
     final longText = List.filled(12, '这是一段较长的用户输入内容').join('\n');
 
     await tester.pumpWidget(
-      MaterialApp(
+      _localizedMaterialApp(
         theme: buildEcoDarkTheme(),
         home: Scaffold(
           body: SizedBox(
@@ -1789,7 +1903,7 @@ void main() {
     addTearDown(scrollController.dispose);
 
     await tester.pumpWidget(
-      MaterialApp(
+      _localizedMaterialApp(
         theme: buildEcoDarkTheme(),
         home: Scaffold(
           body: ActivityFeedList(
@@ -1821,7 +1935,7 @@ void main() {
 
     Future<void> pumpList(List<ActivityFeedEntry> entries) async {
       await tester.pumpWidget(
-        MaterialApp(
+        _localizedMaterialApp(
           theme: buildEcoDarkTheme(),
           home: Scaffold(
             body: Center(
@@ -2604,7 +2718,7 @@ void main() {
           threadId: 't1',
           runProjection: snapshot,
         );
-        return MaterialApp(
+        return _localizedMaterialApp(
           theme: buildEcoDarkTheme(),
           home: Scaffold(
             body: ActivityFeedList(
@@ -2742,4 +2856,19 @@ void main() {
 
     expect(shouldFollowStreamingTail(previous: previous, next: next), isTrue);
   });
+}
+
+Widget _localizedMaterialApp({ThemeData? theme, required Widget home}) {
+  return MaterialApp(
+    locale: const Locale('zh'),
+    localizationsDelegates: const [
+      AppLocalizations.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    supportedLocales: AppLocalizations.supportedLocales,
+    theme: theme,
+    home: home,
+  );
 }

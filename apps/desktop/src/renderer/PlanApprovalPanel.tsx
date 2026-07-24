@@ -1,5 +1,6 @@
 import { Loader2, PanelRightOpen } from "lucide-react";
 import type { ThreadPendingPlan } from "../shared/ipc";
+import { useTranslation } from "react-i18next";
 import { MarkdownContent } from "./MarkdownContent";
 
 interface PlanApprovalPanelProps {
@@ -21,20 +22,21 @@ export function PlanApprovalPanel({
   onDismiss,
   onOpenInPanel,
 }: PlanApprovalPanelProps) {
+  const { t } = useTranslation();
   const planTrimmed = plan.plan.trim();
   const docked = variant === "dock";
 
   const body = (
     <>
       <header className="plan-approval-header">
-        <h3 className={docked ? "plan-approval-dock-title" : undefined}>实施计划</h3>
+        <h3 className={docked ? "plan-approval-dock-title" : undefined}>{t("approval.plan.title")}</h3>
         {onOpenInPanel ? (
           <button
             type="button"
             className="plan-approval-open-panel"
             onClick={onOpenInPanel}
-            title="在右侧面板查看完整计划"
-            aria-label="在右侧面板查看完整计划"
+            title={t("approval.plan.open")}
+            aria-label={t("approval.plan.open")}
           >
             <PanelRightOpen size={15} aria-hidden />
           </button>
@@ -42,7 +44,7 @@ export function PlanApprovalPanel({
       </header>
       {failureMessage ? (
         <div className="plan-approval-error" role="alert">
-          <strong>上次执行失败</strong>
+          <strong>{t("approval.plan.lastFailed")}</strong>
           <p>{failureMessage}</p>
         </div>
       ) : null}
@@ -63,10 +65,10 @@ export function PlanApprovalPanel({
           {busy ? (
             <>
               <Loader2 size={14} className="spinning" aria-hidden />
-              处理中…
+              {t("common.processing")}
             </>
           ) : (
-            "忽略"
+            t("common.dismiss")
           )}
         </button>
         {!failureMessage ? (
@@ -79,14 +81,14 @@ export function PlanApprovalPanel({
             {busy ? (
               <>
                 <Loader2 size={14} className="spinning" aria-hidden />
-                处理中…
+                {t("common.processing")}
               </>
             ) : docked ? (
               <>
-                执行计划 <kbd aria-hidden>↵</kbd>
+                {t("approval.plan.execute")} <kbd aria-hidden>↵</kbd>
               </>
             ) : (
-              "执行计划"
+              t("approval.plan.execute")
             )}
           </button>
         ) : null}
@@ -103,7 +105,7 @@ export function PlanApprovalPanel({
   }
 
   return (
-    <section className="plan-approval" aria-label="实施计划">
+    <section className="plan-approval" aria-label={t("approval.plan.title")}>
       {body}
     </section>
   );

@@ -63,7 +63,9 @@ class ActivityFeedScrollCoordinator {
     if (position.pixels < 0) {
       _markProgrammatic(() => scrollController.jumpTo(0));
     } else if (position.pixels > position.maxScrollExtent) {
-      _markProgrammatic(() => scrollController.jumpTo(position.maxScrollExtent));
+      _markProgrammatic(
+        () => scrollController.jumpTo(position.maxScrollExtent),
+      );
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
@@ -62,28 +63,38 @@ class _ComposerSettingsSheet extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Text('Composer 设置', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              context.l10n.composerSettings,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 16),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Plan Mode'),
+              title: Text(context.l10n.composerPlanMode),
               value: runtimeConfig.sessionMode == 'plan',
               onChanged: (value) => _update(
                 ref,
-                runtimeConfig.copyWith(
-                  sessionMode: value ? 'plan' : 'agent',
-                ),
+                runtimeConfig.copyWith(sessionMode: value ? 'plan' : 'agent'),
               ),
             ),
             const SizedBox(height: 8),
             DropdownMenu<String>(
               initialSelection: runtimeConfig.bashReviewMode,
-              label: const Text('Bash Review'),
+              label: Text(context.l10n.composerBashReview),
               expandedInsets: EdgeInsets.zero,
-              dropdownMenuEntries: const [
-                DropdownMenuEntry(value: 'always', label: 'Always'),
-                DropdownMenuEntry(value: 'auto', label: 'Auto'),
-                DropdownMenuEntry(value: 'allow_all', label: 'Allow all'),
+              dropdownMenuEntries: [
+                DropdownMenuEntry(
+                  value: 'always',
+                  label: context.l10n.bashReviewAlways,
+                ),
+                DropdownMenuEntry(
+                  value: 'auto',
+                  label: context.l10n.bashReviewAuto,
+                ),
+                DropdownMenuEntry(
+                  value: 'allow_all',
+                  label: context.l10n.bashReviewAllowAll,
+                ),
               ],
               onSelected: (value) {
                 if (value == null) return;
@@ -96,9 +107,10 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                 final profiles = settings?.orchestrationProfiles ?? [];
                 if (profiles.isEmpty) return const SizedBox.shrink();
                 return DropdownMenu<String>(
-                  initialSelection: runtimeConfig.agentProfileId ??
+                  initialSelection:
+                      runtimeConfig.agentProfileId ??
                       runtimeConfig.routeProfileId,
-                  label: const Text('智能体配置'),
+                  label: Text(context.l10n.composerAgentProfile),
                   expandedInsets: EdgeInsets.zero,
                   dropdownMenuEntries: profiles
                       .map(
@@ -135,9 +147,8 @@ class _ComposerSettingsSheet extends ConsumerWidget {
 
   void _update(WidgetRef ref, ThreadRuntimeConfigInput config) {
     onChanged(config);
-    ref.read(desktopRpcProvider)?.updateRuntimeConfig(
-          threadId: threadId,
-          runtimeConfig: config,
-        );
+    ref
+        .read(desktopRpcProvider)
+        ?.updateRuntimeConfig(threadId: threadId, runtimeConfig: config);
   }
 }

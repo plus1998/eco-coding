@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ModelsDevMapping, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
 import {
   catalogCapabilityHint,
@@ -41,10 +42,11 @@ function TriStateField({
   disabled?: boolean;
   onChange: (value: ManualTriState) => void;
 }) {
+  const { t } = useTranslation();
   const options: Array<{ value: ManualTriState; label: string }> = [
-    { value: "auto", label: "自动" },
-    { value: "yes", label: "支持" },
-    { value: "no", label: "不支持" },
+    { value: "auto", label: t("modelSpec.auto") },
+    { value: "yes", label: t("modelSpec.supported") },
+    { value: "no", label: t("modelSpec.unsupported") },
   ];
   return (
     <div className="model-spec-field model-spec-field-tristate">
@@ -110,6 +112,7 @@ export function ModelManualSpecPanel({
   variant = "default",
   onChange,
 }: ModelManualSpecPanelProps) {
+  const { t } = useTranslation();
   const isSidebar = variant === "sidebar";
   const overrideCount = countManualOverrides(value);
   const [expanded, setExpanded] = useState(() => isSidebar || overrideCount > 0);
@@ -121,19 +124,21 @@ export function ModelManualSpecPanel({
   const autoOutputHint = formatTokenCountHint(catalogCapability?.maxOutputTokens);
   const autoImageHint =
     catalogCapability?.supportsImageInput === true
-      ? "支持"
+      ? t("modelSpec.supported")
       : catalogCapability?.supportsImageInput === false
-        ? "不支持"
+        ? t("modelSpec.unsupported")
         : undefined;
   const autoReasoningHint =
     catalogCapability?.supportsReasoning === true
-      ? "支持"
+      ? t("modelSpec.supported")
       : catalogCapability?.supportsReasoning === false
-        ? "不支持"
+        ? t("modelSpec.unsupported")
         : undefined;
 
   const title =
-    overrideCount > 0 ? `手动覆盖 (${overrideCount})` : "手动覆盖";
+    overrideCount > 0
+      ? t("modelSpec.manualOverridesCount", { count: overrideCount })
+      : t("modelSpec.manualOverrides");
 
   const multiplier = parsePriceMultiplierFormValue(value.priceMultiplier);
   const catalogRates = catalogPricing?.rates;
@@ -144,7 +149,12 @@ export function ModelManualSpecPanel({
   const catalogMappingLabel = formatCatalogMappingLabel(autoCapability, autoPricing, mapping);
   const multiplierCaption =
     catalogRates?.inputPerM !== undefined && catalogRates.outputPerM !== undefined
-      ? `正价 $${catalogRates.inputPerM} / $${catalogRates.outputPerM} → 实际 $${formatRateHint(effectiveInputPerM)} / $${formatRateHint(effectiveOutputPerM)}`
+      ? t("modelSpec.multiplierCaption", {
+          catalogInput: catalogRates.inputPerM,
+          catalogOutput: catalogRates.outputPerM,
+          effectiveInput: formatRateHint(effectiveInputPerM),
+          effectiveOutput: formatRateHint(effectiveOutputPerM),
+        })
       : undefined;
 
   const body = (
@@ -157,21 +167,25 @@ export function ModelManualSpecPanel({
       />
 
       <section className="model-spec-form-section">
-        <h4 className="model-spec-form-section-title">上下文与输出</h4>
+        <h4 className="model-spec-form-section-title">{t("modelSpec.contextAndOutput")}</h4>
         <div className="model-spec-form-grid">
           <NumericField
-            label="上下文上限"
+            label={t("modelSpec.contextLimit")}
             value={value.contextTokens}
             placeholder={autoContextHint ?? "tokens"}
-            {...(autoContextHint ? { caption: `catalog · ${autoContextHint}` } : {})}
+            {...(autoContextHint
+              ? { caption: t("modelSpec.catalogHint", { hint: autoContextHint }) }
+              : {})}
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(contextTokens) => onChange({ contextTokens })}
           />
           <NumericField
-            label="最大输出"
+            label={t("modelSpec.maxOutput")}
             value={value.maxOutputTokens}
             placeholder={autoOutputHint ?? "tokens"}
-            {...(autoOutputHint ? { caption: `catalog · ${autoOutputHint}` } : {})}
+            {...(autoOutputHint
+              ? { caption: t("modelSpec.catalogHint", { hint: autoOutputHint }) }
+              : {})}
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(maxOutputTokens) => onChange({ maxOutputTokens })}
           />
@@ -179,17 +193,17 @@ export function ModelManualSpecPanel({
       </section>
 
       <section className="model-spec-form-section">
-        <h4 className="model-spec-form-section-title">模型能力</h4>
+        <h4 className="model-spec-form-section-title">{t("modelSpec.capabilities")}</h4>
         <div className="model-spec-form-grid model-spec-form-grid--stack">
           <TriStateField
-            label="多模态"
+            label={t("modelSpec.multimodal")}
             {...(autoImageHint ? { hint: autoImageHint } : {})}
             value={value.supportsImageInput}
             {...(disabled !== undefined ? { disabled } : {})}
             onChange={(supportsImageInput) => onChange({ supportsImageInput })}
           />
           <TriStateField
-            label="推理"
+            label={t("modelSpec.reasoning")}
             {...(autoReasoningHint ? { hint: autoReasoningHint } : {})}
             value={value.supportsReasoning}
             {...(disabled !== undefined ? { disabled } : {})}
@@ -199,36 +213,36 @@ export function ModelManualSpecPanel({
       </section>
 
       <section className="model-spec-form-section">
-        <h4 className="model-spec-form-section-title">定价 ($/M)</h4>
+        <h4 className="model-spec-form-section-title">{t("modelSpec.pricing")}</h4>
         <div className="model-spec-form-grid model-spec-form-grid--pricing">
           <NumericField
-            label="输入"
+            label={t("modelSpec.input")}
             value={value.inputPerM}
-            placeholder={formatRatePlaceholder(catalogRates?.inputPerM, effectiveInputPerM, "输入")}
+            placeholder={formatRatePlaceholder(catalogRates?.inputPerM, effectiveInputPerM, t("modelSpec.input"))}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(inputPerM) => onChange({ inputPerM })}
           />
           <NumericField
-            label="输出"
+            label={t("modelSpec.output")}
             value={value.outputPerM}
-            placeholder={formatRatePlaceholder(catalogRates?.outputPerM, effectiveOutputPerM, "输出")}
+            placeholder={formatRatePlaceholder(catalogRates?.outputPerM, effectiveOutputPerM, t("modelSpec.output"))}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(outputPerM) => onChange({ outputPerM })}
           />
           <NumericField
-            label="缓存读"
+            label={t("modelSpec.cacheRead")}
             value={value.cacheReadPerM}
-            placeholder={formatRatePlaceholder(catalogRates?.cacheReadPerM, effectiveCacheReadPerM, "缓存读")}
+            placeholder={formatRatePlaceholder(catalogRates?.cacheReadPerM, effectiveCacheReadPerM, t("modelSpec.cacheRead"))}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(cacheReadPerM) => onChange({ cacheReadPerM })}
           />
           <NumericField
-            label="缓存写"
+            label={t("modelSpec.cacheWrite")}
             value={value.cacheWritePerM}
-            placeholder={formatRatePlaceholder(catalogRates?.cacheWritePerM, effectiveCacheWritePerM, "缓存写")}
+            placeholder={formatRatePlaceholder(catalogRates?.cacheWritePerM, effectiveCacheWritePerM, t("modelSpec.cacheWrite"))}
             {...(disabled !== undefined ? { disabled } : {})}
             inputMode="decimal"
             onChange={(cacheWritePerM) => onChange({ cacheWritePerM })}
@@ -238,7 +252,7 @@ export function ModelManualSpecPanel({
 
       <section className="model-spec-form-section model-spec-form-section--multiplier">
         <NumericField
-          label="价格倍率"
+          label={t("modelSpec.priceMultiplier")}
           value={value.priceMultiplier}
           placeholder="x1"
           {...(multiplierCaption ? { caption: multiplierCaption } : {})}
@@ -256,7 +270,9 @@ export function ModelManualSpecPanel({
         <div className="model-manual-spec-sidebar-head">
           <h3 className="model-manual-spec-sidebar-title">{title}</h3>
           {overrideCount > 0 ? (
-            <span className="model-manual-spec-sidebar-badge">{overrideCount} 项</span>
+            <span className="model-manual-spec-sidebar-badge">
+              {t("modelSpec.overrideCount", { count: overrideCount })}
+            </span>
           ) : null}
         </div>
         {body}

@@ -10,6 +10,7 @@ import {
   normalizeStoredPriceMultiplier,
   resolvePriceMultiplier,
 } from "../shared/manual-spec-pricing";
+import { i18n } from "./i18n";
 
 export type ManualTriState = "auto" | "yes" | "no";
 
@@ -146,21 +147,33 @@ export function formToManualSpec(
   const strict = options.strict ?? false;
   const contextTokens = parseManualTokenInput(form.contextTokens, {
     strict,
-    fieldLabel: "手动上下文上限",
+    fieldLabel: i18n.t("modelSpec.manualContextLimit"),
   });
   const maxOutputTokens = parseManualTokenInput(form.maxOutputTokens, {
     strict,
-    fieldLabel: "手动最大输出",
+    fieldLabel: i18n.t("modelSpec.manualMaxOutput"),
   });
   const supportsImageInput = triStateToBoolean(form.supportsImageInput);
   const supportsReasoning = triStateToBoolean(form.supportsReasoning);
-  const inputPerM = parseManualRateInput(form.inputPerM, { strict, fieldLabel: "输入价格" });
-  const outputPerM = parseManualRateInput(form.outputPerM, { strict, fieldLabel: "输出价格" });
-  const cacheReadPerM = parseManualRateInput(form.cacheReadPerM, { strict, fieldLabel: "缓存读取价格" });
-  const cacheWritePerM = parseManualRateInput(form.cacheWritePerM, { strict, fieldLabel: "缓存写入价格" });
+  const inputPerM = parseManualRateInput(form.inputPerM, {
+    strict,
+    fieldLabel: i18n.t("modelSpec.inputPriceLabel"),
+  });
+  const outputPerM = parseManualRateInput(form.outputPerM, {
+    strict,
+    fieldLabel: i18n.t("modelSpec.outputPriceLabel"),
+  });
+  const cacheReadPerM = parseManualRateInput(form.cacheReadPerM, {
+    strict,
+    fieldLabel: i18n.t("modelSpec.cacheReadPriceLabel"),
+  });
+  const cacheWritePerM = parseManualRateInput(form.cacheWritePerM, {
+    strict,
+    fieldLabel: i18n.t("modelSpec.cacheWritePriceLabel"),
+  });
   const priceMultiplier = parsePriceMultiplierInput(form.priceMultiplier, {
     strict,
-    fieldLabel: "价格倍率",
+    fieldLabel: i18n.t("modelSpec.priceMultiplier"),
   });
 
   const next: RouteManualSpec = {
@@ -396,14 +409,14 @@ function parseManualTokenInput(
   }
   if (!/^\d+$/.test(trimmed)) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是正整数。`);
+      throw new Error(i18n.t("modelSpec.validation.positiveInteger", { field: options.fieldLabel }));
     }
     return undefined;
   }
   const parsed = Number(trimmed);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是正整数。`);
+      throw new Error(i18n.t("modelSpec.validation.positiveInteger", { field: options.fieldLabel }));
     }
     return undefined;
   }
@@ -420,14 +433,14 @@ function parseManualRateInput(
   }
   if (!/^\d+(\.\d+)?$/.test(trimmed)) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是正数。`);
+      throw new Error(i18n.t("modelSpec.validation.positiveNumber", { field: options.fieldLabel }));
     }
     return undefined;
   }
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed < 0) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是正数。`);
+      throw new Error(i18n.t("modelSpec.validation.positiveNumber", { field: options.fieldLabel }));
     }
     return undefined;
   }
@@ -486,14 +499,14 @@ function parsePriceMultiplierInput(
   }
   if (!/^\d+(\.\d+)?$/.test(trimmed)) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是正数。`);
+      throw new Error(i18n.t("modelSpec.validation.positiveNumber", { field: options.fieldLabel }));
     }
     return undefined;
   }
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed < 0) {
     if (options.strict) {
-      throw new Error(`${options.fieldLabel}必须是非负数。`);
+      throw new Error(i18n.t("modelSpec.validation.nonNegativeNumber", { field: options.fieldLabel }));
     }
     return undefined;
   }

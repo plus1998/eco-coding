@@ -4,7 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/session_mode.dart';
 import '../../core/constants/session_mode_ui.dart';
+import '../../core/locale/app_locale_preference.dart';
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/providers/app_locale_provider.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_theme_provider.dart';
 import '../../core/theme/app_theme_preference.dart';
@@ -60,7 +64,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
         );
       }
     }
@@ -69,21 +73,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final credentials = ref.watch(credentialsProvider);
+    final l10n = context.l10n;
+    final modeOptions = sessionModeUiOptions(l10n);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('设置'),
-        actions: const [
-          ShellToolbarActions(),
-        ],
+        title: Text(l10n.settingsTitle),
+        actions: const [ShellToolbarActions()],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : credentials.when(
               data: (creds) {
-                final signedIn =
-                    creds.hasUserSession || creds.isProvisioned;
+                final signedIn = creds.hasUserSession || creds.isProvisioned;
                 return ListView(
                   padding: EdgeInsets.only(
                     bottom: adaptiveNavOverlayInset(context) + 24,
@@ -91,41 +94,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   children: [
                     const SizedBox(height: 8),
                     _AccountHeader(
-                      email: creds.userEmail ?? '未登录',
-                      subtitle: creds.userDisplayName ??
+                      email: creds.userEmail ?? l10n.settingsNotSignedIn,
+                      subtitle:
+                          creds.userDisplayName ??
                           creds.deviceName ??
-                          (signedIn ? null : '请先完成 PC 连接'),
+                          (signedIn ? null : l10n.settingsConnectPcFirst),
                       signedIn: signedIn,
                     ),
                     EcoGroupedSection(
-                      label: '外观',
-                      topSpacing: 28,
-                      child: _ThemePreferenceSelector(
-                        selected: ref.watch(appThemePreferenceProvider),
-                        onChanged: (preference) {
-                          ref
-                              .read(appThemePreferenceProvider.notifier)
-                              .setPreference(preference);
-                        },
-                      ),
-                    ),
-                    EcoGroupedSection(
-                      label: '默认模式',
-                      caption: '新建会话时的 Composer 模式',
+                      label: l10n.settingsAppearance,
                       topSpacing: 28,
                       child: Column(
                         children: [
-                          for (var i = 0;
-                              i < sessionModeUiOptions.length;
-                              i++) ...[
+                          _PreferenceRow(
+                            label: l10n.settingsTheme,
+                            child: _ThemePreferenceSelector(
+                              selected: ref.watch(appThemePreferenceProvider),
+                              onChanged: (preference) {
+                                ref
+                                    .read(appThemePreferenceProvider.notifier)
+                                    .setPreference(preference);
+                              },
+                            ),
+                          ),
+                          const EcoGroupedDivider(),
+                          _PreferenceRow(
+                            label: l10n.settingsLanguage,
+                            child: _LocalePreferenceSelector(
+                              selected: ref.watch(appLocalePreferenceProvider),
+                              onChanged: (preference) {
+                                ref
+                                    .read(appLocalePreferenceProvider.notifier)
+                                    .setPreference(preference);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    EcoGroupedSection(
+                      label: l10n.settingsDefaultMode,
+                      caption: l10n.settingsDefaultModeCaption,
+                      topSpacing: 28,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < modeOptions.length; i++) ...[
                             if (i > 0) const EcoGroupedDivider(indent: 52),
                             _SessionModeOption(
-                              option: sessionModeUiOptions[i],
-                              selected: _sessionMode ==
-                                  sessionModeUiOptions[i].value,
-                              onTap: () => _saveSessionMode(
-                                sessionModeUiOptions[i].value,
-                              ),
+                              option: modeOptions[i],
+                              selected: _sessionMode == modeOptions[i].value,
+                              onTap: () =>
+                                  _saveSessionMode(modeOptions[i].value),
                             ),
                           ],
                         ],
@@ -133,36 +152,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     if (signedIn)
                       EcoGroupedSection(
-                        label: '账户',
+                        label: l10n.settingsAccount,
                         topSpacing: 28,
                         child: Column(
                           children: [
                             _SettingsActionRow(
                               icon: EcoIcons.desktop,
-                              title: '切换 PC',
-                              subtitle: '选择或绑定其他 Desktop 设备',
+                              title: l10n.settingsSwitchPc,
+                              subtitle: l10n.settingsSwitchPcSubtitle,
                               onTap: () => context.push('/connect'),
                             ),
                             const EcoGroupedDivider(indent: 52),
                             _SettingsActionRow(
                               icon: EcoIcons.logout,
-                              title: '退出登录',
+                              title: l10n.settingsSignOut,
                               destructive: true,
                               onTap: () async {
-                                final client =
-                                    ref.read(ecoCenterClientProvider);
+                                final client = ref.read(
+                                  ecoCenterClientProvider,
+                                );
                                 final notice = await client.clearSession();
                                 ref.invalidate(credentialsProvider);
                                 ref.invalidate(bindingsProvider);
                                 ref.invalidate(desktopPresenceProvider);
                                 ref
-                                    .read(selectedDesktopIdProvider.notifier)
-                                    .state = null;
+                                        .read(
+                                          selectedDesktopIdProvider.notifier,
+                                        )
+                                        .state =
+                                    null;
                                 if (context.mounted) {
                                   context.go('/connect');
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(notice ?? '已退出登录'),
+                                      content: Text(
+                                        notice == null
+                                            ? l10n.settingsSignedOut
+                                            : localizedEcoCenterNotice(
+                                                notice,
+                                                l10n,
+                                              ),
+                                      ),
                                     ),
                                   );
                                 }
@@ -197,7 +227,7 @@ class _AccountHeader extends StatelessWidget {
   String _initials() {
     final source = (subtitle?.trim().isNotEmpty == true ? subtitle! : email)
         .trim();
-    if (source.isEmpty || source == '未登录') return '?';
+    if (source.isEmpty || !signedIn) return '?';
     final parts = source.split(RegExp(r'\s+'));
     if (parts.length >= 2) {
       return '${parts.first[0]}${parts[1][0]}'.toUpperCase();
@@ -224,10 +254,10 @@ class _AccountHeader extends StatelessWidget {
                 child: Text(
                   _initials(),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: eco.textSecondary,
-                        letterSpacing: -0.3,
-                      ),
+                    fontWeight: FontWeight.w500,
+                    color: eco.textSecondary,
+                    letterSpacing: -0.3,
+                  ),
                 ),
               ),
             ),
@@ -249,17 +279,17 @@ class _AccountHeader extends StatelessWidget {
                     subtitle!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ] else if (!signedIn) ...[
                   const SizedBox(height: 4),
                   Text(
-                    '请先完成 PC 连接',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    context.l10n.settingsConnectPcFirst,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
               ],
@@ -283,6 +313,7 @@ class _ThemePreferenceSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.all(4),
       child: DecoratedBox(
@@ -297,13 +328,111 @@ class _ThemePreferenceSelector extends StatelessWidget {
               for (final preference in AppThemePreference.values)
                 Expanded(
                   child: _ThemeSegment(
-                    label: preference.label,
+                    label: switch (preference) {
+                      AppThemePreference.system => l10n.settingsThemeSystem,
+                      AppThemePreference.dark => l10n.settingsThemeDark,
+                      AppThemePreference.light => l10n.settingsThemeLight,
+                    },
                     selected: selected == preference,
                     onTap: () => onChanged(preference),
                   ),
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreferenceRow extends StatelessWidget {
+  const _PreferenceRow({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: eco.textSecondary),
+            ),
+          ),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _LocalePreferenceSelector extends StatelessWidget {
+  const _LocalePreferenceSelector({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final AppLocalePreference selected;
+  final ValueChanged<AppLocalePreference> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _SegmentedPreference<AppLocalePreference>(
+      values: AppLocalePreference.values,
+      selected: selected,
+      labelFor: (preference) => switch (preference) {
+        AppLocalePreference.system => l10n.settingsLanguageSystem,
+        AppLocalePreference.zhCN => l10n.settingsLanguageChinese,
+        AppLocalePreference.enUS => l10n.settingsLanguageEnglish,
+      },
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _SegmentedPreference<T> extends StatelessWidget {
+  const _SegmentedPreference({
+    required this.values,
+    required this.selected,
+    required this.labelFor,
+    required this.onChanged,
+  });
+
+  final List<T> values;
+  final T selected;
+  final String Function(T value) labelFor;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.composerPillBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          children: [
+            for (final value in values)
+              Expanded(
+                child: _ThemeSegment(
+                  label: labelFor(value),
+                  selected: selected == value,
+                  onTap: () => onChanged(value),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -348,10 +477,10 @@ class _ThemeSegment extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? eco.textPrimary : eco.textMuted,
-                letterSpacing: -0.1,
-              ),
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected ? eco.textPrimary : eco.textMuted,
+            letterSpacing: -0.1,
+          ),
         ),
       ),
     );
@@ -400,10 +529,9 @@ class _SessionModeOption extends StatelessWidget {
                 Text(
                   option.title,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                        fontSize: 17,
-                      ),
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontSize: 17,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -411,9 +539,9 @@ class _SessionModeOption extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textMuted,
-                        fontSize: 13,
-                      ),
+                    color: eco.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -453,11 +581,7 @@ class _SettingsActionRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 22,
-            color: destructive ? eco.danger : eco.accent,
-          ),
+          Icon(icon, size: 22, color: destructive ? eco.danger : eco.accent),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -465,18 +589,17 @@ class _SettingsActionRow extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: color,
-                        fontSize: 17,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(color: color, fontSize: 17),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ],
               ],

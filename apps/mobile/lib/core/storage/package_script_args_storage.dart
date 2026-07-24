@@ -62,7 +62,9 @@ Future<void> _writeStore(PackageScriptArgsByWorkspace store) async {
   await prefs.setString(_storageKey, jsonEncode(normalized));
 }
 
-Future<Map<String, String>> readWorkspaceScriptArgs(String workspacePath) async {
+Future<Map<String, String>> readWorkspaceScriptArgs(
+  String workspacePath,
+) async {
   final store = await _readStore();
   return {...?store[workspacePath]};
 }

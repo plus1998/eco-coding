@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_run_projection.dart';
@@ -18,6 +20,7 @@ import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../approvals/approval_sheets.dart';
 import '../approvals/bash_approval_panel.dart';
 import '../approvals/plan_approval_panel.dart';
@@ -185,6 +188,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final landingHero = landingHeroText(
       workspacePath: workspacePath.isEmpty ? null : workspacePath,
       projectName: projectName,
+      l10n: context.l10n,
     );
     final gitStatusAsync = workspacePath.isNotEmpty && !session.loading
         ? ref.watch(gitStatusProvider(workspacePath))
@@ -328,7 +332,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             session.loading
             ? const Center(child: CircularProgressIndicator())
             : session.error != null
-            ? Center(child: Text(session.error!))
+            ? Center(
+                child: Text(localizedAppError(session.error!, context.l10n)),
+              )
             : showLanding
             ? Padding(
                 padding: EdgeInsets.fromLTRB(32, 0, 32, 32 + feedBottomInset),
@@ -456,8 +462,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                       stopBusy: _stopBusy,
                       hasActivity: session.projectionReady,
                       inputHint: _editingFollowUpId != null
-                          ? '编辑引导消息…'
-                          : (showLanding ? composerLandingPlaceholder : null),
+                          ? context.l10n.threadEditGuidanceHint
+                          : (showLanding
+                                ? composerLandingPlaceholder(context.l10n)
+                                : null),
                       contextSnapshot: session.contextSnapshot,
                       threadStatus: thread?.status,
                       workspacePath: workspacePath,
@@ -785,6 +793,7 @@ class _ActivityFeedView extends ConsumerWidget {
       threadId: threadId,
       runProjection: runProjection,
       subagentSessions: subagentSessions,
+      l10n: context.l10n,
     );
     final projectionReady = isProjectionFeedReady(runProjection);
     final hasStreamingThinking = feedEntries.any(
@@ -811,7 +820,9 @@ class _ActivityFeedView extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
-            isRunning ? '运行投影加载中…' : '运行投影尚未就绪',
+            isRunning
+                ? context.l10n.threadProjectionLoading
+                : context.l10n.threadProjectionUnavailable,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: ecoColors(context).textMuted,
             ),
@@ -862,7 +873,7 @@ Future<void> _openAgentProjectionDetail(
     loadFuture: loadFuture,
     title: entry.text,
     subtitle: agentId,
-    emptyText: '暂无子代理详情',
+    emptyText: context.l10n.threadNoSubagentDetails,
     timelineBuilder: (projection) {
       final agent = projection == null
           ? null
@@ -893,7 +904,7 @@ Future<void> _openToolProjectionDetail(
     loadFuture: loadFuture,
     title: entry.text,
     subtitle: toolUseId,
-    emptyText: '暂无工具详情',
+    emptyText: context.l10n.threadNoToolDetails,
     timelineBuilder: (projection) =>
         _projectionToolDetailItems(projection, toolUseId),
   );
@@ -1125,7 +1136,7 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
                 ),
               ),
               Tooltip(
-                message: '关闭',
+                message: context.l10n.commonClose,
                 child: IconButton(
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
@@ -1149,34 +1160,38 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
               base: widget.baseProjection,
               cachedTimeline: widget.cachedTimeline,
               detail: snapshot.data,
+              l10n: context.l10n,
             );
             Widget body;
             if (entries.isEmpty && loading) {
               body = _ProjectionDetailStatusList(
                 scrollController: _scrollController,
-                title: '正在请求详情…',
+                title: context.l10n.threadRequestingDetails,
                 loading: true,
               );
             } else if (entries.isEmpty) {
               if (snapshot.hasError) {
                 body = _ProjectionDetailStatusList(
                   scrollController: _scrollController,
-                  title: '详情请求失败',
-                  detail: '${snapshot.error}',
+                  title: context.l10n.threadDetailsFailed,
+                  detail: localizedAppError(snapshot.error!, context.l10n),
                 );
               } else {
                 final detail = snapshot.data;
                 body = _ProjectionDetailStatusList(
                   scrollController: _scrollController,
                   title: detail == null
-                      ? '未收到详情响应'
+                      ? context.l10n.threadNoDetailsResponse
                       : detail.timeline.isEmpty
-                      ? '桌面端返回了 0 条详情'
+                      ? context.l10n.threadZeroDetails
                       : widget.emptyText,
                   detail: detail == null
-                      ? '移动端已发起请求，但没有拿到可解析的 detail 结果。'
+                      ? context.l10n.threadDetailsUnparseable
                       : detail.timeline.isEmpty
-                      ? '请求已完成，kind=${detail.kind}, key=${detail.key}。'
+                      ? context.l10n.threadDetailsComplete(
+                          detail.kind,
+                          detail.key,
+                        )
                       : null,
                 );
               }
@@ -1292,6 +1307,7 @@ List<ActivityFeedEntry> _buildProjectionDetailEntries({
   required ThreadRunProjectionSnapshot? base,
   required List<ThreadRunProjectionTimelineItem> cachedTimeline,
   required ThreadRunProjectionDetailResult? detail,
+  required AppLocalizations l10n,
 }) {
   final timeline = _mergeProjectionDetailTimeline(
     cachedTimeline,
@@ -1306,6 +1322,7 @@ List<ActivityFeedEntry> _buildProjectionDetailEntries({
     threadPrompt: '',
     threadId: threadId,
     runProjection: detailProjection,
+    l10n: l10n,
   );
 }
 
@@ -1433,7 +1450,7 @@ class _EditingFollowUpBanner extends StatelessWidget {
             Icon(EcoIcons.followUp, size: 16, color: eco.accentText),
             const SizedBox(width: 8),
             Text(
-              '正在编辑引导消息',
+              context.l10n.threadEditingGuidance,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
@@ -1444,7 +1461,7 @@ class _EditingFollowUpBanner extends StatelessWidget {
             IconButton(
               onPressed: onCancel,
               icon: const Icon(EcoIcons.close, size: 16),
-              tooltip: '取消',
+              tooltip: context.l10n.commonCancel,
               style: TextButton.styleFrom(
                 foregroundColor: eco.composerPillText,
                 padding: EdgeInsets.zero,

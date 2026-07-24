@@ -1,6 +1,7 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/theme/eco_theme.dart';
 import 'composer_stack_card.dart';
@@ -43,7 +44,8 @@ class WorkspaceChangesPill extends StatelessWidget {
     return Padding(
       padding: composerStackOuterPadding,
       child: Center(
-        child: PlatformInfo.isIOS &&
+        child:
+            PlatformInfo.isIOS &&
                 Theme.of(context).brightness == Brightness.dark
             ? AdaptiveButton.child(
                 onPressed: onTap ?? () {},
@@ -90,7 +92,10 @@ double _iosWorkspaceChangesPillWidth({
   }
 
   final eco = ecoColors(context);
-  final countWidth = textWidth('${summary.fileCount} 个文件已更改', labelStyle);
+  final countWidth = textWidth(
+    context.l10n.diffFilesChanged(summary.fileCount),
+    labelStyle,
+  );
   final additionsWidth = textWidth(
     '+${summary.totalAdditions}',
     TextStyle(
@@ -149,7 +154,10 @@ class _WorkspaceChangesPillContent extends StatelessWidget {
               ),
             ),
           ),
-        Text('${summary.fileCount} 个文件已更改', style: labelStyle),
+        Text(
+          context.l10n.diffFilesChanged(summary.fileCount),
+          style: labelStyle,
+        ),
         const SizedBox(width: 8),
         Text(
           '+${summary.totalAdditions}',

@@ -1,8 +1,12 @@
 import 'package:eco_mobile/core/models/project_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eco_mobile/l10n/generated/app_localizations.dart';
+import 'package:flutter/widgets.dart';
 
 void main() {
+  final en = lookupAppLocalizations(const Locale('en'));
+  final zh = lookupAppLocalizations(const Locale('zh'));
   const homePath = '/Users/test/.eco/projects/home';
   const repoPath = '/Users/test/Workspace/eco-coding';
 
@@ -10,6 +14,24 @@ void main() {
     test('trims trailing slashes', () {
       expect(normalizeProjectPath('/foo/bar/'), '/foo/bar');
       expect(normalizeProjectPath('/foo/bar\\'), '/foo/bar');
+    });
+  });
+
+  group('landingHeroText', () {
+    test('uses the requested locale and preserves project names', () {
+      expect(
+        landingHeroText(workspacePath: null, l10n: en),
+        'Open a project to start coding',
+      );
+      expect(
+        landingHeroText(
+          workspacePath: repoPath,
+          projectName: 'eco-coding',
+          l10n: zh,
+        ),
+        '我们应该在 eco-coding 中构建什么？',
+      );
+      expect(composerLandingPlaceholder(en), 'Ask anything');
     });
   });
 
@@ -144,23 +166,13 @@ void main() {
 
     test('matches by name when home path is unavailable', () {
       expect(
-        isHomeProject(
-          path: homePath,
-          homeProjectPath: '',
-          projectName: 'home',
-        ),
+        isHomeProject(path: homePath, homeProjectPath: '', projectName: 'home'),
         isTrue,
       );
     });
 
     test('matches basename home when name is unavailable', () {
-      expect(
-        isHomeProject(
-          path: homePath,
-          homeProjectPath: '',
-        ),
-        isTrue,
-      );
+      expect(isHomeProject(path: homePath, homeProjectPath: ''), isTrue);
     });
 
     test('matches canonical .eco/projects/home path regardless of name', () {
@@ -317,8 +329,9 @@ void main() {
           ),
         ],
         grouped: grouped,
-        activityReferenceMs: DateTime.parse('2026-01-01T00:00:00.000Z')
-            .millisecondsSinceEpoch,
+        activityReferenceMs: DateTime.parse(
+          '2026-01-01T00:00:00.000Z',
+        ).millisecondsSinceEpoch,
       );
 
       expect(sorted.map((project) => project.path).toList(), [
@@ -347,8 +360,9 @@ void main() {
           ),
         ]),
         currentWorkspacePath: repoPath,
-        activityReferenceMs: DateTime.parse('2026-01-10T00:00:00.000Z')
-            .millisecondsSinceEpoch,
+        activityReferenceMs: DateTime.parse(
+          '2026-01-10T00:00:00.000Z',
+        ).millisecondsSinceEpoch,
       );
 
       expect(sorted.first.path, repoPath);
@@ -466,8 +480,9 @@ void main() {
         ],
         pinnedPaths: ['/Users/test/other'],
         grouped: grouped,
-        activityReferenceMs: DateTime.parse('2026-01-01T00:00:00.000Z')
-            .millisecondsSinceEpoch,
+        activityReferenceMs: DateTime.parse(
+          '2026-01-01T00:00:00.000Z',
+        ).millisecondsSinceEpoch,
       );
 
       expect(sorted.map((project) => project.path).toList(), [

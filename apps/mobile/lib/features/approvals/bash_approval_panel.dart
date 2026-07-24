@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
@@ -90,6 +91,7 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
       description: widget.request.description,
       reason: widget.request.reason,
       filesystemTool: widget.request.filesystemTool,
+      l10n: context.l10n,
     );
     final detail = widget.request.filesystemTool != null
         ? '${widget.request.filesystemTool}: ${widget.request.filesystemPath}'
@@ -161,7 +163,11 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                         foregroundColor: colors.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
-                      child: Text(widget.busy ? '处理中…' : '跳过'),
+                      child: Text(
+                        widget.busy
+                            ? context.l10n.commonProcessing
+                            : context.l10n.approvalSkip,
+                      ),
                     ),
                     const Spacer(),
                     FilledButton(
@@ -193,7 +199,7 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                                     : Colors.white,
                               ),
                             )
-                          : const Text('提交 ↵'),
+                          : Text(context.l10n.approvalSubmitEnter),
                     ),
                   ],
                 ),
@@ -242,7 +248,7 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                   isCollapsed: true,
                   filled: false,
                   fillColor: Colors.transparent,
-                  hintText: bashApprovalDenyOptionLabel,
+                  hintText: bashApprovalDenyOptionLabel(context.l10n),
                   hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontSize: 14,
                     height: 1.45,
@@ -307,7 +313,7 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                         height: 1.45,
                       ),
                       children: [
-                        TextSpan(text: bashApprovalRememberPrefixIntro),
+                        TextSpan(text: context.l10n.bashApprovalRememberPrefix),
                         TextSpan(
                           text: formatBashApprovalRememberPrefix(
                             rememberCommand,
@@ -361,7 +367,7 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                   ),
                 ),
               ),
-              const Expanded(child: Text('是')),
+              Expanded(child: Text(context.l10n.approvalYes)),
             ],
           ),
         ),
@@ -427,7 +433,7 @@ class _CodePreview extends StatelessWidget {
                     foregroundColor: colors.textMuted,
                     textStyle: const TextStyle(fontSize: 11),
                   ),
-                  child: const Text('展开'),
+                  child: Text(context.l10n.commonExpand),
                 ),
               ),
             ),
@@ -444,7 +450,7 @@ class _CodePreview extends StatelessWidget {
                 foregroundColor: colors.textMuted,
                 textStyle: const TextStyle(fontSize: 11),
               ),
-              child: const Text('收起'),
+              child: Text(context.l10n.commonCollapse),
             ),
           ),
       ],

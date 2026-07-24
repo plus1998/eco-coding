@@ -1,4 +1,5 @@
 import { Ban, CheckCircle2, Circle, CircleDot, XCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { CoderTodoItem, CoderTodoStatus } from "../shared/ipc";
 
 interface CoderTodoPanelProps {
@@ -9,12 +10,12 @@ interface CoderTodoPanelProps {
   compact?: boolean;
 }
 
-const statusLabel: Record<CoderTodoStatus, string> = {
-  pending: "待执行",
-  running: "进行中",
-  completed: "已完成",
-  blocked: "受阻",
-  cancelled: "已停止",
+const statusKey: Record<CoderTodoStatus, string> = {
+  pending: "todo.status.pending",
+  running: "todo.status.running",
+  completed: "todo.status.completed",
+  blocked: "todo.status.blocked",
+  cancelled: "todo.status.cancelled",
 };
 
 const statusIcon = {
@@ -33,6 +34,7 @@ function displayLabel(todo: CoderTodoItem, compact: boolean): string {
 }
 
 export function CoderTodoPanel({ todos, embedded, compact = false }: CoderTodoPanelProps) {
+  const { t } = useTranslation();
   if (todos.length === 0) {
     return null;
   }
@@ -60,12 +62,12 @@ export function CoderTodoPanel({ todos, embedded, compact = false }: CoderTodoPa
                   {label}
                 </strong>
                 {!compact ? (
-                  <span className={`coder-todo-status ${todo.status}`}>{statusLabel[todo.status]}</span>
+                  <span className={`coder-todo-status ${todo.status}`}>{t(statusKey[todo.status])}</span>
                 ) : null}
               </div>
               {!compact && todo.detail && todo.detail !== todo.title ? (
                 <details className="coder-todo-detail">
-                  <summary>详情</summary>
+                  <summary>{t("todo.details")}</summary>
                   <pre>{todo.detail}</pre>
                 </details>
               ) : null}
@@ -81,10 +83,10 @@ export function CoderTodoPanel({ todos, embedded, compact = false }: CoderTodoPa
   }
 
   return (
-    <section className="coder-todo-panel" aria-label="进度">
+    <section className="coder-todo-panel" aria-label={t("todo.progress")}>
       <header className="coder-todo-header">
-        <h3>进度</h3>
-        <span>{todos.length} 项</span>
+        <h3>{t("todo.progress")}</h3>
+        <span>{t("todo.count", { count: todos.length })}</span>
       </header>
       {list}
     </section>

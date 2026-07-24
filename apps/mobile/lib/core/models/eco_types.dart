@@ -225,12 +225,71 @@ class EcoEventEnvelope {
   final String? workspacePath;
 }
 
+enum EcoCenterErrorKind {
+  invalidServerScheme,
+  deviceCredentialsRequired,
+  quickPairQrOutdated,
+  serverUnreachable,
+  websocketDisconnected,
+  rpcTimeout,
+  serverUrlRequired,
+  connectionAborted,
+  websocketTimeout,
+  rpcFailed,
+  userSessionExpired,
+  deviceCredentialsMissing,
+  serverOutdated,
+  httpRequestFailed,
+  networkRequestFailed,
+  invalidPairQr,
+  reauthRequired,
+}
+
+enum EcoCenterNoticeKind { deviceInactive, localSignOutCleanupFailed }
+
+class EcoCenterNotice {
+  const EcoCenterNotice(this.kind, {this.nativeMessage});
+
+  final EcoCenterNoticeKind kind;
+  final String? nativeMessage;
+}
+
 class EcoCenterException implements Exception {
-  EcoCenterException(this.message, {this.code, this.recovery});
+  EcoCenterException(
+    this.message, {
+    this.code,
+    this.recovery,
+    this.kind,
+    this.nativeMessage,
+  });
+
+  EcoCenterException.app(
+    EcoCenterErrorKind kind, {
+    int? code,
+    CenterServerAuthRecovery? recovery,
+  }) : this(
+         'eco_center.${kind.name}',
+         code: code,
+         recovery: recovery,
+         kind: kind,
+       );
+
+  EcoCenterException.native(
+    String nativeMessage, {
+    int? code,
+    CenterServerAuthRecovery? recovery,
+  }) : this(
+         nativeMessage,
+         code: code,
+         recovery: recovery,
+         nativeMessage: nativeMessage,
+       );
 
   final String message;
   final int? code;
   final CenterServerAuthRecovery? recovery;
+  final EcoCenterErrorKind? kind;
+  final String? nativeMessage;
 
   @override
   String toString() => message;
@@ -240,7 +299,7 @@ String normalizeCenterServerHttpUrl(String serverUrl) {
   final trimmed = serverUrl.trim();
   final parsed = Uri.parse(trimmed);
   if (parsed.scheme != 'http' && parsed.scheme != 'https') {
-    throw EcoCenterException('Center server URL must use http or https.');
+    throw EcoCenterException.app(EcoCenterErrorKind.invalidServerScheme);
   }
   var path = parsed.path;
   while (path.endsWith('/')) {

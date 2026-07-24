@@ -70,6 +70,13 @@ ensureDesktopPath();
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
+import { expectedIpcErrorKey, translateCatalog } from "../shared/i18n-catalogs";
+import {
+  type AppLocale,
+  type AppLocalePreference,
+  normalizeLocalePreference,
+  resolveAppLocale,
+} from "../shared/locale";
 import {
   deriveBashApprovalRememberPrefix,
   formatBashApprovalDenyMessage,
@@ -1759,10 +1766,17 @@ function registerDesktopCommand<Args extends unknown[], Result>(
   channel: IpcChannel,
   handler: (...args: Args) => Result | Promise<Result>,
 ): void {
+  const invoke = async (...args: Args): Promise<Result> => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      throw localizeExpectedIpcError(error);
+    }
+  };
   if (isRemoteCommandChannel(channel)) {
-    desktopEventCenter.registerCommand(channel, (args) => handler(...(args as Args)));
+    desktopEventCenter.registerCommand(channel, (args) => invoke(...(args as Args)));
   }
-  ipcMain.handle(channel, async (_event, ...args: unknown[]) => handler(...(args as Args)));
+  ipcMain.handle(channel, async (_event, ...args: unknown[]) => invoke(...(args as Args)));
 }
 
 function parseComposerDraftContextKey(value: unknown): string {
@@ -1774,9 +1788,30 @@ function parseComposerDraftContextKey(value: unknown): string {
 }
 
 type AppThemeSource = "dark" | "light" | "system";
+let appLocalePreference: AppLocalePreference = "system";
 
 function normalizeAppThemeSource(value: unknown): AppThemeSource {
   return value === "dark" || value === "light" || value === "system" ? value : "system";
+}
+
+function currentAppLocale(): AppLocale {
+  return resolveAppLocale(appLocalePreference, [app.getLocale()]);
+}
+
+function mainText(
+  key: Parameters<typeof translateCatalog>[1],
+  variables?: Parameters<typeof translateCatalog>[2],
+): string {
+  return translateCatalog(currentAppLocale(), key, variables);
+}
+
+function localizeExpectedIpcError(error: unknown): unknown {
+  if (!(error instanceof Error)) {
+    return error;
+  }
+  const message = error.message.trim();
+  const key = expectedIpcErrorKey(message);
+  return key ? new Error(mainText(key)) : error;
 }
 
 function showDesktopNotification(content: { title: string; body: string }): void {
@@ -1807,7 +1842,7 @@ function registerIpcHandlers(): void {
       codex: {
         available: codexAvailable,
         ...(!codexAvailable && {
-          reason: "未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
+          reason: mainText("native.codexUnavailable"),
         }),
       },
     };
@@ -1817,6 +1852,11 @@ function registerIpcHandlers(): void {
     const themeSource = normalizeAppThemeSource(payload);
     nativeTheme.themeSource = themeSource;
     return { themeSource };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.appSetLocale, async (payload: unknown) => {
+    appLocalePreference = normalizeLocalePreference(payload);
+    return { localePreference: appLocalePreference };
   });
 
   registerDesktopCommand(IPC_CHANNELS.appShowThreadCompletionNotification, async (payload: unknown) => {
@@ -1870,7 +1910,7 @@ function registerIpcHandlers(): void {
     if (!approval) {
       return { shown: false, reason: "approval_not_pending" } as const;
     }
-    const content = buildThreadApprovalNotificationContent(thread, kind, approval);
+    const content = buildThreadApprovalNotificationContent(thread, kind, approval, currentAppLocale());
     if (!content) {
       return { shown: false, reason: "notification_content_unavailable" } as const;
     }
@@ -1881,7 +1921,7 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.workspaceOpen, async () => {
     const result = await dialog.showOpenDialog({
-      title: "Open project folder",
+      title: mainText("native.openProject"),
       properties: ["openDirectory"],
     });
 

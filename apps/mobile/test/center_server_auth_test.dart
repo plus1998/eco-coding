@@ -8,9 +8,11 @@ void main() {
     '登录已失效，请重新登录。': CenterServerAuthRecovery.relogin,
     'Device is not active.': CenterServerAuthRecovery.deviceInactive,
     'Token device is not active.': CenterServerAuthRecovery.deviceInactive,
-    'Refresh token device is not active.': CenterServerAuthRecovery.deviceInactive,
+    'Refresh token device is not active.':
+        CenterServerAuthRecovery.deviceInactive,
     'Token user is not active.': CenterServerAuthRecovery.accountUnusable,
-    'Refresh token subject is not active.': CenterServerAuthRecovery.accountUnusable,
+    'Refresh token subject is not active.':
+        CenterServerAuthRecovery.accountUnusable,
     'Connection timed out.': CenterServerAuthRecovery.network,
     'Request failed with HTTP 503.': CenterServerAuthRecovery.network,
     'Something else': CenterServerAuthRecovery.unknown,

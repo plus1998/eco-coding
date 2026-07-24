@@ -11,6 +11,7 @@ import type {
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import { type AgentTemplatePermissionChip, buildAgentTemplatePermissionChips } from "./agent-template-form";
+import { i18n } from "./i18n";
 
 export interface AgentProfileMainSummary {
   name: string;
@@ -81,7 +82,7 @@ export function buildAgentProfileSummary(
   const mainRiskLabels = summarizeToolRiskLabels(profile.mainAgent.tools);
   const mainModelRef = profile.mainAgent.modelRef;
   const main: AgentProfileMainSummary = {
-    name: profile.mainAgent.name.trim() || "主 Agent",
+    name: profile.mainAgent.name.trim() || i18n.t("settings.models.mainAgent"),
     modelLabel: formatModelLabel(mainModelRef.providerId, mainModelRef.modelId, mainModelRef),
     modelId: mainModelRef.modelId,
     ...(mainModelRef.thinkingEffort ? { thinkingEffort: mainModelRef.thinkingEffort } : {}),
@@ -116,19 +117,19 @@ export function buildAgentProfileSummary(
 export function formatAgentDomainLabel(domain: AgentDomain): string {
   switch (domain) {
     case "coding":
-      return "编程";
+      return i18n.t("agentProfile.domain.coding");
     case "research":
-      return "研究";
+      return i18n.t("agentProfile.domain.research");
     case "writing":
-      return "写作";
+      return i18n.t("agentProfile.domain.writing");
     case "product":
-      return "产品";
+      return i18n.t("agentProfile.domain.product");
     case "data":
-      return "数据";
+      return i18n.t("agentProfile.domain.data");
     case "ops":
-      return "运维";
+      return i18n.t("agentProfile.domain.ops");
     case "custom":
-      return "自定义";
+      return i18n.t("agentProfile.domain.custom");
   }
 }
 
@@ -170,18 +171,20 @@ function resolveAgentEnabled(
 
 function formatProfileSourceLabel(profile: OrchestrationProfile): string {
   if (profile.source === "built_in") {
-    return "内置";
+    return i18n.t("agentProfile.source.builtIn");
   }
   if (profile.source === "derived") {
-    return profile.sourceRouteProfileId ? "派生" : "派生配置";
+    return profile.sourceRouteProfileId
+      ? i18n.t("agentProfile.source.derived")
+      : i18n.t("agentProfile.source.derivedProfile");
   }
   if (profile.source === "project") {
-    return "项目";
+    return i18n.t("settings.models.editor.project");
   }
   if (profile.source === "user") {
-    return "用户";
+    return i18n.t("settings.models.editor.user");
   }
-  return "自定义";
+  return i18n.t("agentProfile.domain.custom");
 }
 
 function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
@@ -191,11 +194,11 @@ function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
     labels.push("Bash");
   }
   if (policy.filesystem?.write === "workspace") {
-    labels.push("写文件");
+    labels.push(i18n.t("agentProfile.risk.writeFiles"));
   }
   const networkEnabled = policy.network?.webSearch || policy.network?.webFetch;
   if (networkEnabled) {
-    labels.push("联网");
+    labels.push(i18n.t("agentProfile.risk.network"));
   }
   if ((policy.mcp?.allowedServers.length ?? 0) > 0 || (policy.mcp?.allowedTools.length ?? 0) > 0) {
     labels.push("MCP");
@@ -217,7 +220,7 @@ function dedupeRiskLabels(labels: readonly string[]): string[] {
 
 function formatModelLabel(_providerId: string, modelId: string, modelRef?: ModelRef): string {
   const model = modelId.trim();
-  const base = model ? shortenModelId(model) : "未配置";
+  const base = model ? shortenModelId(model) : i18n.t("common.notConfigured");
   const suffixes: string[] = [];
   if (modelRef?.thinkingEffort && modelRef.thinkingEffort !== "off") {
     suffixes.push(modelRef.thinkingEffort);

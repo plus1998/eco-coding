@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/locale/app_locale_preference.dart';
+import 'core/providers/app_locale_provider.dart';
 import 'core/providers/app_theme_provider.dart';
 import 'core/theme/app_theme_preference.dart';
 
@@ -11,9 +13,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
-    ),
+    const SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent),
   );
 
   final prefs = await SharedPreferences.getInstance();
@@ -21,11 +21,16 @@ Future<void> main() async {
     prefs.getString(AppThemePreference.storageKey),
   );
   final initialTheme = stored ?? AppThemePreference.system;
+  final storedLocale = AppLocalePreference.tryParse(
+    prefs.getString(AppLocalePreference.storageKey),
+  );
+  final initialLocale = storedLocale ?? AppLocalePreference.system;
 
   runApp(
     ProviderScope(
       overrides: [
         appThemeBootstrapProvider.overrideWithValue(initialTheme),
+        appLocaleBootstrapProvider.overrideWithValue(initialLocale),
       ],
       child: const EcoApp(),
     ),

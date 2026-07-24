@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/models/thread_models.dart';
@@ -20,6 +21,7 @@ import '../../core/widgets/eco_surface_card.dart';
 import '../../core/widgets/paced_stream_text.dart';
 import '../../core/widgets/shimmer_text.dart';
 import '../../core/theme/subagent_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import 'activity_feed_scroll_coordinator.dart';
 import 'projection_activity_feed.dart';
 import 'thread_session_layout.dart';
@@ -146,30 +148,36 @@ List<ActivityFeedEntry> buildActivityFeed({
   String? threadId,
   ThreadRunProjectionSnapshot? runProjection,
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
+  AppLocalizations? l10n,
 }) {
   if (!isProjectionFeedReady(runProjection)) {
     return const [];
   }
+  final strings = l10n ?? lookupAppLocalizations(const Locale('zh'));
   final groupedActions = groupActivityFeedActionEntries(
     buildProjectionActivityFeed(
       projection: runProjection!,
       threadPrompt: threadPrompt,
       threadId: threadId,
       subagentSessions: subagentSessions,
+      l10n: strings,
     ),
+    l10n: strings,
   );
   return groupProjectionActivityFeedTurns(groupedActions, runProjection);
 }
 
 List<ActivityFeedEntry> groupActivityFeedActionEntries(
-  List<ActivityFeedEntry> entries,
-) {
+  List<ActivityFeedEntry> entries, {
+  AppLocalizations? l10n,
+}) {
+  final strings = l10n ?? lookupAppLocalizations(const Locale('zh'));
   final grouped = <ActivityFeedEntry>[];
   var pending = <ActivityFeedEntry>[];
 
   void flush() {
     if (pending.isNotEmpty) {
-      grouped.add(_buildActionGroupEntry(pending));
+      grouped.add(_buildActionGroupEntry(pending, strings));
     }
     pending = <ActivityFeedEntry>[];
   }
@@ -186,9 +194,12 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
   return grouped;
 }
 
-ActivityFeedEntry _buildActionGroupEntry(List<ActivityFeedEntry> entries) {
+ActivityFeedEntry _buildActionGroupEntry(
+  List<ActivityFeedEntry> entries,
+  AppLocalizations l10n,
+) {
   final first = entries.first;
-  final summary = _summarizeActionEntries(entries);
+  final summary = _summarizeActionEntries(entries, l10n);
   return ActivityFeedEntry(
     id: 'action-group:${first.id}',
     kind: ActivityFeedKind.actionGroup,
@@ -212,22 +223,32 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
 
 ({String label, ActivityActionIcon icon}) _summarizeActionEntries(
   List<ActivityFeedEntry> entries,
+  AppLocalizations l10n,
 ) {
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.failed) {
+      final target = clampActivityPreviewLine(
+        entry.bashRun?.command ?? entry.text,
+        64,
+      );
+      final suffix = target.isEmpty ? '' : ' $target';
       return (
-        label: '工具未完成 · ${entry.text}',
+        label: l10n.activityRanSuffix(suffix),
         icon: entry.actionIcon ?? ActivityActionIcon.file,
       );
     }
   }
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.running) {
-      return _summarizeSingleActionEntry(entry, running: true);
+      return _summarizeSingleActionEntry(entry, running: true, l10n: l10n);
     }
   }
   if (entries.length == 1) {
-    return _summarizeSingleActionEntry(entries.single, running: false);
+    return _summarizeSingleActionEntry(
+      entries.single,
+      running: false,
+      l10n: l10n,
+    );
   }
 
   final editedFiles = <String>{};
@@ -275,30 +296,35 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
 
   final clauses = <String>[];
   if (readFiles.isNotEmpty) {
-    clauses.add('已读取 ${readFiles.length} 个文件');
+    clauses.add(l10n.activityReadFiles(readFiles.length));
   }
   if (writtenFiles.isNotEmpty) {
-    clauses.add('已写入 ${writtenFiles.length} 个文件');
+    clauses.add(l10n.activityWroteFiles(writtenFiles.length));
   }
   if (editedFiles.isNotEmpty) {
-    clauses.add('已编辑 ${editedFiles.length} 个文件');
+    clauses.add(l10n.activityEditedFiles(editedFiles.length));
   }
   if (searches > 0) {
-    clauses.add(searches > 1 ? '已搜索代码 $searches 次' : '已搜索代码');
+    clauses.add(
+      searches > 1
+          ? l10n.activitySearchedCodeTimes(searches)
+          : l10n.activitySearchedCode,
+    );
   }
   if (commands > 0) {
-    clauses.add('已运行 $commands 条命令');
+    clauses.add(l10n.activityRanCommands(commands));
   }
   if (agents > 0) {
-    clauses.add('已调用 $agents 个子代理');
+    clauses.add(l10n.activityCalledSubagents(agents));
   }
   if (otherTools > 0) {
-    clauses.add('已执行 $otherTools 个工具');
+    clauses.add(l10n.activityRanTools(otherTools));
   }
 
   return (
-    label: _joinChineseClauses(
-      clauses.isEmpty ? ['已执行 ${entries.length} 个工具'] : clauses,
+    label: _joinActivityClauses(
+      clauses.isEmpty ? [l10n.activityRanTools(entries.length)] : clauses,
+      l10n,
     ),
     icon: writtenFiles.isNotEmpty || editedFiles.isNotEmpty
         ? ActivityActionIcon.edit
@@ -317,6 +343,7 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
 ({String label, ActivityActionIcon icon}) _summarizeSingleActionEntry(
   ActivityFeedEntry entry, {
   required bool running,
+  required AppLocalizations l10n,
 }) {
   final target = clampActivityPreviewLine(
     entry.bashRun?.command ?? entry.fileChange?.path ?? entry.text,
@@ -325,26 +352,33 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
   final suffix = target.isEmpty ? '' : ' $target';
   final toolName = entry.toolName;
   final verb = switch (toolName) {
-    'TaskCreate' => running ? '正在创建任务' : '已创建任务',
-    'TaskUpdate' || 'TodoWrite' => running ? '正在更新任务' : '已更新任务',
-    'Write' => running ? '正在写入' : '已写入',
-    'Edit' || 'MultiEdit' => running ? '正在编辑' : '已编辑',
-    'Read' || 'NotebookRead' => running ? '正在读取' : '已读取',
-    'Glob' || 'Grep' => running ? '正在搜索' : '已搜索',
-    'Bash' => running ? '正在运行' : '已运行',
-    'Agent' || 'Task' => running ? '正在调用子代理' : '已调用子代理',
-    _ when entry.fileChange != null => running ? '正在编辑' : '已编辑',
+    'TaskCreate' =>
+      running ? l10n.activityCreatingTask : l10n.activityCreatedTask,
+    'TaskUpdate' || 'TodoWrite' =>
+      running ? l10n.activityUpdatingTask : l10n.activityUpdatedTask,
+    'Write' => running ? l10n.activityWriting : l10n.activityWrote,
+    'Edit' ||
+    'MultiEdit' => running ? l10n.activityEditing : l10n.activityEdited,
+    'Read' ||
+    'NotebookRead' => running ? l10n.activityReading : l10n.activityRead,
+    'Glob' ||
+    'Grep' => running ? l10n.activitySearching : l10n.activitySearched,
+    'Bash' => running ? l10n.activityRunning : l10n.activityRan,
+    'Agent' || 'Task' =>
+      running ? l10n.activityCallingSubagent : l10n.activityCalledSubagent,
+    _ when entry.fileChange != null =>
+      running ? l10n.activityEditing : l10n.activityEdited,
     _ when entry.actionIcon == ActivityActionIcon.file =>
-      running ? '正在读取' : '已读取',
+      running ? l10n.activityReading : l10n.activityRead,
     _ when entry.actionIcon == ActivityActionIcon.search =>
-      running ? '正在搜索' : '已搜索',
+      running ? l10n.activitySearching : l10n.activitySearched,
     _
         when entry.actionIcon == ActivityActionIcon.terminal ||
             entry.bashRun != null =>
-      running ? '正在运行' : '已运行',
+      running ? l10n.activityRunning : l10n.activityRan,
     _ when entry.actionIcon == ActivityActionIcon.agent =>
-      running ? '正在调用子代理' : '已调用子代理',
-    _ => running ? '正在执行' : '已执行',
+      running ? l10n.activityCallingSubagent : l10n.activityCalledSubagent,
+    _ => running ? l10n.activityExecuting : l10n.activityExecuted,
   };
   return (
     label: '$verb$suffix',
@@ -352,10 +386,17 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
   );
 }
 
-String _joinChineseClauses(List<String> clauses) {
+String _joinActivityClauses(List<String> clauses, AppLocalizations l10n) {
   if (clauses.length <= 1) return clauses.firstOrNull ?? '';
-  if (clauses.length == 2) return '${clauses[0]}和${clauses[1]}';
-  return '${clauses.sublist(0, clauses.length - 1).join('、')}和${clauses.last}';
+  if (clauses.length == 2) {
+    return l10n.activityListPair(clauses[0], clauses[1]);
+  }
+  return l10n.activityListEnd(
+    clauses
+        .sublist(0, clauses.length - 1)
+        .join(l10n.localeName.startsWith('zh') ? '、' : ', '),
+    clauses.last,
+  );
 }
 
 ToolActionLifecycle? _resolveActionGroupLifecycle(
@@ -675,7 +716,7 @@ class _ScrollToBottomButton extends StatelessWidget {
     final colors = ecoColors(context);
     final buttonChild = Semantics(
       button: true,
-      label: '回到底部',
+      label: context.l10n.threadBackToBottom,
       child: SizedBox(
         width: _scrollToBottomButtonSize,
         height: _scrollToBottomButtonSize,
@@ -689,7 +730,7 @@ class _ScrollToBottomButton extends StatelessWidget {
 
     if (PlatformInfo.isIOS) {
       return Tooltip(
-        message: '回到底部',
+        message: context.l10n.threadBackToBottom,
         child: AdaptiveButton.child(
           onPressed: onPressed,
           style: AdaptiveButtonStyle.glass,
@@ -713,7 +754,10 @@ class _ScrollToBottomButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(20),
-        child: Tooltip(message: '回到底部', child: buttonChild),
+        child: Tooltip(
+          message: context.l10n.threadBackToBottom,
+          child: buttonChild,
+        ),
       ),
     );
   }
@@ -876,7 +920,9 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final duration = _durationMs > 0 ? _formatTurnDurationMs(_durationMs) : '';
-    final status = widget.entry.running ? '处理中' : '已处理';
+    final status = widget.entry.running
+        ? context.l10n.activityProcessing
+        : context.l10n.activityProcessed;
     final process = widget.entry.processEntries;
 
     return Padding(
@@ -887,7 +933,9 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
           Semantics(
             button: !widget.entry.running,
             expanded: _expanded,
-            label: widget.entry.running ? '执行过程' : '本轮执行结果',
+            label: widget.entry.running
+                ? context.l10n.activityExecutionProcess
+                : context.l10n.activityExecutionResult,
             child: InkWell(
               onTap: widget.entry.running
                   ? null
@@ -959,7 +1007,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
             Padding(
               padding: const EdgeInsets.only(top: 9),
               child: Semantics(
-                label: '最终输出',
+                label: context.l10n.activityFinalOutput,
                 child: _ActivityFeedEntryTile(
                   entry: widget.entry.finalOutput!,
                   agentProfile: widget.agentProfile,
@@ -1113,7 +1161,9 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                             visualDensity: VisualDensity.compact,
                           ),
                           child: Text(
-                            _expanded ? '收起' : '展开全文',
+                            _expanded
+                                ? context.l10n.commonCollapse
+                                : context.l10n.activityExpandFull,
                             style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(color: eco.textMuted),
                           ),
@@ -1160,7 +1210,7 @@ class _ClarificationAnswerTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '澄清回答',
+                  context.l10n.activityClarificationAnswer,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: eco.textMuted,
                     fontWeight: FontWeight.w600,
@@ -1179,7 +1229,9 @@ class _ClarificationAnswerTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    rows[index].answer.isEmpty ? '（未选择）' : rows[index].answer,
+                    rows[index].answer.isEmpty
+                        ? context.l10n.activityNoneSelected
+                        : rows[index].answer,
                     style: activityFeedBodyStyle(context, height: 1.45),
                   ),
                 ],
@@ -1337,7 +1389,7 @@ class _ThinkingTileContentState extends State<_ThinkingTileContent> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
         child: ShimmerText(
-          text: '正在思考',
+          text: context.l10n.activityThinking,
           style: activityFeedBodyStyle(context, height: 1.4),
           baseColor: ecoColors(context).textMuted,
           highlightColor: ecoColors(context).textSecondary,
@@ -1362,7 +1414,7 @@ class _ThinkingTileContentState extends State<_ThinkingTileContent> {
         children: [
           ActivityFeedBlockHeader(
             icon: EcoIcons.sparkles,
-            title: '思考',
+            title: context.l10n.activityThinkingLabel,
             iconColor: widget.streaming ? eco.accent : eco.textMuted,
             expanded: canToggle ? _expanded : null,
           ),
@@ -1428,6 +1480,10 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
   @override
   Widget build(BuildContext context) {
     final children = widget.entry.actionChildren;
+    final singleBashChild =
+        children.length == 1 && children.single.bashRun != null
+            ? children.single
+            : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
       child: Column(
@@ -1451,25 +1507,35 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.only(left: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final child in children)
-                        _ActionTile(
-                          key: ValueKey(child.id),
-                          label: child.text,
-                          icon: child.actionIcon ?? ActivityActionIcon.file,
-                          lifecycle: child.lifecycle,
-                          bashRun: child.bashRun,
-                          fileChange: child.fileChange,
-                          toolUseId: child.toolUseId,
-                          forceDetailsExpanded: widget.onOpenToolDetail == null,
-                          onOpenToolDetail: widget.onOpenToolDetail != null
-                              ? () => widget.onOpenToolDetail!(child)
-                              : null,
+                  child: singleBashChild != null
+                      ? _BashRunCard(
+                          display: singleBashChild.bashRun!,
+                          lifecycle: singleBashChild.lifecycle,
+                          showHeader: false,
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final child in children)
+                              _ActionTile(
+                                key: ValueKey(child.id),
+                                label: child.text,
+                                icon:
+                                    child.actionIcon ??
+                                    ActivityActionIcon.file,
+                                lifecycle: child.lifecycle,
+                                bashRun: child.bashRun,
+                                fileChange: child.fileChange,
+                                toolUseId: child.toolUseId,
+                                forceDetailsExpanded:
+                                    widget.onOpenToolDetail == null,
+                                onOpenToolDetail:
+                                    widget.onOpenToolDetail != null
+                                    ? () => widget.onOpenToolDetail!(child)
+                                    : null,
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
                 ),
               ),
             ),
@@ -1558,7 +1624,11 @@ class _ActionTileState extends State<_ActionTile> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _ActionSummaryLine(
-              label: _bashActionSummaryLabel(bashRun, widget.lifecycle),
+              label: _bashActionSummaryLabel(
+                bashRun,
+                widget.lifecycle,
+                context.l10n,
+              ),
               icon: ActivityActionIcon.terminal,
               lifecycle: widget.lifecycle,
               expanded: _expanded,
@@ -1628,17 +1698,18 @@ class _ActionTileState extends State<_ActionTile> {
 String _bashActionSummaryLabel(
   BashRunCardDisplay display,
   ToolActionLifecycle? lifecycle,
+  AppLocalizations l10n,
 ) {
   final title = display.title.trim();
   final command = display.command?.trim() ?? '';
   final target = title.isNotEmpty && title != 'Shell' ? title : command;
   final suffix = target.isEmpty ? '' : ' $target';
   if (lifecycle == ToolActionLifecycle.failed) {
-    return '运行失败$suffix';
+    return l10n.activityRanSuffix(suffix);
   }
   return lifecycle == ToolActionLifecycle.running
-      ? '正在运行$suffix'
-      : '已运行$suffix';
+      ? l10n.activityRunningSuffix(suffix)
+      : l10n.activityRanSuffix(suffix);
 }
 
 class _ActionSummaryLine extends StatelessWidget {
@@ -1664,34 +1735,54 @@ class _ActionSummaryLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final failed = lifecycle == ToolActionLifecycle.failed;
-    final iconColor = failed ? eco.statusDenyText : eco.textMuted;
 
     final content = Row(
       children: [
-        Icon(EcoIcons.activityAction(icon), size: 15, color: iconColor),
+        Icon(EcoIcons.activityAction(icon), size: 15, color: eco.textMuted),
         const SizedBox(width: 8),
         Expanded(
-          child: lifecycle == ToolActionLifecycle.running
-              ? ShimmerText(
-                  text: label,
-                  baseColor: eco.textMuted,
-                  highlightColor: eco.textSecondary,
-                  style: activityFeedBodyStyle(
-                    context,
-                    color: eco.textMuted,
-                    height: 1.35,
-                  )?.copyWith(fontWeight: FontWeight.w500),
-                )
-              : Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: activityFeedBodyStyle(
-                    context,
-                    color: failed ? eco.statusDenyText : eco.textMuted,
-                    height: 1.35,
-                  )?.copyWith(fontWeight: FontWeight.w500),
+          child: Row(
+            children: [
+              Flexible(
+                child: lifecycle == ToolActionLifecycle.running
+                    ? ShimmerText(
+                        text: label,
+                        baseColor: eco.textMuted,
+                        highlightColor: eco.textSecondary,
+                        style: activityFeedBodyStyle(
+                          context,
+                          color: eco.textMuted,
+                          height: 1.35,
+                        )?.copyWith(fontWeight: FontWeight.w500),
+                      )
+                    : Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: activityFeedBodyStyle(
+                          context,
+                          color: eco.textMuted,
+                          height: 1.35,
+                        )?.copyWith(fontWeight: FontWeight.w500),
+                      ),
+              ),
+              if (failed) ...[
+                const SizedBox(width: 6),
+                Semantics(
+                  label: context.l10n.activityFailed,
+                  child: Container(
+                    key: const ValueKey('activity-tool-failure-dot'),
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: eco.statusDenyText.withValues(alpha: 0.58),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
                 ),
+              ],
+            ],
+          ),
         ),
         if (additions > 0 || deletions > 0) ...[
           const SizedBox(width: 8),
@@ -1844,7 +1935,10 @@ class _BashRunCardState extends State<_BashRunCard> {
                   titleColor: failed ? eco.danger : null,
                   expanded: canExpand ? _bodyExpanded : null,
                   trailing: failed
-                      ? const ActivityFeedStatusChip(label: '失败', danger: true)
+                      ? ActivityFeedStatusChip(
+                          label: context.l10n.activityFailed,
+                          danger: true,
+                        )
                       : null,
                 ),
               if (command.isNotEmpty || output.isNotEmpty) ...[
@@ -2004,9 +2098,15 @@ class _FileChangeCardState extends State<_FileChangeCard> {
             iconColor: failed ? eco.danger : eco.textMuted,
             expanded: _expanded,
             trailing: failed
-                ? const ActivityFeedStatusChip(label: '失败', danger: true)
+                ? ActivityFeedStatusChip(
+                    label: context.l10n.activityFailed,
+                    danger: true,
+                  )
                 : running
-                ? const ActivityFeedStatusChip(label: '运行中', active: true)
+                ? ActivityFeedStatusChip(
+                    label: context.l10n.threadRunRunning,
+                    active: true,
+                  )
                 : null,
           ),
           const ActivityFeedBlockDivider(),
@@ -2096,8 +2196,15 @@ class _ReconnectPhaseTileState extends State<_ReconnectPhaseTile>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     if (!_isFailure) {
       _spinController.repeat();
+    } else {
+      _spinController.stop();
     }
   }
 
@@ -2107,7 +2214,8 @@ class _ReconnectPhaseTileState extends State<_ReconnectPhaseTile>
     super.dispose();
   }
 
-  bool get _isFailure => widget.summary.startsWith('连接失败');
+  bool get _isFailure =>
+      widget.summary.startsWith(context.l10n.activityConnectionFailed);
 
   bool get _hasDetail =>
       widget.detail != null && widget.detail!.trim().isNotEmpty;
@@ -2303,12 +2411,13 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final durationLabel = formatSubagentDuration(
       widget.running ? _liveDurationMs : widget.durationMs,
       running: widget.running,
+      l10n: context.l10n,
     );
 
     final onTap =
         widget.onOpenDetail ?? () => setState(() => _expanded = !_expanded);
     final expanded = widget.onOpenDetail == null && _expanded;
-    final title = resolveSubagentRunDisplayTitle(role);
+    final title = resolveSubagentRunDisplayTitle(role, context.l10n);
     final titleWithId = widget.agentId == null
         ? title
         : '$title · #${shortSubagentAgentId(widget.agentId!)}';
@@ -2316,7 +2425,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     return Semantics(
       button: true,
       expanded: expanded,
-      label: '$title 子代理任务',
+      label: context.l10n.activitySubagentTask(title),
       child: ActivityFeedBlock(
         onTap: onTap,
         child: Column(
@@ -2347,7 +2456,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     const SizedBox(height: 8),
                   ],
                   Text(
-                    '任务目标',
+                    context.l10n.activityTaskGoal,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: eco.textMuted,
                       fontSize: 11,
@@ -2357,7 +2466,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                   const SizedBox(height: 4),
                   if (fullText.isEmpty)
                     Text(
-                      '等待任务说明…',
+                      context.l10n.activityWaitingMission,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: eco.textMuted,
                         fontStyle: FontStyle.italic,
@@ -2397,7 +2506,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                   ] else if (expanded && widget.running) ...[
                     const SizedBox(height: 10),
                     Text(
-                      '等待执行事件…',
+                      context.l10n.activityWaitingEvents,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: eco.textMuted,
                         fontStyle: FontStyle.italic,

@@ -6,6 +6,7 @@ import {
   mergeThreadFollowUp,
   queuedThreadFollowUps,
 } from "../src/renderer/thread-follow-up-ui";
+import { i18n } from "../src/renderer/i18n";
 
 function followUp(
   id: string,
@@ -53,7 +54,8 @@ test("mergeThreadFollowUp replaces existing records by id", () => {
   expect(mergeThreadFollowUp([original], updated)).toEqual([updated]);
 });
 
-test("formatThreadFollowUpPreview includes image count without overflowing long prompts", () => {
+test("formatThreadFollowUpPreview localizes image and empty defaults", async () => {
+  await i18n.changeLanguage("en-US");
   const preview = formatThreadFollowUpPreview(
     followUp("with-image", {
       prompt: "a".repeat(140),
@@ -61,6 +63,13 @@ test("formatThreadFollowUpPreview includes image count without overflowing long 
     }),
   );
 
-  expect(preview).toEndWith("... (1 张图片)");
+  expect(preview).toEndWith("... (1 image(s))");
   expect(preview.length).toBeLessThan(140);
+  expect(formatThreadFollowUpPreview(followUp("images", {
+    prompt: "",
+    attachments: [{ mediaType: "image/png", data: "abc" }],
+  }))).toBe("1 image(s)");
+  expect(formatThreadFollowUpPreview(followUp("empty", { prompt: "" }))).toBe(
+    "Empty follow-up message",
+  );
 });

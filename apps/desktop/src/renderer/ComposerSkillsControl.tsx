@@ -1,6 +1,7 @@
 import { ChevronDown, Sparkles } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import type { SkillInfo } from "../shared/skills";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
@@ -30,6 +31,7 @@ function ComposerSkillsRows({
   saving,
   onToggleSkill,
 }: ComposerSkillsRowsProps) {
+  const { t } = useTranslation();
   return (
     <>
       {(["project", "user"] as const).map((source) => {
@@ -37,7 +39,11 @@ function ComposerSkillsRows({
         if (scoped.length === 0) return null;
         return (
           <section key={source} className="composer-skills-scope">
-            <h3>{source === "project" ? "项目" : "用户"}</h3>
+            <h3>
+              {source === "project"
+                ? t("settings.models.editor.project")
+                : t("settings.models.editor.user")}
+            </h3>
             <div className="composer-agents-list">
               {scoped.map((skill) => {
                 const key = skill.settingsKey ?? skill.skillFilePath;
@@ -50,13 +56,17 @@ function ComposerSkillsRows({
                     </div>
                     <label
                       className="composer-switch"
-                      title={enabled ? `${skill.name} · 已启用` : `${skill.name} · 已停用`}
+                      title={t(enabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+                        name: skill.name,
+                      })}
                     >
                       <input
                         type="checkbox"
                         checked={enabled}
                         disabled={!canEdit || saving || !onToggleSkill}
-                        aria-label={`${skill.name} ${enabled ? "已启用" : "已停用"}`}
+                        aria-label={t(enabled ? "composer.enabledAria" : "composer.disabledAria", {
+                          name: skill.name,
+                        })}
                         onChange={() => onToggleSkill?.(key, !enabled)}
                       />
                       <span className="composer-switch-track" aria-hidden />
@@ -73,8 +83,9 @@ function ComposerSkillsRows({
 }
 
 export function ComposerSkillsCardBody(props: ComposerSkillsRowsProps) {
+  const { t } = useTranslation();
   if (props.skills.length === 0) {
-    return <p className="floating-workspace-card-empty">当前项目没有可配置的 Skills</p>;
+    return <p className="floating-workspace-card-empty">{t("composer.skills.empty")}</p>;
   }
 
   return (
@@ -92,6 +103,7 @@ export function ComposerSkillsControl({
   compact,
   onToggleSkill,
 }: ComposerSkillsControlProps) {
+  const { t } = useTranslation();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -144,11 +156,11 @@ export function ComposerSkillsControl({
           ref={panelRef}
           className="composer-codex-popover composer-agents-popover composer-skills-popover"
           role="dialog"
-          aria-label="Skills"
+          aria-label={t("composer.skills.title")}
           style={panelStyle}
         >
           <div className="composer-agents-popover-header">
-            <span>Skills</span>
+            <span>{t("composer.skills.title")}</span>
             <span>{summary}</span>
           </div>
           <div className="composer-skills-popover-scroll">
@@ -178,7 +190,7 @@ export function ComposerSkillsControl({
         ]
           .filter(Boolean)
           .join(" ")}
-        aria-label={`配置 Skills，已启用 ${summary}`}
+        aria-label={t("composer.skills.configureSummary", { summary })}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -192,7 +204,9 @@ export function ComposerSkillsControl({
           aria-hidden
           className="composer-context-trigger-icon"
         />
-        <span className="composer-context-trigger-label">{compact ? summary : "Skills"}</span>
+        <span className="composer-context-trigger-label">
+          {compact ? summary : t("composer.skills.title")}
+        </span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}

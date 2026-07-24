@@ -185,7 +185,9 @@ class EcoCenterClient {
 
   Future<PublicDevice> syncDeviceProfile() async {
     if (!_credentials.hasDeviceCredentials || _credentials.deviceId == null) {
-      throw EcoCenterException('Device credentials are required.');
+      throw EcoCenterException.app(
+        EcoCenterErrorKind.deviceCredentialsRequired,
+      );
     }
     final profile = await DeviceProfile.collect();
     final serverUrl = _requireServerUrl();
@@ -218,12 +220,12 @@ class EcoCenterClient {
 
   Future<QuickPairingResult> quickJoinFromQr(PairingQrPayload payload) async {
     if (!payload.canQuickJoin) {
-      throw EcoCenterException('QR 码缺少服务器地址或授权信息，请使用 PC 最新版生成的二维码。');
+      throw EcoCenterException.app(EcoCenterErrorKind.quickPairQrOutdated);
     }
     final serverUrl = normalizeCenterServerHttpUrl(payload.serverUrl!);
     final reachable = await testConnection(serverUrl);
     if (!reachable) {
-      throw EcoCenterException('无法访问服务器，请检查地址与网络');
+      throw EcoCenterException.app(EcoCenterErrorKind.serverUnreachable);
     }
     final sameServer =
         _credentials.serverUrl.trim().isNotEmpty &&
@@ -359,9 +361,9 @@ class EcoCenterClient {
     );
   }
 
-  Future<String?> clearSession() async {
+  Future<EcoCenterNotice?> clearSession() async {
     disconnect();
-    String? notice;
+    EcoCenterNotice? notice;
     final deviceId = _credentials.deviceId;
     final serverUrl = _credentials.serverUrl;
     if (deviceId != null && deviceId.isNotEmpty && serverUrl.isNotEmpty) {
@@ -376,9 +378,12 @@ class EcoCenterClient {
       } catch (error) {
         final recovery = _recoveryFromError(error);
         if (recovery == CenterServerAuthRecovery.deviceInactive) {
-          notice = centerServerAuthRecoveryMessage(recovery);
+          notice = const EcoCenterNotice(EcoCenterNoticeKind.deviceInactive);
         } else {
-          notice = '本地已退出，但服务端注销未完成：${_exceptionMessage(error)}';
+          notice = EcoCenterNotice(
+            EcoCenterNoticeKind.localSignOutCleanupFailed,
+            nativeMessage: _exceptionMessage(error),
+          );
         }
       }
     }
@@ -398,7 +403,7 @@ class EcoCenterClient {
     int? deadlineMs,
   }) async {
     if (_socket == null || _status.state != EcoConnectionState.connected) {
-      throw EcoCenterException('WebSocket is not connected.');
+      throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
     }
     final id = 'mobile_req_${++_rpcCounter}';
     final completer = Completer<dynamic>();
@@ -422,8 +427,8 @@ class EcoCenterClient {
         Duration(milliseconds: deadlineMs ?? defaultInvokeTimeoutMs),
         onTimeout: () {
           _pendingInvokes.remove(id);
-          throw EcoCenterException(
-            'RPC timed out.',
+          throw EcoCenterException.app(
+            EcoCenterErrorKind.rpcTimeout,
             code: EcoRpcConstants.timeout,
           );
         },
@@ -445,7 +450,7 @@ class EcoCenterClient {
   Future<void> _connectOnce() async {
     _clearReconnectTimer();
     if (_credentials.serverUrl.isEmpty) {
-      throw EcoCenterException('Center server URL is required.');
+      throw EcoCenterException.app(EcoCenterErrorKind.serverUrlRequired);
     }
 
     _emitStatus(
@@ -455,7 +460,7 @@ class EcoCenterClient {
     try {
       final accessToken = await _ensureDeviceAccessToken();
       if (_intentionallyStopped) {
-        throw EcoCenterException('Connection aborted.');
+        throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
       }
 
       final wsUrl = buildCenterServerWebSocketUrl(
@@ -478,10 +483,10 @@ class EcoCenterClient {
       await channel.ready.timeout(
         const Duration(seconds: 15),
         onTimeout: () =>
-            throw EcoCenterException('WebSocket connection timed out.'),
+            throw EcoCenterException.app(EcoCenterErrorKind.websocketTimeout),
       );
       if (_intentionallyStopped) {
-        throw EcoCenterException('Connection aborted.');
+        throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
       }
 
       _emitStatus(
@@ -558,10 +563,15 @@ class EcoCenterClient {
     if (decoded.containsKey('error')) {
       final error = decoded['error'] as Map<String, dynamic>;
       pending.completeError(
-        EcoCenterException(
-          error['message'] as String? ?? 'RPC failed.',
-          code: error['code'] as int?,
-        ),
+        error['message'] is String
+            ? EcoCenterException.native(
+                error['message'] as String,
+                code: error['code'] as int?,
+              )
+            : EcoCenterException.app(
+                EcoCenterErrorKind.rpcFailed,
+                code: error['code'] as int?,
+              ),
       );
       return;
     }
@@ -631,8 +641,8 @@ class EcoCenterClient {
         );
       }
     }
-    throw EcoCenterException(
-      'User session expired. Please sign in again.',
+    throw EcoCenterException.app(
+      EcoCenterErrorKind.userSessionExpired,
       recovery: CenterServerAuthRecovery.relogin,
     );
   }
@@ -682,8 +692,8 @@ class EcoCenterClient {
         throw _toAuthException(error);
       }
     }
-    throw EcoCenterException(
-      'Device credentials are missing.',
+    throw EcoCenterException.app(
+      EcoCenterErrorKind.deviceCredentialsMissing,
       recovery: CenterServerAuthRecovery.relogin,
     );
   }
@@ -751,26 +761,30 @@ class EcoCenterClient {
           response.statusCode! >= 300) {
         final error = map?['error'];
         if (error is String && error.isNotEmpty) {
-          throw EcoCenterException(
-            error.toLowerCase().contains('route not found')
-                ? 'Server 版本过旧，缺少扫码连接接口。请重新构建并部署 Center Server（docker compose up -d --build）。'
-                : error,
-          );
+          if (error.toLowerCase().contains('route not found')) {
+            throw EcoCenterException.app(EcoCenterErrorKind.serverOutdated);
+          }
+          throw EcoCenterException.native(error);
         }
-        throw EcoCenterException(
-          'Request failed with HTTP ${response.statusCode}.',
+        throw EcoCenterException.app(
+          EcoCenterErrorKind.httpRequestFailed,
+          code: response.statusCode,
         );
       }
 
       return map ?? {};
     } on DioException catch (error) {
-      throw EcoCenterException(error.message ?? 'Network request failed.');
+      final nativeMessage = error.message?.trim();
+      if (nativeMessage?.isNotEmpty == true) {
+        throw EcoCenterException.native(nativeMessage!);
+      }
+      throw EcoCenterException.app(EcoCenterErrorKind.networkRequestFailed);
     }
   }
 
   String _requireServerUrl() {
     if (_credentials.serverUrl.isEmpty) {
-      throw EcoCenterException('Center server URL is required.');
+      throw EcoCenterException.app(EcoCenterErrorKind.serverUrlRequired);
     }
     return _credentials.serverUrl;
   }
@@ -795,16 +809,19 @@ class EcoCenterClient {
       if (error is EcoCenterException) {
         return error;
       }
-      return EcoCenterException(message);
+      return EcoCenterException.native(message);
     }
     final recovery = classifyCenterServerAuthError(message);
     final resolved = recovery == CenterServerAuthRecovery.unknown
         ? (fallbackRecovery ?? CenterServerAuthRecovery.relogin)
         : recovery;
     if (resolved == CenterServerAuthRecovery.relogin) {
-      return EcoCenterException(centerServerReauthMessage, recovery: resolved);
+      return EcoCenterException.app(
+        EcoCenterErrorKind.reauthRequired,
+        recovery: resolved,
+      );
     }
-    return EcoCenterException(message, recovery: resolved);
+    return EcoCenterException.native(message, recovery: resolved);
   }
 
   Future<void> dispose() async {
@@ -854,7 +871,7 @@ PairingQrPayload parsePairingQrPayload(String raw) {
     final uri = Uri.parse(trimmed);
     final code = uri.queryParameters['code'];
     if (code == null || code.trim().isEmpty) {
-      throw EcoCenterException('无效的配对二维码。');
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidPairQr);
     }
     return PairingQrPayload(
       serverUrl: uri.queryParameters['server'],

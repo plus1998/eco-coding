@@ -42,10 +42,7 @@ void main() {
     });
 
     test('falls back to shortened device id', () {
-      expect(
-        formatDesktopLabel(null, 'dev_1234567890abcdef'),
-        'dev_1234…cdef',
-      );
+      expect(formatDesktopLabel(null, 'dev_1234567890abcdef'), 'dev_1234…cdef');
     });
   });
 

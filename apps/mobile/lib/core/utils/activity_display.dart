@@ -1,5 +1,6 @@
 import 'dart:ui' show Color;
 
+import '../../l10n/generated/app_localizations.dart';
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
 import '../theme/subagent_theme.dart' as subagent_theme;
@@ -35,28 +36,30 @@ const _chineseRoleToId = {
   '测试': 'tester',
 };
 
-const _toolVerbLabels = {
-  'Read': '读取',
-  'Write': '写入',
-  'Edit': '编辑',
-  'MultiEdit': '编辑',
-  'Grep': '搜索',
-  'Glob': '查找',
-  'Bash': '运行命令',
-  'Agent': '调用',
-  'TodoWrite': '更新任务',
-  'TaskCreate': '创建任务',
-  'TaskUpdate': '更新任务',
-  'TaskList': '列出任务',
-  'TaskOutput': '读取任务输出',
-  'AskUserQuestion': '澄清问题',
-  'WebSearch': '网络搜索',
-  'WebFetch': '获取网页',
-  'Skill': '读取技能',
-};
+String? _toolVerbLabel(String toolName, AppLocalizations l10n) {
+  return switch (toolName) {
+    'Read' => l10n.toolRead,
+    'Write' => l10n.toolWrite,
+    'Edit' || 'MultiEdit' => l10n.toolEdit,
+    'Grep' => l10n.toolSearch,
+    'Glob' => l10n.toolFind,
+    'Bash' => l10n.toolRunCommand,
+    'Agent' => l10n.toolCall,
+    'TodoWrite' || 'TaskUpdate' => l10n.toolUpdateTasks,
+    'TaskCreate' => l10n.toolCreateTask,
+    'TaskList' => l10n.toolListTasks,
+    'TaskOutput' => l10n.toolReadTaskOutput,
+    'AskUserQuestion' => l10n.toolClarify,
+    'WebSearch' => l10n.toolWebSearch,
+    'WebFetch' => l10n.toolWebFetch,
+    'Skill' => l10n.activityReadSkill,
+    _ => null,
+  };
+}
 
 final _subagentBracketPrefix = RegExp(r'^【[^】]+】\s*');
 
+// Chinese alternatives match historical Desktop event text, not mobile UI.
 final _activityNoisePattern = RegExp(
   r'^(?:Tool:|Running tool:|Requesting model|Compacting context|API retry |Usage recorded|Run finished|Agent session started|Agent run completed|Claude Agent SDK ready|状态已更新|已从异常退出恢复|【\d+/\d+】|Creating isolated worktree|Isolated worktree ready:|Local model router ready:|Working in project directory:|已清理隔离工作树|工具调用被拒绝|Permission denied for )',
   caseSensitive: false,
@@ -93,41 +96,43 @@ final _toolLinePattern = RegExp(
   r'^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$',
 );
 
-final _progressPatterns = <({RegExp pattern, String verb})>[
+enum _ProgressKind { read, write, edit, search, command }
+
+final _progressPatterns = <({RegExp pattern, _ProgressKind kind})>[
   (
     pattern: RegExp(
       r'^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$',
       caseSensitive: false,
     ),
-    verb: '读取',
+    kind: _ProgressKind.read,
   ),
   (
     pattern: RegExp(
       r'^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$',
       caseSensitive: false,
     ),
-    verb: '写入',
+    kind: _ProgressKind.write,
   ),
   (
     pattern: RegExp(
       r'^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$',
       caseSensitive: false,
     ),
-    verb: '编辑',
+    kind: _ProgressKind.edit,
   ),
   (
     pattern: RegExp(
       r'^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$',
       caseSensitive: false,
     ),
-    verb: '搜索',
+    kind: _ProgressKind.search,
   ),
   (
     pattern: RegExp(
       r'^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$',
       caseSensitive: false,
     ),
-    verb: '运行命令',
+    kind: _ProgressKind.command,
   ),
 ];
 
@@ -319,6 +324,7 @@ String? resolveStructuredBashDescription({
 String formatStructuredToolActionLabel(
   ThreadRunToolMetadata tool, {
   ThreadRunBashApprovalMetadata? bashApproval,
+  required AppLocalizations l10n,
 }) {
   if (tool.name == 'Bash') {
     final description = resolveStructuredBashDescription(
@@ -332,6 +338,7 @@ String formatStructuredToolActionLabel(
   return formatToolDisplayLabel(
     bashApproval?.toolName ?? tool.name,
     bashApproval?.detail ?? tool.detail,
+    l10n,
   );
 }
 
@@ -415,6 +422,7 @@ String resolveBashApprovalTitle({
   String? description,
   required String reason,
   String? filesystemTool,
+  required AppLocalizations l10n,
 }) {
   final normalizedDescription = description?.trim();
   if (normalizedDescription != null && normalizedDescription.isNotEmpty) {
@@ -423,9 +431,9 @@ String resolveBashApprovalTitle({
   final normalizedReason = reason.trim();
   if (normalizedReason.isNotEmpty) return normalizedReason;
   if (filesystemTool != null && filesystemTool.trim().isNotEmpty) {
-    return '允许在工作区外执行 $filesystemTool？';
+    return l10n.activityAllowOutsideWorkspace(filesystemTool);
   }
-  return '需要确认工具权限';
+  return l10n.activityToolPermissionRequired;
 }
 
 String activityActionKey({
@@ -437,18 +445,38 @@ String activityActionKey({
 }
 
 String normalizeActivityActionLabel(String raw) {
-  return parseToolActionDisplayLabel(raw);
+  return stripSubagentBracketPrefix(raw.trim());
 }
 
-bool isGenericToolActionLabel(String label) {
+bool isGenericToolActionLabel(String label, AppLocalizations l10n) {
   final trimmed = label.trim();
   if (trimmed.isEmpty) return true;
-  return _toolVerbLabels.values.contains(trimmed);
+  return <String>{
+    l10n.toolRead,
+    l10n.toolWrite,
+    l10n.toolEdit,
+    l10n.toolSearch,
+    l10n.toolFind,
+    l10n.toolRunCommand,
+    l10n.toolCall,
+    l10n.toolUpdateTasks,
+    l10n.toolCreateTask,
+    l10n.toolListTasks,
+    l10n.toolReadTaskOutput,
+    l10n.toolClarify,
+    l10n.toolWebSearch,
+    l10n.toolWebFetch,
+    l10n.activityReadSkill,
+  }.contains(trimmed);
 }
 
-String resolveMergedToolActionLabel(String existing, String incoming) {
-  if (!isGenericToolActionLabel(existing) &&
-      isGenericToolActionLabel(incoming)) {
+String resolveMergedToolActionLabel(
+  String existing,
+  String incoming,
+  AppLocalizations l10n,
+) {
+  if (!isGenericToolActionLabel(existing, l10n) &&
+      isGenericToolActionLabel(incoming, l10n)) {
     return existing;
   }
   return incoming;
@@ -674,7 +702,7 @@ ParsedActivityToolInvocation? parseActivityToolInvocation(String raw) {
   if (text.isEmpty) return null;
 
   for (final item in _progressPatterns) {
-    if (item.verb != '运行命令') continue;
+    if (item.kind != _ProgressKind.command) continue;
     final match = item.pattern.firstMatch(text);
     if (match != null) {
       final detail = match.group(1)?.trim();
@@ -783,22 +811,26 @@ BashRunCardDisplay? resolveBashRunCardDisplay({
   );
 }
 
-String formatToolDisplayLabel(String toolName, [String? detail]) {
+String formatToolDisplayLabel(
+  String toolName,
+  String? detail,
+  AppLocalizations l10n,
+) {
   final normalizedDetail = detail?.trim();
   if (toolName == 'Skill' ||
       (normalizedDetail != null && normalizedDetail.endsWith(' 技能'))) {
-    return normalizedDetail ?? '读取技能';
+    return normalizedDetail ?? l10n.activityReadSkill;
   }
   if (toolName == 'Agent') {
-    return normalizedDetail ?? '启动子代理';
+    return normalizedDetail ?? l10n.activityStartSubagent;
   }
   if (normalizedDetail != null && normalizedDetail.isNotEmpty) {
     return normalizedDetail;
   }
-  return _toolVerbLabels[toolName] ?? toolName;
+  return _toolVerbLabel(toolName, l10n) ?? toolName;
 }
 
-String parseToolActionDisplayLabel(String raw) {
+String parseToolActionDisplayLabel(String raw, AppLocalizations l10n) {
   final text = stripSubagentBracketPrefix(raw.trim());
   if (text.isEmpty) return raw.trim();
 
@@ -824,7 +856,7 @@ String parseToolActionDisplayLabel(String raw) {
           .trim();
       if (detail.isEmpty) detail = null;
     }
-    return formatToolDisplayLabel(tool, detail);
+    return formatToolDisplayLabel(tool, detail, l10n);
   }
 
   final bareMatch = RegExp(
@@ -836,7 +868,7 @@ String parseToolActionDisplayLabel(String raw) {
         .group(2)!
         .replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
         .trim();
-    return formatToolDisplayLabel(tool, detail);
+    return formatToolDisplayLabel(tool, detail, l10n);
   }
 
   return text;
@@ -878,15 +910,15 @@ ActivityActionIcon iconForActivityMessage(String message) {
   }
   for (final item in _progressPatterns) {
     if (item.pattern.hasMatch(stripped)) {
-      switch (item.verb) {
-        case '搜索':
+      switch (item.kind) {
+        case _ProgressKind.search:
           return ActivityActionIcon.search;
-        case '编辑':
-        case '写入':
+        case _ProgressKind.edit:
+        case _ProgressKind.write:
           return ActivityActionIcon.edit;
-        case '运行命令':
+        case _ProgressKind.command:
           return ActivityActionIcon.terminal;
-        default:
+        case _ProgressKind.read:
           return ActivityActionIcon.file;
       }
     }
@@ -894,7 +926,10 @@ ActivityActionIcon iconForActivityMessage(String message) {
   return ActivityActionIcon.file;
 }
 
-ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
+ParsedReconnectActivity? parseReconnectActivityMessage(
+  String message,
+  AppLocalizations l10n,
+) {
   final trimmed = message.trim();
 
   final connectionFailed = _connectionFailedPattern.firstMatch(trimmed);
@@ -906,12 +941,12 @@ ParsedReconnectActivity? parseReconnectActivityMessage(String message) {
     if (httpMatch != null) {
       final detail = httpMatch.group(2)?.trim();
       return ParsedReconnectActivity(
-        summary: '连接失败 · HTTP ${httpMatch.group(1)}',
+        summary: l10n.activityConnectionFailedHttp(httpMatch.group(1)!),
         detail: detail == null || detail.isEmpty ? null : detail,
       );
     }
     return ParsedReconnectActivity(
-      summary: '连接失败',
+      summary: l10n.activityConnectionFailed,
       detail: body.isEmpty ? null : body,
     );
   }
@@ -923,6 +958,7 @@ ParsedReconnectActivity? resolveReconnectPhaseDisplay({
   required String text,
   Map<String, dynamic>? metadata,
   int? apiErrorStatusCode,
+  required AppLocalizations l10n,
 }) {
   final origin = metadata?['activityOrigin'];
   if (origin == 'sdk.api_retry') {
@@ -932,15 +968,20 @@ ParsedReconnectActivity? resolveReconnectPhaseDisplay({
       final maxRetries = retry['maxRetries'];
       if (attempt is num && maxRetries is num) {
         return ParsedReconnectActivity(
-          summary: '重连 ${attempt.toInt()}/${maxRetries.toInt()}',
+          summary: l10n.activityReconnectAttempt(
+            attempt.toInt(),
+            maxRetries.toInt(),
+          ),
         );
       }
     }
   }
   if (origin == 'proxy.connection_error' && apiErrorStatusCode != null) {
-    return ParsedReconnectActivity(summary: '连接失败 · HTTP $apiErrorStatusCode');
+    return ParsedReconnectActivity(
+      summary: l10n.activityConnectionFailedHttp(apiErrorStatusCode),
+    );
   }
-  return parseReconnectActivityMessage(text);
+  return parseReconnectActivityMessage(text, l10n);
 }
 
 bool isReconnectActivityOrigin(String? origin) {
@@ -948,7 +989,7 @@ bool isReconnectActivityOrigin(String? origin) {
 }
 
 bool isReconnectActivityMessage(String message) {
-  return parseReconnectActivityMessage(message) != null;
+  return _connectionFailedPattern.hasMatch(message.trim());
 }
 
 final _reconnectClearSystemNoise = <RegExp>[
@@ -1021,17 +1062,17 @@ class ParsedReconnectActivity {
   final String? detail;
 }
 
-String resolveSubagentRunDisplayTitle(String role) {
-  const labels = {
-    'vision': '看图',
-    'explore': '探索',
-    'architect': '架构',
-    'coder': '编码',
-    'reviewer': '审查',
-    'tester': '测试',
-  };
+String resolveSubagentRunDisplayTitle(String role, AppLocalizations l10n) {
   final normalized = normalizeAgentDisplayRole(role) ?? role;
-  return labels[normalized] ?? normalized;
+  return switch (normalized) {
+    'vision' => l10n.roleVision,
+    'explore' => l10n.roleExplore,
+    'architect' => l10n.roleArchitect,
+    'coder' => l10n.roleCoder,
+    'reviewer' => l10n.roleReviewer,
+    'tester' => l10n.roleTester,
+    _ => normalized,
+  };
 }
 
 Color subagentMissionBorderColor(String role, {OrchestrationProfile? profile}) {

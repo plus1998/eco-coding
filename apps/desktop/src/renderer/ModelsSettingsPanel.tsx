@@ -22,6 +22,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type BuiltInPresetDefinition,
   buildOrchestrationProfileFromPreset,
@@ -89,17 +90,6 @@ export type ModelsSettingsTab =
   | "proxyBridge"
   | "presets";
 
-const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
-  { id: "subagents", label: "智能体库" },
-  { id: "routes", label: "智能体配置" },
-  { id: "presets", label: "场景预设" },
-];
-
-const PROVIDER_SETTINGS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
-  { id: "providers", label: "模型服务商" },
-  { id: "proxyBridge", label: "代理桥" },
-];
-
 type AgentProfileEditorMode = "create" | "edit" | "copy";
 
 interface ModelsSettingsPanelProps {
@@ -138,6 +128,16 @@ export function ModelsSettingsPanel({
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
+  const { t } = useTranslation();
+  const modelsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
+    { id: "subagents", label: t("settings.models.library") },
+    { id: "routes", label: t("settings.models.configurations") },
+    { id: "presets", label: t("settings.models.presets") },
+  ];
+  const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
+    { id: "providers", label: t("settings.models.providers") },
+    { id: "proxyBridge", label: t("settings.models.proxyBridge") },
+  ];
   const resolvedInitialTab =
     mode === "providerSettings"
       ? initialTab === "proxyBridge"
@@ -200,7 +200,7 @@ export function ModelsSettingsPanel({
 
   const exportAgentProfiles = useCallback(async (profileIds?: string[]) => {
     if (!window.eco?.exportOrchestrationProfiles) {
-      setProfileArchiveMessage({ kind: "error", message: "智能体配置导出接口不可用。" });
+      setProfileArchiveMessage({ kind: "error", message: t("settings.models.exportUnavailable") });
       return;
     }
     setProfileArchiveBusy(true);
@@ -212,7 +212,10 @@ export function ModelsSettingsPanel({
       }
       setProfileArchiveMessage({
         kind: "success",
-        message: `已导出 ${result.exported} 个智能体配置${result.path ? `：${result.path}` : ""}`,
+        message: t("settings.models.exported", {
+          count: result.exported,
+          path: result.path ? t("settings.models.exportPath", { path: result.path }) : "",
+        }),
       });
     } catch (caught) {
       setProfileArchiveMessage({
@@ -226,7 +229,7 @@ export function ModelsSettingsPanel({
 
   const importAgentProfiles = useCallback(async () => {
     if (!window.eco?.importOrchestrationProfiles) {
-      setProfileArchiveMessage({ kind: "error", message: "智能体配置导入接口不可用。" });
+      setProfileArchiveMessage({ kind: "error", message: t("settings.models.importUnavailable") });
       return;
     }
     setProfileArchiveBusy(true);
@@ -242,8 +245,11 @@ export function ModelsSettingsPanel({
         kind: "success",
         message:
           result.errors.length > 0
-            ? `已导入 ${result.imported} 个智能体配置，${result.errors.length} 个失败`
-            : `已导入 ${result.imported} 个智能体配置`,
+            ? t("settings.models.importedWithErrors", {
+                count: result.imported,
+                errors: result.errors.length,
+              })
+            : t("settings.models.imported", { count: result.imported }),
       });
     } catch (caught) {
       setProfileArchiveMessage({
@@ -259,14 +265,17 @@ export function ModelsSettingsPanel({
   const copyPresetToProfile = useCallback(
     async (preset: BuiltInPresetDefinition) => {
       if (!window.eco?.saveAgentTemplate || !window.eco?.saveOrchestrationProfile) {
-        setPresetProfileMessage({ kind: "error", message: "场景预设导入接口不可用。" });
+        setPresetProfileMessage({
+          kind: "error",
+          message: t("settings.models.presetImportUnavailable"),
+        });
         return;
       }
       const provider = selectPresetDefaultProvider(settings.providers);
       if (!provider) {
         setPresetProfileMessage({
           kind: "error",
-          message: "请先在模型服务商设置中配置至少一个启用的模型服务商，并添加候选模型。",
+          message: t("settings.models.providerRequired"),
         });
         return;
       }
@@ -305,11 +314,16 @@ export function ModelsSettingsPanel({
         const importedTemplateCount = savedTemplates.length;
         const templateMessage =
           importedTemplateCount > 0
-            ? `已导入 ${importedTemplateCount} 个子代理模板`
-            : "已复用现有子代理模板副本";
+            ? t("settings.models.templatesImported", { count: importedTemplateCount })
+            : t("settings.models.templatesReused");
         setPresetProfileMessage({
           kind: "success",
-          message: `${templateMessage}并创建智能体配置「${profile.name}」，默认使用 ${provider.name} / ${provider.defaultModel}。`,
+          message: t("settings.models.presetCreated", {
+            templateMessage,
+            profile: profile.name,
+            provider: provider.name,
+            model: provider.defaultModel,
+          }),
         });
       } catch (caught) {
         setPresetProfileMessage({
@@ -514,7 +528,7 @@ export function ModelsSettingsPanel({
     if (!window.eco?.deleteOrchestrationProfile || !canEditStoredAgentProfile(profile)) {
       return;
     }
-    if (!window.confirm(`确定删除智能体配置「${profile.name}」？`)) {
+    if (!window.confirm(t("settings.models.confirmDeleteProfile", { name: profile.name }))) {
       return;
     }
     onSavingChange?.(true);
@@ -573,12 +587,12 @@ export function ModelsSettingsPanel({
       return;
     }
     if (settings.providers.length <= 1) {
-      setModalError("至少保留一个模型服务商。");
+      setModalError(t("settings.models.keepProvider"));
       return;
     }
-    const providerName = providerForm.name.trim() || "模型服务商";
+    const providerName = providerForm.name.trim() || t("settings.models.providerFallback");
     if (
-      !window.confirm(`确定删除模型服务商「${providerName}」？引用它的智能体配置将改用其他模型服务商。`)
+      !window.confirm(t("settings.models.confirmDeleteProvider", { name: providerName }))
     ) {
       return;
     }
@@ -624,7 +638,7 @@ export function ModelsSettingsPanel({
     }
     const routes = runtimeRoleRoutesFromAgentProfile(profile);
     const displayNames = new Map<string, string>([
-      ["planner", profile.mainAgent.name || "主 Agent"],
+      ["planner", profile.mainAgent.name || t("settings.models.mainAgent")],
       ...profile.agents.map((agent) => [agent.agentKey, agent.displayName || agent.agentKey] as const),
     ]);
     setTestingAgentProfileId(profile.id);
@@ -650,23 +664,44 @@ export function ModelsSettingsPanel({
         const durations = result.results
           .map((entry) => (entry.elapsedMs !== undefined ? formatDurationMs(entry.elapsedMs) : undefined))
           .filter(Boolean);
-        const durationHint = durations.length > 0 ? `，耗时 ${durations[0]}` : "";
+        const durationHint =
+          durations.length > 0
+            ? t("settings.models.durationHint", { duration: durations[0] })
+            : "";
         const dedupeHint =
           uniqueModels.size < result.passed
-            ? `（${uniqueModels.size} 组模型服务商+模型，共 ${result.passed} 个 Agent）`
+            ? t("settings.models.dedupeHint", {
+                groups: uniqueModels.size,
+                count: result.passed,
+              })
             : "";
         setAgentProfileTestMessage({
           kind: "success",
-          message: `智能体配置「${profile.name}」全部 ${result.passed} 个 Agent 已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
+          message: t("settings.models.profileTestPassed", {
+            name: profile.name,
+            count: result.passed,
+            dedupe: dedupeHint,
+            duration: durationHint,
+          }),
         });
       } else {
         const failedLabels = result.results
           .filter((entry) => !entry.ok)
-          .map((entry) => `${displayNames.get(entry.role) ?? entry.role}：${entry.error ?? "失败"}`)
+          .map(
+            (entry) =>
+              `${displayNames.get(entry.role) ?? entry.role}: ${
+                entry.error ?? t("settings.models.failedFallback")
+              }`,
+          )
           .join("；");
         setAgentProfileTestMessage({
           kind: "error",
-          message: `智能体配置「${profile.name}」${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
+          message: t("settings.models.profileTestPartial", {
+            name: profile.name,
+            passed: result.passed,
+            total: result.results.length,
+            failures: failedLabels,
+          }),
         });
       }
     } catch (caught) {
@@ -683,14 +718,14 @@ export function ModelsSettingsPanel({
     if (!window.eco?.testProviderConnection) {
       return;
     }
-    const providerName = target.name.trim() || "模型服务商";
+    const providerName = target.name.trim() || t("settings.models.providerFallback");
     if (!target.baseUrl.trim()) {
-      showProviderTestMessage("error", "请先填写 baseURL。");
+      showProviderTestMessage("error", t("settings.models.baseUrlRequired"));
       return;
     }
     const testModel = (modelId ?? target.defaultModel).trim();
     if (!testModel) {
-      showProviderTestMessage("error", "请先在候选模型中选择要测试的模型。");
+      showProviderTestMessage("error", t("settings.models.testModelRequired"));
       return;
     }
 
@@ -712,9 +747,16 @@ export function ModelsSettingsPanel({
       });
       if (result.ok) {
         const duration = formatDurationMs(performance.now() - startedAt);
-        showProviderTestMessage("success", `「${providerName} / ${testModel}」测试成功，耗时 ${duration}`);
+        showProviderTestMessage(
+          "success",
+          t("settings.models.providerTestPassed", {
+            provider: providerName,
+            model: testModel,
+            duration,
+          }),
+        );
       } else {
-        showProviderTestMessage("error", result.error ?? "测试失败。");
+        showProviderTestMessage("error", result.error ?? t("settings.models.testFailed"));
       }
     } catch (caught) {
       showProviderTestMessage("error", caught instanceof Error ? caught.message : String(caught));
@@ -764,20 +806,24 @@ export function ModelsSettingsPanel({
 
       {mode === "providerSettings" ? (
         <header className="mcp-page-header">
-          <h1>模型服务商</h1>
+          <h1>{t("settings.models.providers")}</h1>
         </header>
       ) : (
         <header className="settings-page-header">
-          <h1>智能体构建器</h1>
+          <h1>{t("settings.models.builder")}</h1>
         </header>
       )}
 
       <div
         className="models-settings-tabs"
         role="tablist"
-        aria-label={mode === "providerSettings" ? "模型服务商设置分类" : "模型设置分类"}
+        aria-label={
+          mode === "providerSettings"
+            ? t("settings.models.providerCategories")
+            : t("settings.models.categories")
+        }
       >
-        {(mode === "providerSettings" ? PROVIDER_SETTINGS_TAB_ITEMS : MODELS_TAB_ITEMS).map((tab) => (
+        {(mode === "providerSettings" ? providerSettingsTabItems : modelsTabItems).map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -814,15 +860,15 @@ export function ModelsSettingsPanel({
       {activeTab === "providers" && (
         <section className="mcp-list-section">
           <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">模型服务商</span>
+            <span className="mcp-list-toolbar-label">{t("settings.models.providers")}</span>
             <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
               <Plus size={16} />
-              添加模型服务商
+              {t("settings.models.addProvider")}
             </button>
           </div>
 
           {providerOptions.length === 0 ? (
-            <p className="mcp-list-empty">尚未添加模型服务商</p>
+            <p className="mcp-list-empty">{t("settings.models.noProviders")}</p>
           ) : (
             <ul className="mcp-server-list">
               {providerOptions.map((provider) => (
@@ -833,12 +879,15 @@ export function ModelsSettingsPanel({
                       type="button"
                       className="mcp-icon-button"
                       onClick={() => openEditProvider(provider)}
-                      aria-label={`配置 ${provider.name}`}
+                      aria-label={t("settings.models.configureProvider", { name: provider.name })}
                       disabled={busy}
                     >
                       <Settings2 size={18} />
                     </button>
-                    <label className="mcp-toggle mcp-toggle-sm" title={provider.enabled ? "已启用" : "已禁用"}>
+                    <label
+                      className="mcp-toggle mcp-toggle-sm"
+                      title={provider.enabled ? t("common.enabled") : t("common.disabled")}
+                    >
                       <input
                         type="checkbox"
                         checked={provider.enabled}
@@ -866,7 +915,7 @@ export function ModelsSettingsPanel({
                 onClick={() => void importAgentProfiles()}
               >
                 <ArrowUp size={14} />
-                导入 Profile
+                {t("settings.models.importProfile")}
               </button>
               <button
                 type="button"
@@ -875,7 +924,7 @@ export function ModelsSettingsPanel({
                 onClick={() => void exportAgentProfiles()}
               >
                 <Download size={14} />
-                导出 Profile
+                {t("settings.models.exportProfile")}
               </button>
               <button
                 type="button"
@@ -884,13 +933,13 @@ export function ModelsSettingsPanel({
                 onClick={openCreateAgentProfile}
               >
                 <Plus size={16} />
-                添加智能体配置
+                {t("settings.models.addProfile")}
               </button>
             </div>
           </div>
 
           {selectableProfileSummaries.length === 0 ? (
-            <p className="mcp-list-empty">尚未添加可运行的智能体配置</p>
+            <p className="mcp-list-empty">{t("settings.models.noProfiles")}</p>
           ) : (
             <ul className="mcp-server-list">
               {selectableProfileSummaries.map((summary) => {
@@ -906,8 +955,16 @@ export function ModelsSettingsPanel({
                         className={defaultProfile ? "mcp-icon-button is-active" : "mcp-icon-button"}
                         disabled={busy || defaultProfile}
                         onClick={() => void onDefaultAgentProfileChange?.(summary.profile.id)}
-                        aria-label={defaultProfile ? `${summary.name} 已是默认配置` : `设 ${summary.name} 为默认配置`}
-                        title={defaultProfile ? "已是默认配置" : "设为默认配置"}
+                        aria-label={
+                          defaultProfile
+                            ? t("settings.models.isDefaultAria", { name: summary.name })
+                            : t("settings.models.setDefaultAria", { name: summary.name })
+                        }
+                        title={
+                          defaultProfile
+                            ? t("settings.models.isDefault")
+                            : t("settings.models.setDefault")
+                        }
                       >
                         <Star size={18} fill={defaultProfile ? "currentColor" : "none"} />
                       </button>
@@ -916,8 +973,8 @@ export function ModelsSettingsPanel({
                         className="mcp-icon-button"
                         disabled={busy || testingAgentProfileId !== null}
                         onClick={() => void testAgentProfile(summary.profile)}
-                        aria-label={`连通性测试：${summary.name}`}
-                        title={`连通性测试：${summary.name}`}
+                        aria-label={t("settings.models.testConnectivity", { name: summary.name })}
+                        title={t("settings.models.testConnectivity", { name: summary.name })}
                       >
                         {testingProfile ? (
                           <RefreshCw size={18} className="model-refresh-spin" />
@@ -929,8 +986,8 @@ export function ModelsSettingsPanel({
                         type="button"
                         className="mcp-icon-button"
                         onClick={() => openCopyAgentProfile(summary.profile)}
-                        aria-label={`复制 ${summary.name}`}
-                        title={`复制 ${summary.name}`}
+                        aria-label={t("settings.models.copyNamed", { name: summary.name })}
+                        title={t("settings.models.copyNamed", { name: summary.name })}
                         disabled={busy}
                       >
                         <Copy size={18} />
@@ -939,8 +996,8 @@ export function ModelsSettingsPanel({
                         type="button"
                         className="mcp-icon-button"
                         onClick={() => void exportAgentProfiles([summary.profile.id])}
-                        aria-label={`导出 ${summary.name}`}
-                        title={`导出 ${summary.name}`}
+                        aria-label={t("settings.models.exportNamed", { name: summary.name })}
+                        title={t("settings.models.exportNamed", { name: summary.name })}
                         disabled={busy || profileArchiveBusy}
                       >
                         <Download size={18} />
@@ -949,8 +1006,16 @@ export function ModelsSettingsPanel({
                         type="button"
                         className="mcp-icon-button"
                         onClick={() => openEditAgentProfile(summary.profile)}
-                        aria-label={editableProfile ? `编辑 ${summary.name}` : `复制 ${summary.name}`}
-                        title={editableProfile ? `编辑 ${summary.name}` : `复制 ${summary.name}`}
+                        aria-label={
+                          editableProfile
+                            ? t("settings.models.editNamed", { name: summary.name })
+                            : t("settings.models.copyNamed", { name: summary.name })
+                        }
+                        title={
+                          editableProfile
+                            ? t("settings.models.editNamed", { name: summary.name })
+                            : t("settings.models.copyNamed", { name: summary.name })
+                        }
                         disabled={busy}
                       >
                         <Pencil size={18} />
@@ -960,8 +1025,8 @@ export function ModelsSettingsPanel({
                           type="button"
                           className="mcp-icon-button danger"
                           onClick={() => void deleteAgentProfile(summary.profile)}
-                          aria-label={`删除 ${summary.name}`}
-                          title={`删除 ${summary.name}`}
+                          aria-label={t("settings.models.deleteNamed", { name: summary.name })}
+                          title={t("settings.models.deleteNamed", { name: summary.name })}
                           disabled={busy}
                         >
                           <Trash2 size={18} />
@@ -1057,16 +1122,31 @@ export function AgentProfileEditorModal({
   onClose: () => void;
   onSave: () => void;
 }) {
+  const { t } = useTranslation();
   const modalTitle =
-    mode === "edit" ? "编辑智能体配置" : mode === "copy" ? "复制为智能体配置" : "新建智能体配置";
-  const modalBadge = mode === "edit" ? "编辑" : mode === "copy" ? "副本" : "新建";
+    mode === "edit"
+      ? t("settings.models.editor.editTitle")
+      : mode === "copy"
+        ? t("settings.models.editor.copyTitle")
+        : t("settings.models.editor.createTitle");
+  const modalBadge =
+    mode === "edit"
+      ? t("common.edit")
+      : mode === "copy"
+        ? t("settings.models.editor.copyBadge")
+        : t("settings.models.editor.newBadge");
   const modalHint =
     mode === "edit"
-      ? "修改当前 Profile 的名称、主 Agent 和子代理节点。"
+      ? t("settings.models.editor.editHint")
       : mode === "copy"
-        ? "基于现有 Profile 创建一份可编辑副本。"
-        : "创建新的 Profile，并选择需要的子代理节点。";
-  const saveLabel = mode === "edit" ? "保存修改" : mode === "copy" ? "创建副本" : "创建";
+        ? t("settings.models.editor.copyHint")
+        : t("settings.models.editor.createHint");
+  const saveLabel =
+    mode === "edit"
+      ? t("settings.models.editor.saveChanges")
+      : mode === "copy"
+        ? t("settings.models.editor.createCopy")
+        : t("common.create");
   const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
   const selectedTemplateIds = useMemo(
     () => new Set(form.agents.map((agent) => agent.templateId)),
@@ -1181,8 +1261,8 @@ export function AgentProfileEditorModal({
         type="button"
         className="settings-modal-backdrop-close"
         onClick={onClose}
-        aria-label="关闭"
-        title="关闭"
+        aria-label={t("common.close")}
+        title={t("common.close")}
         disabled={busy}
       />
       <div
@@ -1205,8 +1285,8 @@ export function AgentProfileEditorModal({
             type="button"
             className="mcp-icon-button"
             onClick={onClose}
-            aria-label="关闭"
-            title="关闭"
+            aria-label={t("common.close")}
+            title={t("common.close")}
             disabled={busy}
           >
             <X size={18} />
@@ -1217,7 +1297,7 @@ export function AgentProfileEditorModal({
           <section className="models-agent-profile-form-section">
             <div className="models-agent-profile-meta-grid">
               <label className="mcp-field">
-                <span className="mcp-field-label">Profile 名称</span>
+                <span className="mcp-field-label">{t("settings.models.editor.profileName")}</span>
                 <input
                   className="mcp-field-input"
                   value={form.name}
@@ -1228,7 +1308,9 @@ export function AgentProfileEditorModal({
               <div className="models-agent-profile-meta-badges">
                 <span className="models-agent-domain-badge">{formatAgentDomainLabel(form.preset)}</span>
                 <span className="models-agent-source-badge">
-                  {form.source === "project" ? "项目" : "用户"}
+                  {form.source === "project"
+                    ? t("settings.models.editor.project")
+                    : t("settings.models.editor.user")}
                 </span>
               </div>
             </div>
@@ -1236,15 +1318,15 @@ export function AgentProfileEditorModal({
 
           <section className="models-agent-profile-form-section">
             <div className="models-agent-profile-visual-builder">
-              <aside className="models-agent-profile-palette" aria-label="智能体库">
+              <aside className="models-agent-profile-palette" aria-label={t("settings.models.library")}>
                 <div className="models-agent-profile-builder-head">
-                  <h3 className="models-route-profile-section-title">智能体库</h3>
+                  <h3 className="models-route-profile-section-title">{t("settings.models.library")}</h3>
                   <span className="models-agent-source-badge">{selectableTemplates.length} 可选</span>
                 </div>
                 {templates.length === 0 ? (
-                  <p className="mcp-list-empty">智能体库暂无模板。</p>
+                  <p className="mcp-list-empty">{t("settings.models.editor.libraryEmpty")}</p>
                 ) : selectableTemplates.length === 0 ? (
-                  <p className="mcp-list-empty">智能体库中的模板都已加入当前 Profile。</p>
+                  <p className="mcp-list-empty">{t("settings.models.editor.libraryAllAdded")}</p>
                 ) : (
                   <div className="models-agent-profile-palette-list">
                     {selectableTemplates.map((template) => (
@@ -1276,19 +1358,21 @@ export function AgentProfileEditorModal({
 
               <section
                 className="models-agent-profile-canvas"
-                aria-label="智能体配置画布"
+                aria-label={t("settings.models.editor.canvas")}
                 onDragOver={handleCanvasDragOver}
                 onDrop={handleCanvasDrop}
               >
                 <div className="models-agent-profile-builder-head">
                   <div>
-                    <h3 className="models-route-profile-section-title">智能体配置画布</h3>
+                    <h3 className="models-route-profile-section-title">{t("settings.models.editor.canvas")}</h3>
                     <p className="models-agent-profile-builder-subtitle">
                       主 Agent 和 {form.agents.length} 个子代理节点
                     </p>
                   </div>
                   <span className="models-agent-source-badge">
-                    {form.mainSystemPromptPreset === "core_native" ? "跟随 Agent" : "自定义指令"}
+                    {form.mainSystemPromptPreset === "core_native"
+                      ? t("settings.models.editor.followAgent")
+                      : t("settings.models.editor.customInstructions")}
                   </span>
                 </div>
 
@@ -1302,8 +1386,9 @@ export function AgentProfileEditorModal({
                     <span className="models-agent-profile-node-type">Main Agent</span>
                     <span className="models-agent-profile-node-title">{form.mainName}</span>
                     <span className="models-agent-profile-node-model">
-                      {(activeProvider?.name ?? form.mainProviderId) || "未选模型服务商"} /{" "}
-                      {form.mainModelId || "未选模型"}
+                      {(activeProvider?.name ?? form.mainProviderId) ||
+                        t("settings.models.editor.noProvider")}{" "}
+                      / {form.mainModelId || t("settings.models.editor.noModel")}
                     </span>
                     <span className="models-agent-profile-node-footer">
                       <Settings2 size={14} />
@@ -1316,8 +1401,8 @@ export function AgentProfileEditorModal({
                   <div className="models-agent-profile-node-column">
                     {form.agents.length === 0 ? (
                       <div className="models-agent-profile-empty-drop">
-                        <span>拖入子代理节点</span>
-                        <small>子代理节点只绑定模型服务商和模型。</small>
+                        <span>{t("settings.models.editor.dropAgents")}</span>
+                        <small>{t("settings.models.editor.dropAgentsHint")}</small>
                       </div>
                     ) : (
                       <div className="models-agent-profile-node-grid">
@@ -1334,13 +1419,16 @@ export function AgentProfileEditorModal({
                                 onClick={() => setSelectedNode({ kind: "agent", agentKey: agent.agentKey })}
                               >
                                 <span className="models-agent-profile-node-type">
-                                  {template ? formatAgentDomainLabel(template.domain) : "模板缺失"}
+                                  {template
+                                    ? formatAgentDomainLabel(template.domain)
+                                    : t("settings.models.editor.templateMissing")}
                                 </span>
                                 <span className="models-agent-profile-node-title">{nodeTitle}</span>
                                 <span className="models-agent-profile-node-key">{agent.agentKey}</span>
                                 <span className="models-agent-profile-node-model">
-                                  {(provider?.name ?? agent.providerId) || "未选模型服务商"} /{" "}
-                                  {agent.modelId || "未选模型"}
+                                  {(provider?.name ?? agent.providerId) ||
+                                    t("settings.models.editor.noProvider")}{" "}
+                                  / {agent.modelId || t("settings.models.editor.noModel")}
                                 </span>
                                 <span className="models-agent-profile-node-footer">
                                   <Settings2 size={14} />
@@ -1352,8 +1440,8 @@ export function AgentProfileEditorModal({
                                 className="mcp-icon-button danger models-agent-profile-node-remove"
                                 disabled={busy}
                                 onClick={() => removeAgent(index)}
-                                aria-label={`移除 ${nodeTitle}`}
-                                title={`移除 ${nodeTitle}`}
+                                aria-label={t("settings.models.editor.removeNode", { name: nodeTitle })}
+                                title={t("settings.models.editor.removeNode", { name: nodeTitle })}
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -1391,7 +1479,7 @@ export function AgentProfileEditorModal({
 
         <footer className="settings-modal-footer">
           <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </button>
           <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
             {saveLabel}
@@ -1415,13 +1503,16 @@ function CandidateModelSelectField({
   disabled?: boolean;
   onChange: (candidateId: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mcp-field">
-      <span className="mcp-field-label">候选模型</span>
+      <span className="mcp-field-label">{t("settings.models.candidateModels")}</span>
       {loading ? (
-        <span className="mcp-field-hint">加载中...</span>
+        <span className="mcp-field-hint">{t("settings.models.loading")}</span>
       ) : candidates.length === 0 ? (
-        <span className="mcp-field-hint candidate-model-empty-hint">请先在模型服务商中添加候选模型</span>
+        <span className="mcp-field-hint candidate-model-empty-hint">
+          {t("settings.models.addCandidatesFirst")}
+        </span>
       ) : (
         <select
           className="mcp-field-input"
@@ -1429,7 +1520,7 @@ function CandidateModelSelectField({
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         >
-          <option value="">选择候选模型...</option>
+          <option value="">{t("settings.models.selectCandidate")}</option>
           {candidates.map((c) => (
             <option key={c.id} value={c.id}>
               {c.displayName || c.modelId}
@@ -1481,17 +1572,18 @@ function ThinkingEffortSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <label className="mcp-field">
-      <span className="mcp-field-label">思考强度</span>
+      <span className="mcp-field-label">{t("settings.models.thinkingEffort")}</span>
       <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        <option value="">默认</option>
-        <option value="off">关闭</option>
-        <option value="low">低</option>
-        <option value="medium">中</option>
-        <option value="high">高</option>
-        <option value="xhigh">极高</option>
-        <option value="max">最大</option>
+        <option value="">{t("common.default")}</option>
+        <option value="off">{t("settings.models.effort.off")}</option>
+        <option value="low">{t("settings.models.effort.low")}</option>
+        <option value="medium">{t("settings.models.effort.medium")}</option>
+        <option value="high">{t("settings.models.effort.high")}</option>
+        <option value="xhigh">{t("settings.models.effort.xhigh")}</option>
+        <option value="max">{t("settings.models.effort.max")}</option>
       </select>
     </label>
   );
@@ -1506,11 +1598,12 @@ function ApiCompatSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <label className="mcp-field">
-      <span className="mcp-field-label">API 兼容模式</span>
+      <span className="mcp-field-label">{t("settings.models.apiCompat")}</span>
       <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        <option value="">默认</option>
+        <option value="">{t("common.default")}</option>
         {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -1550,11 +1643,12 @@ function ProfileNodeCandidateModelFields({
   onThinkingEffortChange: (value: string) => void;
   onApiCompatChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="profile-node-model-fields">
       <div className="models-agent-template-form-grid">
         <label className="mcp-field">
-          <span className="mcp-field-label">模型服务商</span>
+          <span className="mcp-field-label">{t("settings.models.providers")}</span>
           <select
             className="mcp-field-input"
             value={providerId}
@@ -1623,14 +1717,21 @@ function AgentProfileNodeConfigModal({
   onPatchAgent: (index: number, patch: Partial<AgentProfileAgentFormState>) => void;
   onPatchMainToolPolicy: (patch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) => void;
 }) {
+  const { t } = useTranslation();
   const isMainNode = node.kind === "main";
   const nodeProviderId = isMainNode ? form.mainProviderId : (agent?.providerId ?? "");
   const { candidates: nodeCandidates, loading: nodeCandidatesLoading } = useCandidateModels(nodeProviderId);
   const selectedCandidateId = isMainNode ? form.mainCandidateModelId : (agent?.candidateModelId ?? "");
   const selectedCandidate = nodeCandidates.find((candidate) => candidate.id === selectedCandidateId);
   const nodeTitle = isMainNode
-    ? "主 Agent 配置"
-    : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
+    ? t("settings.models.node.mainTitle")
+    : t("settings.models.node.agentTitle", {
+        name:
+          template?.name ??
+          agent?.displayName ??
+          agent?.agentKey ??
+          t("settings.models.node.subagent"),
+      });
   const mainCapabilityOptions = useMemo(
     () =>
       buildAgentTemplateCapabilityOptions({
@@ -1678,8 +1779,8 @@ function AgentProfileNodeConfigModal({
         type="button"
         className="settings-modal-backdrop-close"
         onClick={onClose}
-        aria-label="关闭节点配置"
-        title="关闭节点配置"
+        aria-label={t("settings.models.node.close")}
+        title={t("settings.models.node.close")}
         disabled={busy}
       />
       <div
@@ -1696,8 +1797,8 @@ function AgentProfileNodeConfigModal({
             type="button"
             className="mcp-icon-button"
             onClick={onClose}
-            aria-label="关闭"
-            title="关闭"
+            aria-label={t("common.close")}
+            title={t("common.close")}
             disabled={busy}
           >
             <X size={18} />
@@ -1711,17 +1812,19 @@ function AgentProfileNodeConfigModal({
                 <div className="models-agent-profile-title-row">
                   <span className="models-route-role">{form.mainName}</span>
                   <span className="models-agent-source-badge">
-                    {form.mainSystemPromptPreset === "core_native" ? "跟随 Agent" : "自定义指令"}
+                    {form.mainSystemPromptPreset === "core_native"
+                      ? t("settings.models.editor.followAgent")
+                      : t("settings.models.editor.customInstructions")}
                   </span>
                 </div>
                 <p className="models-subagent-card-desc">
-                  主 Agent 定义当前 Profile 的任务目标、编排边界和可用工具。
+                  {t("settings.models.node.mainDescription")}
                 </p>
               </div>
 
               <div className="models-agent-template-form-grid">
                 <label className="mcp-field">
-                  <span className="mcp-field-label">名称</span>
+                  <span className="mcp-field-label">{t("settings.models.node.name")}</span>
                   <input
                     className="mcp-field-input"
                     value={form.mainName}
@@ -1730,7 +1833,7 @@ function AgentProfileNodeConfigModal({
                   />
                 </label>
                 <label className="mcp-field">
-                  <span className="mcp-field-label">系统提示词</span>
+                  <span className="mcp-field-label">{t("settings.models.node.systemPrompt")}</span>
                   <select
                     className="mcp-field-input"
                     value={form.mainSystemPromptPreset}
@@ -1742,8 +1845,10 @@ function AgentProfileNodeConfigModal({
                       })
                     }
                   >
-                    <option value="core_native">跟随 Agent</option>
-                    <option value="custom_append">自定义指令</option>
+                    <option value="core_native">{t("settings.models.editor.followAgent")}</option>
+                    <option value="custom_append">
+                      {t("settings.models.editor.customInstructions")}
+                    </option>
                   </select>
                 </label>
               </div>
@@ -1778,7 +1883,7 @@ function AgentProfileNodeConfigModal({
 
               {form.mainSystemPromptPreset === "custom_append" ? (
                 <label className="mcp-field">
-                  <span className="mcp-field-label">主 Agent 提示词</span>
+                  <span className="mcp-field-label">{t("settings.models.node.mainPrompt")}</span>
                   <textarea
                     className="mcp-field-input mcp-field-textarea models-agent-prompt-textarea"
                     value={form.mainPrompt}
@@ -1807,12 +1912,17 @@ function AgentProfileNodeConfigModal({
                       {formatAgentDomainLabel(template.domain)}
                     </span>
                   ) : (
-                    <span className="models-agent-source-badge">模板缺失</span>
+                    <span className="models-agent-source-badge">
+                      {t("settings.models.editor.templateMissing")}
+                    </span>
                   )}
                   <span className="models-route-role-id">{agent?.agentKey}</span>
                 </div>
                 <p className="models-subagent-card-desc">
-                  {template?.description ?? `引用模板：${agent?.templateId ?? ""}`}
+                  {template?.description ??
+                    t("settings.models.node.templateReference", {
+                      id: agent?.templateId ?? "",
+                    })}
                 </p>
               </div>
 
@@ -1846,7 +1956,7 @@ function AgentProfileNodeConfigModal({
 
               {agent ? (
                 <AgentThemeColorField
-                  label="主题色"
+                  label={t("settings.models.node.themeColor")}
                   agentKey={agent.agentKey}
                   value={agent.themeColor}
                   {...(busy !== undefined ? { disabled: busy } : {})}
@@ -1869,7 +1979,7 @@ function AgentProfileNodeConfigModal({
 
         <footer className="settings-modal-footer">
           <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            关闭
+            {t("common.close")}
           </button>
         </footer>
       </div>
@@ -1912,8 +2022,13 @@ function ProviderEditorModal({
   onRefreshModels: () => void;
   onTestCandidate: (modelId: string) => void;
 }) {
+  const { t } = useTranslation();
   const isEditing = Boolean(form.id);
-  const title = isEditing ? `编辑 ${form.name.trim() || "模型服务商"}` : "新建模型服务商";
+  const title = isEditing
+    ? t("settings.models.provider.editTitle", {
+        name: form.name.trim() || t("settings.models.providerFallback"),
+      })
+    : t("settings.models.provider.createTitle");
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
   const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(true);
   const [candidateSaveError, setCandidateSaveError] = useState<string | undefined>(undefined);
@@ -1962,8 +2077,8 @@ function ProviderEditorModal({
         type="button"
         className="settings-modal-backdrop-close"
         onClick={onClose}
-        aria-label="关闭"
-        title="关闭"
+        aria-label={t("common.close")}
+        title={t("common.close")}
         disabled={busy}
       />
       <div
@@ -1982,17 +2097,21 @@ function ProviderEditorModal({
               className={`candidate-panel-toggle${candidatesPanelOpen ? " is-open" : ""}`}
               onClick={() => setCandidatesPanelOpen((v) => !v)}
               aria-expanded={candidatesPanelOpen}
-              title={candidatesPanelOpen ? "收起候选模型" : "展开候选模型"}
+              title={
+                candidatesPanelOpen
+                  ? t("settings.models.provider.collapseCandidates")
+                  : t("settings.models.provider.expandCandidates")
+              }
             >
               <ChevronRight size={14} className="candidate-panel-toggle-icon" aria-hidden />
-              候选模型
+              {t("settings.models.candidateModels")}
             </button>
             <button
               type="button"
               className="mcp-icon-button"
               onClick={onClose}
-              aria-label="关闭"
-              title="关闭"
+              aria-label={t("common.close")}
+              title={t("common.close")}
               disabled={busy}
             >
               <X size={18} />
@@ -2003,7 +2122,7 @@ function ProviderEditorModal({
         <div className="provider-modal-layout">
           <div className="provider-modal-form-main settings-modal-body mcp-editor-form models-editor-form">
             <div className="mcp-field models-provider-preset-field">
-              <span className="mcp-field-label">供应商预设</span>
+              <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
               <select
                 className="mcp-field-input"
                 value={activePreset?.id ?? ""}
@@ -2021,7 +2140,7 @@ function ProviderEditorModal({
                   setForm((current) => applyProviderPreset(current, preset));
                 }}
               >
-                <option value="">手动配置</option>
+                <option value="">{t("settings.models.provider.manual")}</option>
                 {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {formatProviderPresetSelectLabel(preset)}
@@ -2031,7 +2150,7 @@ function ProviderEditorModal({
             </div>
 
             <label className="mcp-field">
-              <span className="mcp-field-label">名称</span>
+              <span className="mcp-field-label">{t("settings.models.provider.name")}</span>
               <input
                 className="mcp-field-input"
                 value={form.name}
@@ -2048,12 +2167,12 @@ function ProviderEditorModal({
                 onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
               />
               <span className="mcp-field-hint">
-                服务根地址，可含路径（如 https://opencode.ai/zen → GET …/zen/v1/models）
+                {t("settings.models.provider.rootHint")}
               </span>
             </label>
 
             <div className="mcp-field models-provider-endpoint-row">
-              <span className="mcp-field-label">请求端点</span>
+              <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
               <div className="models-provider-endpoint-inline">
                 <ApiCompatToggle
                   value={form.apiCompat ?? "anthropic"}
@@ -2075,15 +2194,15 @@ function ProviderEditorModal({
               </div>
               <span className="mcp-field-hint">
                 {isOpenAICompat(form.apiCompat ?? "anthropic")
-                  ? "OpenAI 网关的服务路径前缀（如 /zen）；/anthropic 仅用于 Anthropic Messages，OpenAI 模式会自动忽略"
-                  : "Anthropic Messages 路径前缀，留空表示根路径"}
+                  ? t("settings.models.provider.openAiPathHint")
+                  : t("settings.models.provider.anthropicPathHint")}
                 {" · "}
                 {UPSTREAM_API_COMPAT_OPTIONS.find((o) => o.value === (form.apiCompat ?? "anthropic"))?.hint}
               </span>
             </div>
 
             <label className="mcp-field">
-              <span className="mcp-field-label">Token 计数模式</span>
+              <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
               <select
                 className="mcp-field-input"
                 value={form.tokenCountMode ?? "local_heuristic"}
@@ -2095,13 +2214,17 @@ function ProviderEditorModal({
                   }))
                 }
               >
-                <option value="local_heuristic">本地启发式（兼容所有平台）</option>
-                <option value="anthropic_messages">Anthropic-style /v1/messages/count_tokens（含新版 llama.cpp）</option>
+                <option value="local_heuristic">
+                  {t("settings.models.provider.localHeuristic")}
+                </option>
+                <option value="anthropic_messages">
+                  {t("settings.models.provider.anthropicCount")}
+                </option>
                 <option value="openai_responses">OpenAI /v1/responses/input_tokens</option>
                 <option value="llama_tokenize">llama.cpp /apply-template + /tokenize</option>
               </select>
               <span className="mcp-field-hint">
-                必须按上游真实能力显式选择，不根据 API 兼容模式自动猜测；精确接口失败会直接报错，不会伪装成本地精确计数。
+                {t("settings.models.provider.tokenCountHint")}
               </span>
             </label>
 
@@ -2116,7 +2239,7 @@ function ProviderEditorModal({
                     rel="noreferrer"
                   >
                     <LinkIcon size={12} />
-                    注册 / 创建 Key
+                    {t("settings.models.provider.createKey")}
                   </a>
                 ) : null}
               </span>
@@ -2124,14 +2247,21 @@ function ProviderEditorModal({
                 className="mcp-field-input"
                 type="password"
                 value={form.apiKey ?? ""}
-                placeholder={form.id ? "留空则保留已保存的 Key" : "可选，本地 Ollama 等可留空"}
+                placeholder={
+                  form.id
+                    ? t("settings.models.provider.keepKey")
+                    : t("settings.models.provider.optionalKey")
+                }
                 onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
               />
             </label>
 
             <label className="mcp-field models-toggle-field">
-              <span className="mcp-field-label">启用此模型服务商</span>
-              <label className="mcp-toggle mcp-toggle-sm" title={form.enabled ? "已启用" : "已禁用"}>
+              <span className="mcp-field-label">{t("settings.models.provider.enable")}</span>
+              <label
+                className="mcp-toggle mcp-toggle-sm"
+                title={form.enabled ? t("common.enabled") : t("common.disabled")}
+              >
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -2143,7 +2273,9 @@ function ProviderEditorModal({
             </label>
 
             {modelsError ? (
-              <p className="mcp-field-hint settings-form-error">模型列表获取失败：{modelsError}</p>
+              <p className="mcp-field-hint settings-form-error">
+                {t("settings.models.provider.modelsFailed", { detail: modelsError })}
+              </p>
             ) : null}
 
             {error && <p className="settings-form-error">{error}</p>}
@@ -2169,11 +2301,11 @@ function ProviderEditorModal({
             ) : (
               <aside className="candidate-panel">
                 <div className="candidate-panel-header">
-                  <span className="candidate-panel-title">候选模型</span>
+                  <span className="candidate-panel-title">{t("settings.models.candidateModels")}</span>
                 </div>
                 <div className="candidate-panel-body">
                   <p className="candidate-models-empty">
-                    先填写并保存服务商基础信息后，可在此添加候选模型并进行连通性测试。
+                    {t("settings.models.provider.saveFirst")}
                   </p>
                   <button
                     type="button"
@@ -2181,7 +2313,9 @@ function ProviderEditorModal({
                     disabled={busy || ensuringProvider || !form.baseUrl.trim() || !form.name.trim()}
                     onClick={() => void ensureProviderSavedForCandidates()}
                   >
-                    {ensuringProvider ? "保存中..." : "保存并添加候选模型"}
+                    {ensuringProvider
+                      ? t("settings.models.provider.saving")
+                      : t("settings.models.provider.saveAndAdd")}
                   </button>
                 </div>
               </aside>
@@ -2196,17 +2330,17 @@ function ProviderEditorModal({
               className="mcp-uninstall-button"
               onClick={onDelete}
               disabled={busy || ensuringProvider || !canDelete}
-              title={canDelete ? undefined : "至少保留一个模型服务商"}
+              title={canDelete ? undefined : t("settings.models.keepProvider")}
             >
               <Trash2 size={16} />
-              删除
+              {t("common.delete")}
             </button>
           ) : (
             <span />
           )}
           <div className="settings-modal-footer-actions">
             <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy || ensuringProvider}>
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -2214,7 +2348,7 @@ function ProviderEditorModal({
               disabled={busy || ensuringProvider}
               onClick={() => void handleSaveProvider()}
             >
-              保存
+              {t("common.save")}
             </button>
           </div>
         </footer>
@@ -2230,6 +2364,7 @@ function AgentProfileSummaryBlock({
   summary: AgentProfileSummary;
   isDefault: boolean;
 }) {
+  const { t } = useTranslation();
   const visibleAgents = summary.enabledAgents.slice(0, 5);
   const hiddenCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
   return (
@@ -2238,12 +2373,24 @@ function AgentProfileSummaryBlock({
         <span className="mcp-server-name">{summary.name}</span>
         <span className="models-agent-domain-badge">{summary.presetLabel}</span>
         <span className="models-agent-source-badge">{summary.sourceLabel}</span>
-        {isDefault ? <span className="models-agent-default-badge">默认</span> : null}
+        {isDefault ? (
+          <span className="models-agent-default-badge">{t("common.default")}</span>
+        ) : null}
       </div>
       <div className="models-agent-profile-meta">
-        <span>主 Agent：{summary.main.modelLabel}</span>
-        <span>{summary.enabledAgents.length} 个启用子代理</span>
-        {summary.disabledAgentCount > 0 ? <span>{summary.disabledAgentCount} 个停用</span> : null}
+        <span>{t("settings.models.summary.main", { model: summary.main.modelLabel })}</span>
+        <span>
+          {t("settings.models.summary.enabledAgents", {
+            count: summary.enabledAgents.length,
+          })}
+        </span>
+        {summary.disabledAgentCount > 0 ? (
+          <span>
+            {t("settings.models.summary.disabledAgents", {
+              count: summary.disabledAgentCount,
+            })}
+          </span>
+        ) : null}
       </div>
       {summary.highRiskLabels.length > 0 ? (
         <div className="models-agent-profile-risks">
@@ -2265,7 +2412,7 @@ function AgentProfileSummaryBlock({
         ))}
         {hiddenCount > 0 ? (
           <span className="models-agent-profile-agent-pill">
-            <span className="models-agent-profile-agent-name">更多</span>
+            <span className="models-agent-profile-agent-name">{t("settings.models.summary.more")}</span>
             <span className="models-agent-profile-agent-model">+{hiddenCount}</span>
           </span>
         ) : null}
@@ -2289,6 +2436,7 @@ function PresetOverview({
   copyingPresetId?: string | null;
   onCopyPreset: (preset: BuiltInPresetDefinition) => void;
 }) {
+  const { t } = useTranslation();
   const templateById = new Map(templates.map((template) => [template.id, template]));
   return (
     <div className="models-preset-grid">
@@ -2311,18 +2459,20 @@ function PresetOverview({
                 <span className="models-preset-description">{preset.description}</span>
               </div>
               <span className={runnable ? "models-provider-badge on" : "models-provider-badge"}>
-                {runnable ? "可运行" : "模板可用"}
+                {runnable
+                  ? t("settings.models.preset.runnable")
+                  : t("settings.models.preset.templatesReady")}
               </span>
             </div>
 
             <div className="models-preset-metrics">
               <span>
                 <strong>{preset.defaultAgents.length}</strong>
-                子代理
+                {t("settings.models.preset.subagents")}
               </span>
               <span>
                 <strong>{domainTemplates.length}</strong>
-                模板
+                {t("settings.models.preset.templates")}
               </span>
               <span>
                 <strong>{domainProfiles.length}</strong>
@@ -2343,12 +2493,16 @@ function PresetOverview({
                 );
               })}
               {missingDefaultAgents.length > 0 ? (
-                <span className="models-preset-template is-missing">缺失 {missingDefaultAgents.length}</span>
+                <span className="models-preset-template is-missing">
+                  {t("settings.models.preset.missing", {
+                    count: missingDefaultAgents.length,
+                  })}
+                </span>
               ) : null}
             </div>
 
             <div className="models-preset-focus">
-              <span>默认智能体配置</span>
+              <span>{t("settings.models.preset.defaultConfig")}</span>
               <p>{primaryExample?.title ?? preset.modelSuggestion.main}</p>
             </div>
 
@@ -2359,10 +2513,14 @@ function PresetOverview({
                 className="models-section-button"
                 disabled={busy}
                 onClick={() => onCopyPreset(preset)}
-                title={`从 ${formatAgentDomainLabel(preset.id)} 创建智能体配置`}
+                title={t("settings.models.preset.createFrom", {
+                  name: formatAgentDomainLabel(preset.id),
+                })}
               >
                 <Plus size={14} />
-                {copyingPresetId === preset.id ? "创建中" : "复制为 Profile"}
+                {copyingPresetId === preset.id
+                  ? t("settings.models.preset.creating")
+                  : t("settings.models.preset.copyProfile")}
               </button>
             </div>
           </article>

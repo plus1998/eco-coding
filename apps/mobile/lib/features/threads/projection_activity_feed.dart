@@ -5,6 +5,7 @@ import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
+import '../../l10n/generated/app_localizations.dart';
 import 'activity_feed.dart';
 
 class _ProjectionFeedSlot {
@@ -154,6 +155,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   String? threadPrompt,
   String? threadId,
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
+  required AppLocalizations l10n,
 }) {
   final requestSpansById = {
     for (final span in projection.requestSpans) span.requestId: span,
@@ -230,7 +232,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           agent: displayAgent,
           displayTimeline: displayTimeline,
           missionText: missionText,
-          statusText: resolveProjectionAgentStatusText(displayAgent),
+          statusText: resolveProjectionAgentStatusText(displayAgent, l10n),
         );
       })
       .toList();
@@ -251,6 +253,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
       item,
       requestSpansById,
       rawMainTimeline,
+      l10n: l10n,
     );
     if (entry == null) continue;
     final sortAnchor = _resolveFeedEntrySortAnchor(item, toolSortAnchors);
@@ -273,14 +276,18 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     final timing = sessionsByAgentId[agent.agentId];
     final running = resolveSubagentRunning(agent: agent, timing: timing);
     final durationMs = resolveSubagentDurationMs(agent: agent, timing: timing);
-    final timeline = buildSubagentTimelineFromProjection(card.displayTimeline);
+    final timeline = buildSubagentTimelineFromProjection(
+      card.displayTimeline,
+      l10n,
+    );
 
     slots.add(
       _ProjectionFeedSlot(
         entry: ActivityFeedEntry(
           id: 'projection-agent-${agent.agentId}',
           kind: ActivityFeedKind.subagentMission,
-          text: delegation?.summary ?? resolveSubagentRunDisplayTitle(role),
+          text:
+              delegation?.summary ?? resolveSubagentRunDisplayTitle(role, l10n),
           subagentRole: role,
           missionPrompt: missionText.isNotEmpty
               ? missionText
@@ -288,7 +295,8 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           agentId: agent.agentId,
           running: running,
           durationMs: durationMs,
-          statusText: card.statusText ?? (running ? '工作中' : null),
+          statusText:
+              card.statusText ?? (running ? l10n.activityWorking : null),
           timeline: timeline,
           runAttemptId: agent.runAttemptId,
           at: agent.startedAt,
@@ -366,6 +374,7 @@ ActivityFeedEntry? _buildProjectionFeedEntry(
   List<ThreadRunProjectionTimelineItem> rawMainTimeline, {
   String? agentId,
   String? agentRole,
+  required AppLocalizations l10n,
 }) {
   final feedId = _projectionMainFeedEntryKey(
     item,
@@ -378,6 +387,7 @@ ActivityFeedEntry? _buildProjectionFeedEntry(
     feedId: feedId,
     agentRole: agentRole,
     agentId: agentId,
+    l10n: l10n,
   );
 }
 
@@ -1309,12 +1319,14 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   required String feedId,
   String? agentRole,
   String? agentId,
+  required AppLocalizations l10n,
 }) {
   final text = item.text.trim();
   final reconnect = resolveReconnectPhaseDisplay(
     text: text,
     metadata: item.metadata,
     apiErrorStatusCode: _readProjectionApiError(item)?.statusCode,
+    l10n: l10n,
   );
   if (reconnect != null) {
     return ActivityFeedEntry(
@@ -1334,6 +1346,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       item,
       feedId: feedId,
       bashApproval: bashApproval,
+      l10n: l10n,
     );
   }
 
@@ -1378,7 +1391,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   if (item.eventType == 'tool.started' ||
       item.eventType == 'tool.completed' ||
       item.eventType == 'tool.failed') {
-    return _buildProjectionToolActionEntry(item, feedId: feedId);
+    return _buildProjectionToolActionEntry(item, feedId: feedId, l10n: l10n);
   }
 
   if (item.eventType == 'api.error') {
@@ -1393,7 +1406,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     );
   }
 
-  final phaseLabel = _resolveProjectionPhaseLabel(item);
+  final phaseLabel = _resolveProjectionPhaseLabel(item, l10n);
   if (phaseLabel != null) {
     return ActivityFeedEntry(
       id: feedId,
@@ -1411,6 +1424,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
   ThreadRunProjectionTimelineItem item, {
   required String feedId,
   ThreadRunBashApprovalMetadata? bashApproval,
+  required AppLocalizations l10n,
 }) {
   bashApproval ??= readBashApprovalMetadata(item.metadata);
   final tool = readProjectionToolMetadata(item.metadata);
@@ -1429,6 +1443,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
                 toolUseId: bashApproval?.toolUseId ?? tool?.toolUseId,
               ),
           bashApproval: bashApproval,
+          l10n: l10n,
         );
   final lifecycle = bashApproval != null
       ? bashApprovalPhaseToLifecycle(bashApproval.phase)
@@ -1504,6 +1519,7 @@ bool _isProjectionLifecycleText(String text) {
 }
 
 bool _isProjectionInternalMessageText(String text) {
+  // Chinese literals match historical Desktop protocol payloads, not UI.
   final trimmed = text.trim();
   return isInternalActivityMessage(trimmed) ||
       trimmed.startsWith('__eco_worktree_merge__') ||
@@ -1558,19 +1574,22 @@ bool _isProjectionToolFailureDuplicateMessage(
   return false;
 }
 
-String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
+String? _resolveProjectionPhaseLabel(
+  ThreadRunProjectionTimelineItem item,
+  AppLocalizations l10n,
+) {
   final text = item.text.trim();
   if (item.eventType == 'context.compaction.started') {
-    return text.isEmpty ? '正在自动压缩上下文' : text;
+    return text.isEmpty ? l10n.activityCompressingContext : text;
   }
   if (item.eventType == 'context.compaction.completed') {
-    return text.isEmpty ? '上下文已自动压缩' : text;
+    return text.isEmpty ? l10n.activityContextCompressed : text;
   }
   if (item.eventType == 'context.compaction.failed') {
-    return text.isEmpty ? '上下文压缩失败' : text;
+    return text.isEmpty ? l10n.activityContextCompressionFailed : text;
   }
   if (item.eventType == 'context.compaction.suspended') {
-    return text.isEmpty ? '自动上下文压缩已暂停' : text;
+    return text.isEmpty ? l10n.activityContextCompressionPaused : text;
   }
   if (item.eventType == 'context.cache_config_drift') {
     return null;
@@ -1579,13 +1598,13 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
     return null;
   }
   if (item.eventType == 'billing.cache_hit_dropped') {
-    return text.isEmpty ? 'Prompt cache 命中率大幅下降' : text;
+    return text.isEmpty ? l10n.activityPromptCacheDrop : text;
   }
   if (item.eventType == 'context.tool_output_truncated') {
-    return text.isEmpty ? 'Tool 输出已截断' : text;
+    return text.isEmpty ? l10n.activityToolOutputTruncated : text;
   }
   if (item.eventType == 'request.retry_scheduled') {
-    return text.isEmpty ? '准备重试' : text;
+    return text.isEmpty ? l10n.activityPreparingRetry : text;
   }
   if (item.eventType == 'request.completed') {
     return null;
@@ -1597,7 +1616,7 @@ String? _resolveProjectionPhaseLabel(ThreadRunProjectionTimelineItem item) {
     return null;
   }
   if (item.eventType == 'diagnostic') {
-    return text.isEmpty ? '运行诊断' : text;
+    return text.isEmpty ? l10n.activityRunDiagnostics : text;
   }
   if (item.eventType == 'thread.status') {
     if (text.isEmpty || text == '状态已更新' || _isProjectionLifecycleText(text)) {

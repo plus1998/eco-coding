@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/mcp_models.dart';
+import '../../core/models/app_error.dart';
 import '../../core/models/skill_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
@@ -437,7 +438,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   }) async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
-      throw StateError('未选择 PC，无法请求投影详情');
+      throw const AppErrorCodeException(
+        AppErrorCode.threadProjectionNoPcSelected,
+      );
     }
     final detailKey = '$kind:$key';
     var afterSequence = _loadedProjectionDetailKeys.contains(detailKey)
@@ -509,7 +512,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
-      state = state.copyWith(loading: false, error: '未选择 PC');
+      state = state.copyWith(
+        loading: false,
+        error: threadNoPcSelectedErrorCode,
+      );
       return;
     }
 

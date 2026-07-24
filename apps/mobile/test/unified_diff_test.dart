@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:eco_mobile/core/models/git_models.dart';
 import 'package:eco_mobile/core/utils/unified_diff.dart';
+import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 
 const sampleDiff = '''diff --git a/src/a.ts b/src/a.ts
 index 111..222 100644
@@ -26,7 +28,12 @@ void main() {
     expect(files.length, 2);
     expect(files.first.path, 'src/a.ts');
     expect(files.first.hunks.length, 1);
-    expect(files.first.hunks.first.rangeLabel, '第 1-4 行');
+    expect(
+      files.first.hunks.first.rangeLabel(
+        lookupAppLocalizations(const Locale('zh')),
+      ),
+      '第 1-4 行',
+    );
     expect(files.first.additions, 1);
     expect(files.first.deletions, 1);
     expect(files.last.hunks.first.lines.length, 2);

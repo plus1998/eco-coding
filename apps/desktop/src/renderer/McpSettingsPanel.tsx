@@ -9,6 +9,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   mcpServerToInput,
   parseMcpArgsList,
@@ -53,6 +55,7 @@ type McpCheckState =
 const editorCheckKey = "__editor__";
 
 export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: McpSettingsPanelProps) {
+  const { t } = useTranslation();
   const [view, setView] = useState<McpPanelView>("list");
   const [form, setForm] = useState<McpServerConfigInput>(emptyForm);
   const [args, setArgs] = useState<string[]>([]);
@@ -143,7 +146,7 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: M
     } catch (caught) {
       const result: McpServerCheckResult = {
         ok: false,
-        serverName: input.name.trim() || "未命名 MCP",
+        serverName: input.name.trim() || t("settings.mcp.unnamed"),
         transport: input.transport,
         checkedAt: new Date().toISOString(),
         durationMs: 0,
@@ -177,16 +180,16 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: M
   return (
     <>
       <header className="mcp-page-header">
-        <h1>MCP 服务器</h1>
+        <h1>{t("settings.mcp.title")}</h1>
         <p className="mcp-page-desc">
-          连接外部工具和数据源。
+          {t("settings.mcp.description")}{" "}
           <a
             href="https://code.claude.com/docs/en/agent-sdk/mcp"
             target="_blank"
             rel="noreferrer"
             className="mcp-learn-more"
           >
-            了解更多
+            {t("settings.mcp.learnMore")}
           </a>
         </p>
       </header>
@@ -195,15 +198,15 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: M
 
       <section className="mcp-list-section">
         <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">服务器</span>
+          <span className="mcp-list-toolbar-label">{t("settings.mcp.servers")}</span>
           <button type="button" className="mcp-add-button" onClick={openCreate} disabled={busy}>
             <Plus size={16} />
-            添加服务器
+            {t("settings.mcp.add")}
           </button>
         </div>
 
         {servers.length === 0 ? (
-          <p className="mcp-list-empty">尚未添加 MCP 服务器</p>
+          <p className="mcp-list-empty">{t("settings.mcp.empty")}</p>
         ) : (
           <ul className="mcp-server-list">
             {servers.map((server) => (
@@ -220,8 +223,8 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: M
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => void handleCheck(server.id, mcpServerToInput(server))}
-                    aria-label={`检测 ${server.name}`}
-                    title="检测连接"
+                    aria-label={t("settings.mcp.checkAria", { name: server.name })}
+                    title={t("settings.mcp.check")}
                     disabled={busy || checkStates[server.id]?.status === "checking"}
                   >
                     {checkStates[server.id]?.status === "checking" ? (
@@ -234,12 +237,15 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: M
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => openEdit(server)}
-                    aria-label={`配置 ${server.name}`}
+                    aria-label={t("settings.mcp.configureAria", { name: server.name })}
                     disabled={busy}
                   >
                     <Settings2 size={18} />
                   </button>
-                  <label className="mcp-toggle" title={server.enabled ? "已启用" : "已禁用"}>
+                  <label
+                    className="mcp-toggle"
+                    title={server.enabled ? t("settings.mcp.enabled") : t("settings.mcp.disabled")}
+                  >
                     <input
                       type="checkbox"
                       checked={server.enabled}
@@ -287,15 +293,16 @@ function McpServerEditor({
   onCheck: () => void;
   checkState?: McpCheckState | undefined;
 }) {
+  const { t } = useTranslation();
   const isEditing = Boolean(form.id);
-  const titleName = form.name.trim() || "新服务器";
+  const titleName = form.name.trim() || t("settings.mcp.newServer");
 
   return (
     <>
       <header className="mcp-editor-header">
         <button type="button" className="mcp-back-button" onClick={onBack} disabled={busy}>
           <ChevronLeft size={18} />
-          返回
+          {t("settings.mcp.back")}
         </button>
         {isEditing && (
           <button
@@ -305,22 +312,26 @@ function McpServerEditor({
             disabled={busy}
           >
             <Trash2 size={16} />
-            卸载
+            {t("settings.mcp.uninstall")}
           </button>
         )}
       </header>
 
       <div className="mcp-editor-title-block">
-        <h1>{isEditing ? `更新 ${titleName} MCP` : "添加 MCP 服务器"}</h1>
+        <h1>
+          {isEditing
+            ? t("settings.mcp.updateTitle", { name: titleName })
+            : t("settings.mcp.addTitle")}
+        </h1>
         {isEditing && (
-          <p className="mcp-editor-hint">如需切换 MCP 服务器类型，请先卸载当前配置。</p>
+          <p className="mcp-editor-hint">{t("settings.mcp.switchHint")}</p>
         )}
       </div>
 
       <div className="mcp-editor-form">
         {!isEditing && (
           <label className="mcp-field">
-            <span className="mcp-field-label">名称</span>
+            <span className="mcp-field-label">{t("settings.mcp.name")}</span>
             <input
               className="mcp-field-input"
               value={form.name}
@@ -332,7 +343,7 @@ function McpServerEditor({
 
         {!isEditing && (
           <label className="mcp-field">
-            <span className="mcp-field-label">传输类型</span>
+            <span className="mcp-field-label">{t("settings.mcp.transport")}</span>
             <select
               className="mcp-field-input"
               value={form.transport}
@@ -343,7 +354,7 @@ function McpServerEditor({
                 }))
               }
             >
-              <option value="stdio">stdio（本地进程）</option>
+              <option value="stdio">{t("settings.mcp.localProcess")}</option>
               <option value="http">http</option>
               <option value="sse">sse</option>
             </select>
@@ -353,7 +364,7 @@ function McpServerEditor({
         {form.transport === "stdio" ? (
           <>
             <label className="mcp-field">
-              <span className="mcp-field-label">启动命令</span>
+              <span className="mcp-field-label">{t("settings.mcp.command")}</span>
               <input
                 className="mcp-field-input"
                 value={form.command ?? ""}
@@ -363,7 +374,7 @@ function McpServerEditor({
             </label>
 
             <div className="mcp-field">
-              <span className="mcp-field-label">参数</span>
+              <span className="mcp-field-label">{t("settings.mcp.arguments")}</span>
               <ul className="mcp-kv-rows">
                 {args.map((arg, index) => (
                   <li key={`arg-${index}`} className="mcp-kv-row">
@@ -377,13 +388,13 @@ function McpServerEditor({
                           ),
                         )
                       }
-                      placeholder="参数值"
+                      placeholder={t("settings.mcp.argumentValue")}
                     />
                     <button
                       type="button"
                       className="mcp-row-delete"
                       onClick={() => setArgs((current) => current.filter((_, i) => i !== index))}
-                      aria-label="删除参数"
+                      aria-label={t("settings.mcp.deleteArgument")}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -396,12 +407,12 @@ function McpServerEditor({
                 onClick={() => setArgs((current) => [...current, ""])}
               >
                 <Plus size={16} />
-                添加参数
+                {t("settings.mcp.addArgument")}
               </button>
             </div>
 
             <div className="mcp-field">
-              <span className="mcp-field-label">环境变量</span>
+              <span className="mcp-field-label">{t("settings.mcp.environment")}</span>
               <ul className="mcp-kv-rows">
                 {envEntries.map((entry, index) => (
                   <li key={`env-${index}`} className="mcp-kv-row mcp-env-row">
@@ -433,7 +444,7 @@ function McpServerEditor({
                       type="button"
                       className="mcp-row-delete"
                       onClick={() => setEnvEntries((current) => current.filter((_, i) => i !== index))}
-                      aria-label="删除环境变量"
+                      aria-label={t("settings.mcp.deleteEnvironment")}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -446,7 +457,7 @@ function McpServerEditor({
                 onClick={() => setEnvEntries((current) => [...current, { key: "", value: "" }])}
               >
                 <Plus size={16} />
-                添加环境变量
+                {t("settings.mcp.addEnvironment")}
               </button>
             </div>
           </>
@@ -462,7 +473,7 @@ function McpServerEditor({
               />
             </label>
             <label className="mcp-field">
-              <span className="mcp-field-label">请求头（JSON）</span>
+              <span className="mcp-field-label">{t("settings.mcp.headers")}</span>
               <textarea
                 className="mcp-field-input mcp-field-textarea"
                 value={form.headersJson ?? "{}"}
@@ -476,9 +487,9 @@ function McpServerEditor({
         )}
 
         <details className="mcp-advanced">
-          <summary>高级选项</summary>
+          <summary>{t("settings.mcp.advanced")}</summary>
           <label className="mcp-field">
-            <span className="mcp-field-label">允许的工具（留空则 mcp__名称__*）</span>
+            <span className="mcp-field-label">{t("settings.mcp.allowedTools")}</span>
             <input
               className="mcp-field-input"
               value={form.allowedTools ?? ""}
@@ -506,10 +517,10 @@ function McpServerEditor({
             ) : (
               <Radar size={16} />
             )}
-            检测连接
+            {t("settings.mcp.check")}
           </button>
           <button type="button" className="mcp-save-button" onClick={() => void onSave()} disabled={busy}>
-            保存
+            {t("common.save")}
           </button>
         </div>
       </div>
@@ -518,6 +529,7 @@ function McpServerEditor({
 }
 
 function McpCheckStatus({ state }: { state?: McpCheckState | undefined }) {
+  const { t } = useTranslation();
   if (!state) {
     return null;
   }
@@ -525,7 +537,7 @@ function McpCheckStatus({ state }: { state?: McpCheckState | undefined }) {
     return (
       <span className="mcp-check-status is-checking">
         <LoaderCircle size={13} className="mcp-spin" />
-        检测中
+        {t("settings.mcp.checking")}
       </span>
     );
   }
@@ -536,17 +548,18 @@ function McpCheckStatus({ state }: { state?: McpCheckState | undefined }) {
       title={result.details || result.message}
     >
       {result.ok ? <CircleCheck size={13} /> : <CircleAlert size={13} />}
-      {formatCheckSummary(result)}
+      {formatCheckSummary(result, t)}
     </span>
   );
 }
 
 function McpCheckCard({ state }: { state: McpCheckState }) {
+  const { t } = useTranslation();
   if (state.status === "checking") {
     return (
       <div className="mcp-check-card is-checking">
         <LoaderCircle size={16} className="mcp-spin" />
-        <span>正在启动并握手...</span>
+        <span>{t("settings.mcp.handshaking")}</span>
       </div>
     );
   }
@@ -560,23 +573,30 @@ function McpCheckCard({ state }: { state: McpCheckState }) {
       <div className="mcp-check-card-meta">
         <span>{result.transport}</span>
         <span>{result.durationMs}ms</span>
-        {result.protocolVersion && <span>协议 {result.protocolVersion}</span>}
+        {result.protocolVersion && (
+          <span>{t("settings.mcp.protocol", { version: result.protocolVersion })}</span>
+        )}
         {result.serverInfo?.name && <span>{result.serverInfo.name}</span>}
       </div>
       {result.toolNames && result.toolNames.length > 0 && (
-        <p className="mcp-check-card-detail">工具：{result.toolNames.join(", ")}</p>
+        <p className="mcp-check-card-detail">
+          {t("settings.mcp.tools", { tools: result.toolNames.join(", ") })}
+        </p>
       )}
       {!result.ok && result.details && <p className="mcp-check-card-detail">{result.details}</p>}
     </div>
   );
 }
 
-function formatCheckSummary(result: McpServerCheckResult): string {
+function formatCheckSummary(result: McpServerCheckResult, t: TFunction): string {
   if (!result.ok) {
-    return `失败 · ${result.message}`;
+    return t("settings.mcp.failed", { message: result.message });
   }
   if (typeof result.toolsCount === "number") {
-    return `通过 · ${result.toolsCount} 个工具 · ${result.durationMs}ms`;
+    return t("settings.mcp.passedWithTools", {
+      count: result.toolsCount,
+      duration: result.durationMs,
+    });
   }
-  return `通过 · ${result.durationMs}ms`;
+  return t("settings.mcp.passed", { duration: result.durationMs });
 }

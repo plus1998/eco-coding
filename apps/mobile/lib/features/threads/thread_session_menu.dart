@@ -2,12 +2,14 @@ import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_adaptive_icons.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart'
     show AdaptiveToolbarIcon, sessionToolbarButtonSize;
+import '../../l10n/generated/app_localizations.dart';
 import '../composer/commit_push_sheet.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
@@ -18,9 +20,14 @@ String resolveGitRemoteSyncAction(int behindCount) {
   return behindCount > 0 ? 'pull' : 'fetch';
 }
 
-String resolveGitRemoteSyncLabel(GitWorkingTreeStatus? gitStatus) {
+String resolveGitRemoteSyncLabel(
+  GitWorkingTreeStatus? gitStatus,
+  AppLocalizations l10n,
+) {
   final behindCount = gitStatus?.behindCount ?? 0;
-  return behindCount > 0 ? '拉取（落后 $behindCount）' : '抓取';
+  return behindCount > 0
+      ? l10n.threadPullBehind(behindCount)
+      : l10n.threadFetch;
 }
 
 class ThreadSessionMenuButton extends ConsumerWidget {
@@ -47,43 +54,43 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       gitStatus!.branch != 'detached' &&
       (gitStatus?.hasUpstream ?? false);
 
-  List<_ThreadSessionMenuEntry> _entries() => [
+  List<_ThreadSessionMenuEntry> _entries(AppLocalizations l10n) => [
     _ThreadSessionMenuEntry(
       value: 'todos',
       icon: EcoIcons.todos,
-      label: '任务进度',
+      label: l10n.threadTasks,
       enabled: _hasThread,
     ),
     _ThreadSessionMenuEntry(
       value: 'review',
       icon: EcoIcons.codeReview,
-      label: '代码审查',
+      label: l10n.threadCodeReview,
       enabled: workspacePath.isNotEmpty,
     ),
     _ThreadSessionMenuEntry(
       value: 'commit',
       icon: EcoIcons.commitPush,
-      label: '提交与推送',
+      label: l10n.threadCommitPush,
       enabled:
           workspacePath.isNotEmpty && (gitStatus?.isGitRepository ?? false),
     ),
     _ThreadSessionMenuEntry(
       value: resolveGitRemoteSyncAction(gitStatus?.behindCount ?? 0),
       icon: EcoIcons.pull,
-      label: resolveGitRemoteSyncLabel(gitStatus),
+      label: resolveGitRemoteSyncLabel(gitStatus, l10n),
       enabled: !isRunning && _canPull,
     ),
     _ThreadSessionMenuEntry(
       value: 'scripts',
       icon: EcoIcons.npmScripts,
-      label: 'npm scripts',
+      label: l10n.threadNpmScripts,
       enabled: workspacePath.isNotEmpty,
     ),
   ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final entries = _entries();
+    final entries = _entries(context.l10n);
     final menuItems = [
       for (final entry in entries)
         AdaptivePopupMenuItem<String>(
@@ -115,7 +122,7 @@ class ThreadSessionMenuButton extends ConsumerWidget {
           },
           child: AdaptiveToolbarIcon(
             icon: EcoIcons.more,
-            tooltip: '更多',
+            tooltip: context.l10n.threadMore,
             size: sessionToolbarButtonSize,
             visualOnly: true,
           ),
@@ -156,9 +163,9 @@ Future<void> handleThreadSessionMenuAction({
       case 'todos':
         if (threadId == null || threadId.isEmpty) {
           if (context.mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('请先开始会话后再查看任务进度')));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(context.l10n.threadStartFirstForTasks)),
+            );
           }
           return;
         }
@@ -226,9 +233,9 @@ Future<void> openCommitPushFromMenu({
       runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
   if (profileId.isEmpty) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先在 Composer 设置中选择智能体配置')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.threadSelectAgentProfileFirst)),
+      );
     }
     return;
   }
@@ -243,7 +250,7 @@ Future<void> openCommitPushFromMenu({
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => const PopScope(
+      builder: (dialogContext) => PopScope(
         canPop: false,
         child: Center(
           child: Card(
@@ -252,9 +259,9 @@ Future<void> openCommitPushFromMenu({
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('正在加载提交信息…'),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(context.l10n.threadLoadingCommit),
                 ],
               ),
             ),
@@ -296,9 +303,9 @@ Future<void> openCommitPushFromMenu({
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(switch (committed) {
-            'commit-push' => '已提交并推送到远程',
-            'push' => '已推送到远程',
-            _ => '已提交',
+            'commit-push' => context.l10n.threadCommittedPushed,
+            'push' => context.l10n.threadPushed,
+            _ => context.l10n.threadCommitted,
           }),
         ),
       );
@@ -324,16 +331,16 @@ Future<void> pullChangesFromMenu({
   showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => const Center(
+    builder: (dialogContext) => Center(
       child: Card(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 12),
-              Text('正在拉取…'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 12),
+              Text(context.l10n.threadPulling),
             ],
           ),
         ),
@@ -353,14 +360,24 @@ Future<void> pullChangesFromMenu({
       final files = result.conflictFiles.join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(files.isEmpty ? '拉取产生冲突，请在 Desktop 处理' : '拉取冲突：$files'),
+          content: Text(
+            files.isEmpty
+                ? context.l10n.threadPullConflictDesktop
+                : context.l10n.threadPullConflictFiles(files),
+          ),
         ),
       );
       return;
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步')),
+      SnackBar(
+        content: Text(
+          result.pulled
+              ? context.l10n.threadPullSuccess
+              : context.l10n.threadAlreadySynced,
+        ),
+      ),
     );
   } finally {
     if (context.mounted) {
@@ -381,16 +398,16 @@ Future<void> fetchChangesFromMenu({
   showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => const Center(
+    builder: (dialogContext) => Center(
       child: Card(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 12),
-              Text('正在抓取…'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 12),
+              Text(context.l10n.threadFetching),
             ],
           ),
         ),
@@ -404,7 +421,7 @@ Future<void> fetchChangesFromMenu({
     if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('抓取完成')));
+    ).showSnackBar(SnackBar(content: Text(context.l10n.threadFetchComplete)));
   } finally {
     if (context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();

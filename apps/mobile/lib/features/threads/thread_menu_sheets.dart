@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/storage/package_script_args_storage.dart';
@@ -12,6 +13,7 @@ import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../../core/utils/strip_ansi.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
@@ -165,7 +167,7 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
         children: [
           const SizedBox(height: 12),
           const EcoSheetGrabber(),
-          _SheetHeader(title: '任务进度'),
+          _SheetHeader(title: context.l10n.threadTasks),
           Expanded(
             child: FutureBuilder<List<CoderTodoItem>>(
               future: _future,
@@ -180,7 +182,7 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
                 if (todos.isEmpty) {
                   return Center(
                     child: Text(
-                      '暂无任务列表',
+                      context.l10n.threadTaskListEmpty,
                       style: TextStyle(color: eco.textMuted),
                     ),
                   );
@@ -216,7 +218,7 @@ class _TodoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final icon = _todoIcon(todo.status);
-    final label = _todoStatusLabel(todo.status);
+    final label = _todoStatusLabel(todo.status, context.l10n);
     final displayTitle =
         todo.status == 'running' &&
             todo.detail.trim().isNotEmpty &&
@@ -293,18 +295,18 @@ Color _todoIconColor(String status, EcoColors colors) {
   }
 }
 
-String _todoStatusLabel(String status) {
+String _todoStatusLabel(String status, AppLocalizations l10n) {
   switch (status) {
     case 'running':
-      return '进行中';
+      return l10n.threadTaskInProgress;
     case 'completed':
-      return '已完成';
+      return l10n.threadTaskCompleted;
     case 'blocked':
-      return '受阻';
+      return l10n.threadTaskBlocked;
     case 'cancelled':
-      return '已停止';
+      return l10n.threadTaskStopped;
     default:
-      return '待执行';
+      return l10n.threadTaskPending;
   }
 }
 
@@ -335,7 +337,7 @@ class _WorkspaceDiffReviewSheetState
   Future<WorkspaceDiffResult> _loadDiff() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
-      throw StateError('未连接 Desktop');
+      throw StateError(context.l10n.threadDesktopDisconnected);
     }
     final diff = await rpc.getWorkspaceDiff(widget.workspacePath);
     refreshWorkspaceChanges(ref, widget.workspacePath);
@@ -492,7 +494,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   Future<PackageScriptsListResult> _loadScripts() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
-      throw StateError('未连接 Desktop');
+      throw StateError(context.l10n.threadDesktopDisconnected);
     }
     final listing = await rpc.listPackageScripts(widget.workspacePath);
     var scriptArgs = Map<String, String>.from(listing.scriptArgs);
@@ -594,7 +596,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                           children: [
                             _SheetHeader(
-                              title: 'npm scripts',
+                              title: context.l10n.threadNpmScripts,
                               subtitle: subtitle,
                             ),
                             if (_errorMessage != null) ...[
@@ -611,7 +613,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                 padding: const EdgeInsets.only(top: 24),
                                 child: Center(
                                   child: Text(
-                                    '未找到 package.json scripts',
+                                    context.l10n.threadNpmScriptsEmpty,
                                     style: TextStyle(color: eco.textMuted),
                                   ),
                                 ),
@@ -659,8 +661,13 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                               ),
                                               IconButton(
                                                 tooltip: savedArgs.isNotEmpty
-                                                    ? '附加参数：$savedArgs'
-                                                    : '附加参数',
+                                                    ? context.l10n
+                                                          .threadExtraArgsValue(
+                                                            savedArgs,
+                                                          )
+                                                    : context
+                                                          .l10n
+                                                          .threadExtraArgs,
                                                 icon: Icon(
                                                   EcoIcons.rename,
                                                   size: 18,
@@ -687,7 +694,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                       },
                                               ),
                                               IconButton(
-                                                tooltip: '运行',
+                                                tooltip: context.l10n.threadRun,
                                                 icon: Icon(
                                                   Icons.play_arrow_rounded,
                                                   size: 22,
@@ -716,11 +723,12 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                                 controller:
                                                     _argsInputController,
                                                 autofocus: true,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      isDense: true,
-                                                      hintText: '附加参数',
-                                                    ),
+                                                decoration: InputDecoration(
+                                                  isDense: true,
+                                                  hintText: context
+                                                      .l10n
+                                                      .threadExtraArgs,
+                                                ),
                                                 enabled: !isRunning,
                                                 onSubmitted: (value) =>
                                                     _commitScriptArgs(
@@ -811,7 +819,7 @@ class _PackageScriptErrorNotice extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: '关闭',
+              tooltip: context.l10n.commonClose,
               visualDensity: VisualDensity.compact,
               onPressed: onDismiss,
               icon: const Icon(Icons.close_rounded, size: 18),
@@ -836,12 +844,12 @@ class _PackageScriptProgressCard extends StatelessWidget {
   final bool stopping;
   final VoidCallback onStop;
 
-  String get _statusLabel => switch (task.status) {
-    'starting' => '启动中',
-    'running' => '运行中',
-    'exited' => '已完成',
-    'failed' => '执行失败',
-    'stopped' => '已停止',
+  String _statusLabel(AppLocalizations l10n) => switch (task.status) {
+    'starting' => l10n.threadRunStarting,
+    'running' => l10n.threadRunRunning,
+    'exited' => l10n.threadRunCompleted,
+    'failed' => l10n.threadRunFailed,
+    'stopped' => l10n.threadRunStopped,
     _ => task.status,
   };
 
@@ -881,8 +889,8 @@ class _PackageScriptProgressCard extends StatelessWidget {
                 ),
                 Text(
                   task.exitCode == null
-                      ? _statusLabel
-                      : '$_statusLabel · ${task.exitCode}',
+                      ? _statusLabel(context.l10n)
+                      : '${_statusLabel(context.l10n)} · ${task.exitCode}',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: statusColor,
                     fontWeight: FontWeight.w600,
@@ -892,7 +900,11 @@ class _PackageScriptProgressCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: stopping ? null : onStop,
-                    child: Text(stopping ? '停止中' : '停止'),
+                    child: Text(
+                      stopping
+                          ? context.l10n.threadStopping
+                          : context.l10n.threadStop,
+                    ),
                   ),
                 ],
               ],
@@ -922,7 +934,9 @@ class _PackageScriptProgressCard extends StatelessWidget {
               child: SingleChildScrollView(
                 reverse: true,
                 child: SelectableText(
-                  output.isEmpty ? '等待 Desktop 返回命令输出…' : output,
+                  output.isEmpty
+                      ? context.l10n.threadWaitingCommandOutput
+                      : output,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: output.isEmpty ? eco.textMuted : eco.textPrimary,
                     fontFamily: 'monospace',
@@ -934,7 +948,7 @@ class _PackageScriptProgressCard extends StatelessWidget {
             if (task.outputTruncated) ...[
               const SizedBox(height: 6),
               Text(
-                '输出过长，已仅保留最近内容',
+                context.l10n.threadOutputTruncated,
                 style: Theme.of(
                   context,
                 ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
@@ -969,7 +983,9 @@ Future<void> showThreadActionSheet({
               items: [
                 EcoActionSheetItem(
                   icon: EcoIcons.pin,
-                  label: isPinned ? '取消置顶' : '置顶',
+                  label: isPinned
+                      ? context.l10n.projectUnpin
+                      : context.l10n.projectPin,
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     if (isPinned) {
@@ -985,7 +1001,7 @@ Future<void> showThreadActionSheet({
                 ),
                 EcoActionSheetItem(
                   icon: EcoIcons.delete,
-                  label: '删除会话',
+                  label: context.l10n.threadDelete,
                   destructive: true,
                   onTap: () async {
                     Navigator.pop(sheetContext);
@@ -993,19 +1009,21 @@ Future<void> showThreadActionSheet({
                       context: context,
                       builder: (dialogContext) {
                         return AlertDialog(
-                          title: const Text('删除会话'),
-                          content: Text('确定删除「${thread.title}」？此操作不可撤销。'),
+                          title: Text(context.l10n.threadDelete),
+                          content: Text(
+                            context.l10n.threadDeleteConfirm(thread.title),
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () =>
                                   Navigator.pop(dialogContext, false),
-                              child: const Text('取消'),
+                              child: Text(context.l10n.commonCancel),
                             ),
                             TextButton(
                               onPressed: () =>
                                   Navigator.pop(dialogContext, true),
                               child: Text(
-                                '删除',
+                                context.l10n.commonDelete,
                                 style: TextStyle(
                                   color: ecoColors(context).danger,
                                   fontWeight: FontWeight.w600,
@@ -1022,7 +1040,7 @@ Future<void> showThreadActionSheet({
                     try {
                       final rpc = ref.read(desktopRpcProvider);
                       if (rpc == null) {
-                        throw StateError('未选择 PC');
+                        throw StateError(context.l10n.projectNoPcSelected);
                       }
                       await rpc.deleteThread(thread.id);
                       await ref
@@ -1031,7 +1049,7 @@ Future<void> showThreadActionSheet({
                       await ref.read(threadListProvider.notifier).refresh();
                       if (context.mounted) {
                         messenger.showSnackBar(
-                          const SnackBar(content: Text('会话已删除')),
+                          SnackBar(content: Text(context.l10n.threadDeleted)),
                         );
                       }
                     } catch (error) {

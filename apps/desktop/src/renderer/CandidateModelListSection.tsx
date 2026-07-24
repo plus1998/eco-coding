@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Plus, Pencil, Trash2, X, RefreshCw, Link as LinkIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type {
   CandidateModelInput,
   CandidateModelView,
@@ -65,11 +66,12 @@ async function lookupCandidateRouteHints(
 }
 
 function CandidateModelInlineSpec({ candidate }: { candidate: CandidateModelView }) {
+  const { t } = useTranslation();
   const capability = candidateCapabilityHint(candidate);
   const pricing = candidatePricingHint(candidate);
   const overriddenFields = candidateOverrideFields(candidate);
   if (!capability && !pricing) {
-    return <span className="candidate-model-spec-empty">未配置规格</span>;
+    return <span className="candidate-model-spec-empty">{t("candidateModels.noSpec")}</span>;
   }
   return (
     <ModelSpecSummary
@@ -96,6 +98,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
     },
     ref,
   ) {
+  const { t } = useTranslation();
   const [candidates, setCandidates] = useState<CandidateModelView[]>([]);
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -234,15 +237,15 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
   return (
     <aside className="candidate-panel">
       <div className="candidate-panel-header">
-        <span className="candidate-panel-title">候选模型</span>
+        <span className="candidate-panel-title">{t("settings.models.candidateModels")}</span>
         <div className="candidate-panel-header-actions">
           <button
             type="button"
             className="mcp-icon-button candidate-panel-icon-btn"
             disabled={busy || loading}
             onClick={loadCandidates}
-            title="刷新"
-            aria-label="刷新"
+            title={t("common.refresh")}
+            aria-label={t("common.refresh")}
           >
             <RefreshCw size={14} className={loading ? "model-refresh-spin" : undefined} />
           </button>
@@ -251,8 +254,8 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
             className="mcp-icon-button candidate-panel-icon-btn"
             disabled={busy || modelsLoading}
             onClick={() => setPickerOpen(true)}
-            title="添加候选模型"
-            aria-label="添加候选模型"
+            title={t("candidateModels.add")}
+            aria-label={t("candidateModels.add")}
           >
             <Plus size={14} />
           </button>
@@ -262,7 +265,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       <div className="candidate-panel-body">
         {candidates.length === 0 ? (
           <p className="candidate-models-empty">
-            暂无候选模型。点击右上角 + 从上游模型列表中添加。
+            {t("candidateModels.empty")}
           </p>
         ) : (
           <div className="candidate-models-list">
@@ -272,7 +275,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                   <div className="candidate-model-edit">
                     <div className="candidate-model-edit-header">
                       <div className="candidate-model-edit-title">
-                        <span className="candidate-model-edit-label">编辑</span>
+                        <span className="candidate-model-edit-label">{t("common.edit")}</span>
                         <span className="candidate-model-name">{candidate.modelId}</span>
                       </div>
                       <div className="candidate-model-edit-actions">
@@ -285,12 +288,12 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                             });
                           }}
                         >
-                          保存
+                          {t("common.save")}
                         </button>
                         <button
                           type="button"
                           className="mcp-icon-button"
-                          aria-label="取消编辑"
+                          aria-label={t("candidateModels.cancelEdit")}
                           onClick={() => {
                             setEditingId(null);
                             editingIdRef.current = null;
@@ -302,7 +305,9 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                     </div>
                     <div className="candidate-model-edit-fields">
                       <section className="candidate-model-edit-section">
-                        <h4 className="candidate-model-edit-section-title">Models.dev 映射</h4>
+                        <h4 className="candidate-model-edit-section-title">
+                          {t("modelSpec.modelsDevMapping")}
+                        </h4>
                         <ModelsDevModelSelectField
                           value={editingMapping}
                           options={modelsDevOptions}
@@ -341,8 +346,12 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                         <button
                           type="button"
                           className="mcp-icon-button"
-                          title={`连通性测试：${candidate.modelId}`}
-                          aria-label={`连通性测试：${candidate.modelId}`}
+                          title={t("settings.models.testConnectivity", {
+                            name: candidate.modelId,
+                          })}
+                          aria-label={t("settings.models.testConnectivity", {
+                            name: candidate.modelId,
+                          })}
                           disabled={busy || Boolean(testingModelKey)}
                           onClick={() => onTestModel(candidate.modelId)}
                         >
@@ -356,7 +365,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                       <button
                         type="button"
                         className="mcp-icon-button"
-                        title="编辑"
+                        title={t("common.edit")}
                         disabled={busy}
                         onClick={() => handleStartEdit(candidate)}
                       >
@@ -365,7 +374,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                       <button
                         type="button"
                         className="mcp-icon-button"
-                        title="删除"
+                        title={t("common.delete")}
                         disabled={busy}
                         onClick={() => handleDelete(candidate.id)}
                       >
@@ -409,6 +418,7 @@ function CandidateModelPickerModal({
   onConfirm,
   onRefreshModels,
 }: CandidateModelPickerModalProps) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const toggleSelection = (modelId: string) => {
@@ -441,13 +451,13 @@ function CandidateModelPickerModal({
       >
         <header className="settings-modal-header">
           <h2 id="candidate-picker-title" className="settings-modal-title">
-            选择模型添加到候选列表
+            {t("candidateModels.pickerTitle")}
           </h2>
           <button
             type="button"
             className="mcp-icon-button"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t("common.close")}
           >
             <X size={18} />
           </button>
@@ -455,10 +465,10 @@ function CandidateModelPickerModal({
         <div className="candidate-picker-body">
           <div className="candidate-picker-toolbar">
             <button type="button" className="settings-secondary-button" onClick={selectAll}>
-              全选
+              {t("candidateModels.selectAll")}
             </button>
             <button type="button" className="settings-secondary-button" onClick={clearSelection}>
-              清除选择
+              {t("candidateModels.clearSelection")}
             </button>
             <button
               type="button"
@@ -467,17 +477,20 @@ function CandidateModelPickerModal({
               onClick={onRefreshModels}
             >
               <RefreshCw size={14} className={loading ? "model-refresh-spin" : undefined} />
-              刷新列表
+              {t("candidateModels.refreshList")}
             </button>
             <span className="candidate-picker-count">
-              已选 {selected.size} / {models.length}
+              {t("candidateModels.selectedCount", {
+                selected: selected.size,
+                total: models.length,
+              })}
             </span>
           </div>
           {loading && models.length === 0 ? (
-            <p className="candidate-picker-loading">正在加载模型列表...</p>
+            <p className="candidate-picker-loading">{t("candidateModels.loading")}</p>
           ) : models.length === 0 ? (
             <p className="candidate-picker-empty">
-              暂无可添加的模型。请先刷新模型列表，或所有模型已在候选列表中。
+              {t("candidateModels.noneAvailable")}
             </p>
           ) : (
             <div className="candidate-picker-list">
@@ -500,7 +513,7 @@ function CandidateModelPickerModal({
           <span />
           <div className="settings-modal-footer-actions">
             <button type="button" className="settings-modal-cancel" onClick={onClose}>
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -508,7 +521,9 @@ function CandidateModelPickerModal({
               disabled={selected.size === 0}
               onClick={() => onConfirm([...selected])}
             >
-              添加 {selected.size > 0 ? `(${selected.size})` : ""}
+              {t("candidateModels.addCount", {
+                count: selected.size > 0 ? `(${selected.size})` : "",
+              })}
             </button>
           </div>
         </footer>

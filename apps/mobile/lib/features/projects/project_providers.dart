@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/project_models.dart';
+import '../../core/models/app_error.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
 import '../threads/thread_providers.dart';
@@ -12,8 +13,7 @@ String _selectedProjectKey(String desktopId) =>
 String _collapsedProjectsKey(String desktopId) =>
     'eco.collapsed_projects.$desktopId';
 
-String _pinnedProjectsKey(String desktopId) =>
-    'eco.pinned_projects.$desktopId';
+String _pinnedProjectsKey(String desktopId) => 'eco.pinned_projects.$desktopId';
 
 String _pinnedThreadsKey(String desktopId) => 'eco.pinned_threads.$desktopId';
 
@@ -29,8 +29,9 @@ class ProjectWorkspaceContext {
   final WorkspaceInfo? currentWorkspace;
 }
 
-final threadsByProjectProvider =
-    Provider<Map<String, List<ThreadSummary>>>((ref) {
+final threadsByProjectProvider = Provider<Map<String, List<ThreadSummary>>>((
+  ref,
+) {
   final threads = ref.watch(threadListProvider).valueOrNull ?? const [];
   final pinnedThreadIds = ref.watch(pinnedThreadIdsProvider).toSet();
   final grouped = groupThreadsByProject(threads);
@@ -40,32 +41,33 @@ final threadsByProjectProvider =
   };
 });
 
-final projectWorkspaceContextProvider =
-    FutureProvider<ProjectWorkspaceContext>((ref) async {
-  final rpc = ref.watch(desktopRpcProvider);
-  if (rpc == null) {
-    return const ProjectWorkspaceContext(homeProjectPath: '');
-  }
+final projectWorkspaceContextProvider = FutureProvider<ProjectWorkspaceContext>(
+  (ref) async {
+    final rpc = ref.watch(desktopRpcProvider);
+    if (rpc == null) {
+      return const ProjectWorkspaceContext(homeProjectPath: '');
+    }
 
-  var homePath = '';
-  try {
-    homePath = await rpc.getHomeProjectPath();
-  } catch (_) {
-    // Older Center Server builds may not expose workspace:get-home-path yet.
-  }
+    var homePath = '';
+    try {
+      homePath = await rpc.getHomeProjectPath();
+    } catch (_) {
+      // Older Center Server builds may not expose workspace:get-home-path yet.
+    }
 
-  WorkspaceInfo? currentWorkspace;
-  try {
-    currentWorkspace = await rpc.getCurrentWorkspace();
-  } catch (_) {
-    currentWorkspace = null;
-  }
+    WorkspaceInfo? currentWorkspace;
+    try {
+      currentWorkspace = await rpc.getCurrentWorkspace();
+    } catch (_) {
+      currentWorkspace = null;
+    }
 
-  return ProjectWorkspaceContext(
-    homeProjectPath: homePath,
-    currentWorkspace: currentWorkspace,
-  );
-});
+    return ProjectWorkspaceContext(
+      homeProjectPath: homePath,
+      currentWorkspace: currentWorkspace,
+    );
+  },
+);
 
 /// Projects derived from [threadListProvider] + workspace context.
 /// Thread list updates only recompute locally; no per-project inspect RPCs.
@@ -109,7 +111,7 @@ Future<void> refreshProjectsAndThreads(WidgetRef ref) async {
 Future<WorkspaceInfo> openProjectPath(WidgetRef ref, String path) async {
   final rpc = ref.read(desktopRpcProvider);
   if (rpc == null) {
-    throw StateError('未选择 PC');
+    throw const AppErrorCodeException(AppErrorCode.threadNoPcSelected);
   }
   refreshWorkspaceChanges(ref, path);
   final workspace = await rpc.openWorkspacePath(path);
@@ -141,8 +143,8 @@ final displayProjectsProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
 
 final selectedProjectPathProvider =
     AsyncNotifierProvider<SelectedProjectPathNotifier, String?>(
-  SelectedProjectPathNotifier.new,
-);
+      SelectedProjectPathNotifier.new,
+    );
 
 class SelectedProjectPathNotifier extends AsyncNotifier<String?> {
   @override
@@ -191,8 +193,8 @@ class SelectedProjectPathNotifier extends AsyncNotifier<String?> {
 
 final collapsedProjectPathsProvider =
     NotifierProvider<CollapsedProjectPathsNotifier, Set<String>>(
-  CollapsedProjectPathsNotifier.new,
-);
+      CollapsedProjectPathsNotifier.new,
+    );
 
 class CollapsedProjectPathsNotifier extends Notifier<Set<String>> {
   bool _loaded = false;
@@ -290,8 +292,8 @@ class CollapsedProjectPathsNotifier extends Notifier<Set<String>> {
 
 final pinnedProjectPathsProvider =
     NotifierProvider<PinnedProjectPathsNotifier, List<String>>(
-  PinnedProjectPathsNotifier.new,
-);
+      PinnedProjectPathsNotifier.new,
+    );
 
 class PinnedProjectPathsNotifier extends Notifier<List<String>> {
   bool _loaded = false;
@@ -353,8 +355,8 @@ class PinnedProjectPathsNotifier extends Notifier<List<String>> {
 
 final pinnedThreadIdsProvider =
     NotifierProvider<PinnedThreadIdsNotifier, List<String>>(
-  PinnedThreadIdsNotifier.new,
-);
+      PinnedThreadIdsNotifier.new,
+    );
 
 class PinnedThreadIdsNotifier extends Notifier<List<String>> {
   bool _loaded = false;
@@ -410,8 +412,8 @@ class PinnedThreadIdsNotifier extends Notifier<List<String>> {
 
 final hiddenProjectPathsProvider =
     NotifierProvider<HiddenProjectPathsNotifier, Set<String>>(
-  HiddenProjectPathsNotifier.new,
-);
+      HiddenProjectPathsNotifier.new,
+    );
 
 class HiddenProjectPathsNotifier extends Notifier<Set<String>> {
   bool _loaded = false;
@@ -434,8 +436,7 @@ class HiddenProjectPathsNotifier extends Notifier<Set<String>> {
     await ref.read(collapsedProjectPathsProvider.notifier).remove(project.path);
 
     final selected = ref.read(selectedProjectPathProvider).valueOrNull;
-    if (selected != null &&
-        normalizeProjectPath(selected) == normalized) {
+    if (selected != null && normalizeProjectPath(selected) == normalized) {
       await ref.read(selectedProjectPathProvider.notifier).clear();
     }
   }

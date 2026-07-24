@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { GitSettingsSnapshot } from "../shared/ipc";
 
 interface GitSettingsPanelProps {
@@ -8,6 +9,7 @@ interface GitSettingsPanelProps {
 }
 
 export function GitSettingsPanel({ settings, busy, onSave }: GitSettingsPanelProps) {
+  const { t } = useTranslation();
   const savedInstructions = settings.commitMessageInstructions ?? "";
   const [draft, setDraft] = useState(savedInstructions);
   const [saving, setSaving] = useState(false);
@@ -43,8 +45,8 @@ export function GitSettingsPanel({ settings, busy, onSave }: GitSettingsPanelPro
       <section className="settings-section git-settings-section">
         <div className="settings-section-head git-settings-section-head">
           <div>
-            <span className="settings-section-label">提交指令</span>
-            <p className="settings-section-subtitle">已添加到提交信息生成提示中</p>
+            <span className="settings-section-label">{t("settings.git.instructions")}</span>
+            <p className="settings-section-subtitle">{t("settings.git.instructionsSubtitle")}</p>
           </div>
           <button
             type="button"
@@ -52,14 +54,14 @@ export function GitSettingsPanel({ settings, busy, onSave }: GitSettingsPanelPro
             disabled={!dirty || saving || busy}
             onClick={() => void handleSave()}
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? t("settings.git.saving") : t("common.save")}
           </button>
         </div>
 
         <textarea
           className="git-settings-instructions-input"
           value={draft}
-          placeholder="使用中文"
+          placeholder={t("settings.git.placeholder")}
           rows={6}
           disabled={saving || busy}
           onChange={(event) => setDraft(event.target.value)}

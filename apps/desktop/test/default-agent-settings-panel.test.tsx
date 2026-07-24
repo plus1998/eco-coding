@@ -1,15 +1,16 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { DefaultAgentSettingsPanel } from "../src/renderer/DefaultAgentSettingsPanel";
+import { renderLocalized } from "./i18n-test";
 
 test("default Agent settings renders Claude Code and Codex choices", () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderLocalized(
     createElement(DefaultAgentSettingsPanel, {
       defaultCoreKind: "claude",
       codexAvailable: true,
       onChange: () => undefined,
     }),
+    "zh-CN",
   );
 
   expect(markup).toContain("默认 Agent");
@@ -22,13 +23,14 @@ test("default Agent settings renders Claude Code and Codex choices", () => {
 });
 
 test("unavailable Codex is disabled with its explicit reason", () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderLocalized(
     createElement(DefaultAgentSettingsPanel, {
       defaultCoreKind: "claude",
       codexAvailable: false,
       codexUnavailableReason: "未安装 Codex CLI",
       onChange: () => undefined,
     }),
+    "zh-CN",
   );
 
   expect(markup).toContain("未安装 Codex CLI");

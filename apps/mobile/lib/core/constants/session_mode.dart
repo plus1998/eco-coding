@@ -14,6 +14,8 @@ SessionMode normalizeSessionMode(String? value) {
   return isSessionMode(value) ? value! : 'agent';
 }
 
-bool isAskSessionMode({String? sessionMode}) => resolveSessionMode(sessionMode: sessionMode) == 'ask';
+bool isAskSessionMode({String? sessionMode}) =>
+    resolveSessionMode(sessionMode: sessionMode) == 'ask';
 
-bool isPlanSessionMode({String? sessionMode}) => resolveSessionMode(sessionMode: sessionMode) == 'plan';
+bool isPlanSessionMode({String? sessionMode}) =>
+    resolveSessionMode(sessionMode: sessionMode) == 'plan';

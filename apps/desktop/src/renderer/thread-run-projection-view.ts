@@ -36,6 +36,7 @@ import {
   resolveReconnectPhaseDisplay,
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
+import { i18n } from "./i18n";
 import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
@@ -303,16 +304,17 @@ function normalizePlanDismissalTimeline(
       normalized.push(item);
       continue;
     }
-    if (normalized.at(-1)?.text === "计划忽略") {
+    if (normalized.at(-1)?.text === i18n.t("projection.planDismissed")) {
       continue;
     }
-    normalized.push({ ...item, text: "计划忽略" });
+    normalized.push({ ...item, text: i18n.t("projection.planDismissed") });
   }
   return normalized;
 }
 
 function isPlanDismissalText(text: string): boolean {
   const trimmed = text.trim();
+  // Compatibility literals from persisted runtime history; do not localize matching.
   return (
     trimmed === "计划忽略" ||
     trimmed === "已忽略计划。" ||
@@ -412,6 +414,7 @@ function isProjectionToolFailureDuplicateMessage(
   if (!text) {
     return false;
   }
+  // Compatibility literal emitted by older runtimes.
   if (text === "工具调用被拒绝") {
     return true;
   }
@@ -718,6 +721,7 @@ function isRequestFailureFeedNoiseItem(item: ThreadRunProjectionTimelineItem): b
 
 function isProjectionInternalMessageText(text: string): boolean {
   const trimmed = text.trim();
+  // Protocol/history strings are matched verbatim across app versions.
   return (
     trimmed.startsWith("__eco_worktree_merge__") ||
     trimmed === "回答完成。" ||
@@ -738,6 +742,7 @@ function isProjectionInternalMessageText(text: string): boolean {
 }
 
 function isProjectionApprovalTransitionStatus(text: string): boolean {
+  // Protocol/history strings are matched verbatim across app versions.
   return (
     text === "等待工具权限确认…" ||
     text === "等待工具读取确认…" ||
@@ -2080,7 +2085,9 @@ export function projectionItemToDetailBlock(
       ...(output && { output }),
       ...(metadataTool?.exitCode !== undefined && { exitCode: metadataTool.exitCode }),
     });
-    const commandMessage = command ? `Tool: Bash · ${command}` : undefined;
+    const commandMessage = command
+      ? i18n.t("projection.bashCommand", { command })
+      : undefined;
     const error = recoveredResult ? "" : output || (text !== commandMessage ? text : "");
     return {
       kind: "tool-failed",
@@ -2183,7 +2190,10 @@ function formatReconnectPhaseSummary(
     return failedCount > 1 ? `${summary} ×${failedCount}` : summary;
   }
   if (collapse.failedCount > 1) {
-    return `${summary} · 连接失败 ${collapse.failedCount} 次`;
+    return i18n.t("projection.reconnectFailures", {
+      summary,
+      count: collapse.failedCount,
+    });
   }
   return summary;
 }
@@ -2237,7 +2247,7 @@ function findLatestAgentSpeechSummary(
       return text;
     }
     if (item.eventType === "thinking.delta" || item.eventType === "thinking.final") {
-      return `思考：${text}`;
+      return i18n.t("projection.thinking", { text });
     }
   }
   return undefined;
@@ -2349,40 +2359,46 @@ function isProjectionLifecycleText(text: string): boolean {
 function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): string | undefined {
   const text = item.text.trim();
   if (item.eventType === "context.compaction.started") {
-    return text || "正在自动压缩上下文";
+    return text || i18n.t("projection.compactionStarted");
   }
   if (item.eventType === "context.compaction.completed") {
-    return text || "上下文已自动压缩";
+    return text || i18n.t("projection.compactionCompleted");
   }
   if (item.eventType === "context.compaction.failed") {
-    return text || "上下文压缩失败";
+    return text || i18n.t("projection.compactionFailed");
   }
   if (item.eventType === "context.compaction.suspended") {
-    return text || "自动上下文压缩已暂停";
+    return text || i18n.t("projection.compactionSuspended");
   }
   if (item.eventType === "context.cache_config_drift") {
-    return text || "Composer 配置已变更";
+    return text || i18n.t("projection.configChanged");
   }
   if (item.eventType === "context.cache_invalidated") {
-    return text || "本会话 prompt cache 已失效";
+    return text || i18n.t("projection.cacheInvalidated");
   }
   if (item.eventType === "billing.cache_hit_dropped") {
-    return text || "Prompt cache 命中率大幅下降";
+    return text || i18n.t("projection.cacheHitDropped");
   }
   if (item.eventType === "context.tool_output_truncated") {
-    return text || "Tool 输出已截断";
+    return text || i18n.t("projection.toolOutputTruncated");
   }
   if (item.eventType === "agent.started") {
-    return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已启动`;
+    return i18n.t("projection.agentStarted", {
+      agent: resolveSubagentRunDisplayTitle(item.role ?? i18n.t("projection.subagent")),
+    });
   }
   if (item.eventType === "agent.stopped") {
-    return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已完成`;
+    return i18n.t("projection.agentCompleted", {
+      agent: resolveSubagentRunDisplayTitle(item.role ?? i18n.t("projection.subagent")),
+    });
   }
   if (item.eventType === "agent.abandoned") {
-    return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已中止`;
+    return i18n.t("projection.agentAbandoned", {
+      agent: resolveSubagentRunDisplayTitle(item.role ?? i18n.t("projection.subagent")),
+    });
   }
   if (item.eventType === "request.retry_scheduled") {
-    return text || "准备重试";
+    return text || i18n.t("projection.retrying");
   }
   if (
     item.eventType === "request.completed" ||
@@ -2392,7 +2408,7 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
     return undefined;
   }
   if (item.eventType === "diagnostic") {
-    return text || "运行诊断";
+    return text || i18n.t("projection.diagnostic");
   }
   if (item.eventType === "thread.status") {
     if (!text || text === "状态已更新" || isProjectionLifecycleText(text)) {
@@ -2408,7 +2424,7 @@ function resolveProjectionToolName(item: ThreadRunProjectionTimelineItem): strin
   if (metadataTool?.name.trim()) {
     return metadataTool.name;
   }
-  return "Tool";
+  return i18n.t("projection.tool");
 }
 
 function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem): string {
@@ -2416,7 +2432,9 @@ function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem)
   if (metadataTool) {
     return formatProjectionToolActionLabel(metadataTool);
   }
-  return item.eventType === "tool.completed" ? "工具完成" : "工具调用";
+  return item.eventType === "tool.completed"
+    ? i18n.t("projection.toolCompleted")
+    : i18n.t("projection.toolCall");
 }
 
 function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
@@ -2461,7 +2479,7 @@ function readProjectionDelegationMetadata(
     return undefined;
   }
   return {
-    subagent: role || "子代理",
+    subagent: role || i18n.t("projection.subagent"),
     summary: summary || prompt.slice(0, 200),
     ...(prompt && { prompt }),
   };

@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -112,7 +115,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       appBar: buildThreadSessionAppBar(
         context,
         ref,
-        title: '新建会话',
+        title: context.l10n.threadNew,
         workspacePath: workspacePath,
         projectName: project?.name,
         runtimeConfig: runtimeConfig,
@@ -138,6 +141,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                         workspacePath: workspacePath,
                         isHomeProject: project?.isHome ?? false,
                         projectName: project?.name,
+                        l10n: context.l10n,
                       ),
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall
@@ -182,7 +186,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                             isRunning: false,
                             sendBusy: _starting,
                             hasActivity: false,
-                            inputHint: composerLandingPlaceholder,
+                            inputHint: composerLandingPlaceholder(context.l10n),
                             workspacePath: workspacePath,
                             coreKind: _coreKind,
                             onCoreKindChanged: (coreKind) {
@@ -269,9 +273,9 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
+        );
       }
     } finally {
       if (mounted) setState(() => _starting = false);

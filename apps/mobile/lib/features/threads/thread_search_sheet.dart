@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
@@ -113,12 +114,12 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
               textInputAction: TextInputAction.search,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: '搜索会话标题或项目',
+                hintText: context.l10n.threadSearchHint,
                 prefixIcon: const Icon(EcoIcons.search, size: 19),
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: '清除',
+                        tooltip: context.l10n.threadSearchClear,
                         icon: const Icon(EcoIcons.close, size: 18),
                         onPressed: () {
                           _searchController.clear();
@@ -137,7 +138,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                     children: [
                       if (runningThreads.isNotEmpty)
                         _SearchResultSection(
-                          label: '正在运行',
+                          label: context.l10n.threadSearchRunning,
                           children: [
                             for (final thread in runningThreads)
                               _ThreadSearchRow(
@@ -146,7 +147,10 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                                     projectNames[normalizeProjectPath(
                                       thread.workspacePath,
                                     )] ??
-                                    _projectBasename(thread.workspacePath),
+                                    _projectBasename(
+                                      thread.workspacePath,
+                                      context.l10n.projectFallbackName,
+                                    ),
                                 onTap: () => Navigator.pop(
                                   context,
                                   ThreadSearchSelection.thread(thread),
@@ -156,7 +160,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                         ),
                       if (recentThreads.isNotEmpty)
                         _SearchResultSection(
-                          label: '会话',
+                          label: context.l10n.threadSearchSessions,
                           children: [
                             for (final thread in recentThreads)
                               _ThreadSearchRow(
@@ -165,7 +169,10 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                                     projectNames[normalizeProjectPath(
                                       thread.workspacePath,
                                     )] ??
-                                    _projectBasename(thread.workspacePath),
+                                    _projectBasename(
+                                      thread.workspacePath,
+                                      context.l10n.projectFallbackName,
+                                    ),
                                 onTap: () => Navigator.pop(
                                   context,
                                   ThreadSearchSelection.thread(thread),
@@ -175,7 +182,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                         ),
                       if (matchingProjects.isNotEmpty)
                         _SearchResultSection(
-                          label: '项目',
+                          label: context.l10n.threadSearchProjects,
                           children: [
                             for (final project in matchingProjects)
                               _ProjectSearchRow(
@@ -191,7 +198,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                   )
                 : Center(
                     child: Text(
-                      '没有匹配的会话或项目',
+                      context.l10n.threadSearchNoResults,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: ecoColors(context).textMuted,
                       ),
@@ -336,8 +343,8 @@ class _ProjectSearchRow extends StatelessWidget {
   }
 }
 
-String _projectBasename(String path) {
+String _projectBasename(String path, String fallback) {
   final normalized = normalizeProjectPath(path);
   final segments = normalized.split('/').where((part) => part.isNotEmpty);
-  return segments.isEmpty ? '项目' : segments.last;
+  return segments.isEmpty ? fallback : segments.last;
 }

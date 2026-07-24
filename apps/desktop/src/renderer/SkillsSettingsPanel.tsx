@@ -1,5 +1,7 @@
 import { AppWindow, Check, Download, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { AppLocale } from "../shared/locale";
 import type {
   SkillCatalogEntry,
   SkillCatalogSearchResult,
@@ -34,6 +36,8 @@ export function SkillsSettingsPanel({
   onSearchCatalog,
   onInstallCatalog,
 }: SkillsSettingsPanelProps) {
+  const { t, i18n } = useTranslation();
+  const locale = (i18n.resolvedLanguage ?? i18n.language) as AppLocale;
   const [activeLayout, setActiveLayout] = useState<SkillLayout>("agents");
   const [pendingUninstall, setPendingUninstall] = useState<SkillInfo>();
   const [uninstalling, setUninstalling] = useState(false);
@@ -86,18 +90,31 @@ export function SkillsSettingsPanel({
           href={entry.url}
           target="_blank"
           rel="noreferrer"
-          title={`在 skills.sh 查看 ${entry.source}/${entry.skillId}`}
+          title={t("settings.skills.viewOnStore", {
+            source: entry.source,
+            skill: entry.skillId,
+          })}
         >
           <strong>{entry.name}</strong>
           <code>{entry.source}</code>
-          <span>{formatInstallCount(entry.installs)} 次安装</span>
+          <span>{t("settings.skills.installs", { count: formatInstallCount(entry.installs, locale) })}</span>
         </a>
         <button
           type="button"
           className="skills-catalog-install"
           disabled={installed || Boolean(installingCatalogId)}
-          aria-label={installed ? `${entry.name} 已安装` : `安装 ${entry.name}`}
-          title={installed ? "已安装" : installing ? "安装中" : "安装"}
+          aria-label={
+            installed
+              ? t("settings.skills.installedAria", { name: entry.name })
+              : t("settings.skills.installAria", { name: entry.name })
+          }
+          title={
+            installed
+              ? t("settings.skills.installed")
+              : installing
+                ? t("settings.skills.installing")
+                : t("settings.skills.install")
+          }
           onClick={() => {
             setInstallingCatalogId(entry.id);
             setCatalogError(undefined);
@@ -136,12 +153,12 @@ export function SkillsSettingsPanel({
         type="search"
         value={catalogQuery}
         onChange={(event) => setCatalogQuery(event.target.value)}
-        placeholder="搜索 skills.sh"
-        aria-label="搜索 skills.sh"
+        placeholder={t("settings.skills.searchPlaceholder")}
+        aria-label={t("settings.skills.searchPlaceholder")}
         autoFocus
       />
       <button type="submit" disabled={catalogQuery.trim().length < 2 || catalogLoading}>
-        {catalogLoading ? "搜…" : "搜"}
+        {catalogLoading ? t("settings.skills.searching") : t("settings.skills.search")}
       </button>
     </form>
   );
@@ -158,8 +175,8 @@ export function SkillsSettingsPanel({
               type="button"
               className="settings-icon-button"
               onClick={openCatalog}
-              aria-label="浏览 Skills 商店"
-              title="浏览 Skills 商店"
+              aria-label={t("settings.skills.browse")}
+              title={t("settings.skills.browse")}
             >
               <AppWindow size={18} />
             </button>
@@ -168,7 +185,7 @@ export function SkillsSettingsPanel({
               className="settings-icon-button"
               onClick={onRefresh}
               disabled={loading}
-              aria-label="刷新 Skills 列表"
+              aria-label={t("settings.skills.refresh")}
             >
               <RefreshCw size={18} className={loading ? "spinning" : undefined} />
             </button>
@@ -188,17 +205,19 @@ export function SkillsSettingsPanel({
             <header className="settings-modal-header">
               <div>
                 <h2 id="skills-catalog-title" className="settings-modal-title">
-                  Skills 商店
+                  {t("settings.skills.store")}
                 </h2>
                 <p className="skills-catalog-modal-meta">
-                  {catalogResult ? `${catalogResult.entries.length} 个搜索结果 · ` : "技能排行榜 · "}
-                  安装到 {skillLayoutLabel(activeLayout)}
+                  {catalogResult
+                    ? t("settings.skills.searchCount", { count: catalogResult.entries.length })
+                    : t("settings.skills.leaderboardMeta")}
+                  {t("settings.skills.installTo", { layout: skillLayoutLabel(activeLayout) })}
                 </p>
               </div>
               <button
                 type="button"
                 className="settings-icon-button"
-                aria-label="关闭 Skills 商店"
+                aria-label={t("settings.skills.closeStore")}
                 disabled={Boolean(installingCatalogId)}
                 onClick={() => setCatalogOpen(false)}
               >
@@ -210,9 +229,9 @@ export function SkillsSettingsPanel({
               {catalogError ? <p className="settings-form-error">{catalogError}</p> : null}
               {catalogResult ? (
                 <section className="skills-catalog-results-section">
-                  <h3>搜索结果</h3>
+                  <h3>{t("settings.skills.searchResults")}</h3>
                   {catalogResult.entries.length === 0 ? (
-                    <p className="settings-empty-hint">没有找到匹配的 Skill。</p>
+                    <p className="settings-empty-hint">{t("settings.skills.noResults")}</p>
                   ) : (
                     <ul className="skills-catalog-grid">
                       {catalogResult.entries.map((entry) => renderCatalogEntry(entry))}
@@ -222,11 +241,11 @@ export function SkillsSettingsPanel({
               ) : null}
               {leaderboardError ? <p className="settings-form-error">{leaderboardError}</p> : null}
               {leaderboardLoading && leaderboardEntries.length === 0 ? (
-                <p className="settings-empty-hint">正在加载技能排行榜…</p>
+                <p className="settings-empty-hint">{t("settings.skills.loadingLeaderboard")}</p>
               ) : null}
               {leaderboardEntries.length > 0 ? (
                 <section className="skills-catalog-results-section">
-                  <h3>技能排行榜</h3>
+                  <h3>{t("settings.skills.leaderboard")}</h3>
                   <ul className="skills-catalog-grid">
                     {leaderboardEntries.map(({ entry, rank }) => renderCatalogEntry(entry, rank))}
                   </ul>
@@ -237,7 +256,7 @@ export function SkillsSettingsPanel({
         </div>
       ) : null}
 
-      <div className="models-settings-tabs" role="tablist" aria-label="Skills 来源">
+      <div className="models-settings-tabs" role="tablist" aria-label={t("settings.skills.sources")}>
         {SKILL_LAYOUT_TABS.map((tab) => (
           <button
             key={tab.layout}
@@ -257,7 +276,7 @@ export function SkillsSettingsPanel({
         <div id="skills-source-panel" role="tabpanel">
           {visibleSkills.length === 0 ? (
             <p className="settings-empty-hint">
-              在 <code>{skillLayoutRoot(activeLayout)}/&lt;skill-name&gt;/SKILL.md</code> 添加 Skill。
+              {t("settings.skills.addHint", { path: skillLayoutRoot(activeLayout) })}
             </p>
           ) : (
             <ul className="skill-list">
@@ -272,8 +291,12 @@ export function SkillsSettingsPanel({
                       <button
                         type="button"
                         className="skill-card-uninstall"
-                        aria-label={`卸载 ${skill.name}`}
-                        title={isSystemCodexSkill(skill) ? "Codex 内置 Skill 不可卸载" : "卸载 Skill"}
+                        aria-label={t("settings.skills.uninstallAria", { name: skill.name })}
+                        title={
+                          isSystemCodexSkill(skill)
+                            ? t("settings.skills.systemCannotUninstall")
+                            : t("settings.skills.uninstall")
+                        }
                         disabled={isSystemCodexSkill(skill)}
                         onClick={() => {
                           setUninstallError(undefined);
@@ -342,8 +365,10 @@ function skillLayoutLabel(layout: SkillLayout): string {
   return "Agents";
 }
 
-function formatInstallCount(count: number): string {
-  return new Intl.NumberFormat("zh-CN", { notation: count >= 10_000 ? "compact" : "standard" }).format(count);
+function formatInstallCount(count: number, locale: AppLocale): string {
+  return new Intl.NumberFormat(locale, {
+    notation: count >= 10_000 ? "compact" : "standard",
+  }).format(count);
 }
 
 export function isCatalogSkillInstalled(skills: SkillInfo[], entry: SkillCatalogEntry): boolean {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FitAddon, Ghostty, ITheme, Terminal as GhosttyTerminalType } from "ghostty-web";
 import type { TerminalStreamEvent } from "../shared/ipc";
+import { i18n } from "./i18n";
 import {
   DEFAULT_TYPOGRAPHY_PREFERENCES,
   TYPOGRAPHY_CHANGE_EVENT,
@@ -351,7 +352,7 @@ export function GhosttyTerminal({
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
-      mount.textContent = `终端初始化失败：${message}`;
+      mount.textContent = i18n.t("terminal.initFailed", { detail: message });
       mount.style.color = "var(--terminal-fg, var(--text-primary))";
     });
 

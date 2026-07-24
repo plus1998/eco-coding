@@ -1,4 +1,5 @@
 import type { LinkAgentsSkillsResult, SkillInfo } from "../shared/skills";
+import { useTranslation } from "react-i18next";
 import { SkillPillWithCard } from "./composer-skills-ui";
 
 interface ComposerSkillsBarProps {
@@ -18,15 +19,16 @@ export function ComposerSkillsBar({
   onLinkAgents,
   lastLinkResult,
 }: ComposerSkillsBarProps) {
+  const { t } = useTranslation();
   const projectSkillsNeedingLink = skillsNeedingLink.filter((skill) => skill.source === "project");
   if (availableSkills.length === 0 && projectSkillsNeedingLink.length === 0) {
     return null;
   }
 
   return (
-    <section className="composer-skills-bar" aria-label="当前项目 Skills">
+    <section className="composer-skills-bar" aria-label={t("composer.skills.project")}>
       <div className="composer-skills-bar-row">
-        <span className="composer-skills-bar-label">Skills</span>
+        <span className="composer-skills-bar-label">{t("composer.skills.title")}</span>
         <ul className="composer-skills-bar-list">
           {availableSkills.map((skill) => (
             <SkillPillWithCard
@@ -46,7 +48,7 @@ export function ComposerSkillsBar({
           <span className="composer-skills-bar-label" aria-hidden="true" />
           <p className="composer-skills-link-hint">
             <span className="composer-skills-link-hint-message">
-              {projectSkillsNeedingLink.length} 个 Skills 需链至 .claude
+              {t("composer.skills.needLink", { count: projectSkillsNeedingLink.length })}
             </span>
             {onLinkAgents ? (
               <button
@@ -55,12 +57,12 @@ export function ComposerSkillsBar({
                 disabled={linking}
                 onClick={() => void onLinkAgents()}
               >
-                {linking ? "链接中…" : "创建链接"}
+                {linking ? t("composer.skills.linking") : t("composer.skills.createLink")}
               </button>
             ) : null}
             {lastLinkResult && lastLinkResult.created.length > 0 ? (
               <span className="composer-skills-link-hint-meta">
-                已链接 {lastLinkResult.created.length} 个
+                {t("composer.skills.linked", { count: lastLinkResult.created.length })}
               </span>
             ) : null}
             {lastLinkResult && lastLinkResult.errors.length > 0 ? (

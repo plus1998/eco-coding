@@ -1,4 +1,5 @@
 import '../models/thread_models.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 bool isFollowUpThreadLiveEvent({
   required String kind,
@@ -54,10 +55,13 @@ List<ThreadPendingFollowUp> mergeThreadFollowUp(
   return sortThreadFollowUps(next);
 }
 
-String formatThreadFollowUpPreview(ThreadPendingFollowUp followUp) {
+String formatThreadFollowUpPreview(
+  ThreadPendingFollowUp followUp,
+  AppLocalizations l10n,
+) {
   final prompt = followUp.prompt.trim();
   final imageCount = followUp.attachments.length;
-  final imageLabel = '$imageCount 张图片';
+  final imageLabel = l10n.followUpImages(imageCount);
   if (prompt.length > 120) {
     final clipped = '${prompt.substring(0, 117)}...';
     return imageCount > 0 ? '$clipped ($imageLabel)' : clipped;
@@ -65,7 +69,7 @@ String formatThreadFollowUpPreview(ThreadPendingFollowUp followUp) {
   if (prompt.isNotEmpty) {
     return imageCount > 0 ? '$prompt ($imageLabel)' : prompt;
   }
-  return imageCount > 0 ? imageLabel : '空引导消息';
+  return imageCount > 0 ? imageLabel : l10n.followUpEmptyGuidance;
 }
 
 int _compareThreadFollowUps(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
@@ -28,20 +29,20 @@ class ProjectListEmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              '还没有项目',
+              context.l10n.projectNoProjects,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: eco.textSecondary,
-                  ),
+                fontWeight: FontWeight.w600,
+                color: eco.textSecondary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              '点右上角打开项目，\n输入 Desktop 上的路径即可开始。',
+              context.l10n.projectNoProjectsHint,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: eco.textMuted,
-                    height: 1.45,
-                  ),
+                color: eco.textMuted,
+                height: 1.45,
+              ),
             ),
           ],
         ),
@@ -130,56 +131,51 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                                 vertical: 14,
                               ),
                               child: Text(
-                                '暂无会话',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
+                                context.l10n.threadNoSessions,
+                                style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: eco.textMuted),
                               ),
                             )
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                ...slice.visible.asMap().entries.map(
-                                  (entry) {
-                                    final thread = entry.value;
-                                    final isLast = entry.key ==
-                                            slice.visible.length - 1 &&
-                                        !slice.hasMore;
-                                    return Column(
-                                      children: [
-                                        ProjectThreadRow(
-                                          thread: thread,
-                                          isPinned: widget.pinnedThreadIds
-                                              .contains(thread.id),
-                                          onTap: () =>
-                                              widget.onThreadTap(thread),
-                                          onLongPress:
-                                              widget.onThreadLongPress == null
-                                                  ? null
-                                                  : () => widget
-                                                      .onThreadLongPress!(
-                                                      thread,
-                                                    ),
-                                        ),
-                                        if (!isLast)
-                                          const EcoGroupedDivider(indent: 16),
-                                      ],
-                                    );
-                                  },
-                                ),
+                                ...slice.visible.asMap().entries.map((entry) {
+                                  final thread = entry.value;
+                                  final isLast =
+                                      entry.key == slice.visible.length - 1 &&
+                                      !slice.hasMore;
+                                  return Column(
+                                    children: [
+                                      ProjectThreadRow(
+                                        thread: thread,
+                                        isPinned: widget.pinnedThreadIds
+                                            .contains(thread.id),
+                                        onTap: () => widget.onThreadTap(thread),
+                                        onLongPress:
+                                            widget.onThreadLongPress == null
+                                            ? null
+                                            : () => widget.onThreadLongPress!(
+                                                thread,
+                                              ),
+                                      ),
+                                      if (!isLast)
+                                        const EcoGroupedDivider(indent: 16),
+                                    ],
+                                  );
+                                }),
                                 if (slice.hasMore) ...[
                                   const EcoGroupedDivider(indent: 16),
                                   EcoGroupedTile(
-                                    onTap: () => setState(
-                                      () => _threadsExpanded = true,
-                                    ),
+                                    onTap: () =>
+                                        setState(() => _threadsExpanded = true),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 16,
                                       vertical: 12,
                                     ),
                                     child: Text(
-                                      '还有 ${threads.length - slice.visible.length} 条',
+                                      context.l10n.projectMoreThreads(
+                                        threads.length - slice.visible.length,
+                                      ),
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodyMedium
@@ -225,12 +221,7 @@ class _ProjectHeader extends StatelessWidget {
     final eco = ecoColors(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        ecoGroupedHorizontalInset,
-        12,
-        8,
-        0,
-      ),
+      padding: const EdgeInsets.fromLTRB(ecoGroupedHorizontalInset, 12, 8, 0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -247,8 +238,8 @@ class _ProjectHeader extends StatelessWidget {
                       project.isHome
                           ? EcoIcons.home
                           : isCollapsed
-                              ? EcoIcons.folder
-                              : EcoIcons.folderOpen,
+                          ? EcoIcons.folder
+                          : EcoIcons.folderOpen,
                       size: 18,
                       color: eco.accent,
                     ),
@@ -272,9 +263,7 @@ class _ProjectHeader extends StatelessWidget {
                                   project.name,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleSmall
+                                  style: Theme.of(context).textTheme.titleSmall
                                       ?.copyWith(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
@@ -298,9 +287,7 @@ class _ProjectHeader extends StatelessWidget {
                                 const SizedBox(width: 6),
                                 Text(
                                   '$threadCount',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
+                                  style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
                                         color: eco.textMuted,
                                         fontFeatures: const [
@@ -320,12 +307,11 @@ class _ProjectHeader extends StatelessWidget {
                                 maxLines: 1,
                                 softWrap: false,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
+                                style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(
-                                      color: eco.textMuted
-                                          .withValues(alpha: 0.75),
+                                      color: eco.textMuted.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       fontSize: 11,
                                     ),
                               ),
@@ -343,12 +329,11 @@ class _ProjectHeader extends StatelessWidget {
                                   maxLines: 1,
                                   softWrap: false,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
+                                  style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
-                                        color: eco.textMuted
-                                            .withValues(alpha: 0.7),
+                                        color: eco.textMuted.withValues(
+                                          alpha: 0.7,
+                                        ),
                                         fontSize: 11,
                                         fontFeatures: const [
                                           FontFeature.tabularFigures(),
@@ -370,11 +355,7 @@ class _ProjectHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Padding(
               padding: const EdgeInsets.all(10),
-              child: Icon(
-                EcoIcons.newThread,
-                size: 20,
-                color: eco.accent,
-              ),
+              child: Icon(EcoIcons.newThread, size: 20, color: eco.accent),
             ),
           ),
         ],
@@ -402,7 +383,10 @@ class ProjectThreadRow extends StatelessWidget {
     final eco = ecoColors(context);
     final title = thread.title;
     final showStatus = hasThreadStatusIndicator(thread);
-    final timeLabel = formatRelativeTime(threadStatusTime(thread));
+    final timeLabel = formatRelativeTime(
+      threadStatusTime(thread),
+      context.l10n,
+    );
 
     return EcoGroupedTile(
       onTap: onTap,
@@ -418,11 +402,7 @@ class ProjectThreadRow extends StatelessWidget {
                 Row(
                   children: [
                     if (isPinned) ...[
-                      Icon(
-                        EcoIcons.pin,
-                        size: 11,
-                        color: eco.textMuted,
-                      ),
+                      Icon(EcoIcons.pin, size: 11, color: eco.textMuted),
                       const SizedBox(width: 5),
                     ],
                     Expanded(
@@ -431,9 +411,9 @@ class ProjectThreadRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w400,
-                            ),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
                   ],
@@ -445,19 +425,16 @@ class ProjectThreadRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                          height: 1.3,
-                        ),
+                      color: eco.textMuted,
+                      height: 1.3,
+                    ),
                   ),
                 ],
               ],
             ),
           ),
           const SizedBox(width: 12),
-          ThreadStatusIndicator(
-            thread: thread,
-            timeLabel: timeLabel,
-          ),
+          ThreadStatusIndicator(thread: thread, timeLabel: timeLabel),
         ],
       ),
     );
@@ -479,12 +456,12 @@ class ThreadStatusIndicator extends StatelessWidget {
     final eco = ecoColors(context);
     if (isThreadWaitingForApproval(thread)) {
       return Text(
-        '待批准',
+        context.l10n.projectAwaitingApproval,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: eco.statusAllowText,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.1,
-            ),
+          color: eco.statusAllowText,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.1,
+        ),
       );
     }
 
@@ -515,9 +492,9 @@ class ThreadStatusIndicator extends StatelessWidget {
     return Text(
       timeLabel,
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: eco.textMuted,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+        color: eco.textMuted,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
     );
   }
 }

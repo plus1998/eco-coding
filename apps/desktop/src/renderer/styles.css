@@ -14041,6 +14041,52 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   line-height: 1.45;
 }
 
+.settings-segmented-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.settings-segmented-control > svg {
+  flex: 0 0 auto;
+  margin: 0 5px;
+}
+
+.settings-segmented-control button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.settings-segmented-control button:hover {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+}
+
+.settings-segmented-control button.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.settings-segmented-control button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .settings-text-button {
   padding: 5px 9px;
   border: none;

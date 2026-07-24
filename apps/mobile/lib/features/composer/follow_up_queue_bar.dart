@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -67,11 +69,16 @@ class FollowUpQueueBar extends StatelessWidget {
                   ),
                 ],
               ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 160),
+              child: SizedBox(
+                height: math.min(
+                  160,
+                  10 +
+                      (followUps.length * 34) +
+                      (math.max(0, followUps.length - 1) * 5),
+                ),
                 child: ReorderableListView.builder(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
                   buildDefaultDragHandles: false,
                   itemCount: followUps.length,
                   onReorder: onReorder,
@@ -114,7 +121,7 @@ class _FollowUpDragHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: '拖动调整消息顺序',
+      label: context.l10n.followUpReorder,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Icon(Icons.drag_indicator_rounded, size: 16, color: color),
@@ -163,18 +170,22 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
         ComposerContextMenuEntry(
           value: 'escalate',
           icon: EcoIcons.indent,
-          label: widget.escalateBusyId == widget.followUp.id ? '处理中…' : '引导',
+          label: widget.escalateBusyId == widget.followUp.id
+              ? context.l10n.commonProcessing
+              : context.l10n.followUpGuide,
           enabled: !_actionBusy,
         ),
-      const ComposerContextMenuEntry(
+      ComposerContextMenuEntry(
         value: 'edit',
         icon: EcoIcons.edit,
-        label: '修改',
+        label: context.l10n.followUpEdit,
       ),
       ComposerContextMenuEntry(
         value: 'delete',
         icon: EcoIcons.delete,
-        label: widget.cancelBusyId == widget.followUp.id ? '删除中…' : '删除',
+        label: widget.cancelBusyId == widget.followUp.id
+            ? context.l10n.followUpDeleting
+            : context.l10n.commonDelete,
         enabled: !_actionBusy,
         danger: true,
       ),
@@ -210,7 +221,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
     );
 
     return Semantics(
-      label: '已排队的引导消息',
+      label: context.l10n.followUpQueuedGuidance,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -239,7 +250,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
                 ],
                 Expanded(
                   child: Text(
-                    formatThreadFollowUpPreview(widget.followUp),
+                    formatThreadFollowUpPreview(widget.followUp, context.l10n),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: textStyle,

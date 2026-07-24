@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import 'setup_status.dart';
 
 /// User-facing setup flow (WebSocket connects automatically after login).
@@ -10,26 +12,26 @@ enum SetupWizardStep { server, login, bindPc, selectPc }
 extension SetupWizardStepX on SetupWizardStep {
   int get index => SetupWizardStep.values.indexOf(this);
 
-  String get title => switch (this) {
-        SetupWizardStep.server => '配置服务器',
-        SetupWizardStep.login => '注册 / 登录',
-        SetupWizardStep.bindPc => '绑定 PC',
-        SetupWizardStep.selectPc => '选择 PC',
-      };
+  String title(AppLocalizations l10n) => switch (this) {
+    SetupWizardStep.server => l10n.setupWizardServerTitle,
+    SetupWizardStep.login => l10n.setupWizardLoginTitle,
+    SetupWizardStep.bindPc => l10n.setupWizardBindTitle,
+    SetupWizardStep.selectPc => l10n.setupWizardSelectTitle,
+  };
 
-  String get subtitle => switch (this) {
-        SetupWizardStep.server => '填写 Center Server 地址并确认可达',
-        SetupWizardStep.login => '登录账号并注册本机为移动设备',
-        SetupWizardStep.bindPc => '在 Desktop 生成配对码后扫码或手输',
-        SetupWizardStep.selectPc => '选择要远程操控的 PC',
-      };
+  String subtitle(AppLocalizations l10n) => switch (this) {
+    SetupWizardStep.server => l10n.setupWizardServerSubtitle,
+    SetupWizardStep.login => l10n.setupWizardLoginSubtitle,
+    SetupWizardStep.bindPc => l10n.setupWizardBindSubtitle,
+    SetupWizardStep.selectPc => l10n.setupWizardSelectSubtitle,
+  };
 
-  String get shortLabel => switch (this) {
-        SetupWizardStep.server => '服务器',
-        SetupWizardStep.login => '账号',
-        SetupWizardStep.bindPc => '绑定',
-        SetupWizardStep.selectPc => 'PC',
-      };
+  String shortLabel(AppLocalizations l10n) => switch (this) {
+    SetupWizardStep.server => l10n.setupWizardServerShort,
+    SetupWizardStep.login => l10n.setupWizardAccountShort,
+    SetupWizardStep.bindPc => l10n.setupWizardPairShort,
+    SetupWizardStep.selectPc => 'PC',
+  };
 }
 
 SetupWizardStep resolveSetupWizardStep(SetupOverview overview) {
@@ -122,8 +124,8 @@ class _StepDot extends StatelessWidget {
     final fg = done
         ? eco.statusAllowText
         : active
-            ? eco.accentText
-            : eco.textMuted;
+        ? eco.accentText
+        : eco.textMuted;
 
     final dot = Column(
       mainAxisSize: MainAxisSize.min,
@@ -137,14 +139,14 @@ class _StepDot extends StatelessWidget {
             color: done
                 ? eco.statusAllowBg
                 : active
-                    ? eco.accentSoft
-                    : Colors.transparent,
+                ? eco.accentSoft
+                : Colors.transparent,
             border: Border.all(
               color: done
                   ? eco.statusAllowBorder
                   : active
-                      ? eco.accent.withValues(alpha: 0.6)
-                      : eco.borderSubtle,
+                  ? eco.accent.withValues(alpha: 0.6)
+                  : eco.borderSubtle,
               width: active ? 1.5 : 1,
             ),
           ),
@@ -163,16 +165,16 @@ class _StepDot extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          step.shortLabel,
+          step.shortLabel(context.l10n),
           textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: fg,
-                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                fontSize: 11,
-                letterSpacing: 0.2,
-              ),
+            color: fg,
+            fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+            fontSize: 11,
+            letterSpacing: 0.2,
+          ),
         ),
       ],
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../locale/app_localizations_ext.dart';
 import '../theme/eco_icons.dart';
 import 'adaptive_toolbar_icon.dart'
     show AdaptiveToolbarIcon, sessionToolbarButtonGap, sessionToolbarButtonSize;
@@ -31,7 +32,7 @@ class ShellToolbarActions extends ConsumerWidget {
         children: [
           if (showSearch) ...[
             AdaptiveToolbarIcon(
-              tooltip: '搜索会话和项目',
+              tooltip: context.l10n.toolbarSearch,
               icon: EcoIcons.search,
               size: sessionToolbarButtonSize,
               iconSize: 18,
@@ -41,7 +42,7 @@ class ShellToolbarActions extends ConsumerWidget {
           ],
           if (showOpenProject) ...[
             AdaptiveToolbarIcon(
-              tooltip: '打开项目',
+              tooltip: context.l10n.toolbarOpenProject,
               icon: EcoIcons.folderOpen,
               size: sessionToolbarButtonSize,
               onPressed: () => showOpenProjectSheet(context: context, ref: ref),
@@ -50,7 +51,7 @@ class ShellToolbarActions extends ConsumerWidget {
           ],
           if (showSwitchPc)
             AdaptiveToolbarIcon(
-              tooltip: '切换 PC',
+              tooltip: context.l10n.toolbarSwitchPc,
               icon: EcoIcons.desktop,
               size: sessionToolbarButtonSize,
               onPressed: () => context.push('/connect'),

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
+import '../../core/models/app_error.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
@@ -41,7 +44,9 @@ Future<void> showProjectActionSheet({
               items: [
                 EcoActionSheetItem(
                   icon: EcoIcons.pin,
-                  label: isPinned ? '取消置顶' : '置顶',
+                  label: isPinned
+                      ? context.l10n.projectUnpin
+                      : context.l10n.projectPin,
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     if (isPinned) {
@@ -57,7 +62,7 @@ Future<void> showProjectActionSheet({
                 ),
                 EcoActionSheetItem(
                   icon: EcoIcons.delete,
-                  label: '移除项目',
+                  label: context.l10n.projectRemove,
                   destructive: true,
                   onTap: () async {
                     Navigator.pop(sheetContext);
@@ -80,6 +85,7 @@ Future<void> showOpenProjectSheet({
   required WidgetRef ref,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
 
   await showEcoModalBottomSheet<void>(
     context: context,
@@ -89,11 +95,15 @@ Future<void> showOpenProjectSheet({
       final rpc = ref.read(desktopRpcProvider);
       return _OpenProjectSheet(
         initialPath: () async {
-          if (rpc == null) throw StateError('未选择 PC');
+          if (rpc == null) {
+            throw const AppErrorCodeException(AppErrorCode.threadNoPcSelected);
+          }
           return rpc.getUserHomePath();
         },
         listDirectories: (path) async {
-          if (rpc == null) throw StateError('未选择 PC');
+          if (rpc == null) {
+            throw const AppErrorCodeException(AppErrorCode.threadNoPcSelected);
+          }
           return rpc.listWorkspaceDirectories(path);
         },
         onOpen: (path) async {
@@ -102,9 +112,11 @@ Future<void> showOpenProjectSheet({
             if (sheetContext.mounted) {
               Navigator.pop(sheetContext);
             }
-            messenger.showSnackBar(const SnackBar(content: Text('项目已打开')));
+            messenger.showSnackBar(SnackBar(content: Text(l10n.projectOpened)));
           } catch (error) {
-            messenger.showSnackBar(SnackBar(content: Text(error.toString())));
+            messenger.showSnackBar(
+              SnackBar(content: Text(localizedAppError(error, l10n))),
+            );
             rethrow;
           }
         },
@@ -198,7 +210,7 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const EcoSheetGrabber(),
-            const EcoSheetHeader(title: '打开项目'),
+            EcoSheetHeader(title: context.l10n.projectOpen),
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: ecoGroupedHorizontalInset,
@@ -210,13 +222,13 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
                   vertical: 12,
                 ),
                 child: Text(
-                  _listing?.path ?? '正在读取 Desktop 文件夹…',
+                  _listing?.path ?? context.l10n.projectOpening,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: eco.textSecondary,
-                        letterSpacing: -0.15,
-                      ),
+                    color: eco.textSecondary,
+                    letterSpacing: -0.15,
+                  ),
                 ),
               ),
             ),
@@ -231,34 +243,34 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
                       ),
                     )
                   : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _error!,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: eco.danger),
-                                ),
-                                const SizedBox(height: 16),
-                                TextButton(
-                                  onPressed: _loadInitialDirectory,
-                                  child: const Text('重试'),
-                                ),
-                              ],
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: eco.danger),
                             ),
-                          ),
-                        )
-                      : EcoGroupedSurface(
-                          child: _OpenProjectDirectoryList(
-                            listing: _listing!,
-                            opening: _opening,
-                            onOpenParent: (path) => _loadDirectory(path),
-                            onOpenDirectory: (path) => _loadDirectory(path),
-                          ),
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: _loadInitialDirectory,
+                              child: Text(context.l10n.commonRetry),
+                            ),
+                          ],
                         ),
+                      ),
+                    )
+                  : EcoGroupedSurface(
+                      child: _OpenProjectDirectoryList(
+                        listing: _listing!,
+                        opening: _opening,
+                        onOpenParent: (path) => _loadDirectory(path),
+                        onOpenDirectory: (path) => _loadDirectory(path),
+                      ),
+                    ),
             ),
             const SizedBox(height: 16),
             Padding(
@@ -278,7 +290,7 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
                           color: eco.onAccent,
                         ),
                       )
-                    : const Text('打开当前文件夹'),
+                    : Text(context.l10n.projectOpenCurrentFolder),
               ),
             ),
           ],
@@ -312,7 +324,7 @@ class _OpenProjectDirectoryList extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Center(
           child: Text(
-            '此文件夹没有子文件夹',
+            context.l10n.projectNoSubfolders,
             style: TextStyle(color: eco.textMuted),
           ),
         ),
@@ -330,10 +342,10 @@ class _OpenProjectDirectoryList extends StatelessWidget {
                 Icon(EcoIcons.back, size: 20, color: eco.accent),
                 const SizedBox(width: 14),
                 Text(
-                  '上一级',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 17,
-                      ),
+                  context.l10n.projectParentFolder,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontSize: 17),
                 ),
               ],
             ),
@@ -341,9 +353,7 @@ class _OpenProjectDirectoryList extends StatelessWidget {
         for (var i = 0; i < directories.length; i++) ...[
           if (i > 0 || hasParent) const EcoGroupedDivider(indent: 50),
           EcoGroupedTile(
-            onTap: opening
-                ? null
-                : () => onOpenDirectory(directories[i].path),
+            onTap: opening ? null : () => onOpenDirectory(directories[i].path),
             padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
             child: Row(
               children: [
@@ -354,9 +364,9 @@ class _OpenProjectDirectoryList extends StatelessWidget {
                     directories[i].name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontSize: 17,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(fontSize: 17),
                   ),
                 ),
                 Icon(
@@ -373,7 +383,7 @@ class _OpenProjectDirectoryList extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Center(
               child: Text(
-                '此文件夹没有子文件夹',
+                context.l10n.projectNoSubfolders,
                 style: TextStyle(color: eco.textMuted),
               ),
             ),

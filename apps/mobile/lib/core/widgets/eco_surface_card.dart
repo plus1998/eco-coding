@@ -32,12 +32,7 @@ class EcoSurfaceCard extends StatelessWidget {
       color: backgroundColor ?? Colors.transparent,
       shape: shape,
       clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? child
-          : InkWell(
-              onTap: onTap,
-              child: child,
-            ),
+      child: onTap == null ? child : InkWell(onTap: onTap, child: child),
     );
   }
 }
@@ -120,8 +115,10 @@ class EcoClippedFadeBody extends StatelessWidget {
 
       if (showFade && fadeHeight > 0 && collapsedMaxHeight > 0) {
         final fadeStart =
-            ((collapsedMaxHeight - fadeHeight) / collapsedMaxHeight)
-                .clamp(0.0, 0.92);
+            ((collapsedMaxHeight - fadeHeight) / collapsedMaxHeight).clamp(
+              0.0,
+              0.92,
+            );
         body = ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (bounds) {

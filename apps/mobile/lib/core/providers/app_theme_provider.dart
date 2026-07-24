@@ -9,8 +9,8 @@ final appThemeBootstrapProvider = Provider<AppThemePreference>(
 
 final appThemePreferenceProvider =
     NotifierProvider<AppThemePreferenceNotifier, AppThemePreference>(
-  AppThemePreferenceNotifier.new,
-);
+      AppThemePreferenceNotifier.new,
+    );
 
 class AppThemePreferenceNotifier extends Notifier<AppThemePreference> {
   @override
@@ -19,6 +19,9 @@ class AppThemePreferenceNotifier extends Notifier<AppThemePreference> {
   Future<void> setPreference(AppThemePreference preference) async {
     state = preference;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(AppThemePreference.storageKey, preference.storageValue);
+    await prefs.setString(
+      AppThemePreference.storageKey,
+      preference.storageValue,
+    );
   }
 }

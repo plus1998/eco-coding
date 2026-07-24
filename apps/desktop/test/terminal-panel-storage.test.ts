@@ -6,10 +6,12 @@ import {
   readTerminalWorkspaceState,
   saveTerminalWorkspaceState,
 } from "../src/renderer/terminal-panel-storage";
+import { i18n } from "../src/renderer/i18n";
 
 const storage = new Map<string, string>();
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en-US");
   storage.clear();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
@@ -51,4 +53,24 @@ test("creates unique tab labels within a project", () => {
   expect(nextTerminalTabLabel("fadanjiance", tabs)).toBe("fadanjiance 2");
   tabs.push(createTerminalTab("fadanjiance 2"));
   expect(nextTerminalTabLabel("fadanjiance", tabs)).toBe("fadanjiance 3");
+});
+
+test("uses the active locale for empty and restored terminal labels", () => {
+  expect(createTerminalTab(" ").label).toBe("Terminal");
+  expect(nextTerminalTabLabel("", [])).toBe("Terminal");
+
+  storage.set(
+    "eco.terminal",
+    JSON.stringify({
+      projects: {
+        "/tmp/project": {
+          open: true,
+          height: 280,
+          tabs: [{ id: "tab-1", label: "" }],
+          activeTabId: "tab-1",
+        },
+      },
+    }),
+  );
+  expect(readTerminalWorkspaceState()["/tmp/project"]?.tabs[0]?.label).toBe("Terminal");
 });

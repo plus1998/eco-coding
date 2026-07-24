@@ -1,6 +1,8 @@
 import { ChevronLeft, Loader2, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "./i18n";
 import type {
   CenterServerConnectionStatus,
   CenterServerCreatePairingResult,
@@ -56,6 +58,7 @@ export function CenterServerSettingsPanel({
   onDisconnect,
   onRemoveConnection,
 }: CenterServerSettingsPanelProps) {
+  const { t } = useTranslation();
   const [view, setView] = useState<PanelView>("list");
   const [form, setForm] = useState<CenterServerSettingsInput>(() => viewToInput(snapshot.settings));
   const [authMode, setAuthMode] = useState<AccountAuthMode>("signup");
@@ -86,7 +89,7 @@ export function CenterServerSettingsPanel({
     snapshot.status.state === "error" &&
     isCenterServerReloginError(snapshot.status.lastError);
   const serverUrl = form.serverUrl || snapshot.settings.serverUrl;
-  const deviceLabel = snapshot.settings.deviceName || "远程服务";
+  const deviceLabel = snapshot.settings.deviceName || t("settings.center.remoteService");
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
 
   const refreshBindings = useCallback(async () => {
@@ -142,7 +145,7 @@ export function CenterServerSettingsPanel({
         setServerReachable(true);
       } else {
         setServerReachable(false);
-        setError(result.error ?? "无法访问服务，请检查地址后重试。");
+        setError(result.error ?? t("settings.center.unreachable"));
       }
     } catch (caught) {
       setServerReachable(false);
@@ -155,15 +158,15 @@ export function CenterServerSettingsPanel({
   async function handleSaveServer() {
     const deviceName = form.deviceName?.trim();
     if (!hasUrl) {
-      setError("请填写服务地址。");
+      setError(t("settings.center.serverRequired"));
       return;
     }
     if (!deviceName) {
-      setError("请填写本机名称。");
+      setError(t("settings.center.deviceRequired"));
       return;
     }
     if (!registered && !serverReachable) {
-      setError("请先测试服务可达性。");
+      setError(t("settings.center.testFirst"));
       return;
     }
 
@@ -191,7 +194,7 @@ export function CenterServerSettingsPanel({
   async function handleAccountAuth() {
     const deviceName = form.deviceName?.trim() || snapshot.settings.deviceName;
     if (!email.trim() || !password.trim() || !deviceName) {
-      setError("请填写邮箱和密码。");
+      setError(t("settings.center.credentialsRequired"));
       return;
     }
     setError(undefined);
@@ -233,7 +236,7 @@ export function CenterServerSettingsPanel({
       if (!enabled) {
         await onDisconnect();
       } else if (nextSnapshot.status.state === "error") {
-        setError(nextSnapshot.status.lastError ?? "连接失败。");
+        setError(nextSnapshot.status.lastError ?? t("settings.center.connectionFailed"));
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -257,9 +260,7 @@ export function CenterServerSettingsPanel({
   async function handleRevokeBinding(binding: CenterServerDeviceBindingView) {
     const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
     const mobileLabel = mobile?.name ?? shortenDeviceId(binding.mobileDeviceId);
-    const confirmed = window.confirm(
-      `确定解绑「${mobileLabel}」？\n解绑后该手机将无法远程操控本机，需重新扫码配对。`,
-    );
+    const confirmed = window.confirm(t("settings.center.confirmUnbind", { name: mobileLabel }));
     if (!confirmed) {
       return;
     }
@@ -282,19 +283,17 @@ export function CenterServerSettingsPanel({
         : classifyCenterServerAuthError(error instanceof Error ? error.message : String(error));
     const detail = error instanceof Error ? error.message : String(error);
     if (recovery === "account_unusable") {
-      return `账号已停用，无法在服务端完成注销：${detail}\n仍要删除本机配置吗？`;
+      return t("settings.center.remove.accountUnusable", { detail });
     }
     if (recovery === "relogin") {
-      return `登录已失效，无法在服务端完成注销：${detail}\n仍要删除本机配置吗？`;
+      return t("settings.center.remove.relogin", { detail });
     }
-    return `无法连接服务端完成注销：${detail}\n仍要删除本机配置吗？服务端可能仍保留该设备记录。`;
+    return t("settings.center.remove.unreachable", { detail });
   }
 
   async function handleRemoveConnection(forceLocal = false) {
     if (!forceLocal) {
-      const confirmed = window.confirm(
-        `确定删除「${deviceLabel}」连接？\n将断开远程服务、解绑已配对手机，需重新配置才能使用。`,
-      );
+      const confirmed = window.confirm(t("settings.center.confirmRemove", { name: deviceLabel }));
       if (!confirmed) {
         return;
       }
@@ -388,18 +387,18 @@ export function CenterServerSettingsPanel({
   return (
     <div className="cs">
       <header className="cs-head">
-        <h1 className="cs-title">连接</h1>
-        <p className="cs-desc">远程 Eco 服务，同步会话并远程控制本机。</p>
+        <h1 className="cs-title">{t("settings.center.title")}</h1>
+        <p className="cs-desc">{t("settings.center.description")}</p>
       </header>
 
       {error ? <p className="cs-error">{error}</p> : null}
 
       {!registered ? (
         <div className="cs-empty">
-          <p className="cs-empty-text">尚未配置远程服务</p>
+          <p className="cs-empty-text">{t("settings.center.empty")}</p>
           <button type="button" className="cs-btn" disabled={actionBusy} onClick={openSetup}>
             <Plus size={15} strokeWidth={1.75} />
-            添加连接
+            {t("settings.center.add")}
           </button>
         </div>
       ) : (
@@ -419,8 +418,8 @@ export function CenterServerSettingsPanel({
                   type="button"
                   className="cs-icon-btn is-warn"
                   onClick={openReauth}
-                  aria-label="重新登录"
-                  title="重新登录"
+                  aria-label={t("settings.center.relogin")}
+                  title={t("settings.center.relogin")}
                   disabled={actionBusy}
                 >
                   <LogIn size={16} strokeWidth={1.75} />
@@ -430,12 +429,15 @@ export function CenterServerSettingsPanel({
                 type="button"
                 className="cs-icon-btn"
                 onClick={openServerEditor}
-                aria-label="配置"
+                aria-label={t("settings.center.configure")}
                 disabled={actionBusy}
               >
                 <Settings2 size={16} strokeWidth={1.75} />
               </button>
-              <label className="cs-switch" title={form.enabled ? "已启用" : "已禁用"}>
+              <label
+                className="cs-switch"
+                title={form.enabled ? t("common.enabled") : t("common.disabled")}
+              >
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -458,7 +460,7 @@ export function CenterServerSettingsPanel({
             onClick={() => void handleRemoveConnection()}
           >
             <Trash2 size={14} strokeWidth={1.75} />
-            删除连接
+            {t("settings.center.delete")}
           </button>
         </section>
       ) : null}
@@ -466,7 +468,7 @@ export function CenterServerSettingsPanel({
       {registered && isLive ? (
         <section className="cs-block">
           <div className="cs-block-head">
-            <h2 className="cs-block-label">已绑定手机</h2>
+            <h2 className="cs-block-label">{t("settings.center.boundPhones")}</h2>
             <button
               type="button"
               className="cs-text-action is-muted"
@@ -474,16 +476,16 @@ export function CenterServerSettingsPanel({
               onClick={() => void refreshBindings()}
             >
               <RefreshCw size={14} strokeWidth={1.75} className={bindingsLoading ? "cs-spin" : undefined} />
-              刷新
+              {t("common.refresh")}
             </button>
           </div>
 
           {bindingsError ? <p className="cs-error">{bindingsError}</p> : null}
 
           {bindingsLoading && activeBindings.length === 0 ? (
-            <p className="cs-placeholder">加载中…</p>
+            <p className="cs-placeholder">{t("common.loading")}</p>
           ) : activeBindings.length === 0 ? (
-            <p className="cs-placeholder">暂无绑定手机，生成配对码后扫码绑定。</p>
+            <p className="cs-placeholder">{t("settings.center.noPhones")}</p>
           ) : (
             <ul className="cs-list">
               {activeBindings.map((binding) => {
@@ -503,7 +505,12 @@ export function CenterServerSettingsPanel({
                         </span>
                         {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
                         <span className="cs-device-meta">
-                          {online ? "在线" : "离线"} · 绑定于 {formatLocalTime(binding.createdAt)}
+                          {t("settings.center.boundAt", {
+                            status: online
+                              ? t("settings.center.online")
+                              : t("settings.center.offline"),
+                            time: formatLocalTime(binding.createdAt),
+                          })}
                         </span>
                       </div>
                     </div>
@@ -513,7 +520,9 @@ export function CenterServerSettingsPanel({
                       disabled={actionBusy || revoking}
                       onClick={() => void handleRevokeBinding(binding)}
                     >
-                      {revoking ? "解绑中" : "解绑"}
+                      {revoking
+                        ? t("settings.center.revoking")
+                        : t("settings.center.revoke")}
                     </button>
                   </li>
                 );
@@ -526,7 +535,7 @@ export function CenterServerSettingsPanel({
       {registered && isLive ? (
         <section className="cs-block">
           <div className="cs-block-head">
-            <h2 className="cs-block-label">手机配对</h2>
+            <h2 className="cs-block-label">{t("settings.center.pairing")}</h2>
             <button
               type="button"
               className="cs-btn cs-btn--ghost"
@@ -534,17 +543,17 @@ export function CenterServerSettingsPanel({
               onClick={() => void handleCreatePairing()}
             >
               <QrCode size={15} strokeWidth={1.75} />
-              生成配对码
+              {t("settings.center.generatePairing")}
             </button>
           </div>
 
           {!pairing ? (
-            <p className="cs-placeholder">Eco App 扫码即可绑定本机。</p>
+            <p className="cs-placeholder">{t("settings.center.scanHint")}</p>
           ) : (
             <div className="cs-pairing">
               {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
                 <p className="cs-pairing-note">
-                  localhost 手机无法访问，请改用局域网 IP 后重新生成。
+                  {t("settings.center.localhostWarning")}
                 </p>
               ) : null}
               <div className="cs-pairing-qr">
@@ -554,11 +563,13 @@ export function CenterServerSettingsPanel({
                   level="M"
                   includeMargin={false}
                   role="img"
-                  aria-label={`配对二维码 ${pairing.code}`}
+                  aria-label={t("settings.center.qrAria", { code: pairing.code })}
                 />
               </div>
               <code className="cs-pairing-code">{pairing.code}</code>
-              <p className="cs-pairing-expire">过期 {formatLocalTime(pairing.expiresAt)}</p>
+              <p className="cs-pairing-expire">
+                {t("settings.center.expires", { time: formatLocalTime(pairing.expiresAt) })}
+              </p>
             </div>
           )}
         </section>
@@ -592,21 +603,24 @@ function ServerEditor({
   onSave: () => void;
   onServerUrlChange: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <button type="button" className="cs-back" onClick={onBack} disabled={busy}>
         <ChevronLeft size={16} strokeWidth={1.75} />
-        返回
+        {t("settings.mcp.back")}
       </button>
 
       <header className="cs-head cs-head--editor">
-        <h1 className="cs-title">{registered ? "服务配置" : "添加连接"}</h1>
-        <p className="cs-desc">填写地址并确认可达。</p>
+        <h1 className="cs-title">
+          {registered ? t("settings.center.serverConfig") : t("settings.center.add")}
+        </h1>
+        <p className="cs-desc">{t("settings.center.editorDescription")}</p>
       </header>
 
       <div className="cs-form">
         <label className="cs-field">
-          <span className="cs-field-label">服务地址</span>
+          <span className="cs-field-label">{t("settings.center.serverUrl")}</span>
           <input
             className="cs-input"
             type="text"
@@ -621,7 +635,7 @@ function ServerEditor({
         </label>
 
         <label className="cs-field">
-          <span className="cs-field-label">本机名称</span>
+          <span className="cs-field-label">{t("settings.center.deviceName")}</span>
           <input
             className="cs-input"
             type="text"
@@ -632,7 +646,9 @@ function ServerEditor({
           />
         </label>
 
-        {serverReachable && !registered ? <p className="cs-success">服务可达</p> : null}
+        {serverReachable && !registered ? (
+          <p className="cs-success">{t("settings.center.reachable")}</p>
+        ) : null}
         {error ? <p className="cs-error">{error}</p> : null}
 
         <div className="cs-form-actions">
@@ -643,18 +659,18 @@ function ServerEditor({
             onClick={onTestConnection}
           >
             <RefreshCw size={15} strokeWidth={1.75} className={testing ? "cs-spin" : undefined} />
-            测试
+            {t("settings.center.test")}
           </button>
           <button type="button" className="cs-btn" disabled={busy} onClick={onSave}>
             {busy ? (
               <>
                 <Loader2 size={15} strokeWidth={1.75} className="cs-spin" aria-hidden />
-                保存中…
+                {t("settings.center.saving")}
               </>
             ) : registered ? (
-              "保存"
+              t("common.save")
             ) : (
-              "继续"
+              t("settings.center.continue")
             )}
           </button>
         </div>
@@ -694,15 +710,18 @@ function AccountEditor({
   onBack: () => void;
   onSubmit: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <button type="button" className="cs-back" onClick={onBack} disabled={busy}>
         <ChevronLeft size={16} strokeWidth={1.75} />
-        返回
+        {t("settings.mcp.back")}
       </button>
 
       <header className="cs-head cs-head--editor">
-        <h1 className="cs-title">{registered ? "重新登录" : "绑定账号"}</h1>
+        <h1 className="cs-title">
+          {registered ? t("settings.center.relogin") : t("settings.center.bindAccount")}
+        </h1>
         <p className="cs-desc">
           <code className="cs-inline-code">{serverUrl}</code>
         </p>
@@ -710,7 +729,7 @@ function AccountEditor({
 
       <div className="cs-form">
         {!registered ? (
-          <div className="cs-tabs" role="tablist" aria-label="账号操作">
+          <div className="cs-tabs" role="tablist" aria-label={t("settings.center.accountActions")}>
             <button
               type="button"
               role="tab"
@@ -719,7 +738,7 @@ function AccountEditor({
               disabled={busy}
               onClick={() => setAuthMode("signup")}
             >
-              注册
+              {t("settings.center.signup")}
             </button>
             <button
               type="button"
@@ -729,27 +748,27 @@ function AccountEditor({
               disabled={busy}
               onClick={() => setAuthMode("signin")}
             >
-              登录
+              {t("settings.center.signin")}
             </button>
           </div>
         ) : null}
 
         {authMode === "signup" && !registered ? (
           <label className="cs-field">
-            <span className="cs-field-label">昵称</span>
+            <span className="cs-field-label">{t("settings.center.displayName")}</span>
             <input
               className="cs-input"
               type="text"
               value={displayName}
               disabled={busy}
-              placeholder="可选"
+              placeholder={t("settings.center.optional")}
               onChange={(event) => setDisplayName(event.target.value)}
             />
           </label>
         ) : null}
 
         <label className="cs-field">
-          <span className="cs-field-label">邮箱</span>
+          <span className="cs-field-label">{t("settings.center.email")}</span>
           <input
             className="cs-input"
             type="email"
@@ -762,7 +781,7 @@ function AccountEditor({
         </label>
 
         <label className="cs-field">
-          <span className="cs-field-label">密码</span>
+          <span className="cs-field-label">{t("settings.center.password")}</span>
           <input
             className="cs-input"
             type="password"
@@ -784,12 +803,14 @@ function AccountEditor({
           {busy ? (
             <>
               <Loader2 size={15} strokeWidth={1.75} className="cs-spin" aria-hidden />
-              {authMode === "signup" ? "注册中…" : "登录中…"}
+              {authMode === "signup"
+                ? t("settings.center.signingUp")
+                : t("settings.center.signingIn")}
             </>
           ) : authMode === "signup" ? (
-            "注册并绑定"
+            t("settings.center.signupBind")
           ) : (
-            "登录并绑定"
+            t("settings.center.signinBind")
           )}
         </button>
       </div>
@@ -804,8 +825,13 @@ function StatusMeta({
   status: CenterServerConnectionStatus;
   needsReauth: boolean;
 }) {
+  const { t } = useTranslation();
   if (needsReauth) {
-    return <span className="cs-service-status is-warn">会话已过期</span>;
+    return (
+      <span className="cs-service-status is-warn">
+        {t("settings.center.sessionExpired")}
+      </span>
+    );
   }
   return (
     <span className={`cs-service-status is-${status.state}`}>
@@ -845,15 +871,15 @@ function viewToInput(settings: CenterServerSettingsView): CenterServerSettingsIn
 function connectionStatusLabel(state: CenterServerConnectionStatus["state"]): string {
   switch (state) {
     case "disabled":
-      return "未启用";
+      return i18n.t("settings.center.status.disabled");
     case "disconnected":
-      return "未连接";
+      return i18n.t("settings.center.status.disconnected");
     case "connecting":
-      return "连接中";
+      return i18n.t("settings.center.status.connecting");
     case "connected":
-      return "已连接";
+      return i18n.t("settings.center.status.connected");
     case "error":
-      return "连接异常";
+      return i18n.t("settings.center.status.error");
   }
 }
 
@@ -862,7 +888,7 @@ function formatLocalTime(iso: string): string {
   if (Number.isNaN(parsed)) {
     return iso;
   }
-  return new Date(parsed).toLocaleString();
+  return new Date(parsed).toLocaleString(i18n.resolvedLanguage);
 }
 
 function shortenDeviceId(deviceId: string): string {

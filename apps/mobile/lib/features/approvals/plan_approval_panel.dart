@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_markdown.dart';
@@ -37,12 +38,16 @@ class PlanApprovalPanel extends StatelessWidget {
             border: Border.all(color: colors.composerPillBorder),
             boxShadow: [
               BoxShadow(
-                color: colors.shadowScrim.withValues(alpha: isDark ? 0.22 : 0.05),
+                color: colors.shadowScrim.withValues(
+                  alpha: isDark ? 0.22 : 0.05,
+                ),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
               BoxShadow(
-                color: colors.shadowScrim.withValues(alpha: isDark ? 0.12 : 0.04),
+                color: colors.shadowScrim.withValues(
+                  alpha: isDark ? 0.12 : 0.04,
+                ),
                 blurRadius: 2,
                 offset: const Offset(0, 1),
               ),
@@ -55,11 +60,11 @@ class PlanApprovalPanel extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '实施计划',
+                  context.l10n.approvalImplementPlan,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w400,
-                        height: 1.5,
-                      ),
+                    fontWeight: FontWeight.w400,
+                    height: 1.5,
+                  ),
                 ),
                 if (failureMessage != null) ...[
                   const SizedBox(height: 10),
@@ -67,7 +72,9 @@ class PlanApprovalPanel extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: colors.dangerSoft,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: colors.danger.withValues(alpha: 0.35)),
+                      border: Border.all(
+                        color: colors.danger.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -75,18 +82,15 @@ class PlanApprovalPanel extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '上次执行失败',
-                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                  color: colors.danger,
-                                ),
+                            context.l10n.approvalLastRunFailed,
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(color: colors.danger),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             failureMessage!,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colors.danger,
-                                  height: 1.45,
-                                ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colors.danger, height: 1.45),
                           ),
                         ],
                       ),
@@ -109,17 +113,23 @@ class PlanApprovalPanel extends StatelessWidget {
                         foregroundColor: colors.textMuted,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
-                      child: Text(busy ? '处理中…' : '忽略'),
+                      child: Text(
+                        busy
+                            ? context.l10n.commonProcessing
+                            : context.l10n.approvalIgnore,
+                      ),
                     ),
                     const Spacer(),
                     if (canApprove)
                       FilledButton(
                         onPressed: busy ? null : () => onApprove(),
                         style: FilledButton.styleFrom(
-                          backgroundColor:
-                              isDark ? colors.composerSendBg : const Color(0xFF0D0D0D),
-                          foregroundColor:
-                              isDark ? colors.composerSendText : Colors.white,
+                          backgroundColor: isDark
+                              ? colors.composerSendBg
+                              : const Color(0xFF0D0D0D),
+                          foregroundColor: isDark
+                              ? colors.composerSendText
+                              : Colors.white,
                           minimumSize: const Size(0, 34),
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           shape: const StadiumBorder(),
@@ -135,7 +145,7 @@ class PlanApprovalPanel extends StatelessWidget {
                                       : Colors.white,
                                 ),
                               )
-                            : const Text('执行计划 ↵'),
+                            : Text(context.l10n.approvalExecutePlan),
                       ),
                   ],
                 ),

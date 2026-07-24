@@ -1,6 +1,7 @@
 import { ChevronDown, Plug } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type { McpServerConfigView } from "../shared/ipc";
 import { sanitizeMcpServerName } from "../shared/mcp";
@@ -24,6 +25,7 @@ function McpServerRows({
   saving,
   onToggleServer,
 }: ComposerMcpServersProps) {
+  const { t } = useTranslation();
   const enabledServers = servers.filter((server) => server.enabled && server.name.trim());
 
   return (
@@ -41,13 +43,17 @@ function McpServerRows({
             </div>
             <label
               className="composer-switch"
-              title={enabled ? `${server.name} · 已启用` : `${server.name} · 已停用`}
+              title={t(enabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+                name: server.name,
+              })}
             >
               <input
                 type="checkbox"
                 checked={enabled}
                 disabled={saving || !clickable}
-                aria-label={`${server.name} ${enabled ? "已启用" : "已停用"}`}
+                aria-label={t(enabled ? "composer.enabledAria" : "composer.disabledAria", {
+                  name: server.name,
+                })}
                 onChange={() => onToggleServer?.(serverKey, !enabled)}
               />
               <span className="composer-switch-track" aria-hidden />
@@ -60,10 +66,11 @@ function McpServerRows({
 }
 
 export function ComposerMcpCardBody(props: ComposerMcpServersProps) {
+  const { t } = useTranslation();
   const enabledServers = props.servers.filter((server) => server.enabled && server.name.trim());
 
   if (enabledServers.length === 0) {
-    return <p className="floating-workspace-card-empty">未配置 MCP 服务器</p>;
+    return <p className="floating-workspace-card-empty">{t("composer.mcp.empty")}</p>;
   }
 
   return (
@@ -83,6 +90,7 @@ export function ComposerMcpServers({
   compact,
   onToggleServer,
 }: ComposerMcpServersProps) {
+  const { t } = useTranslation();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -158,11 +166,11 @@ export function ComposerMcpServers({
         ref={panelRef}
         className="composer-codex-popover composer-agents-popover"
         role="dialog"
-        aria-label="MCP 服务器"
+        aria-label={t("settings.mcp.title")}
         style={panelStyle}
       >
         <div className="composer-agents-popover-header">
-          <span>MCP 服务器</span>
+          <span>{t("settings.mcp.title")}</span>
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
@@ -191,7 +199,7 @@ export function ComposerMcpServers({
         ]
           .filter(Boolean)
           .join(" ")}
-        aria-label={`配置 MCP 服务器，已启用 ${summary}`}
+        aria-label={t("composer.mcp.configureSummary", { summary })}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -209,7 +217,9 @@ export function ComposerMcpServers({
           aria-hidden
           className="composer-context-trigger-icon"
         />
-        <span className="composer-context-trigger-label">{compact ? summary : "MCP"}</span>
+        <span className="composer-context-trigger-label">
+          {compact ? summary : t("settings.mcp.title")}
+        </span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}

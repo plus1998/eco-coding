@@ -1,4 +1,5 @@
 import '../models/git_models.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 enum DiffLineKind { context, addition, deletion }
 
@@ -39,10 +40,10 @@ class DiffHunk {
   int get deletions =>
       lines.where((line) => line.kind == DiffLineKind.deletion).length;
 
-  String get rangeLabel {
-    if (newLines <= 0) return '变更';
-    if (newLines == 1) return '第 $newStart 行';
-    return '第 $newStart-$newEnd 行';
+  String rangeLabel(AppLocalizations l10n) {
+    if (newLines <= 0) return l10n.diffChange;
+    if (newLines == 1) return l10n.diffLine(newStart);
+    return l10n.diffLineRange(newStart, newEnd);
   }
 }
 

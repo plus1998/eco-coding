@@ -44,7 +44,9 @@ String formatDeviceLabel(
   }
 
   final name = device?.name.trim();
-  if (name != null && name.isNotEmpty && !_isGenericDeviceName(name, kind: kind)) {
+  if (name != null &&
+      name.isNotEmpty &&
+      !_isGenericDeviceName(name, kind: kind)) {
     return name;
   }
 

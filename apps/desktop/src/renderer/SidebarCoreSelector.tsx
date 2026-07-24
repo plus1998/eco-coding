@@ -1,6 +1,8 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "./i18n";
 
 interface SidebarCoreSelectorProps {
   coreKind: CoreKind | undefined;
@@ -20,7 +22,7 @@ const coreOptions: Array<{ kind: CoreKind; label: string }> = [
 export function coreDisplayName(coreKind: CoreKind | undefined): string {
   if (coreKind === "codex") return "Codex";
   if (coreKind === "claude") return "Claude Code";
-  return "Core 未知";
+  return i18n.t("sidebar.unknownCore");
 }
 
 export function SidebarCoreSelector({
@@ -32,6 +34,7 @@ export function SidebarCoreSelector({
   onChange,
   onOpenSearch,
 }: SidebarCoreSelectorProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const editable = !locked && !busy;
@@ -62,7 +65,7 @@ export function SidebarCoreSelector({
         <button
           type="button"
           className="sidebar-core-heading is-editable"
-          aria-label={`当前 Core：${coreDisplayName(coreKind)}，点击切换`}
+          aria-label={t("sidebar.currentCore", { core: coreDisplayName(coreKind) })}
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
@@ -77,8 +80,8 @@ export function SidebarCoreSelector({
       <button
         type="button"
         className="sidebar-core-search"
-        aria-label="搜索会话和项目"
-        title="搜索会话和项目"
+        aria-label={t("nav.search")}
+        title={t("nav.search")}
         onClick={() => {
           setOpen(false);
           onOpenSearch();
@@ -88,7 +91,7 @@ export function SidebarCoreSelector({
       </button>
 
       {open ? (
-        <div className="sidebar-core-menu" role="menu" aria-label="选择 Core">
+        <div className="sidebar-core-menu" role="menu" aria-label={t("sidebar.selectCore")}>
           {coreOptions.map((option) => {
             const selected = option.kind === coreKind;
             const unavailable = option.kind === "codex" && !codexAvailable;

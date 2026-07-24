@@ -13,31 +13,34 @@ void main() {
     expect(resolveSubagentThemeColor('tester'), const Color(0xFFF472B6));
   });
 
-  test('resolveSubagentThemeColor uses profile overrides and unknown fallback', () {
-    const profile = OrchestrationProfile(
-      id: 'p1',
-      name: 'Test',
-      builtinExploreThemeColor: '#112233',
-      agents: [
-        OrchestrationAgentInstance(
-          agentKey: 'coder',
-          enabled: true,
-          themeColor: '#445566',
-        ),
-      ],
-    );
+  test(
+    'resolveSubagentThemeColor uses profile overrides and unknown fallback',
+    () {
+      const profile = OrchestrationProfile(
+        id: 'p1',
+        name: 'Test',
+        builtinExploreThemeColor: '#112233',
+        agents: [
+          OrchestrationAgentInstance(
+            agentKey: 'coder',
+            enabled: true,
+            themeColor: '#445566',
+          ),
+        ],
+      );
 
-    expect(
-      resolveSubagentThemeColor('explore', profile: profile),
-      const Color(0xFF112233),
-    );
-    expect(
-      resolveSubagentThemeColor('eco_coder', profile: profile),
-      const Color(0xFF445566),
-    );
-    expect(
-      resolveSubagentThemeColor('researcher', profile: profile),
-      subagentUnknownThemeColor,
-    );
-  });
+      expect(
+        resolveSubagentThemeColor('explore', profile: profile),
+        const Color(0xFF112233),
+      );
+      expect(
+        resolveSubagentThemeColor('eco_coder', profile: profile),
+        const Color(0xFF445566),
+      );
+      expect(
+        resolveSubagentThemeColor('researcher', profile: profile),
+        subagentUnknownThemeColor,
+      );
+    },
+  );
 }

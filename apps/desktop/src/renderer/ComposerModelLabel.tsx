@@ -1,12 +1,13 @@
 import type { ThinkingEffort } from "../shared/ipc";
+import { i18n } from "./i18n";
 
-const THINKING_EFFORT_LABELS: Record<ThinkingEffort, string> = {
-  off: "关闭",
-  low: "低",
-  medium: "中",
-  high: "高",
-  xhigh: "极高",
-  max: "最大",
+const THINKING_EFFORT_KEYS: Record<ThinkingEffort, string> = {
+  off: "settings.models.effort.off",
+  low: "settings.models.effort.low",
+  medium: "settings.models.effort.medium",
+  high: "settings.models.effort.high",
+  xhigh: "settings.models.effort.xhigh",
+  max: "settings.models.effort.max",
 };
 
 export type ComposerModelLabelSize = "small" | "medium";
@@ -65,5 +66,5 @@ export function formatComposerModelName(modelId: string, displayName?: string): 
 }
 
 export function formatComposerThinkingEffortLabel(effort: ThinkingEffort | undefined): string {
-  return effort ? THINKING_EFFORT_LABELS[effort] : "默认";
+  return effort ? i18n.t(THINKING_EFFORT_KEYS[effort]) : i18n.t("common.default");
 }

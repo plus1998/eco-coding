@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { formatCostUsd, formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime/usage";
 import { buildAgentViewRows, buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
 import {
@@ -22,6 +23,7 @@ import {
   formatRuntimeRoleModelLabel,
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
+import { i18n } from "./i18n";
 
 type BreakdownView = "agent" | "model" | "events";
 
@@ -41,16 +43,22 @@ function formatLedgerEventAgentLabel(event: ThreadUsageLedgerEventView): string 
     return undefined;
   }
   if (agentId === event.billingRole || agentId === "planner") {
-    return "主会话";
+    return i18n.t("usage.mainSession");
   }
   return agentId.slice(-8);
 }
 
-const ATTRIBUTION_STATUS_LABELS: Record<ThreadUsageLedgerEventView["attributionStatus"], string> = {
-  attributed: "",
-  pending: "待归属",
-  unattributed: "未归属",
-};
+function attributionStatusLabel(
+  status: ThreadUsageLedgerEventView["attributionStatus"],
+): string {
+  if (status === "pending") {
+    return i18n.t("usage.pending");
+  }
+  if (status === "unattributed") {
+    return i18n.t("usage.unattributed");
+  }
+  return "";
+}
 
 export function BillingCostCell({
   ecoCostUsd,
@@ -62,7 +70,10 @@ export function BillingCostCell({
 	  className?: string;
 	}) {
   return (
-    <span className={className} title={reportedCostUsd !== undefined ? "经济编程 / 来源报告" : undefined}>
+    <span
+      className={className}
+      title={reportedCostUsd !== undefined ? i18n.t("usage.costTitle") : undefined}
+    >
       {formatCostUsd(ecoCostUsd)}
       {reportedCostUsd !== undefined && reportedCostUsd > 0 ? (
         <span className="usage-breakdown-cost-reported"> / {formatCostUsd(reportedCostUsd)}</span>
@@ -143,20 +154,26 @@ function BreakdownRows({
             className="usage-breakdown-row"
             title={
               row.modelId
-                ? `${formatRuntimeRoleModelLabel(row.role, row.modelId, agentDisplayNames)} · 经济编程费用`
-                : `${row.label} · 经济编程费用`
+                ? i18n.t("usage.ecoCost", {
+                    label: formatRuntimeRoleModelLabel(
+                      row.role,
+                      row.modelId,
+                      agentDisplayNames,
+                    ),
+                  })
+                : i18n.t("usage.ecoCost", { label: row.label })
             }
           >
             <span className="usage-breakdown-label">
               {`${resolveRuntimeAgentName(row.role, agentDisplayNames) ?? row.label}${
                 row.kind === "unattributed"
-                  ? " · 未归属"
+                  ? ` · ${i18n.t("usage.unattributed")}`
                   : row.kind === "pending"
-                    ? " · 待归属"
+                    ? ` · ${i18n.t("usage.pending")}`
                     : ""
               }`}
             </span>
-            <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+            <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
               {row.tokenBadge}
             </span>
             <BillingCostCell ecoCostUsd={row.ecoCostUsd} />
@@ -171,7 +188,7 @@ function BreakdownRows({
             <span className="usage-breakdown-label">
               {formatUsageBreakdownAgentLabel(row.role, row.agentId, agentDisplayNames)}
             </span>
-            <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+            <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
               {formatUsageBadge({
                 inputTokens: row.inputTokens,
                 outputTokens: row.outputTokens,
@@ -197,7 +214,7 @@ function BreakdownRows({
             .join("、")}`}
         >
           <span className="usage-breakdown-label">{row.label}</span>
-          <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+          <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
             {row.tokenBadge}
           </span>
           <BillingCostCell ecoCostUsd={row.ecoCostUsd} reportedCostUsd={row.reportedCostUsd} />
@@ -216,7 +233,7 @@ function LedgerEventRow({
   agentDisplayNames?: RuntimeAgentDisplayNames;
   showSource?: boolean;
 }) {
-  const attributionLabel = ATTRIBUTION_STATUS_LABELS[event.attributionStatus];
+  const attributionLabel = attributionStatusLabel(event.attributionStatus);
   const billingRole = resolveLedgerEventBillingRole(event);
   const roleLabel =
     resolveRuntimeAgentName(billingRole, agentDisplayNames) ?? formatRoleModelLabel(billingRole);
@@ -227,9 +244,13 @@ function LedgerEventRow({
   const modelShort = modelLabel ? shortenModelId(modelLabel) : undefined;
   const detailParts = [
     roleLabel,
-    modelShort ? `模型 ${modelShort}` : undefined,
-    event.agentId ? `agent ${formatLedgerEventAgentLabel(event)}` : "无 agent",
-    ledgerEventRouteRoleDiffers(event) ? `路由 ${routeRoleLabel}` : undefined,
+    modelShort ? i18n.t("usage.model", { model: modelShort }) : undefined,
+    event.agentId
+      ? `agent ${formatLedgerEventAgentLabel(event)}`
+      : i18n.t("usage.noAgent"),
+    ledgerEventRouteRoleDiffers(event)
+      ? i18n.t("usage.route", { role: routeRoleLabel })
+      : undefined,
     attributionLabel || undefined,
     event.attributionReason,
     showSource ? event.source : undefined,
@@ -249,17 +270,20 @@ function LedgerEventRow({
         <span className="usage-breakdown-event-role">{roleLabel}</span>
         {modelShort ? (
           <span className="usage-breakdown-event-model" title={modelLabel}>
-            模型 {modelShort}
+            {i18n.t("usage.model", { model: modelShort })}
           </span>
         ) : null}
         {event.agentId ? (
           <span className="usage-breakdown-event-agent">agent {formatLedgerEventAgentLabel(event)}</span>
         ) : (
-          <span className="usage-breakdown-event-no-agent">无 agent</span>
+          <span className="usage-breakdown-event-no-agent">{i18n.t("usage.noAgent")}</span>
         )}
         {ledgerEventRouteRoleDiffers(event) ? (
-          <span className="usage-breakdown-event-route" title={`Proxy 路由角色：${routeRoleLabel}`}>
-            路由 {routeRoleLabel}
+          <span
+            className="usage-breakdown-event-route"
+            title={i18n.t("usage.proxyRoute", { role: routeRoleLabel })}
+          >
+            {i18n.t("usage.route", { role: routeRoleLabel })}
           </span>
         ) : null}
         {attributionLabel ? (
@@ -268,7 +292,7 @@ function LedgerEventRow({
           </span>
         ) : null}
       </span>
-      <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+      <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
         {formatUsageBadge({
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
@@ -326,7 +350,7 @@ function LedgerEventRows({
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   if (events.length === 0) {
-    return <p className="usage-breakdown-events-empty">暂无逐笔账本记录。</p>;
+    return <p className="usage-breakdown-events-empty">{i18n.t("usage.noEvents")}</p>;
   }
 
   const primarySource = resolveBillingPrimarySource(billing);
@@ -344,11 +368,11 @@ function LedgerEventRows({
   if (sortedPrimary.length === 0) {
     return (
       <>
-        <p className="usage-breakdown-events-empty">主账暂无逐笔记录。</p>
+        <p className="usage-breakdown-events-empty">{i18n.t("usage.noPrimaryEvents")}</p>
         {sortedShadow.length > 0 ? (
           <ExpandableBillingSection
-            title="校验源"
-            summary={`${sortedShadow.length} 笔 SDK shadow，不计入主账`}
+            title={i18n.t("usage.validationSource")}
+            summary={i18n.t("usage.shadowSummary", { count: sortedShadow.length })}
             className="usage-breakdown-shadow-events"
           >
             <LedgerEventList
@@ -366,15 +390,20 @@ function LedgerEventRows({
 
   const primaryBadge = formatUsageBadge(primaryTotals);
   const footerParts = [
-    `主账 ${sortedPrimary.length} 笔`,
+    i18n.t("usage.primaryCount", { count: sortedPrimary.length }),
     primaryBadge,
-    tokensMatch ? "与顶部合计一致" : `主账合计 ${primaryTotals.total}，顶部 ${snapshotTokens}`,
+    tokensMatch
+      ? i18n.t("usage.matchesTotal")
+      : i18n.t("usage.totalMismatch", {
+          primary: primaryTotals.total,
+          snapshot: snapshotTokens,
+        }),
   ];
   if (pendingCount > 0) {
-    footerParts.push(`${pendingCount} 笔待归属`);
+    footerParts.push(i18n.t("usage.pendingCount", { count: pendingCount }));
   }
   if (unattributedCount > 0) {
-    footerParts.push(`${unattributedCount} 笔无 agent`);
+    footerParts.push(i18n.t("usage.unattributedCount", { count: unattributedCount }));
   }
 
   return (
@@ -390,18 +419,18 @@ function LedgerEventRows({
           "usage-breakdown-events-footer",
           tokensMatch ? "usage-breakdown-events-footer-ok" : "usage-breakdown-events-footer-warn",
         ].join(" ")}
-        title="逐笔默认仅展示主账来源（通常为 Proxy），与按 Agent/按模型视图同一口径"
+        title={i18n.t("usage.primaryHint")}
       >
         {footerParts.join(" · ")}
       </p>
       {sortedShadow.length > 0 ? (
         <ExpandableBillingSection
-          title="校验源"
-          summary={`${sortedShadow.length} 笔 SDK shadow，不计入主账`}
+          title={i18n.t("usage.validationSource")}
+          summary={i18n.t("usage.shadowSummary", { count: sortedShadow.length })}
           className="usage-breakdown-shadow-events"
         >
           <p className="usage-breakdown-events-hint">
-            以下为对账校验记录，每条请求可能重复出现在 Proxy / SDK；仅主账计入顶部用量。
+            {i18n.t("usage.shadowHint")}
           </p>
           <LedgerEventList
             events={sortedShadow}
@@ -439,7 +468,7 @@ function ViewToggle({
         className={view === "model" ? "active" : undefined}
         onClick={() => onChange("model")}
       >
-        按模型
+        {i18n.t("usage.byModel")}
       </button>
       <button
         type="button"
@@ -448,7 +477,7 @@ function ViewToggle({
         className={view === "agent" ? "active" : undefined}
         onClick={() => onChange("agent")}
       >
-        按 Agent
+        {i18n.t("usage.byAgent")}
       </button>
       {showEvents ? (
         <button
@@ -458,7 +487,7 @@ function ViewToggle({
           className={view === "events" ? "active" : undefined}
           onClick={() => onChange("events")}
         >
-          逐笔
+          {i18n.t("usage.events")}
         </button>
       ) : null}
     </div>
@@ -471,6 +500,7 @@ export function UsageBreakdownPanel({
   variant,
   agentDisplayNames,
 }: UsageBreakdownPanelProps) {
+  useTranslation();
   const breakdown = useMemo(() => buildBillingTokenBreakdown(billing), [billing]);
   const [view, setView] = useState<BreakdownView>("model");
   const [expanded, setExpanded] = useState(false);
@@ -529,7 +559,7 @@ export function UsageBreakdownPanel({
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
         >
-          <span className="usage-breakdown-compact-title">累计用量</span>
+          <span className="usage-breakdown-compact-title">{i18n.t("usage.cumulative")}</span>
           <span className="usage-breakdown-compact-summary">{summary}</span>
           <ChevronDown
             size={14}
@@ -551,7 +581,11 @@ export function UsageBreakdownPanel({
   const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
   return (
-    <ExpandableBillingSection title="用量明细" summary={summary} defaultExpanded>
+    <ExpandableBillingSection
+      title={i18n.t("usage.details")}
+      summary={summary}
+      defaultExpanded
+    >
       <ViewToggle view={view} onChange={setView} compact={false} showEvents={showEvents} />
       {breakdownBody}
     </ExpandableBillingSection>

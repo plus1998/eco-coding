@@ -1,4 +1,5 @@
 import '../models/thread_run_projection.dart';
+import '../../l10n/generated/app_localizations.dart';
 import 'subagent_session_timing.dart';
 import 'file_change.dart';
 import 'activity_display.dart';
@@ -28,6 +29,7 @@ class SubagentTimelineEntry {
 
 List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
   List<ThreadRunProjectionTimelineItem> timeline,
+  AppLocalizations l10n,
 ) {
   final output = <SubagentTimelineEntry>[];
   for (final item in timeline) {
@@ -47,6 +49,7 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
               : formatToolDisplayLabel(
                   bashApproval.toolName,
                   bashApproval.detail,
+                  l10n,
                 ),
           icon: iconForToolName(bashApproval.toolName),
           lifecycle: bashApprovalPhaseToLifecycle(bashApproval.phase),
@@ -70,10 +73,10 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
             lifecycle: item.eventType == 'tool.failed'
                 ? ToolActionLifecycle.failed
                 : item.eventType == 'tool.completed'
-                    ? ToolActionLifecycle.completed
-                    : tool != null
-                        ? toolLifecycleFromMetadata(tool)
-                        : ToolActionLifecycle.running,
+                ? ToolActionLifecycle.completed
+                : tool != null
+                ? toolLifecycleFromMetadata(tool)
+                : ToolActionLifecycle.running,
             isError: item.eventType == 'tool.failed',
             fileChange: fileChange,
           ),
@@ -81,11 +84,10 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
         continue;
       }
       final label = tool != null
-          ? (tool.name == 'Bash' &&
-                  tool.description?.trim().isNotEmpty == true
-              ? tool.description!.trim()
-              : formatToolDisplayLabel(tool.name, tool.detail))
-          : parseToolActionDisplayLabel(item.text);
+          ? (tool.name == 'Bash' && tool.description?.trim().isNotEmpty == true
+                ? tool.description!.trim()
+                : formatToolDisplayLabel(tool.name, tool.detail, l10n))
+          : parseToolActionDisplayLabel(item.text, l10n);
       if (label.trim().isEmpty) continue;
       output.add(
         SubagentTimelineEntry(
@@ -96,10 +98,10 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
           lifecycle: item.eventType == 'tool.failed'
               ? ToolActionLifecycle.failed
               : item.eventType == 'tool.completed'
-                  ? ToolActionLifecycle.completed
-                  : tool != null
-                      ? toolLifecycleFromMetadata(tool)
-                      : ToolActionLifecycle.running,
+              ? ToolActionLifecycle.completed
+              : tool != null
+              ? toolLifecycleFromMetadata(tool)
+              : ToolActionLifecycle.running,
           isError: item.eventType == 'tool.failed',
         ),
       );
@@ -113,28 +115,22 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
           : item.text.trim();
       if (message == null || message.isEmpty) continue;
       output.add(
-        SubagentTimelineEntry(
-          id: item.id,
-          label: message,
-          isError: true,
-        ),
+        SubagentTimelineEntry(id: item.id, label: message, isError: true),
       );
       continue;
     }
 
-    if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
+    if (item.eventType == 'message.delta' ||
+        item.eventType == 'message.final') {
       final text = item.text.trim();
       if (text.isEmpty || item.eventType == 'message.delta') continue;
       if (isLegacyBashApprovalActivityText(text)) continue;
-      if (parseSubagentMissionMessage(text) != null || isSubagentMissionEnvelope(text)) continue;
+      if (parseSubagentMissionMessage(text) != null ||
+          isSubagentMissionEnvelope(text))
+        continue;
       final preview = _firstReadableLine(text);
       if (preview.length >= 8 && !isActivityNoiseMessage(preview)) {
-        output.add(
-          SubagentTimelineEntry(
-            id: item.id,
-            label: preview,
-          ),
-        );
+        output.add(SubagentTimelineEntry(id: item.id, label: preview));
       }
       continue;
     }
@@ -145,7 +141,7 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
         output.add(
           SubagentTimelineEntry(
             id: item.id,
-            label: '思考：$preview',
+            label: '${l10n.activityThinkingLabel}: $preview',
           ),
         );
       }
@@ -154,9 +150,13 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
   return output;
 }
 
-String? resolveProjectionAgentStatusText(ThreadRunProjectionAgent agent) {
+String? resolveProjectionAgentStatusText(
+  ThreadRunProjectionAgent agent,
+  AppLocalizations l10n,
+) {
   for (final item in agent.timeline.reversed) {
-    if (item.eventType == 'message.final' || item.eventType == 'message.delta') {
+    if (item.eventType == 'message.final' ||
+        item.eventType == 'message.delta') {
       if (parseSubagentMissionMessage(item.text) != null ||
           isSubagentMissionEnvelope(item.text)) {
         continue;
@@ -168,12 +168,15 @@ String? resolveProjectionAgentStatusText(ThreadRunProjectionAgent agent) {
     }
     if (item.eventType == 'thinking.final') {
       final line = _firstReadableLine(item.text);
-      if (line.isNotEmpty) return '思考：$line';
+      if (line.isNotEmpty) {
+        return '${l10n.activityThinkingLabel}: $line';
+      }
     }
   }
   final latest = agent.latestActivity?.trim();
   if (latest != null &&
       latest.isNotEmpty &&
+      // Historical Desktop status payload, not a mobile UI label.
       latest != '状态已更新' &&
       !latest.startsWith('Agent session')) {
     return _firstReadableLine(latest);
@@ -184,7 +187,7 @@ String? resolveProjectionAgentStatusText(ThreadRunProjectionAgent agent) {
         item.eventType == 'tool.failed') {
       final label = item.text.trim();
       if (label.isNotEmpty) {
-        return parseToolActionDisplayLabel(label);
+        return parseToolActionDisplayLabel(label, l10n);
       }
     }
   }
@@ -256,7 +259,7 @@ ProjectionAgentDelegation? readProjectionDelegationMetadata(
   final prompt = (metadata['delegationPrompt'] as String?)?.trim() ?? '';
   if (summary.isEmpty && prompt.isEmpty) return null;
   final role =
-      normalizeAgentDisplayRole(item.role) ?? item.role?.trim() ?? '子代理';
+      normalizeAgentDisplayRole(item.role) ?? item.role?.trim() ?? 'subagent';
   return ProjectionAgentDelegation(
     role: role,
     summary: summary.isNotEmpty
@@ -329,8 +332,8 @@ String resolveSubagentCardMissionText(
       parentToolUseId.isNotEmpty &&
       mainTimeline.isNotEmpty) {
     for (final item in mainTimeline) {
-      final toolUseId = readProjectionToolMetadata(item.metadata)?.toolUseId
-              ?.trim() ??
+      final toolUseId =
+          readProjectionToolMetadata(item.metadata)?.toolUseId?.trim() ??
           readBashApprovalMetadata(item.metadata)?.toolUseId.trim();
       if (toolUseId != parentToolUseId) continue;
       final mission = parseSubagentMissionMessage(item.text);

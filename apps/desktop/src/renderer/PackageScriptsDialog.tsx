@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
 import { formatRunCommand } from "../shared/package-script-run";
 import {
@@ -46,6 +47,7 @@ export function PackageScriptsDialog({
   onRun,
   onRefresh,
 }: PackageScriptsDialogProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [scriptArgsByName, setScriptArgsByName] = useState<Record<string, string>>({});
   const [editingScript, setEditingScript] = useState<string | null>(null);
@@ -177,7 +179,7 @@ export function PackageScriptsDialog({
   const subtitleParts = [
     packageName,
     managerLabel,
-    scripts.length > 0 ? `${scripts.length} 个脚本` : null,
+    scripts.length > 0 ? t("dialog.scripts.count", { count: scripts.length }) : null,
   ].filter(Boolean);
 
   return createPortal(
@@ -189,12 +191,12 @@ export function PackageScriptsDialog({
         <div
           className="package-scripts-dialog"
           role="dialog"
-          aria-label="脚本"
+          aria-label={t("dialog.scripts.title")}
           aria-modal="true"
         >
           <header className="package-scripts-header">
             <div className="package-scripts-header-text">
-              <h2 className="package-scripts-title">脚本</h2>
+              <h2 className="package-scripts-title">{t("dialog.scripts.title")}</h2>
               <p className="package-scripts-subtitle">
                 {subtitleParts.join(" · ")}
               </p>
@@ -203,13 +205,13 @@ export function PackageScriptsDialog({
               <button
                 type="button"
                 className="package-scripts-icon-btn"
-                aria-label="刷新脚本列表"
+                aria-label={t("dialog.scripts.refreshAria")}
                 disabled={busy}
                 onClick={() => void onRefresh()}
               >
                 <RefreshCw size={15} className={busy ? "spinning" : undefined} />
               </button>
-              <button type="button" className="package-scripts-icon-btn" aria-label="关闭" onClick={onClose}>
+              <button type="button" className="package-scripts-icon-btn" aria-label={t("common.close")} onClick={onClose}>
                 <X size={15} />
               </button>
             </div>
@@ -222,8 +224,8 @@ export function PackageScriptsDialog({
                 type="search"
                 className="package-scripts-search"
                 value={query}
-                placeholder="搜索"
-                aria-label="搜索脚本"
+                placeholder={t("common.search")}
+                aria-label={t("dialog.scripts.searchAria")}
                 disabled={busy}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -232,9 +234,9 @@ export function PackageScriptsDialog({
 
           <div className="package-scripts-body">
             {scripts.length === 0 ? (
-              <p className="package-scripts-empty">当前工作区没有可运行的 package.json 脚本。</p>
+              <p className="package-scripts-empty">{t("dialog.scripts.empty")}</p>
             ) : filteredScripts.length === 0 ? (
-              <p className="package-scripts-empty">没有匹配的脚本。</p>
+              <p className="package-scripts-empty">{t("dialog.scripts.noMatch")}</p>
             ) : (
               <ul className="package-scripts-list">
                 {filteredScripts.map((entry) => {
@@ -276,8 +278,12 @@ export function PackageScriptsDialog({
                             ]
                               .filter(Boolean)
                               .join(" ")}
-                            aria-label={`${entry.name} 附加参数`}
-                            title={savedArgs ? `附加参数：${savedArgs}` : "附加参数"}
+                            aria-label={t("dialog.scripts.argsFor", { name: entry.name })}
+                            title={
+                              savedArgs
+                                ? t("dialog.scripts.argsValue", { args: savedArgs })
+                                : t("dialog.scripts.args")
+                            }
                             disabled={busy}
                             onClick={() => {
                               if (isEditingArgs) {
@@ -294,8 +300,12 @@ export function PackageScriptsDialog({
                             className={["package-scripts-action-btn", isCopied ? "is-active" : ""]
                               .filter(Boolean)
                               .join(" ")}
-                            aria-label={isCopied ? `已复制 ${entry.name} 命令` : `复制 ${entry.name} 命令`}
-                            title={isCopied ? "已复制" : `复制 ${runCommand}`}
+                            aria-label={
+                              isCopied
+                                ? t("dialog.scripts.copiedCommand", { name: entry.name })
+                                : t("dialog.scripts.copy", { name: entry.name })
+                            }
+                            title={isCopied ? t("dialog.scripts.copied") : t("dialog.scripts.copy", { name: runCommand })}
                             disabled={busy}
                             onClick={() => void copyScriptCommand(entry.name, savedArgs || undefined)}
                           >
@@ -304,8 +314,8 @@ export function PackageScriptsDialog({
                           <button
                             type="button"
                             className="package-scripts-run-btn"
-                            aria-label={`${entry.name} 在终端中运行`}
-                            title="在终端中运行"
+                            aria-label={t("dialog.scripts.runFor", { name: entry.name })}
+                            title={t("dialog.scripts.run")}
                             disabled={busy}
                             onClick={() => void onRun(entry.name, savedArgs || undefined)}
                           >
@@ -324,8 +334,8 @@ export function PackageScriptsDialog({
                             type="text"
                             className="package-scripts-args-input"
                             value={draftArgs}
-                            placeholder="附加参数"
-                            aria-label={`${entry.name} 附加参数`}
+                            placeholder={t("dialog.scripts.args")}
+                            aria-label={t("dialog.scripts.argsFor", { name: entry.name })}
                             disabled={busy}
                             onChange={(event) => setDraftArgs(event.target.value)}
                             onBlur={() => void commitScriptArgs(entry.name, draftArgs)}

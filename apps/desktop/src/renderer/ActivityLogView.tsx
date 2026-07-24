@@ -9,6 +9,7 @@ import {
   formatUsageBadge,
   shortenModelId,
 } from "@eco/runtime/usage";
+import { i18n } from "./i18n";
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -43,6 +44,7 @@ import {
   useState,
   type WheelEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   activityLabelIncludesAgentRole,
   clampActivityPreviewLine,
@@ -150,13 +152,13 @@ function formatRunLogMessageTime(
     return undefined;
   }
   return {
-    label: date.toLocaleString(undefined, {
+    label: date.toLocaleString(i18n.resolvedLanguage, {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
     }),
-    title: date.toLocaleString(undefined, {
+    title: date.toLocaleString(i18n.resolvedLanguage, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -232,8 +234,8 @@ function RunLogMessageMeta({
           type="button"
           className="run-log-message-meta-button"
           onClick={() => restorePrompt.onRestorePrompt(restorePrompt.text, restorePrompt.rewindTarget)}
-          aria-label="回到此节点"
-          title="回到此节点并重写"
+          aria-label={i18n.t("activity.rewind")}
+          title={i18n.t("activity.rewindTitle")}
         >
           <Reply size={13} />
         </button>
@@ -243,8 +245,8 @@ function RunLogMessageMeta({
           type="button"
           className="run-log-message-meta-button"
           onClick={() => copyRunLogMessageText(copyText ?? "")}
-          aria-label="复制消息"
-          title="复制消息"
+          aria-label={i18n.t("activity.copyMessage")}
+          title={i18n.t("activity.copyMessage")}
         >
           <Copy size={13} />
         </button>
@@ -354,7 +356,7 @@ interface ActivityLogViewProps {
 
 function ProjectionFeedLoading() {
   return (
-    <div className="run-log run-log-empty" role="status" aria-label="加载中">
+    <div className="run-log run-log-empty" role="status" aria-label={i18n.t("activity.loading")}>
       <div className="run-log-projection-loading" aria-hidden>
         <span />
         <span />
@@ -365,6 +367,7 @@ function ProjectionFeedLoading() {
 }
 
 export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogViewProps) {
+  useTranslation();
   const projection = props.projection;
   if (!projection?.sourceEventCount) {
     if (props.thread?.prompt && !isThreadStoppedForFinalSummary(props.thread.status)) {
@@ -597,7 +600,9 @@ function ProjectionTurnFeedSection({
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-label={section.running ? "执行过程" : "本轮执行结果"}
+      aria-label={
+        section.running ? i18n.t("activity.process") : i18n.t("activity.turnResult")
+      }
     >
       <button
         type="button"
@@ -609,14 +614,19 @@ function ProjectionTurnFeedSection({
       >
         <span className="run-log-turn-heading">
           <span className="run-log-turn-status">
-            {section.running ? "处理中" : "已处理"}
+            {section.running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
             {durationMs > 0 ? ` ${formatDuration(durationMs)}` : ""}
           </span>
           {!section.running ? <ChevronRight size={15} className="run-log-turn-chevron" aria-hidden /> : null}
         </span>
         <span className="run-log-turn-divider" aria-hidden />
       </button>
-      <div id={contentId} className="run-log-turn-process" aria-label="执行过程" aria-hidden={!expanded}>
+      <div
+        id={contentId}
+        className="run-log-turn-process"
+        aria-label={i18n.t("activity.process")}
+        aria-hidden={!expanded}
+      >
         <div
           className={`run-log-turn-process-inner${section.processEntries.length === 0 ? " is-empty" : ""}`}
         >
@@ -626,7 +636,7 @@ function ProjectionTurnFeedSection({
         </div>
       </div>
       {section.finalEntry ? (
-        <div className="run-log-turn-final" aria-label="最终输出">
+        <div className="run-log-turn-final" aria-label={i18n.t("activity.finalOutput")}>
           <ProjectionMainFeedEntry entry={section.finalEntry} {...entryProps} />
         </div>
       ) : null}
@@ -814,7 +824,7 @@ export function ProjectionToolGroupEntry({
   const Icon = actionIcons[summary.icon];
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
-  const statusLabel = approvalLifecycle ? lifecycleStatusLabels[approvalLifecycle] : undefined;
+  const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
   const onlyBlock = blocks.length === 1 ? blocks[0] : undefined;
   const singleBashBlock =
     onlyBlock?.kind === "action" && onlyBlock.bashRun
@@ -858,7 +868,11 @@ export function ProjectionToolGroupEntry({
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
         {hasFailedTool ? (
-          <span className="run-log-tool-status-dot" title="运行未完成" aria-hidden />
+          <span
+            className="run-log-tool-status-dot"
+            title={i18n.t("activity.incomplete")}
+            aria-hidden
+          />
         ) : null}
         <ChevronRight
           size={15}
@@ -1097,7 +1111,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
     if (block?.kind === "tool-failed") {
       return {
         label: block.recoveredResult
-          ? "补丁已应用 · 检查通过"
+          ? i18n.t("activity.patchRecovered")
           : summarizeFailedTool(block.tool, block.command),
         icon: iconForToolName(block.tool),
       };
@@ -1188,35 +1202,37 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
 
   const clauses: string[] = [];
   if (readFiles.size > 0) {
-    clauses.push(`已读取 ${readFiles.size} 个文件`);
+    clauses.push(i18n.t("activity.summary.readFiles", { count: readFiles.size }));
   }
   if (writtenFiles.size > 0) {
-    clauses.push(`已写入 ${writtenFiles.size} 个文件`);
+    clauses.push(i18n.t("activity.summary.writtenFiles", { count: writtenFiles.size }));
   }
   if (editedFiles.size > 0) {
-    clauses.push(`已编辑 ${editedFiles.size} 个文件`);
+    clauses.push(i18n.t("activity.summary.editedFiles", { count: editedFiles.size }));
   }
   if (searches > 0) {
-    clauses.push("已搜索代码");
+    clauses.push(i18n.t("activity.summary.searched"));
   }
   if (commands > 0) {
-    clauses.push(`已运行 ${commands} 条命令`);
+    clauses.push(i18n.t("activity.summary.commands", { count: commands }));
   }
   if (taskCreates > 0) {
-    clauses.push(`已创建 ${taskCreates} 个任务`);
+    clauses.push(i18n.t("activity.summary.createdTasks", { count: taskCreates }));
   }
   if (taskUpdates > 0) {
-    clauses.push(`已更新任务 ${taskUpdates} 次`);
+    clauses.push(i18n.t("activity.summary.updatedTasks", { count: taskUpdates }));
   }
   if (agents > 0) {
-    clauses.push(`已调用 ${agents} 个子代理`);
+    clauses.push(i18n.t("activity.summary.agents", { count: agents }));
   }
   if (otherTools > 0) {
-    clauses.push(`已执行 ${otherTools} 个工具`);
+    clauses.push(i18n.t("activity.summary.tools", { count: otherTools }));
   }
 
   const label = joinChineseClauses(
-    clauses.length ? clauses : [`已执行 ${actionBlocks.length} 个工具`],
+    clauses.length
+      ? clauses
+      : [i18n.t("activity.summary.tools", { count: actionBlocks.length })],
   );
   const icon: ActivityActionIcon =
     writtenFiles.size > 0 || editedFiles.size > 0 || taskCreates > 0 || taskUpdates > 0
@@ -1243,30 +1259,32 @@ function summarizeRunningActionBlock(
   const suffix = target ? ` ${target}` : "";
 
   if (block.toolName === "TaskCreate") {
-    return `正在创建任务${suffix}`;
+    return i18n.t("activity.running.createTask", { suffix });
   }
   if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
-    return `正在更新任务${suffix}`;
+    return i18n.t("activity.running.updateTask", { suffix });
   }
   if (block.toolName === "Write") {
-    return `正在写入${suffix}`;
+    return i18n.t("activity.running.write", { suffix });
   }
   if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
-    return `正在编辑${suffix}`;
+    return i18n.t("activity.running.edit", { suffix });
   }
   if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
-    return `正在读取${suffix}`;
+    return i18n.t("activity.running.read", { suffix });
   }
   if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
-    return `正在搜索${suffix}`;
+    return i18n.t("activity.running.search", { suffix });
   }
   if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
-    return `正在运行${suffix}`;
+    return i18n.t("activity.running.command", { suffix });
   }
   if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
-    return `正在调用子代理${suffix}`;
+    return i18n.t("activity.running.agent", { suffix });
   }
-  return `正在执行${suffix || ` ${block.toolName ?? "工具"}`}`;
+  return i18n.t("activity.running.tool", {
+    suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
+  });
 }
 
 function summarizeCompletedActionBlock(
@@ -1279,35 +1297,39 @@ function summarizeCompletedActionBlock(
   const suffix = target ? ` ${target}` : "";
 
   if (block.toolName === "TaskCreate") {
-    return `已创建任务${suffix}`;
+    return i18n.t("activity.completed.createTask", { suffix });
   }
   if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
-    return `已更新任务${suffix}`;
+    return i18n.t("activity.completed.updateTask", { suffix });
   }
   if (block.toolName === "Write") {
-    return `已写入${suffix}`;
+    return i18n.t("activity.completed.write", { suffix });
   }
   if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
-    return `已编辑${suffix}`;
+    return i18n.t("activity.completed.edit", { suffix });
   }
   if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
-    return `已读取${suffix}`;
+    return i18n.t("activity.completed.read", { suffix });
   }
   if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
-    return `已搜索${suffix}`;
+    return i18n.t("activity.completed.search", { suffix });
   }
   if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
-    return `已运行${suffix}`;
+    return i18n.t("activity.completed.command", { suffix });
   }
   if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
-    return `已调用子代理${suffix}`;
+    return i18n.t("activity.completed.agent", { suffix });
   }
-  return `已执行${suffix || ` ${block.toolName ?? "工具"}`}`;
+  return i18n.t("activity.completed.tool", {
+    suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
+  });
 }
 
 function summarizeFailedTool(tool: string, command?: string): string {
   const target = clampActivityPreviewLine(command || tool, 64);
-  return `已运行${target ? ` ${target}` : ""}`;
+  return i18n.t("activity.completed.command", {
+    suffix: target ? ` ${target}` : "",
+  });
 }
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
@@ -1329,9 +1351,15 @@ function joinChineseClauses(clauses: readonly string[]): string {
     return clauses[0] ?? "";
   }
   if (clauses.length === 2) {
-    return `${clauses[0]}和${clauses[1]}`;
+    return i18n.t("activity.joinTwo", {
+      first: clauses[0],
+      second: clauses[1],
+    });
   }
-  return `${clauses.slice(0, -1).join("、")}和${clauses.at(-1)}`;
+  return i18n.t("activity.joinMany", {
+    head: clauses.slice(0, -1).join(i18n.language === "zh-CN" ? "、" : ", "),
+    last: clauses.at(-1) ?? "",
+  });
 }
 
 function resolveActionBlocksLifecycle(
@@ -1542,13 +1570,20 @@ const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetail
 
   if (isFinalResult) {
     return (
-      <section className="subagent-conversation-result" aria-label="子代理执行结果">
+      <section
+        className="subagent-conversation-result"
+        aria-label={i18n.t("activity.subagentResult")}
+      >
         <header className="subagent-conversation-result-header">
           <span className="subagent-conversation-result-icon">
             <ShieldCheck size={14} aria-hidden />
           </span>
-          <span className="subagent-conversation-result-title">执行结果</span>
-          <span className="subagent-conversation-result-note">最终汇总</span>
+          <span className="subagent-conversation-result-title">
+            {i18n.t("activity.result")}
+          </span>
+          <span className="subagent-conversation-result-note">
+            {i18n.t("activity.finalSummary")}
+          </span>
         </header>
         <div className="subagent-conversation-result-body">
           <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />
@@ -1724,11 +1759,15 @@ function ProjectionSubagentRunRow({
     rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
       ? rawStatus
       : agent.status === "active" || agent.status === "launching"
-        ? "工作中"
-        : "点击查看执行详情";
+        ? i18n.t("activity.working")
+        : i18n.t("activity.viewDetails");
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
-    elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
+    elapsedMs > 0
+      ? running
+        ? formatDuration(elapsedMs)
+        : i18n.t("activity.duration", { duration: formatDuration(elapsedMs) })
+      : undefined;
   const missionText = useLatchedAgentText(agent.agentId, incomingMissionText);
   const statusBadge = resolveSubagentStatusBadge(running, agent.status);
 
@@ -1941,7 +1980,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
       ) : null}
       <div className="subagent-conversation-status-row">
         <span className="subagent-conversation-status">
-          {running ? "处理中" : "已处理"}
+          {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
           {durationLabel ? ` ${durationLabel}` : ""}
         </span>
       </div>
@@ -1967,7 +2006,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
           ) : running ? (
             <WaitingThinkingBlock active />
           ) : (
-            <p className="subagent-task-detail-empty">暂无可展示的执行明细</p>
+            <p className="subagent-task-detail-empty">{i18n.t("activity.noDetails")}</p>
           )}
           {running && !waitingThinkingVisible ? <RunLogConversationTail /> : null}
         </div>
@@ -1996,18 +2035,19 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
   }
 
   return (
-    <section className="subagent-run-instance-strip" aria-label="子代理运行指标">
+    <section className="subagent-run-instance-strip" aria-label={i18n.t("activity.metrics")}>
       {usage ? (
         <>
           <div
             className="subagent-run-instance-metric subagent-run-instance-metric--io"
-            title={`输入 ${formatTokenCount(usage.inputTokens)} / 输出 ${formatTokenCount(
-              usage.outputTokens,
-            )}`}
+            title={i18n.t("activity.ioTitle", {
+              input: formatTokenCount(usage.inputTokens),
+              output: formatTokenCount(usage.outputTokens),
+            })}
           >
             <span className="subagent-run-instance-heading">
               <ArrowDownToLine size={13} aria-hidden />
-              <span className="subagent-run-instance-label">输入输出</span>
+              <span className="subagent-run-instance-label">{i18n.t("activity.inputOutput")}</span>
             </span>
             <span className="subagent-run-instance-split-values">
               <span>
@@ -2022,13 +2062,14 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
           </div>
           <div
             className="subagent-run-instance-metric subagent-run-instance-metric--cache"
-            title={`缓存读 ${formatTokenCount(usage.cacheReadTokens)} / 缓存写 ${formatTokenCount(
-              usage.cacheCreationTokens,
-            )}`}
+            title={i18n.t("activity.cacheTitle", {
+              read: formatTokenCount(usage.cacheReadTokens),
+              write: formatTokenCount(usage.cacheCreationTokens),
+            })}
           >
             <span className="subagent-run-instance-heading">
               <Database size={13} aria-hidden />
-              <span className="subagent-run-instance-label">缓存</span>
+              <span className="subagent-run-instance-label">{i18n.t("activity.cache")}</span>
             </span>
             <span className="subagent-run-instance-split-values">
               <span>
@@ -2046,11 +2087,14 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
       {contextLabel ? (
         <div
           className="subagent-run-instance-metric subagent-run-instance-metric--context"
-          title={`上下文 ${contextLabel}${contextDetail ? ` (${contextDetail})` : ""}`}
+          title={i18n.t("activity.contextTitle", {
+            label: contextLabel,
+            detail: contextDetail ? ` (${contextDetail})` : "",
+          })}
         >
           <span className="subagent-run-instance-heading">
             <Gauge size={13} aria-hidden />
-            <span className="subagent-run-instance-label">上下文</span>
+            <span className="subagent-run-instance-label">{i18n.t("activity.context")}</span>
           </span>
           <span className="subagent-run-instance-context-value">
             <strong>{contextLabel}</strong>
@@ -2064,13 +2108,13 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
       {costLabel || modelLabel ? (
         <div
           className="subagent-run-instance-metric subagent-run-instance-metric--billing-model"
-          title={[costLabel ? `计费 ${costLabel}` : "", modelId ? `模型 ${modelId}` : ""]
+          title={[costLabel ? i18n.t("activity.billingTitle", { cost: costLabel }) : "", modelId ? i18n.t("activity.modelTitle", { model: modelId }) : ""]
             .filter(Boolean)
             .join(" / ")}
         >
           <span className="subagent-run-instance-heading">
             <CircleDollarSign size={13} aria-hidden />
-            <span className="subagent-run-instance-label">计费 / 模型</span>
+            <span className="subagent-run-instance-label">{i18n.t("activity.billingModel")}</span>
           </span>
           <span className="subagent-run-instance-billing-model-values">
             <strong>{costLabel ?? "-"}</strong>
@@ -2184,17 +2228,17 @@ function resolveSubagentStatusBadge(
   status?: ThreadRunProjectionAgent["status"],
 ): SubagentStatusBadge {
   if (running || status === "active" || status === "launching") {
-    return { label: "运行中", tone: "running" };
+    return { label: i18n.t("activity.runningStatus"), tone: "running" };
   }
   if (status === "abandoned") {
-    return { label: "已中止", tone: "abandoned" };
+    return { label: i18n.t("activity.aborted"), tone: "abandoned" };
   }
   return { label: "", tone: "done" };
 }
 
 function resolveSubagentKindBadge(role: string): string {
   const normalized = normalizeAgentDisplayRole(role) ?? role;
-  return SUBAGENT_ROLE_SHORT[normalized] ?? "代理";
+  return SUBAGENT_ROLE_SHORT[normalized] ?? i18n.t("activity.agentFallback");
 }
 
 function shouldSuppressSubagentCardTimelineItem(
@@ -2298,7 +2342,7 @@ function SubagentRunCardButton({
           />
         ) : (
           <p className="subagent-run-mission-preview subagent-run-mission-placeholder" title={statusText}>
-            {statusText || "等待任务说明…"}
+            {statusText || i18n.t("activity.waitingMission")}
           </p>
         )}
       </div>
@@ -2555,7 +2599,7 @@ function PromptCacheTimelineBlock({
       <div className="run-log-prompt-cache-timeline-body">
         <div className="run-log-prompt-cache-timeline-title">
           <Sparkles size={14} aria-hidden />
-          <span>Prompt cache 时间线</span>
+          <span>{i18n.t("activity.promptCacheTimeline")}</span>
         </div>
         <p className="run-log-prompt-cache-timeline-narrative">{narrative}</p>
         {steps.length > 1 ? (
@@ -2579,7 +2623,11 @@ function formatPromptCacheTimelineTime(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return date.toLocaleTimeString(i18n.resolvedLanguage, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function ContextCompactionDivider({ label }: { label: string }) {
@@ -2626,7 +2674,7 @@ function WaitingThinkingBlock({
     <div className="run-log-thinking streaming empty">
       <div className="run-log-thinking-header">
         <span className="run-log-thinking-label">
-          <ShimmerText>正在思考</ShimmerText>
+          <ShimmerText>{i18n.t("activity.thinking")}</ShimmerText>
         </span>
       </div>
     </div>
@@ -2654,7 +2702,11 @@ function isWaitingThinkingItem(
 
 function RunLogConversationTail() {
   return (
-    <div className="run-log-conversation-tail" role="status" aria-label="会话进行中">
+    <div
+      className="run-log-conversation-tail"
+      role="status"
+      aria-label={i18n.t("activity.conversationActive")}
+    >
       <StreamingTypingIndicator />
     </div>
   );
@@ -2707,7 +2759,7 @@ function ThinkingBlock({
             className="run-log-thinking-body-inner"
             ref={thinkingBodyInnerRef}
             role="region"
-            aria-label="思考内容"
+            aria-label={i18n.t("activity.thinkingContent")}
           >
             <div className="run-log-thinking-body">
               {streaming ? (
@@ -2795,7 +2847,7 @@ function UserPromptBlock({
                 <img
                   key={image.id}
                   src={`data:${image.mediaType};base64,${image.data}`}
-                  alt={`用户上传的图片 ${index + 1}`}
+                  alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
                   loading="lazy"
                 />
               ))}
@@ -2821,7 +2873,7 @@ function UserPromptBlock({
               onClick={() => setExpanded((value) => !value)}
               aria-expanded={expanded}
             >
-              {expanded ? "收起" : "展开全文"}
+              {expanded ? i18n.t("activity.collapse") : i18n.t("activity.expandFull")}
             </button>
           ) : null}
         </div>
@@ -2873,9 +2925,15 @@ function parseClarificationAnswersSummary(text: string): Array<{ question: strin
 
 function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; answer: string }> }) {
   return (
-    <div className="clarification-answer-card" role="group" aria-label="澄清回答">
+    <div
+      className="clarification-answer-card"
+      role="group"
+      aria-label={i18n.t("activity.clarificationAnswer")}
+    >
       <div className="clarification-answer-header">
-        <span className="clarification-answer-title">澄清回答</span>
+        <span className="clarification-answer-title">
+          {i18n.t("activity.clarificationAnswer")}
+        </span>
       </div>
       <div className="clarification-answer-rows">
         {rows.map((row, index) => (
@@ -2920,14 +2978,16 @@ function SubagentMissionBlock({
     >
       <div className="run-log-mission-head">
         <span className="run-log-mission-head-main">
-          <span className="run-log-mission-tag">任务目标</span>
+          <span className="run-log-mission-tag">{i18n.t("activity.mission")}</span>
         </span>
         <ChevronDown size={16} className={`run-log-mission-chevron${expanded ? " open" : ""}`} aria-hidden />
       </div>
       {fullText ? (
         <ExpandableMissionText text={fullText} expanded={expanded} className="run-log-mission-preview" />
       ) : (
-        <p className="run-log-mission-summary run-log-mission-summary-muted">等待任务说明…</p>
+        <p className="run-log-mission-summary run-log-mission-summary-muted">
+          {i18n.t("activity.waitingMission")}
+        </p>
       )}
     </button>
   );
@@ -2962,9 +3022,17 @@ function ToolFailedBlock({
       <span
         className={`run-log-tool-failed-label${recoveredResult ? " is-recovered" : ""}`}
       >
-        <span>{recoveredResult ? "补丁已应用 · 检查通过" : summarizeFailedTool(tool, command)}</span>
+        <span>
+          {recoveredResult
+            ? i18n.t("activity.patchRecovered")
+            : summarizeFailedTool(tool, command)}
+        </span>
         {!recoveredResult ? (
-          <span className="run-log-tool-status-dot" title="运行未完成" aria-hidden />
+          <span
+            className="run-log-tool-status-dot"
+            title={i18n.t("activity.incomplete")}
+            aria-hidden
+          />
         ) : null}
       </span>
       {isBash && (command || (!recoveredResult && error)) ? (
@@ -2981,7 +3049,7 @@ function ToolFailedBlock({
         <div className="run-log-tool-result-panel is-success">
           <div className="run-log-tool-result-header">
             <ShieldCheck size={14} aria-hidden />
-            <span>未发现待清理的残留引用</span>
+            <span>{i18n.t("activity.noResidue")}</span>
           </div>
           <ul className="run-log-tool-result-files">
             {recoveredResult.files.map((file) => (
@@ -2997,7 +3065,7 @@ function ToolFailedBlock({
         <div className="run-log-tool-result-panel">
           <div className="run-log-tool-result-header">
             <Terminal size={14} aria-hidden />
-            <span>命令输出</span>
+            <span>{i18n.t("activity.commandOutput")}</span>
           </div>
           <pre className="run-log-tool-failed-error">{error}</pre>
         </div>
@@ -3019,7 +3087,10 @@ function ApiErrorBlock({
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
-  const title = statusCode !== undefined ? `连接失败 · HTTP ${statusCode}` : "连接失败";
+  const title =
+    statusCode !== undefined
+      ? i18n.t("activity.connectionFailedHttp", { status: statusCode })
+      : i18n.t("activity.connectionFailed");
 
   return (
     <div className="run-log-api-error" role="alert">
@@ -3066,7 +3137,7 @@ function RunLogAction({
   const [canExpand, setCanExpand] = useState(false);
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
-  const statusLabel = approvalLifecycle ? lifecycleStatusLabels[approvalLifecycle] : undefined;
+  const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
   const subagentRole = subagent?.trim() ? subagent : undefined;
   const showRoleLabel =
     subagentRole !== undefined &&
@@ -3392,8 +3463,8 @@ function RunLogBashCommand({ command }: { command: string }) {
         type="button"
         className="run-log-bash-copy"
         onClick={() => copyRunLogMessageText(command)}
-        aria-label="复制 Bash 命令"
-        title="复制命令"
+        aria-label={i18n.t("activity.copyBash")}
+        title={i18n.t("activity.copyCommand")}
       >
         <Copy size={13} />
       </button>
@@ -3409,8 +3480,8 @@ function RunLogBashOutput({ output }: { output: string }) {
           type="button"
           className="run-log-bash-copy run-log-bash-output-copy"
           onClick={() => copyRunLogMessageText(output)}
-          aria-label="复制命令输出"
-          title="复制输出"
+          aria-label={i18n.t("activity.copyCommandOutput")}
+          title={i18n.t("activity.copyOutput")}
         >
           <Copy size={13} />
         </button>
@@ -3432,14 +3503,22 @@ function isApprovalLifecycle(lifecycle: ToolActionLifecycle): lifecycle is Appro
   return lifecycle in approvalLifecycleStatusIcons;
 }
 
-const lifecycleStatusLabels: Record<ToolActionLifecycle, string> = {
-  "approval-pending": "等待确认",
-  "approval-approved": "已允许",
-  "approval-rejected": "已拒绝",
-  running: "执行中",
-  completed: "已完成",
-  failed: "失败",
-};
+function lifecycleStatusLabel(lifecycle: ToolActionLifecycle): string {
+  switch (lifecycle) {
+    case "approval-pending":
+      return i18n.t("activity.lifecycle.pending");
+    case "approval-approved":
+      return i18n.t("activity.lifecycle.approved");
+    case "approval-rejected":
+      return i18n.t("activity.lifecycle.rejected");
+    case "running":
+      return i18n.t("activity.lifecycle.running");
+    case "completed":
+      return i18n.t("activity.lifecycle.completed");
+    case "failed":
+      return i18n.t("activity.lifecycle.failed");
+  }
+}
 
 const actionIcons = {
   search: Search,

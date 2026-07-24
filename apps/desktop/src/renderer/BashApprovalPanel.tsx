@@ -1,5 +1,6 @@
 import { AlertTriangle, Loader2, Pencil, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import {
   BASH_APPROVAL_DENY_OPTION_LABEL,
@@ -35,6 +36,7 @@ export function BashApprovalPanel({
   onResolve,
   onSkip,
 }: BashApprovalPanelProps) {
+  const { t } = useTranslation();
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [denyFeedback, setDenyFeedback] = useState("");
   const denyInputRef = useRef<HTMLInputElement>(null);
@@ -127,11 +129,15 @@ export function BashApprovalPanel({
   const title =
     request.description?.trim() ||
     request.reason ||
-    (request.filesystemTool ? `允许在工作区外执行 ${request.filesystemTool}？` : "需要确认工具权限");
+    (request.filesystemTool
+      ? t("approval.bash.fileTitle", { tool: request.filesystemTool })
+      : t("approval.bash.title"));
   const runningLabel = request.filesystemTool
-    ? `正在请求 ${request.filesystemTool}`
-    : `正在运行 ${request.command}`;
-  const panelLabel = request.filesystemTool ? "文件访问确认" : "Bash 执行确认";
+    ? t("approval.bash.runningTool", { tool: request.filesystemTool })
+    : t("approval.bash.runningCommand", { command: request.command });
+  const panelLabel = request.filesystemTool
+    ? t("approval.bash.fileLabel")
+    : t("approval.bash.label");
   const detail = request.filesystemPath ?? request.command;
   const docked = variant === "dock";
 
@@ -161,7 +167,7 @@ export function BashApprovalPanel({
               disabled={busy}
               value={denyFeedback}
               placeholder={BASH_APPROVAL_DENY_OPTION_LABEL}
-              aria-label="告知 Eco 如何调整"
+              aria-label={t("approval.bash.feedbackAria")}
               onFocus={() => setHighlightIndex(optionIndex)}
               onChange={(event) => setDenyFeedback(event.target.value)}
             />
@@ -222,7 +228,7 @@ export function BashApprovalPanel({
           <span className="bash-approval-option-index" aria-hidden>
             {CIRCLED_OPTION_MARKERS[optionIndex] ?? `${optionIndex + 1}.`}
           </span>
-          <span className="bash-approval-option-label">是</span>
+          <span className="bash-approval-option-label">{t("common.yes")}</span>
         </button>
       </li>
     );
@@ -237,7 +243,9 @@ export function BashApprovalPanel({
             <span className="bash-approval-risk-icon" aria-hidden>
               <RiskLevelIcon level={request.riskLevel} />
             </span>
-            <span className="bash-approval-risk-label">{formatRiskLevel(request.riskLevel)}</span>
+            <span className="bash-approval-risk-label">
+              {t(`approval.bash.risk.${request.riskLevel}`)}
+            </span>
             <span className="bash-approval-risk-score">{request.riskScore}</span>
           </span>
         ) : null}
@@ -253,7 +261,7 @@ export function BashApprovalPanel({
         maxCollapsedHeight={112}
       />
 
-      <ul className="bash-approval-option-list" role="listbox" aria-label="工具授权选项">
+      <ul className="bash-approval-option-list" role="listbox" aria-label={t("approval.bash.options")}>
         {options.map(renderOption)}
       </ul>
 
@@ -262,10 +270,10 @@ export function BashApprovalPanel({
           {busy ? (
             <>
               <Loader2 size={14} className="spinning" aria-hidden />
-              处理中…
+              {t("common.processing")}
             </>
           ) : (
-            "跳过"
+            t("common.skip")
           )}
         </button>
         <button
@@ -277,11 +285,11 @@ export function BashApprovalPanel({
           {busy ? (
             <>
               <Loader2 size={14} className="spinning" aria-hidden />
-              处理中…
+              {t("common.processing")}
             </>
           ) : (
             <>
-              提交 <kbd aria-hidden>↵</kbd>
+              {t("approval.bash.submit")} <kbd aria-hidden>↵</kbd>
             </>
           )}
         </button>
@@ -314,20 +322,6 @@ export function BashApprovalPanel({
       {panel}
     </div>
   );
-}
-
-function formatRiskLevel(level: BashApprovalRequest["riskLevel"]): string {
-  switch (level) {
-    case "critical":
-      return "严重";
-    case "high":
-      return "高风险";
-    case "medium":
-      return "中风险";
-    case "low":
-      return "低风险";
-  }
-  return level;
 }
 
 function RiskLevelIcon({ level }: { level: BashApprovalRequest["riskLevel"] }) {

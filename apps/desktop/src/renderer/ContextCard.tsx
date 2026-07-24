@@ -2,6 +2,7 @@ import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel } from "@eco/runtime
 import { formatTokenCount } from "@eco/runtime/usage";
 import { FoldVertical, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {
   type RuntimeAgentDisplayNames,
@@ -13,6 +14,7 @@ import {
   resolveRuntimeAgentThemeColor,
 } from "./runtime-agent-theme";
 import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
+import { i18n } from "./i18n";
 
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
@@ -70,15 +72,15 @@ function pctClass(pct: number): string {
 
 function formatOccupancyStatus(pct: number): string {
   if (pct >= 100) {
-    return "已满";
+    return i18n.t("context.status.full");
   }
   if (pct >= 95) {
-    return "接近上限";
+    return i18n.t("context.status.nearLimit");
   }
   if (pct >= 85) {
-    return "即将触顶";
+    return i18n.t("context.status.warning");
   }
-  return "已用";
+  return i18n.t("context.status.used");
 }
 
 function contextRoles(context: ThreadContextSnapshot): ThreadRoleContextSnapshot[] {
@@ -178,6 +180,7 @@ function SubagentContextRow({
   row: FlatSubagentRow;
   agentThemes?: RuntimeAgentThemes;
 }) {
+  const { t } = useTranslation();
   const role = row.snapshot;
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   const occupied = role.occupied;
@@ -187,7 +190,10 @@ function SubagentContextRow({
   const accent = resolveRuntimeAgentThemeColor(row.role, agentThemes);
 
   return (
-    <article className="context-card-subagent-row" aria-label={`${row.title} 上下文`}>
+    <article
+      className="context-card-subagent-row"
+      aria-label={t("context.agentContext", { agent: row.title })}
+    >
       <div className="context-card-subagent-row-head">
         <span className="context-card-subagent-row-dot" style={{ backgroundColor: accent }} aria-hidden />
         <div className="context-card-subagent-row-copy">
@@ -201,7 +207,11 @@ function SubagentContextRow({
       <div
         className="context-card-bar context-card-bar-subagent"
         role="img"
-        aria-label={`${row.title} 约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
+        aria-label={t("context.approxUsage", {
+          agent: row.title,
+          occupied: formatContextK(occupied),
+          limit: formatContextK(limit),
+        })}
       >
         {occupied > 0 ? (
           <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
@@ -235,6 +245,7 @@ function ContextRoleBody({
   detailsOpen: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
+  const { t } = useTranslation();
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   const occupied = role.occupied;
   const limit = role.limit;
@@ -266,7 +277,12 @@ function ContextRoleBody({
       <div
         className="context-card-bar"
         role="img"
-        aria-label={`${roleLabel} 上下文已用 ${role.occupancyPct}%，约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
+        aria-label={t("context.usageAria", {
+          agent: roleLabel,
+          percent: role.occupancyPct,
+          occupied: formatContextK(occupied),
+          limit: formatContextK(limit),
+        })}
       >
         {occupied > 0 ? (
           <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
@@ -304,7 +320,9 @@ function ContextRoleBody({
       ) : null}
 
       {!role.limitsResolved ? (
-        <p className="context-card-footnote">上限未匹配 models.dev，按 {formatContextK(role.limit)} 估算</p>
+        <p className="context-card-footnote">
+          {t("context.estimatedLimit", { limit: formatContextK(role.limit) })}
+        </p>
       ) : null}
     </div>
   );
@@ -323,6 +341,7 @@ export function ContextCard({
   promptCacheInvalidated = false,
   onDismiss,
 }: ContextCardProps) {
+  const { t } = useTranslation();
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
   const [compacting, setCompacting] = useState(false);
   const [compactError, setCompactError] = useState<string | null>(null);
@@ -346,7 +365,7 @@ export function ContextCard({
         setCompactError(result.message);
       }
     } catch (error) {
-      setCompactError(error instanceof Error ? error.message : "上下文压缩失败");
+      setCompactError(error instanceof Error ? error.message : t("context.compactionFailed"));
     } finally {
       compactRequestRef.current = false;
       setCompacting(false);
@@ -359,7 +378,7 @@ export function ContextCard({
     }
     return (
       <div className="context-card context-card-empty">
-        <p className="context-card-placeholder">{placeholder ?? "上下文 — 有模型请求后显示"}</p>
+        <p className="context-card-placeholder">{placeholder ?? t("context.empty")}</p>
       </div>
     );
   }
@@ -375,7 +394,7 @@ export function ContextCard({
     <div className={hasSubagents ? "context-card context-card-has-subagents" : "context-card"}>
       <div className="context-card-header">
         <div className="context-card-title-group">
-          <h4 className="context-card-title">上下文</h4>
+          <h4 className="context-card-title">{t("context.title")}</h4>
         </div>
         <div className="context-card-header-actions">
           {context ? (
@@ -384,16 +403,16 @@ export function ContextCard({
               className="context-card-compact"
               onClick={() => void handleCompact()}
               disabled={!canCompact}
-              aria-label="手动压缩上下文"
+              aria-label={t("context.compact")}
               title={
                 compactError ??
                 (contextCompactionInFlight
-                  ? "上下文正在压缩中"
+                  ? t("context.compacting")
                   : threadStatus === "running"
-                    ? "线程运行中，暂不可压缩"
+                    ? t("context.runningCannotCompact")
                     : compacting
-                      ? "正在压缩上下文"
-                      : "手动压缩上下文")
+                      ? t("context.compacting")
+                      : t("context.compact"))
               }
             >
               {compactionBusy ? (
@@ -409,7 +428,9 @@ export function ContextCard({
               className="context-card-collapse"
               onClick={() => setPlannerDetailsOpen((open) => !open)}
               aria-expanded={plannerDetailsOpen}
-              aria-label={plannerDetailsOpen ? "折叠分项" : "展开分项"}
+              aria-label={
+                plannerDetailsOpen ? t("context.collapseBreakdown") : t("context.expandBreakdown")
+              }
             >
               <span className="context-card-collapse-label">{plannerDetailsOpen ? "−" : "+"}</span>
             </button>
@@ -419,7 +440,7 @@ export function ContextCard({
               type="button"
               className="context-card-dismiss"
               onClick={onDismiss}
-              aria-label="关闭上下文"
+              aria-label={t("context.close")}
             >
               <X size={14} aria-hidden />
             </button>
@@ -429,13 +450,13 @@ export function ContextCard({
 
       {autoCompactSuspended ? (
         <p className="context-card-compact-suspended" role="status">
-          自动压缩已暂停（连续失败 3 次）。请使用右侧按钮手动压缩，或开启新会话。
+          {t("context.autoCompactSuspended")}
         </p>
       ) : null}
 
       {promptCacheInvalidated ? (
         <p className="context-card-cache-invalidated" role="status">
-          本会话 prompt cache 已失效，后续请求可能无法复用缓存，费用或延迟或上升。
+          {t("context.promptCacheInvalidated")}
         </p>
       ) : null}
 
@@ -445,7 +466,7 @@ export function ContextCard({
         </p>
       ) : null}
 
-      <section className="context-card-main" aria-label="主 Agent 上下文">
+      <section className="context-card-main" aria-label={t("context.mainAgent")}>
         <ContextRoleBody
           role={planner}
           detailsOpen={plannerDetailsOpen}
@@ -454,8 +475,8 @@ export function ContextCard({
       </section>
 
       {hasSubagents ? (
-        <div className="context-card-scroll" aria-label="子代理上下文">
-          <p className="context-card-section-label">子代理</p>
+        <div className="context-card-scroll" aria-label={t("context.subagentsAria")}>
+          <p className="context-card-section-label">{t("context.subagents")}</p>
           <div className="context-card-subagent-group">
             {flatSubagents.map((row) => (
               <SubagentContextRow key={row.key} row={row} {...(agentThemes && { agentThemes })} />

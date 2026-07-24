@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { formatSavingsLine } from "@eco/runtime/billing";
 import { formatCostUsd, formatTokenCount, formatUsageBadge } from "@eco/runtime/usage";
@@ -46,6 +47,7 @@ import type {
   WorkspaceDiffResult,
 } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import { i18n } from "./i18n";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -101,14 +103,14 @@ function formatCacheCostSuffix(billing: ThreadBillingSnapshot): {
   const cachePct = billing.ecoCostUsd > 0 ? (cacheUsd / billing.ecoCostUsd) * 100 : 0;
   const detail: string[] = [];
   if (cacheRead > 0) {
-    detail.push(`读 ${formatTokenCount(cacheRead)}`);
+    detail.push(i18n.t("billing.cacheRead", { count: formatTokenCount(cacheRead) }));
   }
   if (cacheCreation > 0) {
-    detail.push(`写 ${formatTokenCount(cacheCreation)}`);
+    detail.push(i18n.t("billing.cacheWrite", { count: formatTokenCount(cacheCreation) }));
   }
   return {
     label: `${formatCostUsd(cacheUsd)}（${cachePct.toFixed(0)}%）`,
-    title: `缓存费用（models.dev cache_read / cache_write）${detail.join(" · ")}`,
+    title: i18n.t("billing.cacheCost", { detail: detail.join(" · ") }),
   };
 }
 
@@ -148,7 +150,7 @@ function visibleBillingDiagnostics(
       {
         type: "pricing_unresolved",
         severity: "warning",
-        message: "部分模型未匹配 models.dev 单价，①② 可能不完整。",
+        message: i18n.t("billing.pricingIncomplete"),
       },
     ];
   }
@@ -206,7 +208,11 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
   const summary = rows.map((row) => billingSourceLabels[row.source]).join(" · ");
 
   return (
-    <ExpandableBillingSection title="计费校验" summary={summary} className="thread-info-source-compare">
+    <ExpandableBillingSection
+      title={i18n.t("billing.validation")}
+      summary={summary}
+      className="thread-info-source-compare"
+    >
       <ul className="thread-info-source-list">
         {rows.map((row) => {
           const tokenBadge = formatUsageBadge({
@@ -223,15 +229,25 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
             <li
               key={row.source}
               className="thread-info-source-row"
-              title={`${billingSourceLabels[row.source]} token × models.dev 单价${
-                row.reportedCostUsd !== undefined ? ` · 报告 ${formatCostUsd(row.reportedCostUsd)}` : ""
-              }`}
+              title={i18n.t("billing.sourcePricingTitle", {
+                source: billingSourceLabels[row.source],
+                reported:
+                  row.reportedCostUsd !== undefined
+                    ? i18n.t("billing.reported", {
+                        cost: formatCostUsd(row.reportedCostUsd),
+                      })
+                    : "",
+              })}
             >
               <div className="thread-info-source-row-head">
                 <span className="thread-info-source-label">
                   {billingSourceLabels[row.source]}
-                  {isPrimary ? <span className="thread-info-source-primary">主账</span> : null}
-                  {isDisplay ? <span className="thread-info-source-display">展示中</span> : null}
+                  {isPrimary ? (
+                    <span className="thread-info-source-primary">{i18n.t("billing.primary")}</span>
+                  ) : null}
+                  {isDisplay ? (
+                    <span className="thread-info-source-display">{i18n.t("billing.displayed")}</span>
+                  ) : null}
                 </span>
                 <span className="thread-info-source-cost">
                   {formatCostUsd(row.ecoCostUsd)}
@@ -240,7 +256,7 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
                   ) : null}
                 </span>
               </div>
-              <span className="thread-info-source-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+              <span className="thread-info-source-tokens" title={i18n.t("billing.tokenTitle")}>
                 {tokenBadge}
               </span>
             </li>
@@ -351,7 +367,7 @@ function BillingFloatPillLabel({
   }
   return (
     <span className="thread-info-float-pill-label">
-      <span>计费</span>
+      <span>{i18n.t("billing.title")}</span>
       <span className={cost > 0 ? "thread-info-float-pill-cost" : "thread-info-float-pill-cost is-empty"}>
         {formatBillingPillCost(billing)}
       </span>
@@ -407,9 +423,14 @@ function BillingFloatingCard({
     <div className="thread-info-float-card thread-info-billing-card">
       <div className="thread-info-float-card-header">
         <h4 className="thread-info-float-card-title">
-          计费对比
+          {i18n.t("billing.comparison")}
         </h4>
-        <button type="button" className="thread-info-float-dismiss" onClick={onDismiss} aria-label="关闭计费对比">
+        <button
+          type="button"
+          className="thread-info-float-dismiss"
+          onClick={onDismiss}
+          aria-label={i18n.t("billing.closeComparison")}
+        >
           <X size={14} aria-hidden />
         </button>
       </div>
@@ -417,7 +438,7 @@ function BillingFloatingCard({
       {showBilling && tokenBadge ? (
         <p
           className="thread-info-billing-tokens"
-          title="↑ 输入 ↓ 输出 ⊙ 缓存 token（读+写合计）；线程累计，非单次请求"
+          title={i18n.t("billing.tokenDetail")}
         >
           {tokenBadge}
           {cacheCostSuffix ? (
@@ -434,18 +455,18 @@ function BillingFloatingCard({
         <ul className="thread-info-billing-list">
           <li>
             <span className="thread-info-billing-row-label">
-              <span>① 未编排</span>
-              <ThreadInfoHelpButton label="未编排说明">
-                假设全部 token 均按主模型（{plannerLabel}）models.dev 单价估算，未做角色编排
+              <span>{i18n.t("billing.unorchestrated")}</span>
+              <ThreadInfoHelpButton label={i18n.t("billing.unorchestratedHelp")}>
+                {i18n.t("billing.unorchestratedDescription", { model: plannerLabel })}
               </ThreadInfoHelpButton>
             </span>
             <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
           </li>
           <li className="thread-info-billing-eco">
             <span className="thread-info-billing-row-label">
-              <span>② 经济编程</span>
-              <ThreadInfoHelpButton label="经济编程说明">
-                Eco-Coding通过前沿模型做计划、拆分任务、审查，经济模型进行执行任务、测试等编排方案进行Token的节约
+              <span>{i18n.t("billing.eco")}</span>
+              <ThreadInfoHelpButton label={i18n.t("billing.ecoHelp")}>
+                {i18n.t("billing.ecoDescription")}
               </ThreadInfoHelpButton>
             </span>
             <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
@@ -718,6 +739,7 @@ export function ThreadInfoFloatStack({
   agentThemes?: RuntimeAgentThemes;
   variant?: "panel" | "composer";
 }) {
+  const { t } = useTranslation();
   const showBillingFloat = showBillingSection;
   const showContextFloat = true;
   const contextOccupancyPct = resolvePlannerOccupancyPct(context);
@@ -752,7 +774,9 @@ export function ThreadInfoFloatStack({
                 {...(billing !== undefined && { billing })}
               />
             }
-            ariaLabel={`计费对比，当前 ${formatBillingPillCost(billing)}`}
+            ariaLabel={t("billing.comparisonCurrent", {
+              cost: formatBillingPillCost(billing),
+            })}
             resetKey={threadId}
             width={320}
             minHeight={220}
@@ -783,7 +807,7 @@ export function ThreadInfoFloatStack({
             }
             ariaLabel={
               contextOccupancyPct !== undefined
-                ? `Context，主 Agent 占用 ${contextOccupancyPct}%`
+                ? t("billing.contextOccupancy", { pct: contextOccupancyPct })
                 : "Context"
             }
             resetKey={threadId}
@@ -853,11 +877,12 @@ export function ThreadInfoPanel({
   agentDisplayNames,
   agentThemes,
 }: ThreadInfoPanelProps) {
+  const { t } = useTranslation();
   const projectLabel =
     workspaceLabel?.trim() ||
     workspacePath?.split("/").filter(Boolean).pop() ||
     workspace?.name ||
-    "未打开项目";
+    t("billing.noProject");
   const billing = usageSummary?.billing;
   const tokenBadge = billing
     ? formatUsageBadge({
@@ -867,7 +892,7 @@ export function ThreadInfoPanel({
         cacheCreationTokens: billing.totalTokens.cacheCreation,
       })
     : null;
-  const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? "主模型";
+  const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? t("billing.mainModel");
   const cacheCostSuffix = billing ? formatCacheCostSuffix(billing) : null;
   const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
   const showBilling = hasBillingData(billing);
@@ -892,11 +917,11 @@ export function ThreadInfoPanel({
     <aside
       id="thread-info-panel"
       className="thread-info-panel"
-      aria-label={threadId ? "会话信息" : "工作区"}
+      aria-label={threadId ? t("billing.threadInfo") : t("billing.workspace")}
     >
       <div className="thread-info-panel-scroll">
         <section className="thread-info-section thread-info-workspace-section">
-          <h3 className="thread-info-heading">工作区</h3>
+          <h3 className="thread-info-heading">{t("billing.workspace")}</h3>
           <WorkspaceGitSection
             {...(workspacePath && { workspacePath })}
             workspaceLabel={projectLabel}
@@ -926,7 +951,7 @@ export function ThreadInfoPanel({
           <section className="thread-info-section thread-info-todos">
             <h3 className="thread-info-heading">
               <ListTodo size={14} aria-hidden />
-              进度
+              {t("billing.progress")}
             </h3>
             {todos.length > 0 ? <CoderTodoPanel todos={todos} embedded compact /> : null}
           </section>

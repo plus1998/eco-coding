@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../models/thread_models.dart';
 import '../models/thread_usage_models.dart';
 import '../theme/subagent_theme.dart';
@@ -22,12 +23,16 @@ String formatBillingPillCost(ThreadBillingSnapshot? billing) {
   return formatCostUsd(billing?.ecoCostUsd ?? 0);
 }
 
-String formatSavingsLine(double savedUsd, double savedPct) {
+String formatSavingsLine(
+  double savedUsd,
+  double savedPct,
+  AppLocalizations l10n,
+) {
   if (savedUsd <= 0) {
-    return '暂无节省';
+    return l10n.usageNoSavings;
   }
   final pct = savedPct > 0 ? ' ${savedPct.toStringAsFixed(0)}%' : '';
-  return '节省 ${formatCostUsd(savedUsd)}$pct';
+  return l10n.usageSavings(formatCostUsd(savedUsd), pct);
 }
 
 String formatContextK(int value) {
@@ -36,22 +41,24 @@ String formatContextK(int value) {
   }
   if (value < 1000000) {
     final rounded = value / 1000;
-    return rounded >= 100 ? '${rounded.round()}K' : '${rounded.toStringAsFixed(1)}K';
+    return rounded >= 100
+        ? '${rounded.round()}K'
+        : '${rounded.toStringAsFixed(1)}K';
   }
   return '${(value / 1000000).toStringAsFixed(1)}M';
 }
 
-String formatOccupancyLabel(int pct) {
+String formatOccupancyLabel(int pct, AppLocalizations l10n) {
   if (pct >= 100) {
-    return '100% 已满';
+    return l10n.usageFull;
   }
   if (pct >= 95) {
-    return '$pct% 接近上限';
+    return l10n.usageNearLimit(pct);
   }
   if (pct >= 85) {
-    return '$pct% 即将触顶';
+    return l10n.usageAlmostFull(pct);
   }
-  return '$pct% 已用';
+  return l10n.usageUsed(pct);
 }
 
 int? resolvePlannerOccupancyPct(ThreadContextSnapshot? context) {
@@ -83,62 +90,66 @@ ThreadRoleContextSnapshot resolvePlannerContext(ThreadContextSnapshot context) {
   );
 }
 
-String billingEmptyHint(String? status) {
+String billingEmptyHint(String? status, AppLocalizations l10n) {
   if (status == 'running' || status == 'queued') {
-    return '费用累计中…';
+    return l10n.usageAccumulating;
   }
   if (status == 'awaiting_plan') {
-    return '计划阶段已产生的 token 与费用将显示在此处。';
+    return l10n.usagePlanHint;
   }
   if (status != null &&
       status != 'idle' &&
       status != 'completed' &&
       status != 'failed' &&
       status != 'blocked') {
-    return '暂无累计 token 或费用记录。';
+    return l10n.usageNoRecords;
   }
-  return '费用 — 有模型请求后显示';
+  return l10n.usageCostPlaceholder;
 }
 
-String contextCardPlaceholder(String? status) {
+String contextCardPlaceholder(String? status, AppLocalizations l10n) {
   if (status == 'running' || status == 'queued') {
-    return '用量随每轮模型响应更新';
+    return l10n.usageUpdatesPerResponse;
   }
   if (status == 'awaiting_plan') {
-    return '计划阶段用量将随模型响应更新';
+    return l10n.usagePlanUpdates;
   }
   if (status == 'completed' ||
       status == 'idle' ||
       status == 'failed' ||
       status == 'blocked') {
-    return '暂无上下文数据';
+    return l10n.usageNoContext;
   }
-  return '上下文 — 有模型请求后显示';
+  return l10n.usageContextPlaceholder;
 }
 
-String roleDisplayLabel(String role) {
+String roleDisplayLabel(String role, AppLocalizations l10n) {
   switch (role) {
     case 'planner':
       return 'Main Agent';
     case 'vision':
-      return '看图';
+      return l10n.roleVision;
     case 'coder':
-      return '编码';
+      return l10n.roleCoder;
     case 'reviewer':
-      return '审查';
+      return l10n.roleReviewer;
     case 'tester':
-      return '测试';
+      return l10n.roleTester;
     case 'explore':
-      return '探索';
+      return l10n.roleExplore;
     case 'architect':
-      return '架构';
+      return l10n.roleArchitect;
     default:
       return role;
   }
 }
 
-String formatRoleModelLabel(String role, String? modelId) {
-  final base = roleDisplayLabel(role);
+String formatRoleModelLabel(
+  String role,
+  String? modelId,
+  AppLocalizations l10n,
+) {
+  final base = roleDisplayLabel(role, l10n);
   final model = modelId?.trim();
   if (model == null || model.isEmpty) {
     return base;
@@ -152,15 +163,6 @@ String shortAgentId(String agentId) {
   }
   return agentId.substring(0, 8);
 }
-
-const _subagentRoleShort = <String, String>{
-  'vision': '看图',
-  'explore': '探索',
-  'architect': '架构',
-  'coder': '编码',
-  'reviewer': '审查',
-  'tester': '测试',
-};
 
 class FlatSubagentContextRow {
   const FlatSubagentContextRow({
@@ -181,20 +183,23 @@ class FlatSubagentContextRow {
 List<FlatSubagentContextRow> buildFlatSubagentContextRows(
   ThreadContextSnapshot context, {
   OrchestrationProfile? profile,
+  required AppLocalizations l10n,
 }) {
   final subagentRoles = context.roles
       .where((role) => role.role != 'planner')
       .toList();
 
-  final instances = [...context.instances]
-      .where((instance) => instance.role != 'planner' && instance.occupied > 0)
-      .toList()
-    ..sort((left, right) => right.occupied.compareTo(left.occupied));
+  final instances =
+      [...context.instances]
+          .where(
+            (instance) => instance.role != 'planner' && instance.occupied > 0,
+          )
+          .toList()
+        ..sort((left, right) => right.occupied.compareTo(left.occupied));
 
   if (instances.isNotEmpty) {
     return instances.map((instance) {
-      final roleLabel =
-          _subagentRoleShort[instance.role] ?? instance.role;
+      final roleLabel = roleDisplayLabel(instance.role, l10n);
       return FlatSubagentContextRow(
         key: instance.agentId,
         role: instance.role,
@@ -217,7 +222,7 @@ List<FlatSubagentContextRow> buildFlatSubagentContextRows(
     return FlatSubagentContextRow(
       key: role.role,
       role: role.role,
-      title: formatRoleModelLabel(role.role, role.modelId),
+      title: formatRoleModelLabel(role.role, role.modelId, l10n),
       accentColor: resolveSubagentThemeColor(role.role, profile: profile),
       snapshot: role,
     );

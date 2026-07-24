@@ -1,10 +1,15 @@
+import 'dart:ui';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/app_locale_provider.dart';
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/utils/center_server_auth.dart';
 import '../../core/utils/device_display.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_session.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 enum SetupStepState { pending, inProgress, done, error }
 
@@ -62,6 +67,9 @@ class SetupOverview {
 }
 
 final setupOverviewProvider = Provider<SetupOverview>((ref) {
+  final localePreference = ref.watch(appLocalePreferenceProvider);
+  final locale = localePreference.locale ?? PlatformDispatcher.instance.locale;
+  final l10n = lookupAppLocalizations(locale);
   ref.watch(appSessionProvider);
   final credentialsAsync = ref.watch(credentialsProvider);
   final persistedCredentials = ref.read(ecoCenterClientProvider).credentials;
@@ -86,7 +94,10 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       bindings?.where((binding) => binding.isActive).toList() ?? [];
   final hasBinding = activeBindings.isNotEmpty;
   final bindingsReloading =
-      bindingsAsync.isLoading && bindings == null && loggedIn && deviceRegistered;
+      bindingsAsync.isLoading &&
+      bindings == null &&
+      loggedIn &&
+      deviceRegistered;
 
   String? selectedName;
   bool? selectedOnline;
@@ -149,8 +160,12 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     if (effectiveSelectedDesktopId == null) {
       return SetupStepState.inProgress;
     }
-    if (!activeBindings.any((binding) => binding.desktopDeviceId == effectiveSelectedDesktopId)) {
-      return bindingsReloading ? SetupStepState.inProgress : SetupStepState.pending;
+    if (!activeBindings.any(
+      (binding) => binding.desktopDeviceId == effectiveSelectedDesktopId,
+    )) {
+      return bindingsReloading
+          ? SetupStepState.inProgress
+          : SetupStepState.pending;
     }
     return SetupStepState.done;
   }
@@ -158,65 +173,74 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final steps = [
     SetupStep(
       id: 'server',
-      title: '服务器可达',
+      title: l10n.setupStatusServerReachable,
       state: serverStepState(),
       subtitle: hasServerUrl ? credentials.serverUrl : null,
-      hint: serverReachable == false
-          ? '请检查地址、Wi‑Fi 与 Server 是否监听 0.0.0.0'
-          : null,
+      hint: serverReachable == false ? l10n.setupStatusServerHelp : null,
     ),
     SetupStep(
       id: 'login',
-      title: '账号与手机设备',
+      title: l10n.setupStatusAccountDevice,
       state: loginStepState(),
       subtitle: loggedIn ? credentials.userEmail : null,
-      hint: loggedIn && !deviceRegistered ? '正在注册本机设备…' : null,
+      hint: loggedIn && !deviceRegistered
+          ? l10n.setupStatusRegisteringDevice
+          : null,
     ),
     SetupStep(
       id: 'websocket',
-      title: '实时通道 (WebSocket)',
+      title: l10n.setupStatusLiveChannel,
       state: wsStepState(),
       subtitle: wsState == EcoConnectionState.connected
-          ? '已连接 Center Server'
+          ? l10n.setupStatusCenterConnected
           : wsState == EcoConnectionState.connecting ||
-                  wsState == EcoConnectionState.disconnected
-              ? '正在连接…'
-              : null,
+                wsState == EcoConnectionState.disconnected
+          ? l10n.setupStatusConnecting
+          : null,
       hint: wsStepState() == SetupStepState.error
-          ? _websocketErrorHint(connection?.authRecovery, wsError)
+          ? _websocketErrorHint(connection?.authRecovery, wsError, l10n)
           : null,
     ),
     SetupStep(
       id: 'bind',
-      title: '绑定 PC',
+      title: l10n.setupStatusPairPc,
       state: bindStepState(),
-      subtitle: hasBinding ? '已绑定 ${activeBindings.length} 台' : null,
-      hint: !hasBinding && !bindingsReloading
-          ? '在 Desktop 生成配对码后扫码或手输'
+      subtitle: hasBinding
+          ? l10n.setupStatusBoundCount(activeBindings.length)
           : null,
+      hint: !hasBinding && !bindingsReloading ? l10n.setupStatusPairHint : null,
     ),
     SetupStep(
       id: 'select',
-      title: '选择操控的 PC',
+      title: l10n.setupStatusSelectControlledPc,
       state: selectStepState(),
       subtitle: effectiveSelectedDesktopId != null
           ? selectedOnline == null
-              ? '${selectedName ?? effectiveSelectedDesktopId} · 检测中…'
-              : '${selectedName ?? effectiveSelectedDesktopId}${selectedOnline == true ? ' · 在线' : ' · 离线'}'
+                ? l10n.setupStatusCheckingDevice(
+                    selectedName ?? effectiveSelectedDesktopId,
+                  )
+                : selectedOnline == true
+                ? l10n.setupStatusDeviceOnline(
+                    selectedName ?? effectiveSelectedDesktopId,
+                  )
+                : l10n.setupStatusDeviceOffline(
+                    selectedName ?? effectiveSelectedDesktopId,
+                  )
           : null,
-      hint: effectiveSelectedDesktopId != null &&
-              selectedOnline == false
-          ? 'Desktop 当前离线，请确认 Desktop 已连接同一 Server'
+      hint: effectiveSelectedDesktopId != null && selectedOnline == false
+          ? l10n.setupStatusDesktopOfflineHelp
           : null,
     ),
   ];
 
-  final gateComplete = loggedIn &&
+  final gateComplete =
+      loggedIn &&
       deviceRegistered &&
       effectiveSelectedDesktopId != null &&
       effectiveSelectedDesktopId.isNotEmpty;
 
-  final readyForThreads = gateComplete &&
+  final readyForThreads =
+      gateComplete &&
       wsState == EcoConnectionState.connected &&
       selectedOnline == true;
 
@@ -227,10 +251,14 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   );
 });
 
-String? _websocketErrorHint(CenterServerAuthRecovery? authRecovery, String? wsError) {
+String? _websocketErrorHint(
+  CenterServerAuthRecovery? authRecovery,
+  String? wsError,
+  AppLocalizations l10n,
+) {
   final recovery = authRecovery ?? classifyCenterServerAuthError(wsError);
   if (recovery != CenterServerAuthRecovery.unknown) {
-    return centerServerAuthRecoveryMessage(recovery);
+    return localizedCenterServerRecovery(recovery, l10n);
   }
-  return wsError ?? 'WebSocket 未连接，请重新登录或下拉刷新';
+  return wsError ?? l10n.setupStatusWebSocketDisconnected;
 }

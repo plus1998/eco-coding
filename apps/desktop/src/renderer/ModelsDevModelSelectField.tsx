@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ModelsDevMapping, ModelsDevModelOption } from "../shared/ipc";
 
 interface ModelsDevModelSelectFieldProps {
@@ -46,6 +47,7 @@ export function ModelsDevModelSelectField({
   autoResolvedLabel,
   onChange,
 }: ModelsDevModelSelectFieldProps) {
+  const { t } = useTranslation();
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -130,7 +132,7 @@ export function ModelsDevModelSelectField({
             className={`mcp-field-input model-combobox-input${!value && autoLabel ? " models-dev-select-auto" : ""}`}
             value={displayValue}
             disabled={disabled}
-            placeholder="自动匹配（未命中时可选手动映射）"
+            placeholder={t("modelsDevSelect.placeholder")}
             role="combobox"
             aria-expanded={open}
             aria-controls={listboxId}
@@ -156,7 +158,7 @@ export function ModelsDevModelSelectField({
           <button
             type="button"
             className="model-combobox-toggle"
-            aria-label={open ? "收起 models.dev 列表" : "展开 models.dev 列表"}
+            aria-label={open ? t("modelsDevSelect.collapse") : t("modelsDevSelect.expand")}
             aria-expanded={open}
             aria-controls={listboxId}
             disabled={disabled || loading}
@@ -179,13 +181,15 @@ export function ModelsDevModelSelectField({
               onClick={selectAuto}
             >
               <span className="model-combobox-option-label">
-                自动匹配
-                {autoMatchSummary ? ` · 当前命中 ${autoMatchSummary}` : " · 按上游模型 id 推断"}
+                {t("modelsDevSelect.auto")}
+                {autoMatchSummary
+                  ? t("modelsDevSelect.currentMatch", { model: autoMatchSummary })
+                  : t("modelsDevSelect.inferFromId")}
               </span>
             </button>
           </li>
           {loading ? (
-            <li className="model-combobox-menu-status">加载 models.dev 目录…</li>
+            <li className="model-combobox-menu-status">{t("modelsDevSelect.loading")}</li>
           ) : filteredOptions.length > 0 ? (
             filteredOptions.map((option) => {
               const optionMapping = { providerKey: option.providerKey, modelId: option.modelId };
@@ -205,7 +209,7 @@ export function ModelsDevModelSelectField({
                     <span className="model-combobox-option-label">
                       {option.displayName} · {option.providerKey}/{option.modelId}
                       {!value && mappingEquals(autoResolvedMapping, optionMapping) && autoResolved
-                        ? " · 自动命中"
+                        ? t("modelsDevSelect.autoMatchedSuffix")
                         : ""}
                     </span>
                   </button>
@@ -213,17 +217,21 @@ export function ModelsDevModelSelectField({
               );
             })
           ) : (
-            <li className="model-combobox-menu-status">没有匹配的 models.dev 模型</li>
+            <li className="model-combobox-menu-status">{t("modelsDevSelect.noMatch")}</li>
           )}
         </ul>
       )}
 
       {value ? (
-        <p className="models-dev-select-hint">手动映射：{manualLabel}</p>
+        <p className="models-dev-select-hint">
+          {t("modelsDevSelect.manualMapping", { model: manualLabel })}
+        </p>
       ) : autoMatchSummary ? (
-        <p className="models-dev-select-hint">自动命中：{autoMatchSummary}</p>
+        <p className="models-dev-select-hint">
+          {t("modelsDevSelect.autoMatch", { model: autoMatchSummary })}
+        </p>
       ) : autoResolved === false ? (
-        <p className="models-dev-select-hint unresolved">未自动匹配，可手动选择 models.dev 模型</p>
+        <p className="models-dev-select-hint unresolved">{t("modelsDevSelect.unresolved")}</p>
       ) : null}
     </div>
   );

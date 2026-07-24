@@ -1,5 +1,6 @@
 import { FileDiff } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
 import { DiffReviewModal } from "./DiffReviewModal";
 
@@ -13,6 +14,7 @@ function formatDiffStat(value: number): string {
 }
 
 export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCardProps) {
+  const { t } = useTranslation();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewDiff, setReviewDiff] = useState("");
   const [error, setError] = useState<string | undefined>();
@@ -38,14 +40,16 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
       <div
         className="workspace-changes-card codex-style"
         role="status"
-        aria-label="工作区变更已合并"
+        aria-label={t("workspace.diff.merged")}
       >
         <div className="workspace-changes-header">
           <div className="workspace-changes-header-main">
             <FileDiff size={18} className="workspace-changes-icon" aria-hidden />
             <div className="workspace-changes-title-wrap">
-              <span className="workspace-changes-title">已编辑 {fileCount} 个文件</span>
-              <span className="workspace-changes-totals" aria-label="变更行数">
+              <span className="workspace-changes-title">
+                {t("workspace.diff.editedFiles", { count: fileCount })}
+              </span>
+              <span className="workspace-changes-totals" aria-label={t("git.commit.changedLines")}>
                 <span className="diff-stat-add">+{formatDiffStat(summary.totalAdditions)}</span>
                 <span className="diff-stat-del">-{formatDiffStat(summary.totalDeletions)}</span>
               </span>
@@ -58,7 +62,7 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
                 className="workspace-changes-review"
                 onClick={() => void openReview()}
               >
-                审核
+                {t("workspace.diff.reviewAction")}
               </button>
             </div>
           ) : null}
@@ -78,7 +82,7 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
             ))}
           </ul>
         ) : null}
-        <p className="workspace-changes-note">未自动提交</p>
+        <p className="workspace-changes-note">{t("workspace.diff.notCommitted")}</p>
         {error ? (
           <p className="workspace-changes-error" role="alert">
             {error}

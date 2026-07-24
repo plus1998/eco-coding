@@ -1,5 +1,6 @@
 import { Copy, Download, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AgentDomain, AgentTemplate, McpServerConfigView } from "../shared/ipc";
 import {
   AGENT_DOMAIN_OPTIONS,
@@ -13,6 +14,7 @@ import {
   formatAgentDomain,
   formatAgentSource,
 } from "./agent-template-form";
+import { i18n } from "./i18n";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
 const DOMAIN_ORDER: AgentDomain[] = ["coding", "research", "writing", "product", "data", "ops", "custom"];
@@ -32,6 +34,7 @@ export function SubagentSettingsSection({
   onRegistryChange,
   onSavingChange,
 }: SubagentSettingsSectionProps) {
+  const { t } = useTranslation();
   const [editorForm, setEditorForm] = useState<AgentTemplateFormState>();
   const [editingTemplateId, setEditingTemplateId] = useState<string>();
   const [editorError, setEditorError] = useState<string>();
@@ -101,7 +104,7 @@ export function SubagentSettingsSection({
       const template = buildAgentTemplateFromForm(editorForm, { existing: editorTemplate });
       await window.eco.saveAgentTemplate(template);
       await onRegistryChange();
-      setRegistryMessage(`已保存 ${template.name}`);
+      setRegistryMessage(t("subagentSettings.saved", { name: template.name }));
       closeEditor();
     } catch (caught) {
       setEditorError(caught instanceof Error ? caught.message : String(caught));
@@ -115,7 +118,7 @@ export function SubagentSettingsSection({
     if (!window.eco || template.builtIn || template.source === "built_in" || template.source === "derived") {
       return;
     }
-    if (!window.confirm(`确定删除子代理模板「${template.name}」？`)) {
+    if (!window.confirm(t("subagentSettings.confirmDelete", { name: template.name }))) {
       return;
     }
     setRegistrySaving(true);
@@ -123,7 +126,7 @@ export function SubagentSettingsSection({
     try {
       await window.eco.deleteAgentTemplate(template.id);
       await onRegistryChange();
-      setRegistryMessage(`已删除 ${template.name}`);
+      setRegistryMessage(t("subagentSettings.deleted", { name: template.name }));
     } catch (caught) {
       setEditorError(caught instanceof Error ? caught.message : String(caught));
       setEditorForm(agentTemplateToForm(template));
@@ -144,7 +147,7 @@ export function SubagentSettingsSection({
     try {
       const result = await window.eco.exportAgentTemplates(templateIds ? { templateIds } : undefined);
       if (!result.canceled) {
-        setRegistryMessage(`已导出 ${result.exported} 个模板`);
+        setRegistryMessage(t("subagentSettings.exported", { count: result.exported }));
       }
     } catch (caught) {
       setRegistryMessage(caught instanceof Error ? caught.message : String(caught));
@@ -167,8 +170,11 @@ export function SubagentSettingsSection({
         await onRegistryChange();
         setRegistryMessage(
           result.errors.length > 0
-            ? `已导入 ${result.imported} 个模板，${result.errors.length} 个失败`
-            : `已导入 ${result.imported} 个模板`,
+            ? t("subagentSettings.importedWithErrors", {
+                count: result.imported,
+                errors: result.errors.length,
+              })
+            : t("subagentSettings.imported", { count: result.imported }),
         );
       }
     } catch (caught) {
@@ -191,7 +197,7 @@ export function SubagentSettingsSection({
               onClick={openCreateTemplate}
             >
               <Plus size={16} />
-              新建模板
+              {t("subagentSettings.newTemplate")}
             </button>
             <button
               type="button"
@@ -200,7 +206,7 @@ export function SubagentSettingsSection({
               onClick={() => void importTemplates()}
             >
               <Upload size={14} />
-              导入 JSON
+              {t("subagentSettings.importJson")}
             </button>
             <button
               type="button"
@@ -209,7 +215,7 @@ export function SubagentSettingsSection({
               onClick={() => void exportTemplates()}
             >
               <Download size={14} />
-              导出 JSON
+              {t("subagentSettings.exportJson")}
             </button>
           </div>
         </div>
@@ -217,7 +223,7 @@ export function SubagentSettingsSection({
         {registryMessage ? <p className="models-agent-registry-message">{registryMessage}</p> : null}
 
         {sortedTemplates.length === 0 ? (
-          <p className="mcp-list-empty">尚未添加子代理模板</p>
+          <p className="mcp-list-empty">{t("subagentSettings.empty")}</p>
         ) : (
           <ul className="models-agent-template-list">
             {sortedTemplates.map((template) => {
@@ -255,8 +261,8 @@ export function SubagentSettingsSection({
                       type="button"
                       className="mcp-icon-button"
                       onClick={() => openCopyTemplate(template)}
-                      aria-label={`复制 ${template.name}`}
-                      title={`复制 ${template.name}`}
+                      aria-label={t("subagentSettings.copyNamed", { name: template.name })}
+                      title={t("subagentSettings.copyNamed", { name: template.name })}
                       disabled={registryBusy}
                     >
                       <Copy size={18} />
@@ -265,8 +271,8 @@ export function SubagentSettingsSection({
                       type="button"
                       className="mcp-icon-button"
                       onClick={() => void exportTemplates([template.id])}
-                      aria-label={`导出 ${template.name}`}
-                      title={`导出 ${template.name}`}
+                      aria-label={t("subagentSettings.exportNamed", { name: template.name })}
+                      title={t("subagentSettings.exportNamed", { name: template.name })}
                       disabled={registryBusy}
                     >
                       <Download size={18} />
@@ -275,8 +281,16 @@ export function SubagentSettingsSection({
                       type="button"
                       className="mcp-icon-button"
                       onClick={() => openEditTemplate(template)}
-                      aria-label={editable ? `编辑 ${template.name}` : `复制 ${template.name}`}
-                      title={editable ? `编辑 ${template.name}` : `复制 ${template.name}`}
+                      aria-label={
+                        editable
+                          ? t("subagentSettings.editNamed", { name: template.name })
+                          : t("subagentSettings.copyNamed", { name: template.name })
+                      }
+                      title={
+                        editable
+                          ? t("subagentSettings.editNamed", { name: template.name })
+                          : t("subagentSettings.copyNamed", { name: template.name })
+                      }
                       disabled={registryBusy}
                     >
                       <Pencil size={18} />
@@ -286,8 +300,8 @@ export function SubagentSettingsSection({
                         type="button"
                         className="mcp-icon-button"
                         onClick={() => void deleteTemplate(template)}
-                        aria-label={`删除 ${template.name}`}
-                        title={`删除 ${template.name}`}
+                        aria-label={t("subagentSettings.deleteNamed", { name: template.name })}
+                        title={t("subagentSettings.deleteNamed", { name: template.name })}
                         disabled={registryBusy}
                       >
                         <Trash2 size={18} />
@@ -339,7 +353,12 @@ function AgentTemplateEditorModal({
   onClose: () => void;
   onSave: () => void;
 }) {
-  const title = editing ? `编辑 ${form.name.trim() || "子代理模板"}` : "新建子代理模板";
+  const { t } = useTranslation();
+  const title = editing
+    ? t("subagentSettings.editTitle", {
+        name: form.name.trim() || t("subagentSettings.templateFallback"),
+      })
+    : t("subagentSettings.createTitle");
   const capabilityOptions = useMemo(
     () =>
       buildAgentTemplateCapabilityOptions({
@@ -364,8 +383,8 @@ function AgentTemplateEditorModal({
         type="button"
         className="settings-modal-backdrop-close"
         onClick={onClose}
-        aria-label="关闭"
-        title="关闭"
+        aria-label={t("common.close")}
+        title={t("common.close")}
         disabled={busy}
       />
       <div
@@ -382,8 +401,8 @@ function AgentTemplateEditorModal({
             type="button"
             className="mcp-icon-button"
             onClick={onClose}
-            aria-label="关闭"
-            title="关闭"
+            aria-label={t("common.close")}
+            title={t("common.close")}
             disabled={busy}
           >
             <X size={18} />
@@ -395,7 +414,7 @@ function AgentTemplateEditorModal({
             <section className="models-agent-template-editor-main">
               <div className="models-agent-template-form-grid">
                 <label className="mcp-field">
-                  <span className="mcp-field-label">模板 ID</span>
+                  <span className="mcp-field-label">{t("subagentSettings.templateId")}</span>
                   <input
                     className="mcp-field-input"
                     value={form.id}
@@ -404,7 +423,7 @@ function AgentTemplateEditorModal({
                   />
                 </label>
                 <label className="mcp-field">
-                  <span className="mcp-field-label">名称</span>
+                  <span className="mcp-field-label">{t("subagentSettings.name")}</span>
                   <input
                     className="mcp-field-input"
                     value={form.name}
@@ -413,7 +432,7 @@ function AgentTemplateEditorModal({
                   />
                 </label>
                 <label className="mcp-field">
-                  <span className="mcp-field-label">领域</span>
+                  <span className="mcp-field-label">{t("subagentSettings.domain")}</span>
                   <select
                     className="mcp-field-input"
                     value={form.domain}
@@ -430,7 +449,7 @@ function AgentTemplateEditorModal({
               </div>
 
               <label className="mcp-field">
-                <span className="mcp-field-label">描述</span>
+                <span className="mcp-field-label">{t("subagentSettings.description")}</span>
                 <input
                   className="mcp-field-input"
                   value={form.description}
@@ -440,7 +459,7 @@ function AgentTemplateEditorModal({
               </label>
 
               <label className="mcp-field">
-                <span className="mcp-field-label">使用时机</span>
+                <span className="mcp-field-label">{t("subagentSettings.whenToUse")}</span>
                 <input
                   className="mcp-field-input"
                   value={form.whenToUse}
@@ -450,7 +469,7 @@ function AgentTemplateEditorModal({
               </label>
 
               <label className="mcp-field">
-                <span className="mcp-field-label">提示词</span>
+                <span className="mcp-field-label">{t("subagentSettings.prompt")}</span>
                 <textarea
                   className="mcp-field-input mcp-field-textarea models-agent-prompt-textarea"
                   value={form.prompt}
@@ -460,7 +479,7 @@ function AgentTemplateEditorModal({
               </label>
 
               <label className="mcp-field">
-                <span className="mcp-field-label">输出契约</span>
+                <span className="mcp-field-label">{t("subagentSettings.outputContract")}</span>
                 <textarea
                   className="mcp-field-input mcp-field-textarea"
                   value={form.outputContract}
@@ -472,8 +491,10 @@ function AgentTemplateEditorModal({
 
             <aside className="models-agent-template-policy-panel">
               <div className="models-agent-template-policy-head">
-                <span className="models-route-profile-section-title">权限与工具</span>
-                <p>按功能开关配置工具权限；需要时再展开高级细调。</p>
+                <span className="models-route-profile-section-title">
+                  {t("subagentSettings.permissions")}
+                </span>
+                <p>{t("subagentSettings.permissionsHint")}</p>
               </div>
 
               <ToolCapabilityPanel
@@ -490,10 +511,10 @@ function AgentTemplateEditorModal({
 
         <footer className="settings-modal-footer">
           <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </button>
           <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
-            保存
+            {t("common.save")}
           </button>
         </footer>
       </div>
@@ -503,17 +524,19 @@ function AgentTemplateEditorModal({
 
 function formatModelBinding(template: AgentTemplate): string {
   if (template.modelRequirements?.capabilities.length) {
-    return `模型要求：${template.modelRequirements.capabilities.join("/")}`;
+    return i18n.t("subagentSettings.modelRequirements", {
+      capabilities: template.modelRequirements.capabilities.join("/"),
+    });
   }
-  return "模型由 Profile 绑定";
+  return i18n.t("subagentSettings.profileBindsModel");
 }
 
 function formatTools(template: AgentTemplate): string {
   const disallowedCount = template.defaultTools.disallowed.length;
   if (disallowedCount === 0) {
-    return "默认允许";
+    return i18n.t("subagentSettings.toolsAllowed");
   }
-  return `禁用 ${disallowedCount} 项`;
+  return i18n.t("subagentSettings.toolsDisabled", { count: disallowedCount });
 }
 
 function sourceRank(template: AgentTemplate): number {

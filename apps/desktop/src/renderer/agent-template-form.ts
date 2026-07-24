@@ -16,6 +16,7 @@ import {
   toolPolicyToCapabilityFields,
   type ToolCapabilityFieldValues,
 } from "./tool-capability-groups";
+import { i18n } from "./i18n";
 
 export type { ToolCapabilityFieldValues };
 export {
@@ -121,17 +122,17 @@ export function buildAgentTemplateFromForm(
   form: AgentTemplateFormState,
   options: { existing?: AgentTemplate | undefined; nowIso?: string | undefined } = {},
 ): AgentTemplate {
-  const id = requireTemplateField(form.id, "子代理模板 id");
+  const id = requireTemplateField(form.id, i18n.t("agent.template.id"));
   if (id.startsWith("builtin.")) {
-    throw new Error("内置子代理模板 id 不可用于用户配置。");
+    throw new Error(i18n.t("agent.template.builtinId"));
   }
   if (!/^[a-zA-Z0-9_.-]+$/.test(id)) {
-    throw new Error("子代理模板 id 只能包含字母、数字、点、下划线和连字符。");
+    throw new Error(i18n.t("agent.template.invalidId"));
   }
-  const name = requireTemplateField(form.name, "名称");
-  const description = requireTemplateField(form.description, "描述");
-  const whenToUse = requireTemplateField(form.whenToUse, "使用时机");
-  const prompt = requireTemplateField(form.prompt, "提示词");
+  const name = requireTemplateField(form.name, i18n.t("agent.template.name"));
+  const description = requireTemplateField(form.description, i18n.t("agent.template.description"));
+  const whenToUse = requireTemplateField(form.whenToUse, i18n.t("agent.template.whenToUse"));
+  const prompt = requireTemplateField(form.prompt, i18n.t("agent.template.prompt"));
   const mcpServers = parseList(form.mcpServers);
   const defaultTools = capabilityFieldsToToolPolicy(form);
   return {
@@ -169,12 +170,12 @@ export function formatAgentDomain(domain: AgentDomain): string {
 
 export function formatAgentSource(template: AgentTemplate): string {
   if (template.builtIn || template.source === "built_in") {
-    return "内置";
+    return i18n.t("agent.source.builtin");
   }
   if (template.source === "derived") {
-    return "派生";
+    return i18n.t("agent.source.derived");
   }
-  return "用户";
+  return i18n.t("agent.source.user");
 }
 
 export function toggleAgentTemplateListValue(raw: string, value: string, checked: boolean): string {
@@ -263,15 +264,15 @@ function buildAdvancedToolOptions(
       return {
         value,
         label: value,
-        sourceLabel: "预设",
-        description: "来自内置或现有子代理模板。",
+        sourceLabel: i18n.t("agent.option.preset"),
+        description: i18n.t("agent.option.presetDescription"),
       };
     }
     return {
       value,
       label: value,
-      sourceLabel: "当前",
-      description: "当前配置中的自定义工具名。",
+      sourceLabel: i18n.t("agent.option.current"),
+      description: i18n.t("agent.option.currentToolDescription"),
     };
   });
 }
@@ -295,7 +296,7 @@ function buildMcpServerOptions(
       return {
         value,
         label: server.name,
-        sourceLabel: "已启用",
+        sourceLabel: i18n.t("agent.option.enabled"),
         description: formatMcpServerDescription(server),
       };
     }
@@ -303,15 +304,15 @@ function buildMcpServerOptions(
       return {
         value,
         label: server.name,
-        sourceLabel: "未启用",
-        description: "当前配置中保留的 MCP 服务器，但该服务器未启用。",
+        sourceLabel: i18n.t("agent.option.disabled"),
+        description: i18n.t("agent.option.disabledServerDescription"),
       };
     }
     return {
       value,
       label: value,
-      sourceLabel: "未配置",
-      description: "当前模板保留的 MCP 服务器名，未在全局 MCP 设置中找到。",
+      sourceLabel: i18n.t("agent.option.unconfigured"),
+      description: i18n.t("agent.option.unconfiguredServerDescription"),
     };
   });
 }
@@ -333,8 +334,8 @@ function buildMcpToolOptions(
         label: value,
         sourceLabel: server.name,
         description: server.allowedTools.trim()
-          ? "来自该 MCP 服务器的工具 allowlist。"
-          : "该 MCP 服务器未声明具体工具，按服务器级 wildcard 授权。",
+          ? i18n.t("agent.option.serverAllowlist")
+          : i18n.t("agent.option.serverWildcard"),
       })),
     );
   const configuredByValue = new Map(configuredOptions.map((option) => [option.value, option]));
@@ -352,30 +353,30 @@ function buildMcpToolOptions(
       return {
         value,
         label: value,
-        sourceLabel: "预设",
-        description: "来自内置或现有子代理模板。",
+        sourceLabel: i18n.t("agent.option.preset"),
+        description: i18n.t("agent.option.presetDescription"),
       };
     }
     return {
       value,
       label: value,
-      sourceLabel: "当前",
-      description: "当前模板保留的 MCP 工具模式，未在已启用 MCP 服务器 allowlist 中找到。",
+      sourceLabel: i18n.t("agent.option.current"),
+      description: i18n.t("agent.option.currentMcpToolDescription"),
     };
   });
 }
 
 function formatMcpServerDescription(server: McpServerConfigView): string {
   if (server.allowedTools.trim()) {
-    return "使用该服务器配置中声明的工具 allowlist。";
+    return i18n.t("agent.option.allowlistDescription");
   }
-  return "该服务器未声明具体工具，运行时只能按服务器级 wildcard 授权。";
+  return i18n.t("agent.option.wildcardDescription");
 }
 
 function requireTemplateField(value: string, label: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
-    throw new Error(`${label}不能为空。`);
+    throw new Error(i18n.t("agent.validation.required", { label }));
   }
   return trimmed;
 }

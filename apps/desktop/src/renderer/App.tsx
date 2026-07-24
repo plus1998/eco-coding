@@ -46,6 +46,13 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { I18nextProvider, useTranslation } from "react-i18next";
+import type { AppLocalePreference } from "../shared/locale";
+import {
+  applyLocalePreference,
+  i18n,
+  initialLocalePreference,
+} from "./i18n";
 import { installVitePreloadRecovery } from "./vite-preload-recovery";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
@@ -375,32 +382,6 @@ interface SettingsNavGroup {
   sections: SettingsSection[];
 }
 
-const settingsNavGroups: SettingsNavGroup[] = [
-  {
-    label: "个人",
-    sections: [{ id: "general", label: "外观", icon: Monitor, keywords: ["主题", "字体", "字号", "代码"] }],
-  },
-  {
-    label: "集成",
-    sections: [
-      { id: "providers", label: "模型服务商", icon: Settings2 },
-      { id: "mcp", label: "MCP", icon: Plug },
-      { id: "centerServer", label: "连接", icon: Cloud },
-    ],
-  },
-  {
-    label: "编码",
-    sections: [
-      { id: "defaultAgent", label: "默认 Agent", icon: Cpu },
-      { id: "models", label: "智能体构建器", icon: SlidersHorizontal },
-      { id: "skills", label: "Skills", icon: Sparkles },
-      { id: "git", label: "Git", icon: GitBranch },
-    ],
-  },
-];
-
-const settingsSections = settingsNavGroups.flatMap((group) => group.sections);
-
 const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
   settings: {
     enabled: false,
@@ -467,7 +448,7 @@ function buildTerminalStateForLiveSessions(
       return existingTab;
     }
 
-    const labelBase = workspaceLabel.trim() || "终端";
+    const labelBase = workspaceLabel.trim() || i18n.t("app.terminalFallback");
     const baseLabel = index === 0 ? labelBase : `${labelBase} ${index + 1}`;
     let label = baseLabel;
     let suffix = 2;
@@ -630,7 +611,8 @@ function buildActivityUserMessageNavItem(
 ): ActivityUserMessageNavItemDraft {
   return {
     id,
-    userMessage: normalizeActivityUserMessageText(text) || `用户消息 ${index + 1}`,
+    userMessage:
+      normalizeActivityUserMessageText(text) || i18n.t("app.userMessage", { count: index + 1 }),
     index,
     fileNames: new Set(),
   };
@@ -650,7 +632,9 @@ function finishActivityUserMessageNavItem(
 }
 
 function activityUserMessageAriaLabel(item: ActivityUserMessageNavItem): string {
-  return `跳到${clipActivityUserMessageText(item.userMessage, 34)}`;
+  return i18n.t("app.jumpToMessage", {
+    message: clipActivityUserMessageText(item.userMessage, 34),
+  });
 }
 
 function formatActivityUserMessageFileList(fileNames: readonly string[]): string {
@@ -729,7 +713,7 @@ function ActivityUserMessageNavigator({
   return (
     <nav
       className="activity-user-message-nav"
-      aria-label="用户消息列表"
+      aria-label={i18n.t("app.userMessageList")}
       onPointerLeave={() => setHoveredId(undefined)}
       onBlur={(event) => clearHoverIfLeaving(event.relatedTarget, event.currentTarget)}
     >
@@ -788,6 +772,7 @@ function ActivityUserMessageNavigator({
 }
 
 function App() {
+  const { t } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
@@ -798,6 +783,8 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
   const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
+  const [localePreference, setLocalePreference] =
+    useState<AppLocalePreference>(initialLocalePreference);
   const [typographyPreferences, setTypographyPreferences] = useState<TypographyPreferences>(() =>
     readStoredTypographyPreferences(),
   );
@@ -809,6 +796,60 @@ function App() {
   useEffect(() => {
     persistTypographyPreferences(typographyPreferences);
   }, [typographyPreferences]);
+
+  useEffect(() => {
+    void applyLocalePreference(localePreference);
+  }, [localePreference]);
+
+  useEffect(() => {
+    if (localePreference !== "system") {
+      return undefined;
+    }
+    const handleLanguageChange = () => {
+      void applyLocalePreference("system");
+    };
+    window.addEventListener("languagechange", handleLanguageChange);
+    return () => window.removeEventListener("languagechange", handleLanguageChange);
+  }, [localePreference]);
+
+  const settingsNavGroups = useMemo<SettingsNavGroup[]>(
+    () => [
+      {
+        label: t("settings.group.personal"),
+        sections: [
+          {
+            id: "general",
+            label: t("settings.general"),
+            icon: Monitor,
+            keywords: [
+              t("settings.theme"),
+              t("settings.fonts"),
+              t("settings.language"),
+              "code",
+            ],
+          },
+        ],
+      },
+      {
+        label: t("settings.group.integrations"),
+        sections: [
+          { id: "providers", label: t("settings.providers"), icon: Settings2 },
+          { id: "mcp", label: "MCP", icon: Plug },
+          { id: "centerServer", label: t("settings.connection"), icon: Cloud },
+        ],
+      },
+      {
+        label: t("settings.group.coding"),
+        sections: [
+          { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
+          { id: "models", label: t("settings.agentBuilder"), icon: SlidersHorizontal },
+          { id: "skills", label: "Skills", icon: Sparkles },
+          { id: "git", label: "Git", icon: GitBranch },
+        ],
+      },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     if (appTheme !== "system") {
@@ -1157,7 +1198,7 @@ function App() {
       }
 
       if (event.type === "thread.title_failed" && event.threadId === selectedThreadIdRef.current) {
-        showAppMessageErrorRef.current("会话标题生成失败");
+        showAppMessageErrorRef.current(t("thread.titleGenerationFailed"));
         return;
       }
 
@@ -1781,11 +1822,11 @@ function App() {
   }, [hiddenProjectPaths, projects, selectedProjectPath, workspace]);
   const currentProjectName = useMemo(() => {
     if (!currentProjectPath) {
-      return "项目";
+      return t("nav.projectFallback");
     }
     const project = projects.find((item) => item.path === currentProjectPath);
     return project?.name ?? pathToName(currentProjectPath);
-  }, [currentProjectPath, projects]);
+  }, [currentProjectPath, projects, t]);
   const gitStatus = currentProjectPath
     ? gitStatusByWorkspace[currentProjectPath]?.status
     : undefined;
@@ -2238,10 +2279,13 @@ function App() {
         }
       }
       if (succeeded) {
-        showAppMessageSuccessRef.current(`脚本“${scriptName}”执行成功`);
+        showAppMessageSuccessRef.current(t("app.scriptSucceeded", { name: scriptName }));
       } else {
-        const exitCodeDetail = exitCode === undefined ? "" : `（退出码 ${exitCode}）`;
-        showAppMessageErrorRef.current(`脚本“${scriptName}”执行失败${exitCodeDetail}`);
+        const exitCodeDetail =
+          exitCode === undefined ? "" : t("app.exitCode", { code: exitCode });
+        showAppMessageErrorRef.current(
+          t("app.scriptFailed", { name: scriptName, detail: exitCodeDetail }),
+        );
       }
       return succeeded;
     },
@@ -2794,7 +2838,9 @@ function App() {
       .catch((caught) => {
         if (!cancelled) {
           setComposerCandidateModels([]);
-          setComposerModelsError(`候选模型加载失败：${errorMessage(caught)}`);
+          setComposerModelsError(
+            t("app.candidateModelsFailed", { detail: errorMessage(caught) }),
+          );
         }
       })
       .finally(() => {
@@ -3977,7 +4023,7 @@ function App() {
 
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
-      setError("当前桌面预加载 API 不包含后续消息编辑锁，请重启应用后再试。");
+      setError(t("app.preload.followUpEditing"));
       return;
     }
     setFollowUpBusy(true);
@@ -4029,19 +4075,19 @@ function App() {
       return;
     }
     if (contextCompactionInFlight) {
-      setError("上下文正在压缩中，请稍候。");
+      setError(t("app.contextCompacting"));
       return;
     }
     setError(undefined);
     requestActivityFeedForceScroll();
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
-    const messagePrompt = prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
+    const messagePrompt = prompt.trim() || (attachments?.length ? t("app.imagePrompt") : "");
 
     if (composerFollowUpMode && activeThread) {
       if (editingFollowUpId) {
         if (typeof window.eco.updateThreadFollowUp !== "function") {
-          setError("当前桌面预加载 API 不包含编辑后续消息入口，请重启应用后再试。");
+          setError(t("app.preload.followUpUpdate"));
           return;
         }
         setFollowUpBusy(true);
@@ -4066,7 +4112,7 @@ function App() {
       }
 
       if (typeof window.eco.enqueueThreadFollowUp !== "function") {
-        setError("当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。");
+        setError(t("app.preload.followUpEnqueue"));
         return;
       }
       setFollowUpBusy(true);
@@ -4103,7 +4149,7 @@ function App() {
 
     setIsStarting(true);
     if (!composerRuntimeConfig) {
-      setError("请先配置子代理编排方案。");
+      setError(t("app.configureOrchestration"));
       setIsStarting(false);
       return;
     }
@@ -4135,7 +4181,7 @@ function App() {
         try {
           await refreshThreadState(result.thread.id);
         } catch (caught) {
-          setError(`消息已发送，但界面状态同步失败：${errorMessage(caught)}`);
+          setError(t("app.sentSyncFailed", { detail: errorMessage(caught) }));
         }
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
         if (effectiveComposerRuntimeConfig ?? composerRuntimeConfig) {
@@ -4204,7 +4250,7 @@ function App() {
 
   async function cancelQueuedFollowUp(followUp: ThreadPendingFollowUp) {
     if (!window.eco || typeof window.eco.cancelThreadFollowUp !== "function") {
-      setError("当前桌面预加载 API 不包含取消后续消息入口，请重启应用后再试。");
+      setError(t("app.preload.followUpCancel"));
       return;
     }
     setError(undefined);
@@ -4230,7 +4276,7 @@ function App() {
 
   async function escalateQueuedFollowUp(followUp: ThreadPendingFollowUp) {
     if (!window.eco || typeof window.eco.escalateThreadFollowUp !== "function") {
-      setError("当前桌面预加载 API 不包含立即处理后续消息入口，请重启应用后再试。");
+      setError(t("app.preload.followUpEscalate"));
       return;
     }
     setError(undefined);
@@ -4589,7 +4635,7 @@ function App() {
       return;
     }
     if (!composerRuntimeConfig) {
-      setError("请先配置子代理编排方案。");
+      setError(t("app.configureOrchestration"));
       return;
     }
     const fileList = conflictFiles.map((file) => `- ${file}`).join("\n");
@@ -4599,7 +4645,7 @@ function App() {
     if (activeThread) {
       if (activeThread.status === "running" || activeThread.status === "queued") {
         if (typeof window.eco.enqueueThreadFollowUp !== "function") {
-          setError("当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。");
+          setError(t("app.preload.followUpEnqueue"));
           return;
         }
         setFollowUpBusy(true);
@@ -4756,7 +4802,7 @@ function App() {
       override &&
       !resolveMainAgentModelOverrideForProvider(templateMainModel?.providerId, override)
     ) {
-      setError("只能选择当前配置后端的模型。");
+      setError(t("app.modelBackendMismatch"));
       return;
     }
     const { mainAgentModelOverride: _currentOverride, ...baseRuntimeConfig } = composerRuntimeConfig;
@@ -5347,7 +5393,7 @@ function App() {
       return;
     }
     if (thread.status === "running" || thread.status === "queued") {
-      setError("请先停止当前运行后再删除对话。");
+      setError(t("thread.stopFirst"));
       return;
     }
     if (deletingThreadId) {
@@ -5414,11 +5460,11 @@ function App() {
 
   async function addComposerImageFiles(files: FileList | File[]) {
     if (!canPasteComposerImages) {
-      setComposerImageNotice("当前主代理模型不支持图片输入。");
+      setComposerImageNotice(t("app.imageUnsupported"));
       return;
     }
     if (plannerCapability && !plannerCapability.capabilitiesResolved) {
-      setComposerImageNotice("未匹配 models.dev，请自行确认主代理模型是否支持图片。");
+      setComposerImageNotice(t("app.imageCapabilityUnknown"));
     } else {
       setComposerImageNotice(undefined);
     }
@@ -5575,15 +5621,15 @@ function App() {
     "--task-panel-width": `${taskPanelWidth}px`,
   } as CSSProperties;
   const workspacePanelToolbar = showWorkspacePanel ? (
-    <div className="codex-main-toolbar codex-main-toolbar--workspace" aria-label="工作区控制">
+    <div className="codex-main-toolbar codex-main-toolbar--workspace" aria-label={t("app.workspaceControls")}>
       <button
         type="button"
         className={
           workspaceCardsPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
         }
         onClick={toggleWorkspacePanelForCurrentProject}
-        title={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
-        aria-label={workspaceCardsPanelOpen ? "收起工作区卡片" : "打开工作区卡片"}
+        title={workspaceCardsPanelOpen ? t("app.workspaceCardsCollapse") : t("app.workspaceCardsOpen")}
+        aria-label={workspaceCardsPanelOpen ? t("app.workspaceCardsCollapse") : t("app.workspaceCardsOpen")}
         aria-expanded={workspaceCardsPanelOpen}
         aria-controls="workspace-cards-panel"
       >
@@ -5592,15 +5638,15 @@ function App() {
     </div>
   ) : null;
   const fixedSidebarToolbar = showWorkspacePanel && !settingsOpen ? (
-    <div className="codex-fixed-sidebar-toolbar" aria-label="侧边栏控制">
+    <div className="codex-fixed-sidebar-toolbar" aria-label={t("app.sidebarControls")}>
       <button
         type="button"
         className={
           currentTerminalState?.open ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
         }
         onClick={toggleTerminalForCurrentProject}
-        title={currentTerminalState?.open ? "关闭终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"}
-        aria-label={currentTerminalState?.open ? "关闭终端" : "打开终端"}
+        title={`${currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")} (Ctrl+\`)`}
+        aria-label={currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")}
         aria-expanded={currentTerminalState?.open === true}
         aria-controls="terminal-panel"
       >
@@ -5610,8 +5656,8 @@ function App() {
         type="button"
         className={taskPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
         onClick={toggleTaskPanelForCurrentProject}
-        title={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
-        aria-label={taskPanelOpen ? "收起任务侧栏" : "打开任务侧栏"}
+        title={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
+        aria-label={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
         aria-expanded={taskPanelOpen}
         aria-controls="task-panel"
       >
@@ -5626,15 +5672,15 @@ function App() {
         className={["workspace-panel", "is-task-panel-mode", taskPanelFullscreenOpen ? "is-fullscreen" : ""]
           .filter(Boolean)
           .join(" ")}
-        aria-label={taskPanelFullscreenOpen ? "全屏任务面板" : "任务面板"}
+        aria-label={taskPanelFullscreenOpen ? t("app.taskPanelFullscreen") : t("app.taskPanel")}
         aria-hidden={!taskPanelOpen}
       >
         <hr
           className="task-panel-resize-handle"
-          aria-label="调整任务面板宽度"
+          aria-label={t("app.taskPanelResize")}
           aria-orientation="vertical"
           tabIndex={0}
-          title="拖动调整宽度"
+          title={t("app.dragResize")}
           onMouseDown={handleTaskPanelResizeMouseDown}
           onKeyDown={handleTaskPanelResizeKeyDown}
         />
@@ -5756,24 +5802,24 @@ function App() {
   }, [showLanding, currentProjectPath]);
   const shellClassName = ["shell", settingsOpen ? "shell-settings-open" : ""].filter(Boolean).join(" ");
   const composerPlaceholder = showClarification
-    ? "补充消息会排队；请先回答当前问题"
+    ? t("thread.composer.answerQuestion")
     : showBashApproval
-      ? "补充消息会排队；工具授权请用下方卡片"
+      ? t("thread.composer.approveTool")
       : showPlanApproval
-        ? "补充消息会排队；计划审批请用下方卡片"
+        ? t("thread.composer.approvePlan")
         : contextCompactionInFlight
-          ? "上下文压缩中，请稍候…"
+          ? t("thread.composer.compacting")
           : activeThread?.status === "awaiting_plan"
-            ? "请先确认或忽略下方计划"
+            ? t("thread.composer.confirmPlan")
             : activeThread && isContinuableThreadStatus(activeThread.status)
-              ? "继续对话…"
+              ? t("thread.composer.continue")
               : composerFollowUpMode
                 ? editingFollowUpId
-                  ? "编辑引导消息…"
-                  : "要求后续变更"
+                  ? t("thread.composer.editFollowUp")
+                  : t("thread.composer.requestChanges")
                 : activeThread
-                  ? "当前对话不可发送"
-                  : "尽管问";
+                  ? t("thread.composer.unavailable")
+                  : t("thread.composer.placeholder");
   const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
   const composerActionMode = editingFollowUpId
     ? "save-follow-up"
@@ -5786,12 +5832,12 @@ function App() {
   const composerActionDisabled = composerActionMode === "stop" ? cancelBusy : !canSend;
   const composerActionLabel =
     composerActionMode === "stop"
-      ? "停止"
+      ? t("thread.action.stop")
       : composerActionMode === "queue"
-        ? "排队后续消息"
+        ? t("thread.action.queue")
         : composerActionMode === "save-follow-up"
-          ? "保存引导消息"
-          : "发送";
+          ? t("thread.action.saveFollowUp")
+          : t("thread.action.send");
   const composerActionClassName = ["send-button", composerActionMode].filter(Boolean).join(" ");
   const composerCompact = !showLanding;
 
@@ -5913,14 +5959,14 @@ function App() {
               />
             ) : null}
             {composerAttachments.length > 0 ? (
-              <ul className="composer-attachments" aria-label="已粘贴的图片">
+              <ul className="composer-attachments" aria-label={t("app.pastedImages")}>
                 {composerAttachments.map((attachment) => (
                   <li key={attachment.id} className="composer-attachment">
                     <img src={attachment.previewUrl} alt="" />
                     <button
                       type="button"
                       className="composer-attachment-remove"
-                      aria-label="移除图片"
+                      aria-label={t("app.removeImage")}
                       onClick={() => removeComposerAttachment(attachment.id)}
                     >
                       <X size={14} />
@@ -6088,11 +6134,11 @@ function App() {
               )}
               {!routesReady && !composerFollowUpMode && (
                 <p className="composer-hint">
-                  请先在
+                  {t("thread.configureModelsPrefix")}{" "}
                   <button type="button" className="link-button" onClick={openProviderSettings}>
-                    模型服务商
+                    {t("settings.providers")}
                   </button>
-                  中配置模型（API Key 可选）
+                  {" "}{t("thread.configureModelsSuffix")}
                 </p>
               )}
             </div>
@@ -6145,11 +6191,11 @@ function App() {
         />
         <button type="button" className="sidebar-action" onClick={startNewChat}>
           <MessageSquarePlus size={18} />
-          新对话
+          {t("nav.newThread")}
         </button>
         <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
           {isOpening ? <Loader2 size={18} className="spinning" aria-hidden /> : <FolderOpen size={18} />}
-          {isOpening ? "打开中" : "打开项目"}
+          {isOpening ? t("nav.opening") : t("nav.openProject")}
         </button>
 
         <div className="sidebar-section sidebar-section-grow">
@@ -6178,7 +6224,7 @@ function App() {
 
         <button type="button" className="sidebar-settings" onClick={openProviderSettings}>
           <Settings2 size={18} />
-          设置
+          {t("nav.settings")}
         </button>
       </aside>
 
@@ -6259,9 +6305,9 @@ function App() {
                     <h1 className="codex-hero">
                       {currentProjectPath
                         ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
-                          ? "你在忙什么？"
-                          : `我们应该在 ${currentProjectName} 中构建什么？`
-                        : "打开一个项目开始编码"}
+                          ? t("app.landing.home")
+                          : t("app.landing.project", { project: currentProjectName })
+                        : t("app.landing.openProject")}
                     </h1>
                     {composer}
                   </div>
@@ -6318,8 +6364,8 @@ function App() {
                             type="button"
                             className="activity-feed-scroll-jump is-visible"
                             onClick={handleActivityFeedScrollJump}
-                            aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
-                            title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                            aria-label={activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")}
+                            title={activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")}
                           >
                             {activityFeedScrollJump === "top" ? (
                               <ChevronUp size={18} />
@@ -6377,7 +6423,7 @@ function App() {
               ]
                 .filter(Boolean)
                 .join(" ")}
-              aria-label="工作区面板"
+              aria-label={t("app.workspacePanel")}
               aria-hidden={!workspaceCardsPanelOpen}
               style={
                 {
@@ -6476,7 +6522,7 @@ function App() {
       ) : null}
 
       {settingsOpen && (
-        <div className="settings-page" role="dialog" aria-modal="true" aria-label="设置">
+        <div className="settings-page" role="dialog" aria-modal="true" aria-label={t("settings.dialog")}>
           <aside className="settings-nav">
             <button
               type="button"
@@ -6487,7 +6533,7 @@ function App() {
               }}
             >
               <ChevronLeft size={18} />
-              返回应用
+              {t("settings.back")}
             </button>
 
             <div className="settings-nav-search">
@@ -6495,14 +6541,14 @@ function App() {
               <input
                 type="search"
                 className="settings-nav-search-input"
-                placeholder="搜索设置…"
+                placeholder={t("settings.searchPlaceholder")}
                 value={settingsSearch}
                 onChange={(event) => setSettingsSearch(event.target.value)}
-                aria-label="搜索设置"
+                aria-label={t("settings.search")}
               />
             </div>
 
-            <nav className="settings-nav-groups" aria-label="设置分类">
+            <nav className="settings-nav-groups" aria-label={t("settings.categories")}>
               {settingsNavGroups
                 .map((group) => ({
                   ...group,
@@ -6551,6 +6597,8 @@ function App() {
                   onThemeChange={setAppTheme}
                   typography={typographyPreferences}
                   onTypographyChange={setTypographyPreferences}
+                  localePreference={localePreference}
+                  onLocalePreferenceChange={setLocalePreference}
                 />
               )}
 
@@ -6619,7 +6667,7 @@ function App() {
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />
                 ) : (
-                  <p className="settings-empty-hint">正在加载模型服务商配置…</p>
+                  <p className="settings-empty-hint">{t("settings.loadingProviders")}</p>
                 ))}
 
               {settingsSection === "models" &&
@@ -6642,7 +6690,7 @@ function App() {
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />
                 ) : (
-                  <p className="settings-empty-hint">正在加载模型与工作流配置…</p>
+                  <p className="settings-empty-hint">{t("settings.loadingModels")}</p>
                 ))}
 
               {settingsSection === "git" && (
@@ -6681,6 +6729,7 @@ function FollowUpQueuePanel({
   onEdit: (followUp: ThreadPendingFollowUp) => void;
   onReorder: (followUpIds: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const [draggedId, setDraggedId] = useState<string>();
 
   const moveDraggedBefore = (targetId: string) => {
@@ -6693,7 +6742,7 @@ function FollowUpQueuePanel({
     onReorder(next);
   };
   return (
-    <div className="follow-up-queue" aria-label="已排队的引导消息">
+    <div className="follow-up-queue" aria-label={t("app.queuedGuidance")}>
       <div className="follow-up-queue-rows">
         {followUps.map((followUp) => {
           const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
@@ -6715,8 +6764,8 @@ function FollowUpQueuePanel({
                 className="follow-up-card-main follow-up-card-main-editable"
                 role="button"
                 tabIndex={actionBusy ? -1 : 0}
-                aria-label="重新编辑引导消息"
-                title="重新编辑"
+                aria-label={t("thread.editFollowUpAria")}
+                title={t("thread.editFollowUp")}
                 onClick={() => {
                   if (!actionBusy) {
                     onEdit(followUp);
@@ -6735,8 +6784,8 @@ function FollowUpQueuePanel({
                   draggable={!actionBusy}
                   role="button"
                   tabIndex={actionBusy ? -1 : 0}
-                  aria-label="拖动调整消息顺序"
-                  title="拖动调整顺序"
+                  aria-label={t("thread.reorderFollowUpAria")}
+                  title={t("thread.reorderFollowUp")}
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
                     event.stopPropagation();
@@ -6756,8 +6805,8 @@ function FollowUpQueuePanel({
                     role="button"
                     tabIndex={actionBusy ? -1 : 0}
                     aria-disabled={actionBusy}
-                    aria-label="立即处理引导消息"
-                    title="立即处理"
+                    aria-label={t("thread.followUpNowAria")}
+                    title={t("thread.followUpNow")}
                     onClick={() => {
                       if (!actionBusy) {
                         onEscalate(followUp);
@@ -6772,12 +6821,12 @@ function FollowUpQueuePanel({
                     }}
                   >
                     <CornerDownRight size={11} aria-hidden />
-                    {isEscalating ? "正在处理…" : "引导"}
+                    {isEscalating ? t("thread.processing") : t("thread.guide")}
                   </span>
                 ) : (
                   <span className="follow-up-card-type">
                     <CornerDownRight size={11} aria-hidden />
-                    引导
+                    {t("thread.guide")}
                   </span>
                 )}
                 <button
@@ -6785,8 +6834,8 @@ function FollowUpQueuePanel({
                   className="follow-up-card-action"
                   onClick={() => onCancel(followUp)}
                   disabled={actionBusy}
-                  title="删除"
-                  aria-label="删除引导消息"
+                  title={t("common.delete")}
+                  aria-label={t("thread.deleteFollowUpAria")}
                 >
                   {cancelBusyId === followUp.id ? <Activity size={12} /> : <Trash2 size={12} />}
                 </button>
@@ -6839,4 +6888,9 @@ function pathToName(projectPath: string): string {
 }
 
 installVitePreloadRecovery();
-createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+document.documentElement.lang = i18n.resolvedLanguage ?? "zh-CN";
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <I18nextProvider i18n={i18n}>
+    <App />
+  </I18nextProvider>,
+);

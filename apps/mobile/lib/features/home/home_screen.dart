@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
@@ -86,7 +88,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _wizardStep = SetupWizardStep.server;
       _showManualSetup = true;
     });
-    _showSnack(centerServerAuthRecoveryMessage(recovery));
+    _showSnack(localizedCenterServerRecovery(recovery, context.l10n));
   }
 
   @override
@@ -103,7 +105,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await action();
     } catch (error) {
-      if (mounted) _showSnack(error.toString());
+      if (mounted) _showSnack(localizedAppError(error, context.l10n));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -163,12 +165,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (selected.online) {
           _showSnack(
             result.alreadyBound
-                ? '已打开 ${selected.name}'
-                : '已绑定 ${selected.name}',
+                ? context.l10n.setupOpenedDevice(selected.name)
+                : context.l10n.setupBoundDevice(selected.name),
           );
           if (mounted) context.go('/threads');
         } else {
-          _showSnack('${selected.name} 已选择，但当前离线');
+          _showSnack(context.l10n.setupSelectedDeviceOffline(selected.name));
         }
       });
       return;
@@ -179,7 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showManualSetup = true;
       _wizardStep = SetupWizardStep.bindPc;
     });
-    _showSnack('旧版二维码，请完成登录后绑定');
+    _showSnack(context.l10n.setupLegacyQr);
   }
 
   Future<_SelectedDesktopResult> _selectDesktop(String desktopId) async {
@@ -229,7 +231,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
         if (recovery == CenterServerAuthRecovery.relogin) {
           setState(() => _wizardStep = SetupWizardStep.login);
-          _showSnack(centerServerAuthRecoveryMessage(recovery));
+          _showSnack(localizedCenterServerRecovery(recovery, context.l10n));
           return;
         }
         if (recovery == CenterServerAuthRecovery.accountUnusable) {
@@ -241,25 +243,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _wizardStep = SetupWizardStep.login;
             _showManualSetup = true;
           });
-          _showSnack(centerServerAuthRecoveryMessage(recovery));
+          _showSnack(localizedCenterServerRecovery(recovery, context.l10n));
         }
       });
     });
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('连接 PC'),
+        title: Text(context.l10n.setupConnectPc),
         leading: Navigator.canPop(context)
             ? AdaptiveToolbarIcon(
                 icon: EcoIcons.back,
-                tooltip: '返回',
+                tooltip: context.l10n.commonBack,
                 size: sessionToolbarButtonSize,
                 onPressed: actionBusy ? null : () => context.pop(),
               )
             : _showManualSetup && !overview.setupComplete
             ? AdaptiveToolbarIcon(
                 icon: EcoIcons.qrScan,
-                tooltip: '返回扫码',
+                tooltip: context.l10n.commonBack,
                 size: sessionToolbarButtonSize,
                 onPressed: actionBusy
                     ? null
@@ -273,7 +275,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ? _GlassRefreshSpinner()
                 : AdaptiveToolbarIcon(
                     icon: EcoIcons.refresh,
-                    tooltip: '刷新状态',
+                    tooltip: context.l10n.commonRefresh,
                     onPressed: actionBusy ? null : _refreshStatus,
                     size: sessionToolbarButtonSize,
                   ),
@@ -292,9 +294,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     .read(ecoCenterClientProvider)
                     .setSelectedDesktop(desktopId);
                 if (online) {
-                  _showSnack('已选择 $name');
+                  _showSnack(context.l10n.setupSelectedDevice(name));
                 } else {
-                  _showSnack('$name 当前离线，请确认 Desktop 已连接 Server');
+                  _showSnack(context.l10n.setupDeviceOfflineServerHelp(name));
                 }
               },
             )
@@ -368,9 +370,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (ok) {
               await client.setServerUrl(_serverUrlController.text);
               ref.invalidate(credentialsProvider);
-              _showSnack('服务器可达');
+              _showSnack(context.l10n.setupServerReachable);
             } else {
-              _showSnack('无法访问服务器，请检查地址与网络');
+              _showSnack(context.l10n.setupServerUnreachable);
             }
           }),
         ),
@@ -389,7 +391,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onSubmit: () => _run(() async {
             final client = ref.read(ecoCenterClientProvider);
             if (_serverUrlController.text.trim().isEmpty) {
-              throw Exception('请先完成服务器配置');
+              throw Exception(context.l10n.setupServerRequired);
             }
             await client.setServerUrl(_serverUrlController.text);
             if (_isRegister) {
@@ -408,11 +410,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ref.invalidate(credentialsProvider);
             ref.invalidate(bindingsProvider);
             ref.invalidate(desktopPresenceProvider);
-            _showSnack('登录成功，WebSocket 已连接');
+            _showSnack(context.l10n.setupLoginSuccess);
           }),
           onReconnect: () => _run(() async {
             await ref.read(ecoCenterClientProvider).connect();
-            _showSnack('已尝试重新连接 WebSocket');
+            _showSnack(context.l10n.setupReconnectAttempted);
           }),
         ),
       ),
@@ -436,10 +438,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _pairCodeController.clear();
             final selected = await _selectDesktop(binding.desktopDeviceId);
             if (selected.online) {
-              _showSnack('已绑定 ${selected.name}');
+              _showSnack(context.l10n.setupBoundDevice(selected.name));
               if (mounted) context.go('/threads');
             } else {
-              _showSnack('${selected.name} 已绑定，但当前离线');
+              _showSnack(context.l10n.setupBoundDeviceOffline(selected.name));
             }
           }),
         ),
@@ -455,9 +457,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 .read(ecoCenterClientProvider)
                 .setSelectedDesktop(desktopId);
             if (online) {
-              _showSnack('已选择 $name');
+              _showSnack(context.l10n.setupSelectedDevice(name));
             } else {
-              _showSnack('$name 当前离线');
+              _showSnack(context.l10n.setupSelectedDeviceOffline(name));
             }
           },
         ),
@@ -487,7 +489,7 @@ class _ConnectStepHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          step.title,
+          step.title(context.l10n),
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
             letterSpacing: 0,
@@ -496,7 +498,7 @@ class _ConnectStepHeader extends StatelessWidget {
         if (!done) ...[
           const SizedBox(height: 6),
           Text(
-            step.subtitle,
+            step.subtitle(context.l10n),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: ecoColors(context).textMuted,
               height: 1.4,
@@ -540,19 +542,19 @@ class _WizardNavBar extends StatelessWidget {
         if (showBack)
           OutlinedButton(
             onPressed: busy ? null : onBack,
-            child: const Text('上一步'),
+            child: Text(context.l10n.setupPrevious),
           ),
         const Spacer(),
         if (showNext)
           OutlinedButton(
             onPressed: busy ? null : onNext,
-            child: const Text('下一步'),
+            child: Text(context.l10n.setupNext),
           ),
         if (showEnterApp && onEnterApp != null) ...[
           if (showNext) const SizedBox(width: 8),
           FilledButton(
             onPressed: busy ? null : onEnterApp,
-            child: const Text('进入应用'),
+            child: Text(context.l10n.setupEnterApp),
           ),
         ],
       ],
@@ -627,7 +629,9 @@ class _ServerStep extends StatelessWidget {
         FilledButton(
           onPressed: busy ? null : onTest,
           child: Text(
-            serverStep.state == SetupStepState.done ? '重新测试' : '测试连接',
+            serverStep.state == SetupStepState.done
+                ? context.l10n.setupRetestConnection
+                : context.l10n.setupTestConnection,
           ),
         ),
       ],
@@ -674,7 +678,7 @@ class _LoginStep extends ConsumerWidget {
           if (wsNeedsAttention) ...[
             const SizedBox(height: 12),
             Text(
-              wsStep.hint ?? '连接异常',
+              wsStep.hint ?? context.l10n.setupConnectionError,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: ecoColors(context).statusDenyText,
               ),
@@ -682,7 +686,7 @@ class _LoginStep extends ConsumerWidget {
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: busy ? null : onReconnect,
-              child: const Text('重试连接'),
+              child: Text(context.l10n.setupRetryConnection),
             ),
           ],
         ],
@@ -693,12 +697,15 @@ class _LoginStep extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (overview.steps[0].state != SetupStepState.done)
-          const _StepBlockedHint(text: '请先完成服务器配置')
+          _StepBlockedHint(text: context.l10n.setupCompleteServerFirst)
         else ...[
           SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: false, label: Text('登录')),
-              ButtonSegment(value: true, label: Text('注册')),
+            segments: [
+              ButtonSegment(value: false, label: Text(context.l10n.setupLogin)),
+              ButtonSegment(
+                value: true,
+                label: Text(context.l10n.setupRegister),
+              ),
             ],
             selected: {isRegister},
             onSelectionChanged: onToggleRegister == null
@@ -708,21 +715,25 @@ class _LoginStep extends ConsumerWidget {
           const SizedBox(height: 16),
           TextField(
             controller: emailController,
-            decoration: const InputDecoration(labelText: '邮箱'),
+            decoration: InputDecoration(labelText: context.l10n.setupEmail),
             keyboardType: TextInputType.emailAddress,
             enabled: !busy,
           ),
           const SizedBox(height: 12),
           TextField(
             controller: passwordController,
-            decoration: const InputDecoration(labelText: '密码'),
+            decoration: InputDecoration(labelText: context.l10n.setupPassword),
             obscureText: true,
             enabled: !busy,
           ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: busy ? null : onSubmit,
-            child: Text(isRegister ? '注册并登录' : '登录'),
+            child: Text(
+              isRegister
+                  ? context.l10n.setupRegisterAndLogin
+                  : context.l10n.setupLogin,
+            ),
           ),
         ],
       ],
@@ -751,7 +762,7 @@ class _BindPcStep extends StatelessWidget {
 
     if (bindStep.state == SetupStepState.done) {
       return _AccountStatusRow(
-        email: bindStep.subtitle ?? '已绑定 PC',
+        email: bindStep.subtitle ?? context.l10n.setupBoundPcFallback,
         connected: true,
       );
     }
@@ -760,16 +771,16 @@ class _BindPcStep extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (overview.steps[1].state != SetupStepState.done)
-          const _StepBlockedHint(text: '请先完成登录')
+          _StepBlockedHint(text: context.l10n.setupCompleteLoginFirst)
         else ...[
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: pairCodeController,
-                  decoration: const InputDecoration(
-                    labelText: '配对码',
-                    hintText: '8 位',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.setupPairingCode,
+                    hintText: context.l10n.setupPairingCodeHint,
                   ),
                   textCapitalization: TextCapitalization.characters,
                   enabled: !busy,
@@ -779,14 +790,14 @@ class _BindPcStep extends StatelessWidget {
               IconButton(
                 onPressed: busy ? null : onScan,
                 icon: const Icon(EcoIcons.qrScan),
-                tooltip: '扫码',
+                tooltip: context.l10n.setupScan,
               ),
             ],
           ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: busy ? null : onBind,
-            child: const Text('绑定'),
+            child: Text(context.l10n.setupBind),
           ),
         ],
       ],
@@ -819,14 +830,14 @@ class _SelectPcStep extends ConsumerWidget {
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
 
     if (overview.steps[3].state != SetupStepState.done) {
-      return const _StepBlockedHint(text: '请先绑定 PC');
+      return _StepBlockedHint(text: context.l10n.setupBindPcFirst);
     }
 
     return bindingsAsync.when(
       data: (bindings) {
         final active = bindings.where((b) => b.isActive).toList();
         if (active.isEmpty) {
-          return const _StepBlockedHint(text: '暂无绑定设备');
+          return _StepBlockedHint(text: context.l10n.setupNoBoundDevices);
         }
 
         final seenDesktopIds = <String>{};
@@ -859,8 +870,9 @@ class _SelectPcStep extends ConsumerWidget {
                   final online = presenceLoading
                       ? stableOnline
                       : stableOnline ?? onlineIds.contains(desktopId);
-                  final device =
-                      presence.where((d) => d.id == desktopId).firstOrNull;
+                  final device = presence
+                      .where((d) => d.id == desktopId)
+                      .firstOrNull;
                   final name = formatDesktopLabel(device, desktopId);
                   final detail = formatDeviceDetail(device);
                   final selected = selectedDesktop == desktopId;
@@ -882,10 +894,7 @@ class _SelectPcStep extends ConsumerWidget {
 
         if (embedded) return list;
 
-        return EcoGroupedSurface(
-          margin: EdgeInsets.zero,
-          child: list,
-        );
+        return EcoGroupedSurface(margin: EdgeInsets.zero, child: list);
       },
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -937,19 +946,18 @@ class _PcDeviceTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                        fontSize: 17,
-                      ),
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontSize: 17,
+                  ),
                 ),
                 if (detail != null)
                   Text(
                     detail!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textMuted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
               ],
             ),
@@ -968,11 +976,7 @@ class _PcDeviceTile extends StatelessWidget {
           ),
           if (selected) ...[
             const SizedBox(width: 10),
-            Icon(
-              EcoIcons.check,
-              size: 18,
-              color: eco.accent,
-            ),
+            Icon(EcoIcons.check, size: 18, color: eco.accent),
           ],
         ],
       ),
@@ -1008,9 +1012,9 @@ class _AccountStatusRow extends StatelessWidget {
               email,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontSize: 17,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontSize: 17),
             ),
           ),
         ],
@@ -1048,13 +1052,13 @@ class _ScanFirstView extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             Text(
-              '扫描 PC 端配对码',
+              context.l10n.setupScanPcCode,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 10),
             Text(
-              '在 Desktop「连接」页生成二维码',
+              context.l10n.setupScanPcCodeHint,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: ecoColors(context).textMuted,
@@ -1063,14 +1067,14 @@ class _ScanFirstView extends StatelessWidget {
             ),
             const Spacer(flex: 3),
             AdaptiveGlassActionButton(
-              label: '扫一扫',
+              label: context.l10n.setupScan,
               icon: EcoIcons.qrScan,
               onPressed: busy ? null : onScan,
             ),
             const SizedBox(height: 4),
             TextButton(
               onPressed: busy ? null : onManualSetup,
-              child: const Text('手动配置'),
+              child: Text(context.l10n.setupManualConfiguration),
             ),
           ],
         ),
@@ -1121,9 +1125,12 @@ class _ReadyConnectionView extends ConsumerWidget {
     }
 
     final statusLabel = switch (selectedOnline) {
-      true => '在线',
-      false => '离线',
-      null => selectedName == null ? '未选择' : '检测中',
+      true => context.l10n.commonOnline,
+      false => context.l10n.commonOffline,
+      null =>
+        selectedName == null
+            ? context.l10n.commonNotSelected
+            : context.l10n.commonChecking,
     };
     final statusColor = switch (selectedOnline) {
       true => eco.online,
@@ -1146,23 +1153,23 @@ class _ReadyConnectionView extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '选择 PC',
+                        context.l10n.setupSelectPc,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '选中一台 Desktop 进入应用，或扫码绑定新设备。',
+                        context.l10n.setupSelectPcHint,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: eco.textMuted,
-                              height: 1.4,
-                            ),
+                          color: eco.textMuted,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 if (selectedName != null)
                   EcoGroupedSection(
-                    label: '当前',
+                    label: context.l10n.setupCurrent,
                     topSpacing: 28,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -1192,9 +1199,7 @@ class _ReadyConnectionView extends ConsumerWidget {
                                   selectedName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
+                                  style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: 4),
@@ -1226,11 +1231,11 @@ class _ReadyConnectionView extends ConsumerWidget {
                     ),
                   ),
                 EcoGroupedSection(
-                  label: '已绑定',
+                  label: context.l10n.setupBound,
                   topSpacing: selectedName == null ? 28 : 20,
                   footer: overview.canEnterApp
                       ? null
-                      : '请选择一台在线 PC 后再进入应用',
+                      : context.l10n.setupSelectOnlinePcFirst,
                   child: _SelectPcStep(
                     overview: overview,
                     busy: busy,
@@ -1271,9 +1276,7 @@ class _ReadyConnectionActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: eco.bgMain,
-      ),
+      decoration: BoxDecoration(color: eco.bgMain),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -1282,7 +1285,7 @@ class _ReadyConnectionActions extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AdaptiveGlassActionButton(
-                label: '进入应用',
+                label: context.l10n.setupEnterApp,
                 icon: EcoIcons.goForward,
                 onPressed: busy || !canEnterApp ? null : onEnterApp,
                 height: 54,
@@ -1292,7 +1295,7 @@ class _ReadyConnectionActions extends StatelessWidget {
                 onPressed: busy ? null : onBindNewPc,
                 icon: Icon(EcoIcons.qrScan, size: 18, color: eco.accent),
                 label: Text(
-                  '绑定新 PC',
+                  context.l10n.setupBindNewPc,
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w400,
@@ -1321,9 +1324,9 @@ class _StepBlockedHint extends StatelessWidget {
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: ecoColors(context).textMuted,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: ecoColors(context).textMuted),
       ),
     );
   }

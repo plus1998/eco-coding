@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+// Historical generated placeholder filtered from model-provided raw titles.
 const _pendingThreadTitle = '新编码任务';
 
 final _titleRefusalPattern = RegExp(
@@ -65,7 +66,8 @@ String? sanitizeThreadTitle(String? title, {String prompt = ''}) {
       _titleGarbageSuffixPattern.hasMatch(cleaned)) {
     return null;
   }
-  if (prompt.isNotEmpty && _normalizeTitle(cleaned) == _normalizeTitle(prompt)) {
+  if (prompt.isNotEmpty &&
+      _normalizeTitle(cleaned) == _normalizeTitle(prompt)) {
     return null;
   }
   if (cleaned == _pendingThreadTitle) {

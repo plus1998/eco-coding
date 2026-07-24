@@ -1,4 +1,5 @@
 import 'thread_models.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 const homeProjectDisplayName = 'Home';
 
@@ -35,7 +36,9 @@ class EcoProject {
 }
 
 String normalizeProjectPath(String projectPath) {
-  final normalized = projectPath.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+  final normalized = projectPath
+      .replaceAll('\\', '/')
+      .replaceAll(RegExp(r'/+$'), '');
   return normalized.isEmpty ? '/' : normalized;
 }
 
@@ -170,7 +173,8 @@ int projectActivityTimeMs(
       maxMs = ms;
     }
   }
-  final isCurrent = currentWorkspacePath != null &&
+  final isCurrent =
+      currentWorkspacePath != null &&
       normalizeProjectPath(currentWorkspacePath) == key;
   if (isCurrent) {
     return maxMs > activityReferenceMs ? maxMs : activityReferenceMs;
@@ -188,7 +192,8 @@ int compareProjectsByActivity(
   if (a.isHome != b.isHome) {
     return a.isHome ? -1 : 1;
   }
-  final delta = projectActivityTimeMs(
+  final delta =
+      projectActivityTimeMs(
         b,
         grouped: grouped,
         currentWorkspacePath: currentWorkspacePath,
@@ -299,8 +304,9 @@ Map<String, List<ThreadSummary>> groupThreadsByProject(
 const projectVisibleThreadLimit = 5;
 
 int threadActivityTimeMs(ThreadSummary thread) {
-  final iso =
-      thread.updatedAt.trim().isNotEmpty ? thread.updatedAt : thread.createdAt;
+  final iso = thread.updatedAt.trim().isNotEmpty
+      ? thread.updatedAt
+      : thread.createdAt;
   return DateTime.tryParse(iso)?.millisecondsSinceEpoch ?? 0;
 }
 
@@ -354,18 +360,20 @@ String landingHeroText({
   required String? workspacePath,
   bool isHomeProject = false,
   String? projectName,
+  required AppLocalizations l10n,
 }) {
   if (workspacePath == null || workspacePath.trim().isEmpty) {
-    return '打开一个项目开始编码';
+    return l10n.landingOpenProject;
   }
   if (isHomeProject) {
-    return '你在忙什么？';
+    return l10n.landingHomePrompt;
   }
   final name = projectName ?? _basename(workspacePath);
-  return '我们应该在 $name 中构建什么？';
+  return l10n.landingProjectPrompt(name);
 }
 
-const composerLandingPlaceholder = '尽管问';
+String composerLandingPlaceholder(AppLocalizations l10n) =>
+    l10n.composerLandingPlaceholder;
 
 bool shouldShowProjectBranch(String? branch) {
   if (branch == null) return false;

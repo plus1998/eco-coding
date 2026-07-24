@@ -1,5 +1,6 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface DefaultAgentSettingsPanelProps {
   defaultCoreKind: CoreKind;
@@ -9,21 +10,6 @@ interface DefaultAgentSettingsPanelProps {
   onChange: (coreKind: CoreKind) => void;
 }
 
-const agentOptions = [
-  {
-    kind: "claude" as const,
-    label: "Claude Code",
-    description: "新会话默认使用 Claude Code。",
-    iconSrc: "./agent-icons/claude-code.ico",
-  },
-  {
-    kind: "codex" as const,
-    label: "Codex",
-    description: "新会话默认使用 Codex。",
-    iconSrc: "./agent-icons/codex.ico",
-  },
-];
-
 export function DefaultAgentSettingsPanel({
   defaultCoreKind,
   codexAvailable,
@@ -31,21 +17,36 @@ export function DefaultAgentSettingsPanel({
   busy,
   onChange,
 }: DefaultAgentSettingsPanelProps) {
+  const { t } = useTranslation();
+  const agentOptions = [
+    {
+      kind: "claude" as const,
+      label: "Claude Code",
+      description: t("settings.defaultAgent.claudeDescription"),
+      iconSrc: "./agent-icons/claude-code.ico",
+    },
+    {
+      kind: "codex" as const,
+      label: "Codex",
+      description: t("settings.defaultAgent.codexDescription"),
+      iconSrc: "./agent-icons/codex.ico",
+    },
+  ];
   return (
     <>
       <header className="settings-page-header">
-        <h1>默认 Agent</h1>
+        <h1>{t("settings.defaultAgent")}</h1>
       </header>
 
       <section className="settings-section">
         <div className="settings-section-head">
           <div>
-            <span className="settings-section-label">新会话 Agent</span>
-            <p className="settings-section-subtitle">新建对话时默认使用的编码 Agent。</p>
+            <span className="settings-section-label">{t("settings.defaultAgent.new")}</span>
+            <p className="settings-section-subtitle">{t("settings.defaultAgent.subtitle")}</p>
           </div>
         </div>
 
-        <div className="default-agent-options" role="radiogroup" aria-label="默认 Agent">
+        <div className="default-agent-options" role="radiogroup" aria-label={t("settings.defaultAgent")}>
           {agentOptions.map((option) => {
             const selected = option.kind === defaultCoreKind;
             const unavailable = option.kind === "codex" && !codexAvailable;
@@ -68,7 +69,11 @@ export function DefaultAgentSettingsPanel({
                 </span>
                 <span className="default-agent-option-body">
                   <strong>{option.label}</strong>
-                  <small>{unavailable ? codexUnavailableReason || "当前不可用" : option.description}</small>
+                  <small>
+                    {unavailable
+                      ? codexUnavailableReason || t("settings.defaultAgent.unavailable")
+                      : option.description}
+                  </small>
                 </span>
                 <span className="default-agent-option-state" aria-hidden>
                   {selected ? <Check size={15} /> : null}
