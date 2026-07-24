@@ -12,14 +12,19 @@ class _ProjectionFeedSlot {
     required this.entry,
     required this.at,
     required this.sequence,
+    required this.sortLane,
     required this.sortKey,
   });
 
   final ActivityFeedEntry entry;
   final String at;
   final int sequence;
+  final int sortLane;
   final String sortKey;
 }
+
+const _feedSortLaneNormal = 0;
+const _feedSortLaneStreamMessage = 1;
 
 class _ProjectionSubagentCard {
   const _ProjectionSubagentCard({
@@ -171,6 +176,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
         ),
         at: '1970-01-01T00:00:00.000Z',
         sequence: 0,
+        sortLane: _feedSortLaneNormal,
         sortKey: 'user:prompt',
       ),
     );
@@ -188,6 +194,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
         ),
         at: item.at,
         sequence: item.sequence,
+        sortLane: _feedSortLaneNormal,
         sortKey: 'user:${item.id}',
       ),
     );
@@ -234,6 +241,10 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     subagentCards,
     requestSpansById,
   );
+  final toolSortAnchors = _buildToolLifecycleSortAnchors([
+    ...rawMainTimeline,
+    for (final card in subagentCards) ...card.agent.timeline,
+  ]);
 
   for (final item in mainTimeline) {
     final entry = _buildProjectionFeedEntry(
@@ -242,11 +253,13 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
       rawMainTimeline,
     );
     if (entry == null) continue;
+    final sortAnchor = _resolveFeedEntrySortAnchor(item, toolSortAnchors);
     slots.add(
       _ProjectionFeedSlot(
         entry: entry,
-        at: item.at,
-        sequence: item.sequence,
+        at: sortAnchor.at,
+        sequence: sortAnchor.sequence,
+        sortLane: _resolveFeedEntrySortLane(item, requestSpansById),
         sortKey: entry.id,
       ),
     );
@@ -282,12 +295,15 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
         ),
         at: agent.startedAt,
         sequence: card.displayTimeline.firstOrNull?.sequence ?? 0,
+        sortLane: _feedSortLaneNormal,
         sortKey: 'agent-card:${agent.agentId}',
       ),
     );
   }
 
   slots.sort((left, right) {
+    final laneDelta = left.sortLane.compareTo(right.sortLane);
+    if (laneDelta != 0) return laneDelta;
     final atDelta = left.at.compareTo(right.at);
     if (atDelta != 0) return atDelta;
     final sequenceDelta = left.sequence.compareTo(right.sequence);
@@ -296,6 +312,52 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   });
 
   return slots.map((slot) => slot.entry).toList();
+}
+
+Map<String, ({String at, int sequence})> _buildToolLifecycleSortAnchors(
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  final anchors = <String, ({String at, int sequence})>{};
+  for (final item in timeline) {
+    final toolUseId =
+        readProjectionToolMetadata(item.metadata)?.toolUseId?.trim() ??
+        readBashApprovalMetadata(item.metadata)?.toolUseId.trim();
+    if (toolUseId == null || toolUseId.isEmpty) continue;
+    final candidate = (at: item.at, sequence: item.sequence);
+    final existing = anchors[toolUseId];
+    if (existing == null || candidate.sequence < existing.sequence) {
+      anchors[toolUseId] = candidate;
+    }
+  }
+  return anchors;
+}
+
+({String at, int sequence}) _resolveFeedEntrySortAnchor(
+  ThreadRunProjectionTimelineItem item,
+  Map<String, ({String at, int sequence})> toolAnchors,
+) {
+  final toolUseId =
+      readProjectionToolMetadata(item.metadata)?.toolUseId?.trim() ??
+      readBashApprovalMetadata(item.metadata)?.toolUseId.trim();
+  if (toolUseId != null && toolUseId.isNotEmpty) {
+    final anchor = toolAnchors[toolUseId];
+    if (anchor != null) return anchor;
+  }
+  return (at: item.at, sequence: item.sequence);
+}
+
+int _resolveFeedEntrySortLane(
+  ThreadRunProjectionTimelineItem item,
+  Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
+) {
+  if (item.eventType == 'message.delta') {
+    final requestId = item.requestId?.trim();
+    final span = requestId == null ? null : requestSpansById[requestId];
+    if (span == null || _isProjectionRequestActive(span)) {
+      return _feedSortLaneStreamMessage;
+    }
+  }
+  return _feedSortLaneNormal;
 }
 
 ActivityFeedEntry? _buildProjectionFeedEntry(

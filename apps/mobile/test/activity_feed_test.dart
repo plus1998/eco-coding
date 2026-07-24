@@ -21,6 +21,36 @@ List<ActivityFeedEntry> _toolActions(List<ActivityFeedEntry> entries) => [
       ...entry.actionChildren,
 ];
 
+ThreadRunProjectionTimelineItem _toolTimelineItem({
+  required String id,
+  required int sequence,
+  required String at,
+  required String eventType,
+  required String toolUseId,
+  required String toolName,
+  required String detail,
+}) {
+  final status = eventType == 'tool.completed' ? 'completed' : 'running';
+  return ThreadRunProjectionTimelineItem(
+    id: id,
+    sequence: sequence,
+    eventType: eventType,
+    scope: 'main',
+    role: 'tool',
+    text: 'Tool: $toolName · $detail',
+    at: at,
+    metadata: {
+      'liveType': eventType,
+      'tool': {
+        'name': toolName,
+        'detail': detail,
+        'toolUseId': toolUseId,
+        'status': status,
+      },
+    },
+  );
+}
+
 void main() {
   test('configuredOrchestrationSubagentRoles hides unconfigured roles', () {
     const profile = OrchestrationProfile(
@@ -151,6 +181,108 @@ void main() {
       ActivityFeedKind.assistant,
     ]);
     expect(grouped.first.text, '已读取 lib/feed.dart');
+  });
+
+  test('buildActivityFeed keeps tool groups between assistant text blocks', () {
+    final timeline = <ThreadRunProjectionTimelineItem>[
+      const ThreadRunProjectionTimelineItem(
+        id: 'body-1',
+        sequence: 1,
+        eventType: 'message.final',
+        scope: 'main',
+        role: 'planner',
+        text: '正文输出1',
+        at: '2026-01-01T00:00:01.000Z',
+      ),
+      for (var index = 0; index < 3; index++)
+        _toolTimelineItem(
+          id: 'bash-$index-start',
+          sequence: 2 + index,
+          eventType: 'tool.started',
+          toolUseId: 'toolu_bash_$index',
+          toolName: 'Bash',
+          detail: 'bash${index + 1}',
+          at: '2026-01-01T00:00:0${2 + index}.000Z',
+        ),
+      const ThreadRunProjectionTimelineItem(
+        id: 'body-2',
+        sequence: 5,
+        eventType: 'message.final',
+        scope: 'main',
+        role: 'planner',
+        text: '正文输出2',
+        at: '2026-01-01T00:00:05.000Z',
+      ),
+      for (var index = 0; index < 3; index++)
+        _toolTimelineItem(
+          id: 'edit-$index-start',
+          sequence: 6 + index,
+          eventType: 'tool.started',
+          toolUseId: 'toolu_edit_$index',
+          toolName: 'Edit',
+          detail: 'lib/file_${index + 1}.dart',
+          at: '2026-01-01T00:00:0${6 + index}.000Z',
+        ),
+      const ThreadRunProjectionTimelineItem(
+        id: 'body-3',
+        sequence: 9,
+        eventType: 'message.final',
+        scope: 'main',
+        role: 'planner',
+        text: '正文输出3',
+        at: '2026-01-01T00:00:09.000Z',
+      ),
+      for (var index = 0; index < 3; index++)
+        _toolTimelineItem(
+          id: 'bash-$index-complete',
+          sequence: 10 + index,
+          eventType: 'tool.completed',
+          toolUseId: 'toolu_bash_$index',
+          toolName: 'Bash',
+          detail: 'bash${index + 1}',
+          at: '2026-01-01T00:00:${10 + index}.000Z',
+        ),
+      for (var index = 0; index < 3; index++)
+        _toolTimelineItem(
+          id: 'edit-$index-complete',
+          sequence: 13 + index,
+          eventType: 'tool.completed',
+          toolUseId: 'toolu_edit_$index',
+          toolName: 'Edit',
+          detail: 'lib/file_${index + 1}.dart',
+          at: '2026-01-01T00:00:${13 + index}.000Z',
+        ),
+    ];
+
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:16.000Z',
+        sourceEventCount: timeline.length,
+        agents: const [],
+        timeline: timeline,
+      ),
+    );
+
+    expect(feed.map((entry) => entry.kind), [
+      ActivityFeedKind.assistant,
+      ActivityFeedKind.actionGroup,
+      ActivityFeedKind.assistant,
+      ActivityFeedKind.actionGroup,
+      ActivityFeedKind.assistant,
+    ]);
+    expect(feed.map((entry) => entry.text), [
+      '正文输出1',
+      '已运行 3 条命令',
+      '正文输出2',
+      '已编辑 3 个文件',
+      '正文输出3',
+    ]);
+    expect(feed[1].actionChildren, hasLength(3));
+    expect(feed[3].actionChildren, hasLength(3));
   });
 
   test(

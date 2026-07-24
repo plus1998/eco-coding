@@ -157,7 +157,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       }
     });
     try {
-      final text = await recognizer.recognize();
+      final text = await recognizer.recognize(
+        locale: systemSpeechRecognitionLocaleTag(),
+      );
       if (!mounted) return;
       if (text.isEmpty) {
         _showSnack('未识别到语音内容');
@@ -194,8 +196,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   @override
   Widget build(BuildContext context) {
     final canEditConfig = !widget.isRunning;
+    final speechLocale = systemSpeechRecognitionLocaleTag();
     final speechAvailable =
-        ref.watch(systemSpeechRecognizerAvailabilityProvider).valueOrNull ==
+        ref
+            .watch(systemSpeechRecognizerAvailabilityProvider(speechLocale))
+            .valueOrNull ==
         true;
     final showSpeechInput = speechAvailable || _speechBusy;
 

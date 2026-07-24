@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,9 +7,19 @@ final systemSpeechRecognizerProvider = Provider<SystemSpeechRecognizer>((ref) {
   return const SystemSpeechRecognizer();
 });
 
-final systemSpeechRecognizerAvailabilityProvider = FutureProvider<bool>((ref) {
-  return ref.watch(systemSpeechRecognizerProvider).isAvailable();
-});
+final systemSpeechRecognizerAvailabilityProvider =
+    FutureProvider.family<bool, String?>((ref, locale) {
+      return ref
+          .watch(systemSpeechRecognizerProvider)
+          .isAvailable(locale: locale);
+    });
+
+String? systemSpeechRecognitionLocaleTag([Locale? locale]) {
+  final tag = (locale ?? PlatformDispatcher.instance.locale)
+      .toLanguageTag()
+      .trim();
+  return tag.isEmpty ? null : tag;
+}
 
 class SystemSpeechRecognizer {
   const SystemSpeechRecognizer();
