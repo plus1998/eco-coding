@@ -26,6 +26,7 @@ import {
   Pencil,
   RefreshCw,
   Reply,
+  HelpCircle,
   Search,
   Shield,
   ShieldAlert,
@@ -2933,6 +2934,7 @@ function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; an
     >
       <div className="clarification-answer-header">
         <span className="clarification-answer-title">
+          <HelpCircle className="clarification-answer-icon" size={14} aria-hidden />
           {i18n.t("activity.clarificationAnswer")}
         </span>
       </div>
