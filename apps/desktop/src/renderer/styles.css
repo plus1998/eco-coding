@@ -8253,49 +8253,6 @@ button.sidebar-core-heading {
   --run-log-expandable-fade: var(--codex-log-bg, #171717);
 }
 
-.subagent-conversation-result {
-  position: relative;
-  min-width: 0;
-  padding: 12px 14px 14px;
-  border-left: 2px solid var(--subagent-accent, #60a5fa);
-  background: color-mix(in srgb, var(--subagent-accent-soft, rgba(96, 165, 250, 0.07)) 72%, transparent);
-}
-
-.subagent-conversation-result-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: var(--subagent-accent, #60a5fa);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.3;
-}
-
-.subagent-conversation-result-body {
-  min-width: 0;
-  color: var(--codex-log-text, #e5e5e5);
-}
-
-.subagent-conversation-result-body .run-log-narrative,
-.subagent-conversation-result-body .run-log-narrative-body,
-.subagent-conversation-result-body .markdown-content {
-  width: 100%;
-  max-width: 100%;
-  color: inherit;
-}
-
-.subagent-conversation-result-body .markdown-content h1,
-.subagent-conversation-result-body .markdown-content h2,
-.subagent-conversation-result-body .markdown-content h3 {
-  color: var(--codex-log-heading, #f5f5f5);
-}
-
-.subagent-conversation-result-body .markdown-pre {
-  border-color: color-mix(in srgb, var(--subagent-accent-border, rgba(96, 165, 250, 0.28)) 55%, transparent);
-  background: color-mix(in srgb, var(--codex-log-bg, #171717) 88%, transparent);
-}
-
 .work-session-details-compact {
   margin-top: 8px;
   min-width: 0;
@@ -22104,52 +22061,6 @@ body.is-resizing-task-panel {
     rgba(248, 250, 252, 0.94) 28%,
     rgba(248, 250, 252, 0.98)
   );
-}
-
-/* Subagent result and runtime telemetry use a compact, scan-first workbench layout. */
-.subagent-conversation-result {
-  overflow: visible;
-  padding: 12px 0 4px;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--border-sidebar) 78%, transparent);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.subagent-conversation-result-header {
-  min-height: 26px;
-  margin: 0;
-  padding: 0 2px;
-  border-bottom: 0;
-  color: var(--terminal-fg);
-}
-
-.subagent-conversation-result-icon {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0;
-  background: transparent;
-  color: #62c98e;
-}
-
-.subagent-conversation-result-title {
-  font-size: 12px;
-  font-weight: 680;
-}
-
-.subagent-conversation-result-note {
-  margin-left: auto;
-  color: var(--terminal-muted);
-  font-size: 10px;
-  font-weight: 560;
-}
-
-.subagent-conversation-result-body {
-  padding: 7px 2px 0;
 }
 
 .subagent-conversation .subagent-run-instance-strip {

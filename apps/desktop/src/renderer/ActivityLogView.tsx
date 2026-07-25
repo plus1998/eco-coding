@@ -95,6 +95,7 @@ import {
   collapseProjectionToolLifecycleItemsForDetail,
   collapseProjectionTimelineStreamsForDetail,
   isProjectionRequestActive,
+  isProjectionSubagentPromptItem,
   isProjectionUserPromptItem,
   projectionItemToDetailBlock,
   readProjectionAgentDelegation,
@@ -574,20 +575,67 @@ function ProjectionTurnFeedSection({
 }: ProjectionFeedEntrySharedProps & {
   section: Extract<ThreadRunTurnFeedSection, { kind: "turn" }>;
 }) {
+  return (
+    <RunLogTurnSection
+      turnKey={section.attempt.attemptId}
+      running={section.running}
+      startedAt={section.attempt.startedAt}
+      {...(section.attempt.endedAt && { endedAt: section.attempt.endedAt })}
+      processEmpty={section.processEntries.length === 0}
+      process={
+        <>
+          {section.processEntries.map((entry) => (
+            <ProjectionMainFeedEntry key={entry.key} entry={entry} {...entryProps} />
+          ))}
+        </>
+      }
+      {...(section.finalEntry && {
+        final: (
+          <ProjectionMainFeedEntry entry={section.finalEntry} {...entryProps} />
+        ),
+      })}
+    />
+  );
+}
+
+function RunLogTurnSection({
+  turnKey,
+  running,
+  startedAt,
+  endedAt,
+  projectedDurationMs = 0,
+  leading,
+  process,
+  processEmpty,
+  final,
+  className,
+}: {
+  turnKey: string;
+  running: boolean;
+  startedAt: string;
+  endedAt?: string;
+  projectedDurationMs?: number;
+  leading?: ReactNode;
+  process: ReactNode;
+  processEmpty: boolean;
+  final?: ReactNode;
+  className?: string;
+}) {
   const onLayoutChange = useActivityFeedLayoutChange();
-  const [expanded, setExpanded] = useState(section.running);
-  const previousRunningRef = useRef(section.running);
-  const durationMs = useTurnDurationMs(section.attempt.startedAt, section.attempt.endedAt, section.running);
-  const contentId = `turn-process-${section.attempt.attemptId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const [expanded, setExpanded] = useState(running);
+  const previousRunningRef = useRef(running);
+  const measuredDurationMs = useTurnDurationMs(startedAt, endedAt, running);
+  const durationMs = Math.max(measuredDurationMs, projectedDurationMs);
+  const contentId = `turn-process-${turnKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   useEffect(() => {
-    if (section.running) {
+    if (running) {
       setExpanded(true);
     } else if (previousRunningRef.current) {
       setExpanded(false);
     }
-    previousRunningRef.current = section.running;
-  }, [section.running]);
+    previousRunningRef.current = running;
+  }, [running]);
 
   useLayoutEffect(() => {
     onLayoutChange?.({ immediate: true });
@@ -597,29 +645,32 @@ function ProjectionTurnFeedSection({
     <section
       className={[
         "run-log-turn",
-        section.running ? "is-running" : "is-completed",
+        className,
+        running ? "is-running" : "is-completed",
         expanded ? "is-expanded" : "is-collapsed",
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-label={
-        section.running ? i18n.t("activity.process") : i18n.t("activity.turnResult")
-      }
+      aria-label={running ? i18n.t("activity.process") : i18n.t("activity.turnResult")}
     >
+      {leading}
       <button
         type="button"
         className="run-log-turn-toggle"
         onClick={() => setExpanded((value) => !value)}
-        disabled={section.running}
         aria-expanded={expanded}
         aria-controls={contentId}
       >
         <span className="run-log-turn-heading">
           <span className="run-log-turn-status">
-            {section.running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
+            {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
             {durationMs > 0 ? ` ${formatDuration(durationMs)}` : ""}
           </span>
-          {!section.running ? <ChevronRight size={15} className="run-log-turn-chevron" aria-hidden /> : null}
+          <ChevronRight
+            size={15}
+            className={`run-log-turn-chevron${expanded ? " open" : ""}`}
+            aria-hidden
+          />
         </span>
         <span className="run-log-turn-divider" aria-hidden />
       </button>
@@ -629,17 +680,13 @@ function ProjectionTurnFeedSection({
         aria-label={i18n.t("activity.process")}
         aria-hidden={!expanded}
       >
-        <div
-          className={`run-log-turn-process-inner${section.processEntries.length === 0 ? " is-empty" : ""}`}
-        >
-          {section.processEntries.map((entry) => (
-            <ProjectionMainFeedEntry key={entry.key} entry={entry} {...entryProps} />
-          ))}
+        <div className={`run-log-turn-process-inner${processEmpty ? " is-empty" : ""}`}>
+          {process}
         </div>
       </div>
-      {section.finalEntry ? (
+      {final ? (
         <div className="run-log-turn-final" aria-label={i18n.t("activity.finalOutput")}>
-          <ProjectionMainFeedEntry entry={section.finalEntry} {...entryProps} />
+          {final}
         </div>
       ) : null}
     </section>
@@ -1037,13 +1084,10 @@ function ProjectionToolGroupChildEntry({
         item={entry.item}
         requestSpansById={requestSpansById}
         compact
-        forceActionDetailsExpanded
       />
     );
   }
-  return (
-    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} forceActionDetailsExpanded />
-  );
+  return <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />;
 }
 
 function ProjectionToolGroupBashChild({
@@ -1392,6 +1436,17 @@ function resolveActionBlocksLifecycle(
 type SubagentDetailFeedEntry = ThreadRunProjectionTimelineFeedEntry;
 type SubagentDetailDisplayEntry = SubagentDetailFeedEntry | ThreadRunProjectionToolGroupFeedEntry;
 
+interface SubagentDetailTurn {
+  key: string;
+  prompt?: SubagentDetailFeedEntry;
+  entries: SubagentDetailDisplayEntry[];
+  finalResult?: SubagentDetailFeedEntry;
+  running: boolean;
+  startedAt: string;
+  endedAt?: string;
+  projectedDurationMs?: number;
+}
+
 function groupSubagentDetailFeedEntries(
   entries: readonly SubagentDetailFeedEntry[],
 ): SubagentDetailDisplayEntry[] {
@@ -1423,6 +1478,95 @@ function groupSubagentDetailFeedEntries(
   }
   flush();
   return grouped;
+}
+
+function buildSubagentDetailTurns(
+  entries: readonly SubagentDetailFeedEntry[],
+  agent: ThreadRunProjectionAgent,
+): SubagentDetailTurn[] {
+  const running = agent.status === "active" || agent.status === "launching";
+  const rawTurns: Array<{
+    key: string;
+    prompt?: SubagentDetailFeedEntry;
+    entries: SubagentDetailFeedEntry[];
+    startedAt: string;
+  }> = [];
+  let current: (typeof rawTurns)[number] | undefined;
+
+  for (const entry of entries) {
+    if (isProjectionSubagentPromptItem(entry.item)) {
+      current = {
+        key: `subagent-turn:${entry.item.requestId ?? entry.item.id}`,
+        prompt: entry,
+        entries: [],
+        startedAt: entry.at,
+      };
+      rawTurns.push(current);
+      continue;
+    }
+    if (!current) {
+      current = {
+        key: `subagent-turn:initial:${entry.item.requestId ?? entry.item.id}`,
+        entries: [],
+        startedAt: entry.at,
+      };
+      rawTurns.push(current);
+    }
+    current.entries.push(entry);
+  }
+
+  return rawTurns.map((turn, index) => {
+    const turnRunning = running && index === rawTurns.length - 1;
+    const finalResult = turnRunning ? undefined : resolveSubagentTurnFinalResult(turn.entries);
+    const processEntries = (finalResult
+      ? turn.entries.filter((entry) => entry.item.id !== finalResult.item.id)
+      : turn.entries
+    ).filter((entry) => !isDuplicateSubagentTurnResultPhase(entry, finalResult));
+    const nextTurn = rawTurns[index + 1];
+    const startedAt = index === 0 ? agent.startedAt : turn.startedAt;
+    const endedAt = turnRunning ? undefined : nextTurn?.startedAt ?? agent.endedAt ?? turn.entries.at(-1)?.at;
+    return {
+      key: turn.key,
+      ...(turn.prompt && { prompt: turn.prompt }),
+      entries: groupSubagentDetailFeedEntries(processEntries),
+      ...(finalResult && { finalResult }),
+      running: turnRunning,
+      startedAt,
+      ...(endedAt && { endedAt }),
+      ...(rawTurns.length === 1 && { projectedDurationMs: agent.durationMs }),
+    };
+  });
+}
+
+function resolveSubagentTurnFinalResult(
+  entries: readonly SubagentDetailFeedEntry[],
+): SubagentDetailFeedEntry | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry || entry.item.eventType !== "message.final") {
+      continue;
+    }
+    const block = projectionItemToDetailBlock(entry.item);
+    if (block?.kind === "narrative" && !block.streaming && block.text.trim()) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function isDuplicateSubagentTurnResultPhase(
+  entry: SubagentDetailFeedEntry,
+  finalResult: SubagentDetailFeedEntry | undefined,
+): boolean {
+  if (!finalResult) {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(entry.item);
+  return (
+    block?.kind === "phase" &&
+    entry.item.text.trim().replace(/\s+/gu, " ") ===
+      finalResult.item.text.trim().replace(/\s+/gu, " ")
+  );
 }
 
 function projectionRequestSpanRenderSignature(span?: ProjectionRequestSpan): string {
@@ -1542,16 +1686,13 @@ function areProjectionSubagentDetailFeedEntryPropsEqual(
   prev: {
     entry: SubagentDetailFeedEntry;
     requestSpansById: ProjectionRequestSpansById;
-    finalResultItemId?: string;
   },
   next: {
     entry: SubagentDetailFeedEntry;
     requestSpansById: ProjectionRequestSpansById;
-    finalResultItemId?: string;
   },
 ): boolean {
   return (
-    prev.finalResultItemId === next.finalResultItemId &&
     projectionSubagentDetailEntrySignature(prev.entry) ===
       projectionSubagentDetailEntrySignature(next.entry) &&
     projectionSubagentDetailEntryRequestSpanSignature(prev.entry, prev.requestSpansById) ===
@@ -1562,40 +1703,70 @@ function areProjectionSubagentDetailFeedEntryPropsEqual(
 const ProjectionSubagentDetailFeedEntry = memo(function ProjectionSubagentDetailFeedEntry({
   entry,
   requestSpansById,
-  finalResultItemId,
 }: {
   entry: SubagentDetailFeedEntry;
   requestSpansById: ProjectionRequestSpansById;
-  finalResultItemId?: string;
 }) {
-  const isFinalResult = entry.item.id === finalResultItemId;
-
-  if (isFinalResult) {
-    return (
-      <section
-        className="subagent-conversation-result"
-        aria-label={i18n.t("activity.subagentResult")}
-      >
-        <header className="subagent-conversation-result-header">
-          <span className="subagent-conversation-result-icon">
-            <ShieldCheck size={14} aria-hidden />
-          </span>
-          <span className="subagent-conversation-result-title">
-            {i18n.t("activity.result")}
-          </span>
-          <span className="subagent-conversation-result-note">
-            {i18n.t("activity.finalSummary")}
-          </span>
-        </header>
-        <div className="subagent-conversation-result-body">
-          <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />
-        </div>
-      </section>
-    );
-  }
-
   return <ProjectionTimelineEntry item={entry.item} requestSpansById={requestSpansById} compact />;
 }, areProjectionSubagentDetailFeedEntryPropsEqual);
+
+function ProjectionSubagentTurn({
+  turn,
+  requestSpansById,
+}: {
+  turn: SubagentDetailTurn;
+  requestSpansById: ProjectionRequestSpansById;
+}) {
+  return (
+    <RunLogTurnSection
+      turnKey={turn.key}
+      running={turn.running}
+      startedAt={turn.startedAt}
+      {...(turn.endedAt && { endedAt: turn.endedAt })}
+      {...(turn.projectedDurationMs !== undefined && {
+        projectedDurationMs: turn.projectedDurationMs,
+      })}
+      className="subagent-conversation-turn"
+      processEmpty={turn.entries.length === 0}
+      {...(turn.prompt && {
+        leading: (
+          <ProjectionSubagentDetailFeedEntry
+            entry={turn.prompt}
+            requestSpansById={requestSpansById}
+          />
+        ),
+      })}
+      process={
+        <>
+          {turn.entries.map((entry) =>
+            entry.kind === "tool-group" ? (
+              <ProjectionToolGroupEntry
+                key={entry.key}
+                entry={entry}
+                requestSpansById={requestSpansById}
+              />
+            ) : (
+              <ProjectionSubagentDetailFeedEntry
+                key={entry.key}
+                entry={entry}
+                requestSpansById={requestSpansById}
+              />
+            ),
+          )}
+          {turn.running && turn.entries.length === 0 ? <WaitingThinkingBlock active /> : null}
+        </>
+      }
+      {...(turn.finalResult && {
+        final: (
+          <ProjectionSubagentDetailFeedEntry
+            entry={turn.finalResult}
+            requestSpansById={requestSpansById}
+          />
+        ),
+      })}
+    />
+  );
+}
 
 function ProjectionAgentEchoEntry({
   entry,
@@ -1692,44 +1863,6 @@ function useLatchedAgentText(agentId: string, text: string): string {
     latchRef.current.text = text;
   }
   return text || latchRef.current.text;
-}
-
-function normalizeSubagentResultText(text: string): string {
-  return text.trim().replace(/\s+/gu, " ");
-}
-
-function resolveSubagentFinalResultItem(
-  agent: ThreadRunProjectionAgent,
-  timeline: readonly ThreadRunProjectionTimelineItem[],
-): ThreadRunProjectionTimelineItem | undefined {
-  if (agent.status === "active" || agent.status === "launching") {
-    return undefined;
-  }
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    const item = timeline[index];
-    if (item?.eventType !== "message.final") {
-      continue;
-    }
-    const block = projectionItemToDetailBlock(item);
-    if (block?.kind === "narrative" && !block.streaming && block.text.trim()) {
-      return item;
-    }
-  }
-  return undefined;
-}
-
-function isDuplicateFinalResultPhase(
-  item: ThreadRunProjectionTimelineItem,
-  finalResult: ThreadRunProjectionTimelineItem | undefined,
-): boolean {
-  if (!finalResult || item.id === finalResult.id) {
-    return false;
-  }
-  const block = projectionItemToDetailBlock(item);
-  return (
-    block?.kind === "phase" &&
-    normalizeSubagentResultText(item.text) === normalizeSubagentResultText(finalResult.text)
-  );
 }
 
 function ProjectionSubagentRunRow({
@@ -1857,37 +1990,26 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
-  const liveDurationMs = useSubagentDurationMs(agent, running);
   const visibleTimeline = useMemo(
     () =>
       collapseProjectionTimelineStreamsForDetail(
-        collapseProjectionToolLifecycleItemsForDetail(agent.timeline),
-      ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText))),
-    [agent.timeline, missionText],
+        collapseProjectionToolLifecycleItemsForDetail(
+          filterSubagentDetailTimelineNoise(agent.timeline),
+        ),
+      ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay)),
+    [agent.timeline, missionDisplay],
   );
-  const finalResultItem = useMemo(
-    () => resolveSubagentFinalResultItem(agent, visibleTimeline),
-    [agent, visibleTimeline],
+  const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, visibleTimeline);
+  const turns = useMemo(
+    () => buildSubagentDetailTurns(detailFeedEntries, agent),
+    [agent, detailFeedEntries],
   );
-  const filteredTimeline = useMemo(
-    () => visibleTimeline.filter((item) => !isDuplicateFinalResultPhase(item, finalResultItem)),
-    [finalResultItem, visibleTimeline],
-  );
-  const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, filteredTimeline);
-  const detailDisplayEntries = useMemo(
-    () => groupSubagentDetailFeedEntries(detailFeedEntries),
-    [detailFeedEntries],
-  );
-  const waitingThinkingVisible =
-    running &&
-    (detailFeedEntries.length === 0 ||
-      detailFeedEntries.some((entry) => isWaitingThinkingItem(entry.item, requestSpansById)));
-  const latestTimelineItem = filteredTimeline.at(-1);
+  const latestTimelineItem = visibleTimeline.at(-1);
   const layoutSignature = [
     agent.agentId,
     agent.status,
     missionDisplay.length,
-    detailDisplayEntries.length,
+    turns.length,
     latestTimelineItem?.id ?? "",
     latestTimelineItem?.text.length ?? 0,
   ].join(":");
@@ -1973,8 +2095,6 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     return () => observer.disconnect();
   }, [agent.agentId, scrollToBottom]);
 
-  const durationLabel = liveDurationMs > 0 ? formatDuration(liveDurationMs) : undefined;
-
   return (
     <div className="subagent-task-detail-feed subagent-conversation">
       <div ref={feedRef} className="subagent-conversation-log">
@@ -1982,35 +2102,20 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
           {missionDisplay ? (
             <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" />
           ) : null}
-          <div className="subagent-conversation-status-row">
-            <span className="subagent-conversation-status">
-              {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
-              {durationLabel ? ` ${durationLabel}` : ""}
-            </span>
-          </div>
-          {detailDisplayEntries.length > 0 ? (
-            detailDisplayEntries.map((entry) =>
-              entry.kind === "tool-group" ? (
-                <ProjectionToolGroupEntry
-                  key={entry.key}
-                  entry={entry}
-                  requestSpansById={requestSpansById}
-                />
-              ) : (
-                <ProjectionSubagentDetailFeedEntry
-                  key={entry.key}
-                  entry={entry}
-                  requestSpansById={requestSpansById}
-                  {...(finalResultItem && { finalResultItemId: finalResultItem.id })}
-                />
-              ),
-            )
+          {turns.length > 0 ? (
+            turns.map((turn) => (
+              <ProjectionSubagentTurn
+                key={turn.key}
+                turn={turn}
+                requestSpansById={requestSpansById}
+              />
+            ))
           ) : running ? (
             <WaitingThinkingBlock active />
           ) : (
             <p className="subagent-task-detail-empty">{i18n.t("activity.noDetails")}</p>
           )}
-          {running && !waitingThinkingVisible ? <RunLogConversationTail /> : null}
+          {running ? <RunLogConversationTail /> : null}
         </div>
       </div>
       <ProjectionSubagentRunInstanceStrip agent={agent} />
@@ -2170,6 +2275,16 @@ function ProjectionTimelineEntry({
   const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
   const requestActive = isProjectionRequestActive(requestSpan);
 
+  if (block.kind === "subagent-prompt") {
+    return wrapRunLogFeedEntry(
+      <UserPromptBlock
+        text={block.text}
+        className="subagent-conversation-prompt"
+        createdAt={item.at}
+      />,
+      { compact },
+    );
+  }
   if (block.kind === "narrative") {
     return wrapRunLogFeedEntry(
       <RunLogNarrative
@@ -2245,7 +2360,7 @@ function resolveSubagentKindBadge(role: string): string {
 
 function shouldSuppressSubagentCardTimelineItem(
   item: ThreadRunProjectionTimelineItem,
-  hasCardMission: boolean,
+  missionText: string,
 ): boolean {
   if (
     item.eventType === "agent.started" ||
@@ -2257,11 +2372,44 @@ function shouldSuppressSubagentCardTimelineItem(
   if (isSubagentMissionEnvelope(item.text)) {
     return true;
   }
-  if (!hasCardMission) {
+  if (!missionText) {
     return false;
   }
   const block = projectionItemToDetailBlock(item);
-  return block?.kind === "subagent-mission";
+  if (block?.kind === "subagent-mission") {
+    return true;
+  }
+  return (
+    block?.kind === "subagent-prompt" &&
+    resolveMissionDisplayText(block.text) === resolveMissionDisplayText(missionText)
+  );
+}
+
+function filterSubagentDetailTimelineNoise(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const filtered = timeline.filter(
+    (item) => !(item.eventType === "thinking.final" && item.text.trim().length === 0),
+  );
+  const ordered: ThreadRunProjectionTimelineItem[] = [];
+  for (let index = 0; index < filtered.length; index += 1) {
+    const item = filtered[index];
+    const next = filtered[index + 1];
+    if (
+      item?.eventType === "request.started" &&
+      item.requestId &&
+      next?.requestId === item.requestId &&
+      isProjectionSubagentPromptItem(next)
+    ) {
+      ordered.push(next, item);
+      index += 1;
+      continue;
+    }
+    if (item) {
+      ordered.push(item);
+    }
+  }
+  return ordered;
 }
 
 function SubagentRunCardButton({
@@ -2426,6 +2574,9 @@ function DetailBlock({
         {...(agentThemes && { agentThemes })}
       />
     );
+  }
+  if (block.kind === "subagent-prompt") {
+    return <UserPromptBlock text={block.text} className="subagent-conversation-prompt" />;
   }
   if (block.kind === "model-request") {
     return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;

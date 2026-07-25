@@ -3529,6 +3529,54 @@ test("projectionItemToDetailBlock maps agent.started delegation metadata to suba
   });
 });
 
+test("projectionItemToDetailBlock maps Codex subagent user messages to prompt bubbles", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "subagent-follow-up",
+      eventType: "message.final",
+      scope: "agent",
+      role: "coder",
+      agentId: "coder_a",
+      text: "按审查意见修正后端实现。",
+      metadata: {
+        liveType: "message.user",
+        itemType: "userMessage",
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "subagent-prompt",
+    text: "按审查意见修正后端实现。",
+    subagent: "coder",
+    agentId: "coder_a",
+  });
+});
+
+test("projectionItemToDetailBlock keeps subagent assistant messages as narrative", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "subagent-output",
+      eventType: "message.final",
+      scope: "agent",
+      role: "coder",
+      agentId: "coder_a",
+      text: "后端实现已修正。",
+      metadata: {
+        liveType: "message.final",
+        itemType: "agentMessage",
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "narrative",
+    text: "后端实现已修正。",
+    subagent: "coder",
+    agentId: "coder_a",
+  });
+});
+
 test("resolveSubagentCardMissionText prefers delegation prompt over summary", () => {
   expect(
     resolveSubagentCardMissionText({

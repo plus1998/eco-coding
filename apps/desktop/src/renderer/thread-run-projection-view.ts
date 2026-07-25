@@ -2045,6 +2045,16 @@ export function projectionItemToDetailBlock(
     });
   }
 
+  if (isProjectionSubagentPromptItem(item)) {
+    const subagent = resolveProjectionSubagent(item);
+    return {
+      kind: "subagent-prompt",
+      text: item.text,
+      ...(subagent && { subagent }),
+      ...(item.agentId && { agentId: item.agentId }),
+    };
+  }
+
   const bashApproval = readProjectionBashApprovalMetadata(item);
   if (bashApproval) {
     return buildProjectionToolActionBlock(item, {
@@ -2251,6 +2261,10 @@ export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem
     return false;
   }
   return item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
+}
+
+export function isProjectionSubagentPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return item.scope === "agent" && projectionLiveType(item) === "message.user" && item.text.trim().length > 0;
 }
 
 export function resolveProjectionAgentStatusText(agent: ThreadRunProjectionAgent): string | undefined {

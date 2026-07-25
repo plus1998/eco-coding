@@ -499,8 +499,8 @@ test("ActivityLogView keeps a running attempt process expanded without final out
 
   expect(html).toContain("处理中");
   expect(html).toContain('class="run-log-turn is-running is-expanded"');
-  expect(html).toContain('class="run-log-turn-toggle" disabled=""');
-  expect(html).not.toContain("run-log-turn-chevron");
+  expect(html).toContain('class="run-log-turn-toggle" aria-expanded="true"');
+  expect(html).toContain("run-log-turn-chevron open");
   expect(html).toContain('aria-label="执行过程" aria-hidden="false"');
   expect(html).not.toContain('class="run-log-turn-final"');
 });
@@ -837,8 +837,10 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("只读检查路由链路");
   expect(html).toContain("已处理 2m 8s");
   expect(html).toContain("检查完成，问题在 role fallback。");
-  expect(html).toContain("subagent-conversation-result");
-  expect(html).toContain("执行结果");
+  expect(html).toContain('class="run-log-turn-final"');
+  expect(html).not.toContain("subagent-conversation-result");
+  expect(html).not.toMatch(/>执行结果</);
+  expect(html).not.toMatch(/>最终汇总</);
   // Long mission text must live inside the scrollable log so the feed stays reachable.
   expect(html.indexOf("subagent-conversation-log")).toBeGreaterThan(-1);
   expect(html.indexOf("subagent-conversation-prompt")).toBeGreaterThan(
@@ -927,7 +929,7 @@ test("ProjectionSubagentDetailFeed marks only the last completed summary as resu
     }),
   );
 
-  expect(html.match(/subagent-conversation-result"/g)?.length ?? 0).toBe(1);
+  expect(html.match(/class="run-log-turn-final"/g)?.length ?? 0).toBe(1);
   expect(html.match(/修复完成，重复结果已移除。/g)?.length ?? 0).toBe(1);
   expect(html).toContain("我先检查了事件投影。");
   expect(html).not.toContain("run-log-phase");
@@ -957,7 +959,7 @@ test("ProjectionSubagentDetailFeed does not expose a result before the subagent 
   );
 
   expect(html).toContain("当前只是执行过程中的正文。");
-  expect(html).not.toContain("subagent-conversation-result");
+  expect(html).not.toContain("run-log-turn-final");
   expect(html).not.toContain("执行结果");
 });
 
@@ -1214,7 +1216,7 @@ test("SubagentTaskDrawer shows live running status text in subagent tabs", () =>
   expect(html).toContain("正在读取 src/config.ts");
 });
 
-test("ProjectionSubagentDetailFeed groups adjacent subagent tool rows in the app drawer", () => {
+test("ProjectionSubagentDetailFeed groups detail tools across empty terminal thinking rows", () => {
   const subagent = agent({
     agentId: "agent_coder_1",
     status: "completed",
@@ -1238,8 +1240,18 @@ test("ProjectionSubagentDetailFeed groups adjacent subagent tool rows in the app
         },
       }),
       item({
-        id: "write-done",
+        id: "empty-thinking-after-read",
         sequence: 2,
+        eventType: "thinking.final",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "",
+        metadata: { itemType: "reasoning" },
+      }),
+      item({
+        id: "write-done",
+        sequence: 3,
         eventType: "tool.completed",
         scope: "agent",
         role: "coder",
@@ -1255,8 +1267,18 @@ test("ProjectionSubagentDetailFeed groups adjacent subagent tool rows in the app
         },
       }),
       item({
+        id: "empty-thinking-after-write",
+        sequence: 4,
+        eventType: "thinking.final",
+        scope: "agent",
+        role: "coder",
+        agentId: "agent_coder_1",
+        text: "",
+        metadata: { itemType: "reasoning" },
+      }),
+      item({
         id: "edit-done",
-        sequence: 3,
+        sequence: 5,
         eventType: "tool.completed",
         scope: "agent",
         role: "coder",
@@ -1286,7 +1308,169 @@ test("ProjectionSubagentDetailFeed groups adjacent subagent tool rows in the app
   expect(html).toContain("已读取 1 个文件");
   expect(html).toContain("已写入 1 个文件");
   expect(html).toContain("已编辑 1 个文件");
+  expect(html.match(/class="run-log-tool-group-trigger/g)?.length ?? 0).toBe(1);
   expect(html.match(/class="run-log-action(?:\s|")/g)?.length ?? 0).toBe(0);
+});
+
+test("ProjectionSubagentDetailFeed renders follow-up instructions as prompt bubbles without repeating the mission", () => {
+  const mission = "实现后端通知分流";
+  const subagent = agent({
+    agentId: "agent_coder_1",
+    status: "active",
+    delegationPrompt: mission,
+    timeline: [
+      item({
+        id: "initial-agent-prompt",
+        sequence: 1,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: mission,
+        metadata: { liveType: "message.user", itemType: "userMessage" },
+      }),
+      item({
+        id: "agent-output",
+        sequence: 2,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        text: "初版实现已完成。",
+        metadata: { itemType: "agentMessage" },
+      }),
+      item({
+        id: "follow-up-request-started",
+        sequence: 3,
+        eventType: "request.started",
+        scope: "agent",
+        role: "coder",
+        requestId: "req_follow_up",
+        text: "Requesting model…",
+      }),
+      item({
+        id: "follow-up-agent-prompt",
+        sequence: 4,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        requestId: "req_follow_up",
+        text: "按审查意见修正验签逻辑。",
+        metadata: { liveType: "message.user", itemType: "userMessage" },
+      }),
+      item({
+        id: "follow-up-agent-output",
+        sequence: 5,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        requestId: "req_follow_up",
+        text: "验签逻辑已修正。",
+        metadata: { itemType: "agentMessage" },
+      }),
+      item({
+        id: "same-request-follow-up-agent-prompt",
+        sequence: 6,
+        eventType: "message.final",
+        scope: "agent",
+        role: "coder",
+        requestId: "req_follow_up",
+        text: "继续补充回归测试。",
+        metadata: { liveType: "message.user", itemType: "userMessage" },
+      }),
+    ],
+  });
+  const html = renderToStaticMarkup(
+    createElement(ProjectionSubagentDetailFeed, {
+      agent: subagent,
+      missionText: mission,
+      requestSpansById: new Map([
+        ["req_follow_up", requestSpan({ requestId: "req_follow_up", status: "streaming" })],
+      ]),
+      threadActive: true,
+    }),
+  );
+
+  expect(html.match(/<article class="run-log-user-prompt/g)?.length ?? 0).toBe(3);
+  expect(html.match(/subagent-conversation-turn/g)?.length ?? 0).toBe(3);
+  expect(html.match(/class="run-log-turn-toggle/g)?.length ?? 0).toBe(3);
+  expect(html.match(new RegExp(mission, "g"))?.length ?? 0).toBe(1);
+  expect(html).toContain("按审查意见修正验签逻辑。");
+  expect(html).toContain("继续补充回归测试。");
+  expect(html).toContain("初版实现已完成。");
+  expect(html.indexOf("按审查意见修正验签逻辑。")).toBeLessThan(html.indexOf("正在思考"));
+  const sameRequestPromptIndex = html.indexOf("继续补充回归测试。");
+  expect(sameRequestPromptIndex).toBeGreaterThan(-1);
+  expect(sameRequestPromptIndex).toBeLessThan(html.indexOf("正在思考", sameRequestPromptIndex));
+});
+
+test("ProjectionToolGroupEntry keeps file-change details behind a second disclosure level", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "edit-a",
+          sequence: 1,
+          eventType: "tool.completed",
+          text: "Tool: Edit · src/a.ts",
+          metadata: {
+            tool: {
+              name: "Edit",
+              detail: "src/a.ts",
+              toolUseId: "toolu_edit_a",
+              status: "completed",
+              fileChange: {
+                path: "src/a.ts",
+                additions: 1,
+                deletions: 1,
+                previewLines: [
+                  { kind: "remove", text: "const value = 1;" },
+                  { kind: "add", text: "const value = 2;" },
+                ],
+              },
+            },
+          },
+        }),
+        item({
+          id: "edit-b",
+          sequence: 2,
+          eventType: "tool.completed",
+          text: "Tool: Edit · src/b.ts",
+          metadata: {
+            tool: {
+              name: "Edit",
+              detail: "src/b.ts",
+              toolUseId: "toolu_edit_b",
+              status: "completed",
+              fileChange: {
+                path: "src/b.ts",
+                additions: 1,
+                deletions: 0,
+                previewLines: [{ kind: "add", text: "export const ready = true;" }],
+              },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("file-change tool group missing");
+  }
+
+  const html = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(html.match(/class="run-log-action-trigger/g)?.length ?? 0).toBe(2);
+  expect(html.match(/aria-expanded="false"/g)?.length ?? 0).toBe(2);
+  expect(html).not.toContain("run-log-action-card-detail");
+  expect(html).not.toContain("const value = 2;");
+  expect(html).not.toContain("export const ready = true;");
 });
 
 test("ProjectionSubagentDetailFeed replaces a running tool row with its completed state", () => {

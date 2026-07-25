@@ -43,7 +43,14 @@ export type ActivityDetailBlock =
         episodeId?: string;
       }>;
     }
-  | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string; agentId?: string }
+  | {
+      kind: "subagent-mission";
+      subagent: string;
+      summary: string;
+      prompt?: string;
+      agentId?: string;
+    }
+  | { kind: "subagent-prompt"; text: string; subagent?: string; agentId?: string }
   | { kind: "model-request"; role?: string }
   | { kind: "agent-request"; subagent?: string; agentId?: string }
   | {
