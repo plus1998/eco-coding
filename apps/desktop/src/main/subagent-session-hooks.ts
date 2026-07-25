@@ -23,7 +23,11 @@ export function createSubagentSessionHooks(
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
     onTimingChanged?: () => void;
-    onSubagentStarted?: (agentId: string) => void;
+    onSubagentStarted?: (input: {
+      agentId: string;
+      role: RuntimeAgentRole;
+      parentToolUseId?: string;
+    }) => void;
     onProxyAttributionSettled?: (input: {
       agentId: string;
       role: RuntimeAgentRole;
@@ -58,7 +62,6 @@ export function createSubagentSessionHooks(
       const prompt = input.prompt?.trim() ?? "";
       const todoId = input.todoId?.trim() || undefined;
       const missionKey = role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined;
-      options?.onSubagentStarted?.(input.agentId);
       store.upsertSubagentSessionActive({
         threadId,
         role,
@@ -84,6 +87,11 @@ export function createSubagentSessionHooks(
         role,
         ...(missionKey && { missionKey }),
         ...(todoId && { todoId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      });
+      options?.onSubagentStarted?.({
+        agentId: input.agentId,
+        role,
         ...(parentToolUseId && { parentToolUseId }),
       });
       appendSubagentLifecycleEvent(store, {
@@ -146,6 +154,11 @@ export function createSubagentSessionHooks(
       options?.lifecycle?.linkSubagentParentToolUse({
         threadId,
         agentId: input.agentId,
+        parentToolUseId,
+      });
+      options?.onSubagentStarted?.({
+        agentId: input.agentId,
+        role,
         parentToolUseId,
       });
       options?.onProxyAttributionSettled?.({

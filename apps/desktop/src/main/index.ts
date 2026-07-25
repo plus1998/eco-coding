@@ -275,7 +275,6 @@ import {
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
 import type { UsageBillingObservation } from "./billing-orchestration";
-import { usageBillingObservationKey } from "./usage-billing-observations";
 import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
@@ -315,7 +314,7 @@ import {
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
-import { stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
+import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
 import {
   compactCodexThreadForEcoThread,
   configureCodexApprovalBridge,
@@ -327,6 +326,7 @@ import {
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
+import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
 import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
@@ -336,7 +336,8 @@ import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./co
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
-import { OrchestrationRunBudgetGuard, resolveOrchestrationRunBudget } from "./orchestration-run-budget";
+import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
+import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
@@ -658,26 +659,35 @@ function scheduleWorkspaceGitStatusPublishForThread(threadId: string): void {
 
 const activeRunRuntimeState = new ActiveRunRuntimeStateStore();
 const activeRunBillingState = new ActiveRunBillingStateStore();
-const orchestrationRunBudgetGuard = new OrchestrationRunBudgetGuard(
-  resolveOrchestrationRunBudget(),
-  (event) => {
-    if (!activeRunRuntimeState.abortRun(event.threadId, `orchestration budget exceeded: ${event.kind}`)) {
-      return;
+const orchestrationGuardrails = resolveOrchestrationGuardrails();
+const codexSubagentRuntimeLimit = new CodexSubagentRuntimeLimitController({
+  maxRuntimeMs: orchestrationGuardrails.maxSubagentRuntimeMs,
+  interruptTurn: async ({ agentId, turnId }) => {
+    const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+    if (!client?.isInitialized) {
+      throw new Error(`Codex app-server is unavailable; cannot interrupt child ${agentId} turn ${turnId}.`);
     }
-    const message = `编排已触发硬熔断：${event.message}`;
-    updateThread(event.threadId, { status: "running", message: `${message} 正在停止…` });
-    cancelClarificationsForThread(event.threadId, message);
-    cancelBashApprovalsForThread(event.threadId, message);
-    cancelPlanApprovalsForThreadWithStoreCleanup(event.threadId, message);
-    emitThreadEvent(event.threadId, "thread.orchestration_budget_exceeded", message, "system");
-    logEcoDiag("orchestration.budget_exceeded", {
-      threadId: shortThreadId(event.threadId),
-      kind: event.kind,
-      observed: event.observed,
-      limit: event.limit,
+    await client.request("turn/interrupt", { threadId: agentId, turnId });
+  },
+  onTimeout: ({ threadId, agentId, maxRuntimeMs }) => {
+    const message = `Codex 子代理 ${agentId} 已运行 ${Math.round(maxRuntimeMs / 60_000)} 分钟，已单独停止。`;
+    emitThreadEvent(threadId, "thread.subagent_runtime_limit", message, "system");
+    logEcoDiag("codex.subagent_runtime_limit", {
+      threadId: shortThreadId(threadId),
+      agentId: shortAgentId(agentId),
+      maxRuntimeMs,
     });
   },
-);
+  onInterruptError: ({ threadId, agentId, turnId, error }) => {
+    const detail = errorMessage(error);
+    const message = `Codex 子代理 ${agentId} 已超时，但停止失败：${detail}`;
+    emitThreadEvent(threadId, "thread.subagent_runtime_limit_error", message, "system");
+    process.stderr.write(
+      `[eco-codex] timed-out subagent interrupt failed thread=${threadId} agent=${agentId} turn=${turnId}: ${detail}\n`,
+    );
+  },
+});
+const subagentConcurrencyGates = new Map<string, SubagentConcurrencyGate>();
 const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
@@ -836,7 +846,7 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
   clearRequestStartedPersisted(threadId);
   activeRunRuntimeState.startRun(threadId, run);
   activeRunBillingState.startRun(threadId);
-  orchestrationRunBudgetGuard.start(threadId);
+  getThreadSubagentConcurrencyGate(threadId).clear();
 }
 
 function finishActiveRun(threadId: string): void {
@@ -850,10 +860,23 @@ function finishActiveRun(threadId: string): void {
   }
   activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
-  orchestrationRunBudgetGuard.finish(threadId);
+  subagentConcurrencyGates.get(threadId)?.clear();
+  subagentConcurrencyGates.delete(threadId);
   clearRequestStartedPersisted(threadId);
   threadLiveRequestRegistry.clearThread(threadId);
   proxyBillingStampRegistry.clearThread(threadId);
+}
+
+function getThreadSubagentConcurrencyGate(threadId: string): SubagentConcurrencyGate {
+  let gate = subagentConcurrencyGates.get(threadId);
+  if (!gate) {
+    gate = new SubagentConcurrencyGate({
+      maxConcurrentSubagents: orchestrationGuardrails.maxConcurrentSubagents,
+      readActiveSubagentCount: () => agentLifecycle.activeSubagentCount(threadId),
+    });
+    subagentConcurrencyGates.set(threadId, gate);
+  }
+  return gate;
 }
 
 async function createMainWindow(): Promise<void> {
@@ -1066,8 +1089,25 @@ app.whenReady().then(async () => {
         throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
       }
       const persisted = conversationStore.appendThreadRunEvent(event);
-      if (persisted.eventType === "agent.started" && persisted.agentId) {
-        orchestrationRunBudgetGuard.observeSubagent(persisted.threadId, persisted.agentId);
+      if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
+        const codexThreadId =
+          typeof persisted.metadata.codexThreadId === "string" ? persisted.metadata.codexThreadId.trim() : "";
+        const turnId = typeof persisted.metadata.turnId === "string" ? persisted.metadata.turnId.trim() : "";
+        const attribution = codexThreadId
+          ? resolveCodexThreadAttribution(codexThreadMap, codexThreadId)
+          : undefined;
+        if (codexThreadId && turnId && attribution?.isSubagentThread) {
+          codexSubagentRuntimeLimit.start({
+            threadId: persisted.threadId,
+            agentId: codexThreadId,
+            turnId,
+          });
+        }
+      } else if (
+        (persisted.eventType === "agent.stopped" || persisted.eventType === "agent.abandoned") &&
+        persisted.agentId
+      ) {
+        codexSubagentRuntimeLimit.stop(persisted.agentId);
       }
       applyCodexSubagentLifecycleEvent(persisted, {
         getAgentState: (threadId, agentId) => {
@@ -1348,6 +1388,7 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   settleActiveRunsBeforeQuit();
+  codexSubagentRuntimeLimit.clear();
   flushAllThreadMetrics();
   codexGatewayUsagePending.dispose();
   codexGatewayUsageDeduplicator.clear();
@@ -4203,6 +4244,7 @@ async function startCodexThreadRun(
         });
         return runCodexThreadRequest({
           threadId: input.thread.id,
+          signal: controller.signal,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(input.thread.id, input.roleRoutes),
           resolveAgentRegistry: () => resolveAgentRuntimeConfigForThreadId(input.thread.id),
           resolveExecutionConfirmationMode: () =>
@@ -4233,6 +4275,13 @@ async function startCodexThreadRun(
               );
             }
             await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
+          },
+          onConfigReloadWait: ({ reason, activeThreadIds }) => {
+            const subject = reason === "model_catalog" ? "模型目录" : "会话配置";
+            updateThread(input.thread.id, {
+              status: "running",
+              message: `Codex ${subject}已变更，正在等待活动会话结束：${activeThreadIds.join(", ")}`,
+            });
           },
           recordRouteFingerprint: recordThreadRouteFingerprint,
           onProxyReady: ({ plannerRoute }) => {
@@ -5791,16 +5840,7 @@ async function handleRunCancelled(
   message?: string,
 ): Promise<void> {
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
-  const budgetExceeded = orchestrationRunBudgetGuard.exceeded(threadId);
-  const resolvedMessage =
-    message ?? (budgetExceeded ? `已自动停止：编排触发硬熔断。${budgetExceeded.message}` : undefined);
-  await finalizeCancelledRun(
-    threadId,
-    worktreePlan,
-    explicit,
-    createFinalizeCancelledRunDeps(),
-    resolvedMessage,
-  );
+  await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps(), message);
 }
 
 function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
@@ -5839,11 +5879,16 @@ function buildSdkHookContextExtras(
     },
   };
   const subagentLaunchRegistry = getThreadSubagentLaunchRegistry(threadId);
+  const subagentLaunchGate = getThreadSubagentConcurrencyGate(threadId);
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
     attribution: subagentAttribution,
-    onSubagentStarted: (agentId) => orchestrationRunBudgetGuard.observeSubagent(threadId, agentId),
+    onSubagentStarted: ({ parentToolUseId }) => {
+      subagentLaunchGate.releaseLaunch?.({
+        ...(parentToolUseId && { toolUseId: parentToolUseId }),
+      });
+    },
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
     onProxyAttributionSettled: ({ agentId, role, parentToolUseId }) => {
       usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, {
@@ -5913,7 +5958,14 @@ function buildSdkHookContextExtras(
     );
   }
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
-  return { ...rest, subagentSessions, subagentAttribution, subagentLaunchRegistry };
+  return {
+    ...rest,
+    subagentSessions,
+    subagentLaunchGate,
+    subagentMaxRuntimeMs: orchestrationGuardrails.maxSubagentRuntimeMs,
+    subagentAttribution,
+    subagentLaunchRegistry,
+  };
 }
 
 async function withThreadSdkDriver(
@@ -6847,13 +6899,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
 }
 
 function noteUsageBillingObservation(threadId: string, observation: UsageBillingObservation): void {
-  if (activeRunBillingState.appendObservation(threadId, observation)) {
-    orchestrationRunBudgetGuard.observeUsage(
-      threadId,
-      usageBillingObservationKey(observation),
-      observation.usage,
-    );
-  }
+  activeRunBillingState.appendObservation(threadId, observation);
 }
 
 async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsageEvent): Promise<void> {
@@ -7073,10 +7119,6 @@ function usageBillingEffectsServices() {
 function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): void {
   const threadStatus = conversationStore.getThread(event.threadId)?.status;
   const billing = enrichBillingDisplaySource(event.payload.billing, threadStatus);
-  orchestrationRunBudgetGuard.observeCost(
-    event.threadId,
-    Math.max(billing.sourceReportedCostUsd, billing.ecoCostUsd),
-  );
   emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, {
     ...event.payload,
     billing,
@@ -8474,6 +8516,15 @@ async function resolvePromptImagesForMainContext(input: {
       maxOutputTokens: 1600,
     },
   };
+  const subagentLaunchGate = getThreadSubagentConcurrencyGate(input.threadId);
+  const launchDecision = subagentLaunchGate.tryReserveLaunch({
+    toolUseId: agentId,
+    role: BUILTIN_VISION_AGENT_ROLE,
+    prompt: `Analyze ${attachments.length} image attachment(s).`,
+  });
+  if (!launchDecision.ok) {
+    throw new Error(launchDecision.reason);
+  }
 
   conversationStore.upsertSubagentSessionActive({
     threadId: input.threadId,
@@ -8482,7 +8533,6 @@ async function resolvePromptImagesForMainContext(input: {
     phase,
     missionKey: `prompt-images:${attachments.length}`,
   });
-  orchestrationRunBudgetGuard.observeSubagent(input.threadId, agentId);
   subagentMetricsRegistry.onSubagentStart(input.threadId, {
     agentId,
     role: BUILTIN_VISION_AGENT_ROLE,
@@ -8493,6 +8543,7 @@ async function resolvePromptImagesForMainContext(input: {
     role: BUILTIN_VISION_AGENT_ROLE,
     missionKey: `prompt-images:${attachments.length}`,
   });
+  subagentLaunchGate.releaseLaunch?.({ toolUseId: agentId });
   proxyBillingStampRegistry.register(input.threadId, {
     agentId,
     role: BUILTIN_VISION_AGENT_ROLE,
@@ -8540,7 +8591,9 @@ async function resolvePromptImagesForMainContext(input: {
           imageCount: attachments.length,
         }),
       ),
-      ...(input.signal && { signal: input.signal }),
+      signal: input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(orchestrationGuardrails.maxSubagentRuntimeMs)])
+        : AbortSignal.timeout(orchestrationGuardrails.maxSubagentRuntimeMs),
     });
     const payload = (await response.json()) as unknown;
     if (!response.ok) {

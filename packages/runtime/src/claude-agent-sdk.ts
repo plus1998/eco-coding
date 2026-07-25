@@ -51,6 +51,7 @@ import {
 import { resolveSkillDisplayName } from "./skill-display";
 import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
+import { SubagentRuntimeLimitController } from "./subagent-runtime-limit.js";
 import { mergeSdkDisallowedTools } from "./tool-permission-policy.js";
 import {
   formatGrepTargetLabel,
@@ -106,6 +107,7 @@ export { isSubagentRole, SUBAGENT_ROLES, type SubagentRole };
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
   interrupt?: () => Promise<SdkInterruptReceipt | undefined>;
+  stopTask?: (taskId: string) => Promise<void>;
   setPermissionMode?: (mode: "dontAsk" | "default" | "acceptEdits" | "plan") => Promise<void> | void;
   getContextUsage?: () => Promise<Record<string, unknown>>;
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
@@ -917,6 +919,34 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? "resume-approved-exit"
         : "forbidden";
     const hookContext = this.options.hookContext;
+    let queryForSubagentControl: ReturnType<SdkQuery> | undefined;
+    const subagentRuntimeLimit = new SubagentRuntimeLimitController({
+      ...(hookContext?.subagentMaxRuntimeMs !== undefined && {
+        maxRuntimeMs: hookContext.subagentMaxRuntimeMs,
+      }),
+      stopTask: async (agentId) => {
+        if (typeof queryForSubagentControl?.stopTask !== "function") {
+          throw new Error(`Claude Agent SDK cannot stop timed-out subagent ${agentId}: stopTask is unavailable.`);
+        }
+        await queryForSubagentControl.stopTask(agentId);
+      },
+      onTimeout: ({ agentId, maxRuntimeMs }) => {
+        hookContext?.onNotification?.({
+          title: "子代理运行超时",
+          message: `子代理 ${agentId} 已运行 ${Math.round(maxRuntimeMs / 60_000)} 分钟，已单独停止。`,
+          notificationType: "subagent_runtime_limit",
+        });
+      },
+      onStopError: ({ agentId, error }) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.options.onContextProbe?.("subagent_runtime_limit_stop_error", { agentId, error: message });
+        hookContext?.onNotification?.({
+          title: "子代理超时停止失败",
+          message: `子代理 ${agentId} 超时，但 SDK 未能停止它：${message}`,
+          notificationType: "subagent_runtime_limit_error",
+        });
+      },
+    });
     const shouldBuildHooks = Boolean(
       hookContext ||
         onExitPlanMode ||
@@ -987,6 +1017,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? {
             hooks: buildEcoSdkHooks({
               ...(this.options.hookContext ?? {}),
+              subagentRuntimeLimit,
               planModeToolPolicy,
               ...(input.sdkSession?.implicitReadAllowRoots?.length
                 ? { implicitReadAllowRoots: input.sdkSession.implicitReadAllowRoots }
@@ -1102,6 +1133,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       prompt: phase.prompt,
       options: queryOptions,
     });
+    queryForSubagentControl = query;
 
     input.signal.addEventListener(
       "abort",
@@ -1119,7 +1151,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
     let permissionModeApplied = false;
-    for await (const message of query) {
+    for await (const message of withCleanup(query, () => subagentRuntimeLimit.clear())) {
       for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
         yield event;
       }
@@ -1660,6 +1692,16 @@ export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, 
     ...(isRecord(queryOptions.extraArgs) ? (queryOptions.extraArgs as Record<string, unknown>) : {}),
     "replay-user-messages": null,
   };
+}
+
+async function* withCleanup<T>(source: AsyncIterable<T>, cleanup: () => void): AsyncGenerator<T> {
+  try {
+    for await (const value of source) {
+      yield value;
+    }
+  } finally {
+    cleanup();
+  }
 }
 
 async function interruptOrCloseSdkQuery(

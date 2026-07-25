@@ -127,6 +127,28 @@ export interface EcoSubagentSessionHooks {
   }) => Promise<string | undefined> | string | undefined;
 }
 
+export type EcoSubagentLaunchGateDecision =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+export interface EcoSubagentLaunchGate {
+  tryReserveLaunch(input: {
+    toolUseId: string;
+    role?: RuntimeAgentRole;
+    prompt?: string;
+  }): EcoSubagentLaunchGateDecision;
+  releaseLaunch?(input: {
+    toolUseId?: string;
+    agentId?: string;
+    role?: RuntimeAgentRole;
+  }): void;
+}
+
+export interface EcoSubagentRuntimeLimitHooks {
+  onStart(input: { agentId: string; agentType: string }): void;
+  onStop(input: { agentId: string; agentType: string }): void;
+}
+
 export interface EcoSubagentAttributionHooks {
   resolveAgentId?(input: {
     role: RuntimeAgentRole;
@@ -153,6 +175,9 @@ export interface EcoHookContext {
   planModeToolPolicy?: PlanModeToolPolicy;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
+  subagentLaunchGate?: EcoSubagentLaunchGate;
+  subagentRuntimeLimit?: EcoSubagentRuntimeLimitHooks;
+  subagentMaxRuntimeMs?: number;
   subagentLaunchRegistry?: SubagentLaunchRegistry;
   subagentAttribution?: EcoSubagentAttributionHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
@@ -748,6 +773,60 @@ export function createDisabledSubagentPreToolHook(
   };
 }
 
+export function createNestedSubagentDenyPreToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
+      return {};
+    }
+    const actorAgentId = typeof preInput.agent_id === "string" ? preInput.agent_id.trim() : "";
+    if (actorAgentId) {
+      return denyTool(
+        preInput.tool_name,
+        "Subagents cannot launch other subagents. Finish your current assignment and report back to the main agent instead.",
+      );
+    }
+    return {};
+  };
+}
+
+export function createSubagentLaunchGatePreToolHook(gate?: EcoSubagentLaunchGate): HookCallback {
+  return async (input, toolUseID) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
+      return {};
+    }
+    if (!gate) {
+      return {};
+    }
+    const parentToolUseId =
+      (typeof toolUseID === "string" && toolUseID.trim()) || preInput.tool_use_id.trim();
+    if (!parentToolUseId) {
+      return {};
+    }
+    const rawToolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const { input: toolInput } = normalizeAgentToolInputSubagentType(rawToolInput);
+    const rawType = readAgentSubagentType(rawToolInput);
+    const role = normalizeSdkBuiltinOrEcoAgentRole(rawType) ?? rawType;
+    const prompt = readAgentDelegationPrompt(toolInput);
+    const decision = gate.tryReserveLaunch({
+      toolUseId: parentToolUseId,
+      ...(role && { role }),
+      ...(prompt && { prompt }),
+    });
+    if (decision.ok) {
+      return {};
+    }
+    return denyTool(preInput.tool_name, decision.reason);
+  };
+}
+
 export function createToolPermissionPreToolHook(
   policy?: EcoRuntimeToolPermissionPolicy,
   options: {
@@ -1299,6 +1378,7 @@ export function createSubagentStartHook(handlers: {
   subagentSessions?: EcoSubagentSessionHooks;
   subagentLaunchRegistry?: SubagentLaunchRegistry;
   attribution?: EcoSubagentAttributionHooks;
+  runtimeLimit?: EcoSubagentRuntimeLimitHooks;
 }): HookCallback {
   return async (input, toolUseID) => {
     if (input.hook_event_name !== "SubagentStart") {
@@ -1339,6 +1419,7 @@ export function createSubagentStartHook(handlers: {
     };
     handlers.taskTracker?.onSubagentStart(payload);
     handlers.subagentSessions?.onStart(payload);
+    handlers.runtimeLimit?.onStart(payload);
     handlers.attribution?.onSubagentRegistered?.({
       role: agentType as RuntimeAgentRole,
       agentId: started.agent_id,
@@ -1351,6 +1432,7 @@ export function createSubagentStartHook(handlers: {
 export function createSubagentStopHook(handlers: {
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
+  runtimeLimit?: EcoSubagentRuntimeLimitHooks;
 }): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "SubagentStop") {
@@ -1366,6 +1448,7 @@ export function createSubagentStopHook(handlers: {
       }),
       ...(stopped.transcript_path?.trim() && { transcriptPath: stopped.transcript_path.trim() }),
     };
+    handlers.runtimeLimit?.onStop(payload);
     handlers.taskTracker?.onSubagentStop(payload);
     await handlers.subagentSessions?.onStop(payload);
     return {};
@@ -1505,6 +1588,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     "Agent|Task",
   );
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
+  pushHook(hooks, "PreToolUse", createNestedSubagentDenyPreToolHook(), "Agent|Task");
   pushHook(
     hooks,
     "PreToolUse",
@@ -1516,6 +1600,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
   );
+  pushHook(hooks, "PreToolUse", createSubagentLaunchGatePreToolHook(ctx.subagentLaunchGate), "Agent|Task");
   const subagentLaunchRegistry =
     ctx.subagentLaunchRegistry ??
     (ctx.subagentSessions || ctx.taskTracker || ctx.subagentAttribution
@@ -1563,8 +1648,9 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     ...(ctx.subagentSessions && { subagentSessions: ctx.subagentSessions }),
     ...(subagentLaunchRegistry && { subagentLaunchRegistry }),
     ...(ctx.subagentAttribution && { attribution: ctx.subagentAttribution }),
+    ...(ctx.subagentRuntimeLimit && { runtimeLimit: ctx.subagentRuntimeLimit }),
   };
-  if (subagentHandlers.taskTracker || subagentHandlers.subagentSessions) {
+  if (subagentHandlers.taskTracker || subagentHandlers.subagentSessions || subagentHandlers.runtimeLimit) {
     pushHook(hooks, "SubagentStart", createSubagentStartHook(subagentHandlers));
     pushHook(hooks, "SubagentStop", createSubagentStopHook(subagentHandlers));
   }

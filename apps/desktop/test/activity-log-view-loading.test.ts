@@ -839,6 +839,11 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("检查完成，问题在 role fallback。");
   expect(html).toContain("subagent-conversation-result");
   expect(html).toContain("执行结果");
+  // Long mission text must live inside the scrollable log so the feed stays reachable.
+  expect(html.indexOf("subagent-conversation-log")).toBeGreaterThan(-1);
+  expect(html.indexOf("subagent-conversation-prompt")).toBeGreaterThan(
+    html.indexOf("subagent-conversation-log"),
+  );
 });
 
 test("ProjectionSubagentDetailFeed collapses a thinking delta prefix into its final item", () => {

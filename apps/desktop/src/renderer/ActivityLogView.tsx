@@ -1977,17 +1977,17 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
 
   return (
     <div className="subagent-task-detail-feed subagent-conversation">
-      {missionDisplay ? (
-        <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" />
-      ) : null}
-      <div className="subagent-conversation-status-row">
-        <span className="subagent-conversation-status">
-          {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
-          {durationLabel ? ` ${durationLabel}` : ""}
-        </span>
-      </div>
       <div ref={feedRef} className="subagent-conversation-log">
         <div className="subagent-conversation-log-content">
+          {missionDisplay ? (
+            <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" />
+          ) : null}
+          <div className="subagent-conversation-status-row">
+            <span className="subagent-conversation-status">
+              {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
+              {durationLabel ? ` ${durationLabel}` : ""}
+            </span>
+          </div>
           {detailDisplayEntries.length > 0 ? (
             detailDisplayEntries.map((entry) =>
               entry.kind === "tool-group" ? (

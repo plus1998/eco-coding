@@ -56,6 +56,7 @@ import {
   type CodexApprovalBridgeDeps,
   createCodexApprovalBridge,
 } from "./codex-approval-bridge";
+import { waitForCodexConfigReload } from "./codex-config-reload-wait";
 import { CodexModelCatalogService } from "./codex-model-catalog";
 import {
   CodexRuntimeLifecycle,
@@ -85,6 +86,7 @@ export interface CodexRuntimeAttempt {
 export interface RunThreadRequestWithRuntimeProxyInput {
   threadId: string;
   attachments?: unknown;
+  signal?: AbortSignal;
   resolveRuntimeConfig: () => RuntimeConfigResolution;
   resolveAgentRegistry?: () => EcoAgentRuntimeConfig | undefined;
   /** Composer execution-confirmation setting mapped onto Codex approvalPolicy. */
@@ -106,6 +108,11 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   ensureMcpReady?: () => Promise<void>;
   /** Runs after the exact thread config is bound, before the driver starts the turn. */
   onPrepared?: (prepared: PreparedCodexRuntime) => void | Promise<void>;
+  /** Reports active Codex turns that temporarily prevent an app-server config reload. */
+  onConfigReloadWait?: (input: {
+    reason: "model_catalog" | "thread_config";
+    activeThreadIds: readonly string[];
+  }) => void;
   recordRouteFingerprint: (threadId: string, routes: readonly RuntimeRoute[]) => void;
   startRuntimeProxy?: unknown;
   onProxyReady?: (attempt: CodexRuntimeAttempt) => void | Promise<void>;
@@ -164,6 +171,8 @@ export interface CodexRuntimeRunDeps {
 }
 
 export interface PrepareCodexRuntimeInput {
+  signal?: AbortSignal;
+  onConfigReloadWait?: RunThreadRequestWithRuntimeProxyInput["onConfigReloadWait"];
   agentRegistry?: EcoAgentRuntimeConfig | undefined;
   executionConfirmationMode?: CodexExecutionConfirmationMode;
   enableSubagents?: boolean;
@@ -713,6 +722,7 @@ export function prepareCodexRuntime(input: PrepareCodexRuntimeInput = {}): Promi
 }
 
 async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Promise<PreparedCodexRuntime> {
+  input.signal?.throwIfAborted();
   const runtimeDeps = requireDeps();
   const codexExecutable = resolveCodexExecutable();
   if (!codexExecutable) {
@@ -875,10 +885,15 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   );
 
   // Catalog is startup config: only cold-restart app-server when the fingerprint changes
-  // and every loaded thread is idle/systemError. Active turns reject this prepare.
+  // and every loaded thread is idle/systemError. Active turns are allowed to finish first.
   const catalogNeedsRestart = catalogSync.fingerprint !== lastPreparedModelCatalogFingerprint;
   if (catalogNeedsRestart) {
-    await ensureIdleCodexAppServerRestartForCatalog(runtimeDeps, codexExecutable, catalogSync.fingerprint);
+    await ensureIdleCodexAppServerRestartForCatalog(
+      runtimeDeps,
+      codexExecutable,
+      catalogSync.fingerprint,
+      input,
+    );
   }
 
   const client = await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
@@ -962,12 +977,13 @@ function collectCatalogRoutesForPrepare(
 
 /**
  * Catalog content is only reloaded by app-server process start.
- * Reject when any loaded thread is active so we never silently keep a stale catalog.
+ * Wait when a loaded thread is active so we never silently keep a stale catalog or lose the request.
  */
 async function ensureIdleCodexAppServerRestartForCatalog(
   runtimeDeps: CodexRuntimeRunDeps,
   codexExecutable: string,
   nextFingerprint: string,
+  waitOptions: Pick<PrepareCodexRuntimeInput, "signal" | "onConfigReloadWait">,
 ): Promise<void> {
   const lifecycle = getGlobalCodexRuntimeLifecycle();
   const client = lifecycle?.getClient();
@@ -977,22 +993,20 @@ async function ensureIdleCodexAppServerRestartForCatalog(
     return;
   }
 
-  const loaded = await client.request<{ data?: unknown }>("thread/loaded/list", {});
-  const loadedThreadIds = Array.isArray(loaded.data)
-    ? loaded.data.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    : [];
-  for (const loadedThreadId of loadedThreadIds) {
-    const status = await readCodexThreadStatus(client, loadedThreadId);
-    if (status === "active") {
-      throw new CodexResumeNotAvailable(
-        `Codex model catalog changed but cannot restart while thread '${loadedThreadId}' is active.`,
-        {
-          nextAction:
-            "Wait for the active Codex turn to finish, then retry so Eco can reload the freeform apply_patch catalog.",
-        },
+  await waitForCodexConfigReload({
+    ...(waitOptions.signal ? { signal: waitOptions.signal } : {}),
+    check: async () => {
+      const loadedThreadIds = await listLoadedCodexThreadIds(client);
+      const activeThreadIds = await filterActiveCodexThreadIds(client, loadedThreadIds);
+      return activeThreadIds.length > 0 ? { kind: "busy", activeThreadIds } : { kind: "ready" };
+    },
+    onWaiting: (activeThreadIds) => {
+      runtimeDeps.onStderr?.(
+        `[eco-codex] waiting to reload model catalog; active threads=${activeThreadIds.join(",")}`,
       );
-    }
-  }
+      waitOptions.onConfigReloadWait?.({ reason: "model_catalog", activeThreadIds });
+    },
+  });
 
   runtimeDeps.onStderr?.(
     `[eco-codex] cold restart app-server for model catalog fingerprint=${nextFingerprint.slice(0, 12)}`,
@@ -1122,6 +1136,8 @@ export async function runThreadRequestWithRuntimeProxy(
       });
     }
     const prepared = await prepareCodexRuntime({
+      ...(input.signal ? { signal: input.signal } : {}),
+      ...(input.onConfigReloadWait ? { onConfigReloadWait: input.onConfigReloadWait } : {}),
       agentRegistry: input.resolveAgentRegistry?.(),
       ...(input.resolveExecutionConfirmationMode
         ? { executionConfirmationMode: input.resolveExecutionConfirmationMode() }
@@ -1146,14 +1162,18 @@ export async function runThreadRequestWithRuntimeProxy(
       codexThreadId &&
       !isCodexThreadConfigApplied(currentClient, codexThreadId, prepared.threadConfig);
     if (configChanged || configNotApplied) {
-      await coldReloadIdleCodexThreadForConfigChange(input.threadId);
+      await coldReloadIdleCodexThreadForConfigChange(input.threadId, input);
     }
     // Commit only after the whole admission succeeds. A failed readiness check
     // must not replace the last known-good policy for this Eco thread.
     bindPreparedCodexRuntimeToThread(input.threadId, prepared);
     await input.onPrepared?.(prepared);
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      ...(input.signal?.aborted ? { aborted: true } : {}),
+    };
   }
 
   const routes = buildDriverRoutesFromRuntime(freshConfig.routes);
@@ -1167,7 +1187,10 @@ export async function runThreadRequestWithRuntimeProxy(
   return input.run(attempt);
 }
 
-async function coldReloadIdleCodexThreadForConfigChange(ecoThreadId: string): Promise<void> {
+async function coldReloadIdleCodexThreadForConfigChange(
+  ecoThreadId: string,
+  waitOptions: Pick<RunThreadRequestWithRuntimeProxyInput, "signal" | "onConfigReloadWait">,
+): Promise<void> {
   const runtimeDeps = requireDeps();
   const codexThreadId = runtimeDeps.threadMap.getCodexThreadId(ecoThreadId.trim());
   const lifecycle = getGlobalCodexRuntimeLifecycle();
@@ -1176,32 +1199,39 @@ async function coldReloadIdleCodexThreadForConfigChange(ecoThreadId: string): Pr
     return;
   }
 
-  const targetStatus = await readCodexThreadStatus(client, codexThreadId);
-  if (targetStatus === "notLoaded") {
-    return;
-  }
-  if (targetStatus !== "idle" && targetStatus !== "systemError") {
-    throw new CodexResumeNotAvailable(
-      `Codex cannot reload changed session config while thread '${codexThreadId}' is ${targetStatus}.`,
-      { nextAction: "Wait for the active Codex turn to finish, then retry the message." },
-    );
-  }
+  const reload = await waitForCodexConfigReload({
+    ...(waitOptions.signal ? { signal: waitOptions.signal } : {}),
+    check: async () => {
+      const targetStatus = await readCodexThreadStatus(client, codexThreadId);
+      if (targetStatus === "notLoaded") {
+        return { kind: "skip" };
+      }
+      if (targetStatus === "active") {
+        return { kind: "busy", activeThreadIds: [codexThreadId] };
+      }
+      if (targetStatus !== "idle" && targetStatus !== "systemError") {
+        throw new CodexResumeNotAvailable(
+          `Codex cannot reload changed session config while thread '${codexThreadId}' is ${targetStatus}.`,
+          { nextAction: "Restore a readable Codex thread status, then retry the message." },
+        );
+      }
 
-  const loaded = await client.request<{ data?: unknown }>("thread/loaded/list", {});
-  const loadedThreadIds = Array.isArray(loaded.data)
-    ? loaded.data.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    : [];
-  for (const loadedThreadId of loadedThreadIds) {
-    if (loadedThreadId === codexThreadId) {
-      continue;
-    }
-    const status = await readCodexThreadStatus(client, loadedThreadId);
-    if (status === "active") {
-      throw new CodexResumeNotAvailable(
-        `Codex cannot reload changed session config while another thread '${loadedThreadId}' is active.`,
-        { nextAction: "Wait for the other Codex turn to finish, then retry the message." },
+      const loadedThreadIds = await listLoadedCodexThreadIds(client);
+      const activeThreadIds = await filterActiveCodexThreadIds(
+        client,
+        loadedThreadIds.filter((loadedThreadId) => loadedThreadId !== codexThreadId),
       );
-    }
+      return activeThreadIds.length > 0 ? { kind: "busy", activeThreadIds } : { kind: "ready" };
+    },
+    onWaiting: (activeThreadIds) => {
+      runtimeDeps.onStderr?.(
+        `[eco-codex] waiting to reload thread config ecoThread=${ecoThreadId}; active threads=${activeThreadIds.join(",")}`,
+      );
+      waitOptions.onConfigReloadWait?.({ reason: "thread_config", activeThreadIds });
+    },
+  });
+  if (reload === "skip") {
+    return;
   }
 
   runtimeDeps.onStderr?.(
@@ -1214,6 +1244,23 @@ async function coldReloadIdleCodexThreadForConfigChange(ecoThreadId: string): Pr
   }
   await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
   clearCodexModelCatalogCache();
+}
+
+async function listLoadedCodexThreadIds(client: CodexAppServerClient): Promise<string[]> {
+  const loaded = await client.request<{ data?: unknown }>("thread/loaded/list", {});
+  return Array.isArray(loaded.data)
+    ? loaded.data.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+}
+
+async function filterActiveCodexThreadIds(
+  client: CodexAppServerClient,
+  threadIds: readonly string[],
+): Promise<string[]> {
+  const statuses = await Promise.all(
+    threadIds.map(async (threadId) => ({ threadId, status: await readCodexThreadStatus(client, threadId) })),
+  );
+  return statuses.filter(({ status }) => status === "active").map(({ threadId }) => threadId);
 }
 
 export function createCodexRuntimeDriver(

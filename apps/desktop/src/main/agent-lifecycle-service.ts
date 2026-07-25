@@ -258,6 +258,10 @@ export class AgentLifecycleService {
     return this.threads.get(threadId)?.currentPlannerAgentId;
   }
 
+  activeSubagentCount(threadId: string): number {
+    return this.threads.get(threadId)?.activeAgents.size ?? 0;
+  }
+
   usageRunAttemptId(threadId: string): string | undefined {
     const state = this.threads.get(threadId);
     return state?.currentAttempt?.attemptId ?? state?.lastAttemptId;

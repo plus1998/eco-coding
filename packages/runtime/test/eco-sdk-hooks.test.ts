@@ -16,11 +16,13 @@ import {
   createExitPlanModeAwaitApprovalHook,
   createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
+  createNestedSubagentDenyPreToolHook,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
   createPlanModeBoundaryPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
+  createSubagentLaunchGatePreToolHook,
   createSubagentLaunchPreToolHook,
   createSubagentStartHook,
   createSubagentStopHook,
@@ -1033,6 +1035,61 @@ test("createToolPermissionPreToolHook applies main policy to SDK general-purpose
   expect(generalPurposeBash.hookSpecificOutput?.permissionDecisionReason).not.toContain(
     "No Eco tool policy is registered",
   );
+});
+
+test("createNestedSubagentDenyPreToolHook denies nested subagent delegation", async () => {
+  const hook = createNestedSubagentDenyPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "coder", prompt: "Spawn another coder" },
+      tool_use_id: "tool_nested_agent",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_coder_a",
+      agent_type: "coder",
+    } satisfies PreToolUseHookInput,
+    "tool_nested_agent",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Subagents cannot launch other subagents",
+  );
+});
+
+test("createSubagentLaunchGatePreToolHook explains concurrent launch blocks to main agent", async () => {
+  const reserved: string[] = [];
+  const hook = createSubagentLaunchGatePreToolHook({
+    tryReserveLaunch(input) {
+      reserved.push(input.toolUseId);
+      return { ok: false, reason: "Eco already has 5/5 subagents active or launching. Wait first." };
+    },
+  });
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "coder", prompt: "Implement the API" },
+      tool_use_id: "tool_concurrent_agent",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_concurrent_agent",
+    { signal: new AbortController().signal },
+  );
+
+  expect(reserved).toEqual(["tool_concurrent_agent"]);
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+    permissionDecisionReason: "Eco already has 5/5 subagents active or launching. Wait first.",
+  });
 });
 
 test("createToolPermissionPreToolHook enforces read-only policy for SDK Plan subagent", async () => {

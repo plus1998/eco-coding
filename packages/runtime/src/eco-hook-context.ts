@@ -77,6 +77,28 @@ export interface EcoSubagentSessionHooks {
   }) => Promise<string | undefined> | string | undefined;
 }
 
+export type EcoSubagentLaunchGateDecision =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+export interface EcoSubagentLaunchGate {
+  tryReserveLaunch(input: {
+    toolUseId: string;
+    role?: RuntimeAgentRole;
+    prompt?: string;
+  }): EcoSubagentLaunchGateDecision;
+  releaseLaunch?(input: {
+    toolUseId?: string;
+    agentId?: string;
+    role?: RuntimeAgentRole;
+  }): void;
+}
+
+export interface EcoSubagentRuntimeLimitHooks {
+  onStart(input: { agentId: string; agentType: string }): void;
+  onStop(input: { agentId: string; agentType: string }): void;
+}
+
 export interface EcoSubagentAttributionHooks {
   resolveAgentId?(input: {
     role: RuntimeAgentRole;
@@ -102,6 +124,9 @@ export interface EcoHookContext {
   approveDeferredPlanSubmit?: boolean;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
+  subagentLaunchGate?: EcoSubagentLaunchGate;
+  subagentRuntimeLimit?: EcoSubagentRuntimeLimitHooks;
+  subagentMaxRuntimeMs?: number;
   subagentLaunchRegistry?: SubagentLaunchRegistry;
   subagentAttribution?: EcoSubagentAttributionHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
