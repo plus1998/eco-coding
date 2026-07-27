@@ -5,7 +5,11 @@ import { chromium } from "playwright-core";
 
 const roles = ["explore", "coder", "tester"];
 const cdpUrl = process.env.ECO_CDP_URL ?? "http://127.0.0.1:9222";
-const profileId = process.env.ECO_CODEX_SMOKE_PROFILE_ID ?? "user.custom.profile";
+const mainAgentConfigId = requireEnvironmentValue("ECO_CODEX_SMOKE_MAIN_AGENT_CONFIG_ID");
+const mainPromptId = process.env.ECO_CODEX_SMOKE_MAIN_PROMPT_ID?.trim();
+const subagentOrchestrationId = requireEnvironmentValue(
+  "ECO_CODEX_SMOKE_SUBAGENT_ORCHESTRATION_ID",
+);
 const timeoutMs = Number.parseInt(process.env.ECO_SMOKE_TIMEOUT_MS ?? "240000", 10);
 const marker = process.env.ECO_SMOKE_MARKER ?? String(Date.now());
 const databasePath =
@@ -16,15 +20,26 @@ const browser = await chromium.connectOverCDP(cdpUrl);
 try {
   const page = findEcoPage(browser);
   await page.waitForLoadState("domcontentloaded");
-  const profile = await page.evaluate(
-    async (id) => (await window.eco.listOrchestrationProfiles()).find((candidate) => candidate.id === id),
-    profileId,
+  const settings = await page.evaluate(async () => window.eco.getModelSettings());
+  requireResource(settings.mainAgentConfigs, mainAgentConfigId, "main-agent config");
+  if (mainPromptId) {
+    requireResource(settings.mainAgentPrompts, mainPromptId, "main-agent prompt");
+  }
+  requireResource(
+    settings.subagentOrchestrations,
+    subagentOrchestrationId,
+    "subagent orchestration",
   );
-  if (!profile) throw new Error(`Codex smoke profile was not found: ${profileId}`);
+  const orchestrationSelection = {
+    mainAgentConfigId,
+    mainPrompt: mainPromptId
+      ? { mode: "custom_append", promptId: mainPromptId }
+      : { mode: "builtin" },
+    subagents: { mode: "orchestration", orchestrationId: subagentOrchestrationId },
+  };
 
   const runtimeConfig = {
-    routeProfileId: profile.id,
-    agentProfileId: profile.id,
+    orchestrationSelection,
     subagentEnabled: {
       explore: true,
       architect: false,
@@ -37,7 +52,7 @@ try {
     bashReviewMode: "always",
   };
   const prompt = [
-    "Spawn exactly three Profile agents explore, coder, tester in parallel.",
+    "Spawn exactly three orchestration agents explore, coder, tester in parallel.",
     `explore must reply exactly MULTI_EXPLORE_${marker} and call no tools.`,
     `coder must reply exactly MULTI_CODER_${marker} and call no tools.`,
     `tester must reply exactly MULTI_TESTER_${marker} and call no tools.`,
@@ -52,9 +67,21 @@ try {
   const result = await waitForCompleteResult(page, started.thread.id, timeoutMs);
   const summary = assertCompleteResult(result, started.thread.id, marker);
   summary.sqlite = assertSqlitePersistence(databasePath, started.thread.id, summary.roles);
-  console.log(JSON.stringify({ ok: true, profileId, marker, ...summary }, null, 2));
+  console.log(JSON.stringify({ ok: true, orchestrationSelection, marker, ...summary }, null, 2));
 } finally {
   await browser.close();
+}
+
+function requireEnvironmentValue(name) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required.`);
+  return value;
+}
+
+function requireResource(resources, id, label) {
+  if (!resources.some((resource) => resource.id === id)) {
+    throw new Error(`Codex smoke ${label} was not found: ${id}`);
+  }
 }
 
 function findEcoPage(browserInstance) {

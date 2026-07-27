@@ -58,7 +58,7 @@ interface CodexCommandExecutionFields {
 
 export type CodexThreadAttributionRecord = {
   parentThreadId: string;
-  /** Profile role id when known; parent link alone is enough for Eco thread resolution. */
+  /** Orchestration role id when known; parent link alone is enough for Eco thread resolution. */
   agentRole?: string | undefined;
   agentNickname?: string | undefined;
   spawnCallId?: string | undefined;
@@ -106,10 +106,10 @@ export interface CodexEventAdapterOptions {
   getThreadAttributionRecord?: (codexThreadId: string) => CodexThreadAttributionRecord | undefined;
   /** Consume a queued spawn payload only by the official spawn call id. */
   dequeueSpawnPayloadMatching?: (input: CodexSpawnPayloadMatchInput) => CodexSpawnPayload | undefined;
-  /** Profile custom-agent role ids synced into `$CODEX_HOME/agents`. */
-  profileRoleIds?: readonly string[];
+  /** Orchestration custom-agent role ids synced into `$CODEX_HOME/agents`. */
+  orchestrationRoleIds?: readonly string[];
   /** Runtime getter for role ids when the adapter is configured before role sync finishes. */
-  resolveProfileRoleIds?: () => readonly string[] | undefined;
+  resolveOrchestrationRoleIds?: () => readonly string[] | undefined;
   /** Called when `thread/tokenUsage/updated` yields context occupancy (§4.4). */
   onTokenUsageUpdated?: (resolution: CodexContextSnapshotResolution) => void;
   /** Called when app-server completes a native Plan item. */
@@ -312,7 +312,7 @@ function handleTurnCompleted(ctx: AdapterContext, params: Record<string, unknown
   if (attribution?.isSubagentThread && attribution.agentId === codexThreadId) {
     const record = ctx.getThreadAttributionRecord?.(codexThreadId);
     const parentCodexThreadId = record?.parentThreadId?.trim();
-    const lifecycleRole = resolveSubagentDisplayRole(ctx, resolveChosenProfileRole(ctx, record?.agentRole));
+    const lifecycleRole = resolveSubagentDisplayRole(ctx, resolveChosenOrchestrationRole(ctx, record?.agentRole));
     if (parentCodexThreadId && parentCodexThreadId !== codexThreadId) {
       const interrupted = status === "interrupted" || status === "failed";
       emitAgentLifecycle(ctx, {
@@ -416,13 +416,13 @@ function handleThreadStarted(ctx: AdapterContext, params: Record<string, unknown
   const parentThreadId = readString(thread, "parentThreadId");
   const agentNickname = readString(thread, "agentNickname");
   const existingRecord = codexThreadId ? ctx.getThreadAttributionRecord?.(codexThreadId) : undefined;
-  const explicitProfileRole = resolveChosenProfileRole(ctx, readString(thread, "agentRole"));
-  const existingProfileRole = resolveChosenProfileRole(ctx, existingRecord?.agentRole);
+  const explicitOrchestrationRole = resolveChosenOrchestrationRole(ctx, readString(thread, "agentRole"));
+  const existingOrchestrationRole = resolveChosenOrchestrationRole(ctx, existingRecord?.agentRole);
   const preview = readString(thread, "preview")?.trim();
-  // agentRole is the spawn agent_type (Profile role). Do not fall back to nickname —
+  // agentRole is the spawn agent_type (orchestration role). Do not fall back to nickname:
   // nickname/preview/task labels are not roles and must not open a subagent card.
-  const chosenProfileRole = resolveChosenProfileRole(ctx, explicitProfileRole, existingProfileRole);
-  const displayRole = resolveSubagentDisplayRole(ctx, chosenProfileRole);
+  const chosenOrchestrationRole = resolveChosenOrchestrationRole(ctx, explicitOrchestrationRole, existingOrchestrationRole);
+  const displayRole = resolveSubagentDisplayRole(ctx, chosenOrchestrationRole);
   // Parent link is required for Feed FK resolution.
   if (!codexThreadId || !parentThreadId || codexThreadId === parentThreadId) {
     return;
@@ -442,7 +442,7 @@ function handleThreadStarted(ctx: AdapterContext, params: Record<string, unknown
 
   // A parent link is useful immediately, but emitting a `general` lifecycle
   // here would prevent the later spawn call_id event from correcting the role.
-  if (!chosenProfileRole) {
+  if (!chosenOrchestrationRole) {
     return;
   }
 
@@ -457,7 +457,7 @@ function handleThreadStarted(ctx: AdapterContext, params: Record<string, unknown
       liveType: "agent.started",
       agentRole: displayRole,
       agentThreadId: codexThreadId,
-      ...(chosenProfileRole && { profileRole: chosenProfileRole }),
+      ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
       ...(agentNickname ? { agentNickname } : {}),
       ...(delegation ?? {}),
     },
@@ -1138,14 +1138,14 @@ function handleSubAgentActivityLifecycle(
   // agentPath is /root/{task_name}, not agent_type. Role comes from PreToolUse queue,
   // persisted attribution, or thread/started — never from task_name alone.
   const existingRole = ctx.getThreadAttributionRecord?.(agentThreadId)?.agentRole;
-  const existingProfileRole = resolveChosenProfileRole(ctx, existingRole);
+  const existingOrchestrationRole = resolveChosenOrchestrationRole(ctx, existingRole);
   const taskName = taskNameFromAgentPath(agentPath);
   const queuedPayload =
     kind === "started" && itemId ? ctx.dequeueSpawnPayloadMatching?.({ toolUseId: itemId }) : undefined;
   const queuedRole = queuedPayload?.agentRole;
   const pathRoleHint = agentRoleFromAgentPath(ctx, agentPath);
-  const chosenProfileRole = resolveChosenProfileRole(ctx, queuedRole, existingProfileRole, pathRoleHint);
-  const displayRole = resolveSubagentDisplayRole(ctx, chosenProfileRole);
+  const chosenOrchestrationRole = resolveChosenOrchestrationRole(ctx, queuedRole, existingOrchestrationRole, pathRoleHint);
+  const displayRole = resolveSubagentDisplayRole(ctx, chosenOrchestrationRole);
   const queuedTaskName = queuedPayload?.taskName ?? taskName;
   const persistedSpawnMessage = ctx.getThreadAttributionRecord?.(agentThreadId)?.spawnMessage;
   const spawnPrompt =
@@ -1185,7 +1185,7 @@ function handleSubAgentActivityLifecycle(
         agentPath,
         agentThreadId,
         subAgentActivityKind: kind,
-        ...(chosenProfileRole && { profileRole: chosenProfileRole }),
+        ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
         ...(delegation ?? {}),
       },
     });
@@ -1218,38 +1218,38 @@ function handleSubAgentActivityLifecycle(
 
 const DEFAULT_ECO_PROFILE_ROLE_IDS = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
-/** Profile role id when spawn explicitly chose agent_type; otherwise undefined. */
-function resolveChosenProfileRole(
-  ctx: Pick<AdapterContext, "profileRoleIds" | "resolveProfileRoleIds">,
+/** Orchestration role id when spawn explicitly chose agent_type; otherwise undefined. */
+function resolveChosenOrchestrationRole(
+  ctx: Pick<AdapterContext, "orchestrationRoleIds" | "resolveOrchestrationRoleIds">,
   ...candidates: Array<string | undefined>
 ): string | undefined {
-  const roleLookup = buildProfileRoleLookup(ctx);
+  const roleLookup = buildOrchestrationRoleLookup(ctx);
   for (const candidate of candidates) {
     const normalized = candidate?.trim().toLowerCase();
-    const profileRole = normalized ? roleLookup.get(normalized) : undefined;
-    if (profileRole) {
-      return profileRole;
+    const orchestrationRole = normalized ? roleLookup.get(normalized) : undefined;
+    if (orchestrationRole) {
+      return orchestrationRole;
     }
   }
   return undefined;
 }
 
-/** UI/billing display role: explicit Profile pick, or general when spawn omitted agent_type. */
+/** UI/billing display role: explicit orchestration pick, or general when spawn omitted agent_type. */
 function resolveSubagentDisplayRole(
-  ctx: Pick<AdapterContext, "profileRoleIds" | "resolveProfileRoleIds">,
-  chosenProfileRole?: string,
+  ctx: Pick<AdapterContext, "orchestrationRoleIds" | "resolveOrchestrationRoleIds">,
+  chosenOrchestrationRole?: string,
 ): string {
-  return resolveChosenProfileRole(ctx, chosenProfileRole) ?? CODEX_GENERAL_SPAWN_ROLE;
+  return resolveChosenOrchestrationRole(ctx, chosenOrchestrationRole) ?? CODEX_GENERAL_SPAWN_ROLE;
 }
 
-function buildProfileRoleLookup(
-  ctx: Pick<AdapterContext, "profileRoleIds" | "resolveProfileRoleIds">,
+function buildOrchestrationRoleLookup(
+  ctx: Pick<AdapterContext, "orchestrationRoleIds" | "resolveOrchestrationRoleIds">,
 ): Map<string, string> {
   const lookup = new Map<string, string>();
   const roleIds = [
     ...DEFAULT_ECO_PROFILE_ROLE_IDS,
-    ...(ctx.profileRoleIds ?? []),
-    ...(ctx.resolveProfileRoleIds?.() ?? []),
+    ...(ctx.orchestrationRoleIds ?? []),
+    ...(ctx.resolveOrchestrationRoleIds?.() ?? []),
   ];
   for (const role of roleIds) {
     const trimmed = role.trim();
@@ -1266,10 +1266,10 @@ function isCollabSpawnTool(tool: string | undefined): boolean {
 
 /**
  * Codex `agentPath` is `/root/{task_name}` (task label), not `agent_type`.
- * Only treat the last segment as a role when it matches a known Eco Profile role id.
+ * Only treat the last segment as a role when it matches a known Eco orchestration role id.
  */
 function agentRoleFromAgentPath(
-  ctx: Pick<AdapterContext, "profileRoleIds" | "resolveProfileRoleIds">,
+  ctx: Pick<AdapterContext, "orchestrationRoleIds" | "resolveOrchestrationRoleIds">,
   agentPath: string | undefined,
 ): string | undefined {
   if (!agentPath?.trim()) {
@@ -1284,7 +1284,7 @@ function agentRoleFromAgentPath(
   if (!last) {
     return undefined;
   }
-  return buildProfileRoleLookup(ctx).get(last);
+  return buildOrchestrationRoleLookup(ctx).get(last);
 }
 
 function readCollabSpawnPrompt(item: Record<string, unknown>): string | undefined {
@@ -1370,13 +1370,13 @@ function handleCollabToolCallLifecycle(
           toolUseId: itemId,
         })
       : undefined;
-  const existingProfileRole = resolveChosenProfileRole(ctx, existingRecord?.agentRole);
+  const existingOrchestrationRole = resolveChosenOrchestrationRole(ctx, existingRecord?.agentRole);
   const queuedPayload = matchingQueuedPayload;
   // An exact current spawn payload supersedes persisted attribution from an
   // older event for the same child thread.
   const queuedRole = queuedPayload?.agentRole;
-  const chosenProfileRole = resolveChosenProfileRole(ctx, queuedRole, existingProfileRole);
-  const displayRole = resolveSubagentDisplayRole(ctx, chosenProfileRole);
+  const chosenOrchestrationRole = resolveChosenOrchestrationRole(ctx, queuedRole, existingOrchestrationRole);
+  const displayRole = resolveSubagentDisplayRole(ctx, chosenOrchestrationRole);
   const queuedTaskName = queuedPayload?.taskName;
   const spawnPrompt = resolveSpawnTaskPrompt({
     ...(queuedPayload?.message && { message: queuedPayload.message }),
@@ -1417,7 +1417,7 @@ function handleCollabToolCallLifecycle(
         collabTool: tool,
         codexNewThreadId: newThreadId,
         agentRole: displayRole,
-        ...(chosenProfileRole && { profileRole: chosenProfileRole }),
+        ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
         ...(delegation ?? {}),
       },
     });
@@ -1443,7 +1443,7 @@ function handleCollabToolCallLifecycle(
       itemType: "collabAgentToolCall",
       collabTool: tool,
       agentRole: displayRole,
-      ...(chosenProfileRole && { profileRole: chosenProfileRole }),
+      ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
       ...(newThreadId ? { codexNewThreadId: newThreadId } : {}),
       ...(status ? { collabStatus: status } : {}),
       ...(delegation ?? {}),
@@ -1482,7 +1482,7 @@ function emit(ctx: AdapterContext, input: EmitInput): void {
   const agentId = input.agentId?.trim() || attribution?.agentId?.trim();
   const persistedRole = ctx.getThreadAttributionRecord?.(input.codexThreadId)?.agentRole?.trim();
   const role = attribution?.isSubagentThread
-    ? resolveSubagentDisplayRole(ctx, resolveChosenProfileRole(ctx, input.role?.trim(), persistedRole))
+    ? resolveSubagentDisplayRole(ctx, resolveChosenOrchestrationRole(ctx, input.role?.trim(), persistedRole))
     : input.role?.trim() || persistedRole || undefined;
   const scope = input.scope ?? (agentId ? "agent" : "main");
   // Unmapped Codex id must not be written to thread_run_events (FK → threads.id).

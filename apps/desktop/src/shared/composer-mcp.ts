@@ -17,13 +17,13 @@ export function listEnabledGlobalMcpServerKeys(servers: readonly McpServerConfig
 export function deriveMcpServersEnabled(
   availableServerKeys: readonly string[],
   options: {
-    profileAssignedServers?: readonly string[];
+    orchestrationAssignedServers?: readonly string[];
     existing?: Partial<McpServersEnabledSettings>;
     remembered?: Partial<McpServersEnabledSettings>;
   } = {},
 ): McpServersEnabledSettings {
-  const profileAssigned = new Set(
-    (options.profileAssignedServers ?? []).map((server) => sanitizeMcpServerName(server)),
+  const orchestrationAssigned = new Set(
+    (options.orchestrationAssignedServers ?? []).map((server) => sanitizeMcpServerName(server)),
   );
   const result: McpServersEnabledSettings = {};
   for (const key of availableServerKeys) {
@@ -36,7 +36,7 @@ export function deriveMcpServersEnabled(
       result[sanitized] = options.remembered[sanitized];
       continue;
     }
-    result[sanitized] = profileAssigned.has(sanitized);
+    result[sanitized] = orchestrationAssigned.has(sanitized);
   }
   return result;
 }

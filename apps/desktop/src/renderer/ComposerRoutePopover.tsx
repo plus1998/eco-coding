@@ -1,29 +1,49 @@
-import { Check, ChevronDown, LayoutTemplate, Settings2 } from "lucide-react";
+import { ChevronDown, LayoutTemplate, Settings2 } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
-import {
-  type MainAgentSystemPromptPreset,
-  resolveMainAgentSystemPromptPreset,
-} from "../shared/thread-runtime-config";
-import { type AgentProfileSummary, listSelectableAgentProfileSummaries } from "./agent-profile-summary";
-import { ComposerModelLabel } from "./ComposerModelLabel";
+import type {
+  MainAgentPromptSelection,
+  ModelSettingsSnapshot,
+  SubagentSelection,
+  ThreadRuntimeConfig,
+} from "../shared/ipc";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
-const POPOVER_WIDTH = 420;
+const POPOVER_WIDTH = 340;
 const VIEWPORT_MARGIN = 8;
 const ANCHOR_GAP = 8;
 const MIN_POPOVER_HEIGHT = 120;
+const BUILTIN_PROMPT_VALUE = "builtin";
+const SUBAGENTS_NONE_VALUE = "__none__";
+
+interface CompositionControlHandlers {
+  onSelectMainAgentConfig: (id: string) => void | Promise<void>;
+  onSelectMainPrompt: (selection: MainAgentPromptSelection) => void | Promise<void>;
+  onSelectSubagents: (selection: SubagentSelection) => void | Promise<void>;
+}
+
+function mainPromptSelectionValue(selection: MainAgentPromptSelection | undefined): string {
+  if (!selection) {
+    return "";
+  }
+  return selection.mode === "builtin" ? BUILTIN_PROMPT_VALUE : selection.promptId;
+}
+
+function subagentSelectionValue(selection: SubagentSelection | undefined): string {
+  if (!selection || selection.mode === "none") {
+    return SUBAGENTS_NONE_VALUE;
+  }
+  return selection.orchestrationId;
+}
 
 function clampPopoverLeft(anchorLeft: number, width: number): number {
   const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
@@ -45,80 +65,38 @@ function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
   };
 }
 
-interface ComposerRoutePopoverProps {
+interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   open: boolean;
   settings: ModelSettingsSnapshot;
-  selectedProfileId?: string | undefined;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
-  onSelectProfile: (profileId: string) => void | Promise<void>;
-  onSelectSystemPromptPreset: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
+  onOpenFullSettings: () => void;
+}
+
+interface ComposerRouteCardBodyProps extends CompositionControlHandlers {
+  settings: ModelSettingsSnapshot;
+  runtimeConfig?: ThreadRuntimeConfig | undefined;
+  busy?: boolean | undefined;
   onOpenFullSettings: () => void;
 }
 
 export function ComposerRoutePopover({
   open,
   settings,
-  selectedProfileId,
   runtimeConfig,
   busy,
   anchorRef,
   onClose,
-  onSelectProfile,
-  onSelectSystemPromptPreset,
+  onSelectMainAgentConfig,
+  onSelectMainPrompt,
+  onSelectSubagents,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
-  const selectedOptionRef = useRef<HTMLButtonElement>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
-  const [listMaxHeight, setListMaxHeight] = useState<number>();
-  const profileSummaries = useMemo(
-    () => listSelectableAgentProfileSummaries(settings, runtimeConfig),
-    [settings, runtimeConfig],
-  );
-  const selectedProfile = useMemo(
-    () =>
-      settings.orchestrationProfiles.find(
-        (profile) => profile.id === (runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId),
-      ),
-    [settings.orchestrationProfiles, runtimeConfig?.agentProfileId, runtimeConfig?.routeProfileId],
-  );
-  const selectedSystemPromptPreset =
-    selectedProfile && runtimeConfig
-      ? resolveMainAgentSystemPromptPreset(selectedProfile, runtimeConfig)
-      : undefined;
-
-  const updateListMaxHeight = useCallback(() => {
-    const list = listRef.current;
-    if (!list) {
-      setListMaxHeight((current) => (current === undefined ? current : undefined));
-      return;
-    }
-    const items = Array.from(list.children) as HTMLElement[];
-    if (items.length === 0) {
-      setListMaxHeight((current) => (current === undefined ? current : undefined));
-      return;
-    }
-    const visibleCount = Math.min(2, items.length);
-    let height = 0;
-    for (let index = 0; index < visibleCount; index += 1) {
-      const item = items[index];
-      if (item) {
-        height += item.getBoundingClientRect().height;
-      }
-    }
-    if (visibleCount > 1) {
-      const styles = getComputedStyle(list);
-      const gap = Number.parseFloat(styles.rowGap || styles.gap || "0") || 0;
-      height += gap * (visibleCount - 1);
-    }
-    const nextHeight = Math.ceil(height);
-    setListMaxHeight((current) => (current === nextHeight ? current : nextHeight));
-  }, []);
 
   const updatePanelPosition = useCallback(() => {
     const anchor = anchorRef.current;
@@ -141,43 +119,11 @@ export function ComposerRoutePopover({
     };
   }, [open, updatePanelPosition]);
 
-  useLayoutEffect(() => {
-    if (!open) {
-      return;
-    }
-    if (profileSummaries.length === 0) {
-      updateListMaxHeight();
-      return;
-    }
-    updateListMaxHeight();
-  }, [open, profileSummaries, updateListMaxHeight]);
-
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    const selected = selectedOptionRef.current;
-    if (!open || listMaxHeight === undefined || !list || !selected) {
-      return;
-    }
-    const listRect = list.getBoundingClientRect();
-    const selectedRect = selected.getBoundingClientRect();
-    list.scrollTop = Math.max(
-      0,
-      list.scrollTop + selectedRect.top - listRect.top - (list.clientHeight - selectedRect.height) / 2,
-    );
-  }, [open, listMaxHeight]);
-
-  useEffect(() => {
-    if (open) {
-      return;
-    }
-    setListMaxHeight((current) => (current === undefined ? current : undefined));
-  }, [open]);
-
   useEffect(() => {
     if (!open) {
       return;
     }
-    function onPointerDown(event: MouseEvent) {
+    function onClickOutside(event: MouseEvent) {
       const target = event.target as Node;
       if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) {
         return;
@@ -189,10 +135,10 @@ export function ComposerRoutePopover({
         onClose();
       }
     }
-    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("click", onClickOutside);
     document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("click", onClickOutside);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose, anchorRef]);
@@ -225,36 +171,14 @@ export function ComposerRoutePopover({
           <Settings2 size={15} strokeWidth={1.75} aria-hidden />
         </button>
       </header>
-      <ul
-        ref={listRef}
-        className="composer-route-popover-list"
-        style={listMaxHeight === undefined ? undefined : { maxHeight: listMaxHeight }}
-      >
-        {profileSummaries.map((summary) => (
-          <AgentProfileOption
-            key={summary.selectionId}
-            summary={summary}
-            selected={summary.selectionId === selectedProfileId}
-            buttonRef={summary.selectionId === selectedProfileId ? selectedOptionRef : undefined}
-            disabled={busy}
-            onSelect={() => {
-              if (summary.selectionId) {
-                void onSelectProfile(summary.selectionId);
-              }
-            }}
-          />
-        ))}
-      </ul>
-      {profileSummaries.length === 0 ? (
-        <p className="composer-route-popover-empty">{t("composer.route.empty")}</p>
-      ) : null}
-      {selectedSystemPromptPreset ? (
-        <SystemPromptPresetControl
-          value={selectedSystemPromptPreset}
-          disabled={busy}
-          onChange={onSelectSystemPromptPreset}
-        />
-      ) : null}
+      <ComposerRouteCompositionControls
+        settings={settings}
+        runtimeConfig={runtimeConfig}
+        disabled={busy}
+        onSelectMainAgentConfig={onSelectMainAgentConfig}
+        onSelectMainPrompt={onSelectMainPrompt}
+        onSelectSubagents={onSelectSubagents}
+      />
     </div>,
     document.body,
   );
@@ -262,58 +186,25 @@ export function ComposerRoutePopover({
 
 export function ComposerRouteCardBody({
   settings,
-  selectedProfileId,
   runtimeConfig,
   busy,
-  onSelectProfile,
-  onSelectSystemPromptPreset,
+  onSelectMainAgentConfig,
+  onSelectMainPrompt,
+  onSelectSubagents,
   onOpenFullSettings,
-}: {
-  settings: ModelSettingsSnapshot;
-  selectedProfileId?: string | undefined;
-  runtimeConfig?: ThreadRuntimeConfig | undefined;
-  busy?: boolean | undefined;
-  onSelectProfile: (profileId: string) => void | Promise<void>;
-  onSelectSystemPromptPreset: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
-  onOpenFullSettings: () => void;
-}) {
+}: ComposerRouteCardBodyProps) {
   const { t } = useTranslation();
-  const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
-  const selectedProfile = settings.orchestrationProfiles.find(
-    (profile) => profile.id === (runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId),
-  );
-  const selectedSystemPromptPreset =
-    selectedProfile && runtimeConfig
-      ? resolveMainAgentSystemPromptPreset(selectedProfile, runtimeConfig)
-      : undefined;
 
   return (
     <div className="composer-route-card-body">
-      <ul className="composer-route-popover-list">
-        {profileSummaries.map((summary) => (
-          <AgentProfileOption
-            key={summary.selectionId}
-            summary={summary}
-            selected={summary.selectionId === selectedProfileId}
-            disabled={busy}
-            onSelect={() => {
-              if (summary.selectionId) {
-                void onSelectProfile(summary.selectionId);
-              }
-            }}
-          />
-        ))}
-      </ul>
-      {profileSummaries.length === 0 ? (
-        <p className="composer-route-popover-empty">{t("composer.route.empty")}</p>
-      ) : null}
-      {selectedSystemPromptPreset ? (
-        <SystemPromptPresetControl
-          value={selectedSystemPromptPreset}
-          disabled={busy}
-          onChange={onSelectSystemPromptPreset}
-        />
-      ) : null}
+      <ComposerRouteCompositionControls
+        settings={settings}
+        runtimeConfig={runtimeConfig}
+        disabled={busy}
+        onSelectMainAgentConfig={onSelectMainAgentConfig}
+        onSelectMainPrompt={onSelectMainPrompt}
+        onSelectSubagents={onSelectSubagents}
+      />
       <div className="composer-route-card-footer">
         <button
           type="button"
@@ -331,169 +222,135 @@ export function ComposerRouteCardBody({
   );
 }
 
-function SystemPromptPresetControl({
-  value,
+function ComposerRouteCompositionControls({
+  settings,
+  runtimeConfig,
   disabled,
-  onChange,
+  onSelectMainAgentConfig,
+  onSelectMainPrompt,
+  onSelectSubagents,
 }: {
-  value: MainAgentSystemPromptPreset;
+  settings: ModelSettingsSnapshot;
+  runtimeConfig?: ThreadRuntimeConfig | undefined;
   disabled?: boolean | undefined;
-  onChange: (preset: MainAgentSystemPromptPreset) => void | Promise<void>;
-}) {
-  const { t } = useTranslation();
+} & CompositionControlHandlers) {
+  const mainAgentConfigs = settings.mainAgentConfigs ?? [];
+  const mainAgentPrompts = (settings.mainAgentPrompts ?? []).filter(
+    (prompt) => prompt.mode === "custom_append",
+  );
+  const subagentOrchestrations = settings.subagentOrchestrations ?? [];
+  const selection = runtimeConfig?.orchestrationSelection;
+  const selectedMainAgentConfigId = selection?.mainAgentConfigId ?? "";
+  const mainAgentConfigId = mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId)
+    ? selectedMainAgentConfigId
+    : "";
+  const selectedMainPromptValue = mainPromptSelectionValue(selection?.mainPrompt);
+  const mainPromptValue =
+    selectedMainPromptValue === BUILTIN_PROMPT_VALUE ||
+    mainAgentPrompts.some((prompt) => prompt.id === selectedMainPromptValue)
+      ? selectedMainPromptValue
+      : "";
+  const subagentsValue = subagentSelectionValue(selection?.subagents);
+  const subagentOrchestrationId =
+    subagentsValue !== SUBAGENTS_NONE_VALUE &&
+    subagentOrchestrations.some((orchestration) => orchestration.id === subagentsValue)
+      ? subagentsValue
+      : subagentsValue === SUBAGENTS_NONE_VALUE
+        ? SUBAGENTS_NONE_VALUE
+        : "";
+
   return (
-    <div className="composer-route-prompt-control">
-      <span className="composer-route-prompt-label">{t("composer.route.mainPrompt")}</span>
-      <div className="composer-route-prompt-segments" role="radiogroup" aria-label={t("composer.route.mainPrompt")}>
-        <label className={value === "core_native" ? "active" : undefined} title={t("composer.route.followPromptHint")}>
-          <input
-            type="radio"
-            name="composer-main-agent-system-prompt"
-            value="core_native"
-            checked={value === "core_native"}
-            disabled={disabled}
-            onChange={() => void onChange("core_native")}
-          />
-          <span>{t("settings.models.editor.followAgent")}</span>
-        </label>
-        <label className={value === "custom_append" ? "active" : undefined} title={t("composer.route.customPromptHint")}>
-          <input
-            type="radio"
-            name="composer-main-agent-system-prompt"
-            value="custom_append"
-            checked={value === "custom_append"}
-            disabled={disabled}
-            onChange={() => void onChange("custom_append")}
-          />
-          <span>{t("composer.route.profileInstructions")}</span>
-        </label>
+    <div className="composer-route-composition-controls">
+      <div className="composer-route-prompt-control">
+        <span className="composer-route-prompt-label">主代理</span>
+        <select
+          className="composer-route-prompt-segments"
+          value={mainAgentConfigId}
+          disabled={disabled || mainAgentConfigs.length === 0}
+          onChange={(event) => void onSelectMainAgentConfig(event.target.value)}
+        >
+          {!mainAgentConfigId || mainAgentConfigs.length === 0 ? <option value="">未配置</option> : null}
+          {mainAgentConfigs.map((config) => (
+            <option key={config.id} value={config.id}>
+              {config.name} ({config.modelRef.modelId})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="composer-route-prompt-control">
+        <span className="composer-route-prompt-label">提示词</span>
+        <select
+          className="composer-route-prompt-segments"
+          value={mainPromptValue}
+          disabled={disabled}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value) {
+              return;
+            }
+            void onSelectMainPrompt(
+              value === BUILTIN_PROMPT_VALUE
+                ? { mode: "builtin" }
+                : { mode: "custom_append", promptId: value },
+            );
+          }}
+        >
+          {mainPromptValue ? null : <option value="">未配置</option>}
+          <option value={BUILTIN_PROMPT_VALUE}>跟随 Agent 内置提示词</option>
+          {mainAgentPrompts.map((prompt) => (
+            <option key={prompt.id} value={prompt.id}>
+              {prompt.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="composer-route-prompt-control">
+        <span className="composer-route-prompt-label">子代理编排</span>
+        <select
+          className="composer-route-prompt-segments"
+          value={subagentOrchestrationId}
+          disabled={disabled}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value) {
+              return;
+            }
+            void onSelectSubagents(
+              value === SUBAGENTS_NONE_VALUE
+                ? { mode: "none" }
+                : { mode: "orchestration", orchestrationId: value },
+            );
+          }}
+        >
+          <option value={SUBAGENTS_NONE_VALUE}>不使用子代理</option>
+          {subagentOrchestrations.map((orchestration) => (
+            <option key={orchestration.id} value={orchestration.id}>
+              {orchestration.name} ({orchestration.agents.length})
+            </option>
+          ))}
+        </select>
       </div>
     </div>
-  );
-}
-
-function AgentProfileOption({
-  summary,
-  selected,
-  buttonRef,
-  disabled,
-  onSelect,
-}: {
-  summary: AgentProfileSummary;
-  selected: boolean;
-  buttonRef?: RefObject<HTMLButtonElement | null> | undefined;
-  disabled?: boolean | undefined;
-  onSelect: () => void;
-}) {
-  const { t } = useTranslation();
-  const subagentPreview = summary.enabledAgents.slice(0, 2);
-  const hiddenSubagentCount = Math.max(0, summary.enabledAgents.length - subagentPreview.length);
-  const riskPreview = summary.highRiskLabels.slice(0, 2);
-  const hiddenRiskCount = Math.max(0, summary.highRiskLabels.length - riskPreview.length);
-  const modelRows = [
-    {
-      key: "main",
-      role: t("settings.models.mainAgent"),
-      modelId: summary.main.modelId,
-      thinkingEffort: summary.main.thinkingEffort,
-    },
-    ...subagentPreview.map((agent) => ({
-      key: agent.agentKey,
-      role: agent.name,
-      modelId: agent.modelId,
-      thinkingEffort: agent.thinkingEffort,
-    })),
-  ];
-  const riskText =
-    riskPreview.length > 0
-      ? t("composer.route.highRisk", {
-          risks: riskPreview.join(t("composer.route.listSeparator")),
-          more:
-            hiddenRiskCount > 0
-              ? t("composer.route.moreRiskItems", {
-                  count: riskPreview.length + hiddenRiskCount,
-                })
-              : "",
-        })
-      : null;
-
-  return (
-    <li>
-      <button
-        ref={buttonRef}
-        type="button"
-        className={selected ? "composer-codex-popover-item active" : "composer-codex-popover-item"}
-        disabled={disabled || selected}
-        aria-pressed={selected}
-        onClick={onSelect}
-      >
-        <span className="composer-route-profile-card">
-          <span className="composer-route-profile-head">
-            <span className="composer-route-popover-item-name">{summary.name}</span>
-            <span className="composer-route-profile-meta">
-              {t("composer.route.profileMeta", {
-                preset: summary.presetLabel,
-                count: summary.enabledAgents.length,
-              })}
-            </span>
-          </span>
-
-          <span className="composer-route-profile-models">
-            {modelRows.map((row) => (
-              <span key={row.key} className="composer-route-profile-model-row">
-                <span className="composer-route-profile-model-role">{row.role}</span>
-                <span className="composer-route-profile-model-name" title={row.modelId}>
-                  <ComposerModelLabel
-                    modelId={row.modelId}
-                    thinkingEffort={row.thinkingEffort}
-                    size="small"
-                  />
-                </span>
-              </span>
-            ))}
-            {hiddenSubagentCount > 0 ? (
-              <span className="composer-route-profile-model-row is-more">
-                <span className="composer-route-profile-model-role" aria-hidden />
-                <span className="composer-route-profile-model-name">
-                  {t("composer.route.moreSubagents", { count: hiddenSubagentCount })}
-                </span>
-              </span>
-            ) : null}
-          </span>
-
-          {riskText ? <span className="composer-route-profile-risks">{riskText}</span> : null}
-        </span>
-
-        <span
-          className={
-            selected ? "composer-codex-popover-check" : "composer-codex-popover-check is-placeholder"
-          }
-          aria-hidden
-        >
-          <Check size={14} strokeWidth={2.25} />
-        </span>
-      </button>
-    </li>
   );
 }
 
 export function ComposerRoutePopoverTrigger({
   disabled,
   open,
-  profileName,
+  orchestrationName,
   buttonRef,
   compact,
   onToggle,
 }: {
   disabled?: boolean | undefined;
   open: boolean;
-  profileName?: string | undefined;
+  orchestrationName?: string | undefined;
   buttonRef: RefObject<HTMLButtonElement | null>;
   compact?: boolean | undefined;
   onToggle: () => void;
 }) {
   const { t } = useTranslation();
-  const label = profileName?.trim() || t("composer.route.selectProfile");
+  const label = orchestrationName?.trim() || t("composer.route.selectOrchestration");
 
   return (
     <button
@@ -510,13 +367,13 @@ export function ComposerRoutePopoverTrigger({
       onClick={onToggle}
       disabled={disabled}
       title={
-        profileName
-          ? t("composer.route.currentProfile", { name: profileName })
+        orchestrationName
+          ? t("composer.route.currentOrchestration", { name: orchestrationName })
           : t("composer.route.switch")
       }
       aria-label={
-        profileName
-          ? t("composer.route.currentProfileSwitch", { name: profileName })
+        orchestrationName
+          ? t("composer.route.currentOrchestrationSwitch", { name: orchestrationName })
           : t("composer.route.switch")
       }
       aria-expanded={open}
@@ -529,7 +386,9 @@ export function ComposerRoutePopoverTrigger({
       />
       <span
         className={
-          profileName ? "composer-context-trigger-label" : "composer-context-trigger-label is-placeholder"
+          orchestrationName
+            ? "composer-context-trigger-label"
+            : "composer-context-trigger-label is-placeholder"
         }
       >
         {label}

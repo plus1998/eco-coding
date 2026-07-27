@@ -1,11 +1,10 @@
-import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
+import { resolveThreadOrchestrationSnapshot } from "../shared/thread-runtime-config";
 import {
   defaultThemeColorForAgentKey,
   stripEcoAgentKeyPrefix,
   subagentThemeCssVars,
 } from "../shared/subagent-theme";
-import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 
 export type RuntimeAgentThemes = Record<string, string>;
 
@@ -13,16 +12,14 @@ export function buildRuntimeAgentThemes(
   settings: ModelSettingsSnapshot,
   runtimeConfig: ThreadRuntimeConfig | undefined,
 ): RuntimeAgentThemes {
-  const summary = findSelectableAgentProfileSummary(
-    settings,
-    runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId,
-    runtimeConfig,
-  );
-  if (!summary) {
+  const snapshot = runtimeConfig
+    ? resolveThreadOrchestrationSnapshot(settings, runtimeConfig)
+    : undefined;
+  if (!snapshot) {
     return {};
   }
   const themes: RuntimeAgentThemes = {};
-  for (const agent of listOrchestrationProfileAgents(summary.profile)) {
+  for (const agent of snapshot.agents) {
     const color = agent.themeColor?.trim();
     if (color) {
       addAgentThemeColor(themes, agent.agentKey, color);

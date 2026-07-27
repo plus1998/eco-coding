@@ -76,7 +76,12 @@ export function resolveAgentBashPolicyForConfirmation(
   if (!registry) {
     return undefined;
   }
-  const bash = resolveToolBashPolicy(registry.profile, registry.templates, input.agentId, input.agentType);
+  const bash = resolveToolBashPolicy(
+    registry.orchestration,
+    registry.templates,
+    input.agentId,
+    input.agentType,
+  );
   if (!bash) {
     return undefined;
   }
@@ -384,18 +389,18 @@ export function formatConfirmationUserMessage(
 }
 
 function resolveToolBashPolicy(
-  profile: EcoAgentRuntimeConfig["profile"],
+  orchestration: EcoAgentRuntimeConfig["orchestration"],
   templates: EcoAgentRuntimeConfig["templates"],
   agentId?: string,
   agentType?: string,
 ): ReturnType<typeof resolveEffectiveBashPolicy> {
   const actor = resolveBashPolicyActor(agentId, agentType);
   if (actor === "main") {
-    return resolveEffectiveBashPolicy(materializeEcoToolPolicy(profile.mainAgent.tools));
+    return resolveEffectiveBashPolicy(materializeEcoToolPolicy(orchestration.mainAgent.tools));
   }
-  const agent = profile.agents.find((entry) => entry.agentKey === actor);
+  const agent = orchestration.agents.find((entry) => entry.agentKey === actor);
   if (!agent) {
-    return resolveEffectiveBashPolicy(materializeEcoToolPolicy(profile.mainAgent.tools));
+    return resolveEffectiveBashPolicy(materializeEcoToolPolicy(orchestration.mainAgent.tools));
   }
   const template = templates.find((entry) => entry.id === agent.templateId);
   const policy =
@@ -403,7 +408,7 @@ function resolveToolBashPolicy(
     agent.tools.allowed.length > 0 ||
     agent.tools.disallowed.some((entry) => entry.trim() === "Bash")
       ? agent.tools
-      : (template?.defaultTools ?? profile.mainAgent.tools);
+      : (template?.defaultTools ?? orchestration.mainAgent.tools);
   return resolveEffectiveBashPolicy(materializeEcoToolPolicy(policy));
 }
 

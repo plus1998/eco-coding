@@ -1,7 +1,7 @@
 import type { ThreadRunProjectionTimelineItem } from "./ipc";
 import {
   formatPromptCacheConfigDriftMessage as formatPromptCacheConfigDriftMessageFromConfig,
-  type PromptCacheProfileLabel,
+  type PromptCacheOrchestrationLabel,
 } from "./prompt-cache-config";
 import type { PromptCacheConfigDriftKind } from "./prompt-cache-config";
 
@@ -229,7 +229,7 @@ function buildSyntheticPromptCacheTimelineItem(
 
 export function formatPromptCacheConfigDriftMessage(
   kinds: readonly PromptCacheConfigDriftKind[],
-  options?: { profileLabel?: PromptCacheProfileLabel },
+  options?: { orchestrationLabel?: PromptCacheOrchestrationLabel },
 ): string {
   return formatPromptCacheConfigDriftMessageFromConfig(kinds, options);
 }

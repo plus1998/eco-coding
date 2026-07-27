@@ -51,7 +51,7 @@ export function resolveThreadRuntimeConfig(
 
   if (options.requireCompleteCodingRoutes === false) {
     if (resolvedRoutes.length === 0) {
-      return { ok: false, reason: "At least one model route is required for this Agent Profile." };
+      return { ok: false, reason: "At least one model route is required for this orchestration." };
     }
     return { ok: true, routes: resolvedRoutes };
   }

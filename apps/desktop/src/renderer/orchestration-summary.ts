@@ -1,19 +1,21 @@
-import { listOrchestrationProfileAgents, type ModelRef } from "../shared/agent-orchestration";
+import type { ModelRef } from "../shared/agent-orchestration";
 import type {
   AgentDomain,
   AgentInstanceConfig,
   AgentTemplate,
   ModelSettingsSnapshot,
-  OrchestrationProfile,
+  OrchestrationSelection,
+  ResolvedOrchestrationSnapshot,
   SubagentRole,
   ThreadRuntimeConfig,
   ToolPolicy,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
+import { resolveThreadOrchestrationSnapshot } from "../shared/thread-runtime-config";
 import { type AgentTemplatePermissionChip, buildAgentTemplatePermissionChips } from "./agent-template-form";
 import { i18n } from "./i18n";
 
-export interface AgentProfileMainSummary {
+export interface OrchestrationMainSummary {
   name: string;
   modelLabel: string;
   modelId: string;
@@ -22,7 +24,7 @@ export interface AgentProfileMainSummary {
   permissionChips: AgentTemplatePermissionChip[];
 }
 
-export interface AgentProfileAgentSummary {
+export interface OrchestrationAgentSummary {
   agentKey: string;
   name: string;
   templateName?: string | undefined;
@@ -34,75 +36,61 @@ export interface AgentProfileAgentSummary {
   permissionChips: AgentTemplatePermissionChip[];
 }
 
-export interface AgentProfileSummary {
-  profile: OrchestrationProfile;
-  selectionId?: string | undefined;
+export interface OrchestrationSummary {
+  selection: OrchestrationSelection;
   name: string;
   presetLabel: string;
-  sourceLabel: string;
-  main: AgentProfileMainSummary;
-  agents: AgentProfileAgentSummary[];
-  enabledAgents: AgentProfileAgentSummary[];
+  main: OrchestrationMainSummary;
+  agents: OrchestrationAgentSummary[];
+  enabledAgents: OrchestrationAgentSummary[];
   disabledAgentCount: number;
   highRiskLabels: string[];
 }
 
 const SUBAGENT_ROLE_SET = new Set<string>(SUBAGENT_ROLES);
-export function listSelectableAgentProfileSummaries(
-  settings: ModelSettingsSnapshot,
-  runtimeConfig?: ThreadRuntimeConfig | undefined,
-): AgentProfileSummary[] {
-  return settings.orchestrationProfiles
-    .map((profile) => buildAgentProfileSummary(settings, profile, runtimeConfig))
-    .filter((summary): summary is AgentProfileSummary & { selectionId: string } =>
-      Boolean(summary.selectionId),
-    )
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
-}
 
-export function findSelectableAgentProfileSummary(
+export function resolveThreadOrchestrationSummary(
   settings: ModelSettingsSnapshot,
-  selectionId: string | undefined,
-  runtimeConfig?: ThreadRuntimeConfig | undefined,
-): AgentProfileSummary | undefined {
-  if (!selectionId) {
+  runtimeConfig: ThreadRuntimeConfig | undefined,
+): OrchestrationSummary | undefined {
+  if (!runtimeConfig) {
     return undefined;
   }
-  return listSelectableAgentProfileSummaries(settings, runtimeConfig).find(
-    (summary) => summary.selectionId === selectionId,
-  );
+  const snapshot = resolveThreadOrchestrationSnapshot(settings, runtimeConfig);
+  if (!snapshot) {
+    return undefined;
+  }
+  return buildOrchestrationSummary(settings, snapshot, runtimeConfig);
 }
 
-export function buildAgentProfileSummary(
+export function buildOrchestrationSummary(
   settings: ModelSettingsSnapshot,
-  profile: OrchestrationProfile,
+  snapshot: ResolvedOrchestrationSnapshot,
   runtimeConfig?: ThreadRuntimeConfig | undefined,
-): AgentProfileSummary {
+): OrchestrationSummary {
   const templatesById = new Map(settings.agentTemplates.map((template) => [template.id, template]));
-  const mainRiskLabels = summarizeToolRiskLabels(profile.mainAgent.tools);
-  const mainModelRef = profile.mainAgent.modelRef;
-  const main: AgentProfileMainSummary = {
-    name: profile.mainAgent.name.trim() || i18n.t("settings.models.mainAgent"),
+  const mainRiskLabels = summarizeToolRiskLabels(snapshot.mainAgent.tools);
+  const mainModelRef = snapshot.mainAgent.modelRef;
+  const main: OrchestrationMainSummary = {
+    name: snapshot.mainAgent.name.trim() || i18n.t("settings.models.mainAgent"),
     modelLabel: formatModelLabel(mainModelRef.providerId, mainModelRef.modelId, mainModelRef),
     modelId: mainModelRef.modelId,
     ...(mainModelRef.thinkingEffort ? { thinkingEffort: mainModelRef.thinkingEffort } : {}),
     riskLabels: mainRiskLabels,
     permissionChips: buildAgentTemplatePermissionChips({
-      defaultTools: profile.mainAgent.tools,
+      defaultTools: snapshot.mainAgent.tools,
       mcpServers: [],
       allowDelegation: false,
     }),
   };
-  const agents = listOrchestrationProfileAgents(profile).map((agent) =>
+  const agents = snapshot.agents.map((agent) =>
     buildAgentSummary(agent, templatesById.get(agent.templateId), runtimeConfig),
   );
   const enabledAgents = agents.filter((agent) => agent.enabled);
   return {
-    profile,
-    selectionId: profile.id,
-    name: profile.name,
-    presetLabel: formatAgentDomainLabel(profile.preset),
-    sourceLabel: formatProfileSourceLabel(profile),
+    selection: snapshot.selection,
+    name: formatOrchestrationDisplayName(snapshot),
+    presetLabel: formatAgentDomainLabel(snapshot.mainAgent.domain),
     main,
     agents,
     enabledAgents,
@@ -114,22 +102,30 @@ export function buildAgentProfileSummary(
   };
 }
 
+export function formatOrchestrationDisplayName(snapshot: ResolvedOrchestrationSnapshot): string {
+  const parts = [snapshot.mainAgentConfigName.trim(), snapshot.mainPromptDisplayName.trim()].filter(Boolean);
+  if (snapshot.subagentOrchestrationDisplayName?.trim()) {
+    parts.push(snapshot.subagentOrchestrationDisplayName.trim());
+  }
+  return parts.join(" · ") || i18n.t("composer.route.selectOrchestration");
+}
+
 export function formatAgentDomainLabel(domain: AgentDomain): string {
   switch (domain) {
     case "coding":
-      return i18n.t("agentProfile.domain.coding");
+      return i18n.t("orchestrationResource.domain.coding");
     case "research":
-      return i18n.t("agentProfile.domain.research");
+      return i18n.t("orchestrationResource.domain.research");
     case "writing":
-      return i18n.t("agentProfile.domain.writing");
+      return i18n.t("orchestrationResource.domain.writing");
     case "product":
-      return i18n.t("agentProfile.domain.product");
+      return i18n.t("orchestrationResource.domain.product");
     case "data":
-      return i18n.t("agentProfile.domain.data");
+      return i18n.t("orchestrationResource.domain.data");
     case "ops":
-      return i18n.t("agentProfile.domain.ops");
+      return i18n.t("orchestrationResource.domain.ops");
     case "custom":
-      return i18n.t("agentProfile.domain.custom");
+      return i18n.t("orchestrationResource.domain.custom");
   }
 }
 
@@ -137,7 +133,7 @@ function buildAgentSummary(
   agent: AgentInstanceConfig,
   template: AgentTemplate | undefined,
   runtimeConfig: ThreadRuntimeConfig | undefined,
-): AgentProfileAgentSummary {
+): OrchestrationAgentSummary {
   const enabled = resolveAgentEnabled(agent, runtimeConfig);
   return {
     agentKey: agent.agentKey,
@@ -169,24 +165,6 @@ function resolveAgentEnabled(
   return runtimeConfig.subagentEnabled[agent.agentKey as SubagentRole];
 }
 
-function formatProfileSourceLabel(profile: OrchestrationProfile): string {
-  if (profile.source === "built_in") {
-    return i18n.t("agentProfile.source.builtIn");
-  }
-  if (profile.source === "derived") {
-    return profile.sourceRouteProfileId
-      ? i18n.t("agentProfile.source.derived")
-      : i18n.t("agentProfile.source.derivedProfile");
-  }
-  if (profile.source === "project") {
-    return i18n.t("settings.models.editor.project");
-  }
-  if (profile.source === "user") {
-    return i18n.t("settings.models.editor.user");
-  }
-  return i18n.t("agentProfile.domain.custom");
-}
-
 function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
   const disallowed = new Set(policy.disallowed);
   const labels: string[] = [];
@@ -194,11 +172,11 @@ function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
     labels.push("Bash");
   }
   if (policy.filesystem?.write === "workspace") {
-    labels.push(i18n.t("agentProfile.risk.writeFiles"));
+    labels.push(i18n.t("orchestrationResource.risk.writeFiles"));
   }
   const networkEnabled = policy.network?.webSearch || policy.network?.webFetch;
   if (networkEnabled) {
-    labels.push(i18n.t("agentProfile.risk.network"));
+    labels.push(i18n.t("orchestrationResource.risk.network"));
   }
   if ((policy.mcp?.allowedServers.length ?? 0) > 0 || (policy.mcp?.allowedTools.length ?? 0) > 0) {
     labels.push("连接器");

@@ -166,7 +166,7 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
 
   // Role definitions are thread-scoped via thread/start.config and
   // thread/resume.config. Keeping them out of global config prevents one
-  // concurrently prepared Profile from changing another thread's future spawn.
+  // concurrently prepared orchestration from changing another thread's future spawn.
   if (enableMultiAgent) {
     lines.push(
       "[features]",
@@ -229,7 +229,7 @@ export async function syncCodexConfigFromEcoProviders(
   await fs.mkdir(codexHomeDir, { recursive: true });
   await fs.writeFile(configPath, configToml, "utf8");
 
-  // When Profile agents exist, install PreToolUse hook so spawn_agent always uses
+  // When orchestration agents exist, install PreToolUse hook so spawn_agent always uses
   // fork_turns=none (agent model from agents/*.toml) without teaching the main agent.
   // Also persist hooks.state trusted_hash — untrusted user hooks are skipped by Codex.
   // Dynamic import keeps node:crypto out of the renderer bundle.

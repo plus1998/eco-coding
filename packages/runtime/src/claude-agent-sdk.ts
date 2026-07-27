@@ -10,8 +10,8 @@ import {
 import { formatSubagentMissionMessage } from "./agent-mission";
 import {
   buildMainAgentSystemPrompt,
-  buildToolPermissionPolicyFromProfile,
-  createAgentDefinitionsFromProfile,
+  buildToolPermissionPolicyFromOrchestration,
+  createAgentDefinitionsFromOrchestration,
   type MainAgentHandsOnCapability,
   resolveMainAgentAllowedTools,
   resolveMainAgentHandsOnCapability,
@@ -200,7 +200,7 @@ const agentSessionRulesAppend = [
 ].join("\n");
 const universalEcoBasePromptAppend = [
   "You are running inside Eco, a configurable agent command center.",
-  "Follow the active Eco orchestration profile and delegate only to the listed Eco subagents.",
+  "Follow the active Eco orchestration and delegate only to the listed Eco subagents.",
   "Use tools only when they are allowed for the active role and materially help the user's task.",
 ].join("\n");
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
@@ -213,8 +213,8 @@ const askSessionPhaseAppend = [
 ].join("\n");
 const defaultSettingSources = ["project"] as const;
 
-function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
-  return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
+function usesUniversalOrchestration(input: AgentRuntimeRunInput): boolean {
+  return Boolean(input.agentRegistry && input.agentRegistry.orchestration.mainAgent.domain !== "coding");
 }
 
 function buildAskSessionPhase(input: AgentRuntimeRunInput): {
@@ -238,9 +238,9 @@ function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   };
 }
 
-/** Universal profiles use custom rosters, so the hands-on boundary points at the roster instead of eco_* keys. */
+/** Universal orchestrations use custom rosters, so the hands-on boundary points at the roster instead of eco_* keys. */
 const universalDelegateOptions = {
-  delegateTarget: "an implementation-capable agent from the active profile roster (via Agent(...))",
+  delegateTarget: "an implementation-capable agent from the active orchestration roster (via Agent(...))",
 } as const;
 
 function buildUniversalPhaseAppend(phase: "plan" | "execute" | "autonomous"): string {
@@ -268,7 +268,7 @@ function appendMainAgentHandsOnBoundaryIfNeeded(
   baseAppend: string,
   capability: MainAgentHandsOnCapability,
   availability: SubagentAvailability,
-  universalProfile: boolean,
+  universalOrchestration: boolean,
 ): string {
   if (!shouldAppendMainAgentHandsOnBoundary(capability)) {
     return baseAppend;
@@ -278,7 +278,7 @@ function appendMainAgentHandsOnBoundaryIfNeeded(
     buildMainAgentHandsOnBoundaryAppend(
       capability,
       availability,
-      universalProfile ? universalDelegateOptions : {},
+      universalOrchestration ? universalDelegateOptions : {},
     ),
   ]
     .filter(Boolean)
@@ -408,7 +408,7 @@ function buildUniversalExecutionPromptWithFollowUp(
     lines.push("", "Latest user message:", trimmed);
   }
 
-  lines.push("", "Use the active Eco orchestration profile and its listed subagents as needed.");
+  lines.push("", "Use the active Eco orchestration and its listed subagents as needed.");
   lines.push(formatResumableSubagentsAppend(planning.resumableSubagents ?? []));
   return lines.join("\n");
 }
@@ -702,7 +702,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     mode: "planning" | "execution" | "ask",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
-    const universalProfile = usesUniversalAgentProfile(input);
+    const universalOrchestration = usesUniversalOrchestration(input);
     if (mode === "ask") {
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
       yield* this.runSingleSession(input, buildAskSessionPhase(input));
@@ -710,14 +710,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
+    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.orchestration);
     const planFile = planning?.planFilePath?.trim()
       ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
       : undefined;
     const isSdkResume = Boolean(input.resume?.resumeSessionId);
     const continuationPrompt =
       mode === "execution" && planning
-        ? universalProfile
+        ? universalOrchestration
           ? buildUniversalExecutionPromptWithFollowUp(
               {
                 ...planning,
@@ -735,7 +735,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               followUp: input.prompt,
               isResume: isSdkResume,
             })
-        : mode === "planning" && universalProfile
+        : mode === "planning" && universalOrchestration
           ? buildUniversalPlanningContinuationPrompt(input.prompt)
           : input.prompt;
     yield createPhaseBoundaryEvent(
@@ -755,12 +755,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : {}),
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile
+        universalOrchestration
           ? buildUniversalPhaseAppend("execute")
           : [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
         handsOn,
         availability,
-        universalProfile,
+        universalOrchestration,
       ),
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
@@ -769,14 +769,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 
   private async *runPlanningPass(input: AgentRuntimeRunInput, prompt: string): AsyncIterable<AgentEvent> {
-    const universalProfile = usesUniversalAgentProfile(input);
+    const universalOrchestration = usesUniversalOrchestration(input);
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const sessionResult = yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "plan",
       planningPhase: true,
       allowedTools: [...planningContinuationAllowedTools],
-      phaseAppend: universalProfile ? buildUniversalPhaseAppend("plan") : buildAutonomousPlanningAppend(),
+      phaseAppend: universalOrchestration ? buildUniversalPhaseAppend("plan") : buildAutonomousPlanningAppend(),
       agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -795,20 +795,20 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    const universalProfile = usesUniversalAgentProfile(input);
+    const universalOrchestration = usesUniversalOrchestration(input);
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
-    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
+    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.orchestration);
     yield* this.runSingleSession(input, {
       prompt: input.prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalProfile
+        universalOrchestration
           ? buildUniversalPhaseAppend("autonomous")
           : [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
         handsOn,
         availability,
-        universalProfile,
+        universalOrchestration,
       ),
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
@@ -838,17 +838,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const systemAppend = [
-      usesUniversalAgentProfile(input) ? universalEcoBasePromptAppend : resolveCodingBasePromptAppend(phase),
+      usesUniversalOrchestration(input) ? universalEcoBasePromptAppend : resolveCodingBasePromptAppend(phase),
       phase.phaseAppend,
     ]
       .filter(Boolean)
       .join("\n\n");
     const session = resolveSdkSessionOptions(input.sdkSession);
-    // Profile agents must request the role route's model id (the proxy alias), so the local
+    // Orchestration agents must request the role route's model id (the proxy alias), so the local
     // proxy can attribute usage to the right agent role instead of guessing by shared model.
     const resolveSdkModel = createSdkModelResolver(input.routes);
     const dynamicAgents = input.agentRegistry
-      ? createAgentDefinitionsFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
+      ? createAgentDefinitionsFromOrchestration(input.agentRegistry.orchestration, input.agentRegistry.templates, {
           ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
           resolveModelId: resolveSdkModel,
         })
@@ -857,21 +857,21 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       dynamicAgents && phase.availability
         ? filterAgentDefinitions(dynamicAgents.definitions, phase.availability)
         : dynamicAgents?.definitions;
-    const dynamicProfileDefinitions =
+    const dynamicOrchestrationDefinitions =
       dynamicAgents && input.agentRegistry
         ? filterDynamicDefinitionsForPhase(
             availableDynamicDefinitions ?? {},
             phase.agents,
-            input.agentRegistry.profile.preset,
+            input.agentRegistry.orchestration.mainAgent.domain,
             phase.dynamicAgentKeys,
           )
         : undefined;
-    const dynamicDefinitions = input.agentRegistry ? dynamicProfileDefinitions : phase.agents;
+    const dynamicDefinitions = input.agentRegistry ? dynamicOrchestrationDefinitions : phase.agents;
     const dynamicAgentKeys = dynamicDefinitions ? Object.keys(dynamicDefinitions) : undefined;
     const mainAllowedTools = phase.askPhase
       ? phase.allowedTools
       : input.agentRegistry
-        ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
+        ? resolveMainAgentAllowedTools(input.agentRegistry.orchestration, phase.allowedTools)
         : phase.allowedTools;
     const applyPhaseToolCap =
       phase.planningPhase === true || phase.permissionMode === "plan" || phase.permissionMode === "dontAsk";
@@ -880,7 +880,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? capAgentDefinitionsForReadOnlyPhase(dynamicDefinitions, phase.allowedTools)
         : dynamicDefinitions;
     const toolPermissions = input.agentRegistry
-      ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
+      ? buildToolPermissionPolicyFromOrchestration(input.agentRegistry.orchestration, input.agentRegistry.templates, {
           ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
           ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
           ...(input.sdkSession?.runtimeMcpServers?.length
@@ -972,13 +972,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : [],
     );
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
-    // attributed to the planner role; raw profile model ids are ambiguous when multiple
+    // attributed to the planner role; raw orchestration model ids are ambiguous when multiple
     // roles share the same upstream model.
-    const profileMainModelId = input.agentRegistry?.profile.mainAgent.modelRef.modelId;
-    const mainModel = resolveMainSdkModelId(input.routes, profileMainModelId);
+    const orchestrationMainModelId = input.agentRegistry?.orchestration.mainAgent.modelRef.modelId;
+    const mainModel = resolveMainSdkModelId(input.routes, orchestrationMainModelId);
     const systemPrompt = input.agentRegistry
       ? buildMainAgentSystemPrompt(
-          input.agentRegistry.profile,
+          input.agentRegistry.orchestration,
           input.agentRegistry.templates,
           systemAppend,
           this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {},
@@ -1550,14 +1550,14 @@ export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
 function filterDynamicDefinitionsForPhase(
   definitions: Record<string, unknown>,
   phaseDefinitions: Record<string, unknown> | undefined,
-  preset: string,
+  mainAgentDomain: string,
   explicitAgentKeys?: readonly string[],
 ): Record<string, unknown> {
   if (explicitAgentKeys) {
     const explicit = new Set(explicitAgentKeys);
     return Object.fromEntries(Object.entries(definitions).filter(([key]) => explicit.has(key)));
   }
-  if (preset !== "coding" || !phaseDefinitions) {
+  if (mainAgentDomain !== "coding" || !phaseDefinitions) {
     return definitions;
   }
   const allowedKeys = new Set(Object.keys(phaseDefinitions));

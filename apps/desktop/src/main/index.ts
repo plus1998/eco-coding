@@ -65,9 +65,8 @@ import {
 } from "./packaged-runtime-executables";
 import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
 
-ensureDesktopPath();
+ ensureDesktopPath();
 
-import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import { expectedIpcErrorKey, translateCatalog } from "../shared/i18n-catalogs";
@@ -91,7 +90,6 @@ import {
   type AgentTemplateExportRequest,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
-  buildThreadRuntimeConfigFromDefaults,
   type CandidateModelInput,
   type CandidateModelView,
   type CenterServerRegisterDesktopRequest,
@@ -112,6 +110,7 @@ import {
   isGitFetchRequest,
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
+  parseGitListCommitModelOptionsRequest,
   isGitPullRequest,
   isGitPushRequest,
   isKnownIpcChannel,
@@ -124,11 +123,13 @@ import {
   isTerminalSpawnRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
+  type MainAgentConfigResource,
+  type MainAgentPromptResource,
+  type OrchestrationSelection,
+  type SubagentOrchestrationResource,
   type McpServerConfigInput,
   type ModelSettingsSnapshot,
   normalizeThreadRuntimeConfig,
-  type OrchestrationProfile,
-  type OrchestrationProfileExportRequest,
   type PlanApprovalRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
@@ -138,9 +139,11 @@ import {
   type RuntimeRoleRouteConfig,
   resolveMainAgentSystemPromptPreset,
   resolveSessionMode,
-  resolveThreadAgentProfile,
+  resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
-  runtimeRoleRoutesFromAgentProfile,
+  runtimeRoleRoutesFromOrchestrationSnapshot,
+  hasCompleteOrchestrationSelection,
+  materializeThreadOrchestrationSnapshot,
   SUBAGENT_ROLES,
   type TerminalListRequest,
   type TestProviderConnectionRequest,
@@ -193,10 +196,11 @@ import {
 import { buildCodexMcpServersForConfigSync, filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
+  buildOrchestrationRuntimeKey,
   buildMainAgentModelKey,
   diffPromptCacheRuntimeSignatures,
   resolveMainAgentModelKey,
-  resolvePromptCacheProfileLabel,
+  resolvePromptCacheOrchestrationLabel,
   resolvePromptCacheRuntimeSignature,
 } from "../shared/prompt-cache-config";
 import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
@@ -236,6 +240,7 @@ import {
   buildPlanExecutionFailureMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
+import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
 import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
@@ -243,7 +248,7 @@ import {
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
 } from "../shared/thread-follow-up-drain";
-import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
+import { orchestrationConfigFromSnapshot } from "../shared/agent-orchestration";
 import {
   buildWorktreeMergeSummary,
   formatWorktreeMergeThreadMessage,
@@ -1356,7 +1361,6 @@ app.whenReady().then(async () => {
     nowMs: () => Date.now(),
   });
   loadThreadMetricsFromStore();
-  backfillThreadRuntimeConfigs();
   recoverOrphanedRunningThreads();
   currentWorkspace = await ensureHomeProject();
   initializeGitAutoFetcher();
@@ -1474,76 +1478,7 @@ function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<
   };
 }
 
-function prepareImportedOrchestrationProfile(
-  profile: OrchestrationProfile,
-  existingIds: Set<string>,
-): OrchestrationProfile {
-  const now = new Date().toISOString();
-  const rawId = typeof profile.id === "string" ? profile.id.trim() : "";
-  const protectedId =
-    profile.source === "built_in" ||
-    profile.source === "derived" ||
-    rawId.startsWith("builtin.") ||
-    rawId.startsWith("derived.");
-  const name =
-    typeof profile.name === "string" && profile.name.trim() ? profile.name.trim() : "Imported Agent Profile";
-  const id =
-    !rawId || protectedId || existingIds.has(rawId)
-      ? createUniqueImportedProfileId(`user.imported.${slugifyTemplateId(name) || "profile"}`, existingIds)
-      : rawId;
-  existingIds.add(id);
-  return {
-    ...profile,
-    id,
-    name,
-    source: profile.source === "project" && !protectedId ? "project" : "user",
-    updatedAt: now,
-  };
-}
-
-function collectExportableProfileTemplates(
-  profiles: readonly OrchestrationProfile[],
-  templates: readonly AgentTemplate[],
-): AgentTemplate[] {
-  const referencedTemplateIds = new Set(
-    profiles.flatMap((profile) => profile.agents.map((agent) => agent.templateId.trim()).filter(Boolean)),
-  );
-  return templates.filter(
-    (template) =>
-      referencedTemplateIds.has(template.id) &&
-      !template.builtIn &&
-      template.source !== "built_in" &&
-      template.source !== "derived",
-  );
-}
-
-function rewriteProfileTemplateIds(
-  profile: OrchestrationProfile,
-  templateIdMap: ReadonlyMap<string, string>,
-): OrchestrationProfile {
-  if (templateIdMap.size === 0) {
-    return profile;
-  }
-  return {
-    ...profile,
-    agents: profile.agents.map((agent) => ({
-      ...agent,
-      templateId: templateIdMap.get(agent.templateId) ?? agent.templateId,
-    })),
-  };
-}
-
 function createUniqueImportedTemplateId(baseId: string, existingIds: ReadonlySet<string>): string {
-  let candidate = baseId;
-  let suffix = 2;
-  while (existingIds.has(candidate)) {
-    candidate = `${baseId}_${suffix}`;
-    suffix += 1;
-  }
-  return candidate;
-}
-
-function createUniqueImportedProfileId(baseId: string, existingIds: ReadonlySet<string>): string {
   let candidate = baseId;
   let suffix = 2;
   while (existingIds.has(candidate)) {
@@ -1561,25 +1496,8 @@ function slugifyTemplateId(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-function buildDefaultThreadRuntimeConfig(): ThreadRuntimeConfig {
-  return buildThreadRuntimeConfigFromDefaults({
-    settings: getModelSettingsSnapshot(),
-    workflowDefaults: workflowSettingsStore.get(),
-    mcpServers: mcpStore.listServers(),
-  });
-}
-
 function ensureThreadRuntimeConfig(thread: ThreadSummary): ThreadSummary {
-  if (thread.runtimeConfig) {
-    return thread;
-  }
-  const config = buildDefaultThreadRuntimeConfig();
-  conversationStore.saveThreadRuntimeConfig(thread.id, config);
-  return { ...thread, runtimeConfig: config };
-}
-
-function hydrateThreads(threads: ThreadSummary[]): ThreadSummary[] {
-  return threads.map(ensureThreadRuntimeConfig);
+  return thread;
 }
 
 function buildThreadUsageSnapshotServices(): ThreadUsageSnapshotRuntimeServices {
@@ -1596,15 +1514,40 @@ function buildThreadUsageSnapshotServices(): ThreadUsageSnapshotRuntimeServices 
   };
 }
 
-function backfillThreadRuntimeConfigs(): void {
-  hydrateThreads(conversationStore.listThreads());
-}
-
 function parseThreadRuntimeConfigInput(value: unknown): ThreadRuntimeConfig {
   if (!isThreadRuntimeConfig(value)) {
     throw new Error("Invalid thread runtime configuration.");
   }
   return normalizeThreadRuntimeConfig(value);
+}
+
+/**
+ * Materialize component selection + resolved snapshot for persistence.
+ * Callers that only change bashReviewMode while a snapshot already exists should
+ * keep the existing snapshot instead of re-resolving.
+ */
+function getDefaultOrchestrationSelection(): OrchestrationSelection | undefined {
+  return workflowSettingsStore.get().defaultOrchestrationSelection;
+}
+
+function materializeThreadRuntimeConfig(
+  settings: ModelSettingsSnapshot,
+  config: ThreadRuntimeConfig,
+): ThreadRuntimeConfig {
+  const normalized = normalizeThreadRuntimeConfig(config);
+  if (!hasCompleteOrchestrationSelection(normalized.orchestrationSelection)) {
+    throw new Error("无法物化线程运行时配置：编排组合不完整。");
+  }
+  try {
+    const materialized = materializeThreadOrchestrationSnapshot(settings, normalized.orchestrationSelection);
+    return normalizeThreadRuntimeConfig({
+      ...normalized,
+      ...materialized,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`无法物化线程运行时配置：${detail}`);
+  }
 }
 
 function parseThreadActivityRewindTarget(value: unknown): ThreadActivityRewindTarget | undefined {
@@ -1627,12 +1570,12 @@ function roleRoutesForThreadConfig(
   settings: ModelSettingsSnapshot,
   config: ThreadRuntimeConfig,
 ): RuntimeRoleRouteConfig[] {
-  const profile = resolveThreadAgentProfile(settings, config);
-  if (!profile) {
-    throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
+  const snapshot = resolveThreadOrchestrationSnapshot(settings, config);
+  if (!snapshot) {
+    throw new Error("找不到线程编排快照，请重新选择完整组合。");
   }
   return resolveCandidateModelDefaults(
-    runtimeRoleRoutesFromAgentProfile(profile, config.mainAgentModelOverride),
+    runtimeRoleRoutesFromOrchestrationSnapshot(snapshot, config.mainAgentModelOverride),
   );
 }
 
@@ -1675,11 +1618,13 @@ function mergeRouteManualSpec(
 }
 
 function runtimeValidationOptionsForThreadConfig(
-  settings: ModelSettingsSnapshot,
+  _settings: ModelSettingsSnapshot,
   config: ThreadRuntimeConfig,
 ): { requireCompleteCodingRoutes?: boolean } {
-  const profile = resolveThreadAgentProfile(settings, config);
-  return { requireCompleteCodingRoutes: !profile || profile.preset === "coding" };
+  // Orchestration snapshots only materialize routes that exist in the selection
+  // (planner-only for subagents=none, planner + enabled roster agents otherwise).
+  void resolveThreadOrchestrationSnapshot(_settings, config);
+  return { requireCompleteCodingRoutes: false };
 }
 
 function resolveRuntimeConfigForThreadConfig(
@@ -1760,19 +1705,20 @@ function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRunt
     return undefined;
   }
   const settings = getModelSettingsSnapshot();
-  const profile = resolveThreadAgentProfile(settings, runtimeConfig);
-  if (!profile) {
+  const snapshot = resolveThreadOrchestrationSnapshot(settings, runtimeConfig);
+  if (!snapshot) {
     return undefined;
   }
-  const systemPromptPreset = resolveMainAgentSystemPromptPreset(profile, runtimeConfig);
+  const systemPromptPreset = resolveMainAgentSystemPromptPreset(snapshot, runtimeConfig);
+  const config = orchestrationConfigFromSnapshot(snapshot);
   return {
     templates: settings.agentTemplates,
-    profile:
-      systemPromptPreset === profile.mainAgent.systemPromptPreset
-        ? profile
+    orchestration:
+      systemPromptPreset === snapshot.mainAgent.systemPromptPreset
+        ? config
         : {
-            ...profile,
-            mainAgent: { ...profile.mainAgent, systemPromptPreset },
+            ...config,
+            mainAgent: { ...config.mainAgent, systemPromptPreset },
           },
   };
 }
@@ -2196,9 +2142,7 @@ function registerIpcHandlers(): void {
     return workspace;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadList, async () =>
-    hydrateThreads(conversationStore.listThreads()),
-  );
+  registerDesktopCommand(IPC_CHANNELS.threadList, async () => conversationStore.listThreads());
 
   registerDesktopCommand(IPC_CHANNELS.threadGet, async (threadId: unknown) => {
     const id = typeof threadId === "string" ? threadId.trim() : "";
@@ -2289,14 +2233,26 @@ function registerIpcHandlers(): void {
     }
     const incoming = parseThreadRuntimeConfigInput(request.runtimeConfig);
     const existing = ensureThreadRuntimeConfig(thread).runtimeConfig;
+    const settings = getModelSettingsSnapshot();
     let runtimeConfig = incoming;
     if (thread.status === "running" || thread.status === "queued") {
       if (!existing || !isBashReviewModeOnlyRuntimeConfigUpdate(existing, incoming)) {
         throw new Error("请等待当前运行结束后再修改配置。");
       }
+      // Keep the already-materialized snapshot for bash-only updates while running.
       runtimeConfig = { ...existing, bashReviewMode: incoming.bashReviewMode };
+    } else if (
+      existing &&
+      isBashReviewModeOnlyRuntimeConfigUpdate(existing, incoming) &&
+      existing.resolvedOrchestrationSnapshot
+    ) {
+      runtimeConfig = {
+        ...existing,
+        bashReviewMode: incoming.bashReviewMode,
+      };
+    } else {
+      runtimeConfig = materializeThreadRuntimeConfig(settings, incoming);
     }
-    const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     const configChanged =
       !existing ||
@@ -2322,11 +2278,11 @@ function registerIpcHandlers(): void {
         }),
       );
       if (driftKinds.length > 0) {
-        const profileLabel = driftKinds.includes("profile")
-          ? resolvePromptCacheProfileLabel(settings, runtimeConfig)
+        const orchestrationLabel = driftKinds.includes("orchestration")
+          ? resolvePromptCacheOrchestrationLabel(settings, runtimeConfig)
           : undefined;
         promptCacheRunEventEmitter.emitConfigDrift(threadId, driftKinds, {
-          ...(profileLabel && { profileLabel }),
+          ...(orchestrationLabel && { orchestrationLabel }),
         });
       }
     }
@@ -2629,119 +2585,73 @@ function registerIpcHandlers(): void {
     };
   });
 
-  registerDesktopCommand(
-    IPC_CHANNELS.orchestrationProfileList,
-    async () => getModelSettingsSnapshot().orchestrationProfiles,
-  );
-
-  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileSave, async (payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.mainAgentConfigSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
-      throw new Error("编排配置不能为空。");
+      throw new Error("主 Agent 配置不能为空。");
     }
-    const profile = payload as OrchestrationProfile;
-    if (typeof profile.id !== "string") {
-      throw new Error("编排配置 id 不能为空。");
+    const config = payload as MainAgentConfigResource;
+    if (typeof config.id !== "string" || !config.id.trim()) {
+      throw new Error("主 Agent 配置 id 不能为空。");
     }
-    const saved = agentOrchestrationStore.saveOrchestrationProfile(profile);
+    const saved = agentOrchestrationStore.saveMainAgentConfig(config);
     emitSettingsUpdated();
     return saved;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileDelete, async (profileId: unknown) => {
-    if (typeof profileId !== "string" || !profileId.trim()) {
-      throw new Error("编排配置 id 不能为空。");
+  registerDesktopCommand(IPC_CHANNELS.mainAgentConfigDelete, async (configId: unknown) => {
+    if (typeof configId !== "string" || !configId.trim()) {
+      throw new Error("主 Agent 配置 id 不能为空。");
     }
-    agentOrchestrationStore.deleteOrchestrationProfile(profileId);
+    agentOrchestrationStore.deleteMainAgentConfig(configId, getDefaultOrchestrationSelection());
     emitSettingsUpdated();
     return { ok: true as const };
   });
 
-  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileExport, async (payload?: unknown) => {
-    const request =
-      payload && typeof payload === "object" ? (payload as OrchestrationProfileExportRequest) : {};
-    const requestedIds = Array.isArray(request.profileIds)
-      ? new Set(request.profileIds.map((id) => id.trim()).filter(Boolean))
-      : undefined;
-    const settings = getModelSettingsSnapshot();
-    const profiles = settings.orchestrationProfiles.filter((profile) => {
-      if (requestedIds) {
-        return requestedIds.has(profile.id);
-      }
-      return profile.source === "user" || profile.source === "project";
-    });
-    if (profiles.length === 0) {
-      throw new Error("没有可导出的 Agent Profile。");
+  registerDesktopCommand(IPC_CHANNELS.mainAgentPromptSave, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("主 Agent 提示词不能为空。");
     }
-    const templates = collectExportableProfileTemplates(profiles, settings.agentTemplates);
-    const result = await dialog.showSaveDialog({
-      title: "导出 Agent Profile",
-      defaultPath: `eco-agent-profiles-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    if (result.canceled || !result.filePath) {
-      return { ok: true as const, canceled: true, exported: 0 };
+    const prompt = payload as MainAgentPromptResource;
+    if (typeof prompt.id !== "string" || !prompt.id.trim()) {
+      throw new Error("主 Agent 提示词 id 不能为空。");
     }
-    await fs.writeFile(
-      result.filePath,
-      JSON.stringify(buildAgentProfileArchive(profiles, undefined, { templates }), null, 2),
-      "utf8",
-    );
-    return {
-      ok: true as const,
-      canceled: false,
-      exported: profiles.length,
-      path: result.filePath,
-    };
+    const saved = agentOrchestrationStore.saveMainAgentPrompt(prompt);
+    emitSettingsUpdated();
+    return saved;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileImport, async () => {
-    const result = await dialog.showOpenDialog({
-      title: "导入 Agent Profile",
-      properties: ["openFile"],
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    const filePath = result.filePaths[0];
-    if (result.canceled || !filePath) {
-      return { ok: true as const, canceled: true, imported: 0, profiles: [], errors: [] };
+  registerDesktopCommand(IPC_CHANNELS.mainAgentPromptDelete, async (promptId: unknown) => {
+    if (typeof promptId !== "string" || !promptId.trim()) {
+      throw new Error("主 Agent 提示词 id 不能为空。");
     }
-    const content = await fs.readFile(filePath, "utf8");
-    const parsedBundle = parseAgentProfileArchiveBundle(content);
-    const settings = getModelSettingsSnapshot();
-    const existingTemplateIds = new Set(settings.agentTemplates.map((template) => template.id));
-    const templateIdMap = new Map<string, string>();
-    const errors: string[] = [];
-    for (const [index, template] of parsedBundle.templates.entries()) {
-      try {
-        const prepared = prepareImportedAgentTemplate(template, existingTemplateIds);
-        const saved = agentOrchestrationStore.saveAgentTemplate(prepared);
-        templateIdMap.set(template.id, saved.id);
-      } catch (caught) {
-        errors.push(`模板 ${index + 1}: ${caught instanceof Error ? caught.message : String(caught)}`);
-      }
+    agentOrchestrationStore.deleteMainAgentPrompt(promptId, getDefaultOrchestrationSelection());
+    emitSettingsUpdated();
+    return { ok: true as const };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.subagentOrchestrationSave, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("子代理编排不能为空。");
     }
-    const existingIds = new Set(settings.orchestrationProfiles.map((profile) => profile.id));
-    const imported: OrchestrationProfile[] = [];
-    for (const [index, profile] of parsedBundle.profiles.entries()) {
-      try {
-        const prepared = prepareImportedOrchestrationProfile(
-          rewriteProfileTemplateIds(profile, templateIdMap),
-          existingIds,
-        );
-        imported.push(agentOrchestrationStore.saveOrchestrationProfile(prepared));
-      } catch (caught) {
-        errors.push(`Profile ${index + 1}: ${caught instanceof Error ? caught.message : String(caught)}`);
-      }
+    const orchestration = payload as SubagentOrchestrationResource;
+    if (typeof orchestration.id !== "string" || !orchestration.id.trim()) {
+      throw new Error("子代理编排 id 不能为空。");
     }
-    if (imported.length > 0 || templateIdMap.size > 0) {
-      emitSettingsUpdated();
+    const saved = agentOrchestrationStore.saveSubagentOrchestration(orchestration);
+    emitSettingsUpdated();
+    return saved;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.subagentOrchestrationDelete, async (orchestrationId: unknown) => {
+    if (typeof orchestrationId !== "string" || !orchestrationId.trim()) {
+      throw new Error("子代理编排 id 不能为空。");
     }
-    return {
-      ok: true as const,
-      canceled: false,
-      imported: imported.length,
-      profiles: imported,
-      errors,
-    };
+    agentOrchestrationStore.deleteSubagentOrchestration(
+      orchestrationId,
+      getDefaultOrchestrationSelection(),
+    );
+    emitSettingsUpdated();
+    return { ok: true as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.billingModelsDevList, async () => {
@@ -3008,22 +2918,12 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitListCommitModelOptions, async (payload: unknown) => {
-    if (!payload || typeof payload !== "object") {
-      throw new Error("Invalid git list commit model options request.");
-    }
-    const record = payload as Record<string, unknown>;
-    if (typeof record.profileId !== "string" || !record.profileId.trim()) {
-      throw new Error("Invalid git list commit model options request.");
-    }
-    return handleGitListCommitModelOptions(
-      { profileId: record.profileId.trim() },
-      {
-        providerStore,
-        agentOrchestrationStore,
-        gitSettingsStore,
-        pricingCache,
-      },
-    );
+    return handleGitListCommitModelOptions(parseGitListCommitModelOptionsRequest(payload), {
+      providerStore,
+      agentOrchestrationStore,
+      gitSettingsStore,
+      pricingCache,
+    });
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitCommit, async (payload: unknown) => {
@@ -3223,11 +3123,14 @@ function registerIpcHandlers(): void {
     }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
-    const threadRuntime = parseThreadRuntimeConfigInput(payload.runtimeConfig);
+    const settings = getModelSettingsSnapshot();
+    const threadRuntime = materializeThreadRuntimeConfig(
+      settings,
+      parseThreadRuntimeConfigInput(payload.runtimeConfig),
+    );
     if (coreKind === "codex") {
       assertCodexRuntimeConfigSupported(threadRuntime);
     }
-    const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
     const sessionMode = resolveSessionMode(threadRuntime);
@@ -4169,7 +4072,10 @@ async function startCodexThreadContinuation(
   }
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
-    const next = parseThreadRuntimeConfigInput(input.runtimeConfigInput);
+    const next = materializeThreadRuntimeConfig(
+      settings,
+      parseThreadRuntimeConfigInput(input.runtimeConfigInput),
+    );
     roleRoutesForThreadConfig(settings, next);
     conversationStore.saveThreadRuntimeConfig(thread.id, next);
   }
@@ -5090,7 +4996,10 @@ async function startClaudeThreadContinuation(
   const workspace = await ensureWorkspace(thread.workspacePath);
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
-    const nextConfig = parseThreadRuntimeConfigInput(input.runtimeConfigInput);
+    const nextConfig = materializeThreadRuntimeConfig(
+      settings,
+      parseThreadRuntimeConfigInput(input.runtimeConfigInput),
+    );
     roleRoutesForThreadConfig(settings, nextConfig);
     conversationStore.saveThreadRuntimeConfig(input.threadId, nextConfig);
   }
@@ -7553,20 +7462,23 @@ async function buildSdkSessionOptions(
     projectNames,
     explicitUser: enabledUserNames,
   });
-  const profile = hydrated?.runtimeConfig
-    ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
+  const snapshot = hydrated?.runtimeConfig
+    ? resolveThreadOrchestrationSnapshot(settings, hydrated.runtimeConfig)
     : undefined;
   const mainAgentModelKey = hydrated?.runtimeConfig
     ? resolveMainAgentModelKey(settings, hydrated.runtimeConfig)
     : buildMainAgentModelKey(undefined);
-  const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
+  const orchestrationKey = buildOrchestrationRuntimeKey(
+    snapshot,
+    hydrated?.runtimeConfig?.orchestrationSelection,
+  );
+  if (!orchestrationKey) {
+    throw new Error("Thread orchestration snapshot is missing; select a complete orchestration before running.");
+  }
+  const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, snapshot);
   await auditThreadPromptCacheBeforeSdkSession({
     threadId,
-    profileId:
-      profile?.id?.trim() ||
-      hydrated?.runtimeConfig?.agentProfileId?.trim() ||
-      hydrated?.runtimeConfig?.routeProfileId?.trim() ||
-      "unknown",
+    orchestrationKey,
     mainAgentModelKey,
     mcpServerKeys: enabledMcpServers,
     ...(workspacePath ? { workspacePath } : {}),
@@ -7982,7 +7894,7 @@ function formatContextCompactionMessage(
 
 async function auditThreadPromptCacheBeforeSdkSession(input: {
   threadId: string;
-  profileId: string;
+  orchestrationKey: string;
   mainAgentModelKey: string;
   mcpServerKeys: readonly string[];
   workspacePath?: string;
@@ -7992,7 +7904,7 @@ async function auditThreadPromptCacheBeforeSdkSession(input: {
     return;
   }
   const fingerprint = await resolveThreadPromptCacheFingerprint({
-    profileId: input.profileId,
+    orchestrationKey: input.orchestrationKey,
     mainAgentModelKey: input.mainAgentModelKey,
     mcpServerKeys: input.mcpServerKeys,
     ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
@@ -8006,15 +7918,15 @@ async function auditThreadPromptCacheBeforeSdkSession(input: {
   }
   const settings = getModelSettingsSnapshot();
   const thread = conversationStore.getThread(input.threadId);
-  const profileLabel =
-    reasons.includes("profile_changed") && thread?.runtimeConfig
-      ? resolvePromptCacheProfileLabel(settings, thread.runtimeConfig)
+  const orchestrationLabel =
+    reasons.includes("orchestration_changed") && thread?.runtimeConfig
+      ? resolvePromptCacheOrchestrationLabel(settings, thread.runtimeConfig)
       : undefined;
   process.stderr.write(
     `[eco] prompt cache invalidated thread=${input.threadId} reasons=${formatPromptCacheBreakLog(reasons)}\n`,
   );
   promptCacheRunEventEmitter.emitInvalidated(input.threadId, reasons, {
-    ...(profileLabel && { profileLabel }),
+    ...(orchestrationLabel && { orchestrationLabel }),
   });
 }
 

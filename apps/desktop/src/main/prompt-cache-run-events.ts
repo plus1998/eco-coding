@@ -1,5 +1,5 @@
 import type { ThreadRunEventInput } from "../shared/ipc";
-import type { PromptCacheConfigDriftKind, PromptCacheProfileLabel } from "../shared/prompt-cache-config";
+import type { PromptCacheConfigDriftKind, PromptCacheOrchestrationLabel } from "../shared/prompt-cache-config";
 import { formatPromptCacheConfigDriftMessage } from "../shared/prompt-cache-config";
 import { PROMPT_CACHE_EPISODE_METADATA_KEY } from "../shared/prompt-cache-timeline";
 import type { PromptCacheBreakReason } from "./prompt-cache-fingerprint";
@@ -21,12 +21,12 @@ export interface PromptCacheRunEventEmitter {
   emitConfigDrift(
     threadId: string,
     kinds: readonly PromptCacheConfigDriftKind[],
-    options?: { profileLabel?: PromptCacheProfileLabel },
+    options?: { orchestrationLabel?: PromptCacheOrchestrationLabel },
   ): void;
   emitInvalidated(
     threadId: string,
     reasons: readonly PromptCacheBreakReason[],
-    options?: { profileLabel?: PromptCacheProfileLabel },
+    options?: { orchestrationLabel?: PromptCacheOrchestrationLabel },
   ): void;
   emitHitDropped(
     threadId: string,

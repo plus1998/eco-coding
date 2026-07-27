@@ -7,8 +7,8 @@ import type {
 
 export interface PresetTemplateImportPlan {
   templatesToSave: AgentTemplate[];
-  templatesForProfile: AgentTemplate[];
-  presetForProfile: BuiltInPresetDefinition;
+  templatesForPreset: AgentTemplate[];
+  presetDefinition: BuiltInPresetDefinition;
   copiedTemplateIds: Record<string, string>;
 }
 
@@ -53,8 +53,8 @@ export function buildPresetTemplateImportPlan(
 
   return {
     templatesToSave,
-    templatesForProfile: [...templates, ...templatesToSave],
-    presetForProfile: {
+    templatesForPreset: [...templates, ...templatesToSave],
+    presetDefinition: {
       ...preset,
       defaultAgents: preset.defaultAgents.map((agent) => ({
         ...agent,
@@ -107,18 +107,22 @@ function uniquePresetTemplateCopyId(baseId: string, allocatedIds: Set<string>): 
   throw new Error(`无法为 ${baseId} 生成唯一子代理模板 ID。`);
 }
 
+function cloneStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : [];
+}
+
 function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
   const cloned: ToolPolicy = {
-    allowed: [...policy.allowed],
-    disallowed: [...policy.disallowed],
+    allowed: cloneStringList(policy.allowed),
+    disallowed: cloneStringList(policy.disallowed),
   };
   if (policy.bash) {
     cloned.bash = { enabled: policy.bash.enabled };
   }
   if (policy.mcp) {
     cloned.mcp = {
-      allowedServers: [...policy.mcp.allowedServers],
-      allowedTools: [...policy.mcp.allowedTools],
+      allowedServers: cloneStringList(policy.mcp.allowedServers),
+      allowedTools: cloneStringList(policy.mcp.allowedTools),
     };
   }
   if (policy.filesystem) {
@@ -135,14 +139,14 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
     cloned.delegation = {
       ...policy.delegation,
       ...(policy.delegation.allowedAgents
-        ? { allowedAgents: [...policy.delegation.allowedAgents] }
+        ? { allowedAgents: cloneStringList(policy.delegation.allowedAgents) }
         : {}),
     };
   }
   if (policy.coreOverrides) {
     cloned.coreOverrides = {
       ...(policy.coreOverrides.claude
-        ? { claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] } }
+        ? { claude: { disallowedTools: cloneStringList(policy.coreOverrides.claude.disallowedTools) } }
         : {}),
       ...(policy.coreOverrides.codex ? { codex: { ...policy.coreOverrides.codex } } : {}),
     };

@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import {
-  buildCodingOrchestrationProfileFromRouteProfile,
-  buildOrchestrationProfileFromPreset,
+  buildPresetResourcesFromDefinition,
+  buildPresetResourcesFromRouteProfile,
   CODING_AGENT_TEMPLATE_IDS,
   createBuiltInAgentTemplates,
   createBuiltInPresetCatalog,
-  createUserPresetProfileId,
-  createUserPresetProfileName,
+  orchestrationConfigFromSnapshot,
+  resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
 import type { RouteProfileView } from "../src/shared/ipc";
 
@@ -29,117 +29,88 @@ function codingRouteProfile(): RouteProfileView {
 
 test("built-in agent templates define the default coding library", () => {
   const templates = createBuiltInAgentTemplates();
-  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.explore);
-  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.architect);
-  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.coder);
-  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.reviewer);
-  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.tester);
-  expect(templates.filter((template) => template.domain === "coding")).toHaveLength(5);
+  expect(templates.map((template) => template.id)).toEqual([
+    CODING_AGENT_TEMPLATE_IDS.explore,
+    CODING_AGENT_TEMPLATE_IDS.architect,
+    CODING_AGENT_TEMPLATE_IDS.coder,
+    CODING_AGENT_TEMPLATE_IDS.reviewer,
+    CODING_AGENT_TEMPLATE_IDS.tester,
+  ]);
   expect(templates.every((template) => template.source === "built_in")).toBe(true);
   expect(
-    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.filesystem
-      ?.write,
+    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools
+      .filesystem?.write,
   ).toBe("workspace");
   expect(
-    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.architect)?.defaultTools.filesystem
-      ?.write,
+    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.architect)?.defaultTools
+      .filesystem?.write,
   ).toBe("none");
 });
 
-test("built-in agent registry contains only coding templates", () => {
-  const ids = createBuiltInAgentTemplates().map((template) => template.id);
-  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.explore);
-  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.architect);
-  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.coder);
-  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.reviewer);
-  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.tester);
-  expect(ids).toHaveLength(5);
-});
-
-test("built-in preset catalog defines only coding preset", () => {
+test("built-in preset catalog defines only the coding preset", () => {
   const templatesById = new Set(createBuiltInAgentTemplates().map((template) => template.id));
   const presets = createBuiltInPresetCatalog();
   expect(presets.map((preset) => preset.id)).toEqual(["coding"]);
   for (const preset of presets) {
     expect(preset.mainAgentPrompt.trim().length).toBeGreaterThan(40);
     expect(preset.mainAgentTools.bash?.enabled).toBe(true);
-    expect(preset.mainAgentTools.filesystem?.write).toBe("workspace");
-    expect(preset.defaultAgents.length).toBeGreaterThanOrEqual(3);
-    expect(preset.examples).toHaveLength(3);
-    expect(preset.strategies.autonomous.kind).toBe("autonomous");
-    for (const agent of preset.defaultAgents) {
-      expect(templatesById.has(agent.templateId)).toBe(true);
-    }
+    expect(preset.defaultAgents.length).toBe(5);
+    expect(preset.defaultAgents.every((agent) => templatesById.has(agent.templateId))).toBe(true);
   }
 });
 
-test("built-in preset can be copied into a runnable user orchestration profile", () => {
-  const templates = createBuiltInAgentTemplates();
-  const preset = createBuiltInPresetCatalog().find((candidate) => candidate.id === "coding");
-  if (!preset) {
-    throw new Error("Missing coding preset.");
-  }
-  const profile = buildOrchestrationProfileFromPreset(preset, {
-    id: createUserPresetProfileId("coding", ["user.coding.profile"]),
-    name: createUserPresetProfileName("Coding", ["Coding Profile"]),
+test("scene preset creates independent resources and a live selection", () => {
+  const preset = createBuiltInPresetCatalog()[0]!;
+  const bundle = buildPresetResourcesFromDefinition(preset, {
+    mainAgentConfigId: "user.coding.main",
+    mainAgentConfigName: "Coding Main",
+    mainAgentPromptId: "user.coding.prompt",
+    mainAgentPromptName: "Coding Prompt",
+    subagentOrchestrationId: "user.coding.subagents",
+    subagentOrchestrationName: "Coding Subagents",
     modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
-    templates,
     updatedAt: "2026-06-07T08:00:00.000Z",
   });
-  expect(profile).toMatchObject({
-    id: "user.coding.profile.2",
-    name: "Coding Profile 2",
-    preset: "coding",
-    source: "user",
-    updatedAt: "2026-06-07T08:00:00.000Z",
-    mainAgent: {
-      systemPromptPreset: "core_native",
-      modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
-    },
-    strategy: { kind: "autonomous" },
+  expect(bundle.mainAgentConfig).toMatchObject({
+    id: "user.coding.main",
+    name: "Coding Main",
+    modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
   });
-  expect(profile.agents.map((agent) => agent.agentKey)).toEqual([
+  expect(bundle.mainAgentPrompt).toBeUndefined();
+  expect(bundle.subagentOrchestration.agents.map((agent) => agent.agentKey)).toEqual([
     "explore",
     "architect",
     "coder",
     "reviewer",
     "tester",
   ]);
-  expect(profile.agents.every((agent) => agent.enabled)).toBe(true);
-  expect(profile.agents.every((agent) => agent.modelRef.modelId === "coding-model")).toBe(true);
-  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.tools.filesystem?.write).toBe(
-    "workspace",
-  );
-  expect(profile.mainAgent.tools.bash?.enabled).toBe(true);
-});
-
-test("route profile migrates to a coding orchestration profile", () => {
-  const profile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile());
-  expect(profile).toMatchObject({
-    id: "coding-default",
-    name: "默认编程",
-    preset: "coding",
-    sourceRouteProfileId: "coding-default",
-    source: "derived",
-    mainAgent: {
-      agentKey: "main",
-      systemPromptPreset: "core_native",
-      modelRef: { providerId: "p1", modelId: "planner-model", thinkingEffort: "high" },
-    },
-    strategy: { kind: "autonomous" },
+  expect(bundle.selection).toEqual({
+    mainAgentConfigId: "user.coding.main",
+    mainPrompt: { mode: "builtin" },
+    subagents: { mode: "orchestration", orchestrationId: "user.coding.subagents" },
   });
-  expect(profile.agents.map((agent) => agent.agentKey)).toEqual([
-    "explore",
-    "architect",
-    "coder",
-    "reviewer",
-    "tester",
-  ]);
-  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId).toBe("coder-model");
 });
 
-test("coding orchestration migration maps enabled agents without plan-mode strategy coupling", () => {
-  const profile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile(), {
+test("route profile conversion creates resources without retaining route profile identity", () => {
+  const bundle = buildPresetResourcesFromRouteProfile(codingRouteProfile(), {
+    mainAgentConfigId: "user.route.main",
+    subagentOrchestrationId: "user.route.subagents",
+  });
+  expect(bundle.mainAgentConfig).toMatchObject({
+    id: "user.route.main",
+    modelRef: { providerId: "p1", modelId: "planner-model", thinkingEffort: "high" },
+  });
+  expect(bundle.subagentOrchestration.id).toBe("user.route.subagents");
+  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId)
+    .toBe("coder-model");
+  expect(bundle).not.toHaveProperty("id");
+  expect(bundle).not.toHaveProperty("sourceRouteProfileId");
+});
+
+test("route profile conversion honors subagent availability", () => {
+  const bundle = buildPresetResourcesFromRouteProfile(codingRouteProfile(), {
+    mainAgentConfigId: "user.route.main",
+    subagentOrchestrationId: "user.route.subagents",
     subagentEnabled: {
       explore: true,
       architect: false,
@@ -148,22 +119,61 @@ test("coding orchestration migration maps enabled agents without plan-mode strat
       tester: true,
     },
   });
-  expect(profile.strategy.kind).toBe("autonomous");
-  expect(profile.agents.find((agent) => agent.agentKey === "explore")?.modelRef.modelId).toBe(
-    "explore-model",
-  );
-  expect(profile.agents.find((agent) => agent.agentKey === "explore")?.enabled).toBe(true);
-  expect(profile.agents.find((agent) => agent.agentKey === "architect")?.enabled).toBe(false);
-  expect(profile.agents.find((agent) => agent.agentKey === "reviewer")?.enabled).toBe(false);
-  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.enabled).toBe(true);
+  expect(bundle.subagentOrchestration.strategy.kind).toBe("autonomous");
+  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "architect")?.enabled)
+    .toBe(false);
+  expect(bundle.subagentOrchestration.agents.find((agent) => agent.agentKey === "reviewer")?.enabled)
+    .toBe(false);
 });
 
-test("coding orchestration migration requires a complete coding route set", () => {
-  const routeProfile = codingRouteProfile();
+test("strict snapshot resolution rejects missing resource references", () => {
+  const preset = createBuiltInPresetCatalog()[0]!;
+  const bundle = buildPresetResourcesFromDefinition(preset, {
+    mainAgentConfigId: "user.coding.main",
+    mainAgentConfigName: "Coding Main",
+    subagentOrchestrationId: "user.coding.subagents",
+    subagentOrchestrationName: "Coding Subagents",
+    modelRef: { providerId: "p1", modelId: "m1" },
+  });
   expect(() =>
-    buildCodingOrchestrationProfileFromRouteProfile({
-      ...routeProfile,
-      routes: routeProfile.routes.filter((route) => route.role !== "tester"),
+    resolveOrchestrationSnapshot(bundle.selection, {
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [bundle.subagentOrchestration],
     }),
-  ).toThrow("missing tester model route");
+  ).toThrow(/找不到主 Agent 配置|main agent config .*not found/i);
+});
+
+test("resolved snapshots are isolated from selections, resources, and runtime materialization", () => {
+  const bundle = buildPresetResourcesFromRouteProfile(codingRouteProfile(), {
+    mainAgentConfigId: " user.route.main ",
+    subagentOrchestrationId: " user.route.subagents ",
+  });
+  const selection = structuredClone(bundle.selection);
+  selection.mainAgentConfigId = ` ${selection.mainAgentConfigId} `;
+  if (selection.subagents.mode === "orchestration") {
+    selection.subagents.orchestrationId = ` ${selection.subagents.orchestrationId} `;
+  }
+  const snapshot = resolveOrchestrationSnapshot(selection, {
+    mainAgentConfigs: [bundle.mainAgentConfig],
+    mainAgentPrompts: [],
+    subagentOrchestrations: [bundle.subagentOrchestration],
+  });
+
+  selection.mainAgentConfigId = "changed";
+  bundle.mainAgentConfig.modelRef.modelId = "changed-main";
+  bundle.subagentOrchestration.agents[0]!.modelRef.modelId = "changed-explore";
+
+  expect(snapshot.selection.mainAgentConfigId).toBe("user.route.main");
+  expect(snapshot.mainAgent.modelRef.modelId).toBe("planner-model");
+  expect(snapshot.agents[0]?.modelRef.modelId).toBe("explore-model");
+
+  const runtimeConfig = orchestrationConfigFromSnapshot(snapshot);
+  runtimeConfig.mainAgent.modelRef.modelId = "runtime-main";
+  runtimeConfig.agents[0]!.modelRef.modelId = "runtime-explore";
+  runtimeConfig.strategy.guidancePrompt = "runtime guidance";
+
+  expect(snapshot.mainAgent.modelRef.modelId).toBe("planner-model");
+  expect(snapshot.agents[0]?.modelRef.modelId).toBe("explore-model");
+  expect(snapshot.strategy.guidancePrompt).not.toBe("runtime guidance");
 });

@@ -63,7 +63,7 @@ test("agent orchestration switches remain editable for an editable active thread
   expect(markup).not.toContain('type="checkbox" disabled=""');
 });
 
-test("agent orchestration is hidden when the profile only has the main agent", () => {
+test("agent orchestration is hidden when the snapshot only has the main agent", () => {
   const markup = renderToStaticMarkup(
     createElement(WorkspaceFloatingCards, {
       hasActiveThread: true,

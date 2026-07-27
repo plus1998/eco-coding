@@ -24,7 +24,7 @@ export const BASH_REVIEW_UI: BashReviewUiOption[] = [
     value: "allow_all",
     title: "自动执行",
     subtitle: "allow",
-    description: "跳过确认（仍受当前模式、Profile 与安全策略限制）",
+    description: "跳过确认（仍受当前模式、编排与安全策略限制）",
   },
 ];
 

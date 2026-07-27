@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_adaptive_icons.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart'
@@ -229,12 +230,13 @@ Future<void> openCommitPushFromMenu({
   GitWorkingTreeStatus? gitStatus,
 }) async {
   if (workspacePath.isEmpty) return;
-  final profileId =
-      runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
-  if (profileId.isEmpty) {
+  if (!isThreadOrchestrationReady(
+    ref.read(modelSettingsProvider).valueOrNull,
+    runtimeConfig,
+  )) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.threadSelectAgentProfileFirst)),
+        SnackBar(content: Text(context.l10n.threadSelectOrchestrationFirst)),
       );
     }
     return;
@@ -289,11 +291,18 @@ Future<void> openCommitPushFromMenu({
     Navigator.of(context, rootNavigator: true).pop();
     loadingDialogOpen = false;
 
+    final mainAgentConfigId =
+        runtimeConfig.orchestrationSelection?.mainAgentConfigId ??
+        runtimeConfig
+            .resolvedOrchestrationSnapshot
+            ?.selection
+            .mainAgentConfigId ??
+        '';
     final committed = await showCommitPushSheet(
       context: context,
       ref: ref,
       workspacePath: workspacePath,
-      profileId: profileId,
+      mainAgentConfigId: mainAgentConfigId,
       diff: results[1] as WorkspaceDiffResult,
       gitStatus: results[0] as GitWorkingTreeStatus,
     );

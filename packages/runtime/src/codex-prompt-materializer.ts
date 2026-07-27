@@ -1,5 +1,5 @@
 /**
- * Maps Eco Composer `sessionMode` + Profile tool policy to Codex `turn/start` params.
+ * Maps Eco Composer `sessionMode` + orchestration tool policy to Codex `turn/start` params.
  *
  * @see docs/codex-integration-plan.md §6.2.1, §6.5.1
  * @see docs/codex-permissions.md
@@ -57,10 +57,10 @@ export interface CodexCollaborationMode {
 
 export interface CodexTurnMaterializationConfig {
   sessionMode: CodexSessionMode;
-  /** Profile instructions appended to the Core-native prompt. */
-  profileAppend?: string;
-  /** Profile mainAgent.tools (Codex-native). Defaults to product workspace-write policy. */
-  profileToolPolicy?: EcoToolPolicy;
+  /** Orchestration instructions appended to the Core-native prompt. */
+  orchestrationAppend?: string;
+  /** Orchestration mainAgent.tools (Codex-native). Defaults to product workspace-write policy. */
+  orchestrationToolPolicy?: EcoToolPolicy;
 }
 
 export interface CodexTurnOptions {
@@ -103,29 +103,29 @@ export function isCodexSessionMode(value: unknown): value is CodexSessionMode {
   return typeof value === "string" && (CODEX_SESSION_MODES as readonly string[]).includes(value);
 }
 
-function resolveCustomDeveloperInstructions(profileAppend?: string): string {
-  return profileAppend?.trim() ?? "";
+function resolveCustomDeveloperInstructions(orchestrationAppend?: string): string {
+  return orchestrationAppend?.trim() ?? "";
 }
 
 /**
  * Build Codex `turn/start` options from Eco thread runtime config.
  *
- * Codex ships base instructions; Eco only forwards Profile custom main-agent prompt
+ * Codex ships base instructions; Eco only forwards the orchestration's custom main-agent prompt
  * when `systemPromptPreset === "custom_append"`.
  *
- * | sessionMode | collaborationMode | sandboxPolicy (before profile intersect) |
+ * | sessionMode | collaborationMode | sandboxPolicy (before orchestration intersect) |
  * |-------------|-------------------|------------------------------------------|
- * | agent       | default           | profile (default workspace-write)        |
- * | plan        | plan              | workspaceWrite unless profile read-only  |
+ * | agent       | default           | orchestration (default workspace-write)  |
+ * | plan        | plan              | workspaceWrite unless orchestration is read-only |
  * | ask         | default           | readOnly                                 |
  */
 export function buildCodexTurnOptions(config: CodexTurnMaterializationConfig): CodexTurnOptions {
-  const developerInstructions = resolveCustomDeveloperInstructions(config.profileAppend);
+  const developerInstructions = resolveCustomDeveloperInstructions(config.orchestrationAppend);
   const hasDeveloperInstructions = developerInstructions.length > 0;
-  const profileToolPolicy = config.profileToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY;
+  const orchestrationToolPolicy = config.orchestrationToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY;
   const effective = resolveEffectiveTurnSandbox({
     sessionMode: config.sessionMode,
-    profilePolicy: profileToolPolicy,
+    orchestrationPolicy: orchestrationToolPolicy,
   });
 
   const base = {

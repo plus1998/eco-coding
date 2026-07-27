@@ -1,9 +1,12 @@
 import '../utils/activity_display.dart';
 import '../constants/session_mode.dart';
+import 'agent_orchestration.dart';
 import 'composer_mcp.dart';
 import 'mcp_models.dart';
 import 'thread_run_projection.dart';
 import 'thread_usage_models.dart';
+
+export 'agent_orchestration.dart';
 
 const subagentRoles = ['explore', 'architect', 'coder', 'reviewer', 'tester'];
 
@@ -80,8 +83,8 @@ class MainAgentModelOverride {
 
 class ThreadRuntimeConfig {
   const ThreadRuntimeConfig({
-    required this.routeProfileId,
-    this.agentProfileId,
+    this.orchestrationSelection,
+    this.resolvedOrchestrationSnapshot,
     required this.subagentEnabled,
     this.mcpServersEnabled,
     this.skillsEnabled,
@@ -91,6 +94,18 @@ class ThreadRuntimeConfig {
   });
 
   factory ThreadRuntimeConfig.fromJson(Map<String, dynamic> json) {
+    for (final key in const [
+      'routeProfileId',
+      'agentProfileId',
+      'mainAgentConfigId',
+      'mainPrompt',
+      'subagentOrchestrationId',
+      'resolvedProfileSnapshot',
+    ]) {
+      if (json.containsKey(key)) {
+        throw FormatException('Unsupported legacy thread runtime field: $key');
+      }
+    }
     final rawSubagents = json['subagentEnabled'];
     Map<String, bool>? parsedSubagents;
     if (rawSubagents is Map) {
@@ -120,10 +135,28 @@ class ThreadRuntimeConfig {
         ),
       );
     }
+    OrchestrationSelection? orchestrationSelection;
+    if (json.containsKey('orchestrationSelection')) {
+      orchestrationSelection = OrchestrationSelection.fromJson(
+        _requiredJsonObject(
+          json['orchestrationSelection'],
+          'orchestrationSelection',
+        ),
+      );
+    }
+    ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot;
+    if (json.containsKey('resolvedOrchestrationSnapshot')) {
+      resolvedOrchestrationSnapshot = ResolvedOrchestrationSnapshot.fromJson(
+        _requiredJsonObject(
+          json['resolvedOrchestrationSnapshot'],
+          'resolvedOrchestrationSnapshot',
+        ),
+      );
+    }
     final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
     return ThreadRuntimeConfig(
-      routeProfileId: json['routeProfileId'] as String? ?? '',
-      agentProfileId: json['agentProfileId'] as String?,
+      orchestrationSelection: orchestrationSelection,
+      resolvedOrchestrationSnapshot: resolvedOrchestrationSnapshot,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
       mcpServersEnabled: parsedMcp,
       skillsEnabled: parsedSkills,
@@ -134,8 +167,11 @@ class ThreadRuntimeConfig {
   }
 
   Map<String, dynamic> toJson() => {
-    'routeProfileId': routeProfileId,
-    if (agentProfileId != null) 'agentProfileId': agentProfileId,
+    if (orchestrationSelection != null)
+      'orchestrationSelection': orchestrationSelection!.toJson(),
+    if (resolvedOrchestrationSnapshot != null)
+      'resolvedOrchestrationSnapshot':
+          resolvedOrchestrationSnapshot!.toJson(),
     'subagentEnabled': subagentEnabled,
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
     if (skillsEnabled != null) 'skillsEnabled': skillsEnabled,
@@ -146,8 +182,9 @@ class ThreadRuntimeConfig {
   };
 
   ThreadRuntimeConfig copyWith({
-    String? routeProfileId,
-    String? agentProfileId,
+    OrchestrationSelection? orchestrationSelection,
+    ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot,
+    bool clearOrchestrationSnapshot = false,
     Map<String, bool>? subagentEnabled,
     Map<String, bool>? mcpServersEnabled,
     Map<String, bool>? skillsEnabled,
@@ -157,8 +194,12 @@ class ThreadRuntimeConfig {
     String? bashReviewMode,
   }) {
     return ThreadRuntimeConfig(
-      routeProfileId: routeProfileId ?? this.routeProfileId,
-      agentProfileId: agentProfileId ?? this.agentProfileId,
+      orchestrationSelection:
+          orchestrationSelection ?? this.orchestrationSelection,
+      resolvedOrchestrationSnapshot: clearOrchestrationSnapshot
+          ? null
+          : (resolvedOrchestrationSnapshot ??
+                this.resolvedOrchestrationSnapshot),
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
       skillsEnabled: skillsEnabled ?? this.skillsEnabled,
@@ -170,8 +211,8 @@ class ThreadRuntimeConfig {
     );
   }
 
-  final String routeProfileId;
-  final String? agentProfileId;
+  final OrchestrationSelection? orchestrationSelection;
+  final ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot;
   final Map<String, bool> subagentEnabled;
   final Map<String, bool>? mcpServersEnabled;
   final Map<String, bool>? skillsEnabled;
@@ -219,7 +260,7 @@ class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
     this.defaultCoreKind,
-    this.defaultAgentProfileId,
+    this.defaultOrchestrationSelection,
     this.mcpServersEnabled,
   });
 
@@ -232,10 +273,16 @@ class WorkflowSettingsSnapshot {
       );
     }
     final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
+    OrchestrationSelection? defaultOrchestrationSelection;
+    if (json['defaultOrchestrationSelection'] is Map<String, dynamic>) {
+      defaultOrchestrationSelection = OrchestrationSelection.fromJson(
+        json['defaultOrchestrationSelection'] as Map<String, dynamic>,
+      );
+    }
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
       defaultCoreKind: json['defaultCoreKind'] as String?,
-      defaultAgentProfileId: json['defaultAgentProfileId'] as String?,
+      defaultOrchestrationSelection: defaultOrchestrationSelection,
       mcpServersEnabled: parsedMcp,
     );
   }
@@ -244,14 +291,15 @@ class WorkflowSettingsSnapshot {
     'sessionMode': sessionMode,
     'planModelEnabled': sessionMode == 'plan',
     if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
-    if (defaultAgentProfileId != null)
-      'defaultAgentProfileId': defaultAgentProfileId,
+    if (defaultOrchestrationSelection != null)
+      'defaultOrchestrationSelection':
+          defaultOrchestrationSelection!.toJson(),
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
   };
 
   final SessionMode sessionMode;
   final String? defaultCoreKind;
-  final String? defaultAgentProfileId;
+  final OrchestrationSelection? defaultOrchestrationSelection;
   final Map<String, bool>? mcpServersEnabled;
 }
 
@@ -833,124 +881,6 @@ class WorkspaceDirectoryListing {
   final List<WorkspaceDirectoryEntry> directories;
 }
 
-class OrchestrationAgentInstance {
-  const OrchestrationAgentInstance({
-    required this.agentKey,
-    required this.enabled,
-    this.themeColor,
-    this.mcpServers = const [],
-  });
-
-  factory OrchestrationAgentInstance.fromJson(Map<String, dynamic> json) =>
-      OrchestrationAgentInstance(
-        agentKey: json['agentKey'] as String? ?? '',
-        enabled: json['enabled'] as bool? ?? false,
-        themeColor: json['themeColor'] as String?,
-        mcpServers: (json['mcpServers'] as List<dynamic>? ?? [])
-            .map((entry) => entry.toString())
-            .toList(),
-      );
-
-  final String agentKey;
-  final bool enabled;
-  final String? themeColor;
-  final List<String> mcpServers;
-}
-
-class OrchestrationModelRef {
-  const OrchestrationModelRef({
-    required this.providerId,
-    required this.modelId,
-    this.thinkingEffort,
-    this.candidateModelId,
-  });
-
-  factory OrchestrationModelRef.fromJson(Map<String, dynamic> json) =>
-      OrchestrationModelRef(
-        providerId: json['providerId'] as String? ?? '',
-        modelId: json['modelId'] as String? ?? '',
-        thinkingEffort: json['thinkingEffort'] as String?,
-        candidateModelId: json['candidateModelId'] as String?,
-      );
-
-  final String providerId;
-  final String modelId;
-  final String? thinkingEffort;
-  final String? candidateModelId;
-}
-
-OrchestrationModelRef? _readMainAgentModelRef(Map<String, dynamic> json) {
-  final mainAgent = json['mainAgent'];
-  if (mainAgent is! Map<String, dynamic>) return null;
-  final modelRef = mainAgent['modelRef'];
-  if (modelRef is! Map<String, dynamic>) return null;
-  final parsed = OrchestrationModelRef.fromJson(modelRef);
-  return parsed.providerId.trim().isEmpty || parsed.modelId.trim().isEmpty
-      ? null
-      : parsed;
-}
-
-List<String> _readMainAssignedMcpServers(Map<String, dynamic> json) {
-  final mainAgent = json['mainAgent'];
-  if (mainAgent is! Map<String, dynamic>) return const [];
-  final tools = mainAgent['tools'];
-  if (tools is! Map<String, dynamic>) return const [];
-  final mcp = tools['mcp'];
-  if (mcp is! Map<String, dynamic>) return const [];
-  final allowedServers = mcp['allowedServers'];
-  if (allowedServers is! List) return const [];
-  return allowedServers.map((entry) => entry.toString()).toList();
-}
-
-class OrchestrationProfile {
-  const OrchestrationProfile({
-    required this.id,
-    required this.name,
-    required this.agents,
-    this.mainModelRef,
-    this.builtinExploreThemeColor,
-    this.mainAssignedMcpServers = const [],
-  });
-
-  factory OrchestrationProfile.fromJson(Map<String, dynamic> json) =>
-      OrchestrationProfile(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? json['id'] as String? ?? '',
-        mainModelRef: _readMainAgentModelRef(json),
-        builtinExploreThemeColor: _readBuiltinExploreThemeColor(json),
-        mainAssignedMcpServers: _readMainAssignedMcpServers(json),
-        agents: (json['agents'] as List<dynamic>? ?? [])
-            .map(
-              (e) => OrchestrationAgentInstance.fromJson(
-                e as Map<String, dynamic>,
-              ),
-            )
-            .toList(),
-      );
-
-  final String id;
-  final String name;
-  final List<OrchestrationAgentInstance> agents;
-  final OrchestrationModelRef? mainModelRef;
-  final String? builtinExploreThemeColor;
-  final List<String> mainAssignedMcpServers;
-}
-
-String? _readBuiltinExploreThemeColor(Map<String, dynamic> json) {
-  final builtinAgents = json['builtinAgents'];
-  if (builtinAgents is Map<String, dynamic>) {
-    final explore = builtinAgents['explore'];
-    if (explore is Map<String, dynamic>) {
-      final themeColor = explore['themeColor'];
-      if (themeColor is String && themeColor.trim().isNotEmpty) {
-        return themeColor;
-      }
-    }
-  }
-  final fallback = json['builtinExploreThemeColor'];
-  return fallback is String && fallback.trim().isNotEmpty ? fallback : null;
-}
-
 class RouteProfileSummary {
   const RouteProfileSummary({required this.id, required this.name});
 
@@ -966,8 +896,9 @@ class RouteProfileSummary {
 
 class ModelSettingsSnapshot {
   const ModelSettingsSnapshot({
-    required this.orchestrationProfiles,
-    required this.routeProfiles,
+    required this.mainAgentConfigs,
+    this.mainAgentPrompts = const [],
+    this.subagentOrchestrations = const [],
     this.providers = const [],
     this.mcpSettings,
   });
@@ -975,15 +906,28 @@ class ModelSettingsSnapshot {
   factory ModelSettingsSnapshot.fromJson(Map<String, dynamic> json) {
     final rawMcpSettings = json['mcpSettings'];
     return ModelSettingsSnapshot(
-      orchestrationProfiles:
-          (json['orchestrationProfiles'] as List<dynamic>? ?? [])
+      mainAgentConfigs: (json['mainAgentConfigs'] as List<dynamic>? ?? [])
+          .map(
+            (entry) => MainAgentConfigResource.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(growable: false),
+      mainAgentPrompts: (json['mainAgentPrompts'] as List<dynamic>? ?? [])
+          .map(
+            (entry) => MainAgentPromptResource.fromJson(
+              entry as Map<String, dynamic>,
+            ),
+          )
+          .toList(growable: false),
+      subagentOrchestrations:
+          (json['subagentOrchestrations'] as List<dynamic>? ?? [])
               .map(
-                (e) => OrchestrationProfile.fromJson(e as Map<String, dynamic>),
+                (entry) => SubagentOrchestrationResource.fromJson(
+                  entry as Map<String, dynamic>,
+                ),
               )
-              .toList(),
-      routeProfiles: (json['routeProfiles'] as List<dynamic>? ?? [])
-          .map((e) => RouteProfileSummary.fromJson(e as Map<String, dynamic>))
-          .toList(),
+              .toList(growable: false),
       providers: (json['providers'] as List<dynamic>? ?? [])
           .map((e) => ModelProviderView.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -993,8 +937,9 @@ class ModelSettingsSnapshot {
     );
   }
 
-  final List<OrchestrationProfile> orchestrationProfiles;
-  final List<RouteProfileSummary> routeProfiles;
+  final List<MainAgentConfigResource> mainAgentConfigs;
+  final List<MainAgentPromptResource> mainAgentPrompts;
+  final List<SubagentOrchestrationResource> subagentOrchestrations;
   final List<ModelProviderView> providers;
   final McpSettingsSnapshot? mcpSettings;
 }

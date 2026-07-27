@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:eco_mobile/core/models/agent_orchestration.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
+import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/thread_usage_display.dart';
@@ -81,15 +83,19 @@ void main() {
     },
   );
 
-  test('buildFlatSubagentContextRows applies profile theme overrides', () {
-    const profile = OrchestrationProfile(
-      id: 'p1',
-      name: 'Test',
+  test('buildFlatSubagentContextRows applies theme overrides', () {
+    const themeSource = SubagentThemeSource(
       agents: [
-        OrchestrationAgentInstance(
+        AgentInstanceConfig(
           agentKey: 'coder',
+          templateId: 'builtin.coding.coder',
           enabled: true,
           themeColor: '#112233',
+          modelRef: OrchestrationModelRef(
+            providerId: 'provider-1',
+            modelId: 'gpt-5.6-sol',
+          ),
+          tools: ToolPolicy(),
         ),
       ],
     );
@@ -112,7 +118,7 @@ void main() {
 
     final rows = buildFlatSubagentContextRows(
       context,
-      profile: profile,
+      themeSource: themeSource,
       l10n: _zh,
     );
     expect(rows.first.accentColor, const Color(0xFF112233));

@@ -1,5 +1,5 @@
 /**
- * Codex-native Profile / Agent tool policy.
+ * Codex-native orchestration Agent tool policy.
  *
  * Maps Eco settings to Codex `sandbox_mode`, `approval_policy`, `web_search`,
  * and MCP allowlists — not Claude Agent SDK tool names.
@@ -21,7 +21,7 @@ export const CODEX_WEB_SEARCH_MODES = ["disabled", "cached", "live"] as const;
 export type CodexWebSearchMode = (typeof CODEX_WEB_SEARCH_MODES)[number];
 
 /**
- * Product-default Profile tool policy:
+ * Product-default orchestration tool policy:
  * - workspace write (project-edit)
  * - outside workspace requires Codex approval prompts
  * - approvalPolicy on-request (Codex decides when to ask)
@@ -66,7 +66,7 @@ export type CodexAppServerSandboxPolicyWire =
   | { type: "workspaceWrite"; networkAccess?: boolean }
   | { type: "dangerFullAccess" };
 
-/** Role / config.toml keys written for a Profile agent. */
+/** Role / config.toml keys written for an orchestration agent. */
 export interface CodexRolePermissionTomlFields {
   sandbox_mode: CodexSandboxMode;
   approval_policy: CodexApprovalPolicy;
@@ -192,7 +192,7 @@ function migrateLegacyClaudeToolPolicy(
   // Legacy bash:false + write:workspace cannot be expressed; fail closed.
   if (bash?.enabled === false && writeWorkspace) {
     throw new Error(
-      "Legacy tool policy disables Bash while allowing writes. Codex cannot remove shell under workspace-write; re-save the Profile with an explicit sandboxMode.",
+      "Tool policy disables Bash while allowing writes. Codex cannot remove shell under workspace-write; re-save the orchestration resource with an explicit sandboxMode.",
     );
   }
 
@@ -353,37 +353,37 @@ export function toCodexAppServerSandboxPolicyWire(
 }
 
 /**
- * Intersect sessionMode sandbox with Profile policy (stricter wins).
- * ask → always readOnly; profile danger-full-access only applies in agent mode.
+ * Intersect sessionMode sandbox with orchestration policy (stricter wins).
+ * ask -> always readOnly; orchestration danger-full-access only applies in agent mode.
  */
 export function resolveEffectiveTurnSandbox(input: {
   sessionMode: "agent" | "plan" | "ask";
-  profilePolicy?: EcoToolPolicy;
+  orchestrationPolicy?: EcoToolPolicy;
 }): { sandboxPolicy: CodexTurnSandboxPolicy; networkAccess?: boolean; approvalPolicy: CodexApprovalPolicy } {
-  const profile = input.profilePolicy ?? DEFAULT_CODEX_TOOL_POLICY;
-  const approvalPolicy = profile.approvalPolicy;
+  const orchestration = input.orchestrationPolicy ?? DEFAULT_CODEX_TOOL_POLICY;
+  const approvalPolicy = orchestration.approvalPolicy;
 
   if (input.sessionMode === "ask") {
     return { sandboxPolicy: "readOnly", approvalPolicy };
   }
 
-  const profileTurn = ecoSandboxModeToTurnPolicy(profile.sandboxMode);
+  const orchestrationTurn = ecoSandboxModeToTurnPolicy(orchestration.sandboxMode);
   if (input.sessionMode === "plan") {
-    // Plan mode keeps workspaceWrite at session layer unless profile is stricter (read-only).
-    if (profileTurn === "readOnly") {
+    // Plan mode keeps workspaceWrite at session layer unless orchestration is stricter (read-only).
+    if (orchestrationTurn === "readOnly") {
       return { sandboxPolicy: "readOnly", approvalPolicy };
     }
     return {
       sandboxPolicy: "workspaceWrite",
-      ...(profile.networkAccess ? { networkAccess: true } : {}),
+      ...(orchestration.networkAccess ? { networkAccess: true } : {}),
       approvalPolicy,
     };
   }
 
   // agent
   return {
-    sandboxPolicy: profileTurn,
-    ...(profileTurn === "workspaceWrite" && profile.networkAccess ? { networkAccess: true } : {}),
+    sandboxPolicy: orchestrationTurn,
+    ...(orchestrationTurn === "workspaceWrite" && orchestration.networkAccess ? { networkAccess: true } : {}),
     approvalPolicy,
   };
 }

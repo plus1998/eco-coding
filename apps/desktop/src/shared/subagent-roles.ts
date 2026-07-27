@@ -92,7 +92,7 @@ export function resolveSubagentRunDisplayTitle(role: string): string {
   return "子代理";
 }
 
-/** Canonical runtime role for billing hooks when SDK sends eco_* keys or profile display ids. */
+/** Canonical runtime role for billing hooks when SDK sends eco_* keys or orchestration display ids. */
 export function resolveSubagentSessionRole(agentType: string | undefined): string | undefined {
   if (!agentType?.trim()) {
     return undefined;

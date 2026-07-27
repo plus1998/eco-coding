@@ -21,13 +21,13 @@ function item(
 
 test("formatPromptCacheConfigDriftMessage describes composer drift", () => {
   expect(
-    formatPromptCacheConfigDriftMessage(["profile"], {
-      profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
+    formatPromptCacheConfigDriftMessage(["orchestration"], {
+      orchestrationLabel: { modelStack: "GPT+DeepSeek", orchestrationName: "Composer" },
     }),
   ).toContain("Composer");
   expect(
-    formatPromptCacheConfigDriftMessage(["profile", "mcp"], {
-      profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
+    formatPromptCacheConfigDriftMessage(["orchestration", "mcp"], {
+      orchestrationLabel: { modelStack: "GPT+DeepSeek", orchestrationName: "Composer" },
     }),
   ).toContain("GPT+DeepSeek");
 });

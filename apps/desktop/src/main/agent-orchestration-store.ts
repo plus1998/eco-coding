@@ -3,14 +3,23 @@ import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
   type AgentTemplate,
-  listOrchestrationProfileAgents,
-  type OrchestrationProfile,
+  type MainAgentConfigResource,
+  type MainAgentPromptResource,
+  type OrchestrationSelection,
+  type SubagentOrchestrationResource,
+  isOrchestrationSelection,
 } from "../shared/agent-orchestration";
 
 interface StoredConfigRow {
   id: string;
   value_json: string;
 }
+
+const UPSERT_SQL = `
+  INSERT INTO __TABLE__ (id, value_json, updated_at)
+  VALUES (?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+`;
 
 export async function createAgentOrchestrationStore(dbPath: string): Promise<AgentOrchestrationStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
@@ -31,14 +40,24 @@ export class AgentOrchestrationStore {
         updated_at TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS orchestration_profiles (
+      CREATE TABLE IF NOT EXISTS main_agent_configs (
         id TEXT PRIMARY KEY,
         value_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
 
-      DROP TABLE IF EXISTS agent_template_versions;
-      DROP TABLE IF EXISTS orchestration_profile_versions;
+      CREATE TABLE IF NOT EXISTS main_agent_prompts (
+        id TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS subagent_orchestrations (
+        id TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
     `);
   }
 
@@ -58,13 +77,7 @@ export class AgentOrchestrationStore {
 
   saveAgentTemplate(template: AgentTemplate): AgentTemplate {
     const normalized = normalizeStoredAgentTemplate(template);
-    this.db
-      .prepare(`
-        INSERT INTO agent_templates (id, value_json, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-      `)
-      .run(normalized.id, JSON.stringify(normalized), normalized.updatedAt);
+    this.upsertRow("agent_templates", normalized.id, normalized, normalized.updatedAt);
     return normalized;
   }
 
@@ -72,35 +85,91 @@ export class AgentOrchestrationStore {
     this.db.prepare(`DELETE FROM agent_templates WHERE id = ?`).run(id.trim());
   }
 
-  listOrchestrationProfiles(): OrchestrationProfile[] {
-    const profiles: OrchestrationProfile[] = [];
-    for (const row of this.db
-      .prepare(`SELECT id, value_json FROM orchestration_profiles ORDER BY id ASC`)
-      .all()) {
-      const parsed = parseOrchestrationProfileRow(row as unknown as StoredConfigRow);
-      if (parsed.ok) {
-        profiles.push(parsed.profile);
-        continue;
-      }
-      console.warn(`[agent-profile] skipped invalid stored profile ${parsed.id}: ${parsed.error.message}`);
-    }
-    return profiles;
+  listMainAgentConfigs(): MainAgentConfigResource[] {
+    return this.listResourceRows("main_agent_configs").map(parseMainAgentConfigRow);
   }
 
-  saveOrchestrationProfile(profile: OrchestrationProfile): OrchestrationProfile {
-    const normalized = normalizeStoredOrchestrationProfile(profile);
-    this.db
-      .prepare(`
-        INSERT INTO orchestration_profiles (id, value_json, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-      `)
-      .run(normalized.id, JSON.stringify(normalized), normalized.updatedAt);
+  getMainAgentConfig(id: string): MainAgentConfigResource | undefined {
+    const row = this.getResourceRow("main_agent_configs", id);
+    return row ? parseMainAgentConfigRow(row) : undefined;
+  }
+
+  saveMainAgentConfig(config: MainAgentConfigResource): MainAgentConfigResource {
+    const normalized = normalizeStoredMainAgentConfig(config);
+    this.upsertRow("main_agent_configs", normalized.id, normalized, normalized.updatedAt);
     return normalized;
   }
 
-  deleteOrchestrationProfile(id: string): void {
-    this.db.prepare(`DELETE FROM orchestration_profiles WHERE id = ?`).run(id.trim());
+  deleteMainAgentConfig(id: string, defaultSelection?: OrchestrationSelection): void {
+    const trimmed = id.trim();
+    if (defaultSelection && referencesMainAgentConfig(defaultSelection, trimmed)) {
+      throw new Error(`主 Agent 配置「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
+    }
+    this.db.prepare(`DELETE FROM main_agent_configs WHERE id = ?`).run(trimmed);
+  }
+
+  listMainAgentPrompts(): MainAgentPromptResource[] {
+    return this.listResourceRows("main_agent_prompts").map(parseMainAgentPromptRow);
+  }
+
+  getMainAgentPrompt(id: string): MainAgentPromptResource | undefined {
+    const row = this.getResourceRow("main_agent_prompts", id);
+    return row ? parseMainAgentPromptRow(row) : undefined;
+  }
+
+  saveMainAgentPrompt(prompt: MainAgentPromptResource): MainAgentPromptResource {
+    const normalized = normalizeStoredMainAgentPrompt(prompt);
+    this.upsertRow("main_agent_prompts", normalized.id, normalized, normalized.updatedAt);
+    return normalized;
+  }
+
+  deleteMainAgentPrompt(id: string, defaultSelection?: OrchestrationSelection): void {
+    const trimmed = id.trim();
+    if (defaultSelection && referencesMainAgentPrompt(defaultSelection, trimmed)) {
+      throw new Error(`主 Agent 提示词「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
+    }
+    this.db.prepare(`DELETE FROM main_agent_prompts WHERE id = ?`).run(trimmed);
+  }
+
+  listSubagentOrchestrations(): SubagentOrchestrationResource[] {
+    return this.listResourceRows("subagent_orchestrations").map(parseSubagentOrchestrationRow);
+  }
+
+  getSubagentOrchestration(id: string): SubagentOrchestrationResource | undefined {
+    const row = this.getResourceRow("subagent_orchestrations", id);
+    return row ? parseSubagentOrchestrationRow(row) : undefined;
+  }
+
+  saveSubagentOrchestration(orchestration: SubagentOrchestrationResource): SubagentOrchestrationResource {
+    const normalized = normalizeStoredSubagentOrchestration(orchestration);
+    this.upsertRow("subagent_orchestrations", normalized.id, normalized, normalized.updatedAt);
+    return normalized;
+  }
+
+  deleteSubagentOrchestration(id: string, defaultSelection?: OrchestrationSelection): void {
+    const trimmed = id.trim();
+    if (defaultSelection && referencesSubagentOrchestration(defaultSelection, trimmed)) {
+      throw new Error(`子代理编排「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
+    }
+    this.db.prepare(`DELETE FROM subagent_orchestrations WHERE id = ?`).run(trimmed);
+  }
+
+  private listResourceRows(table: string): StoredConfigRow[] {
+    return this.db
+      .prepare(`SELECT id, value_json FROM ${table} ORDER BY id ASC`)
+      .all() as unknown as StoredConfigRow[];
+  }
+
+  private getResourceRow(table: string, id: string): StoredConfigRow | undefined {
+    return this.db
+      .prepare(`SELECT id, value_json FROM ${table} WHERE id = ?`)
+      .get(id.trim()) as unknown as StoredConfigRow | undefined;
+  }
+
+  private upsertRow(table: string, id: string, value: unknown, updatedAt: string): void {
+    this.db
+      .prepare(UPSERT_SQL.replace("__TABLE__", table))
+      .run(id, JSON.stringify(value), updatedAt);
   }
 }
 
@@ -137,41 +206,102 @@ export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemp
   };
 }
 
-export function normalizeStoredOrchestrationProfile(profile: OrchestrationProfile): OrchestrationProfile {
-  if (profile.source === "built_in" || profile.source === "derived") {
-    throw new Error("内置或派生编排配置不可写入用户配置。");
+export function normalizeStoredMainAgentConfig(config: MainAgentConfigResource): MainAgentConfigResource {
+  assertWritableUserResource(config.source, config.id, "主 Agent 配置");
+  if (!config.name.trim()) {
+    throw new Error("主 Agent 配置名称不能为空。");
   }
-  if (!profile.id.trim()) {
-    throw new Error("编排配置 id 不能为空。");
-  }
-  if (profile.id.trim().startsWith("builtin.")) {
-    throw new Error("内置编排配置 id 不可用于用户配置。");
-  }
-  if (!profile.name.trim()) {
-    throw new Error("编排配置名称不能为空。");
+  if (!config.agentKey.trim()) {
+    throw new Error("主 Agent 配置 agentKey 不能为空。");
   }
   const now = new Date().toISOString();
-  const {
-    version: _version,
-    builtinAgents: _legacyBuiltinAgents,
-    ...rest
-  } = profile as OrchestrationProfile & { version?: number };
+  return {
+    ...config,
+    id: config.id.trim(),
+    name: config.name.trim(),
+    agentKey: config.agentKey.trim(),
+    skills: [...(config.skills ?? [])],
+    source: config.source === "project" ? "project" : "user",
+    updatedAt: config.updatedAt || now,
+  };
+}
+
+export function normalizeStoredMainAgentPrompt(prompt: MainAgentPromptResource): MainAgentPromptResource {
+  assertWritableUserResource(prompt.source, prompt.id, "主 Agent 提示词");
+  if (!prompt.name.trim()) {
+    throw new Error("主 Agent 提示词名称不能为空。");
+  }
+  const mode = prompt.mode === "builtin" ? "builtin" : "custom_append";
+  const text = typeof prompt.prompt === "string" ? prompt.prompt.trim() : "";
+  if (mode === "custom_append" && !text) {
+    throw new Error("自定义主 Agent 提示词不能为空。");
+  }
+  const now = new Date().toISOString();
+  return {
+    id: prompt.id.trim(),
+    name: prompt.name.trim(),
+    mode,
+    prompt: mode === "builtin" ? "" : text,
+    source: prompt.source === "project" ? "project" : "user",
+    updatedAt: prompt.updatedAt || now,
+  };
+}
+
+export function normalizeStoredSubagentOrchestration(
+  orchestration: SubagentOrchestrationResource,
+): SubagentOrchestrationResource {
+  assertWritableUserResource(orchestration.source, orchestration.id, "子代理编排");
+  if (!orchestration.name.trim()) {
+    throw new Error("子代理编排名称不能为空。");
+  }
+  const now = new Date().toISOString();
+  const { version: _version, ...rest } = orchestration as SubagentOrchestrationResource & {
+    version?: number;
+  };
   return {
     ...rest,
-    id: profile.id.trim(),
-    name: profile.name.trim(),
-    mainAgent: {
-      ...profile.mainAgent,
-      systemPromptPreset:
-        profile.mainAgent.systemPromptPreset === "custom_append" ||
-        (profile.mainAgent.systemPromptPreset as unknown) === "custom"
-          ? "custom_append"
-          : "core_native",
-    },
-    agents: listOrchestrationProfileAgents(profile),
-    source: profile.source === "project" ? "project" : "user",
-    updatedAt: profile.updatedAt || now,
+    id: orchestration.id.trim(),
+    name: orchestration.name.trim(),
+    agents: orchestration.agents.map((agent) => ({ ...agent })),
+    source: orchestration.source === "project" ? "project" : "user",
+    updatedAt: orchestration.updatedAt || now,
   };
+}
+
+function referencesMainAgentConfig(selection: OrchestrationSelection, id: string): boolean {
+  return isOrchestrationSelection(selection) && selection.mainAgentConfigId.trim() === id.trim();
+}
+
+function referencesMainAgentPrompt(selection: OrchestrationSelection, id: string): boolean {
+  return (
+    isOrchestrationSelection(selection) &&
+    selection.mainPrompt.mode === "custom_append" &&
+    selection.mainPrompt.promptId.trim() === id.trim()
+  );
+}
+
+function referencesSubagentOrchestration(selection: OrchestrationSelection, id: string): boolean {
+  return (
+    isOrchestrationSelection(selection) &&
+    selection.subagents.mode === "orchestration" &&
+    selection.subagents.orchestrationId.trim() === id.trim()
+  );
+}
+
+function assertWritableUserResource(
+  source: MainAgentConfigResource["source"] | undefined,
+  id: string,
+  label: string,
+): void {
+  if (source === "built_in" || source === "derived") {
+    throw new Error(`内置或派生${label}不可写入用户配置。`);
+  }
+  if (!id.trim()) {
+    throw new Error(`${label} id 不能为空。`);
+  }
+  if (id.trim().startsWith("builtin.")) {
+    throw new Error(`内置${label} id 不可用于用户配置。`);
+  }
 }
 
 function parseAgentTemplateRow(row: StoredConfigRow): AgentTemplate {
@@ -179,22 +309,19 @@ function parseAgentTemplateRow(row: StoredConfigRow): AgentTemplate {
   return normalizeStoredAgentTemplate(parsed as unknown as AgentTemplate);
 }
 
-function parseOrchestrationProfileRow(
-  row: StoredConfigRow,
-): { ok: true; profile: OrchestrationProfile } | { ok: false; id: string; error: Error } {
-  try {
-    const parsed = parseJsonObject(row.value_json);
-    return {
-      ok: true,
-      profile: normalizeStoredOrchestrationProfile(parsed as unknown as OrchestrationProfile),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      id: row.id,
-      error: error instanceof Error ? error : new Error(String(error)),
-    };
-  }
+function parseMainAgentConfigRow(row: StoredConfigRow): MainAgentConfigResource {
+  const parsed = parseJsonObject(row.value_json);
+  return normalizeStoredMainAgentConfig(parsed as unknown as MainAgentConfigResource);
+}
+
+function parseMainAgentPromptRow(row: StoredConfigRow): MainAgentPromptResource {
+  const parsed = parseJsonObject(row.value_json);
+  return normalizeStoredMainAgentPrompt(parsed as unknown as MainAgentPromptResource);
+}
+
+function parseSubagentOrchestrationRow(row: StoredConfigRow): SubagentOrchestrationResource {
+  const parsed = parseJsonObject(row.value_json);
+  return normalizeStoredSubagentOrchestration(parsed as unknown as SubagentOrchestrationResource);
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {

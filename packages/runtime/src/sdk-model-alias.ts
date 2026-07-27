@@ -16,7 +16,7 @@ function findRouteByRole(
   return routes.find((route) => route.role === role);
 }
 
-/** Map profile/SDK upstream model ids to configured proxy alias ids. */
+/** Map orchestration/SDK upstream model ids to configured proxy alias ids. */
 export function resolveSdkModelId(
   routes: readonly ResolvedModelRoute[],
   agentKey: string,
@@ -60,14 +60,14 @@ export function resolveSdkModelId(
 
 export function resolveMainSdkModelId(
   routes: readonly ResolvedModelRoute[],
-  profileMainModelId?: string,
+  orchestrationMainModelId?: string,
 ): string {
   const plannerAlias = findRouteByRole(routes, "planner")?.primary.modelId;
   if (plannerAlias) {
     return plannerAlias;
   }
-  if (profileMainModelId?.trim()) {
-    return resolveSdkModelId(routes, "planner", profileMainModelId);
+  if (orchestrationMainModelId?.trim()) {
+    return resolveSdkModelId(routes, "planner", orchestrationMainModelId);
   }
   return routes[0]?.primary.modelId ?? "";
 }

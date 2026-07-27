@@ -2,6 +2,7 @@ import 'dart:ui' show Color;
 
 import '../../l10n/generated/app_localizations.dart';
 import '../models/thread_models.dart';
+import '../models/thread_runtime_config.dart';
 import '../models/thread_run_projection.dart';
 import '../theme/subagent_theme.dart' as subagent_theme;
 import 'agent_mission.dart';
@@ -1075,6 +1076,12 @@ String resolveSubagentRunDisplayTitle(String role, AppLocalizations l10n) {
   };
 }
 
-Color subagentMissionBorderColor(String role, {OrchestrationProfile? profile}) {
-  return subagent_theme.subagentMissionBorderColor(role, profile: profile);
+Color subagentMissionBorderColor(
+  String role, {
+  SubagentThemeSource? themeSource,
+}) {
+  return subagent_theme.subagentMissionBorderColor(
+    role,
+    agents: themeSource?.agents ?? const [],
+  );
 }

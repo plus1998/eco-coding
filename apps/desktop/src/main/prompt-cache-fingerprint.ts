@@ -1,30 +1,33 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { PromptCacheProfileLabel } from "../shared/prompt-cache-config";
-import { formatPromptCacheProfileSwitchPhrase } from "../shared/prompt-cache-config";
+import type { PromptCacheOrchestrationLabel } from "../shared/prompt-cache-config";
+import { formatPromptCacheOrchestrationSwitchPhrase } from "../shared/prompt-cache-config";
 
 export type PromptCacheBreakReason =
-  | "profile_changed"
+  | "orchestration_changed"
   | "main_agent_model_changed"
   | "mcp_servers_changed"
   | "claude_md_changed";
 
 export interface PromptCacheFingerprint {
-  profileId: string;
+  orchestrationKey: string;
   mainAgentModelKey: string;
   mcpServerKeys: string[];
   claudeMdDigest: string;
 }
 
 export function buildPromptCacheFingerprint(input: {
-  profileId: string;
+  orchestrationKey: string;
   mainAgentModelKey: string;
   mcpServerKeys: readonly string[];
   claudeMdDigest: string;
 }): PromptCacheFingerprint {
+  const orchestrationKey = input.orchestrationKey.trim();
   return {
-    profileId: input.profileId.trim(),
+    orchestrationKey: orchestrationKey
+      ? createHash("sha256").update(orchestrationKey, "utf8").digest("hex")
+      : "",
     mainAgentModelKey: input.mainAgentModelKey.trim(),
     mcpServerKeys: [...input.mcpServerKeys]
       .map((key) => key.trim())
@@ -39,8 +42,8 @@ export function diffPromptCacheFingerprint(
   after: PromptCacheFingerprint,
 ): PromptCacheBreakReason[] {
   const reasons: PromptCacheBreakReason[] = [];
-  if (before.profileId !== after.profileId) {
-    reasons.push("profile_changed");
+  if (before.orchestrationKey !== after.orchestrationKey) {
+    reasons.push("orchestration_changed");
   }
   if (before.mainAgentModelKey !== after.mainAgentModelKey) {
     reasons.push("main_agent_model_changed");
@@ -56,17 +59,17 @@ export function diffPromptCacheFingerprint(
 
 export function formatPromptCacheBreakMessage(
   reasons: readonly PromptCacheBreakReason[],
-  options?: { profileLabel?: PromptCacheProfileLabel },
+  options?: { orchestrationLabel?: PromptCacheOrchestrationLabel },
 ): string {
   if (reasons.length === 0) {
     return "本会话 prompt cache 已失效";
   }
   const parts: string[] = [];
-  if (reasons.includes("profile_changed")) {
+  if (reasons.includes("orchestration_changed")) {
     parts.push(
-      options?.profileLabel
-        ? formatPromptCacheProfileSwitchPhrase(options.profileLabel)
-        : "Agent Profile 已变更",
+      options?.orchestrationLabel
+        ? formatPromptCacheOrchestrationSwitchPhrase(options.orchestrationLabel)
+        : "编排组合已变更",
     );
   }
   if (reasons.includes("main_agent_model_changed")) {

@@ -787,7 +787,14 @@ class _ActivityFeedView extends ConsumerWidget {
     final subagentSessions = ref.watch(
       threadSessionProvider(threadId).select((state) => state.subagentSessions),
     );
-    final agentProfile = null as OrchestrationProfile?;
+    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final runtimeConfig = ref.watch(
+      threadSessionProvider(threadId).select((state) => state.thread?.runtimeConfig),
+    );
+    final snapshot = runtimeConfig == null
+        ? null
+        : resolveThreadOrchestrationSnapshot(modelSettings, runtimeConfig);
+    final themeSource = SubagentThemeSource.fromSnapshot(snapshot);
     final feedEntries = buildActivityFeed(
       threadPrompt: threadPrompt,
       threadId: threadId,
@@ -836,7 +843,7 @@ class _ActivityFeedView extends ConsumerWidget {
       entries: displayFeedEntries,
       scrollController: scrollController,
       scrollCoordinator: scrollCoordinator,
-      agentProfile: agentProfile,
+      themeSource: themeSource,
       scrollJumpBottomInset: controlsBottomInset,
       padding: EdgeInsets.fromLTRB(
         threadSessionFeedHorizontalPadding,

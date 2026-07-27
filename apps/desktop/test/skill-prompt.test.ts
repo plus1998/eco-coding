@@ -110,6 +110,7 @@ test("resolveImplicitSkillReadRoots includes project roots and explicit skill di
   ).toEqual([
     "/repo/app/.claude/skills",
     "/repo/app/.agents/skills",
+    "/repo/app/.codex/skills",
     "/Users/alice/.claude/skills/vue-best-practices",
   ]);
 });
@@ -118,7 +119,7 @@ test("mergeSkillNames dedupes and sorts", () => {
   expect(mergeSkillNames(["b", "a"], ["a", "c"])).toEqual(["a", "b", "c"]);
 });
 
-test("buildRuntimeAgentSkillAssignments includes dynamic profile agent keys", () => {
+test("buildRuntimeAgentSkillAssignments includes dynamic orchestration agent keys", () => {
   expect(
     buildRuntimeAgentSkillAssignments(["project", "main"], {
       agents: [

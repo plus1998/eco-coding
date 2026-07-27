@@ -922,7 +922,7 @@ function materializeRuntimeToolPermissionEntry(
  */
 function mainAgentDelegationHint(actor: "main" | string | undefined): string {
   return actor === "main"
-    ? " This is the active Eco profile policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying."
+    ? " This is the active Eco orchestration policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying."
     : "";
 }
 

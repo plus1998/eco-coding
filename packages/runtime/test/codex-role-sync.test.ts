@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type {
   EcoAgentTemplateConfig,
-  EcoOrchestrationProfileConfig,
+  EcoOrchestrationConfig,
   EcoToolPolicy,
 } from "../src/agent-orchestration";
 import {
@@ -16,7 +16,7 @@ import {
   assertCodexRoleProvidersAvailable,
   mapEcoThinkingEffortToCodexReasoningEffort,
   sanitizeCodexRoleId,
-  syncProfileAgentsToCodexRoles,
+  syncOrchestrationAgentsToCodexRoles,
   withCodexSkillConfig,
 } from "../src/codex-role-sync";
 
@@ -56,14 +56,14 @@ async function makeTempEcoDataDir(): Promise<string> {
   return dir;
 }
 
-test("syncProfileAgentsToCodexRoles writes role toml for explore and enabled agents", async () => {
+test("syncOrchestrationAgentsToCodexRoles writes role toml for explore and enabled agents", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
   const templates = [researchTemplate, codingTemplate];
 
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile(),
+    orchestration: buildOrchestration(),
     templates,
   });
 
@@ -97,16 +97,16 @@ test("syncProfileAgentsToCodexRoles writes role toml for explore and enabled age
   await expect(fs.stat(path.join(result.agentsDir, "architect.toml"))).rejects.toThrow();
 });
 
-test("syncProfileAgentsToCodexRoles keeps bundles outside discovery and removes legacy Eco roles", async () => {
+test("syncOrchestrationAgentsToCodexRoles keeps bundles outside discovery and removes legacy Eco roles", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
   const legacyRolePath = path.join(codexHomeDir, "agents", "eco", "old-bundle", "coder.toml");
   await fs.mkdir(path.dirname(legacyRolePath), { recursive: true });
   await fs.writeFile(legacyRolePath, 'name = "coder"\n', "utf8");
 
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile(),
+    orchestration: buildOrchestration(),
     templates: [researchTemplate, codingTemplate],
   });
 
@@ -116,27 +116,18 @@ test("syncProfileAgentsToCodexRoles keeps bundles outside discovery and removes 
   expect(await fs.stat(path.join(result.agentsDir, "coder.toml"))).toBeTruthy();
 });
 
-test("syncProfileAgentsToCodexRoles reads Explore from the editable roster", async () => {
+test("syncOrchestrationAgentsToCodexRoles reads Explore from the editable roster", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const profile = buildProfile();
-  const { builtinAgents: _legacyBuiltinAgents, ...profileWithoutLegacyExplore } = profile;
-  const result = await syncProfileAgentsToCodexRoles({
+  const orchestration = buildOrchestration();
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-    profile: {
-      ...profileWithoutLegacyExplore,
-      agents: [
-        {
-          agentKey: "explore",
-          templateId: "builtin.coding.explore",
-          displayName: "Explore",
-          modelRef: { providerId: "fast", modelId: "explore-roster" },
-          tools: toolPolicy({ sandboxMode: "read-only" }),
-          mcpServers: [],
-          skills: [],
-          enabled: true,
-        },
-        ...profile.agents,
-      ],
+    orchestration: {
+      ...orchestration,
+      agents: orchestration.agents.map((agent) =>
+        agent.agentKey === "explore"
+          ? { ...agent, modelRef: { providerId: "fast", modelId: "explore-roster" } }
+          : agent,
+      ),
     },
     templates: [researchTemplate, codingTemplate],
   });
@@ -148,13 +139,11 @@ test("syncProfileAgentsToCodexRoles reads Explore from the editable roster", asy
 test("multi-agent config keeps roles thread-scoped and heterogeneous models immutable", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const profile = buildProfile({
-    builtinAgents: {
-      explore: { modelRef: { providerId: "fast", modelId: "explore-fast" } },
-    },
+  const orchestration = buildOrchestration({
     agents: [
+      exploreAgent({ providerId: "fast", modelId: "explore-fast" }),
       {
-        ...firstProfileAgent(),
+        ...firstOrchestrationAgent(),
         agentKey: "coder",
         templateId: codingTemplate.id,
         displayName: "Implementation Coder",
@@ -164,9 +153,9 @@ test("multi-agent config keeps roles thread-scoped and heterogeneous models immu
     ],
   });
 
-  const roleSync = await syncProfileAgentsToCodexRoles({
+  const roleSync = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile,
+    orchestration,
     templates: [codingTemplate],
   });
   assertCodexRoleProvidersAvailable(roleSync.roles, [
@@ -215,19 +204,16 @@ test("multi-agent config keeps roles thread-scoped and heterogeneous models immu
 test("role TOML carries an explicit apiCompat override in the V1 gateway alias", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const roleSync = await syncProfileAgentsToCodexRoles({
+  const roleSync = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile({
-      builtinAgents: {
-        explore: {
-          modelRef: {
-            providerId: "mixed-wire",
-            modelId: "chat/model.__v1",
-            apiCompat: "openai_chat_completions",
-          },
-        },
-      },
-      agents: [],
+    orchestration: buildOrchestration({
+      agents: [
+        exploreAgent({
+          providerId: "mixed-wire",
+          modelId: "chat/model.__v1",
+          apiCompat: "openai_chat_completions",
+        }),
+      ],
     }),
     templates: [],
   });
@@ -245,19 +231,16 @@ test("role TOML carries an explicit apiCompat override in the V1 gateway alias",
 
 test("responses-native providers reject non-Responses role overrides", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const roleSync = await syncProfileAgentsToCodexRoles({
+  const roleSync = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-    profile: buildProfile({
-      builtinAgents: {
-        explore: {
-          modelRef: {
-            providerId: "native",
-            modelId: "chat-model",
-            apiCompat: "anthropic",
-          },
-        },
-      },
-      agents: [],
+    orchestration: buildOrchestration({
+      agents: [
+        exploreAgent({
+          providerId: "native",
+          modelId: "chat-model",
+          apiCompat: "anthropic",
+        }),
+      ],
     }),
     templates: [],
   });
@@ -278,48 +261,45 @@ test("responses-native providers reject non-Responses role overrides", async () 
 test("role sync rejects unknown apiCompat values", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   await expect(
-    syncProfileAgentsToCodexRoles({
+    syncOrchestrationAgentsToCodexRoles({
       codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-      profile: buildProfile({
-        builtinAgents: {
-          explore: {
-            modelRef: {
-              providerId: "main",
-              modelId: "explore-model",
-              apiCompat: "unknown-wire",
-            },
-          },
-        },
-        agents: [],
+      orchestration: buildOrchestration({
+        agents: [
+          exploreAgent({
+            providerId: "main",
+            modelId: "explore-model",
+            apiCompat: "unknown-wire",
+          }),
+        ],
       }),
       templates: [],
     }),
   ).rejects.toThrow("unsupported modelRef.apiCompat 'unknown-wire'");
 });
 
-test("syncProfileAgentsToCodexRoles keeps old bundles immutable when availability changes", async () => {
+test("syncOrchestrationAgentsToCodexRoles keeps old bundles immutable when availability changes", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const coderAgent = buildProfile().agents.find((agent) => agent.agentKey === "coder");
+  const coderAgent = buildOrchestration().agents.find((agent) => agent.agentKey === "coder");
   if (!coderAgent) {
     throw new Error("Expected coder fixture agent.");
   }
-  const profile = buildProfile({
-    agents: [coderAgent],
+  const orchestration = buildOrchestration({
+    agents: [exploreAgent(), coderAgent],
   });
 
-  const initial = await syncProfileAgentsToCodexRoles({
+  const initial = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile,
+    orchestration,
     templates: [codingTemplate],
   });
   const initialCoderPath = initial.roles.find((role) => role.roleId === "coder")?.rolePath;
   expect(initialCoderPath).toBeTruthy();
   expect(await fs.stat(initialCoderPath!)).toBeTruthy();
 
-  const exploreOnly = await syncProfileAgentsToCodexRoles({
+  const exploreOnly = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile,
+    orchestration,
     templates: [codingTemplate],
     subagentAvailability: { explore: true, coder: false },
   });
@@ -331,9 +311,9 @@ test("syncProfileAgentsToCodexRoles keeps old bundles immutable when availabilit
 
 test("role sync explicitly disables multi-agent features when no role is available", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-    profile: buildProfile({ agents: [] }),
+    orchestration: buildOrchestration({ agents: [] }),
     templates: [],
     subagentAvailability: { explore: false },
   });
@@ -346,13 +326,10 @@ test("role sync explicitly disables multi-agent features when no role is availab
 test("assertCodexRoleProvidersAvailable fails when role provider is missing", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const roleSync = await syncProfileAgentsToCodexRoles({
+  const roleSync = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile({
-      builtinAgents: {
-        explore: { modelRef: { providerId: "missing-provider", modelId: "explore-model" } },
-      },
-      agents: [],
+    orchestration: buildOrchestration({
+      agents: [exploreAgent({ providerId: "missing-provider", modelId: "explore-model" })],
     }),
     templates: [],
   });
@@ -364,12 +341,13 @@ test("assertCodexRoleProvidersAvailable fails when role provider is missing", as
   ).toThrow(/requires provider 'missing-provider'/);
 });
 
-test("syncProfileAgentsToCodexRoles sanitizes unsafe keys without path traversal", async () => {
+test("syncOrchestrationAgentsToCodexRoles sanitizes unsafe keys without path traversal", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const agent = firstProfileAgent();
-  const profile = buildProfile({
+  const agent = firstOrchestrationAgent();
+  const orchestration = buildOrchestration({
     agents: [
+      exploreAgent(),
       {
         ...agent,
         agentKey: "../Deep Research!",
@@ -377,9 +355,9 @@ test("syncProfileAgentsToCodexRoles sanitizes unsafe keys without path traversal
     ],
   });
 
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile,
+    orchestration,
     templates: [researchTemplate],
   });
 
@@ -391,15 +369,15 @@ test("syncProfileAgentsToCodexRoles sanitizes unsafe keys without path traversal
   await expect(fs.stat(path.join(codexHomeDir, "Deep Research!.toml"))).rejects.toThrow();
 });
 
-test("syncProfileAgentsToCodexRoles rejects duplicate sanitized keys", async () => {
+test("syncOrchestrationAgentsToCodexRoles rejects duplicate sanitized keys", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const agent = firstProfileAgent();
+  const agent = firstOrchestrationAgent();
 
   await expect(
-    syncProfileAgentsToCodexRoles({
+    syncOrchestrationAgentsToCodexRoles({
       codexHomeDir,
-      profile: buildProfile({
+      orchestration: buildOrchestration({
         agents: [
           { ...agent, agentKey: "a/b" },
           { ...agent, agentKey: "a_b" },
@@ -410,15 +388,15 @@ test("syncProfileAgentsToCodexRoles rejects duplicate sanitized keys", async () 
   ).rejects.toThrow("Duplicate Codex role id");
 });
 
-test("syncProfileAgentsToCodexRoles rejects case-only collisions and reserved Explore", async () => {
+test("syncOrchestrationAgentsToCodexRoles rejects case-only collisions and reserved Explore", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const agent = firstProfileAgent();
+  const agent = firstOrchestrationAgent();
 
   await expect(
-    syncProfileAgentsToCodexRoles({
+    syncOrchestrationAgentsToCodexRoles({
       codexHomeDir,
-      profile: buildProfile({
+      orchestration: buildOrchestration({
         agents: [
           { ...agent, agentKey: "Researcher" },
           { ...agent, agentKey: "researcher" },
@@ -429,15 +407,15 @@ test("syncProfileAgentsToCodexRoles rejects case-only collisions and reserved Ex
   ).rejects.toThrow("Duplicate Codex role id 'researcher'");
 
   await expect(
-    syncProfileAgentsToCodexRoles({
+    syncOrchestrationAgentsToCodexRoles({
       codexHomeDir,
-      profile: buildProfile({ agents: [{ ...agent, agentKey: "Explore" }] }),
+      orchestration: buildOrchestration({ agents: [{ ...agent, agentKey: "Explore" }] }),
       templates: [researchTemplate],
     }),
   ).rejects.toThrow("reserved Codex explore role id");
 });
 
-test("syncProfileAgentsToCodexRoles redacts known secrets from roles and config declarations", async () => {
+test("syncOrchestrationAgentsToCodexRoles redacts known secrets from roles and config declarations", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
   const secret = "sk-live-secret-value";
@@ -447,9 +425,9 @@ test("syncProfileAgentsToCodexRoles redacts known secrets from roles and config 
     description: `Research role ${secret}`,
   };
 
-  const roleSync = await syncProfileAgentsToCodexRoles({
+  const roleSync = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile({ agents: [firstProfileAgent()] }),
+    orchestration: buildOrchestration({ agents: [firstOrchestrationAgent()] }),
     templates: [secretTemplate],
     secretsToRedact: [secret],
   });
@@ -471,9 +449,9 @@ test("syncProfileAgentsToCodexRoles redacts known secrets from roles and config 
 
 test("role MCP policy explicitly denies inherited servers and intersects tool allowlists", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const profile = buildProfile({
+  const orchestration = buildOrchestration({
     mainAgent: {
-      ...buildProfile().mainAgent,
+      ...buildOrchestration().mainAgent,
       tools: toolPolicy({
         allowSpawn: true,
         mcp: { allowedServers: ["github"], enabledTools: ["read", "missing"] },
@@ -481,7 +459,7 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
     },
     agents: [
       {
-        ...firstProfileAgent(),
+        ...firstOrchestrationAgent(),
         tools: toolPolicy({
           sandboxMode: "read-only",
           mcp: { allowedServers: ["browser"], enabledTools: ["search", "missing"] },
@@ -490,9 +468,9 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
     ],
   });
 
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-    profile,
+    orchestration: orchestration,
     templates: [researchTemplate],
     mcpServers: [
       { name: "browser", transport: "stdio", command: "node", enabledTools: ["search", "open"] },
@@ -524,13 +502,13 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
   expect(researcherToml).not.toContain("Eco MCP allowlist");
 });
 
-test("main actor inherits Composer-selected MCP when its Profile has no MCP policy", async () => {
+test("main actor inherits Composer-selected MCP when its orchestration has no MCP policy", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const profile = buildProfile({ agents: [], builtinAgents: undefined });
+  const orchestration = buildOrchestration({ agents: [] });
 
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-    profile,
+    orchestration,
     templates: [],
     mcpServers: [
       { name: "mongo", transport: "stdio", command: "node" },
@@ -547,19 +525,18 @@ test("main actor inherits Composer-selected MCP when its Profile has no MCP poli
 
 test("explicit empty main MCP policy denies Composer-selected MCP", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const base = buildProfile();
-  const profile = buildProfile({
+  const base = buildOrchestration();
+  const orchestration = buildOrchestration({
     mainAgent: {
       ...base.mainAgent,
       tools: toolPolicy({ mcp: { allowedServers: [] } }),
     },
     agents: [],
-    builtinAgents: undefined,
   });
 
-  const result = await syncProfileAgentsToCodexRoles({
+  const result = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-    profile,
+    orchestration,
     templates: [],
     mcpServers: [{ name: "mongo", transport: "stdio", command: "node" }],
     threadEnabledMcpServers: ["mongo"],
@@ -568,12 +545,12 @@ test("explicit empty main MCP policy denies Composer-selected MCP", async () => 
   expect(result.threadConfig.mcp_servers).toEqual({ mongo: { enabled: false } });
 });
 
-test("content-addressed role bundles survive a concurrent Profile preparation", async () => {
+test("content-addressed role bundles survive a concurrent Orchestration preparation", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);
-  const first = await syncProfileAgentsToCodexRoles({
+  const first = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile({ agents: [firstProfileAgent()] }),
+    orchestration: buildOrchestration({ agents: [firstOrchestrationAgent()] }),
     templates: [researchTemplate],
     mcpServers: [
       { name: "browser", transport: "stdio", command: "node" },
@@ -587,12 +564,12 @@ test("content-addressed role bundles survive a concurrent Profile preparation", 
   }
   const before = await fs.readFile(firstRole.rolePath, "utf8");
 
-  const second = await syncProfileAgentsToCodexRoles({
+  const second = await syncOrchestrationAgentsToCodexRoles({
     codexHomeDir,
-    profile: buildProfile({
+    orchestration: buildOrchestration({
       agents: [
         {
-          ...firstProfileAgent(),
+          ...firstOrchestrationAgent(),
           modelRef: { providerId: "main", modelId: "research-model-v2" },
         },
       ],
@@ -612,11 +589,11 @@ test("content-addressed role bundles survive a concurrent Profile preparation", 
 
 test("role sync rejects an unenumerated child MCP widening over the main actor", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
-  const base = buildProfile();
+  const base = buildOrchestration();
   await expect(
-    syncProfileAgentsToCodexRoles({
+    syncOrchestrationAgentsToCodexRoles({
       codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-      profile: buildProfile({
+      orchestration: buildOrchestration({
         mainAgent: {
           ...base.mainAgent,
           tools: toolPolicy({
@@ -624,7 +601,7 @@ test("role sync rejects an unenumerated child MCP widening over the main actor",
             mcp: { allowedServers: ["browser"], enabledTools: ["search"] },
           }),
         },
-        agents: [firstProfileAgent()],
+        agents: [firstOrchestrationAgent()],
       }),
       templates: [researchTemplate],
       mcpServers: [{ name: "browser", transport: "stdio", command: "node" }],
@@ -679,11 +656,8 @@ const codingTemplate: EcoAgentTemplateConfig = {
   defaultTools: toolPolicy({ sandboxMode: "workspace-write" }),
 };
 
-function buildProfile(overrides: Partial<EcoOrchestrationProfileConfig> = {}): EcoOrchestrationProfileConfig {
-  const profile: EcoOrchestrationProfileConfig = {
-    id: "profile.coding-default",
-    name: "Coding Default",
-    preset: "coding",
+function buildOrchestration(overrides: Partial<EcoOrchestrationConfig> = {}): EcoOrchestrationConfig {
+  const orchestration: EcoOrchestrationConfig = {
     mainAgent: {
       agentKey: "main",
       name: "Main",
@@ -694,12 +668,8 @@ function buildProfile(overrides: Partial<EcoOrchestrationProfileConfig> = {}): E
       tools: toolPolicy({ sandboxMode: "workspace-write", allowSpawn: true }),
       skills: [],
     },
-    builtinAgents: {
-      explore: {
-        modelRef: { providerId: "main", modelId: "explore-model" },
-      },
-    },
     agents: [
+      exploreAgent(),
       {
         agentKey: "researcher",
         templateId: researchTemplate.id,
@@ -732,17 +702,32 @@ function buildProfile(overrides: Partial<EcoOrchestrationProfileConfig> = {}): E
       },
     ],
     strategy: { kind: "autonomous", guidancePrompt: "Delegate when it helps." },
-    version: 1,
-    updatedAt,
-    source: "user",
   };
-  return { ...profile, ...overrides };
+  return { ...orchestration, ...overrides };
 }
 
-function firstProfileAgent(): EcoOrchestrationProfileConfig["agents"][number] {
-  const agent = buildProfile().agents[0];
+function exploreAgent(
+  modelRef: EcoOrchestrationConfig["agents"][number]["modelRef"] = {
+    providerId: "main",
+    modelId: "explore-model",
+  },
+): EcoOrchestrationConfig["agents"][number] {
+  return {
+    agentKey: "explore",
+    templateId: "builtin.coding.explore",
+    displayName: "Explore",
+    modelRef,
+    tools: toolPolicy({ sandboxMode: "read-only" }),
+    mcpServers: [],
+    skills: [],
+    enabled: true,
+  };
+}
+
+function firstOrchestrationAgent(): EcoOrchestrationConfig["agents"][number] {
+  const agent = buildOrchestration().agents.find((candidate) => candidate.agentKey === "researcher");
   if (!agent) {
-    throw new Error("Expected profile fixture to include an agent.");
+    throw new Error("Expected orchestration fixture to include an agent.");
   }
   return agent;
 }

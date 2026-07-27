@@ -20,14 +20,56 @@ const _servers = [
   ),
 ];
 
+ModelSettingsSnapshot _settings() {
+  return ModelSettingsSnapshot(
+    mainAgentConfigs: [
+      MainAgentConfigResource(
+        id: 'main-1',
+        name: 'Orchestration',
+        agentKey: 'main',
+        domain: 'coding',
+        modelRef: const OrchestrationModelRef(
+          providerId: 'provider-1',
+          modelId: 'gpt-5.6-sol',
+        ),
+        tools: const ToolPolicy(mcp: ToolPolicyMcp(allowedServers: ['mongo'])),
+      ),
+    ],
+    subagentOrchestrations: const [
+      SubagentOrchestrationResource(
+        id: 'orch-1',
+        name: 'Subagents',
+        domain: 'coding',
+        agents: [],
+        strategy: OrchestrationStrategy(kind: 'autonomous'),
+      ),
+    ],
+  );
+}
+
+ResolvedOrchestrationSnapshot _snapshot() {
+  return resolveOrchestrationSnapshot(
+    const OrchestrationSelection(
+      mainAgentConfigId: 'main-1',
+      mainPrompt: BuiltinMainAgentPromptSelection(),
+      subagents: OrchestrationSubagentSelection(orchestrationId: 'orch-1'),
+    ),
+    OrchestrationResourceLookup(
+      mainAgentConfigs: _settings().mainAgentConfigs,
+      mainAgentPrompts: const [],
+      subagentOrchestrations: _settings().subagentOrchestrations,
+    ),
+  );
+}
+
 void main() {
   test(
-    'deriveMcpServersEnabled prefers existing over remembered and profile',
+    'deriveMcpServersEnabled prefers existing over remembered and orchestration',
     () {
       expect(
         deriveMcpServersEnabled(
           const ['mongo', 'browser'],
-          profileAssignedServers: const ['mongo'],
+          orchestrationAssignedServers: const ['mongo'],
           remembered: const {'mongo': false, 'browser': true},
           existing: const {'mongo': true},
         ),
@@ -37,15 +79,13 @@ void main() {
   );
 
   test('resolveComposerMcpSettings uses runtime overrides when present', () {
-    final profile = OrchestrationProfile(
-      id: 'p1',
-      name: 'Profile',
-      mainAssignedMcpServers: const ['mongo'],
-      agents: const [],
-    );
     final runtimeConfig = ThreadRuntimeConfig(
-      routeProfileId: 'p1',
-      agentProfileId: 'p1',
+      orchestrationSelection: const OrchestrationSelection(
+        mainAgentConfigId: 'main-1',
+        mainPrompt: BuiltinMainAgentPromptSelection(),
+        subagents: OrchestrationSubagentSelection(orchestrationId: 'orch-1'),
+      ),
+      resolvedOrchestrationSnapshot: _snapshot(),
       subagentEnabled: defaultSubagentAvailability(),
       mcpServersEnabled: const {'mongo': false, 'browser': true},
       sessionMode: 'agent',
@@ -56,29 +96,24 @@ void main() {
       resolveComposerMcpSettings(
         servers: _servers,
         runtimeConfig: runtimeConfig,
-        profile: profile,
+        snapshot: _snapshot(),
       ),
       const {'mongo': false, 'browser': true},
     );
   });
 
   test('buildDefaultRuntimeConfig seeds MCP from workflow defaults', () {
-    final profile = OrchestrationProfile(
-      id: 'p1',
-      name: 'Profile',
-      mainAssignedMcpServers: const ['mongo'],
-      agents: const [],
-    );
-    final settings = ModelSettingsSnapshot(
-      orchestrationProfiles: [profile],
-      routeProfiles: const [],
-    );
-
+    final settings = _settings();
     final config = buildDefaultRuntimeConfig(
       modelSettings: settings,
       workflow: const WorkflowSettingsSnapshot(
         sessionMode: 'agent',
         mcpServersEnabled: {'browser': true},
+        defaultOrchestrationSelection: OrchestrationSelection(
+          mainAgentConfigId: 'main-1',
+          mainPrompt: BuiltinMainAgentPromptSelection(),
+          subagents: OrchestrationSubagentSelection(orchestrationId: 'orch-1'),
+        ),
       ),
       mcpServers: _servers,
     );
@@ -117,8 +152,9 @@ void main() {
 
   test('ModelSettingsSnapshot parses embedded mcpSettings', () {
     final settings = ModelSettingsSnapshot.fromJson({
-      'orchestrationProfiles': [],
-      'routeProfiles': [],
+      'mainAgentConfigs': [],
+      'mainAgentPrompts': [],
+      'subagentOrchestrations': [],
       'mcpSettings': {
         'servers': [
           {'id': '1', 'name': 'mongo', 'transport': 'stdio', 'enabled': true},

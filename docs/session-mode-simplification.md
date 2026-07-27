@@ -22,7 +22,7 @@
 
 1. **一个 runtime 入口**：`run` / `runAsk` / `runContinuation` 共用 `runSingleSession`，按 `sessionMode` 设参数。
 2. **行为由结构约束**：`permissionMode`、`allowedTools`、`disallowedTools`、`agents` 注册表、PreToolUse hooks。
-3. **System prompt 只保留**：SDK preset、极简产品边界、profile `mainAgent.prompt`。
+3. **System prompt 只保留**：SDK preset、极简产品边界、orchestration `mainAgent.prompt`。
 4. **子代理路由**：`description` / `whenToUse` + 工具策略；deny hook 指向当前 session 注册的 agents。
 5. **破坏性迁移可接受**：仅 `sessionMode`；旧 `planModeEnabled` / `orchestrationMode` / run phase `"question"` 不再读取（SQLite 读路径对 `"question"` 做 `ask` 归一化）。
 
@@ -34,7 +34,7 @@
 
 | `sessionMode` | UI | SDK `permissionMode` | 写/Bash | 子代理 | 计划审批 |
 |---------------|-----|----------------------|---------|--------|----------|
-| `agent` | Agent | `acceptEdits` | 按 profile | 全量 enabled | 禁用 Enter/ExitPlanMode（正式计划用 Plan 模式） |
+| `agent` | Agent | `acceptEdits` | 按 orchestration | 全量 enabled | 禁用 Enter/ExitPlanMode（正式计划用 Plan 模式） |
 | `plan` | Plan | `plan` | 禁止 | 只读子集 + `Agent(Plan)` 可选 | **必须** ExitPlanMode 桥接 |
 | `ask` | Ask | `dontAsk` + 只读 `allowedTools` + 显式禁用写/Bash/Plan 工具 | 禁止 | 仅 `explore` | 不进入 |
 
@@ -133,7 +133,7 @@ interface ThreadRuntimeConfig {
 | Ask 后续「帮我改代码」 | 仍为 Ask |
 | Agent 后续纯提问 | 仍为 Agent |
 | Ask 可 `AskUserQuestion` | allowedTools 不含该工具 |
-| Profile 禁用 reviewer | hooks + agents 注册表拦截 |
+| orchestration 禁用 reviewer | hooks + agents 注册表拦截 |
 | hook deny SDK Explore | 无 mandatory prompt 仍 deny |
 
 ---
@@ -143,7 +143,7 @@ interface ThreadRuntimeConfig {
 | # | 问题 | 决议 |
 |---|------|------|
 | 1 | Ask 是否允许 `AskUserQuestion`？ | **不允许**（Ask 只读问答；澄清留给 Plan） |
-| 2 | Ask 是否允许 profile 只读子代理？ | 允许 |
+| 2 | Ask 是否允许 orchestration 只读子代理？ | 允许 |
 | 3 | Thread 创建后能否改 `sessionMode`？ | Composer 可改下一条 |
 | 4 | `sessionMode` 存哪？ | thread 持久化 + workflow 默认 |
 

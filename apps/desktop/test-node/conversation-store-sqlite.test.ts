@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { createAgentOrchestrationStore } from "../src/main/agent-orchestration-store";
 import { createConversationStore } from "../src/main/conversation-store";
 import { createProjectMcpSettingsStore } from "../src/main/project-mcp-settings-store";
 import { createProjectSkillsSettingsStore } from "../src/main/project-skills-settings-store";
@@ -41,6 +42,74 @@ test("Node SQLite remembers MCP switches independently for each project", async 
 
   assert.deepEqual(store.get(projectA).enabledByServer, { github: true, browser: false });
   assert.deepEqual(store.get(projectB).enabledByServer, { github: false, browser: true });
+});
+
+test("Node SQLite stores independent orchestration resources and guards default references", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-orchestration-store-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const store = await createAgentOrchestrationStore(databasePath);
+  const updatedAt = "2026-01-01T00:00:00.000Z";
+
+  store.saveMainAgentConfig({
+    id: "main_1",
+    name: "Main",
+    agentKey: "main",
+    domain: "coding",
+    modelRef: { providerId: "provider_1", modelId: "model_1" },
+    tools: { allowed: [], disallowed: [] },
+    skills: [],
+    source: "user",
+    updatedAt,
+  });
+  store.saveMainAgentPrompt({
+    id: "prompt_1",
+    name: "Prompt",
+    mode: "custom_append",
+    prompt: "Follow the project conventions.",
+    source: "user",
+    updatedAt,
+  });
+  store.saveSubagentOrchestration({
+    id: "subagents_1",
+    name: "Subagents",
+    domain: "coding",
+    strategy: "Delegate focused work.",
+    agents: [],
+    source: "user",
+    updatedAt,
+  });
+
+  const selection = {
+    mainAgentConfigId: "main_1",
+    mainPrompt: { mode: "custom_append" as const, promptId: "prompt_1" },
+    subagents: { mode: "orchestration" as const, orchestrationId: "subagents_1" },
+  };
+  assert.equal(store.listMainAgentConfigs().length, 1);
+  assert.equal(store.listMainAgentPrompts().length, 1);
+  assert.equal(store.listSubagentOrchestrations().length, 1);
+  assert.throws(() => store.deleteMainAgentConfig("main_1", selection), /默认编排组合引用/);
+  assert.throws(() => store.deleteMainAgentPrompt("prompt_1", selection), /默认编排组合引用/);
+  assert.throws(() => store.deleteSubagentOrchestration("subagents_1", selection), /默认编排组合引用/);
+
+  store.deleteMainAgentConfig("main_1");
+  store.deleteMainAgentPrompt("prompt_1");
+  store.deleteSubagentOrchestration("subagents_1");
+  assert.deepEqual(store.listMainAgentConfigs(), []);
+  assert.deepEqual(store.listMainAgentPrompts(), []);
+  assert.deepEqual(store.listSubagentOrchestrations(), []);
+
+  const inspection = new DatabaseSync(databasePath);
+  t.after(() => inspection.close());
+  const tables = inspection
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .all()
+    .map((row) => (row as { name: string }).name);
+  assert.deepEqual(tables, [
+    "agent_templates",
+    "main_agent_configs",
+    "main_agent_prompts",
+    "subagent_orchestrations",
+  ]);
 });
 
 test("Node SQLite persists an Eco thread and Claude session binding", async (t) => {

@@ -37,13 +37,13 @@ test("resolveSdkModelId maps eco_ agent keys to alias", () => {
   expect(resolveSdkModelId(routes, "eco_researcher", "research-model")).toBe("eco-researcher-xyz");
 });
 
-test("resolveSdkModelId maps profile upstream id to alias without leaking bare id", () => {
+test("resolveSdkModelId maps orchestration upstream id to alias without leaking bare id", () => {
   const routes = [route("planner", "eco-planner-abc", "gpt-5.4-mini")];
   expect(resolveSdkModelId(routes, "unknown", "gpt-5.4")).toBe("eco-planner-abc");
   expect(resolveSdkModelId(routes, "unknown", "gpt-5.4-mini")).toBe("eco-planner-abc");
 });
 
-test("resolveMainSdkModelId prefers planner alias over profile upstream id", () => {
+test("resolveMainSdkModelId prefers planner alias over orchestration upstream id", () => {
   const routes = [route("planner", "eco-planner-abc", "gpt-5.4-mini")];
   expect(resolveMainSdkModelId(routes, "gpt-5.4")).toBe("eco-planner-abc");
 });

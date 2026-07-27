@@ -1,16 +1,17 @@
 import { expect, test } from "bun:test";
 import {
   buildBuiltinPlanToolPermissionEntry,
+  buildCodexMainAgentOrchestrationAppend,
   buildMainAgentSystemPrompt,
-  buildToolPermissionPolicyFromProfile,
-  createAgentDefinitionsFromProfile,
+  buildToolPermissionPolicyFromOrchestration,
+  createAgentDefinitionsFromOrchestration,
   type EcoAgentTemplateConfig,
-  type EcoOrchestrationProfileConfig,
+  type EcoOrchestrationConfig,
   type EcoToolPolicy,
   resolveMainAgentAllowedTools,
   resolveMainAgentHandsOnCapability,
   resolveToolPermissionEntryForActor,
-  sdkAgentKeyForProfileAgent,
+  sdkAgentKeyForOrchestrationAgent,
 } from "../src/agent-orchestration";
 import { SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "../src/subagent-availability";
 
@@ -45,10 +46,7 @@ const researchTemplate: EcoAgentTemplateConfig = {
   updatedAt,
 };
 
-const profile: EcoOrchestrationProfileConfig = {
-  id: "profile.research",
-  name: "Research Desk",
-  preset: "research",
+const orchestration: EcoOrchestrationConfig = {
   mainAgent: {
     agentKey: "main",
     name: "Research Coordinator",
@@ -84,8 +82,6 @@ const profile: EcoOrchestrationProfileConfig = {
     },
   ],
   strategy: { kind: "autonomous", guidancePrompt: "Delegate only when evidence quality improves." },
-  updatedAt,
-  source: "user",
 };
 
 function requireElement<T>(values: readonly T[], index: number, label: string): T {
@@ -96,8 +92,8 @@ function requireElement<T>(values: readonly T[], index: number, label: string): 
   return value;
 }
 
-test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", () => {
-  const resolved = createAgentDefinitionsFromProfile(profile, [researchTemplate]);
+test("createAgentDefinitionsFromOrchestration builds enabled SDK agent definitions", () => {
+  const resolved = createAgentDefinitionsFromOrchestration(orchestration, [researchTemplate]);
 
   expect(resolved.agentKeys).toEqual(["eco_researcher"]);
   expect(resolved.definitions).not.toHaveProperty("eco_disabled");
@@ -114,8 +110,8 @@ test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", (
   expect(definition.description).toContain("Use when: Need sourced findings or external context");
 });
 
-test("createAgentDefinitionsFromProfile merges dynamic session skills", () => {
-  const resolved = createAgentDefinitionsFromProfile(profile, [researchTemplate], {
+test("createAgentDefinitionsFromOrchestration merges dynamic session skills", () => {
+  const resolved = createAgentDefinitionsFromOrchestration(orchestration, [researchTemplate], {
     agentSkills: { eco_researcher: ["workspace-research"] },
   });
 
@@ -123,32 +119,30 @@ test("createAgentDefinitionsFromProfile merges dynamic session skills", () => {
   expect(definition.skills).toEqual(["workspace-research"]);
 });
 
-test("buildMainAgentSystemPrompt injects profile strategy without leaking child prompts", () => {
-  const prompt = buildMainAgentSystemPrompt(profile, [researchTemplate], "PHASE APPEND");
+test("buildMainAgentSystemPrompt injects orchestration strategy without leaking child prompts", () => {
+  const prompt = buildMainAgentSystemPrompt(orchestration, [researchTemplate], "PHASE APPEND");
 
   expect(prompt).toMatchObject({ type: "preset", preset: "claude_code" });
   const append = String((prompt as Record<string, unknown>).append);
   expect(append).toContain("You coordinate research work without assuming a coding task.");
   expect(append).toContain("PHASE APPEND");
-  expect(append).toContain("Research Desk");
+  expect(append).toContain("Eco orchestration.");
   expect(append).toContain("Delegate only when evidence quality improves.");
   expect(append).not.toContain("CHILD SECRET PROMPT");
   expect(append).not.toContain("Agent(eco_researcher)");
 });
 
-test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", () => {
-  const codingProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
-    id: "profile.coding",
-    preset: "coding",
+test("buildMainAgentSystemPrompt keeps claude_code preset for coding orchestrations", () => {
+  const codingOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       domain: "coding",
       systemPromptPreset: "core_native",
     },
   };
 
-  const systemPrompt = buildMainAgentSystemPrompt(codingProfile, [researchTemplate], "CODING PHASE APPEND", {
+  const systemPrompt = buildMainAgentSystemPrompt(codingOrchestration, [researchTemplate], "CODING PHASE APPEND", {
     excludeDynamicSections: true,
   }) as Record<string, unknown>;
 
@@ -158,8 +152,13 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", 
     excludeDynamicSections: true,
   });
   expect(systemPrompt.append).toContain("CODING PHASE APPEND");
-  expect(systemPrompt.append).toContain("Research Desk");
+  expect(systemPrompt.append).toContain("Eco orchestration.");
   expect(systemPrompt.append).not.toContain("Agent(eco_researcher)");
+});
+
+test("buildCodexMainAgentOrchestrationAppend includes custom append prompt text", () => {
+  const append = buildCodexMainAgentOrchestrationAppend(orchestration, [researchTemplate]);
+  expect(append).toContain("You coordinate research work without assuming a coding task.");
 });
 
 test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enforcement", () => {
@@ -168,10 +167,10 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
     canRunBash: true,
   });
 
-  const restricted: EcoOrchestrationProfileConfig = {
-    ...profile,
+  const restricted: EcoOrchestrationConfig = {
+    ...orchestration,
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read"],
         disallowed: [],
@@ -184,10 +183,10 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
     canRunBash: true,
   });
 
-  const handsOn: EcoOrchestrationProfileConfig = {
-    ...profile,
+  const handsOn: EcoOrchestrationConfig = {
+    ...orchestration,
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash"],
         disallowed: [],
@@ -201,10 +200,10 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
     canRunBash: true,
   });
 
-  const disallowedWrites: EcoOrchestrationProfileConfig = {
-    ...profile,
+  const disallowedWrites: EcoOrchestrationConfig = {
+    ...orchestration,
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read"],
         disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
@@ -219,8 +218,8 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
   });
 });
 
-test("resolveMainAgentAllowedTools merges phase tools for universal profiles", () => {
-  expect(resolveMainAgentAllowedTools(profile, ["Bash", "Write"])).toEqual([
+test("resolveMainAgentAllowedTools merges phase tools for universal orchestrations", () => {
+  expect(resolveMainAgentAllowedTools(orchestration, ["Bash", "Write"])).toEqual([
     "Bash",
     "Write",
     "Skill",
@@ -241,12 +240,12 @@ test("resolveMainAgentAllowedTools merges phase tools for universal profiles", (
   ]);
 
   const planningPhaseTools = ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"];
-  const planningResolved = resolveMainAgentAllowedTools(profile, planningPhaseTools);
+  const planningResolved = resolveMainAgentAllowedTools(orchestration, planningPhaseTools);
   expect(planningResolved).not.toContain("ExitPlanMode");
   expect(planningResolved).toContain("AskUserQuestion");
   expect(planningResolved).not.toContain("Bash");
 
-  const codingProfile: EcoOrchestrationProfileConfig = { ...profile, preset: "coding" };
+  const codingOrchestration: EcoOrchestrationConfig = { ...orchestration, preset: "coding" };
   const executionPhaseTools = [
     "Agent",
     "Read",
@@ -258,7 +257,7 @@ test("resolveMainAgentAllowedTools merges phase tools for universal profiles", (
     "WebSearch",
     "WebFetch",
   ];
-  expect(resolveMainAgentAllowedTools(codingProfile, executionPhaseTools)).toEqual([
+  expect(resolveMainAgentAllowedTools(codingOrchestration, executionPhaseTools)).toEqual([
     "Agent",
     "Read",
     "Glob",
@@ -283,12 +282,12 @@ test("resolveMainAgentAllowedTools merges phase tools for universal profiles", (
   ]);
 });
 
-test("resolveMainAgentAllowedTools caps coding profile tools to planning phase", () => {
-  const codingProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("resolveMainAgentAllowedTools caps coding orchestration tools to planning phase", () => {
+  const codingOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     preset: "coding",
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
         disallowed: [],
@@ -299,7 +298,7 @@ test("resolveMainAgentAllowedTools caps coding profile tools to planning phase",
     },
   };
   const planningPhaseTools = ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"];
-  const resolved = resolveMainAgentAllowedTools(codingProfile, planningPhaseTools);
+  const resolved = resolveMainAgentAllowedTools(codingOrchestration, planningPhaseTools);
   expect(resolved).not.toContain("ExitPlanMode");
   expect(resolved).toContain("AskUserQuestion");
   expect(resolved).toContain("Read");
@@ -319,7 +318,7 @@ test("buildBuiltinPlanToolPermissionEntry keeps plan agent read-only with networ
 });
 
 test("resolveToolPermissionEntryForActor prevents SDK general-purpose recursive delegation", () => {
-  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate]);
   const entry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
   expect(entry).not.toBe(policy.main);
   expect(entry?.disallowed).toEqual(expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput"]));
@@ -327,7 +326,7 @@ test("resolveToolPermissionEntryForActor prevents SDK general-purpose recursive 
 });
 
 test("resolveToolPermissionEntryForActor maps SDK Plan to read-only policy", () => {
-  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate]);
   const planEntry = resolveToolPermissionEntryForActor(policy, SDK_PLAN_AGENT_KEY);
   expect(planEntry?.disallowed).toContain("Write");
   expect(planEntry?.disallowed).toContain("Bash");
@@ -335,11 +334,11 @@ test("resolveToolPermissionEntryForActor maps SDK Plan to read-only policy", () 
 });
 
 test("resolveToolPermissionEntryForActor inherits planning phase cap for general-purpose", () => {
-  const codingProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+  const codingOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     preset: "coding",
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
         disallowed: [],
@@ -349,7 +348,7 @@ test("resolveToolPermissionEntryForActor inherits planning phase cap for general
       },
     },
   };
-  const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
+  const policy = buildToolPermissionPolicyFromOrchestration(codingOrchestration, [researchTemplate], {
     phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
   const generalPurposeEntry = resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY);
@@ -366,24 +365,24 @@ test("resolveToolPermissionEntryForActor inherits planning phase cap for general
   );
 });
 
-test("resolveToolPermissionEntryForActor still resolves eco profile agents", () => {
-  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
+test("resolveToolPermissionEntryForActor still resolves eco orchestration agents", () => {
+  const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate]);
   expect(resolveToolPermissionEntryForActor(policy, "eco_researcher")).toBe(policy.agents.eco_researcher);
 });
 
-test("buildToolPermissionPolicyFromProfile merges runtime MCP servers into main policy", () => {
-  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
+test("buildToolPermissionPolicyFromOrchestration merges runtime MCP servers into main policy", () => {
+  const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate], {
     runtimeMcpServers: ["mongo"],
   });
   expect(policy.main.mcpServers).toEqual(expect.arrayContaining(["browser", "mongo"]));
 });
 
-test("buildToolPermissionPolicyFromProfile enables bash for hands-on profiles without explicit bash field", () => {
-  const handsOnProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("buildToolPermissionPolicyFromOrchestration enables bash for hands-on orchestrations without explicit bash field", () => {
+  const handsOnOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     preset: "coding",
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: [],
         disallowed: [],
@@ -392,16 +391,16 @@ test("buildToolPermissionPolicyFromProfile enables bash for hands-on profiles wi
       },
     },
   };
-  const policy = buildToolPermissionPolicyFromProfile(handsOnProfile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(handsOnOrchestration, [researchTemplate]);
   expect(policy.main.bash?.enabled).toBe(true);
 });
 
-test("buildToolPermissionPolicyFromProfile enables bash for legacy allowed Bash during execution", () => {
-  const legacyCodingProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("buildToolPermissionPolicyFromOrchestration enables bash for legacy allowed Bash during execution", () => {
+  const legacyCodingOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     preset: "coding",
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
         disallowed: [],
@@ -410,16 +409,16 @@ test("buildToolPermissionPolicyFromProfile enables bash for legacy allowed Bash 
       },
     },
   };
-  const policy = buildToolPermissionPolicyFromProfile(legacyCodingProfile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(legacyCodingOrchestration, [researchTemplate]);
   expect(policy.main.bash?.enabled).toBe(true);
 });
 
-test("buildToolPermissionPolicyFromProfile disables main writes during planning phase", () => {
-  const codingProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("buildToolPermissionPolicyFromOrchestration disables main writes during planning phase", () => {
+  const codingOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     preset: "coding",
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
         disallowed: [],
@@ -429,7 +428,7 @@ test("buildToolPermissionPolicyFromProfile disables main writes during planning 
       },
     },
   };
-  const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
+  const policy = buildToolPermissionPolicyFromOrchestration(codingOrchestration, [researchTemplate], {
     phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
   expect(policy.main.allowed).not.toContain("ExitPlanMode");
@@ -441,19 +440,19 @@ test("buildToolPermissionPolicyFromProfile disables main writes during planning 
   expect(policy.main.bash?.enabled).toBe(false);
 });
 
-test("buildToolPermissionPolicyFromProfile caps universal profile tools during planning phase", () => {
-  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
+test("buildToolPermissionPolicyFromOrchestration caps universal orchestration tools during planning phase", () => {
+  const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate], {
     phaseAllowedTools: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"],
   });
   expect(policy.main.allowed).not.toContain("ExitPlanMode");
   expect(policy.main.allowed).not.toContain("Write");
 });
 
-test("buildToolPermissionPolicyFromProfile does not phase-cap network during execution", () => {
-  const handsOnProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("buildToolPermissionPolicyFromOrchestration does not phase-cap network during execution", () => {
+  const handsOnOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
         allowed: [],
         disallowed: [],
@@ -462,14 +461,14 @@ test("buildToolPermissionPolicyFromProfile does not phase-cap network during exe
       },
     },
   };
-  const policy = buildToolPermissionPolicyFromProfile(handsOnProfile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(handsOnOrchestration, [researchTemplate]);
   expect(policy.main.disallowed).not.toContain("WebSearch");
   expect(policy.main.disallowed).not.toContain("WebFetch");
   expect(policy.main.bash?.enabled).toBe(true);
 });
 
-test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools", () => {
-  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
+test("buildToolPermissionPolicyFromOrchestration resolves main and dynamic agent tools", () => {
+  const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate], {
     agentKeys: ["eco_researcher"],
     phaseAllowedTools: [
       "Agent",
@@ -512,14 +511,14 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
   });
 });
 
-test("buildToolPermissionPolicyFromProfile preserves structured tool policies", () => {
-  const firstAgent = requireElement(profile.agents, 0, "agent");
-  const structuredProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("buildToolPermissionPolicyFromOrchestration preserves structured tool policies", () => {
+  const firstAgent = requireElement(orchestration.agents, 0, "agent");
+  const structuredOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     mainAgent: {
-      ...profile.mainAgent,
+      ...orchestration.mainAgent,
       tools: {
-        ...profile.mainAgent.tools,
+        ...orchestration.mainAgent.tools,
         bash: { enabled: true },
         filesystem: { read: "workspace", write: "none" },
         network: { webSearch: false, webFetch: true },
@@ -539,7 +538,7 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
     ],
   };
 
-  const policy = buildToolPermissionPolicyFromProfile(structuredProfile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(structuredOrchestration, [researchTemplate]);
 
   expect(policy.main).toMatchObject({
     bash: { enabled: true },
@@ -553,10 +552,10 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
   });
 });
 
-test("buildToolPermissionPolicyFromProfile tolerates legacy agent tools without allow lists", () => {
-  const firstAgent = requireElement(profile.agents, 0, "agent");
-  const legacyProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+test("buildToolPermissionPolicyFromOrchestration tolerates legacy agent tools without allow lists", () => {
+  const firstAgent = requireElement(orchestration.agents, 0, "agent");
+  const legacyOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     agents: [
       {
         ...firstAgent,
@@ -567,18 +566,18 @@ test("buildToolPermissionPolicyFromProfile tolerates legacy agent tools without 
     ],
   };
 
-  const policy = buildToolPermissionPolicyFromProfile(legacyProfile, [researchTemplate]);
+  const policy = buildToolPermissionPolicyFromOrchestration(legacyOrchestration, [researchTemplate]);
   expect(policy.agents.eco_researcher?.disallowed).toEqual(expect.arrayContaining(["Bash", "Agent", "Task"]));
 
-  const definitions = createAgentDefinitionsFromProfile(legacyProfile, [researchTemplate]);
+  const definitions = createAgentDefinitionsFromOrchestration(legacyOrchestration, [researchTemplate]);
   const definition = definitions.definitions.eco_researcher as Record<string, unknown>;
   expect(definition.disallowedTools).toEqual(expect.arrayContaining(["Bash", "Agent", "Task"]));
 });
 
 test("subagent delegation tools require allowDelegation", () => {
-  const firstAgent = requireElement(profile.agents, 0, "agent");
-  const delegatingProfile: EcoOrchestrationProfileConfig = {
-    ...profile,
+  const firstAgent = requireElement(orchestration.agents, 0, "agent");
+  const delegatingOrchestration: EcoOrchestrationConfig = {
+    ...orchestration,
     agents: [
       {
         ...firstAgent,
@@ -592,13 +591,13 @@ test("subagent delegation tools require allowDelegation", () => {
     allowDelegation: false,
   };
 
-  const blockedDefinitions = createAgentDefinitionsFromProfile(delegatingProfile, [blockedTemplate]);
+  const blockedDefinitions = createAgentDefinitionsFromOrchestration(delegatingOrchestration, [blockedTemplate]);
   const blockedDefinition = blockedDefinitions.definitions.eco_researcher as Record<string, unknown>;
   expect(blockedDefinition.tools).toEqual(["Read", "LS", "NotebookRead"]);
   expect(blockedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task", "TaskList", "TaskOutput"]);
 
-  const blockedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [blockedTemplate]);
+  const blockedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [blockedTemplate]);
   expect(blockedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Skill", "LS", "NotebookRead"],
     disallowed: ["Agent", "Task", "TaskList", "TaskOutput"],
@@ -606,7 +605,7 @@ test("subagent delegation tools require allowDelegation", () => {
   });
 
   const allowedTemplate: EcoAgentTemplateConfig = { ...blockedTemplate, allowDelegation: true };
-  const allowedDefinitions = createAgentDefinitionsFromProfile(delegatingProfile, [allowedTemplate]);
+  const allowedDefinitions = createAgentDefinitionsFromOrchestration(delegatingOrchestration, [allowedTemplate]);
   const allowedDefinition = allowedDefinitions.definitions.eco_researcher as Record<string, unknown>;
   expect(allowedDefinition.tools).toEqual([
     "Read",
@@ -620,7 +619,7 @@ test("subagent delegation tools require allowDelegation", () => {
   expect(allowedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(allowedDefinition).not.toHaveProperty("disallowedTools");
 
-  const allowedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [allowedTemplate]);
+  const allowedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [allowedTemplate]);
   expect(allowedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Agent", "Task", "Skill", "LS", "NotebookRead", "TaskList", "TaskOutput"],
     disallowed: [],
@@ -628,8 +627,8 @@ test("subagent delegation tools require allowDelegation", () => {
   });
 });
 
-test("sdkAgentKeyForProfileAgent normalizes custom keys", () => {
-  expect(sdkAgentKeyForProfileAgent(" Research Lead ")).toBe("eco_Research_Lead");
-  expect(sdkAgentKeyForProfileAgent("eco_writer")).toBe("eco_writer");
-  expect(() => sdkAgentKeyForProfileAgent("   ")).toThrow("Agent key cannot be empty.");
+test("sdkAgentKeyForOrchestrationAgent normalizes custom keys", () => {
+  expect(sdkAgentKeyForOrchestrationAgent(" Research Lead ")).toBe("eco_Research_Lead");
+  expect(sdkAgentKeyForOrchestrationAgent("eco_writer")).toBe("eco_writer");
+  expect(() => sdkAgentKeyForOrchestrationAgent("   ")).toThrow("Agent key cannot be empty.");
 });

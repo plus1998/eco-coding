@@ -719,13 +719,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bashReviewAllowAllDescription =>
-      'Skip confirmations while respecting the current mode, profile, and security policy';
+      'Skip confirmations while respecting the current mode, orchestration, and security policy';
 
   @override
   String get composerSettings => 'Composer settings';
 
   @override
-  String get composerAgentProfile => 'Agent profile';
+  String get composerOrchestrationSelection => 'Orchestration';
 
   @override
   String activityToolIncomplete(Object text) {
@@ -1023,8 +1023,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Start the session before viewing task progress';
 
   @override
-  String get threadSelectAgentProfileFirst =>
-      'Select an agent profile in Composer settings first';
+  String get threadSelectOrchestrationFirst =>
+      'Select an orchestration in Composer settings first';
 
   @override
   String get threadLoadingCommit => 'Loading commit information...';
@@ -1405,10 +1405,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerReasoningMaximum => 'Maximum';
 
   @override
-  String get composerNoSubagents => 'The current profile has no subagents';
+  String get composerNoSubagents =>
+      'The current orchestration has no subagents';
 
   @override
-  String get composerProfileNotConfigured => 'Profile not configured';
+  String get composerOrchestrationNotConfigured =>
+      'Orchestration not configured';
 
   @override
   String get composerModel => 'Model';
@@ -1417,13 +1419,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerReasoning => 'Reasoning';
 
   @override
-  String get composerProfile => 'Profile';
+  String get composerOrchestration => 'Orchestration';
 
   @override
   String get composerSubagents => 'Subagents';
 
   @override
-  String get composerProfileOrchestration => 'Profile and orchestration';
+  String get composerOrchestrationComponents => 'Orchestration components';
 
   @override
   String get composerSessionOnly => 'Settings apply only to this session';
@@ -1455,14 +1457,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerNoSwitchableModel =>
-      'The current profile has no switchable models';
+      'The current orchestration has no switchable models';
 
   @override
   String get composerNoReasoningOptions =>
-      'The current profile has no reasoning options';
+      'The current orchestration has no reasoning options';
 
   @override
-  String get composerNoProfiles => 'No profiles available';
+  String get composerNoOrchestrationResources =>
+      'No orchestration resources available';
 
   @override
   String get composerNoMcpServers => 'No MCP servers configured';
@@ -1488,14 +1491,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerModelCandidatesHint =>
-      'Only models from the current profile provider are shown';
+      'Only models from the selected main-agent provider are shown';
 
   @override
   String get composerModelLocked =>
       'Models cannot be switched for this session';
 
   @override
-  String get composerFollowProfile => 'Follow profile';
+  String get composerFollowOrchestration => 'Follow orchestration';
 
   @override
   String get composerModelLoadFailed => 'Failed to load candidate models';
@@ -1508,10 +1511,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerSessionReasoningOnly => 'Affects only this session';
 
   @override
-  String get composerSelectProfile => 'Select profile';
+  String get composerSelectOrchestration => 'Select orchestration';
 
   @override
-  String get composerSelectAgentProfile => 'Select agent profile';
+  String get composerSelectOrchestrationSelection => 'Select orchestration';
 
   @override
   String composerOrchestrationSummary(Object summary) {

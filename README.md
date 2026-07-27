@@ -32,7 +32,7 @@ See **[docs/session-mode-simplification.md](docs/session-mode-simplification.md)
 
 ## System prompt and project context
 
-Eco uses the Claude Agent SDK **`claude_code` preset** for the main Planner session. That preset is the same built-in coding system prompt Claude Code uses (tool usage, coding philosophy, safety, tone). Eco only **appends** product-specific rules on top: orchestration boundaries, profile roster, and deliverable headings the UI parses (e.g. reviewer `## P0` / `## Review Verdict`, tester `## Test Verdict`).
+Eco uses the Claude Agent SDK **`claude_code` preset** for the main Planner session. That preset is the same built-in coding system prompt Claude Code uses (tool usage, coding philosophy, safety, tone). Eco only **appends** product-specific rules on top: orchestration boundaries, orchestration roster, and deliverable headings the UI parses (e.g. reviewer `## P0` / `## Review Verdict`, tester `## Test Verdict`).
 
 Project conventions belong in **`CLAUDE.md`** (or `.claude/CLAUDE.md`) in the opened workspace, not in Eco's code. The runtime loads them automatically via `settingSources: ["user", "project"]`:
 
@@ -51,17 +51,17 @@ Built in `runSingleSession()` (`packages/runtime/src/claude-agent-sdk.ts`):
 
 ```txt
 claude_code preset (SDK built-in)
-  + ecoBasePromptAppend                    # coding preset profiles
-    OR universalEcoBasePromptAppend        # non-coding / universal profiles
+  + ecoBasePromptAppend                    # coding preset orchestrations
+    OR universalEcoBasePromptAppend        # non-coding / universal orchestrations
   + phaseAppend                            # mode-specific line (see below)
-  + buildMainAgentProfileAppend()          # profile name + strategy (when profile active)
-  + buildMainAgentHandsOnBoundaryAppend()  # only when profile disallows writes and/or Bash
+  + buildMainAgentOrchestrationAppend()     # orchestration strategy (when orchestration active)
+  + buildMainAgentHandsOnBoundaryAppend()  # only when orchestration disallows writes and/or Bash
 ```
 
 | `phaseAppend` source | Used in |
 |----------------------|---------|
 | `buildAutonomousOrchestratorAppend()` + Agent session rules | Agent mode: no Plan tools; use `AskUserQuestion` for material ambiguity |
-| `buildUniversalPhaseAppend(phase)` | Universal profiles: `Session mode: …` one-liner |
+| `buildUniversalPhaseAppend(phase)` | Universal orchestrations: `Session mode: …` one-liner |
 | `askSessionPhaseAppend` | Ask mode: `Session mode: ask (read-only).` |
 
 **Coding orchestration append** (`packages/runtime/src/prompts/autonomous.ts`) is intentionally short:
@@ -71,7 +71,7 @@ claude_code preset (SDK built-in)
 
 Subagent routing and SDK built-in blocks are enforced in **`agents` definitions**, SDK `permissions.deny` (`Agent(Explore)` etc.), and PreToolUse hooks — not repeated in the main prompt.
 
-**Hands-on boundary** is injected only when the active profile disables main-agent writes or Bash (mirrors PreToolUse policy).
+**Hands-on boundary** is injected only when the active orchestration disables main-agent writes or Bash (mirrors PreToolUse policy).
 
 ### User-turn prompts (not system)
 
@@ -96,7 +96,7 @@ Subagent **description** (routing hint for the main agent) and **prompt** (subag
 
 `execution-agents.ts` also defines **planning-only** architect text (`planningArchitect*`) for `createPlanningAgentDefinitions()` (tests/legacy); **live planning continuation uses the autonomous roster** above.
 
-Universal orchestration profiles use **template prompts** from the profile (`agent-orchestration.ts` → `template.prompt`) instead of the built-in coding subagent prompts.
+Universal orchestrations use **template prompts** from the orchestration (`agent-orchestration.ts` → `template.prompt`) instead of the built-in coding subagent prompts.
 
 ### Runtime injection (hooks, not system append)
 
@@ -169,7 +169,7 @@ Subagent resume state is cleared when the SDK session is reset, routes change, o
 
 ## Agent SDK tools and permissions
 
-Eco sits on top of the Claude Agent SDK’s two-layer tool model (availability vs permission). Profile tool policy, Bash review mode, Plan mode, and `allowedTools` are easy to confuse.
+Eco sits on top of the Claude Agent SDK’s two-layer tool model (availability vs permission). Orchestration tool policy, Bash review mode, Plan mode, and `allowedTools` are easy to confuse.
 
 See **[docs/agent-sdk-tools-and-permissions.md](docs/agent-sdk-tools-and-permissions.md)** for:
 

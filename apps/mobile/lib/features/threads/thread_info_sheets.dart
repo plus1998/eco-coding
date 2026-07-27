@@ -4,7 +4,7 @@ import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
-import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
@@ -137,7 +137,7 @@ Future<void> showThreadContextSheet({
   required BuildContext context,
   required ThreadContextSnapshot? contextSnapshot,
   required String? threadStatus,
-  OrchestrationProfile? agentProfile,
+  SubagentThemeSource? themeSource,
 }) {
   return showEcoActionSheet<void>(
     context: context,
@@ -176,7 +176,7 @@ Future<void> showThreadContextSheet({
               ),
               ..._buildSubagentSections(
                 contextSnapshot,
-                agentProfile: agentProfile,
+                themeSource: themeSource,
                 l10n: context.l10n,
               ),
             ],
@@ -189,12 +189,12 @@ Future<void> showThreadContextSheet({
 
 List<Widget> _buildSubagentSections(
   ThreadContextSnapshot snapshot, {
-  OrchestrationProfile? agentProfile,
+  SubagentThemeSource? themeSource,
   required AppLocalizations l10n,
 }) {
   final rows = buildFlatSubagentContextRows(
     snapshot,
-    profile: agentProfile,
+    themeSource: themeSource,
     l10n: l10n,
   );
   if (rows.isEmpty) return const [];

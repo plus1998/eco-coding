@@ -79,16 +79,21 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
   });
 });
 
-test("normalizeWorkflowSettingsSnapshot preserves a trimmed default Agent profile", () => {
+test("normalizeWorkflowSettingsSnapshot preserves default orchestration selection", () => {
+  const selection = {
+    mainAgentConfigId: "user.main",
+    mainPrompt: { mode: "builtin" as const },
+    subagents: { mode: "none" as const },
+  };
   expect(
     normalizeWorkflowSettingsSnapshot({
       sessionMode: "agent",
-      defaultAgentProfileId: "  profile-b  ",
+      defaultOrchestrationSelection: selection,
     }),
   ).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
-    defaultAgentProfileId: "profile-b",
+    defaultOrchestrationSelection: selection,
   });
 });
 
@@ -109,13 +114,21 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
   const saved = store.save({
     sessionMode: "plan",
     defaultCoreKind: "codex",
-    defaultAgentProfileId: "profile-b",
+    defaultOrchestrationSelection: {
+      mainAgentConfigId: "user.main",
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
+    },
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(saved).toEqual({
     sessionMode: "plan",
     defaultCoreKind: "codex",
-    defaultAgentProfileId: "profile-b",
+    defaultOrchestrationSelection: {
+      mainAgentConfigId: "user.main",
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
+    },
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(store.get()).toEqual(saved);

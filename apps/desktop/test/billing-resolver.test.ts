@@ -233,7 +233,7 @@ test("resolveRuntimeRoutesFromSettings returns empty routes without override", (
     ],
     routeProfiles: [],
     agentTemplates: [],
-    orchestrationProfiles: [],
+    mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [],
   };
   expect(resolveRuntimeRoutesFromSettings(settings, [provider])).toEqual([]);
 });
@@ -244,7 +244,7 @@ test("resolveRuntimeRoutesFromSettings preserves manualSpec and modelsDevMapping
     providers: [],
     routeProfiles: [],
     agentTemplates: [],
-    orchestrationProfiles: [],
+    mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [],
   };
   const routes = resolveRuntimeRoutesFromSettings(
     settings,

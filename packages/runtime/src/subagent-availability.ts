@@ -1,6 +1,6 @@
 export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
-/** Codex spawn without a Profile agent_type uses the main-agent configuration. */
+/** Codex spawn without an orchestration agent_type uses the main-agent configuration. */
 export const CODEX_GENERAL_SPAWN_ROLE = "general";
 
 /** Claude SDK built-in Explore key. Eco blocks this and registers its own configured Explore agent. */

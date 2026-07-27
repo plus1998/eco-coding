@@ -64,7 +64,7 @@ test("syncCodexSpawnAgentHook writes hooks.json and injects fork_turns=none", as
   });
 });
 
-test("spawn hook does not infer Profile role from task_name when agent_type is absent", async () => {
+test("spawn hook does not infer Orchestration role from task_name when agent_type is absent", async () => {
   const codexHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-spawn-hook-role-"));
   await fs.mkdir(path.join(codexHomeDir, "agents"), { recursive: true });
   await fs.writeFile(path.join(codexHomeDir, "agents", "explore.toml"), "# fixture\n", "utf8");

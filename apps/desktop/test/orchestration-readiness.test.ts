@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { areCodingRoutesReady, isAgentProfileReady } from "../src/renderer/agent-profile-readiness";
+import { areCodingRoutesReady, isOrchestrationSnapshotReady } from "../src/renderer/orchestration-readiness";
 import { CODING_AGENT_TEMPLATE_IDS, createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
-import type { ModelSettingsSnapshot, OrchestrationProfile, ToolPolicy } from "../src/shared/ipc";
+import type { ModelSettingsSnapshot, ResolvedOrchestrationSnapshot, ToolPolicy } from "../src/shared/ipc";
 
 const tools: ToolPolicy = { allowed: [], disallowed: [] };
 const exploreTools = createBuiltInAgentTemplates().find(
@@ -22,11 +22,16 @@ const provider: ModelSettingsSnapshot["providers"][number] = {
   updatedAt: "2026-06-07T00:00:00.000Z",
 };
 
-function profile(agentEnabled: boolean): OrchestrationProfile {
+function orchestrationSnapshot(agentEnabled: boolean): ResolvedOrchestrationSnapshot {
   return {
-    id: "custom",
-    name: "Custom",
-    preset: "custom",
+    selection: {
+      mainAgentConfigId: "custom-main",
+      mainPrompt: { mode: "custom_append", promptId: "custom-prompt" },
+      subagents: { mode: "orchestration", orchestrationId: "custom-subagents" },
+    },
+    mainAgentConfigName: "Custom Main",
+    mainPromptDisplayName: "Custom Prompt",
+    subagentOrchestrationDisplayName: "Custom Subagents",
     mainAgent: {
       agentKey: "main",
       name: "Main",
@@ -58,47 +63,46 @@ function profile(agentEnabled: boolean): OrchestrationProfile {
       },
     ],
     strategy: { kind: "autonomous" },
-    updatedAt: "2026-06-07T00:00:00.000Z",
-    source: "user",
+    resolvedAt: "2026-06-07T00:00:00.000Z",
   };
 }
 
-test("isAgentProfileReady ignores disabled agent model refs", () => {
+test("isOrchestrationSnapshotReady ignores disabled agent model refs", () => {
   const providers = new Map([[provider.id, provider]]);
 
-  expect(isAgentProfileReady(profile(false), providers)).toBe(true);
-  expect(isAgentProfileReady(profile(true), providers)).toBe(false);
+  expect(isOrchestrationSnapshotReady(orchestrationSnapshot(false), providers)).toBe(true);
+  expect(isOrchestrationSnapshotReady(orchestrationSnapshot(true), providers)).toBe(false);
 });
 
-test("isAgentProfileReady validates Explore when its node exists", () => {
+test("isOrchestrationSnapshotReady validates Explore when its node exists", () => {
   const providers = new Map([[provider.id, provider]]);
-  const draft = profile(false);
+  const draft = orchestrationSnapshot(false);
   draft.agents[0]!.modelRef = { providerId: "missing", modelId: "explore-model" };
 
-  expect(isAgentProfileReady(draft, providers)).toBe(false);
+  expect(isOrchestrationSnapshotReady(draft, providers)).toBe(false);
   draft.agents = draft.agents.filter((agent) => agent.agentKey !== "explore");
-  expect(isAgentProfileReady(draft, providers)).toBe(true);
+  expect(isOrchestrationSnapshotReady(draft, providers)).toBe(true);
 });
 
-test("isAgentProfileReady evaluates the temporary main model override", () => {
+test("isOrchestrationSnapshotReady evaluates the temporary main model override", () => {
   const overrideProvider = { ...provider, id: "p2", name: "Override Provider" };
   const providers = new Map([
     [provider.id, provider],
     [overrideProvider.id, overrideProvider],
   ]);
-  const draft = profile(false);
+  const draft = orchestrationSnapshot(false);
   draft.mainAgent.modelRef = { providerId: "p1", modelId: "" };
 
-  expect(isAgentProfileReady(draft, providers)).toBe(false);
+  expect(isOrchestrationSnapshotReady(draft, providers)).toBe(false);
   expect(
-    isAgentProfileReady(draft, providers, {
+    isOrchestrationSnapshotReady(draft, providers, {
       providerId: "p1",
       modelId: "gpt-5.6-sol",
       thinkingEffort: "high",
     }),
   ).toBe(true);
   expect(
-    isAgentProfileReady(draft, providers, {
+    isOrchestrationSnapshotReady(draft, providers, {
       providerId: "p2",
       modelId: "gpt-5.6-sol",
       thinkingEffort: "high",

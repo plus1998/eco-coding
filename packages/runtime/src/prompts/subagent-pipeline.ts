@@ -9,7 +9,7 @@ import {
 import type { MainAgentHandsOnCapability } from "../agent-orchestration.js";
 
 /**
- * Hands-on boundary for the main orchestrator, derived from the active profile tool policy.
+ * Hands-on boundary for the main orchestrator, derived from the active orchestration tool policy.
  * The prompt must state the same rules the Eco PreToolUse policy enforces, so the
  * model never has to discover them through denied tool calls.
  */

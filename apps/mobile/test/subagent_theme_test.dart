@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:eco_mobile/core/models/thread_models.dart';
+import 'package:eco_mobile/core/models/agent_orchestration.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
 
 void main() {
@@ -14,31 +14,43 @@ void main() {
   });
 
   test(
-    'resolveSubagentThemeColor uses profile overrides and unknown fallback',
+    'resolveSubagentThemeColor uses agent overrides and unknown fallback',
     () {
-      const profile = OrchestrationProfile(
-        id: 'p1',
-        name: 'Test',
-        builtinExploreThemeColor: '#112233',
-        agents: [
-          OrchestrationAgentInstance(
-            agentKey: 'coder',
-            enabled: true,
-            themeColor: '#445566',
+      const agents = [
+        AgentInstanceConfig(
+          agentKey: 'explore',
+          templateId: 'builtin.coding.explore',
+          enabled: true,
+          themeColor: '#112233',
+          modelRef: OrchestrationModelRef(
+            providerId: 'provider-1',
+            modelId: 'gpt-5.6-terra',
           ),
-        ],
-      );
+          tools: ToolPolicy(),
+        ),
+        AgentInstanceConfig(
+          agentKey: 'coder',
+          templateId: 'builtin.coding.coder',
+          enabled: true,
+          themeColor: '#445566',
+          modelRef: OrchestrationModelRef(
+            providerId: 'provider-1',
+            modelId: 'gpt-5.6-sol',
+          ),
+          tools: ToolPolicy(),
+        ),
+      ];
 
       expect(
-        resolveSubagentThemeColor('explore', profile: profile),
+        resolveSubagentThemeColor('explore', agents: agents),
         const Color(0xFF112233),
       );
       expect(
-        resolveSubagentThemeColor('eco_coder', profile: profile),
+        resolveSubagentThemeColor('eco_coder', agents: agents),
         const Color(0xFF445566),
       );
       expect(
-        resolveSubagentThemeColor('researcher', profile: profile),
+        resolveSubagentThemeColor('researcher', agents: agents),
         subagentUnknownThemeColor,
       );
     },

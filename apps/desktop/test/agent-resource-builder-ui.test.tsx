@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createBlankAgentProfileForm } from "../src/renderer/agent-profile-form";
-import { AgentProfileEditorModal } from "../src/renderer/ModelsSettingsPanel";
+import { createBlankSubagentOrchestrationForm } from "../src/renderer/agent-resource-form";
+import { AgentResourceEditorModal } from "../src/renderer/agent-resource-editor-modal";
 import { createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
 import type { ProviderConfigView } from "../src/shared/ipc";
 
@@ -20,35 +20,38 @@ const provider: ProviderConfigView = {
 
 const templates = createBuiltInAgentTemplates();
 
-function renderBuilder(includeExplore: boolean): string {
-  const form = createBlankAgentProfileForm({ providers: [provider], templates });
+function renderOrchestrationEditor(includeExplore: boolean): string {
+  const form = createBlankSubagentOrchestrationForm({ providers: [provider], templates });
   if (!includeExplore) {
     form.agents = form.agents.filter((agent) => agent.agentKey !== "explore");
   }
   return renderToStaticMarkup(
-    <AgentProfileEditorModal
+    <AgentResourceEditorModal
       form={form}
       setForm={() => {}}
       providers={[provider]}
       templates={templates}
       mcpServers={[]}
       mode="create"
+      scope="orchestration"
       onClose={() => {}}
       onSave={() => {}}
     />,
   );
 }
 
-test("Agent builder renders default Explore as a removable roster node", () => {
-  const markup = renderBuilder(true);
-  expect(markup).toContain('aria-label="智能体库"');
-  expect(markup).toContain('models-agent-profile-node-title">Explore</span>');
+test("Orchestration editor renders roster list with default Explore", () => {
+  const markup = renderOrchestrationEditor(true);
+  expect(markup).toContain('aria-label="子代理 roster"');
+  expect(markup).toContain("Explore");
+  expect(markup).toContain('aria-label="配置 Explore"');
   expect(markup).toContain('aria-label="移除 Explore"');
-  expect(markup).not.toContain('models-agent-profile-palette-title">Explore</span>');
+  expect(markup).not.toContain('aria-label="智能体库"');
 });
 
-test("Agent builder returns deleted Explore to the agent library", () => {
-  const markup = renderBuilder(false);
-  expect(markup).toContain('models-agent-profile-palette-title">Explore</span>');
+test("Orchestration editor exposes removed Explore in add-template select", () => {
+  const markup = renderOrchestrationEditor(false);
+  expect(markup).toContain('value="builtin.coding.explore"');
+  expect(markup).toContain("Explore");
   expect(markup).not.toContain('aria-label="移除 Explore"');
 });

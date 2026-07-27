@@ -10,7 +10,7 @@ import {
   prefillManualSpecFormFromCandidate,
   prefillManualSpecFormFromHints,
   tryFormToManualSpec,
-} from "../src/renderer/agent-profile-manual-spec-form";
+} from "../src/renderer/agent-resource-manual-spec-form";
 import type { RouteCapabilityHint, RoutePricingHint } from "../src/shared/ipc";
 
 test("manualSpecToForm round-trips all fields", () => {
@@ -37,11 +37,15 @@ test("manualSpecToForm round-trips all fields", () => {
 test("formToManualSpec strict validates token and rate fields", () => {
   const form = emptyManualSpecForm();
   form.contextTokens = "abc";
-  expect(() => formToManualSpec(form, { strict: true })).toThrow("手动上下文上限必须是正整数");
+  expect(() => formToManualSpec(form, { strict: true })).toThrow(
+    /手动上下文上限必须是正整数|manual context limit must be a positive integer/i,
+  );
 
   form.contextTokens = "128000";
   form.inputPerM = "bad";
-  expect(() => formToManualSpec(form, { strict: true })).toThrow("输入价格必须是正数");
+  expect(() => formToManualSpec(form, { strict: true })).toThrow(
+    /输入价格必须是正数|input price must be a positive number/i,
+  );
 });
 
 test("tryFormToManualSpec ignores invalid partial input", () => {

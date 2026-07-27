@@ -72,7 +72,7 @@ test("prefers planner display while retaining subagent role snapshots", async ()
   expect(snapshot?.roles.find((role) => role.role === "coder")?.occupied).toBe(80_000);
 });
 
-test("tracks dynamic Agent Profile context roles and instances", async () => {
+test("tracks dynamic orchestration context roles and instances", async () => {
   const monitor = new ContextWindowMonitor(mockCache());
   await monitor.updateFromUsage(
     "t1",

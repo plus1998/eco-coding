@@ -34,7 +34,7 @@ export interface WorkspaceGitSectionProps {
   gitStatus?: GitWorkingTreeStatus;
   gitBusy?: boolean;
   commitDisabled?: boolean;
-  profileId?: string;
+  mainAgentConfigId?: string;
   agentModelLabels?: ComposerAgentModelLabel[];
   routes?: readonly RuntimeRoleRouteConfig[];
   routePricingHints?: RoutePricingHint[];
@@ -66,7 +66,7 @@ export function WorkspaceGitSection({
   gitStatus,
   gitBusy,
   commitDisabled,
-  profileId,
+  mainAgentConfigId,
   agentModelLabels = [],
   routes = [],
   routePricingHints = [],
@@ -123,7 +123,7 @@ export function WorkspaceGitSection({
 
   const showCommitEntry = Boolean(
     workspacePath &&
-      profileId &&
+      mainAgentConfigId &&
       onSaveCommitModelPreference &&
       onCommitSuccess &&
       gitStatus?.isGitRepository,
@@ -662,7 +662,7 @@ export function WorkspaceGitSection({
         <GitCommitDialog
           open={commitDialogOpen && commitDialogWorkspacePath === workspacePath}
           workspacePath={commitDialogWorkspacePath}
-          profileId={profileId!}
+          mainAgentConfigId={mainAgentConfigId!}
           {...(gitStatus && commitDialogWorkspacePath === workspacePath ? { gitStatus } : {})}
           {...(gitBusy !== undefined && { busy: gitBusy })}
           {...(commitDisabled !== undefined && { disabled: commitDisabled })}

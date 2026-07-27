@@ -95,6 +95,61 @@ void main() {
       {'taskId': 'task_1'},
     ]);
   });
+
+  test('listCommitModelOptions sends main agent config id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.listCommitModelOptions(mainAgentConfigId: 'main_1');
+
+    expect(client.channel, 'git:list-commit-model-options');
+    expect(client.args, [
+      {'mainAgentConfigId': 'main_1'},
+    ]);
+  });
+
+  test('generateCommitMessage sends main agent config id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.generateCommitMessage(
+      workspacePath: '/repo',
+      mainAgentConfigId: 'main_1',
+      candidateModelId: 'candidate_1',
+    );
+
+    expect(client.channel, 'git:generate-commit-message');
+    expect(client.args, [
+      {
+        'workspacePath': '/repo',
+        'mainAgentConfigId': 'main_1',
+        'includeUnstaged': true,
+        'candidateModelId': 'candidate_1',
+      },
+    ]);
+  });
+
+  test('commitChanges sends main agent config id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.commitChanges(
+      workspacePath: '/repo',
+      mainAgentConfigId: 'main_1',
+      includeUnstaged: false,
+      message: 'feat: compose orchestration',
+    );
+
+    expect(client.channel, 'git:commit');
+    expect(client.args, [
+      {
+        'workspacePath': '/repo',
+        'mainAgentConfigId': 'main_1',
+        'includeUnstaged': false,
+        'message': 'feat: compose orchestration',
+      },
+    ]);
+  });
 }
 
 class _RecordingEcoCenterClient extends EcoCenterClient {
@@ -138,6 +193,26 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
     }
     if (channel == 'background-terminal:stop') {
       return {'stopped': true} as T;
+    }
+    if (channel == 'git:list-commit-model-options') {
+      return {'options': [], 'savedCandidateModelId': 'auto'} as T;
+    }
+    if (channel == 'git:generate-commit-message') {
+      return {
+            'message': 'feat: compose orchestration',
+            'candidateModelId': 'candidate_1',
+            'modelId': 'model_1',
+            'providerName': 'Provider',
+          }
+          as T;
+    }
+    if (channel == 'git:commit') {
+      return {
+            'commitSha': 'abc123',
+            'message': 'feat: compose orchestration',
+            'generated': false,
+          }
+          as T;
     }
     return {
           'thread': {

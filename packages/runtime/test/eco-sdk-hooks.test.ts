@@ -1741,7 +1741,7 @@ test("createToolPermissionPreToolHook reports denied permissions for audit", asy
       toolName: "Bash",
       toolUseId: "tool_audit",
       reason:
-        'Tool "Bash" is disallowed for main. This is the active Eco profile policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying.',
+        'Tool "Bash" is disallowed for main. This is the active Eco orchestration policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying.',
       actor: "main",
     },
   ]);

@@ -5,9 +5,9 @@ import {
   formatPromptCacheBreakMessage,
 } from "../src/main/prompt-cache-fingerprint";
 
-test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", () => {
+test("diffPromptCacheFingerprint detects orchestration, mcp, and claude.md changes", () => {
   const baseline = buildPromptCacheFingerprint({
-    profileId: "profile-a",
+    orchestrationKey: "orchestration-a",
     mainAgentModelKey: '["p1","m1","high"]',
     mcpServerKeys: ["github", "mongo"],
     claudeMdDigest: "abc123",
@@ -16,18 +16,18 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
     diffPromptCacheFingerprint(
       baseline,
       buildPromptCacheFingerprint({
-        profileId: "profile-b",
+        orchestrationKey: "orchestration-b",
         mainAgentModelKey: '["p1","m1","high"]',
         mcpServerKeys: ["github", "mongo"],
         claudeMdDigest: "abc123",
       }),
     ),
-  ).toEqual(["profile_changed"]);
+  ).toEqual(["orchestration_changed"]);
   expect(
     diffPromptCacheFingerprint(
       baseline,
       buildPromptCacheFingerprint({
-        profileId: "profile-a",
+        orchestrationKey: "orchestration-a",
         mainAgentModelKey: '["p1","m1","high"]',
         mcpServerKeys: ["github"],
         claudeMdDigest: "abc123",
@@ -38,7 +38,7 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
     diffPromptCacheFingerprint(
       baseline,
       buildPromptCacheFingerprint({
-        profileId: "profile-a",
+        orchestrationKey: "orchestration-a",
         mainAgentModelKey: '["p1","m1","high"]',
         mcpServerKeys: ["github", "mongo"],
         claudeMdDigest: "def456",
@@ -49,7 +49,7 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
     diffPromptCacheFingerprint(
       baseline,
       buildPromptCacheFingerprint({
-        profileId: "profile-a",
+        orchestrationKey: "orchestration-a",
         mainAgentModelKey: '["p1","m1","xhigh"]',
         mcpServerKeys: ["github", "mongo"],
         claudeMdDigest: "abc123",
@@ -60,13 +60,13 @@ test("diffPromptCacheFingerprint detects profile, mcp, and claude.md changes", (
     diffPromptCacheFingerprint(
       baseline,
       buildPromptCacheFingerprint({
-        profileId: "profile-b",
+        orchestrationKey: "orchestration-b",
         mainAgentModelKey: '["p2","m2","xhigh"]',
         mcpServerKeys: ["github", "mongo"],
         claudeMdDigest: "abc123",
       }),
     ),
-  ).toEqual(["profile_changed", "main_agent_model_changed"]);
+  ).toEqual(["orchestration_changed", "main_agent_model_changed"]);
 });
 
 test("formatPromptCacheBreakMessage combines multiple reasons", () => {
@@ -74,8 +74,8 @@ test("formatPromptCacheBreakMessage combines multiple reasons", () => {
     "MCP 配置已变更，CLAUDE.md 已变更，本会话 prompt cache 已失效",
   );
   expect(
-    formatPromptCacheBreakMessage(["profile_changed"], {
-      profileLabel: { modelStack: "GPT+DeepSeek", profileName: "Composer" },
+    formatPromptCacheBreakMessage(["orchestration_changed"], {
+      orchestrationLabel: { modelStack: "GPT+DeepSeek", orchestrationName: "Composer" },
     }),
   ).toBe("已经变更为 GPT+DeepSeek（Composer），本会话 prompt cache 已失效");
   expect(formatPromptCacheBreakMessage(["main_agent_model_changed"])).toBe(

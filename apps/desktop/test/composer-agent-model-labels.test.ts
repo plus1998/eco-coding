@@ -1,14 +1,19 @@
 import { expect, test } from "bun:test";
 import { buildComposerAgentModelLabels } from "../src/renderer/composer-agent-model-labels";
 import { i18n } from "../src/renderer/i18n";
-import type { OrchestrationProfile, ToolPolicy } from "../src/shared/ipc";
+import type { ResolvedOrchestrationSnapshot, ToolPolicy } from "../src/shared/ipc";
 
 const tools: ToolPolicy = { allowed: [], disallowed: [] };
 
-const profile: OrchestrationProfile = {
-  id: "research",
-  name: "Research",
-  preset: "research",
+const snapshot: ResolvedOrchestrationSnapshot = {
+  selection: {
+    mainAgentConfigId: "research-main",
+    mainPrompt: { mode: "custom_append", promptId: "research-prompt" },
+    subagents: { mode: "orchestration", orchestrationId: "research-subagents" },
+  },
+  mainAgentConfigName: "Research Main",
+  mainPromptDisplayName: "Research Prompt",
+  subagentOrchestrationDisplayName: "Research Subagents",
   mainAgent: {
     agentKey: "main",
     name: "Research Captain",
@@ -32,8 +37,7 @@ const profile: OrchestrationProfile = {
     },
   ],
   strategy: { kind: "autonomous" },
-  updatedAt: "2026-06-07T00:00:00.000Z",
-  source: "user",
+  resolvedAt: "2026-06-07T00:00:00.000Z",
 };
 
 test("buildComposerAgentModelLabels localizes legacy coding labels", async () => {
@@ -59,10 +63,10 @@ test("buildComposerAgentModelLabels localizes legacy coding labels", async () =>
   expect(labels.find((label) => label.role === "coder")).not.toHaveProperty("required");
 });
 
-test("buildComposerAgentModelLabels renders dynamic Agent Profile labels", async () => {
+test("buildComposerAgentModelLabels renders resolved orchestration labels", async () => {
   await i18n.changeLanguage("en-US");
   const labels = buildComposerAgentModelLabels({
-    profile,
+    snapshot,
     routes: [
       { role: "planner", providerId: "p1", modelId: "main-model" },
       { role: "research_lead", providerId: "p1", modelId: "research-model" },

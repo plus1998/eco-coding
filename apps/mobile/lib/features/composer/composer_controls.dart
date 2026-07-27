@@ -6,6 +6,7 @@ import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
+import '../../core/models/mcp_models.dart';
 import '../../core/models/skill_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -188,7 +189,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
-      defaultAgentProfileId: workflow.defaultAgentProfileId,
+      defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       mcpServersEnabled: mcpServersEnabled,
     ),
   );
@@ -208,32 +209,180 @@ void persistRuntimeConfig(
       ?.updateRuntimeConfig(threadId: threadId, runtimeConfig: config);
 }
 
-ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
-  WidgetRef ref,
-  ThreadRuntimeConfigInput fallback,
-) {
-  return ref.watch(runtimeConfigProvider) ?? fallback;
+class OrchestrationCompositionSelectors extends ConsumerWidget {
+  const OrchestrationCompositionSelectors({
+    super.key,
+    required this.settings,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+    this.mcpServers = const [],
+    this.rememberedMcp,
+  });
+
+  final ModelSettingsSnapshot settings;
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final List<McpServerConfigView> mcpServers;
+  final Map<String, bool>? rememberedMcp;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mainAgentConfigs = settings.mainAgentConfigs;
+    final mainAgentPrompts = settings.mainAgentPrompts
+        .where((prompt) => prompt.mode == 'custom_append')
+        .toList(growable: false);
+    final subagentOrchestrations = settings.subagentOrchestrations;
+    final selection =
+        runtimeConfig.orchestrationSelection ?? emptyOrchestrationSelection();
+    final selectedMainAgentConfigId = selection.mainAgentConfigId;
+    final mainAgentConfigId =
+        mainAgentConfigs.any((config) => config.id == selectedMainAgentConfigId)
+        ? selectedMainAgentConfigId
+        : '';
+    final selectedMainPromptValue = mainPromptSelectionValue(
+      selection.mainPrompt,
+    );
+    final mainPromptValue =
+        selectedMainPromptValue == builtinMainPromptValue ||
+            mainAgentPrompts.any(
+              (prompt) => prompt.id == selectedMainPromptValue,
+            )
+        ? selectedMainPromptValue
+        : '';
+    final subagentsValue = subagentSelectionValue(selection.subagents);
+    final subagentOrchestrationId =
+        subagentsValue != subagentsNoneValue &&
+            subagentOrchestrations.any(
+              (orchestration) => orchestration.id == subagentsValue,
+            )
+        ? subagentsValue
+        : subagentsValue == subagentsNoneValue
+        ? subagentsNoneValue
+        : '';
+
+    void applyPatch({
+      String? mainAgentConfigId,
+      MainAgentPromptSelection? mainPrompt,
+      SubagentSelection? subagents,
+    }) {
+      persistRuntimeConfig(
+        ref,
+        threadId: threadId,
+        config: applyOrchestrationSelectionPatch(
+          settings: settings,
+          runtimeConfig: runtimeConfig,
+          servers: mcpServers,
+          remembered: rememberedMcp,
+          mainAgentConfigId: mainAgentConfigId,
+          mainPrompt: mainPrompt,
+          subagents: subagents,
+        ),
+        onChanged: onChanged,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownMenu<String>(
+          initialSelection: mainAgentConfigId.isEmpty
+              ? null
+              : mainAgentConfigId,
+          label: const Text('主代理'),
+          expandedInsets: EdgeInsets.zero,
+          enabled: canEdit && mainAgentConfigs.isNotEmpty,
+          dropdownMenuEntries: [
+            if (mainAgentConfigId.isEmpty)
+              const DropdownMenuEntry(value: '', label: '未配置'),
+            for (final config in mainAgentConfigs)
+              DropdownMenuEntry(
+                value: config.id,
+                label: '${config.name} (${config.modelRef.modelId})',
+              ),
+          ],
+          onSelected: (value) {
+            if (value == null || value.isEmpty) return;
+            applyPatch(mainAgentConfigId: value);
+          },
+        ),
+        const SizedBox(height: 12),
+        DropdownMenu<String>(
+          initialSelection: mainPromptValue.isEmpty ? null : mainPromptValue,
+          label: const Text('提示词'),
+          expandedInsets: EdgeInsets.zero,
+          enabled: canEdit,
+          dropdownMenuEntries: [
+            if (mainPromptValue.isEmpty)
+              const DropdownMenuEntry(value: '', label: '未配置'),
+            const DropdownMenuEntry(
+              value: builtinMainPromptValue,
+              label: '跟随 Agent 内置提示词',
+            ),
+            for (final prompt in mainAgentPrompts)
+              DropdownMenuEntry(value: prompt.id, label: prompt.name),
+          ],
+          onSelected: (value) {
+            if (value == null || value.isEmpty) return;
+            applyPatch(
+              mainPrompt: value == builtinMainPromptValue
+                  ? const BuiltinMainAgentPromptSelection()
+                  : CustomAppendMainAgentPromptSelection(promptId: value),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        DropdownMenu<String>(
+          initialSelection: subagentOrchestrationId.isEmpty
+              ? null
+              : subagentOrchestrationId,
+          label: const Text('子代理编排'),
+          expandedInsets: EdgeInsets.zero,
+          enabled: canEdit,
+          dropdownMenuEntries: [
+            const DropdownMenuEntry(value: subagentsNoneValue, label: '不使用子代理'),
+            for (final orchestration in subagentOrchestrations)
+              DropdownMenuEntry(
+                value: orchestration.id,
+                label: '${orchestration.name} (${orchestration.agents.length})',
+              ),
+          ],
+          onSelected: (value) {
+            if (value == null || value.isEmpty) return;
+            applyPatch(
+              subagents: value == subagentsNoneValue
+                  ? const NoneSubagentSelection()
+                  : OrchestrationSubagentSelection(orchestrationId: value),
+            );
+          },
+        ),
+      ],
+    );
+  }
 }
 
 class _ComposerSubagentSwitchList extends ConsumerWidget {
   const _ComposerSubagentSwitchList({
     required this.fallbackConfig,
     required this.threadId,
-    required this.profile,
+    required this.snapshot,
     required this.canEdit,
     required this.onChanged,
   });
 
   final ThreadRuntimeConfigInput fallbackConfig;
   final String threadId;
-  final OrchestrationProfile? profile;
+  final ResolvedOrchestrationSnapshot? snapshot;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final runtimeConfig = watchedComposerRuntimeConfig(ref, fallbackConfig);
-    final roles = configuredOrchestrationSubagentRoles(profile);
+    final roles = configuredOrchestrationSubagentRoles(snapshot);
     if (roles.isEmpty) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -259,12 +408,13 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
                 runtimeConfig.subagentEnabled,
                 role,
               );
-              final toggleable = canEdit && isSubagentToggleable(profile, role);
-              final configured = isSubagentConfiguredInProfile(profile, role);
+              final toggleable =
+                  canEdit && isSubagentToggleable(snapshot, role);
+              final configured = isSubagentConfiguredInSnapshot(snapshot, role);
               return EcoSheetSwitchTile(
                 title: _subagentRoleLabels[role] ?? role,
                 subtitle: !configured
-                    ? context.l10n.composerProfileNotConfigured
+                    ? context.l10n.composerOrchestrationNotConfigured
                     : enabled
                     ? context.l10n.commonEnabled
                     : context.l10n.commonDisabled,
@@ -295,13 +445,20 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
   }
 }
 
+ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
+  WidgetRef ref,
+  ThreadRuntimeConfigInput fallback,
+) {
+  return ref.watch(runtimeConfigProvider) ?? fallback;
+}
+
 enum _ComposerRouteCategory {
   agent,
   model,
   thinking,
   mcp,
   skills,
-  profile,
+  orchestration,
   subagents,
 }
 
@@ -356,7 +513,10 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     final mcpEnabledSettings = resolveComposerMcpSettings(
       servers: mcpServers,
       runtimeConfig: runtimeConfig,
-      profile: resolveThreadAgentProfile(modelSettings, runtimeConfig),
+      snapshot: resolveThreadOrchestrationSnapshot(
+        modelSettings,
+        runtimeConfig,
+      ),
       remembered: workflow?.mcpServersEnabled,
     );
     final skillsResult = widget.workspacePath.isEmpty
@@ -373,11 +533,11 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
       runtimeConfig.skillsEnabled,
       projectSkillsSettings?.enabledByPath,
     );
-    final profiles = modelSettings?.orchestrationProfiles ?? [];
-    final selectedId =
-        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
-    final profile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
-    final templateModel = profile?.mainModelRef;
+    final snapshot = resolveThreadOrchestrationSnapshot(
+      modelSettings,
+      runtimeConfig,
+    );
+    final templateModel = snapshot?.mainAgent.modelRef;
     ModelProviderView? modelProvider;
     if (templateModel != null) {
       for (final provider in modelSettings?.providers ?? const []) {
@@ -439,17 +599,23 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
         icon: EcoIcons.todos,
       ),
       (
-        value: _ComposerRouteCategory.profile,
-        label: context.l10n.composerProfile,
-        summary: profile?.name ?? context.l10n.commonNotConfigured,
-        icon: EcoIcons.profile,
+        value: _ComposerRouteCategory.orchestration,
+        label: context.l10n.composerOrchestration,
+        summary:
+            orchestrationCompositionSummary(
+              modelSettings,
+              runtimeConfig,
+            ).isEmpty
+            ? context.l10n.commonNotConfigured
+            : orchestrationCompositionSummary(modelSettings, runtimeConfig),
+        icon: EcoIcons.orchestration,
       ),
       (
         value: _ComposerRouteCategory.subagents,
         label: context.l10n.composerSubagents,
         summary: _firstEnabledSubagentLabel(
           runtimeConfig,
-          profile,
+          snapshot,
           context.l10n,
         ),
         icon: EcoIcons.subagents,
@@ -460,7 +626,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     );
 
     return EcoSheetScaffold(
-      title: context.l10n.composerProfileOrchestration,
+      title: context.l10n.composerOrchestrationComponents,
       subtitle: context.l10n.composerSessionOnly,
       maxHeightFactor: 0.86,
       child: Column(
@@ -567,39 +733,24 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                         ],
                       ),
                     ),
-                  if (_selectedCategory == _ComposerRouteCategory.profile &&
-                      profiles.isNotEmpty)
+                  if (_selectedCategory ==
+                          _ComposerRouteCategory.orchestration &&
+                      modelSettings != null &&
+                      modelSettings.mainAgentConfigs.isNotEmpty)
                     EcoGroupedSection(
-                      label: context.l10n.composerProfile,
+                      label: context.l10n.composerOrchestration,
                       topSpacing: coreKind == null ? 4 : 20,
-                      child: Column(
-                        children: [
-                          for (var i = 0; i < profiles.length; i++) ...[
-                            if (i > 0) const EcoGroupedDivider(indent: 16),
-                            EcoSheetOptionTile(
-                              title: profiles[i].name,
-                              selected: profiles[i].id == selectedId,
-                              enabled: canEdit,
-                              onTap: !canEdit
-                                  ? null
-                                  : () {
-                                      persistRuntimeConfig(
-                                        ref,
-                                        threadId: threadId,
-                                        config: buildRuntimeConfigForProfile(
-                                          profile: profiles[i],
-                                          runtimeConfig: runtimeConfig,
-                                          servers: mcpServers,
-                                          remembered:
-                                              workflow?.mcpServersEnabled,
-                                        ),
-                                        onChanged: onChanged,
-                                      );
-                                      Navigator.pop(context);
-                                    },
-                            ),
-                          ],
-                        ],
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: OrchestrationCompositionSelectors(
+                          settings: modelSettings,
+                          runtimeConfig: runtimeConfig,
+                          threadId: threadId,
+                          canEdit: canEdit,
+                          onChanged: onChanged,
+                          mcpServers: mcpServers,
+                          rememberedMcp: workflow?.mcpServersEnabled,
+                        ),
                       ),
                     ),
                   if ((_selectedCategory == _ComposerRouteCategory.model ||
@@ -622,7 +773,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                   if (_selectedCategory == _ComposerRouteCategory.subagents)
                     EcoGroupedSection(
                       label: context.l10n.composerSubagents,
-                      topSpacing: profiles.isEmpty && coreKind == null ? 4 : 20,
+                      topSpacing: snapshot == null && coreKind == null ? 4 : 20,
                       footer: canEdit
                           ? null
                           : context.l10n.composerOrchestrationLocked,
@@ -691,7 +842,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                           _ComposerSubagentSwitchList(
                             fallbackConfig: fallbackConfig,
                             threadId: threadId,
-                            profile: profile,
+                            snapshot: snapshot,
                             canEdit: canEdit,
                             onChanged: onChanged,
                           ),
@@ -769,10 +920,11 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                     _ComposerRouteEmptyState(
                       message: context.l10n.composerNoReasoningOptions,
                     ),
-                  if (_selectedCategory == _ComposerRouteCategory.profile &&
-                      profiles.isEmpty)
+                  if (_selectedCategory ==
+                          _ComposerRouteCategory.orchestration &&
+                      (modelSettings?.mainAgentConfigs.isEmpty ?? true))
                     _ComposerRouteEmptyState(
-                      message: context.l10n.composerNoProfiles,
+                      message: context.l10n.composerNoOrchestrationResources,
                     ),
                   if (_selectedCategory == _ComposerRouteCategory.mcp &&
                       enabledMcpServers.isEmpty)
@@ -988,10 +1140,10 @@ String _thinkingEffortLabel(String? effort, AppLocalizations l10n) {
 
 String _firstEnabledSubagentLabel(
   ThreadRuntimeConfigInput runtimeConfig,
-  OrchestrationProfile? profile,
+  ResolvedOrchestrationSnapshot? snapshot,
   AppLocalizations l10n,
 ) {
-  for (final role in configuredOrchestrationSubagentRoles(profile)) {
+  for (final role in configuredOrchestrationSubagentRoles(snapshot)) {
     if (isRuntimeSubagentEnabled(runtimeConfig.subagentEnabled, role)) {
       return _subagentRoleLabels[role] ?? role;
     }
@@ -1085,7 +1237,7 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
             child: Column(
               children: [
                 EcoSheetOptionTile(
-                  title: context.l10n.composerFollowProfile,
+                  title: context.l10n.composerFollowOrchestration,
                   subtitle: templateModel.modelId,
                   selected: override == null,
                   enabled: canEdit,
@@ -1355,8 +1507,8 @@ class ComposerToolbarTrigger extends StatelessWidget {
   }
 }
 
-class ComposerProfileControl extends ConsumerWidget {
-  const ComposerProfileControl({
+class ComposerCompositionControl extends ConsumerWidget {
+  const ComposerCompositionControl({
     super.key,
     required this.runtimeConfig,
     required this.threadId,
@@ -1373,30 +1525,19 @@ class ComposerProfileControl extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final modelSettings = ref.watch(modelSettingsProvider);
-    final profileId =
-        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
-
-    final label = modelSettings.maybeWhen(
-      data: (settings) {
-        for (final profile in settings?.orchestrationProfiles ?? []) {
-          if (profile.id == profileId) return profile.name;
-        }
-        return profileId.isEmpty
-            ? context.l10n.composerSelectProfile
-            : profileId;
-      },
-      orElse: () =>
-          profileId.isEmpty ? context.l10n.composerSelectProfile : profileId,
-    );
+    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final label = orchestrationCompositionSummary(modelSettings, runtimeConfig);
+    final displayLabel = label.isEmpty
+        ? context.l10n.composerSelectOrchestration
+        : label;
 
     return ComposerContextTrigger(
-      icon: EcoIcons.profile,
-      label: label,
+      icon: EcoIcons.orchestration,
+      label: displayLabel,
       enabled: canEdit,
       compact: compact,
       onTap: canEdit
-          ? () => _showProfileSheet(
+          ? () => _showCompositionSheet(
               context,
               ref,
               runtimeConfig: runtimeConfig,
@@ -1407,7 +1548,7 @@ class ComposerProfileControl extends ConsumerWidget {
     );
   }
 
-  Future<void> _showProfileSheet(
+  Future<void> _showCompositionSheet(
     BuildContext context,
     WidgetRef ref, {
     required ThreadRuntimeConfigInput runtimeConfig,
@@ -1417,50 +1558,30 @@ class ComposerProfileControl extends ConsumerWidget {
     final settings = await ref.read(modelSettingsProvider.future);
     final workflow = await ref.read(workflowSettingsProvider.future);
     final mcpServers = await ref.read(mcpSettingsProvider.future);
-    final profiles = settings?.orchestrationProfiles ?? [];
-    if (profiles.isEmpty || !context.mounted) return;
-
-    final selectedId =
-        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+    if (settings == null ||
+        settings.mainAgentConfigs.isEmpty ||
+        !context.mounted) {
+      return;
+    }
 
     await showEcoActionSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => EcoSheetScaffold(
-        title: context.l10n.composerSelectAgentProfile,
+        title: context.l10n.composerSelectOrchestrationSelection,
         maxHeightFactor: 0.7,
         child: ListView(
           shrinkWrap: true,
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           children: [
-            EcoGroupedSection(
-              label: context.l10n.composerProfile,
-              topSpacing: 4,
-              child: Column(
-                children: [
-                  for (var i = 0; i < profiles.length; i++) ...[
-                    if (i > 0) const EcoGroupedDivider(indent: 16),
-                    EcoSheetOptionTile(
-                      title: profiles[i].name,
-                      selected: profiles[i].id == selectedId,
-                      onTap: () {
-                        persistRuntimeConfig(
-                          ref,
-                          threadId: threadId,
-                          config: buildRuntimeConfigForProfile(
-                            profile: profiles[i],
-                            runtimeConfig: runtimeConfig,
-                            servers: mcpServers?.servers ?? const [],
-                            remembered: workflow?.mcpServersEnabled,
-                          ),
-                          onChanged: onChanged,
-                        );
-                        Navigator.pop(context);
-                      },
-                    ),
-                  ],
-                ],
-              ),
+            OrchestrationCompositionSelectors(
+              settings: settings,
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              canEdit: true,
+              onChanged: onChanged,
+              mcpServers: mcpServers?.servers ?? const [],
+              rememberedMcp: workflow?.mcpServersEnabled,
             ),
           ],
         ),
@@ -1488,9 +1609,12 @@ class ComposerOrchestrationControl extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
-    final profile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
+    final snapshot = resolveThreadOrchestrationSnapshot(
+      modelSettings,
+      runtimeConfig,
+    );
     final enabledCount = countEnabledSubagents(runtimeConfig.subagentEnabled);
-    final totalCount = countConfiguredSubagents(profile);
+    final totalCount = countConfiguredSubagents(snapshot);
     final summary = totalCount > 0
         ? '$enabledCount/$totalCount'
         : '$enabledCount';
@@ -1508,7 +1632,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
               ref,
               runtimeConfig: runtimeConfig,
               threadId: threadId,
-              profile: profile,
+              snapshot: snapshot,
               onChanged: onChanged,
             )
           : null,
@@ -1520,7 +1644,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
     WidgetRef ref, {
     required ThreadRuntimeConfigInput runtimeConfig,
     required String threadId,
-    required OrchestrationProfile? profile,
+    required ResolvedOrchestrationSnapshot? snapshot,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
     await showEcoActionSheet<void>(
@@ -1593,7 +1717,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                   _ComposerSubagentSwitchList(
                     fallbackConfig: runtimeConfig,
                     threadId: threadId,
-                    profile: profile,
+                    snapshot: snapshot,
                     canEdit: canEdit,
                     onChanged: onChanged,
                   ),
@@ -1737,25 +1861,19 @@ class ComposerRouteSummary extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final modelSettings = ref.watch(modelSettingsProvider);
-    final profileId =
-        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
-    final agentProfile = resolveThreadAgentProfile(
-      modelSettings.valueOrNull,
+    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final snapshot = resolveThreadOrchestrationSnapshot(
+      modelSettings,
       runtimeConfig,
     );
-    final profileLabel = modelSettings.maybeWhen(
-      data: (settings) {
-        for (final profile in settings?.orchestrationProfiles ?? []) {
-          if (profile.id == profileId) return profile.name;
-        }
-        return profileId.isEmpty
-            ? context.l10n.composerSelectProfile
-            : profileId;
-      },
-      orElse: () =>
-          profileId.isEmpty ? context.l10n.composerSelectProfile : profileId,
+    final themeSource = SubagentThemeSource.fromSnapshot(snapshot);
+    final compositionLabel = orchestrationCompositionSummary(
+      modelSettings,
+      runtimeConfig,
     );
+    final displayCompositionLabel = compositionLabel.isEmpty
+        ? context.l10n.composerSelectOrchestration
+        : compositionLabel;
     final plannerContext = contextSnapshot == null
         ? null
         : resolvePlannerContext(contextSnapshot!);
@@ -1764,7 +1882,10 @@ class ComposerRouteSummary extends ConsumerWidget {
         ? null
         : shortenModelId(modelId);
     final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
-    final tooltip = [?modelLabel, profileLabel].whereType<String>().join(' · ');
+    final tooltip = [
+      ?modelLabel,
+      displayCompositionLabel,
+    ].whereType<String>().join(' · ');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1775,7 +1896,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               context: context,
               contextSnapshot: contextSnapshot,
               threadStatus: threadStatus,
-              agentProfile: agentProfile,
+              themeSource: themeSource,
             ),
             tooltip: context.l10n.composerContext,
             icon: ComposerContextRing(
@@ -1797,7 +1918,7 @@ class ComposerRouteSummary extends ConsumerWidget {
           ),
           tooltip: tooltip,
           icon: ComposerToolbarIcon(
-            icon: EcoIcons.profile,
+            icon: EcoIcons.orchestration,
             color: ecoColors(context).textSecondary,
           ),
         ),

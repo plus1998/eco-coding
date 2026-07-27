@@ -1,19 +1,16 @@
 import {
-  type AgentConfigSource,
   CODING_AGENT_TEMPLATE_IDS,
   createBuiltInAgentTemplates,
-  listOrchestrationProfileAgents,
+  resolveAgentTemplateCatalog,
+  type AgentConfigSource,
+  type AgentDomain,
+  type AgentInstanceConfig,
+  type AgentTemplate,
+  type MainAgentConfigResource,
+  type MainAgentPromptResource,
+  type SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
-import type {
-  AgentDomain,
-  AgentTemplate,
-  ModelRef,
-  OrchestrationProfile,
-  OrchestrationStrategy,
-  ProviderConfigView,
-  ThinkingEffort,
-  UpstreamApiCompat,
-} from "../shared/ipc";
+import type { ModelRef, ProviderConfigView, ThinkingEffort, UpstreamApiCompat } from "../shared/ipc";
 import { defaultThemeColorForAgentKey, normalizeThemeColorHex } from "../shared/subagent-theme";
 import { parseList } from "./agent-template-form-utils";
 import {
@@ -24,9 +21,9 @@ import {
 } from "./tool-capability-groups";
 import { i18n } from "./i18n";
 
-export type AgentProfileAgentCapabilityFields = Omit<ToolCapabilityFieldValues, "allowDelegation">;
+export type AgentResourceAgentCapabilityFields = Omit<ToolCapabilityFieldValues, "allowDelegation">;
 
-export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityFields {
+export interface AgentResourceAgentFormState extends AgentResourceAgentCapabilityFields {
   agentKey: string;
   templateId: string;
   displayName: string;
@@ -39,7 +36,7 @@ export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityF
   candidateModelId: string;
 }
 
-export interface AgentProfileFormState {
+export interface AgentResourceFormState {
   id: string;
   name: string;
   preset: AgentDomain;
@@ -68,10 +65,10 @@ export interface AgentProfileFormState {
   mainMcpServers: string;
   mainMcpTools: string;
   guidancePrompt: string;
-  agents: AgentProfileAgentFormState[];
+  agents: AgentResourceAgentFormState[];
 }
 
-interface ProfileFormOptions {
+interface ResourceFormOptions {
   existingIds?: readonly string[];
   existingNames?: readonly string[];
   providers?: readonly ProviderConfigView[];
@@ -93,7 +90,7 @@ const RESERVED_AGENT_KEYS = new Set([
   "user",
 ]);
 
-export function mainCapabilityFromProfileForm(form: AgentProfileFormState): ToolCapabilityFieldValues {
+export function mainCapabilityFromResourceForm(form: AgentResourceFormState): ToolCapabilityFieldValues {
   return {
     readCodebase: form.mainReadCodebase,
     readScope: form.mainReadScope,
@@ -114,8 +111,8 @@ export function mainCapabilityFromProfileForm(form: AgentProfileFormState): Tool
 }
 
 export function agentCapabilityFromAgentForm(
-  agent: AgentProfileAgentFormState,
-): AgentProfileAgentCapabilityFields {
+  agent: AgentResourceAgentFormState,
+): AgentResourceAgentCapabilityFields {
   return {
     readCodebase: agent.readCodebase,
     readScope: agent.readScope,
@@ -134,10 +131,10 @@ export function agentCapabilityFromAgentForm(
   };
 }
 
-export function mainCapabilityPatchToProfileForm(
+export function mainCapabilityPatchToResourceForm(
   patch: Partial<ToolCapabilityFieldValues>,
-): Partial<AgentProfileFormState> {
-  const result: Partial<AgentProfileFormState> = {};
+): Partial<AgentResourceFormState> {
+  const result: Partial<AgentResourceFormState> = {};
   if (patch.readCodebase !== undefined) result.mainReadCodebase = patch.readCodebase;
   if (patch.readScope !== undefined) result.mainReadScope = patch.readScope;
   if (patch.writeCodebase !== undefined) result.mainWriteCodebase = patch.writeCodebase;
@@ -163,14 +160,14 @@ export function mainCapabilityPatchToProfileForm(
 }
 
 export function agentCapabilityPatchToAgentForm(
-  patch: Partial<AgentProfileAgentCapabilityFields>,
-): Partial<AgentProfileAgentFormState> {
+  patch: Partial<AgentResourceAgentCapabilityFields>,
+): Partial<AgentResourceAgentFormState> {
   return patch;
 }
 
-export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): AgentProfileFormState {
+export function createBlankAgentResourceForm(options: ResourceFormOptions = {}): AgentResourceFormState {
   const provider = selectDefaultProvider(options.providers ?? []);
-  const templates = [...(options.templates ?? []), ...createBuiltInAgentTemplates()];
+  const templates = resolveAgentTemplateCatalog(options.templates ?? []);
   const exploreTemplate = templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.explore);
   const mainCapability = createDefaultToolCapabilityFields({
     writeCodebase: true,
@@ -181,9 +178,9 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     askUser: true,
   });
   return {
-    id: createUniqueProfileId("user.custom.profile", options.existingIds ?? []),
-    name: createUniqueProfileName(
-      i18n.t("agentProfile.customProfileName"),
+    id: createUniqueResourceId("user.custom.main", options.existingIds ?? []),
+    name: createUniqueResourceName(
+      i18n.t("orchestrationResource.customResourceName"),
       options.existingNames ?? [],
     ),
     preset: "custom",
@@ -197,73 +194,150 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainSystemPromptPreset: "core_native",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
-    ...mainCapabilityToProfileFormFields(mainCapability),
+    ...mainCapabilityToResourceFormFields(mainCapability),
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: exploreTemplate
-      ? [createProfileAgentFormFromTemplate(exploreTemplate, { ...(provider && { provider }) })]
+      ? [createResourceAgentFormFromTemplate(exploreTemplate, { ...(provider && { provider }) })]
       : [],
   };
 }
 
-export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileFormState {
-  const mainCapability = toolPolicyToCapabilityFields(profile.mainAgent.tools, {
-    allowDelegation: true,
-    ...(profile.mainAgent.tools.mcp?.allowedServers
-      ? { mcpServers: profile.mainAgent.tools.mcp.allowedServers }
-      : {}),
-  });
+export function createBlankMainAgentConfigForm(options: ResourceFormOptions = {}): AgentResourceFormState {
+  const form = createBlankAgentResourceForm(options);
   return {
-    id: profile.id,
-    name: profile.name,
-    preset: profile.preset,
-    source: profile.source === "project" ? "project" : "user",
-    mainName: profile.mainAgent.name,
-    mainProviderId: profile.mainAgent.modelRef.providerId,
-    mainModelId: profile.mainAgent.modelRef.modelId,
-    mainThinkingEffort: profile.mainAgent.modelRef.thinkingEffort ?? "",
-    mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
-    mainCandidateModelId: profile.mainAgent.modelRef.candidateModelId ?? "",
-    mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
-    mainPrompt: profile.mainAgent.prompt,
-    ...mainCapabilityToProfileFormFields(mainCapability),
-    guidancePrompt: profile.strategy.guidancePrompt ?? "",
-    agents: listOrchestrationProfileAgents(profile).map((agent) => ({
-      agentKey: agent.agentKey,
-      templateId: agent.templateId,
-      displayName: agent.displayName ?? "",
-      themeColor: agent.themeColor ?? defaultThemeColorForAgentKey(agent.agentKey),
-      providerId: agent.modelRef.providerId,
-      modelId: agent.modelRef.modelId,
-      thinkingEffort: agent.modelRef.thinkingEffort ?? "",
-      apiCompat: agent.modelRef.apiCompat ?? "",
-      enabled: agent.enabled,
-      candidateModelId: agent.modelRef.candidateModelId ?? "",
-      ...agentCapabilityToAgentForm(
-        toolPolicyToCapabilityFields(agent.tools, {
-          mcpServers: agent.mcpServers,
-        }),
-      ),
-    })),
+    ...form,
+    id: createUniqueResourceId("user.custom.main", options.existingIds ?? []),
+    name: createUniqueResourceName("主代理配置", options.existingNames ?? []),
+    agents: [],
+    guidancePrompt: "",
+    mainSystemPromptPreset: "core_native",
+    mainPrompt: "",
   };
 }
 
-export function createCopiedAgentProfileForm(
-  profile: OrchestrationProfile,
-  options: ProfileFormOptions = {},
-): AgentProfileFormState {
-  const form = agentProfileToForm(profile);
+export function createBlankMainAgentPromptForm(options: ResourceFormOptions = {}): AgentResourceFormState {
+  const form = createBlankAgentResourceForm(options);
   return {
     ...form,
-    id: createUniqueProfileId(userProfileIdFrom(profile.id), options.existingIds ?? []),
-    name: createUniqueProfileName(`${profile.name} Copy`, options.existingNames ?? []),
+    id: createUniqueResourceId("user.custom.prompt", options.existingIds ?? []),
+    name: createUniqueResourceName("自定义提示词", options.existingNames ?? []),
+    agents: [],
+    guidancePrompt: "",
+    mainSystemPromptPreset: "custom_append",
+    mainPrompt: "",
+  };
+}
+
+export function createBlankSubagentOrchestrationForm(options: ResourceFormOptions = {}): AgentResourceFormState {
+  const form = createBlankAgentResourceForm(options);
+  return {
+    ...form,
+    id: createUniqueResourceId("user.custom.orchestration", options.existingIds ?? []),
+    name: createUniqueResourceName("子代理编排", options.existingNames ?? []),
+    preset: "coding",
+    mainProviderId: "",
+    mainModelId: "",
+    mainCandidateModelId: "",
+  };
+}
+
+export function mainAgentConfigToForm(config: MainAgentConfigResource): AgentResourceFormState {
+  const mainCapability = toolPolicyToCapabilityFields(config.tools, {
+    allowDelegation: true,
+    ...(config.tools.mcp?.allowedServers
+      ? { mcpServers: config.tools.mcp.allowedServers }
+      : {}),
+  });
+  return {
+    id: config.id,
+    name: config.name,
+    preset: config.domain,
+    source: config.source === "project" ? "project" : "user",
+    mainName: config.name,
+    mainProviderId: config.modelRef.providerId,
+    mainModelId: config.modelRef.modelId,
+    mainThinkingEffort: config.modelRef.thinkingEffort ?? "",
+    mainApiCompat: config.modelRef.apiCompat ?? "",
+    mainCandidateModelId: config.modelRef.candidateModelId ?? "",
+    mainSystemPromptPreset: "core_native",
+    mainPrompt: "",
+    ...mainCapabilityToResourceFormFields(mainCapability),
+    guidancePrompt: "",
+    agents: [],
+  };
+}
+
+export function mainAgentPromptToForm(prompt: MainAgentPromptResource): AgentResourceFormState {
+  const blank = createBlankMainAgentPromptForm();
+  return {
+    ...blank,
+    id: prompt.id,
+    name: prompt.name,
+    source: prompt.source === "project" ? "project" : "user",
+    mainSystemPromptPreset: "custom_append",
+    mainPrompt: prompt.prompt,
+  };
+}
+
+export function subagentOrchestrationToForm(
+  orchestration: SubagentOrchestrationResource,
+  templates: readonly AgentTemplate[] = [],
+): AgentResourceFormState {
+  const blank = createBlankSubagentOrchestrationForm({ templates });
+  return {
+    ...blank,
+    id: orchestration.id,
+    name: orchestration.name,
+    preset: orchestration.domain,
+    source: orchestration.source === "project" ? "project" : "user",
+    guidancePrompt: orchestration.strategy.guidancePrompt ?? "",
+    agents: orchestration.agents.map((agent) => agentInstanceToForm(agent)),
+  };
+}
+
+export function createCopiedMainAgentConfigForm(
+  config: MainAgentConfigResource,
+  options: ResourceFormOptions = {},
+): AgentResourceFormState {
+  const form = mainAgentConfigToForm(config);
+  return {
+    ...form,
+    id: createUniqueResourceId(userResourceIdFrom(config.id), options.existingIds ?? []),
+    name: createUniqueResourceName(`${config.name} Copy`, options.existingNames ?? []),
     source: "user",
   };
 }
 
-export function createProfileAgentFormFromTemplate(
+export function createCopiedMainAgentPromptForm(
+  prompt: MainAgentPromptResource,
+  options: ResourceFormOptions = {},
+): AgentResourceFormState {
+  const form = mainAgentPromptToForm(prompt);
+  return {
+    ...form,
+    id: createUniqueResourceId(userResourceIdFrom(prompt.id), options.existingIds ?? []),
+    name: createUniqueResourceName(`${prompt.name} Copy`, options.existingNames ?? []),
+    source: "user",
+  };
+}
+
+export function createCopiedSubagentOrchestrationForm(
+  orchestration: SubagentOrchestrationResource,
+  options: ResourceFormOptions = {},
+): AgentResourceFormState {
+  const form = subagentOrchestrationToForm(orchestration, options.templates);
+  return {
+    ...form,
+    id: createUniqueResourceId(userResourceIdFrom(orchestration.id), options.existingIds ?? []),
+    name: createUniqueResourceName(`${orchestration.name} Copy`, options.existingNames ?? []),
+    source: "user",
+  };
+}
+
+export function createResourceAgentFormFromTemplate(
   template: AgentTemplate,
   options: { provider?: ProviderConfigView; existingAgentKeys?: readonly string[] } = {},
-): AgentProfileAgentFormState {
+): AgentResourceAgentFormState {
   const capability = toolPolicyToCapabilityFields(template.defaultTools, {
     mcpServers: template.mcpServers,
   });
@@ -282,52 +356,165 @@ export function createProfileAgentFormFromTemplate(
   };
 }
 
-export function buildOrchestrationProfileFromForm(
-  form: AgentProfileFormState,
+export function buildMainAgentConfigFromForm(
+  form: AgentResourceFormState,
   options: {
-    existing?: OrchestrationProfile;
+    existing?: MainAgentConfigResource;
+    nowIso?: string;
+  } = {},
+): MainAgentConfigResource {
+  const id = form.id.trim();
+  const name = (form.mainName.trim() || form.name.trim());
+  if (!id) {
+    throw new Error(i18n.t("orchestrationResource.validation.idRequired"));
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    throw new Error(i18n.t("orchestrationResource.validation.idFormat"));
+  }
+  if (id.startsWith("builtin.")) {
+    throw new Error(i18n.t("orchestrationResource.validation.reservedId"));
+  }
+  if (!name) {
+    throw new Error(i18n.t("orchestrationResource.validation.nameRequired"));
+  }
+  assertCandidateModelSelected(i18n.t("settings.models.mainAgent"), form.mainCandidateModelId);
+  return {
+    id,
+    name,
+    agentKey: "main",
+    domain: form.preset,
+    modelRef: buildModelRef(form.mainProviderId, form.mainModelId, {
+      thinkingEffort: form.mainThinkingEffort,
+      apiCompat: form.mainApiCompat,
+      candidateModelId: form.mainCandidateModelId,
+    }),
+    tools: capabilityFieldsToToolPolicy(mainCapabilityFromResourceForm(form)),
+    skills: options.existing ? [...options.existing.skills] : [],
+    updatedAt: options.nowIso ?? new Date().toISOString(),
+    source: form.source,
+  };
+}
+
+export function buildMainAgentPromptFromForm(
+  form: AgentResourceFormState,
+  options: {
+    existing?: MainAgentPromptResource;
+    nowIso?: string;
+  } = {},
+): MainAgentPromptResource {
+  const id = form.id.trim();
+  const name = form.name.trim();
+  const prompt = form.mainPrompt.trim();
+  if (!id) {
+    throw new Error(i18n.t("orchestrationResource.validation.idRequired"));
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    throw new Error(i18n.t("orchestrationResource.validation.idFormat"));
+  }
+  if (!name) {
+    throw new Error(i18n.t("orchestrationResource.validation.nameRequired"));
+  }
+  if (!prompt) {
+    throw new Error("自定义提示词正文不能为空。");
+  }
+  return {
+    id,
+    name,
+    mode: "custom_append",
+    prompt,
+    updatedAt: options.nowIso ?? new Date().toISOString(),
+    source: form.source,
+  };
+}
+
+export function buildSubagentOrchestrationFromForm(
+  form: AgentResourceFormState,
+  options: {
+    existing?: SubagentOrchestrationResource;
     templates: readonly AgentTemplate[];
     nowIso?: string;
   },
-): OrchestrationProfile {
+): SubagentOrchestrationResource {
   const id = form.id.trim();
   const name = form.name.trim();
   if (!id) {
-    throw new Error(i18n.t("agentProfile.validation.idRequired"));
+    throw new Error(i18n.t("orchestrationResource.validation.idRequired"));
   }
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
-    throw new Error(i18n.t("agentProfile.validation.idFormat"));
-  }
-  if (id.startsWith("builtin.")) {
-    throw new Error(i18n.t("agentProfile.validation.reservedId"));
+    throw new Error(i18n.t("orchestrationResource.validation.idFormat"));
   }
   if (!name) {
-    throw new Error(i18n.t("agentProfile.validation.nameRequired"));
+    throw new Error(i18n.t("orchestrationResource.validation.nameRequired"));
   }
-  assertCandidateModelSelected(i18n.t("settings.models.mainAgent"), form.mainCandidateModelId);
-  const mainModelRef = buildModelRef(form.mainProviderId, form.mainModelId, {
-    thinkingEffort: form.mainThinkingEffort,
-    apiCompat: form.mainApiCompat,
-    candidateModelId: form.mainCandidateModelId,
+  const agents = buildAgentsFromForm(form, options);
+  return {
+    id,
+    name,
+    domain: form.preset,
+    agents,
+    strategy: buildStrategyFromForm(form),
+    updatedAt: options.nowIso ?? new Date().toISOString(),
+    source: form.source,
+  };
+}
+
+export function canEditStoredCompositionResource(
+  source: AgentConfigSource,
+): source is Extract<AgentConfigSource, "user" | "project"> {
+  return source === "user" || source === "project";
+}
+
+export { tryFormToManualSpec } from "./agent-resource-manual-spec-form";
+
+function agentInstanceToForm(agent: AgentInstanceConfig): AgentResourceAgentFormState {
+  const capability = toolPolicyToCapabilityFields(agent.tools, {
+    mcpServers: agent.mcpServers,
   });
+  return {
+    agentKey: agent.agentKey,
+    templateId: agent.templateId,
+    displayName: agent.displayName ?? "",
+    themeColor: agent.themeColor ?? defaultThemeColorForAgentKey(agent.agentKey),
+    providerId: agent.modelRef.providerId,
+    modelId: agent.modelRef.modelId,
+    thinkingEffort: agent.modelRef.thinkingEffort ?? "",
+    apiCompat: agent.modelRef.apiCompat ?? "",
+    enabled: agent.enabled,
+    candidateModelId: agent.modelRef.candidateModelId ?? "",
+    ...agentCapabilityToAgentForm(capability),
+  };
+}
+
+function buildAgentsFromForm(
+  form: AgentResourceFormState,
+  options: {
+    existing?: SubagentOrchestrationResource;
+    templates: readonly AgentTemplate[];
+  },
+): AgentInstanceConfig[] {
   const templateById = new Map(
-    [...options.templates, ...createBuiltInAgentTemplates()].map((template) => [template.id, template]),
+    resolveAgentTemplateCatalog(options.templates).map((template) => [template.id, template]),
   );
-  const existingAgentByKey = new Map(options.existing?.agents.map((agent) => [agent.agentKey, agent]));
+  const existingAgentByKey = new Map(
+    (options.existing?.agents ?? []).map((agent) => [
+      agent.agentKey,
+      agent,
+    ]),
+  );
   const agentKeys = new Set<string>();
-  const agents = form.agents.map((agentForm) => {
+  return form.agents.map((agentForm) => {
     const agentKey = normalizeAgentKey(
       agentForm.agentKey,
       agentForm.templateId === CODING_AGENT_TEMPLATE_IDS.explore,
     );
     if (agentKeys.has(agentKey)) {
-      throw new Error(i18n.t("agentProfile.validation.duplicateKey", { key: agentKey }));
+      throw new Error(i18n.t("orchestrationResource.validation.duplicateKey", { key: agentKey }));
     }
     agentKeys.add(agentKey);
     const template = templateById.get(agentForm.templateId);
     if (!template) {
       throw new Error(
-        i18n.t("agentProfile.validation.templateNotFound", { id: agentForm.templateId }),
+        i18n.t("orchestrationResource.validation.templateNotFound", { id: agentForm.templateId }),
       );
     }
     const existingAgent = existingAgentByKey.get(agentForm.agentKey.trim());
@@ -356,49 +543,22 @@ export function buildOrchestrationProfileFromForm(
       }),
       tools,
       mcpServers: parseList(agentForm.mcpServers),
-      skills: [],
+      skills: existingAgent ? [...existingAgent.skills] : [],
       enabled: agentForm.enabled,
     };
   });
-
-  return {
-    id,
-    name,
-    preset: form.preset,
-    mainAgent: {
-      agentKey: "main",
-      name: form.mainName.trim() || i18n.t("settings.models.mainAgent"),
-      domain: form.preset,
-      systemPromptPreset: form.mainSystemPromptPreset,
-      prompt: form.mainPrompt.trim() || "Coordinate the task and produce the final answer.",
-      modelRef: mainModelRef,
-      tools: capabilityFieldsToToolPolicy(mainCapabilityFromProfileForm(form)),
-      skills: [],
-    },
-    agents,
-    strategy: buildStrategyFromForm(form),
-    updatedAt: options.nowIso ?? new Date().toISOString(),
-    source: form.source,
-    ...(options.existing?.sourceRouteProfileId && {
-      sourceRouteProfileId: options.existing.sourceRouteProfileId,
-    }),
-  };
 }
 
-export function canEditStoredAgentProfile(profile: OrchestrationProfile): boolean {
-  return profile.source === "user" || profile.source === "project";
-}
-
-function buildStrategyFromForm(form: AgentProfileFormState): OrchestrationStrategy {
+function buildStrategyFromForm(form: AgentResourceFormState) {
   return {
-    kind: "autonomous",
+    kind: "autonomous" as const,
     ...(form.guidancePrompt.trim() ? { guidancePrompt: form.guidancePrompt.trim() } : {}),
   };
 }
 
 function agentCapabilityToAgentForm(
   capability: ToolCapabilityFieldValues,
-): AgentProfileAgentCapabilityFields {
+): AgentResourceAgentCapabilityFields {
   return {
     readCodebase: capability.readCodebase,
     readScope: capability.readScope,
@@ -417,10 +577,10 @@ function agentCapabilityToAgentForm(
   };
 }
 
-function mainCapabilityToProfileFormFields(
+function mainCapabilityToResourceFormFields(
   capability: ToolCapabilityFieldValues,
 ): Pick<
-  AgentProfileFormState,
+  AgentResourceFormState,
   | "mainReadCodebase"
   | "mainReadScope"
   | "mainWriteCodebase"
@@ -458,7 +618,7 @@ function mainCapabilityToProfileFormFields(
 
 function assertCandidateModelSelected(label: string, candidateModelId: string): void {
   if (!candidateModelId.trim()) {
-    throw new Error(i18n.t("agentProfile.validation.candidateRequired", { label }));
+    throw new Error(i18n.t("orchestrationResource.validation.candidateRequired", { label }));
   }
 }
 
@@ -487,7 +647,7 @@ function buildModelRef(
   const provider = providerId.trim();
   const model = modelId.trim();
   if (!provider || !model) {
-    throw new Error(i18n.t("agentProfile.validation.providerAndModelRequired"));
+    throw new Error(i18n.t("orchestrationResource.validation.providerAndModelRequired"));
   }
   const thinkingEffort = options?.thinkingEffort?.trim();
   const apiCompat = options?.apiCompat?.trim();
@@ -508,18 +668,16 @@ function buildModelRef(
   return modelRef;
 }
 
-export { tryFormToManualSpec } from "./agent-profile-manual-spec-form";
-
 function normalizeAgentKey(raw: string, allowExplore = false): string {
   const agentKey = raw.trim();
   if (!agentKey) {
-    throw new Error(i18n.t("agentProfile.validation.keyRequired"));
+    throw new Error(i18n.t("orchestrationResource.validation.keyRequired"));
   }
   if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(agentKey)) {
-    throw new Error(i18n.t("agentProfile.validation.keyFormat"));
+    throw new Error(i18n.t("orchestrationResource.validation.keyFormat"));
   }
   if (RESERVED_AGENT_KEYS.has(agentKey.toLowerCase()) && !(allowExplore && agentKey === "explore")) {
-    throw new Error(i18n.t("agentProfile.validation.keyReserved", { key: agentKey }));
+    throw new Error(i18n.t("orchestrationResource.validation.keyReserved", { key: agentKey }));
   }
   return agentKey;
 }
@@ -551,7 +709,7 @@ function createUniqueAgentKey(base: string, existing: readonly string[]): string
   }
 }
 
-function createUniqueProfileId(base: string, existing: readonly string[]): string {
+function createUniqueResourceId(base: string, existing: readonly string[]): string {
   const used = new Set(existing);
   if (!used.has(base)) {
     return base;
@@ -564,7 +722,7 @@ function createUniqueProfileId(base: string, existing: readonly string[]): strin
   }
 }
 
-function createUniqueProfileName(base: string, existing: readonly string[]): string {
+function createUniqueResourceName(base: string, existing: readonly string[]): string {
   const used = new Set(existing);
   if (!used.has(base)) {
     return base;
@@ -577,13 +735,13 @@ function createUniqueProfileName(base: string, existing: readonly string[]): str
   }
 }
 
-function userProfileIdFrom(id: string): string {
+function userResourceIdFrom(id: string): string {
   const cleaned = id
     .trim()
     .replace(/^builtin\./, "user.")
     .replace(/^derived\./, "user.")
     .replace(/[^a-zA-Z0-9._-]+/g, "_");
-  return cleaned.startsWith("user.") ? cleaned : `user.${cleaned || "profile"}`;
+  return cleaned.startsWith("user.") ? cleaned : `user.${cleaned || "resource"}`;
 }
 
 function selectDefaultProvider(providers: readonly ProviderConfigView[]): ProviderConfigView | undefined {

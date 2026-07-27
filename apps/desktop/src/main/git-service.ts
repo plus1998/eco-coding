@@ -26,8 +26,8 @@ import type { ProviderStore } from "./provider-store";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import type { AgentOrchestrationStore } from "./agent-orchestration-store";
 import {
-  getAgentProfileById,
-  runtimeRoleRoutesFromAgentProfile,
+  runtimeRoleRoutesFromOrchestrationSnapshot,
+  resolveThreadOrchestrationSnapshot,
 } from "../shared/thread-runtime-config";
 import {
   listCommitMessageCandidateModels,
@@ -64,7 +64,7 @@ async function listCommitCandidates(input: {
 }
 
 async function resolveSavedCommitCandidateModel(input: {
-  profileId: string;
+  mainAgentConfigId: string;
   candidateModelIdPreference?: CommitMessageModelPreference;
   gitSettingsStore: GitSettingsStore;
   providerStore: ProviderStore;
@@ -86,17 +86,40 @@ async function resolveSavedCommitCandidateModel(input: {
   })));
   const savedCandidateModelId =
     input.candidateModelIdPreference ??
-    input.gitSettingsStore.getCommitMessageCandidateModelIdForProfile(input.profileId);
+    input.gitSettingsStore.getCommitMessageCandidateModelIdForMainAgentConfig(input.mainAgentConfigId);
   let selected = resolveCommitMessageCandidateModel(candidates, hints, savedCandidateModelId);
   if (!selected && savedCandidateModelId === "auto") {
     const settings = mergeAgentRegistrySettings(
       input.providerStore.getSettings(),
       input.agentOrchestrationStore,
     );
-    const profile = getAgentProfileById(settings, input.profileId);
-    if (profile) {
-      const legacyRole = input.gitSettingsStore.getCommitMessageRoleForProfile(input.profileId);
-      const roleRoutes = runtimeRoleRoutesFromAgentProfile(profile);
+    const mainAgentConfig = settings.mainAgentConfigs.find(
+      (entry) => entry.id === input.mainAgentConfigId,
+    );
+    if (mainAgentConfig) {
+      const legacyRole = input.gitSettingsStore.getCommitMessageRoleForMainAgentConfig(input.mainAgentConfigId);
+      const roleRoutes = [
+        {
+          role: COMMIT_MESSAGE_ROLE,
+          providerId: mainAgentConfig.modelRef.providerId,
+          modelId: mainAgentConfig.modelRef.modelId,
+          ...(mainAgentConfig.modelRef.apiCompat
+            ? { apiCompat: mainAgentConfig.modelRef.apiCompat }
+            : {}),
+          ...(mainAgentConfig.modelRef.thinkingEffort
+            ? { thinkingEffort: mainAgentConfig.modelRef.thinkingEffort }
+            : {}),
+          ...(mainAgentConfig.modelRef.modelsDevMapping
+            ? { modelsDevMapping: mainAgentConfig.modelRef.modelsDevMapping }
+            : {}),
+          ...(mainAgentConfig.modelRef.manualSpec
+            ? { manualSpec: mainAgentConfig.modelRef.manualSpec }
+            : {}),
+          ...(mainAgentConfig.modelRef.candidateModelId
+            ? { candidateModelId: mainAgentConfig.modelRef.candidateModelId }
+            : {}),
+        },
+      ];
       selected = resolveLegacyCommitMessageCandidateModel(candidates, roleRoutes, legacyRole);
     }
   }
@@ -110,7 +133,7 @@ async function resolveSavedCommitCandidateModel(input: {
 }
 
 async function resolveCommitProxyRoute(input: {
-  profileId: string;
+  mainAgentConfigId: string;
   candidateModelIdPreference?: CommitMessageModelPreference;
   providerStore: ProviderStore;
   agentOrchestrationStore: AgentOrchestrationStore;
@@ -162,8 +185,8 @@ export async function handleGitListCommitModelOptions(
     })),
   );
   const options: CommitModelOptionView[] = buildCommitModelOptions(candidates, hints);
-  const savedCandidateModelId = deps.gitSettingsStore.getCommitMessageCandidateModelIdForProfile(
-    request.profileId,
+  const savedCandidateModelId = deps.gitSettingsStore.getCommitMessageCandidateModelIdForMainAgentConfig(
+    request.mainAgentConfigId,
   );
   return {
     options,
@@ -191,7 +214,7 @@ export async function handleGitGenerateCommitMessage(
   const candidateModelIdPreference =
     request.candidateModelId ?? request.role ?? undefined;
   const { route, candidateModelId } = await resolveCommitProxyRoute({
-    profileId: request.profileId,
+    mainAgentConfigId: request.mainAgentConfigId,
     ...(candidateModelIdPreference !== undefined && {
       candidateModelIdPreference,
     }),
@@ -210,7 +233,7 @@ export async function handleGitGenerateCommitMessage(
   );
   if (!message?.trim()) {
     logUpstreamError("git-commit-message-failed", {
-      profileId: request.profileId,
+      mainAgentConfigId: request.mainAgentConfigId,
       workspacePath: request.workspacePath,
       candidateModelId,
       modelId: route.modelId,

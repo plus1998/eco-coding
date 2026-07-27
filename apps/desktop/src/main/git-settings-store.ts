@@ -9,8 +9,8 @@ import type {
 const COMMIT_MESSAGE_INSTRUCTIONS_MAX_CHARS = 2_000;
 
 export interface GitSettingsSnapshot {
-  commitMessageRoleByProfileId: Record<string, CommitMessageRolePreference>;
-  commitMessageCandidateModelIdByProfileId: Record<string, CommitMessageModelPreference>;
+  commitMessageRoleByMainAgentConfigId: Record<string, CommitMessageRolePreference>;
+  commitMessageCandidateModelIdByMainAgentConfigId: Record<string, CommitMessageModelPreference>;
   commitMessageInstructions?: string;
   /** 窗口聚焦且仓库空闲时周期性 git fetch，对齐 VS Code git.autofetch */
   autofetch?: boolean;
@@ -20,8 +20,8 @@ export interface GitSettingsSnapshot {
 
 export function defaultGitSettings(): GitSettingsSnapshot {
   return {
-    commitMessageRoleByProfileId: {},
-    commitMessageCandidateModelIdByProfileId: {},
+    commitMessageRoleByMainAgentConfigId: {},
+    commitMessageCandidateModelIdByMainAgentConfigId: {},
     autofetch: true,
     autofetchPeriod: 180,
   };
@@ -75,18 +75,18 @@ export class GitSettingsStore {
     return this.get();
   }
 
-  getCommitMessageRoleForProfile(profileId: string): CommitMessageRolePreference {
+  getCommitMessageRoleForMainAgentConfig(mainAgentConfigId: string): CommitMessageRolePreference {
     const settings = this.get();
-    return settings.commitMessageRoleByProfileId[profileId] ?? "auto";
+    return settings.commitMessageRoleByMainAgentConfigId[mainAgentConfigId] ?? "auto";
   }
 
-  getCommitMessageCandidateModelIdForProfile(profileId: string): CommitMessageModelPreference {
+  getCommitMessageCandidateModelIdForMainAgentConfig(mainAgentConfigId: string): CommitMessageModelPreference {
     const settings = this.get();
-    return settings.commitMessageCandidateModelIdByProfileId[profileId] ?? "auto";
+    return settings.commitMessageCandidateModelIdByMainAgentConfigId[mainAgentConfigId] ?? "auto";
   }
 
-  saveCommitMessageRoleForProfile(
-    profileId: string,
+  saveCommitMessageRoleForMainAgentConfig(
+    mainAgentConfigId: string,
     role: CommitMessageRolePreference,
     availableRoles: ReadonlySet<string>,
   ): GitSettingsSnapshot {
@@ -95,15 +95,15 @@ export class GitSettingsStore {
       role === "auto" || availableRoles.has(role) ? role : ("auto" as const);
     return this.save({
       ...settings,
-      commitMessageRoleByProfileId: {
-        ...settings.commitMessageRoleByProfileId,
-        [profileId]: nextRole,
+      commitMessageRoleByMainAgentConfigId: {
+        ...settings.commitMessageRoleByMainAgentConfigId,
+        [mainAgentConfigId]: nextRole,
       },
     });
   }
 
-  saveCommitMessageCandidateModelIdForProfile(
-    profileId: string,
+  saveCommitMessageCandidateModelIdForMainAgentConfig(
+    mainAgentConfigId: string,
     candidateModelId: CommitMessageModelPreference,
     availableCandidateModelIds: ReadonlySet<string>,
   ): GitSettingsSnapshot {
@@ -114,9 +114,9 @@ export class GitSettingsStore {
         : ("auto" as const);
     return this.save({
       ...settings,
-      commitMessageCandidateModelIdByProfileId: {
-        ...settings.commitMessageCandidateModelIdByProfileId,
-        [profileId]: nextId,
+      commitMessageCandidateModelIdByMainAgentConfigId: {
+        ...settings.commitMessageCandidateModelIdByMainAgentConfigId,
+        [mainAgentConfigId]: nextId,
       },
     });
   }
@@ -127,16 +127,16 @@ export function normalizeGitSettingsSnapshot(value: unknown): GitSettingsSnapsho
     return defaultGitSettings();
   }
   const record = value as Record<string, unknown>;
-  const commitMessageRoleByProfileId = normalizeRolePreferenceMap(record.commitMessageRoleByProfileId);
-  const commitMessageCandidateModelIdByProfileId = normalizeCandidateModelPreferenceMap(
-    record.commitMessageCandidateModelIdByProfileId,
+  const commitMessageRoleByMainAgentConfigId = normalizeRolePreferenceMap(record.commitMessageRoleByMainAgentConfigId);
+  const commitMessageCandidateModelIdByMainAgentConfigId = normalizeCandidateModelPreferenceMap(
+    record.commitMessageCandidateModelIdByMainAgentConfigId,
   );
   const instructions = normalizeCommitMessageInstructions(record.commitMessageInstructions);
   const autofetch = normalizeAutofetch(record.autofetch);
   const autofetchPeriod = normalizeAutofetchPeriod(record.autofetchPeriod);
   return {
-    commitMessageRoleByProfileId,
-    commitMessageCandidateModelIdByProfileId,
+    commitMessageRoleByMainAgentConfigId,
+    commitMessageCandidateModelIdByMainAgentConfigId,
     ...(instructions && { commitMessageInstructions: instructions }),
     autofetch,
     autofetchPeriod,
@@ -147,16 +147,16 @@ function normalizeRolePreferenceMap(value: unknown): Record<string, CommitMessag
   if (!value || typeof value !== "object") {
     return {};
   }
-  const commitMessageRoleByProfileId: Record<string, CommitMessageRolePreference> = {};
-  for (const [profileId, role] of Object.entries(value)) {
-    if (typeof profileId !== "string" || !profileId.trim()) {
+  const commitMessageRoleByMainAgentConfigId: Record<string, CommitMessageRolePreference> = {};
+  for (const [mainAgentConfigId, role] of Object.entries(value)) {
+    if (typeof mainAgentConfigId !== "string" || !mainAgentConfigId.trim()) {
       continue;
     }
     if (role === "auto" || (typeof role === "string" && role.trim())) {
-      commitMessageRoleByProfileId[profileId] = role === "auto" ? "auto" : role.trim();
+      commitMessageRoleByMainAgentConfigId[mainAgentConfigId] = role === "auto" ? "auto" : role.trim();
     }
   }
-  return commitMessageRoleByProfileId;
+  return commitMessageRoleByMainAgentConfigId;
 }
 
 function normalizeCandidateModelPreferenceMap(
@@ -165,17 +165,17 @@ function normalizeCandidateModelPreferenceMap(
   if (!value || typeof value !== "object") {
     return {};
   }
-  const commitMessageCandidateModelIdByProfileId: Record<string, CommitMessageModelPreference> = {};
-  for (const [profileId, candidateModelId] of Object.entries(value)) {
-    if (typeof profileId !== "string" || !profileId.trim()) {
+  const commitMessageCandidateModelIdByMainAgentConfigId: Record<string, CommitMessageModelPreference> = {};
+  for (const [mainAgentConfigId, candidateModelId] of Object.entries(value)) {
+    if (typeof mainAgentConfigId !== "string" || !mainAgentConfigId.trim()) {
       continue;
     }
     if (candidateModelId === "auto" || (typeof candidateModelId === "string" && candidateModelId.trim())) {
-      commitMessageCandidateModelIdByProfileId[profileId] =
+      commitMessageCandidateModelIdByMainAgentConfigId[mainAgentConfigId] =
         candidateModelId === "auto" ? "auto" : candidateModelId.trim();
     }
   }
-  return commitMessageCandidateModelIdByProfileId;
+  return commitMessageCandidateModelIdByMainAgentConfigId;
 }
 
 function normalizeAutofetch(value: unknown): boolean {
@@ -211,8 +211,8 @@ export function isGitSettingsSnapshot(value: unknown): value is GitSettingsSnaps
     return false;
   }
   const record = value as Record<string, unknown>;
-  const rawRoles = record.commitMessageRoleByProfileId;
-  const rawCandidates = record.commitMessageCandidateModelIdByProfileId;
+  const rawRoles = record.commitMessageRoleByMainAgentConfigId;
+  const rawCandidates = record.commitMessageCandidateModelIdByMainAgentConfigId;
   if (rawRoles !== undefined && (typeof rawRoles !== "object" || rawRoles === null)) {
     return false;
   }

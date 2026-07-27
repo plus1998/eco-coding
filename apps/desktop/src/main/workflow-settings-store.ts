@@ -4,13 +4,15 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { type CoreKind, type EcoOrchestrationMode, isCoreKind } from "@eco/runtime";
 import { type McpServersEnabledSettings, normalizeMcpServersEnabled } from "../shared/composer-mcp";
 import { isSessionMode, normalizeSessionMode, type SessionMode } from "../shared/session-mode";
+import type { OrchestrationSelection } from "../shared/agent-orchestration";
+import { isOrchestrationSelection } from "../shared/agent-orchestration";
 
 export type { SessionMode };
 
 export interface WorkflowSettingsSnapshot {
   sessionMode: SessionMode;
   defaultCoreKind?: CoreKind;
-  defaultAgentProfileId?: string;
+  defaultOrchestrationSelection?: OrchestrationSelection;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -42,12 +44,12 @@ export class WorkflowSettingsStore {
   get(): WorkflowSettingsSnapshot {
     const sessionMode = this.readSessionMode();
     const defaultCoreKind = this.readDefaultCoreKind();
-    const defaultAgentProfileId = this.readDefaultAgentProfileId();
+    const defaultOrchestrationSelection = this.readDefaultOrchestrationSelection();
     const mcpServersEnabled = this.readMcpServersEnabled();
     return {
       sessionMode,
       defaultCoreKind,
-      ...(defaultAgentProfileId ? { defaultAgentProfileId } : {}),
+      ...(defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {}),
       ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
     };
   }
@@ -69,16 +71,20 @@ export class WorkflowSettingsStore {
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
       )
       .run("default_core_kind", JSON.stringify(normalized.defaultCoreKind ?? "claude"), now);
-    if (normalized.defaultAgentProfileId) {
+    if (normalized.defaultOrchestrationSelection) {
       this.db
         .prepare(
           `INSERT INTO workflow_settings (key, value_json, updated_at)
            VALUES (?, ?, ?)
            ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
         )
-        .run("default_agent_profile_id", JSON.stringify(normalized.defaultAgentProfileId), now);
+        .run(
+          "default_orchestration_selection",
+          JSON.stringify(normalized.defaultOrchestrationSelection),
+          now,
+        );
     } else {
-      this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("default_agent_profile_id");
+      this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("default_orchestration_selection");
     }
     if (normalized.mcpServersEnabled) {
       this.db
@@ -147,16 +153,16 @@ export class WorkflowSettingsStore {
     }
   }
 
-  private readDefaultAgentProfileId(): string | undefined {
+  private readDefaultOrchestrationSelection(): OrchestrationSelection | undefined {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
-      .get("default_agent_profile_id") as { value_json: string } | undefined;
+      .get("default_orchestration_selection") as { value_json: string } | undefined;
     if (!row?.value_json?.trim()) {
       return undefined;
     }
     try {
       const parsed = JSON.parse(row.value_json) as unknown;
-      return typeof parsed === "string" && parsed.trim() ? parsed.trim() : undefined;
+      return isOrchestrationSelection(parsed) ? parsed : undefined;
     } catch {
       return undefined;
     }
@@ -187,15 +193,16 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   }
   const record = value as Record<string, unknown>;
   const defaultCoreKind = isCoreKind(record.defaultCoreKind) ? record.defaultCoreKind : "claude";
-  const defaultAgentProfileId =
-    typeof record.defaultAgentProfileId === "string" && record.defaultAgentProfileId.trim()
-      ? record.defaultAgentProfileId.trim()
-      : undefined;
+  const defaultOrchestrationSelection = isOrchestrationSelection(record.defaultOrchestrationSelection)
+    ? record.defaultOrchestrationSelection
+    : undefined;
   const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
   const mcpPart = mcpServersEnabled ? { mcpServersEnabled } : {};
-  const defaultAgentPart = defaultAgentProfileId ? { defaultAgentProfileId } : {};
+  const defaultOrchestrationPart = defaultOrchestrationSelection
+    ? { defaultOrchestrationSelection }
+    : {};
   if (isSessionMode(record.sessionMode)) {
-    return { sessionMode: record.sessionMode, defaultCoreKind, ...defaultAgentPart, ...mcpPart };
+    return { sessionMode: record.sessionMode, defaultCoreKind, ...defaultOrchestrationPart, ...mcpPart };
   }
   return defaultWorkflowSettings();
 }
@@ -208,6 +215,7 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
   return (
     isSessionMode(record.sessionMode) &&
     (record.defaultCoreKind === undefined || isCoreKind(record.defaultCoreKind)) &&
-    (record.defaultAgentProfileId === undefined || typeof record.defaultAgentProfileId === "string")
+    (record.defaultOrchestrationSelection === undefined ||
+      isOrchestrationSelection(record.defaultOrchestrationSelection))
   );
 }

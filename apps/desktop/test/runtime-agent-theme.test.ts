@@ -5,15 +5,16 @@ import {
   resolveSubagentRowThemeStyle,
 } from "../src/renderer/runtime-agent-theme";
 import {
-  buildCodingOrchestrationProfileFromRouteProfile,
+  buildPresetResourcesFromRouteProfile,
   createBuiltInAgentTemplates,
+  resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
-import type { ModelSettingsSnapshot, RouteProfileView } from "../src/shared/ipc";
+import type { ModelSettingsSnapshot, RouteProfileView, ThreadRuntimeConfig } from "../src/shared/ipc";
 import { SUBAGENT_UNKNOWN_THEME_COLOR } from "../src/shared/subagent-theme";
 
 const routeProfile: RouteProfileView = {
   id: "coding-default",
-  name: "默认编程",
+  name: "Default Coding",
   routes: [
     { role: "planner", providerId: "openai", modelId: "gpt-5-codex" },
     { role: "explore", providerId: "openai", modelId: "gpt-5-mini" },
@@ -26,42 +27,26 @@ const routeProfile: RouteProfileView = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
+const bundle = buildPresetResourcesFromRouteProfile(routeProfile, {
+  mainAgentConfigId: "main.coding",
+  subagentOrchestrationId: "subagents.coding",
+});
+
 const settings: ModelSettingsSnapshot = {
   providers: [],
   routeProfiles: [routeProfile],
   agentTemplates: createBuiltInAgentTemplates(),
-  orchestrationProfiles: [buildCodingOrchestrationProfileFromRouteProfile(routeProfile)],
+  mainAgentConfigs: [bundle.mainAgentConfig],
+  mainAgentPrompts: [],
+  subagentOrchestrations: [bundle.subagentOrchestration],
 };
 
-test("resolveRuntimeAgentThemeColor uses built-in defaults when profile has no overrides", () => {
-  expect(resolveRuntimeAgentThemeColor("explore", {})).toBe("#A78BFA");
-  expect(resolveRuntimeAgentThemeColor("architect", {})).toBe("#22D3EE");
-  expect(resolveRuntimeAgentThemeColor("coder", {})).toBe("#34D399");
-  expect(resolveRuntimeAgentThemeColor("reviewer", {})).toBe("#FBBF24");
-  expect(resolveRuntimeAgentThemeColor("tester", {})).toBe("#F472B6");
-});
-
-test("resolveRuntimeAgentThemeColor falls back to unknown blue for external agents", () => {
-  expect(resolveRuntimeAgentThemeColor("researcher", {})).toBe(SUBAGENT_UNKNOWN_THEME_COLOR);
-  expect(resolveRuntimeAgentThemeColor("eco_researcher", {})).toBe(SUBAGENT_UNKNOWN_THEME_COLOR);
-});
-
-test("buildRuntimeAgentThemes maps profile overrides and eco_ aliases", () => {
-  const profile = structuredClone(settings.orchestrationProfiles[0]!);
-  profile.agents = profile.agents.map((agent) =>
-    agent.agentKey === "explore"
-      ? { ...agent, themeColor: "#112233" }
-      : agent.agentKey === "coder"
-        ? { ...agent, themeColor: "#445566" }
-        : agent,
-  );
-  const themedSettings: ModelSettingsSnapshot = {
-    ...settings,
-    orchestrationProfiles: [profile],
-  };
-  const themes = buildRuntimeAgentThemes(themedSettings, {
-    routeProfileId: profile.id,
+function runtimeConfig(snapshot = resolveOrchestrationSnapshot(bundle.selection, settings)): ThreadRuntimeConfig {
+  return {
+    orchestrationSelection: snapshot.selection,
+    resolvedOrchestrationSnapshot: snapshot,
     sessionMode: "agent",
+    bashReviewMode: "auto",
     subagentEnabled: {
       explore: true,
       architect: true,
@@ -69,7 +54,32 @@ test("buildRuntimeAgentThemes maps profile overrides and eco_ aliases", () => {
       reviewer: true,
       tester: true,
     },
-  });
+  };
+}
+
+test("resolveRuntimeAgentThemeColor uses built-in defaults without overrides", () => {
+  expect(resolveRuntimeAgentThemeColor("explore", {})).toBe("#A78BFA");
+  expect(resolveRuntimeAgentThemeColor("architect", {})).toBe("#22D3EE");
+  expect(resolveRuntimeAgentThemeColor("coder", {})).toBe("#34D399");
+  expect(resolveRuntimeAgentThemeColor("reviewer", {})).toBe("#FBBF24");
+  expect(resolveRuntimeAgentThemeColor("tester", {})).toBe("#F472B6");
+});
+
+test("resolveRuntimeAgentThemeColor uses the unknown color for external agents", () => {
+  expect(resolveRuntimeAgentThemeColor("researcher", {})).toBe(SUBAGENT_UNKNOWN_THEME_COLOR);
+  expect(resolveRuntimeAgentThemeColor("eco_researcher", {})).toBe(SUBAGENT_UNKNOWN_THEME_COLOR);
+});
+
+test("buildRuntimeAgentThemes maps snapshot overrides and eco_ aliases", () => {
+  const snapshot = resolveOrchestrationSnapshot(bundle.selection, settings);
+  snapshot.agents = snapshot.agents.map((agent) =>
+    agent.agentKey === "explore"
+      ? { ...agent, themeColor: "#112233" }
+      : agent.agentKey === "coder"
+        ? { ...agent, themeColor: "#445566" }
+        : agent,
+  );
+  const themes = buildRuntimeAgentThemes(settings, runtimeConfig(snapshot));
 
   expect(resolveRuntimeAgentThemeColor("explore", themes)).toBe("#112233");
   expect(resolveRuntimeAgentThemeColor("eco_explore", themes)).toBe("#112233");

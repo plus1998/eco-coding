@@ -1,31 +1,30 @@
-import { listOrchestrationProfileAgents } from "./agent-orchestration";
 import { listEnabledGlobalMcpServerKeys } from "./composer-mcp";
 import type {
   McpServerConfigView,
   ModelSettingsSnapshot,
-  OrchestrationProfile,
   ProviderConfigView,
+  ResolvedOrchestrationSnapshot,
 } from "./ipc";
 import {
   resolveMainAgentModelOverrideForProvider,
   resolveMainAgentSystemPromptPreset,
-  resolveThreadAgentProfile,
+  resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
-  runtimeRoleRoutesFromAgentProfile,
+  runtimeRoleRoutesFromOrchestrationSnapshot,
   type ThreadRuntimeConfig,
 } from "./thread-runtime-config";
 
-export interface PromptCacheProfileLabel {
+export interface PromptCacheOrchestrationLabel {
   modelStack: string;
-  profileName: string;
+  orchestrationName: string;
 }
 
-export type PromptCacheConfigDriftKind = "profile" | "main_model" | "system_prompt" | "mcp" | "skills";
+export type PromptCacheConfigDriftKind = "orchestration" | "main_model" | "system_prompt" | "mcp" | "skills";
 
 export interface PromptCacheRuntimeSignature {
-  profileId: string;
+  orchestrationKey: string;
   mainAgentModelKey: string;
-  mainAgentSystemPromptPreset: OrchestrationProfile["mainAgent"]["systemPromptPreset"] | "";
+  mainAgentSystemPromptPreset: ResolvedOrchestrationSnapshot["mainAgent"]["systemPromptPreset"] | "";
   mcpServerKeys: string[];
   skillKeys: string[];
 }
@@ -45,12 +44,44 @@ export function buildMainAgentModelKey(model: MainAgentModelIdentity | undefined
   ]);
 }
 
+export function buildOrchestrationRuntimeKey(
+  snapshot: ResolvedOrchestrationSnapshot | undefined,
+  selection: ResolvedOrchestrationSnapshot["selection"] | undefined,
+): string {
+  const resolvedSelection = snapshot?.selection ?? selection;
+  if (!resolvedSelection) {
+    return "";
+  }
+  const normalizedSelection = {
+    mainAgentConfigId: resolvedSelection.mainAgentConfigId.trim(),
+    mainPrompt:
+      resolvedSelection.mainPrompt.mode === "builtin"
+        ? { mode: "builtin" as const }
+        : {
+            mode: "custom_append" as const,
+            promptId: resolvedSelection.mainPrompt.promptId.trim(),
+          },
+    subagents:
+      resolvedSelection.subagents.mode === "none"
+        ? { mode: "none" as const }
+        : {
+            mode: "orchestration" as const,
+            orchestrationId: resolvedSelection.subagents.orchestrationId.trim(),
+          },
+  };
+  if (!snapshot) {
+    return JSON.stringify({ selection: normalizedSelection });
+  }
+  const { resolvedAt: _resolvedAt, selection: _selection, ...snapshotContent } = snapshot;
+  return JSON.stringify({ selection: normalizedSelection, snapshot: snapshotContent });
+}
+
 export function resolveMainAgentModelKey(
   settings: ModelSettingsSnapshot,
   runtimeConfig: ThreadRuntimeConfig,
 ): string {
-  const profile = resolveThreadAgentProfile(settings, runtimeConfig);
-  return buildMainAgentModelKey(resolveEffectiveMainAgentModel(profile, runtimeConfig));
+  const snapshot = resolveThreadOrchestrationSnapshot(settings, runtimeConfig);
+  return buildMainAgentModelKey(resolveEffectiveMainAgentModel(snapshot, runtimeConfig));
 }
 
 export function resolvePromptCacheRuntimeSignature(input: {
@@ -58,17 +89,16 @@ export function resolvePromptCacheRuntimeSignature(input: {
   settings: ModelSettingsSnapshot;
   availableMcpServerKeys: readonly string[];
 }): PromptCacheRuntimeSignature {
-  const profile = resolveThreadAgentProfile(input.settings, input.runtimeConfig);
-  const profileId =
-    profile?.id?.trim() ||
-    input.runtimeConfig.agentProfileId?.trim() ||
-    input.runtimeConfig.routeProfileId?.trim() ||
-    "";
-  const mainAgentModelKey = buildMainAgentModelKey(
-    resolveEffectiveMainAgentModel(profile, input.runtimeConfig),
+  const snapshot = resolveThreadOrchestrationSnapshot(input.settings, input.runtimeConfig);
+  const orchestrationKey = buildOrchestrationRuntimeKey(
+    snapshot,
+    input.runtimeConfig.orchestrationSelection,
   );
-  const mainAgentSystemPromptPreset = profile
-    ? resolveMainAgentSystemPromptPreset(profile, input.runtimeConfig)
+  const mainAgentModelKey = buildMainAgentModelKey(
+    resolveEffectiveMainAgentModel(snapshot, input.runtimeConfig),
+  );
+  const mainAgentSystemPromptPreset = snapshot
+    ? resolveMainAgentSystemPromptPreset(snapshot, input.runtimeConfig)
     : "";
   const mcpServerKeys = resolveThreadRuntimeMcpServerKeys({
     runtimeConfig: input.runtimeConfig,
@@ -81,21 +111,23 @@ export function resolvePromptCacheRuntimeSignature(input: {
     .filter(([, enabled]) => enabled)
     .map(([key]) => key)
     .sort();
-  return { profileId, mainAgentModelKey, mainAgentSystemPromptPreset, mcpServerKeys, skillKeys };
+  return { orchestrationKey, mainAgentModelKey, mainAgentSystemPromptPreset, mcpServerKeys, skillKeys };
 }
 
 function resolveEffectiveMainAgentModel(
-  profile: OrchestrationProfile | undefined,
+  snapshot: ResolvedOrchestrationSnapshot | undefined,
   runtimeConfig: ThreadRuntimeConfig,
 ): MainAgentModelIdentity | undefined {
-  if (!profile) {
+  if (!snapshot) {
     return undefined;
   }
   const override = resolveMainAgentModelOverrideForProvider(
-    profile.mainAgent.modelRef.providerId,
+    snapshot.mainAgent.modelRef.providerId,
     runtimeConfig.mainAgentModelOverride,
   );
-  return runtimeRoleRoutesFromAgentProfile(profile, override).find((route) => route.role === "planner");
+  return runtimeRoleRoutesFromOrchestrationSnapshot(snapshot, override).find(
+    (route) => route.role === "planner",
+  );
 }
 
 export function diffPromptCacheRuntimeSignatures(
@@ -103,8 +135,8 @@ export function diffPromptCacheRuntimeSignatures(
   current: PromptCacheRuntimeSignature,
 ): PromptCacheConfigDriftKind[] {
   const kinds: PromptCacheConfigDriftKind[] = [];
-  if (baseline.profileId !== current.profileId) {
-    kinds.push("profile");
+  if (baseline.orchestrationKey !== current.orchestrationKey) {
+    kinds.push("orchestration");
   }
   if (baseline.mainAgentModelKey !== current.mainAgentModelKey) {
     kinds.push("main_model");
@@ -121,24 +153,31 @@ export function diffPromptCacheRuntimeSignatures(
   return kinds;
 }
 
-export function resolvePromptCacheProfileLabel(
+export function resolvePromptCacheOrchestrationLabel(
   settings: ModelSettingsSnapshot,
   runtimeConfig: ThreadRuntimeConfig,
-): PromptCacheProfileLabel | undefined {
-  const profile = resolveThreadAgentProfile(settings, runtimeConfig);
-  if (!profile) {
+): PromptCacheOrchestrationLabel | undefined {
+  const snapshot = resolveThreadOrchestrationSnapshot(settings, runtimeConfig);
+  if (!snapshot) {
     return undefined;
   }
-  const modelStack = formatProfileModelStack(profile, settings.providers);
-  const profileName = profile.name.trim() || profile.id.trim();
-  if (!profileName) {
+  const modelStack = formatSnapshotModelStack(snapshot, settings.providers);
+  const orchestrationName = [
+    snapshot.mainAgentConfigName,
+    snapshot.mainPromptDisplayName,
+    snapshot.subagentOrchestrationDisplayName ?? "无子代理",
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" / ");
+  if (!orchestrationName) {
     return undefined;
   }
-  return { modelStack, profileName };
+  return { modelStack, orchestrationName };
 }
 
-export function formatProfileModelStack(
-  profile: OrchestrationProfile,
+export function formatSnapshotModelStack(
+  snapshot: ResolvedOrchestrationSnapshot,
   providers: readonly ProviderConfigView[],
 ): string {
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
@@ -155,8 +194,8 @@ export function formatProfileModelStack(
     names.push(provider?.name.trim() || id);
   };
 
-  addProvider(profile.mainAgent.modelRef.providerId);
-  for (const agent of listOrchestrationProfileAgents(profile)) {
+  addProvider(snapshot.mainAgent.modelRef.providerId);
+  for (const agent of snapshot.agents) {
     if (agent.enabled) {
       addProvider(agent.modelRef.providerId);
     }
@@ -165,17 +204,17 @@ export function formatProfileModelStack(
   return names.length > 0 ? names.join("+") : "未配置";
 }
 
-export function formatPromptCacheProfileSwitchPhrase(label: PromptCacheProfileLabel): string {
-  return `已经变更为 ${label.modelStack}（${label.profileName}）`;
+export function formatPromptCacheOrchestrationSwitchPhrase(label: PromptCacheOrchestrationLabel): string {
+  return `已经变更为 ${label.modelStack}（${label.orchestrationName}）`;
 }
 
 function formatPromptCacheDriftChangeParts(
   kinds: readonly PromptCacheConfigDriftKind[],
-  profileLabel?: PromptCacheProfileLabel,
+  orchestrationLabel?: PromptCacheOrchestrationLabel,
 ): string[] {
   const parts: string[] = [];
-  if (kinds.includes("profile")) {
-    parts.push(profileLabel ? formatPromptCacheProfileSwitchPhrase(profileLabel) : "Agent Profile 已变更");
+  if (kinds.includes("orchestration")) {
+    parts.push(orchestrationLabel ? formatPromptCacheOrchestrationSwitchPhrase(orchestrationLabel) : "编排组合已变更");
   }
   if (kinds.includes("main_model")) {
     parts.push("主代理模型或思考强度已变更");
@@ -194,20 +233,20 @@ function formatPromptCacheDriftChangeParts(
 
 export function formatPromptCacheConfigDriftHint(
   kinds: readonly PromptCacheConfigDriftKind[],
-  options?: { profileLabel?: PromptCacheProfileLabel },
+  options?: { orchestrationLabel?: PromptCacheOrchestrationLabel },
 ): string {
   if (kinds.length === 0) {
     return "";
   }
-  const parts = formatPromptCacheDriftChangeParts(kinds, options?.profileLabel);
+  const parts = formatPromptCacheDriftChangeParts(kinds, options?.orchestrationLabel);
   return `${parts.join("，")}，可能导致本会话 prompt cache 失效（费用或延迟或上升）。仍可继续使用，或新开 thread 以获得稳定缓存。`;
 }
 
 export function formatPromptCacheConfigDriftMessage(
   kinds: readonly PromptCacheConfigDriftKind[],
-  options?: { profileLabel?: PromptCacheProfileLabel },
+  options?: { orchestrationLabel?: PromptCacheOrchestrationLabel },
 ): string {
-  const parts = formatPromptCacheDriftChangeParts(kinds, options?.profileLabel);
+  const parts = formatPromptCacheDriftChangeParts(kinds, options?.orchestrationLabel);
   if (parts.length === 0) {
     return "Composer 配置已变更";
   }

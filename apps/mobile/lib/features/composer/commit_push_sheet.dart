@@ -13,7 +13,7 @@ Future<String?> showCommitPushSheet({
   required BuildContext context,
   required WidgetRef ref,
   required String workspacePath,
-  required String profileId,
+  required String mainAgentConfigId,
   required WorkspaceDiffResult diff,
   required GitWorkingTreeStatus gitStatus,
 }) {
@@ -31,7 +31,7 @@ Future<String?> showCommitPushSheet({
       maxChildSize: 0.92,
       builder: (context, scrollController) => CommitPushSheet(
         workspacePath: workspacePath,
-        profileId: profileId,
+        mainAgentConfigId: mainAgentConfigId,
         diff: diff,
         gitStatus: gitStatus,
         scrollController: scrollController,
@@ -44,14 +44,14 @@ class CommitPushSheet extends ConsumerStatefulWidget {
   const CommitPushSheet({
     super.key,
     required this.workspacePath,
-    required this.profileId,
+    required this.mainAgentConfigId,
     required this.diff,
     required this.gitStatus,
     required this.scrollController,
   });
 
   final String workspacePath;
-  final String profileId;
+  final String mainAgentConfigId;
   final WorkspaceDiffResult diff;
   final GitWorkingTreeStatus gitStatus;
   final ScrollController scrollController;
@@ -102,7 +102,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
     setState(() => _loadingModels = true);
     try {
       final result = await rpc.listCommitModelOptions(
-        profileId: widget.profileId,
+        mainAgentConfigId: widget.mainAgentConfigId,
       );
       String? selectedId;
       if (result.savedCandidateModelId != 'auto') {
@@ -153,7 +153,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
     try {
       final result = await rpc.generateCommitMessage(
         workspacePath: widget.workspacePath,
-        profileId: widget.profileId,
+        mainAgentConfigId: widget.mainAgentConfigId,
         includeUnstaged: _includeUnstaged,
         candidateModelId: _selectedCandidateModelId,
       );
@@ -178,7 +178,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       final message = _messageController.text.trim();
       await rpc.commitChanges(
         workspacePath: widget.workspacePath,
-        profileId: widget.profileId,
+        mainAgentConfigId: widget.mainAgentConfigId,
         includeUnstaged: _includeUnstaged,
         message: message.isEmpty ? null : message,
         candidateModelId: message.isEmpty ? _selectedCandidateModelId : null,
@@ -229,7 +229,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       final message = _messageController.text.trim();
       await rpc.commitChanges(
         workspacePath: widget.workspacePath,
-        profileId: widget.profileId,
+        mainAgentConfigId: widget.mainAgentConfigId,
         includeUnstaged: _includeUnstaged,
         message: message.isEmpty ? null : message,
         candidateModelId: message.isEmpty ? _selectedCandidateModelId : null,

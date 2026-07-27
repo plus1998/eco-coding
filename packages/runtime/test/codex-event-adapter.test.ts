@@ -526,7 +526,7 @@ test("dispatch maps completed spawnAgent item to agent.started until the child t
   expect(events[0]?.agentId).toBe("thr_codex_child_001");
 });
 
-test("collabAgentToolCall completed consumes queued Profile role when completed carries child thread id", () => {
+test("collabAgentToolCall completed consumes queued Orchestration role when completed carries child thread id", () => {
   const attributions: Array<{ codexThreadId: string; record: Record<string, unknown> }> = [];
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({
@@ -566,7 +566,7 @@ test("collabAgentToolCall completed consumes queued Profile role when completed 
     role: "coder",
     metadata: {
       agentRole: "coder",
-      profileRole: "coder",
+      orchestrationRole: "coder",
       delegationPrompt: "Suggest a scoped implementation step",
     },
   });
@@ -624,7 +624,7 @@ test("collabAgentToolCall completed ignores non-schema item role and uses queued
     role: "coder",
     metadata: {
       agentRole: "coder",
-      profileRole: "coder",
+      orchestrationRole: "coder",
       delegationPrompt: "Suggest a scoped implementation step",
     },
   });
@@ -703,7 +703,7 @@ test("collabAgentToolCall completed matches queued payload over stale attributio
     role: "coder",
     metadata: {
       agentRole: "coder",
-      profileRole: "coder",
+      orchestrationRole: "coder",
       delegationPrompt: spawnMessage,
     },
   });
@@ -791,7 +791,7 @@ test("dispatch records parent link and general display role when spawn omits age
   ]);
 });
 
-test("subAgentActivity started with queued Profile role opens agent.started", () => {
+test("subAgentActivity started with queued Orchestration role opens agent.started", () => {
   const attributions: Array<{ codexThreadId: string; record: Record<string, unknown> }> = [];
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({
@@ -894,13 +894,13 @@ test("subAgentActivity started consumes queued spawn payload only once", () => {
   expect(queued.map((entry) => entry.agentRole)).toEqual(["coder"]);
 });
 
-test("subAgentActivity started accepts queued custom Profile role", () => {
+test("subAgentActivity started accepts queued custom Orchestration role", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({
       resolveEcoThreadId,
       recordThreadRunEvent: record,
       recordThreadAttribution: () => {},
-      profileRoleIds: ["Deep_Research"],
+      orchestrationRoleIds: ["Deep_Research"],
       dequeueSpawnPayloadMatching: ({ toolUseId }) =>
         toolUseId === "item_sub_activity_custom_role"
           ? {
@@ -928,7 +928,7 @@ test("subAgentActivity started accepts queued custom Profile role", () => {
     agentId: "thr_codex_child_deep_research",
     role: "Deep_Research",
     metadata: {
-      profileRole: "Deep_Research",
+      orchestrationRole: "Deep_Research",
       delegationPrompt: "Investigate integration risks",
     },
   });
@@ -1073,7 +1073,7 @@ test("thread/started without role evidence waits for subAgentActivity call_id be
     agentId: "thr_codex_child_precise_role",
     role: "coder",
     metadata: {
-      profileRole: "coder",
+      orchestrationRole: "coder",
       delegationPrompt: "Implement the precise fix",
     },
   });
@@ -1084,7 +1084,7 @@ test("thread/started without role evidence waits for subAgentActivity call_id be
   });
 });
 
-test("thread/started does not infer a custom Profile role from preview text", () => {
+test("thread/started does not infer a custom Orchestration role from preview text", () => {
   const queued = [
     {
       agentRole: "researcher",
@@ -1112,7 +1112,7 @@ test("thread/started does not infer a custom Profile role from preview text", ()
           agentId: codexThreadId,
         };
       },
-      resolveProfileRoleIds: () => ["researcher"],
+      resolveOrchestrationRoleIds: () => ["researcher"],
       dequeueSpawnPayloadMatching: () => queued.shift(),
     });
     adapter.dispatch("thread/started", {
@@ -1136,7 +1136,7 @@ test("thread/started does not infer a custom Profile role from preview text", ()
   expect(queued).toHaveLength(1);
 });
 
-test("thread/started with explicit Profile role does not consume queued payload", () => {
+test("thread/started with explicit Orchestration role does not consume queued payload", () => {
   let payloadDequeues = 0;
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({

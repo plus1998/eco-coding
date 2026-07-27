@@ -27,8 +27,8 @@ export function GitSettingsPanel({ settings, busy, onSave }: GitSettingsPanelPro
     try {
       const trimmed = draft.trim();
       await onSave({
-        commitMessageRoleByProfileId: settings.commitMessageRoleByProfileId,
-        commitMessageCandidateModelIdByProfileId: settings.commitMessageCandidateModelIdByProfileId,
+        commitMessageRoleByMainAgentConfigId: settings.commitMessageRoleByMainAgentConfigId,
+        commitMessageCandidateModelIdByMainAgentConfigId: settings.commitMessageCandidateModelIdByMainAgentConfigId,
         ...(trimmed ? { commitMessageInstructions: trimmed } : {}),
       });
     } finally {

@@ -64,7 +64,7 @@ abstract final class EcoIcons {
   static const IconData npmScripts = LucideIcons.squareTerminal;
 
   // ── Composer 配置 ───────────────────────────────────────
-  static const IconData profile = LucideIcons.layoutDashboard;
+  static const IconData orchestration = LucideIcons.layoutDashboard;
   static const IconData subagents = LucideIcons.users;
   static const IconData planMode = LucideIcons.listTodo;
   static const IconData askMode = LucideIcons.messageCircle;

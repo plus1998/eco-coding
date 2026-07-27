@@ -6,13 +6,13 @@ import path from "node:path";
 // V1 / plain spawn maps to HookToolName::spawn_agent() => "spawn_agent".
 // `collaboration__spawn_agent` is the code-mode / UI label, not the hook matcher name.
 const HOOK_MATCHER = "spawn_agent|collaborationspawn_agent|collaboration__spawn_agent";
-const HOOK_STATUS = "Eco: apply Profile role model";
+const HOOK_STATUS = "Eco: apply orchestration role model";
 
 /**
  * Install a Codex PreToolUse hook that forces `fork_turns="none"` on spawn_agent.
  *
  * Codex defaults omitted fork_turns to "all", which inherits the parent model and
- * rejects agent_type (openai/codex#20077). Eco writes Profile models into
+ * rejects agent_type (openai/codex#20077). Eco writes orchestration models into
  * the thread's content-addressed agent config; the main agent only needs agent_type — this hook
  * applies the community workaround without teaching the model about fork_turns.
  *
@@ -206,7 +206,7 @@ if (!hasMessage || (!hasTaskName && !hasAgentType)) {
   process.exit(0);
 }
 
-// Profile role models load only when fork is not full-history (codex#20077).
+// Orchestration role models load only when fork is not full-history (codex#20077).
 toolInput.fork_turns = "none";
 // Role files own model/provider; strip overrides that confuse Codex built-in names.
 delete toolInput.model;

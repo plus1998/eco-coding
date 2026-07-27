@@ -222,7 +222,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
         WorkflowSettingsSnapshot(
           sessionMode: workflow.sessionMode,
           defaultCoreKind: coreKind,
-          defaultAgentProfileId: workflow.defaultAgentProfileId,
+          defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
           mcpServersEnabled: workflow.mcpServersEnabled,
         ),
       );
@@ -254,8 +254,17 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     final rpc = ref.read(desktopRpcProvider);
     final workspacePath = ref.read(selectedProjectPathProvider).valueOrNull;
     final runtimeConfig = ref.read(runtimeConfigProvider);
+    final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
     if (rpc == null || workspacePath == null || workspacePath.isEmpty) return;
     if (runtimeConfig == null) return;
+    if (!isThreadOrchestrationReady(modelSettings, runtimeConfig)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.commonNotConfigured)),
+        );
+      }
+      return;
+    }
 
     setState(() => _starting = true);
     try {

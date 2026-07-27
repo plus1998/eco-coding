@@ -128,13 +128,13 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     objectArg(["workspacePath", "branch"]),
   ]),
   command("git:generate-commit-message", "Generate commit message", "read", RPC_INVOKE, [
-    objectArg(["workspacePath", "profileId", "includeUnstaged"]),
+    objectArg(["workspacePath", "mainAgentConfigId", "includeUnstaged"]),
   ]),
   command("git:list-commit-model-options", "List commit message model options", "read", RPC_INVOKE, [
-    objectArg(["profileId"]),
+    objectArg(["mainAgentConfigId"]),
   ]),
   command("git:commit", "Commit workspace changes", "execute", RPC_INVOKE, [
-    objectArg(["workspacePath", "profileId", "includeUnstaged"]),
+    objectArg(["workspacePath", "mainAgentConfigId", "includeUnstaged"]),
   ]),
   command("git:push", "Push commits to remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
   command("git:fetch", "Fetch from remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),

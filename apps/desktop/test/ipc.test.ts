@@ -26,11 +26,12 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.agentTemplateDelete).toBe("agent-template:delete");
   expect(IPC_CHANNELS.agentTemplateExport).toBe("agent-template:export");
   expect(IPC_CHANNELS.agentTemplateImport).toBe("agent-template:import");
-  expect(IPC_CHANNELS.orchestrationProfileList).toBe("orchestration-profile:list");
-  expect(IPC_CHANNELS.orchestrationProfileSave).toBe("orchestration-profile:save");
-  expect(IPC_CHANNELS.orchestrationProfileDelete).toBe("orchestration-profile:delete");
-  expect(IPC_CHANNELS.orchestrationProfileExport).toBe("orchestration-profile:export");
-  expect(IPC_CHANNELS.orchestrationProfileImport).toBe("orchestration-profile:import");
+  expect(IPC_CHANNELS.mainAgentConfigSave).toBe("main-agent-config:save");
+  expect(IPC_CHANNELS.mainAgentConfigDelete).toBe("main-agent-config:delete");
+  expect(IPC_CHANNELS.mainAgentPromptSave).toBe("main-agent-prompt:save");
+  expect(IPC_CHANNELS.mainAgentPromptDelete).toBe("main-agent-prompt:delete");
+  expect(IPC_CHANNELS.subagentOrchestrationSave).toBe("subagent-orchestration:save");
+  expect(IPC_CHANNELS.subagentOrchestrationDelete).toBe("subagent-orchestration:delete");
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
   expect(IPC_CHANNELS.threadUpdateRuntimeConfig).toBe("thread:update-runtime-config");
   expect(IPC_CHANNELS.threadGet).toBe("thread:get");

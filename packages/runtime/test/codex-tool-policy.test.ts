@@ -132,18 +132,18 @@ test("role toml fields include sandbox and approval", () => {
   expect(fields.sandbox_workspace_write).toEqual({ network_access: true });
 });
 
-test("ask sessionMode forces readOnly even if profile is workspace-write", () => {
+test("ask sessionMode forces readOnly even if orchestration is workspace-write", () => {
   const effective = resolveEffectiveTurnSandbox({
     sessionMode: "ask",
-    profilePolicy: DEFAULT_CODEX_TOOL_POLICY,
+    orchestrationPolicy: DEFAULT_CODEX_TOOL_POLICY,
   });
   expect(effective.sandboxPolicy).toBe("readOnly");
 });
 
-test("agent sessionMode uses profile danger-full-access", () => {
+test("agent sessionMode uses orchestration danger-full-access", () => {
   const effective = resolveEffectiveTurnSandbox({
     sessionMode: "agent",
-    profilePolicy: normalizeEcoToolPolicy({
+    orchestrationPolicy: normalizeEcoToolPolicy({
       sandboxMode: "danger-full-access",
       approvalPolicy: "never",
     }),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/generated/app_localizations.dart';
-import '../models/thread_models.dart';
+import '../models/thread_runtime_config.dart';
 import '../models/thread_usage_models.dart';
 import '../theme/subagent_theme.dart';
 import 'model_id.dart';
@@ -182,7 +182,7 @@ class FlatSubagentContextRow {
 
 List<FlatSubagentContextRow> buildFlatSubagentContextRows(
   ThreadContextSnapshot context, {
-  OrchestrationProfile? profile,
+  SubagentThemeSource? themeSource,
   required AppLocalizations l10n,
 }) {
   final subagentRoles = context.roles
@@ -204,7 +204,10 @@ List<FlatSubagentContextRow> buildFlatSubagentContextRows(
         key: instance.agentId,
         role: instance.role,
         title: '$roleLabel #${shortAgentId(instance.agentId)}',
-        accentColor: resolveSubagentThemeColor(instance.role, profile: profile),
+        accentColor: resolveSubagentThemeColor(
+          instance.role,
+          agents: themeSource?.agents ?? const [],
+        ),
         snapshot: ThreadRoleContextSnapshot(
           role: instance.role,
           occupied: instance.occupied,
@@ -223,7 +226,10 @@ List<FlatSubagentContextRow> buildFlatSubagentContextRows(
       key: role.role,
       role: role.role,
       title: formatRoleModelLabel(role.role, role.modelId, l10n),
-      accentColor: resolveSubagentThemeColor(role.role, profile: profile),
+      accentColor: resolveSubagentThemeColor(
+        role.role,
+        agents: themeSource?.agents ?? const [],
+      ),
       snapshot: role,
     );
   }).toList();

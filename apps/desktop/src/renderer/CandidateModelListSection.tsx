@@ -19,13 +19,13 @@ import {
 } from "./ModelSpecSummary";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import type { ModelsDevModelOption } from "../shared/ipc";
-import type { ManualSpecFormFields } from "./agent-profile-manual-spec-form";
+import type { ManualSpecFormFields } from "./agent-resource-manual-spec-form";
 import {
   emptyManualSpecForm,
   prefillManualSpecFormFromCandidate,
   prefillManualSpecFormFromHints,
   tryFormToManualSpec,
-} from "./agent-profile-manual-spec-form";
+} from "./agent-resource-manual-spec-form";
 
 interface CandidateModelPanelProps {
   providerId: string;

@@ -54,7 +54,7 @@ export interface CollectCodexGatewayCatalogRoutesInput {
   providers?: readonly EcoProviderForModelCatalog[];
   /** Persisted route-profile / coding route rows. */
   routeConfigs?: readonly CodexGatewayCatalogRoute[];
-  /** Orchestration Profile agents (main + subagents). */
+  /** Orchestration agents (main + subagents). */
   orchestrationAgents?: readonly CodexGatewayCatalogRoute[];
   /** Current effective runtime / agent routes (highest priority). */
   effectiveRoutes?: readonly CodexGatewayCatalogRoute[];

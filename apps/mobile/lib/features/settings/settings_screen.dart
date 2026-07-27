@@ -56,7 +56,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         WorkflowSettingsSnapshot(
           sessionMode: nextMode,
           defaultCoreKind: workflow?.defaultCoreKind,
-          defaultAgentProfileId: workflow?.defaultAgentProfileId,
+          defaultOrchestrationSelection: workflow?.defaultOrchestrationSelection,
           mcpServersEnabled: workflow?.mcpServersEnabled,
         ),
       );

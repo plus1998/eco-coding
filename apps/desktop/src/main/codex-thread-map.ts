@@ -12,10 +12,10 @@ import {
  * product rule even though Codex supports `next_thread_spawn_depth` > 1.
  */
 
-/** Per Codex child thread: parent link + Profile role id (from `thread/started` or spawn item). */
+/** Per Codex child thread: parent link + orchestration role id (from `thread/started` or spawn item). */
 export interface CodexThreadAttributionRecord {
   parentThreadId: string;
-  /** Profile role id when known; parent link alone is enough for Eco thread resolution. */
+  /** Orchestration role id when known; parent link alone is enough for Eco thread resolution. */
   agentRole?: string | undefined;
   agentNickname?: string | undefined;
   spawnCallId?: string | undefined;

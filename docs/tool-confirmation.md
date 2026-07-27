@@ -13,14 +13,14 @@ Composer 里的执行确认（持久化字段仍为 `bashReviewMode`）：
 |------|------|
 | **每次确认** (`always`) | 终端命令与工作区外读取都询问 |
 | **风险时确认** (`auto`) | 低风险自动执行；高风险命令仍询问 |
-| **自动执行** (`allow_all`) | 跳过确认（Profile 禁用、Plan/Ask 模式、硬拒规则仍生效） |
+| **自动执行** (`allow_all`) | 跳过确认（orchestration 禁用、Plan/Ask 模式、硬拒规则仍生效） |
 
 ---
 
 ## 一条决策链
 
 ```
-Profile / sessionMode：能不能用这工具？
+orchestration / sessionMode：能不能用这工具？
         ↓ 不能 → 硬拒（无弹窗）
 PreToolUse Hook：硬拒 denylist / 阶段禁用；工作区外文件访问返回 ask
         ↓ 通过
@@ -42,7 +42,7 @@ canUseTool（Desktop）：evaluateToolConfirmation
 | `sessionMode` | 执行确认 |
 |---------------|----------|
 | `agent` | 按三档执行 |
-| `plan` / `ask` | 不允许 Bash；外读按 Profile |
+| `plan` / `ask` | 不允许 Bash；外读按 orchestration |
 
 ---
 

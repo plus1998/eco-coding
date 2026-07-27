@@ -146,7 +146,9 @@ export class ProviderStore {
       providers: this.listProviders(),
       routeProfiles,
       agentTemplates: createBuiltInAgentTemplates(),
-      orchestrationProfiles: [],
+      mainAgentConfigs: [],
+      mainAgentPrompts: [],
+      subagentOrchestrations: [],
     };
   }
 

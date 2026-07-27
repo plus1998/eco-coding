@@ -1,4 +1,4 @@
-import type { OrchestrationProfile } from "./agent-orchestration";
+import type { ResolvedOrchestrationSnapshot } from "./agent-orchestration";
 
 export type SkillSource = "user" | "project";
 export type SkillLayout = "claude" | "agents" | "codex";
@@ -243,7 +243,7 @@ const LEGACY_AGENT_SKILL_ROLES = [
 
 export function buildRuntimeAgentSkillAssignments(
   skills: readonly string[],
-  profile?: Pick<OrchestrationProfile, "agents">,
+  orchestration?: Pick<ResolvedOrchestrationSnapshot, "agents">,
 ): Partial<Record<string, string[]>> {
   if (skills.length === 0) {
     return {};
@@ -252,7 +252,7 @@ export function buildRuntimeAgentSkillAssignments(
   const assignments: Partial<Record<string, string[]>> = Object.fromEntries(
     LEGACY_AGENT_SKILL_ROLES.map((role) => [role, [...cleanSkills]]),
   );
-  for (const agent of profile?.agents ?? []) {
+  for (const agent of orchestration?.agents ?? []) {
     if (!agent.enabled) {
       continue;
     }

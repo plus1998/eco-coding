@@ -80,6 +80,7 @@ export interface AgentTemplate {
   updatedAt: string;
 }
 
+/** Materialized main-agent block consumed by Claude/Codex runtime. */
 export interface MainAgentConfig {
   agentKey: string;
   name: string;
@@ -89,6 +90,93 @@ export interface MainAgentConfig {
   modelRef: ModelRef;
   tools: ToolPolicy;
   skills: string[];
+}
+
+/** Model + capability policy for the main agent. No prompt text. */
+export interface MainAgentConfigResource {
+  id: string;
+  name: string;
+  agentKey: string;
+  domain: AgentDomain;
+  modelRef: ModelRef;
+  tools: ToolPolicy;
+  skills: string[];
+  updatedAt: string;
+  source: AgentConfigSource;
+}
+
+/** Independent prompt append resource. `builtin` means no custom append. */
+export type MainAgentPromptMode = "builtin" | "custom_append";
+
+export interface MainAgentPromptResource {
+  id: string;
+  name: string;
+  mode: MainAgentPromptMode;
+  /** Custom append text. Empty when mode is `builtin`. */
+  prompt: string;
+  updatedAt: string;
+  source: AgentConfigSource;
+}
+
+export type MainAgentPromptSelection =
+  | { mode: "builtin" }
+  | { mode: "custom_append"; promptId: string };
+
+export type SubagentSelection =
+  | { mode: "none" }
+  | { mode: "orchestration"; orchestrationId: string };
+
+/** Live component references resolved when creating or switching a thread. */
+export interface OrchestrationSelection {
+  mainAgentConfigId: string;
+  mainPrompt: MainAgentPromptSelection;
+  subagents: SubagentSelection;
+}
+
+/** Subagent roster + strategy + domain resource. */
+export interface SubagentOrchestrationResource {
+  id: string;
+  name: string;
+  domain: AgentDomain;
+  agents: AgentInstanceConfig[];
+  strategy: OrchestrationStrategy;
+  updatedAt: string;
+  source: AgentConfigSource;
+}
+
+/**
+ * Materialised orchestration snapshot for a thread runtime.
+ * Retains component content, display names, and the original selection.
+ */
+export interface ResolvedOrchestrationSnapshot {
+  selection: OrchestrationSelection;
+  mainAgentConfigName: string;
+  mainPromptDisplayName: string;
+  subagentOrchestrationDisplayName?: string;
+  mainAgent: MainAgentConfig;
+  agents: AgentInstanceConfig[];
+  strategy: OrchestrationStrategy;
+  resolvedAt: string;
+}
+
+/** Runtime execution config passed to Claude/Codex orchestration. */
+export interface EcoOrchestrationConfig {
+  mainAgent: MainAgentConfig;
+  agents: AgentInstanceConfig[];
+  strategy: OrchestrationStrategy;
+}
+
+export interface OrchestrationResourceLookup {
+  mainAgentConfigs: readonly MainAgentConfigResource[];
+  mainAgentPrompts: readonly MainAgentPromptResource[];
+  subagentOrchestrations: readonly SubagentOrchestrationResource[];
+}
+
+export interface PresetResourceBundle {
+  mainAgentConfig: MainAgentConfigResource;
+  mainAgentPrompt?: MainAgentPromptResource;
+  subagentOrchestration: SubagentOrchestrationResource;
+  selection: OrchestrationSelection;
 }
 
 export interface AgentInstanceConfig {
@@ -103,30 +191,7 @@ export interface AgentInstanceConfig {
   enabled: boolean;
 }
 
-export interface BuiltinAgentConfig {
-  modelRef: ModelRef;
-  themeColor?: string;
-}
-
-export interface BuiltinAgentsConfig {
-  explore: BuiltinAgentConfig;
-}
-
 export type OrchestrationStrategy = { kind: "autonomous"; guidancePrompt?: string };
-
-export interface OrchestrationProfile {
-  id: string;
-  name: string;
-  preset: AgentDomain;
-  mainAgent: MainAgentConfig;
-  /** @deprecated Legacy profiles stored Explore outside the editable agent roster. */
-  builtinAgents?: BuiltinAgentsConfig;
-  agents: AgentInstanceConfig[];
-  strategy: OrchestrationStrategy;
-  updatedAt: string;
-  source: AgentConfigSource;
-  sourceRouteProfileId?: string;
-}
 
 export const CODING_AGENT_TEMPLATE_IDS = {
   explore: "builtin.coding.explore",
@@ -322,6 +387,22 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
   ];
 }
 
+/** Merge store/user templates with built-ins without duplicate ids. User entries win. */
+export function resolveAgentTemplateCatalog(
+  templates: readonly AgentTemplate[] = [],
+): AgentTemplate[] {
+  const byId = new Map<string, AgentTemplate>();
+  for (const template of templates) {
+    byId.set(template.id, template);
+  }
+  for (const template of createBuiltInAgentTemplates()) {
+    if (!byId.has(template.id)) {
+      byId.set(template.id, template);
+    }
+  }
+  return [...byId.values()];
+}
+
 export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
   return [
     {
@@ -373,33 +454,37 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
   ];
 }
 
-export function createUserPresetProfileId(presetId: AgentDomain, existingIds: readonly string[]): string {
+export function createUserPresetResourceId(presetId: AgentDomain, existingIds: readonly string[]): string {
   return uniquePresetProfileValue(
-    `user.${presetId}.profile`,
+    `user.${presetId}.main_config`,
     existingIds,
     (base, index) => `${base}.${index}`,
   );
 }
 
-export function createUserPresetProfileName(presetName: string, existingNames: readonly string[]): string {
+export function createUserPresetResourceName(presetName: string, existingNames: readonly string[]): string {
   return uniquePresetProfileValue(
-    `${presetName} Profile`,
+    `${presetName} Main Config`,
     existingNames,
     (base, index) => `${base} ${index}`,
   );
 }
 
-export function buildOrchestrationProfileFromPreset(
+export function buildPresetResourcesFromDefinition(
   preset: BuiltInPresetDefinition,
   options: {
-    id: string;
-    name: string;
+    mainAgentConfigId: string;
+    mainAgentConfigName: string;
+    subagentOrchestrationId: string;
+    subagentOrchestrationName: string;
+    mainAgentPromptId?: string;
+    mainAgentPromptName?: string;
     modelRef: ModelRef;
     templates?: readonly AgentTemplate[];
     source?: Extract<AgentConfigSource, "user" | "project">;
     updatedAt?: string;
   },
-): OrchestrationProfile {
+): PresetResourceBundle {
   const modelRef = cloneModelRef(options.modelRef);
   if (!modelRef.providerId || !modelRef.modelId) {
     throw new Error("复制场景预设需要可用的默认模型。");
@@ -408,20 +493,33 @@ export function buildOrchestrationProfileFromPreset(
     (options.templates ?? createBuiltInAgentTemplates()).map((template) => [template.id, template]),
   );
   const now = options.updatedAt ?? new Date().toISOString();
-  return {
-    id: options.id.trim(),
-    name: options.name.trim(),
-    preset: preset.id,
-    mainAgent: {
-      agentKey: "main",
-      name: `${preset.name} Main Agent`,
-      domain: preset.id,
-      systemPromptPreset: preset.id === "coding" ? "core_native" : "custom_append",
-      prompt: preset.mainAgentPrompt.trim(),
-      modelRef,
-      tools: cloneToolPolicy(preset.mainAgentTools),
-      skills: [],
-    },
+  const source = options.source ?? "user";
+  const usesCustomPrompt = preset.id !== "coding";
+  const mainAgentConfig: MainAgentConfigResource = {
+    id: options.mainAgentConfigId.trim(),
+    name: options.mainAgentConfigName.trim(),
+    agentKey: "main",
+    domain: preset.id,
+    modelRef,
+    tools: cloneToolPolicy(preset.mainAgentTools),
+    skills: [],
+    updatedAt: now,
+    source,
+  };
+  const mainAgentPrompt: MainAgentPromptResource | undefined = usesCustomPrompt
+    ? {
+        id: (options.mainAgentPromptId ?? `${options.mainAgentConfigId}.prompt`).trim(),
+        name: (options.mainAgentPromptName ?? `${preset.name} Prompt`).trim(),
+        mode: "custom_append",
+        prompt: preset.mainAgentPrompt.trim(),
+        updatedAt: now,
+        source,
+      }
+    : undefined;
+  const subagentOrchestration: SubagentOrchestrationResource = {
+    id: options.subagentOrchestrationId.trim(),
+    name: options.subagentOrchestrationName.trim(),
+    domain: preset.id,
     agents: preset.defaultAgents.map((agent) => {
       const template = templateById.get(agent.templateId);
       if (!template) {
@@ -440,34 +538,51 @@ export function buildOrchestrationProfileFromPreset(
     }),
     strategy: cloneOrchestrationStrategy(preset.strategies.autonomous),
     updatedAt: now,
-    source: options.source ?? "user",
+    source,
+  };
+  const selection: OrchestrationSelection = {
+    mainAgentConfigId: mainAgentConfig.id,
+    mainPrompt: mainAgentPrompt
+      ? { mode: "custom_append", promptId: mainAgentPrompt.id }
+      : { mode: "builtin" },
+    subagents: { mode: "orchestration", orchestrationId: subagentOrchestration.id },
+  };
+  return {
+    mainAgentConfig,
+    ...(mainAgentPrompt ? { mainAgentPrompt } : {}),
+    subagentOrchestration,
+    selection,
   };
 }
 
-export function buildCodingOrchestrationProfileFromRouteProfile(
+export function buildPresetResourcesFromRouteProfile(
   routeProfile: RouteProfileView,
   options: {
+    mainAgentConfigId: string;
+    subagentOrchestrationId: string;
     subagentEnabled?: Partial<SubagentEnabledSettings>;
-  } = {},
-): OrchestrationProfile {
+    updatedAt?: string;
+  },
+): PresetResourceBundle {
   const routeByRole = new Map(routeProfile.routes.map((route) => [route.role, route]));
   const plannerRoute = requireRoute(routeByRole, "planner", routeProfile.id);
   const exploreRoute = requireRoute(routeByRole, "explore", routeProfile.id);
-  const updatedAt = routeProfile.updatedAt;
-  return {
-    id: routeProfile.id,
-    name: routeProfile.name,
-    preset: "coding",
-    mainAgent: {
-      agentKey: CODING_AGENT_KEYS.main,
-      name: "Main Agent",
-      domain: "coding",
-      systemPromptPreset: "core_native",
-      prompt: "Coordinate the coding task, choose useful subagents, and produce a concise final result.",
-      modelRef: routeToModelRef(plannerRoute),
-      tools: cloneToolPolicy(MAIN_CODING_TOOLS),
-      skills: [],
-    },
+  const updatedAt = options.updatedAt ?? routeProfile.updatedAt;
+  const mainAgentConfig: MainAgentConfigResource = {
+    id: options.mainAgentConfigId.trim(),
+    name: `${routeProfile.name} Main Config`,
+    agentKey: CODING_AGENT_KEYS.main,
+    domain: "coding",
+    modelRef: routeToModelRef(plannerRoute),
+    tools: cloneToolPolicy(MAIN_CODING_TOOLS),
+    skills: [],
+    updatedAt,
+    source: "derived",
+  };
+  const subagentOrchestration: SubagentOrchestrationResource = {
+    id: options.subagentOrchestrationId.trim(),
+    name: `${routeProfile.name} Subagents`,
+    domain: "coding",
     agents: [
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.explore,
@@ -503,17 +618,13 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
     strategy: codingDefaultStrategy(),
     updatedAt,
     source: "derived",
-    sourceRouteProfileId: routeProfile.id,
   };
-}
-
-export function buildCodingOrchestrationProfilesFromRouteProfiles(
-  routeProfiles: readonly RouteProfileView[],
-  options: {
-    subagentEnabled?: Partial<SubagentEnabledSettings>;
-  } = {},
-): OrchestrationProfile[] {
-  return routeProfiles.map((profile) => buildCodingOrchestrationProfileFromRouteProfile(profile, options));
+  const selection: OrchestrationSelection = {
+    mainAgentConfigId: mainAgentConfig.id,
+    mainPrompt: { mode: "builtin" },
+    subagents: { mode: "orchestration", orchestrationId: subagentOrchestration.id },
+  };
+  return { mainAgentConfig, subagentOrchestration, selection };
 }
 
 function buildCodingAgentInstance(
@@ -536,36 +647,6 @@ function buildCodingAgentInstance(
     skills: [],
     enabled,
   };
-}
-
-export function listOrchestrationProfileAgents(profile: OrchestrationProfile): AgentInstanceConfig[] {
-  if (profile.agents.some((agent) => agent.agentKey === CODING_AGENT_KEYS.explore)) {
-    return profile.agents;
-  }
-  const legacyExplore = profile.builtinAgents?.explore;
-  if (!legacyExplore) {
-    return profile.agents;
-  }
-  const template = createBuiltInAgentTemplates().find(
-    (candidate) => candidate.id === CODING_AGENT_TEMPLATE_IDS.explore,
-  );
-  if (!template) {
-    throw new Error("Missing built-in Explore template.");
-  }
-  return [
-    {
-      agentKey: CODING_AGENT_KEYS.explore,
-      templateId: template.id,
-      displayName: template.name,
-      ...(legacyExplore.themeColor && { themeColor: legacyExplore.themeColor }),
-      modelRef: cloneModelRef(legacyExplore.modelRef),
-      tools: cloneToolPolicy(template.defaultTools),
-      mcpServers: [],
-      skills: [],
-      enabled: true,
-    },
-    ...profile.agents,
-  ];
 }
 
 function subagentEnabledFor(
@@ -601,7 +682,7 @@ function requireRoute(
 ): RoleRouteConfig {
   const route = routeByRole.get(role);
   if (!route) {
-    throw new Error(`Coding orchestration profile ${profileId} is missing ${role} model route.`);
+    throw new Error(`Coding route profile ${profileId} is missing ${role} model route.`);
   }
   return route;
 }
@@ -643,10 +724,233 @@ function uniquePresetProfileValue(
   throw new Error(`无法为 ${base} 生成唯一名称。`);
 }
 
+
+export function isOrchestrationSelection(value: unknown): value is OrchestrationSelection {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.mainAgentConfigId !== "string" || !record.mainAgentConfigId.trim()) {
+    return false;
+  }
+  if (!isMainAgentPromptSelection(record.mainPrompt)) {
+    return false;
+  }
+  return isSubagentSelection(record.subagents);
+}
+
+export function isSubagentSelection(value: unknown): value is SubagentSelection {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.mode === "none") {
+    return true;
+  }
+  return (
+    record.mode === "orchestration" &&
+    typeof record.orchestrationId === "string" &&
+    Boolean(record.orchestrationId.trim())
+  );
+}
+
+export function isMainAgentPromptSelection(value: unknown): value is MainAgentPromptSelection {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.mode === "builtin") {
+    return true;
+  }
+  return (
+    record.mode === "custom_append" &&
+    typeof record.promptId === "string" &&
+    Boolean(record.promptId.trim())
+  );
+}
+
+export function isResolvedOrchestrationSnapshot(value: unknown): value is ResolvedOrchestrationSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    isOrchestrationSelection(record.selection) &&
+    typeof record.mainAgentConfigName === "string" &&
+    typeof record.mainPromptDisplayName === "string" &&
+    Boolean(record.mainAgent && typeof record.mainAgent === "object") &&
+    Array.isArray(record.agents) &&
+    Boolean(record.strategy && typeof record.strategy === "object") &&
+    typeof record.resolvedAt === "string"
+  );
+}
+
+const BUILTIN_MAIN_PROMPT_DISPLAY_NAME = "内置提示词";
+
+export function resolveMainPromptDisplayName(
+  selection: MainAgentPromptSelection,
+  prompts: readonly MainAgentPromptResource[],
+): string {
+  if (selection.mode === "builtin") {
+    return BUILTIN_MAIN_PROMPT_DISPLAY_NAME;
+  }
+  const prompt = prompts.find((entry) => entry.id === selection.promptId);
+  if (!prompt) {
+    throw new Error(`找不到主 Agent 提示词：${selection.promptId}`);
+  }
+  return prompt.name;
+}
+
+export function materializeMainAgentConfig(
+  config: MainAgentConfigResource,
+  promptSelection: MainAgentPromptSelection,
+  prompts: readonly MainAgentPromptResource[] = [],
+): MainAgentConfig {
+  if (promptSelection.mode === "builtin") {
+    return {
+      agentKey: config.agentKey,
+      name: config.name,
+      domain: config.domain,
+      systemPromptPreset: "core_native",
+      prompt: "",
+      modelRef: cloneModelRef(config.modelRef),
+      tools: cloneToolPolicy(config.tools),
+      skills: [...config.skills],
+    };
+  }
+  const prompt = prompts.find((entry) => entry.id === promptSelection.promptId);
+  if (!prompt) {
+    throw new Error(`找不到主 Agent 提示词：${promptSelection.promptId}`);
+  }
+  if (prompt.mode === "builtin") {
+    throw new Error(`主 Agent 提示词「${prompt.id}」不是有效的自定义追加资源。`);
+  }
+  return {
+    agentKey: config.agentKey,
+    name: config.name,
+    domain: config.domain,
+    systemPromptPreset: "custom_append",
+    prompt: prompt.prompt,
+    modelRef: cloneModelRef(config.modelRef),
+    tools: cloneToolPolicy(config.tools),
+    skills: [...config.skills],
+  };
+}
+
+/** Strict resolver: missing references throw instead of returning undefined. */
+export function resolveOrchestrationSnapshot(
+  selection: OrchestrationSelection,
+  lookup: OrchestrationResourceLookup,
+): ResolvedOrchestrationSnapshot {
+  const resolvedSelection = cloneOrchestrationSelection(selection);
+  const mainAgentConfig = lookup.mainAgentConfigs.find(
+    (entry) => entry.id === resolvedSelection.mainAgentConfigId,
+  );
+  if (!mainAgentConfig) {
+    throw new Error(`找不到主 Agent 配置：${resolvedSelection.mainAgentConfigId}`);
+  }
+
+  const mainAgent = materializeMainAgentConfig(
+    mainAgentConfig,
+    resolvedSelection.mainPrompt,
+    lookup.mainAgentPrompts,
+  );
+  const mainPromptDisplayName = resolveMainPromptDisplayName(
+    resolvedSelection.mainPrompt,
+    lookup.mainAgentPrompts,
+  );
+
+  if (resolvedSelection.subagents.mode === "none") {
+    return {
+      selection: resolvedSelection,
+      mainAgentConfigName: mainAgentConfig.name,
+      mainPromptDisplayName,
+      mainAgent,
+      agents: [],
+      strategy: defaultNoSubagentsStrategy(),
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  const subagentOrchestrationId = resolvedSelection.subagents.orchestrationId;
+  const subagentOrchestration = lookup.subagentOrchestrations.find(
+    (entry) => entry.id === subagentOrchestrationId,
+  );
+  if (!subagentOrchestration) {
+    throw new Error(`找不到子代理编排：${subagentOrchestrationId}`);
+  }
+
+  return {
+    selection: resolvedSelection,
+    mainAgentConfigName: mainAgentConfig.name,
+    mainPromptDisplayName,
+    subagentOrchestrationDisplayName: subagentOrchestration.name,
+    mainAgent,
+    agents: subagentOrchestration.agents.map(cloneAgentInstance),
+    strategy: cloneOrchestrationStrategy(subagentOrchestration.strategy),
+    resolvedAt: new Date().toISOString(),
+  };
+}
+
+export function orchestrationConfigFromSnapshot(
+  snapshot: ResolvedOrchestrationSnapshot,
+): EcoOrchestrationConfig {
+  return {
+    mainAgent: cloneMainAgentConfig(snapshot.mainAgent),
+    agents: snapshot.agents.map(cloneAgentInstance),
+    strategy: cloneOrchestrationStrategy(snapshot.strategy),
+  };
+}
+
+function cloneOrchestrationSelection(selection: OrchestrationSelection): OrchestrationSelection {
+  return {
+    mainAgentConfigId: selection.mainAgentConfigId.trim(),
+    mainPrompt:
+      selection.mainPrompt.mode === "builtin"
+        ? { mode: "builtin" }
+        : { mode: "custom_append", promptId: selection.mainPrompt.promptId.trim() },
+    subagents:
+      selection.subagents.mode === "none"
+        ? { mode: "none" }
+        : { mode: "orchestration", orchestrationId: selection.subagents.orchestrationId.trim() },
+  };
+}
+
+function cloneMainAgentConfig(config: MainAgentConfig): MainAgentConfig {
+  return {
+    agentKey: config.agentKey,
+    name: config.name,
+    domain: config.domain,
+    systemPromptPreset: config.systemPromptPreset,
+    prompt: config.prompt,
+    modelRef: cloneModelRef(config.modelRef),
+    tools: cloneToolPolicy(config.tools),
+    skills: [...config.skills],
+  };
+}
+
+function defaultNoSubagentsStrategy(): OrchestrationStrategy {
+  return { kind: "autonomous" };
+}
+
 function cloneOrchestrationStrategy(strategy: OrchestrationStrategy): OrchestrationStrategy {
   return {
     kind: "autonomous",
     ...(strategy.guidancePrompt && { guidancePrompt: strategy.guidancePrompt }),
+  };
+}
+
+function cloneAgentInstance(agent: AgentInstanceConfig): AgentInstanceConfig {
+  return {
+    agentKey: agent.agentKey,
+    templateId: agent.templateId,
+    ...(agent.displayName ? { displayName: agent.displayName } : {}),
+    ...(agent.themeColor ? { themeColor: agent.themeColor } : {}),
+    modelRef: cloneModelRef(agent.modelRef),
+    tools: cloneToolPolicy(agent.tools),
+    mcpServers: [...agent.mcpServers],
+    skills: [...agent.skills],
+    enabled: agent.enabled,
   };
 }
 
@@ -662,17 +966,21 @@ function cloneModelRef(modelRef: ModelRef): ModelRef {
   };
 }
 
+function cloneStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : [];
+}
+
 function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
   return {
-    allowed: [...policy.allowed],
-    disallowed: [...policy.disallowed],
+    allowed: cloneStringList(policy.allowed),
+    disallowed: cloneStringList(policy.disallowed),
     ...(policy.bash && {
       bash: { enabled: policy.bash.enabled },
     }),
     ...(policy.mcp && {
       mcp: {
-        allowedServers: [...policy.mcp.allowedServers],
-        allowedTools: [...policy.mcp.allowedTools],
+        allowedServers: cloneStringList(policy.mcp.allowedServers),
+        allowedTools: cloneStringList(policy.mcp.allowedTools),
       },
     }),
     ...(policy.filesystem && { filesystem: { ...policy.filesystem } }),
@@ -685,14 +993,14 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
       delegation: {
         ...policy.delegation,
         ...(policy.delegation.allowedAgents && {
-          allowedAgents: [...policy.delegation.allowedAgents],
+          allowedAgents: cloneStringList(policy.delegation.allowedAgents),
         }),
       },
     }),
     ...(policy.coreOverrides && {
       coreOverrides: {
         ...(policy.coreOverrides.claude && {
-          claude: { disallowedTools: [...policy.coreOverrides.claude.disallowedTools] },
+          claude: { disallowedTools: cloneStringList(policy.coreOverrides.claude.disallowedTools) },
         }),
         ...(policy.coreOverrides.codex && { codex: { ...policy.coreOverrides.codex } }),
       },

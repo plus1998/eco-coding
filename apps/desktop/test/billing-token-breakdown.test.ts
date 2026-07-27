@@ -87,7 +87,7 @@ test("buildBillingTokenBreakdown merges roles that share the same model", () => 
   expect(breakdown?.byModel[0]?.ecoCostUsd).toBeCloseTo(0.06);
 });
 
-test("buildBillingTokenBreakdown includes dynamic Agent Profile roles", () => {
+test("buildBillingTokenBreakdown includes dynamic orchestration roles", () => {
   const breakdown = buildBillingTokenBreakdown(
     makeBilling({
       researcher: {

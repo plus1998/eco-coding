@@ -8,6 +8,7 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/file_change.dart';
@@ -573,7 +574,7 @@ class ActivityFeedList extends StatefulWidget {
     required this.entries,
     required this.scrollController,
     this.scrollCoordinator,
-    this.agentProfile,
+    this.themeSource,
     this.onOpenAgentDetail,
     this.onOpenToolDetail,
     this.expandUserPrompts = false,
@@ -586,7 +587,7 @@ class ActivityFeedList extends StatefulWidget {
   final List<ActivityFeedEntry> entries;
   final ScrollController scrollController;
   final ActivityFeedScrollCoordinator? scrollCoordinator;
-  final OrchestrationProfile? agentProfile;
+  final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedEntryCallback? onOpenToolDetail;
   final bool expandUserPrompts;
@@ -679,7 +680,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                 return _ActivityFeedEntryTile(
                   key: ValueKey(entry.id),
                   entry: entry,
-                  agentProfile: widget.agentProfile,
+                  themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   onOpenToolDetail: widget.onOpenToolDetail,
                   expandUserPrompts: widget.expandUserPrompts,
@@ -767,14 +768,14 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   const _ActivityFeedEntryTile({
     super.key,
     required this.entry,
-    this.agentProfile,
+    this.themeSource,
     this.onOpenAgentDetail,
     this.onOpenToolDetail,
     this.expandUserPrompts = false,
   });
 
   final ActivityFeedEntry entry;
-  final OrchestrationProfile? agentProfile;
+  final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedEntryCallback? onOpenToolDetail;
   final bool expandUserPrompts;
@@ -785,7 +786,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
       case ActivityFeedKind.turn:
         return _TurnFeedTile(
           entry: entry,
-          agentProfile: agentProfile,
+          themeSource: themeSource,
           onOpenAgentDetail: onOpenAgentDetail,
           onOpenToolDetail: onOpenToolDetail,
         );
@@ -833,7 +834,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           summary: entry.text,
           prompt: entry.missionPrompt,
           agentId: entry.agentId,
-          agentProfile: agentProfile,
+          themeSource: themeSource,
           running: entry.running,
           durationMs: entry.durationMs,
           statusText: entry.statusText,
@@ -851,13 +852,13 @@ class _ActivityFeedEntryTile extends StatelessWidget {
 class _TurnFeedTile extends StatefulWidget {
   const _TurnFeedTile({
     required this.entry,
-    this.agentProfile,
+    this.themeSource,
     this.onOpenAgentDetail,
     this.onOpenToolDetail,
   });
 
   final ActivityFeedEntry entry;
-  final OrchestrationProfile? agentProfile;
+  final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedEntryCallback? onOpenToolDetail;
 
@@ -993,7 +994,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                             _ActivityFeedEntryTile(
                               key: ValueKey(child.id),
                               entry: child,
-                              agentProfile: widget.agentProfile,
+                              themeSource: widget.themeSource,
                               onOpenAgentDetail: widget.onOpenAgentDetail,
                               onOpenToolDetail: widget.onOpenToolDetail,
                             ),
@@ -1010,7 +1011,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                 label: context.l10n.activityFinalOutput,
                 child: _ActivityFeedEntryTile(
                   entry: widget.entry.finalOutput!,
-                  agentProfile: widget.agentProfile,
+                  themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   onOpenToolDetail: widget.onOpenToolDetail,
                 ),
@@ -1482,8 +1483,8 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
     final children = widget.entry.actionChildren;
     final singleBashChild =
         children.length == 1 && children.single.bashRun != null
-            ? children.single
-            : null;
+        ? children.single
+        : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
       child: Column(
@@ -1521,8 +1522,7 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                                 key: ValueKey(child.id),
                                 label: child.text,
                                 icon:
-                                    child.actionIcon ??
-                                    ActivityActionIcon.file,
+                                    child.actionIcon ?? ActivityActionIcon.file,
                                 lifecycle: child.lifecycle,
                                 bashRun: child.bashRun,
                                 fileChange: child.fileChange,
@@ -2310,7 +2310,7 @@ class _SubagentMissionTile extends StatefulWidget {
     required this.summary,
     this.prompt,
     this.agentId,
-    this.agentProfile,
+    this.themeSource,
     this.running = false,
     this.durationMs = 0,
     this.statusText,
@@ -2322,7 +2322,7 @@ class _SubagentMissionTile extends StatefulWidget {
   final String summary;
   final String? prompt;
   final String? agentId;
-  final OrchestrationProfile? agentProfile;
+  final SubagentThemeSource? themeSource;
   final bool running;
   final int durationMs;
   final String? statusText;
@@ -2403,7 +2403,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final hasTimeline = widget.timeline.isNotEmpty || _latchedHasTimeline;
     final roleColor = resolveSubagentThemeColor(
       role,
-      profile: widget.agentProfile,
+      agents: widget.themeSource?.agents ?? const [],
     );
     final statusText = widget.statusText?.trim();
     final showStatus =

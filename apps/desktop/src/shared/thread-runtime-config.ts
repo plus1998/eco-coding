@@ -1,5 +1,5 @@
 import {
-  collectProfileAssignedMcpServers,
+  collectOrchestrationAssignedMcpServers,
 } from "@eco/runtime/agent-orchestration";
 import {
   defaultSubagentAvailability,
@@ -7,7 +7,16 @@ import {
   SUBAGENT_ROLES,
 } from "@eco/runtime/subagent-availability";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
-import { listOrchestrationProfileAgents } from "./agent-orchestration";
+import {
+  isOrchestrationSelection,
+  isResolvedOrchestrationSnapshot,
+  orchestrationConfigFromSnapshot,
+  resolveOrchestrationSnapshot,
+  type EcoOrchestrationConfig,
+  type OrchestrationResourceLookup,
+  type OrchestrationSelection,
+  type ResolvedOrchestrationSnapshot,
+} from "./agent-orchestration";
 import {
   deriveMcpServersEnabled,
   listEnabledGlobalMcpServerKeys,
@@ -18,8 +27,6 @@ import {
 import type {
   McpServerConfigView,
   ModelSettingsSnapshot,
-  OrchestrationProfile,
-  RoleRouteConfig,
   RuntimeAgentRole,
   RuntimeRoleRouteConfig,
   SubagentEnabledSettings,
@@ -33,8 +40,9 @@ import {
 import { isSessionMode, normalizeSessionMode, resolveSessionMode, type SessionMode } from "./session-mode";
 
 export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
+export type { OrchestrationSelection, ResolvedOrchestrationSnapshot };
 
-export type MainAgentSystemPromptPreset = OrchestrationProfile["mainAgent"]["systemPromptPreset"];
+export type MainAgentSystemPromptPreset = ResolvedOrchestrationSnapshot["mainAgent"]["systemPromptPreset"];
 
 export interface MainAgentModelOverride {
   providerId: string;
@@ -43,9 +51,15 @@ export interface MainAgentModelOverride {
   candidateModelId?: string;
 }
 
+/**
+ * Thread-bound runtime config.
+ * `orchestrationSelection` + `resolvedOrchestrationSnapshot` are materialized when
+ * creating a thread or explicitly switching orchestration. Missing selection only
+ * allows viewing history, not starting a run.
+ */
 export interface ThreadRuntimeConfig {
-  routeProfileId: string;
-  agentProfileId?: string;
+  orchestrationSelection?: OrchestrationSelection;
+  resolvedOrchestrationSnapshot?: ResolvedOrchestrationSnapshot;
   mainAgentModelOverride?: MainAgentModelOverride;
   mainAgentSystemPromptPresetOverride?: MainAgentSystemPromptPreset;
   subagentEnabled: SubagentEnabledSettings;
@@ -65,38 +79,71 @@ export function resolveMainAgentModelOverrideForProvider(
   return currentProviderId && override?.providerId.trim() === currentProviderId ? override : undefined;
 }
 
-export function getDefaultRouteProfileId(settings: ModelSettingsSnapshot): string | undefined {
-  return settings.routeProfiles[0]?.id;
+export function orchestrationResourceLookupFromSettings(
+  settings: ModelSettingsSnapshot,
+): OrchestrationResourceLookup {
+  return {
+    mainAgentConfigs: settings.mainAgentConfigs,
+    mainAgentPrompts: settings.mainAgentPrompts,
+    subagentOrchestrations: settings.subagentOrchestrations,
+  };
 }
 
-export function getDefaultAgentProfileId(
-  settings: ModelSettingsSnapshot,
-  preferredProfileId?: string,
-): string | undefined {
-  const preferredId = preferredProfileId?.trim();
-  if (preferredId && settings.orchestrationProfiles.some((profile) => profile.id === preferredId)) {
-    return preferredId;
+export function hasCompleteOrchestrationSelection(
+  selection: OrchestrationSelection | undefined,
+): selection is OrchestrationSelection {
+  if (!selection || !isOrchestrationSelection(selection)) {
+    return false;
   }
-  return settings.orchestrationProfiles[0]?.id;
+  if (!selection.mainAgentConfigId.trim()) {
+    return false;
+  }
+  if (selection.mainPrompt.mode === "custom_append" && !selection.mainPrompt.promptId.trim()) {
+    return false;
+  }
+  if (
+    selection.subagents.mode === "orchestration" &&
+    !selection.subagents.orchestrationId.trim()
+  ) {
+    return false;
+  }
+  return true;
 }
 
-export function getRoutesForProfile(
+export function resolveThreadOrchestrationSnapshot(
   settings: ModelSettingsSnapshot,
-  routeProfileId: string,
-): RoleRouteConfig[] | undefined {
-  return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
+  config: ThreadRuntimeConfig,
+): ResolvedOrchestrationSnapshot | undefined {
+  if (config.resolvedOrchestrationSnapshot && isResolvedOrchestrationSnapshot(config.resolvedOrchestrationSnapshot)) {
+    return config.resolvedOrchestrationSnapshot;
+  }
+  if (!hasCompleteOrchestrationSelection(config.orchestrationSelection)) {
+    return undefined;
+  }
+  return resolveOrchestrationSnapshot(
+    config.orchestrationSelection,
+    orchestrationResourceLookupFromSettings(settings),
+  );
 }
 
-export function runtimeRoleRoutesFromAgentProfile(
-  profile: OrchestrationProfile,
+export function resolveThreadOrchestrationConfig(
+  settings: ModelSettingsSnapshot,
+  config: ThreadRuntimeConfig,
+): EcoOrchestrationConfig | undefined {
+  const snapshot = resolveThreadOrchestrationSnapshot(settings, config);
+  return snapshot ? orchestrationConfigFromSnapshot(snapshot) : undefined;
+}
+
+export function runtimeRoleRoutesFromOrchestrationSnapshot(
+  snapshot: ResolvedOrchestrationSnapshot,
   mainAgentModelOverride?: MainAgentModelOverride,
 ): RuntimeRoleRouteConfig[] {
   const routes = new Map<RuntimeAgentRole, RuntimeRoleRouteConfig>();
-  routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
-  for (const agent of listOrchestrationProfileAgents(profile)) {
+  routes.set("planner", routeFromModelRef("planner", snapshot.mainAgent.modelRef));
+  for (const agent of snapshot.agents) {
     const role = agent.agentKey;
     if (agent.enabled && role !== "planner" && !routes.has(role)) {
-      routes.set(role, routeFromAgentProfileModelRef(role, agent.modelRef));
+      routes.set(role, routeFromModelRef(role, agent.modelRef));
     }
   }
   return applyMainAgentModelOverride([...routes.values()], mainAgentModelOverride);
@@ -133,9 +180,9 @@ export function applyMainAgentModelOverride(
   });
 }
 
-function routeFromAgentProfileModelRef(
+function routeFromModelRef(
   role: RuntimeAgentRole,
-  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
+  modelRef: ResolvedOrchestrationSnapshot["mainAgent"]["modelRef"],
 ): RuntimeRoleRouteConfig {
   return {
     role,
@@ -149,25 +196,22 @@ function routeFromAgentProfileModelRef(
   };
 }
 
-export function getAgentProfileById(
+/** Build selection + snapshot for thread persistence. */
+export function materializeThreadOrchestrationSnapshot(
   settings: ModelSettingsSnapshot,
-  agentProfileId: string | undefined,
-): OrchestrationProfile | undefined {
-  const id = agentProfileId?.trim();
-  if (!id) {
-    return undefined;
-  }
-  return settings.orchestrationProfiles.find((profile) => profile.id === id);
-}
-
-export function resolveThreadAgentProfile(
-  settings: ModelSettingsSnapshot,
-  config: ThreadRuntimeConfig,
-): OrchestrationProfile | undefined {
-  return (
-    getAgentProfileById(settings, config.agentProfileId) ??
-    getAgentProfileById(settings, config.routeProfileId)
+  selection: OrchestrationSelection,
+): {
+  orchestrationSelection: OrchestrationSelection;
+  resolvedOrchestrationSnapshot: ResolvedOrchestrationSnapshot;
+} {
+  const resolvedOrchestrationSnapshot = resolveOrchestrationSnapshot(
+    selection,
+    orchestrationResourceLookupFromSettings(settings),
   );
+  return {
+    orchestrationSelection: selection,
+    resolvedOrchestrationSnapshot,
+  };
 }
 
 export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeConfig {
@@ -175,9 +219,14 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
     return false;
   }
   const record = value as Record<string, unknown>;
-  const hasRouteProfileId = typeof record.routeProfileId === "string" && record.routeProfileId.trim();
-  const hasAgentProfileId = typeof record.agentProfileId === "string" && record.agentProfileId.trim();
-  if (!hasRouteProfileId && !hasAgentProfileId) {
+  if (
+    "routeProfileId" in record ||
+    "agentProfileId" in record ||
+    "mainAgentConfigId" in record ||
+    "mainPrompt" in record ||
+    "subagentOrchestrationId" in record ||
+    "resolvedProfileSnapshot" in record
+  ) {
     return false;
   }
   if (!isSessionMode(record.sessionMode)) {
@@ -195,6 +244,18 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (
     record.mainAgentSystemPromptPresetOverride !== undefined &&
     !isMainAgentSystemPromptPreset(record.mainAgentSystemPromptPresetOverride)
+  ) {
+    return false;
+  }
+  if (
+    record.orchestrationSelection !== undefined &&
+    !isOrchestrationSelection(record.orchestrationSelection)
+  ) {
+    return false;
+  }
+  if (
+    record.resolvedOrchestrationSnapshot !== undefined &&
+    !isResolvedOrchestrationSnapshot(record.resolvedOrchestrationSnapshot)
   ) {
     return false;
   }
@@ -228,6 +289,9 @@ export function parseThreadRuntimeConfigJson(
   }
   try {
     const parsed: unknown = JSON.parse(json);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
     if (!isThreadRuntimeConfig(parsed)) {
       return undefined;
     }
@@ -241,14 +305,41 @@ export function serializeThreadRuntimeConfig(config: ThreadRuntimeConfig): strin
   return JSON.stringify(normalizeThreadRuntimeConfig(config));
 }
 
+/** Compare runtime configs without volatile snapshot timestamps. */
+export function serializeThreadRuntimeConfigForCompare(config: ThreadRuntimeConfig): string {
+  const normalized = normalizeThreadRuntimeConfig(config);
+  if (!normalized.resolvedOrchestrationSnapshot) {
+    return JSON.stringify(normalized);
+  }
+  const { resolvedAt: _resolvedAt, ...snapshotWithoutTimestamp } =
+    normalized.resolvedOrchestrationSnapshot;
+  return JSON.stringify({
+    ...normalized,
+    resolvedOrchestrationSnapshot: snapshotWithoutTimestamp,
+  });
+}
+
+export function threadRuntimeConfigsEquivalent(
+  left: ThreadRuntimeConfig,
+  right: ThreadRuntimeConfig,
+): boolean {
+  return (
+    serializeThreadRuntimeConfigForCompare(left) === serializeThreadRuntimeConfigForCompare(right)
+  );
+}
+
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
-  const routeProfileId = typeof config.routeProfileId === "string" ? config.routeProfileId.trim() : "";
   const bashReviewMode = normalizeBashReviewMode(config.bashReviewMode);
   const mcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);
   const skillsEnabled = normalizeSkillsEnabled(config.skillsEnabled);
   return {
-    routeProfileId,
-    ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
+    ...(config.orchestrationSelection && isOrchestrationSelection(config.orchestrationSelection)
+      ? { orchestrationSelection: normalizeOrchestrationSelection(config.orchestrationSelection) }
+      : {}),
+    ...(config.resolvedOrchestrationSnapshot &&
+    isResolvedOrchestrationSnapshot(config.resolvedOrchestrationSnapshot)
+      ? { resolvedOrchestrationSnapshot: config.resolvedOrchestrationSnapshot }
+      : {}),
     ...(config.mainAgentModelOverride
       ? { mainAgentModelOverride: normalizeMainAgentModelOverride(config.mainAgentModelOverride) }
       : {}),
@@ -263,15 +354,15 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   };
 }
 
-/** Align runtime subagent toggles with agents actually present in the selected profile. */
-export function deriveSubagentEnabledFromProfile(
-  profile: OrchestrationProfile,
+/** Align runtime subagent toggles with agents actually present in the snapshot. */
+export function deriveSubagentEnabledFromSnapshot(
+  snapshot: ResolvedOrchestrationSnapshot,
   existing?: Partial<SubagentEnabledSettings>,
 ): SubagentEnabledSettings {
   const subagentEnabled = defaultSubagentAvailability();
-  const profileAgents = listOrchestrationProfileAgents(profile);
+  const orchestrationAgents = snapshot.agents;
   for (const role of SUBAGENT_ROLES) {
-    const agent = profileAgents.find((candidate) => candidate.agentKey === role);
+    const agent = orchestrationAgents.find((candidate) => candidate.agentKey === role);
     if (!agent?.enabled) {
       subagentEnabled[role] = false;
       continue;
@@ -290,17 +381,17 @@ function normalizeBashReviewMode(value: unknown): BashReviewMode {
   return "always";
 }
 
-/** Resolve MCP servers enabled for a thread session (composer overrides profile assignment). */
+/** Resolve MCP servers enabled for a thread session (composer overrides snapshot assignment). */
 export function resolveThreadRuntimeMcpServerKeys(input: {
   runtimeConfig?: ThreadRuntimeConfig;
   settings: ModelSettingsSnapshot;
   availableMcpServerKeys: readonly string[];
 }): string[] {
-  const profile = input.runtimeConfig
-    ? resolveThreadAgentProfile(input.settings, input.runtimeConfig)
+  const snapshot = input.runtimeConfig
+    ? resolveThreadOrchestrationSnapshot(input.settings, input.runtimeConfig)
     : undefined;
-  const profileAssigned = profile
-    ? collectProfileAssignedMcpServers(profile, input.settings.agentTemplates)
+  const orchestrationAssigned = snapshot
+    ? collectOrchestrationAssignedMcpServers(orchestrationConfigFromSnapshot(snapshot), input.settings.agentTemplates)
     : [];
   if (input.runtimeConfig?.mcpServersEnabled) {
     return resolveEnabledMcpServerKeys(
@@ -309,40 +400,34 @@ export function resolveThreadRuntimeMcpServerKeys(input: {
       }),
     );
   }
-  return profileAssigned;
+  return orchestrationAssigned;
 }
 
 export function buildThreadRuntimeConfigFromDefaults(input: {
   settings: ModelSettingsSnapshot;
   workflowDefaults: WorkflowSettingsSnapshot;
-  routeProfileId?: string;
-  agentProfileId?: string;
+  orchestrationSelection?: OrchestrationSelection;
   mcpServers?: readonly McpServerConfigView[];
 }): ThreadRuntimeConfig {
-  const requestedProfileId = input.agentProfileId?.trim() || input.routeProfileId?.trim();
-  const agentProfile =
-    getAgentProfileById(input.settings, requestedProfileId) ??
-    getAgentProfileById(
-      input.settings,
-      getDefaultAgentProfileId(input.settings, input.workflowDefaults.defaultAgentProfileId),
-    );
-  if (!agentProfile) {
-    throw new Error("至少添加一套智能体配置。");
+  const selection =
+    input.orchestrationSelection ?? input.workflowDefaults.defaultOrchestrationSelection;
+  if (!hasCompleteOrchestrationSelection(selection)) {
+    throw new Error("请先选择完整的主代理、提示词和子代理编排组合。");
   }
+  const materialized = materializeThreadOrchestrationSnapshot(input.settings, selection);
   const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(input.mcpServers ?? []);
-  const profileAssignedMcpServers = collectProfileAssignedMcpServers(
-    agentProfile,
+  const orchestrationAssignedMcpServers = collectOrchestrationAssignedMcpServers(
+    orchestrationConfigFromSnapshot(materialized.resolvedOrchestrationSnapshot),
     input.settings.agentTemplates,
   );
   const sessionMode = normalizeSessionMode(input.workflowDefaults.sessionMode);
-  return {
-    routeProfileId: agentProfile.id,
-    agentProfileId: agentProfile.id,
-    subagentEnabled: deriveSubagentEnabledFromProfile(agentProfile),
+  const base: ThreadRuntimeConfig = {
+    ...materialized,
+    subagentEnabled: deriveSubagentEnabledFromSnapshot(materialized.resolvedOrchestrationSnapshot),
     ...(availableMcpServerKeys.length > 0
       ? {
           mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
-            profileAssignedServers: profileAssignedMcpServers,
+            orchestrationAssignedServers: orchestrationAssignedMcpServers,
             ...(input.workflowDefaults.mcpServersEnabled
               ? { remembered: input.workflowDefaults.mcpServersEnabled }
               : {}),
@@ -350,12 +435,14 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
         }
       : {}),
     sessionMode,
+    bashReviewMode: "auto",
+  };
+
+  const confirmation = materialized.resolvedOrchestrationSnapshot.mainAgent.tools.confirmation;
+  return {
+    ...base,
     bashReviewMode:
-      agentProfile.mainAgent.tools.confirmation === "never"
-        ? "allow_all"
-        : agentProfile.mainAgent.tools.confirmation === "always"
-          ? "always"
-          : "auto",
+      confirmation === "never" ? "allow_all" : confirmation === "always" ? "always" : "auto",
   };
 }
 
@@ -379,40 +466,38 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
   before: ThreadRuntimeConfig,
   after: ThreadRuntimeConfig,
 ): boolean {
-  const left = normalizeThreadRuntimeConfig(before);
-  const right = normalizeThreadRuntimeConfig(after);
-  return (
-    left.routeProfileId === right.routeProfileId &&
-    left.agentProfileId === right.agentProfileId &&
-    mainAgentModelOverridesEqual(left.mainAgentModelOverride, right.mainAgentModelOverride) &&
-    left.mainAgentSystemPromptPresetOverride === right.mainAgentSystemPromptPresetOverride &&
-    left.sessionMode === right.sessionMode &&
-    booleanRecordsEqual(left.mcpServersEnabled, right.mcpServersEnabled) &&
-    booleanRecordsEqual(left.skillsEnabled, right.skillsEnabled) &&
-    SUBAGENT_ROLES.every((role) => left.subagentEnabled[role] === right.subagentEnabled[role])
-  );
-}
-
-function booleanRecordsEqual(
-  left: Record<string, boolean> | undefined,
-  right: Record<string, boolean> | undefined,
-): boolean {
-  const leftEntries = Object.entries(left ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  const rightEntries = Object.entries(right ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  return (
-    leftEntries.length === rightEntries.length &&
-    leftEntries.every(
-      ([key, enabled], index) =>
-        rightEntries[index]?.[0] === key && rightEntries[index]?.[1] === enabled,
-    )
+  const normalizedBefore = normalizeThreadRuntimeConfig(before);
+  const normalizedAfter = normalizeThreadRuntimeConfig(after);
+  return threadRuntimeConfigsEquivalent(
+    { ...normalizedBefore, bashReviewMode: normalizedAfter.bashReviewMode },
+    normalizedAfter,
   );
 }
 
 export function resolveMainAgentSystemPromptPreset(
-  profile: OrchestrationProfile,
+  snapshot: ResolvedOrchestrationSnapshot,
   config: ThreadRuntimeConfig,
 ): MainAgentSystemPromptPreset {
-  return config.mainAgentSystemPromptPresetOverride ?? profile.mainAgent.systemPromptPreset;
+  return config.mainAgentSystemPromptPresetOverride ?? snapshot.mainAgent.systemPromptPreset;
+}
+
+function normalizeOrchestrationSelection(selection: OrchestrationSelection): OrchestrationSelection {
+  const mainPrompt =
+    selection.mainPrompt.mode === "builtin"
+      ? { mode: "builtin" as const }
+      : { mode: "custom_append" as const, promptId: selection.mainPrompt.promptId.trim() };
+  const subagents =
+    selection.subagents.mode === "none"
+      ? { mode: "none" as const }
+      : {
+          mode: "orchestration" as const,
+          orchestrationId: selection.subagents.orchestrationId.trim(),
+        };
+  return {
+    mainAgentConfigId: selection.mainAgentConfigId.trim(),
+    mainPrompt,
+    subagents,
+  };
 }
 
 function isMainAgentSystemPromptPreset(value: unknown): value is MainAgentSystemPromptPreset {
@@ -443,21 +528,6 @@ function normalizeMainAgentModelOverride(override: MainAgentModelOverride): Main
     ...(override.thinkingEffort !== undefined ? { thinkingEffort: override.thinkingEffort } : {}),
     ...(candidateModelId ? { candidateModelId } : {}),
   };
-}
-
-function mainAgentModelOverridesEqual(
-  left?: MainAgentModelOverride,
-  right?: MainAgentModelOverride,
-): boolean {
-  if (!left || !right) {
-    return left === right;
-  }
-  return (
-    left.providerId === right.providerId &&
-    left.modelId === right.modelId &&
-    left.thinkingEffort === right.thinkingEffort &&
-    left.candidateModelId === right.candidateModelId
-  );
 }
 
 function isThinkingEffort(value: string): value is ThinkingEffort {

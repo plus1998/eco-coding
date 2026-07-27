@@ -69,10 +69,9 @@ import {
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
-  type OrchestrationProfile,
-  type OrchestrationProfileExportRequest,
-  type OrchestrationProfileExportResult,
-  type OrchestrationProfileImportResult,
+  type MainAgentConfigResource,
+  type MainAgentPromptResource,
+  type SubagentOrchestrationResource,
   type PackageScriptsListResult,
   type PackageScriptTerminalLaunchPayload,
   type ProviderConfigInput,
@@ -341,22 +340,25 @@ const api = {
   importAgentTemplates(): Promise<AgentTemplateImportResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateImport);
   },
-  listOrchestrationProfiles(): Promise<OrchestrationProfile[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileList);
+  saveMainAgentConfig(config: MainAgentConfigResource): Promise<MainAgentConfigResource> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mainAgentConfigSave, config);
   },
-  saveOrchestrationProfile(profile: OrchestrationProfile): Promise<OrchestrationProfile> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileSave, profile);
+  deleteMainAgentConfig(configId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mainAgentConfigDelete, configId);
   },
-  deleteOrchestrationProfile(profileId: string): Promise<{ ok: true }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileDelete, profileId);
+  saveMainAgentPrompt(prompt: MainAgentPromptResource): Promise<MainAgentPromptResource> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mainAgentPromptSave, prompt);
   },
-  exportOrchestrationProfiles(
-    request?: OrchestrationProfileExportRequest,
-  ): Promise<OrchestrationProfileExportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileExport, request);
+  deleteMainAgentPrompt(promptId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mainAgentPromptDelete, promptId);
   },
-  importOrchestrationProfiles(): Promise<OrchestrationProfileImportResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileImport);
+  saveSubagentOrchestration(
+    orchestration: SubagentOrchestrationResource,
+  ): Promise<SubagentOrchestrationResource> {
+    return ipcRenderer.invoke(IPC_CHANNELS.subagentOrchestrationSave, orchestration);
+  },
+  deleteSubagentOrchestration(orchestrationId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.subagentOrchestrationDelete, orchestrationId);
   },
   updateThreadRuntimeConfig(request: ThreadUpdateRuntimeConfigRequest): Promise<{ thread: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);

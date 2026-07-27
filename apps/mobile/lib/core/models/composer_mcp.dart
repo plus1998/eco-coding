@@ -18,11 +18,11 @@ List<String> listEnabledGlobalMcpServerKeys(List<McpServerConfigView> servers) {
 
 Map<String, bool> deriveMcpServersEnabled(
   List<String> availableServerKeys, {
-  List<String> profileAssignedServers = const [],
+  List<String> orchestrationAssignedServers = const [],
   Map<String, bool>? existing,
   Map<String, bool>? remembered,
 }) {
-  final profileAssigned = profileAssignedServers
+  final orchestrationAssigned = orchestrationAssignedServers
       .map(sanitizeMcpServerName)
       .toSet();
   final result = <String, bool>{};
@@ -38,7 +38,7 @@ Map<String, bool> deriveMcpServersEnabled(
       result[sanitized] = rememberedValue;
       continue;
     }
-    result[sanitized] = profileAssigned.contains(sanitized);
+    result[sanitized] = orchestrationAssigned.contains(sanitized);
   }
   return result;
 }

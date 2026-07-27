@@ -4,7 +4,7 @@ import type { CodexGatewayApiCompat } from "../../shared/src";
 import type {
   EcoAgentInstanceConfig,
   EcoAgentTemplateConfig,
-  EcoOrchestrationProfileConfig,
+  EcoOrchestrationConfig,
 } from "./agent-orchestration.js";
 import {
   buildCodexGatewayModelAlias,
@@ -25,7 +25,7 @@ import {
 import { exploreAgentDescription, exploreAgentPrompt } from "./prompts/explore.js";
 import { isThreadSubagentRoleEnabledForCodex } from "./subagent-availability.js";
 
-/** Codex role id for Profile `builtinAgents.explore` (plan §6.2.1). */
+/** Reserved Codex role id for the editable Explore roster entry. */
 export const CODEX_EXPLORE_ROLE_ID = "explore";
 const CODEX_EXPLORE_TEMPLATE_ID = "builtin.coding.explore";
 const ECO_ROLE_BUNDLES_DIRNAME = "eco-agent-bundles";
@@ -37,9 +37,9 @@ const BUILTIN_EXPLORE_TOOL_POLICY: EcoToolPolicy = {
   allowSpawn: false,
 };
 
-export interface SyncProfileAgentsToCodexRolesInput {
+export interface SyncOrchestrationAgentsToCodexRolesInput {
   codexHomeDir: string;
-  profile: EcoOrchestrationProfileConfig;
+  orchestration: EcoOrchestrationConfig;
   templates: readonly EcoAgentTemplateConfig[];
   /** Global MCP definitions inherited by the thread before actor-specific policy is applied. */
   mcpServers?: readonly CodexMcpServerForConfigSync[];
@@ -89,18 +89,16 @@ export interface SyncedCodexRole {
   providerId: string;
   /** Explicit modelRef wire override; absent means use the provider default. */
   apiCompat?: CodexGatewayApiCompat;
-  /** Profile tool policy sandbox — used to infer subagent card role when spawn omits agent_type. */
+  /** Orchestration tool policy sandbox used to infer subagent card role when spawn omits agent_type. */
   sandboxMode: CodexSandboxMode;
   /** Exact role policy reapplied to explicit child turns after thread/resume. */
   toolPolicy: EcoToolPolicy;
 }
 
-export interface SyncProfileAgentsToCodexRolesResult {
+export interface SyncOrchestrationAgentsToCodexRolesResult {
   codexHomeDir: string;
   /** Directory containing generated Codex custom agent TOML files. */
   agentsDir: string;
-  /** @deprecated Use agentsDir. Kept as a compatibility alias for older Eco callers. */
-  rolesDir: string;
   roleIds: string[];
   agentRoles: CodexAgentRoleForConfigSync[];
   roles: SyncedCodexRole[];
@@ -117,7 +115,7 @@ interface CodexRoleDraft extends BuiltCodexRole {
 }
 
 /**
- * Sync enabled Profile agents into a content-addressed immutable directory.
+ * Sync enabled orchestration agents into a content-addressed immutable directory.
  * Codex reads a role file only when spawn_agent runs, so mutable shared paths
  * would let a concurrent thread replace another thread's permissions.
  * Bundles stay outside `$CODEX_HOME/agents`, where Codex recursively discovers
@@ -125,19 +123,19 @@ interface CodexRoleDraft extends BuiltCodexRole {
  *
  * @see docs/codex-integration-plan.md §6.2.2, §6.4
  */
-export async function syncProfileAgentsToCodexRoles(
-  input: SyncProfileAgentsToCodexRolesInput & {
+export async function syncOrchestrationAgentsToCodexRoles(
+  input: SyncOrchestrationAgentsToCodexRolesInput & {
     /** Thread-level subagent toggles; when set, only enabled roles are written. */
     subagentAvailability?: Partial<Record<string, boolean>>;
   },
-): Promise<SyncProfileAgentsToCodexRolesResult> {
+): Promise<SyncOrchestrationAgentsToCodexRolesResult> {
   const templateById = new Map(input.templates.map((template) => [template.id, template]));
-  const exploreAgent = input.profile.agents.find(
+  const exploreAgent = input.orchestration.agents.find(
     (agent) =>
       agent.agentKey.trim().toLowerCase() === CODEX_EXPLORE_ROLE_ID &&
       agent.templateId === CODEX_EXPLORE_TEMPLATE_ID,
   );
-  const enabledAgents = input.profile.agents.filter((agent) => {
+  const enabledAgents = input.orchestration.agents.filter((agent) => {
     if (agent === exploreAgent) {
       return false;
     }
@@ -153,24 +151,22 @@ export async function syncProfileAgentsToCodexRoles(
     }
     return isThreadSubagentRoleEnabledForCodex(role, input.subagentAvailability);
   });
-  const includeExplore =
-    Boolean(exploreAgent?.enabled || input.profile.builtinAgents?.explore) &&
-    isExploreRoleEnabled(input.subagentAvailability);
-  const profileRoleIds = resolveUniqueRoleIds(enabledAgents.map((agent) => agent.agentKey));
-  if (includeExplore && profileRoleIds.includes(CODEX_EXPLORE_ROLE_ID)) {
+  const includeExplore = Boolean(exploreAgent?.enabled) && isExploreRoleEnabled(input.subagentAvailability);
+  const orchestrationRoleIds = resolveUniqueRoleIds(enabledAgents.map((agent) => agent.agentKey));
+  if (orchestrationRoleIds.includes(CODEX_EXPLORE_ROLE_ID)) {
     throw new Error(
-      `Profile agent key sanitizes to reserved Codex explore role id '${CODEX_EXPLORE_ROLE_ID}'. Rename the agent key.`,
+      `Orchestration agent key sanitizes to reserved Codex explore role id '${CODEX_EXPLORE_ROLE_ID}'. Rename the agent key.`,
     );
   }
   const secretsToRedact = input.secretsToRedact ?? [];
   const mcpScope = normalizeMcpScope(input.mcpServers ?? [], input.threadEnabledMcpServers);
-  const mainToolPolicy = normalizeEcoToolPolicy(input.profile.mainAgent.tools, {
+  const mainToolPolicy = normalizeEcoToolPolicy(input.orchestration.mainAgent.tools, {
     allowSpawnDefault: true,
   });
   const mainMcpVisibility = buildActorMcpVisibility({
     actor: "main",
     mcpScope,
-    // Composer selection is the main actor's default MCP scope. A Profile only
+    // Composer selection is the main actor's default MCP scope. An orchestration only
     // narrows it when it carries an explicit MCP policy; absence means inherit.
     assignedServers:
       mainToolPolicy.mcp === undefined
@@ -193,7 +189,7 @@ export async function syncProfileAgentsToCodexRoles(
       roleId: CODEX_EXPLORE_ROLE_ID,
       mcpVisibility,
       ...buildExploreCodexRole(
-        exploreAgent?.modelRef ?? input.profile.builtinAgents!.explore.modelRef,
+        exploreAgent!.modelRef,
         secretsToRedact,
         mcpVisibility,
         input.mcpServers ?? [],
@@ -203,9 +199,9 @@ export async function syncProfileAgentsToCodexRoles(
 
   for (let index = 0; index < enabledAgents.length; index += 1) {
     const agent = enabledAgents[index];
-    const roleId = profileRoleIds[index];
+    const roleId = orchestrationRoleIds[index];
     if (!agent || !roleId) {
-      throw new Error("Profile agent role resolution failed.");
+      throw new Error("Orchestration agent role resolution failed.");
     }
     const template = templateById.get(agent.templateId);
     if (!template) {
@@ -276,7 +272,6 @@ export async function syncProfileAgentsToCodexRoles(
   return {
     codexHomeDir: input.codexHomeDir,
     agentsDir,
-    rolesDir: agentsDir,
     roleIds: roles.map((role) => role.roleId),
     agentRoles: roles.map((role) => ({
       roleId: role.roleId,
@@ -315,18 +310,18 @@ export function assertCodexRoleProvidersAvailable(
     const modelId = role.modelId.trim();
     if (!modelId) {
       throw new Error(
-        `Codex role '${role.roleId}' is missing modelRef.modelId. Set an explicit model on the Profile agent.`,
+        `Codex role '${role.roleId}' is missing modelRef.modelId. Set an explicit model on the orchestration agent.`,
       );
     }
     if (!providerId) {
       throw new Error(
-        `Codex role '${role.roleId}' is missing modelRef.providerId. Set an explicit provider on the Profile agent.`,
+        `Codex role '${role.roleId}' is missing modelRef.providerId. Set an explicit provider on the orchestration agent.`,
       );
     }
     const provider = enabledProviders.get(providerId);
     if (!provider) {
       throw new Error(
-        `Codex role '${role.roleId}' requires provider '${providerId}' (model '${modelId}'), but it is missing or disabled in Settings. Enable the provider or update the Profile modelRef.`,
+        `Codex role '${role.roleId}' requires provider '${providerId}' (model '${modelId}'), but it is missing or disabled in Settings. Enable the provider or update the orchestration modelRef.`,
       );
     }
     if (

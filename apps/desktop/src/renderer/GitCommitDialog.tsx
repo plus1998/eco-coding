@@ -32,7 +32,7 @@ export type CommitDialogAction = "commit" | "commit-push" | "push";
 interface GitCommitDialogProps {
   open: boolean;
   workspacePath: string;
-  profileId: string;
+  mainAgentConfigId: string;
   gitStatus?: GitWorkingTreeStatus;
   busy?: boolean;
   disabled?: boolean;
@@ -47,7 +47,7 @@ interface GitCommitDialogProps {
 export function GitCommitDialog({
   open,
   workspacePath,
-  profileId,
+  mainAgentConfigId,
   gitStatus,
   busy,
   disabled,
@@ -112,7 +112,7 @@ export function GitCommitDialog({
     setBranchError(undefined);
     setModelOptionsLoading(true);
     void window.eco
-      .listGitCommitModelOptions({ profileId })
+      .listGitCommitModelOptions({ mainAgentConfigId })
       .then((result) => {
         setModelOptions(result.options);
         const hints = result.options
@@ -143,7 +143,7 @@ export function GitCommitDialog({
       .finally(() => {
         setModelOptionsLoading(false);
       });
-  }, [open, profileId]);
+  }, [open, mainAgentConfigId]);
 
   const handleSelectCandidateModel = useCallback(
     (candidateModelId: string) => {
@@ -211,7 +211,7 @@ export function GitCommitDialog({
       const result = await window.eco.generateGitCommitMessage(
         {
           workspacePath,
-          profileId,
+          mainAgentConfigId,
           includeUnstaged,
           ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
         },
@@ -238,7 +238,7 @@ export function GitCommitDialog({
     disabled,
     workspaceAction,
     workspacePath,
-    profileId,
+    mainAgentConfigId,
     includeUnstaged,
     selectedCandidateModelId,
   ]);
@@ -278,7 +278,7 @@ export function GitCommitDialog({
               const generated = await window.eco.generateGitCommitMessage(
                 {
                   workspacePath: operationWorkspacePath,
-                  profileId,
+                  mainAgentConfigId,
                   includeUnstaged,
                   ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
                 },
@@ -300,7 +300,7 @@ export function GitCommitDialog({
 
             const result = await window.eco.commitGitChanges({
               workspacePath: operationWorkspacePath,
-              profileId,
+              mainAgentConfigId,
               includeUnstaged,
               message: commitMessage,
             });
@@ -364,7 +364,7 @@ export function GitCommitDialog({
       selectedCandidateModelId,
       message,
       workspacePath,
-      profileId,
+      mainAgentConfigId,
       includeUnstaged,
       gitStatus?.branch,
       onBeforeAction,

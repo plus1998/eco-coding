@@ -84,13 +84,36 @@ ThreadRunProjectionTimelineItem _codexMessageTimelineItem({
 
 void main() {
   test('configuredOrchestrationSubagentRoles hides unconfigured roles', () {
-    const profile = OrchestrationProfile(
-      id: 'p1',
-      name: 'Test',
-      agents: [OrchestrationAgentInstance(agentKey: 'coder', enabled: true)],
+    const snapshot = ResolvedOrchestrationSnapshot(
+      selection: OrchestrationSelection(
+        mainAgentConfigId: 'main-1',
+        mainPrompt: BuiltinMainAgentPromptSelection(),
+        subagents: NoneSubagentSelection(),
+      ),
+      mainAgentConfigName: 'Main',
+      mainPromptDisplayName: 'Builtin',
+      mainAgent: MainAgentConfig(
+        agentKey: 'main',
+        name: 'Main',
+        domain: 'coding',
+        systemPromptPreset: 'core_native',
+        prompt: '',
+        modelRef: OrchestrationModelRef(providerId: 'p1', modelId: 'm1'),
+        tools: ToolPolicy(),
+      ),
+      agents: [
+        AgentInstanceConfig(
+          agentKey: 'coder',
+          templateId: 'coder',
+          modelRef: OrchestrationModelRef(providerId: 'p1', modelId: 'm1'),
+          tools: ToolPolicy(),
+        ),
+      ],
+      strategy: OrchestrationStrategy(kind: 'autonomous'),
+      resolvedAt: '2026-07-27T00:00:00.000Z',
     );
 
-    expect(configuredOrchestrationSubagentRoles(profile), ['coder']);
+    expect(configuredOrchestrationSubagentRoles(snapshot), ['coder']);
   });
 
   test('buildActivityFeed returns empty without projection', () {

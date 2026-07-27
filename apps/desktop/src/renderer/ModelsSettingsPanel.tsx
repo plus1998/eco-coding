@@ -25,10 +25,10 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   type BuiltInPresetDefinition,
-  buildOrchestrationProfileFromPreset,
+  buildPresetResourcesFromDefinition,
   createBuiltInPresetCatalog,
-  createUserPresetProfileId,
-  createUserPresetProfileName,
+  createUserPresetResourceId,
+  createUserPresetResourceName,
 } from "../shared/agent-orchestration";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type {
@@ -38,36 +38,17 @@ import type {
   ModelRef,
   ModelSettingsSnapshot,
   ModelsDevModelOption,
-  OrchestrationProfile,
+  OrchestrationSelection,
   ProviderConfigInput,
   ProviderConfigView,
   ProxyBridgeSettingsSnapshot,
   SkillsListResult,
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
-import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
+import { hasCompleteOrchestrationSelection } from "../shared/thread-runtime-config";
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
-import {
-  type AgentProfileAgentFormState,
-  type AgentProfileFormState,
-  agentCapabilityFromAgentForm,
-  agentCapabilityPatchToAgentForm,
-  agentProfileToForm,
-  buildOrchestrationProfileFromForm,
-  canEditStoredAgentProfile,
-  createBlankAgentProfileForm,
-  createCopiedAgentProfileForm,
-  createProfileAgentFormFromTemplate,
-  mainCapabilityFromProfileForm,
-  mainCapabilityPatchToProfileForm,
-} from "./agent-profile-form";
-import {
-  type AgentProfileSummary,
-  buildAgentProfileSummary,
-  formatAgentDomainLabel,
-  listSelectableAgentProfileSummaries,
-} from "./agent-profile-summary";
+import { formatAgentDomainLabel } from "./orchestration-summary";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
@@ -81,16 +62,15 @@ import {
   formatProviderPresetSelectLabel,
 } from "./provider-presets";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
+import { AgentCompositionResourcesSection } from "./AgentCompositionResourcesSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 
 export type ModelsSettingsTab =
   | "subagents"
-  | "routes"
   | "providers"
   | "proxyBridge"
-  | "presets";
-
-type AgentProfileEditorMode = "create" | "edit" | "copy";
+  | "presets"
+  | "compositionParts";
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
@@ -102,8 +82,10 @@ interface ModelsSettingsPanelProps {
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
-  defaultAgentProfileId?: string | undefined;
-  onDefaultAgentProfileChange?: ((profileId: string | undefined) => void | Promise<void>) | undefined;
+  defaultOrchestrationSelection?: OrchestrationSelection | undefined;
+  onDefaultOrchestrationSelectionChange?:
+    | ((selection: OrchestrationSelection | undefined) => void | Promise<void>)
+    | undefined;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
@@ -123,15 +105,15 @@ export function ModelsSettingsPanel({
   initialTab = "subagents",
   mode = "agentBuilder",
   onSettingsChange,
-  defaultAgentProfileId,
-  onDefaultAgentProfileChange,
+  defaultOrchestrationSelection,
+  onDefaultOrchestrationSelectionChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
   const { t } = useTranslation();
   const modelsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
     { id: "subagents", label: t("settings.models.library") },
-    { id: "routes", label: t("settings.models.configurations") },
+    { id: "compositionParts", label: "编排组件" },
     { id: "presets", label: t("settings.models.presets") },
   ];
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
@@ -149,24 +131,12 @@ export function ModelsSettingsPanel({
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
-  const [agentProfileModalOpen, setAgentProfileModalOpen] = useState(false);
-  const [agentProfileForm, setAgentProfileForm] = useState<AgentProfileFormState>(() =>
-    createBlankAgentProfileForm(),
-  );
-  const [editingAgentProfileId, setEditingAgentProfileId] = useState<string>();
-  const [agentProfileEditorMode, setAgentProfileEditorMode] = useState<AgentProfileEditorMode>("create");
-  const [agentProfileModalError, setAgentProfileModalError] = useState<string>();
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
   const [modalError, setModalError] = useState<string>();
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
-  const [testingAgentProfileId, setTestingAgentProfileId] = useState<string | null>(null);
   const [providerTestMessage, setProviderTestMessage] = useState<{
-    kind: AppMessageKind;
-    message: string;
-  }>();
-  const [agentProfileTestMessage, setAgentProfileTestMessage] = useState<{
     kind: AppMessageKind;
     message: string;
   }>();
@@ -176,11 +146,6 @@ export function ModelsSettingsPanel({
   }>();
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
-  const [profileArchiveMessage, setProfileArchiveMessage] = useState<{
-    kind: AppMessageKind;
-    message: string;
-  }>();
-  const [profileArchiveBusy, setProfileArchiveBusy] = useState(false);
   const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -198,73 +163,13 @@ export function ModelsSettingsPanel({
     onSettingsChange(snapshot);
   }, [onSettingsChange]);
 
-  const exportAgentProfiles = useCallback(async (profileIds?: string[]) => {
-    if (!window.eco?.exportOrchestrationProfiles) {
-      setProfileArchiveMessage({ kind: "error", message: t("settings.models.exportUnavailable") });
-      return;
-    }
-    setProfileArchiveBusy(true);
-    setProfileArchiveMessage(undefined);
-    try {
-      const result = await window.eco.exportOrchestrationProfiles(profileIds ? { profileIds } : undefined);
-      if (result.canceled) {
-        return;
-      }
-      setProfileArchiveMessage({
-        kind: "success",
-        message: t("settings.models.exported", {
-          count: result.exported,
-          path: result.path ? t("settings.models.exportPath", { path: result.path }) : "",
-        }),
-      });
-    } catch (caught) {
-      setProfileArchiveMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setProfileArchiveBusy(false);
-    }
-  }, []);
-
-  const importAgentProfiles = useCallback(async () => {
-    if (!window.eco?.importOrchestrationProfiles) {
-      setProfileArchiveMessage({ kind: "error", message: t("settings.models.importUnavailable") });
-      return;
-    }
-    setProfileArchiveBusy(true);
-    setProfileArchiveMessage(undefined);
-    onSavingChange?.(true);
-    try {
-      const result = await window.eco.importOrchestrationProfiles();
-      if (result.canceled) {
-        return;
-      }
-      await refreshSettings();
-      setProfileArchiveMessage({
-        kind: "success",
-        message:
-          result.errors.length > 0
-            ? t("settings.models.importedWithErrors", {
-                count: result.imported,
-                errors: result.errors.length,
-              })
-            : t("settings.models.imported", { count: result.imported }),
-      });
-    } catch (caught) {
-      setProfileArchiveMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setProfileArchiveBusy(false);
-      onSavingChange?.(false);
-    }
-  }, [onSavingChange, refreshSettings]);
-
   const copyPresetToProfile = useCallback(
     async (preset: BuiltInPresetDefinition) => {
-      if (!window.eco?.saveAgentTemplate || !window.eco?.saveOrchestrationProfile) {
+      if (
+        !window.eco?.saveAgentTemplate ||
+        !window.eco?.saveMainAgentConfig ||
+        !window.eco?.saveSubagentOrchestration
+      ) {
         setPresetProfileMessage({
           kind: "error",
           message: t("settings.models.presetImportUnavailable"),
@@ -288,14 +193,21 @@ export function ModelsSettingsPanel({
         for (const template of importPlan.templatesToSave) {
           savedTemplates.push(await window.eco.saveAgentTemplate(template));
         }
-        const profile = buildOrchestrationProfileFromPreset(importPlan.presetForProfile, {
-          id: createUserPresetProfileId(
-            preset.id,
-            settings.orchestrationProfiles.map((profile) => profile.id),
+        const mainAgentConfigId = createUserPresetResourceId(
+          preset.id,
+          settings.mainAgentConfigs.map((config) => config.id),
+        );
+        const subagentOrchestrationId = mainAgentConfigId.replace(/\.main_config$/, ".subagents");
+        const bundle = buildPresetResourcesFromDefinition(importPlan.presetDefinition, {
+          mainAgentConfigId,
+          mainAgentConfigName: createUserPresetResourceName(
+            `${preset.name} Main Config`,
+            settings.mainAgentConfigs.map((config) => config.name),
           ),
-          name: createUserPresetProfileName(
-            preset.name,
-            settings.orchestrationProfiles.map((profile) => profile.name),
+          subagentOrchestrationId,
+          subagentOrchestrationName: createUserPresetResourceName(
+            `${preset.name} Subagents`,
+            settings.subagentOrchestrations.map((orchestration) => orchestration.name),
           ),
           modelRef: modelRefFromProvider(provider),
           templates:
@@ -306,11 +218,18 @@ export function ModelsSettingsPanel({
                   ),
                   ...savedTemplates,
                 ]
-              : importPlan.templatesForProfile,
+              : importPlan.templatesForPreset,
         });
-        await window.eco.saveOrchestrationProfile(profile);
+        await window.eco.saveMainAgentConfig(bundle.mainAgentConfig);
+        if (bundle.mainAgentPrompt) {
+          await window.eco.saveMainAgentPrompt(bundle.mainAgentPrompt);
+        }
+        await window.eco.saveSubagentOrchestration(bundle.subagentOrchestration);
         await refreshSettings();
-        setActiveTab("routes");
+        if (hasCompleteOrchestrationSelection(bundle.selection)) {
+          await onDefaultOrchestrationSelectionChange?.(bundle.selection);
+        }
+        setActiveTab("compositionParts");
         const importedTemplateCount = savedTemplates.length;
         const templateMessage =
           importedTemplateCount > 0
@@ -320,7 +239,7 @@ export function ModelsSettingsPanel({
           kind: "success",
           message: t("settings.models.presetCreated", {
             templateMessage,
-            profile: profile.name,
+            resource: bundle.mainAgentConfig.name,
             provider: provider.name,
             model: provider.defaultModel,
           }),
@@ -335,7 +254,7 @@ export function ModelsSettingsPanel({
         onSavingChange?.(false);
       }
     },
-    [settings, refreshSettings, onSavingChange],
+    [onDefaultOrchestrationSelectionChange, onSavingChange, refreshSettings, settings],
   );
 
   useEffect(() => {
@@ -452,102 +371,6 @@ export function ModelsSettingsPanel({
     setProviderForm(providerToForm());
   }
 
-  function profileFormOptions() {
-    return {
-      existingIds: settings.orchestrationProfiles.map((profile) => profile.id),
-      existingNames: settings.orchestrationProfiles.map((profile) => profile.name),
-      providers: settings.providers,
-      templates: settings.agentTemplates,
-    };
-  }
-
-  function openCreateAgentProfile() {
-    setPanelError(undefined);
-    setAgentProfileModalError(undefined);
-    setEditingAgentProfileId(undefined);
-    setAgentProfileEditorMode("create");
-    setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
-    setAgentProfileModalOpen(true);
-  }
-
-  function openEditAgentProfile(profile: OrchestrationProfile) {
-    setPanelError(undefined);
-    setAgentProfileModalError(undefined);
-    if (!canEditStoredAgentProfile(profile)) {
-      openCopyAgentProfile(profile);
-      return;
-    }
-    setEditingAgentProfileId(profile.id);
-    setAgentProfileEditorMode("edit");
-    setAgentProfileForm(agentProfileToForm(profile));
-    setAgentProfileModalOpen(true);
-  }
-
-  function openCopyAgentProfile(profile: OrchestrationProfile) {
-    setPanelError(undefined);
-    setAgentProfileModalError(undefined);
-    setEditingAgentProfileId(undefined);
-    setAgentProfileEditorMode("copy");
-    setAgentProfileForm(createCopiedAgentProfileForm(profile, profileFormOptions()));
-    setAgentProfileModalOpen(true);
-  }
-
-  function closeAgentProfileModal() {
-    setAgentProfileModalOpen(false);
-    setAgentProfileModalError(undefined);
-    setEditingAgentProfileId(undefined);
-    setAgentProfileEditorMode("create");
-    setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
-  }
-
-  async function saveAgentProfile() {
-    if (!window.eco?.saveOrchestrationProfile) {
-      return;
-    }
-    setAgentProfileModalError(undefined);
-    onSavingChange?.(true);
-    try {
-      const existing = editingAgentProfileId
-        ? settings.orchestrationProfiles.find((profile) => profile.id === editingAgentProfileId)
-        : undefined;
-      const profile = buildOrchestrationProfileFromForm(agentProfileForm, {
-        ...(existing && { existing }),
-        templates: settings.agentTemplates,
-      });
-      await window.eco.saveOrchestrationProfile(profile);
-      await refreshSettings();
-      closeAgentProfileModal();
-    } catch (caught) {
-      setAgentProfileModalError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      onSavingChange?.(false);
-    }
-  }
-
-  async function deleteAgentProfile(profile: OrchestrationProfile) {
-    if (!window.eco?.deleteOrchestrationProfile || !canEditStoredAgentProfile(profile)) {
-      return;
-    }
-    if (!window.confirm(t("settings.models.confirmDeleteProfile", { name: profile.name }))) {
-      return;
-    }
-    onSavingChange?.(true);
-    try {
-      await window.eco.deleteOrchestrationProfile(profile.id);
-      await refreshSettings();
-      if (profile.id === defaultAgentProfileId) {
-        const replacementProfileId = settings.orchestrationProfiles.find(
-          (candidate) => candidate.id !== profile.id,
-        )?.id;
-        await onDefaultAgentProfileChange?.(replacementProfileId);
-      }
-    } catch (caught) {
-      setPanelError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      onSavingChange?.(false);
-    }
-  }
-
   async function saveProvider(options?: { closeOnSuccess?: boolean }) {
     if (!window.eco) {
       return undefined;
@@ -591,9 +414,7 @@ export function ModelsSettingsPanel({
       return;
     }
     const providerName = providerForm.name.trim() || t("settings.models.providerFallback");
-    if (
-      !window.confirm(t("settings.models.confirmDeleteProvider", { name: providerName }))
-    ) {
+    if (!window.confirm(t("settings.models.confirmDeleteProvider", { name: providerName }))) {
       return;
     }
 
@@ -629,88 +450,6 @@ export function ModelsSettingsPanel({
       setPanelError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       onSavingChange?.(false);
-    }
-  }
-
-  async function testAgentProfile(profile: OrchestrationProfile) {
-    if (!window.eco?.testRouteProfile) {
-      return;
-    }
-    const routes = runtimeRoleRoutesFromAgentProfile(profile);
-    const displayNames = new Map<string, string>([
-      ["planner", profile.mainAgent.name || t("settings.models.mainAgent")],
-      ...profile.agents.map((agent) => [agent.agentKey, agent.displayName || agent.agentKey] as const),
-    ]);
-    setTestingAgentProfileId(profile.id);
-    setAgentProfileTestMessage(undefined);
-
-    try {
-      const result = await window.eco.testRouteProfile({
-        routes: routes.map((route) => ({
-          role: route.role,
-          providerId: route.providerId,
-          modelId: route.modelId,
-          ...(route.apiCompat && { apiCompat: route.apiCompat }),
-          thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
-        })),
-      });
-
-      if (result.failed === 0) {
-        const uniqueModels = new Set(
-          routes
-            .filter((route) => route.providerId.trim() && route.modelId.trim())
-            .map((route) => `${route.providerId.trim()}:${route.modelId.trim()}:${route.apiCompat ?? ""}`),
-        );
-        const durations = result.results
-          .map((entry) => (entry.elapsedMs !== undefined ? formatDurationMs(entry.elapsedMs) : undefined))
-          .filter(Boolean);
-        const durationHint =
-          durations.length > 0
-            ? t("settings.models.durationHint", { duration: durations[0] })
-            : "";
-        const dedupeHint =
-          uniqueModels.size < result.passed
-            ? t("settings.models.dedupeHint", {
-                groups: uniqueModels.size,
-                count: result.passed,
-              })
-            : "";
-        setAgentProfileTestMessage({
-          kind: "success",
-          message: t("settings.models.profileTestPassed", {
-            name: profile.name,
-            count: result.passed,
-            dedupe: dedupeHint,
-            duration: durationHint,
-          }),
-        });
-      } else {
-        const failedLabels = result.results
-          .filter((entry) => !entry.ok)
-          .map(
-            (entry) =>
-              `${displayNames.get(entry.role) ?? entry.role}: ${
-                entry.error ?? t("settings.models.failedFallback")
-              }`,
-          )
-          .join("；");
-        setAgentProfileTestMessage({
-          kind: "error",
-          message: t("settings.models.profileTestPartial", {
-            name: profile.name,
-            passed: result.passed,
-            total: result.results.length,
-            failures: failedLabels,
-          }),
-        });
-      }
-    } catch (caught) {
-      setAgentProfileTestMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setTestingAgentProfileId(null);
     }
   }
 
@@ -766,11 +505,6 @@ export function ModelsSettingsPanel({
   }
 
   const providerOptions = useMemo(() => settings.providers, [settings.providers]);
-  const selectableProfileSummaries = useMemo(() => listSelectableAgentProfileSummaries(settings), [settings]);
-  const allProfileSummaries = useMemo(
-    () => settings.orchestrationProfiles.map((profile) => buildAgentProfileSummary(settings, profile)),
-    [settings],
-  );
   const presetCatalog = useMemo(() => createBuiltInPresetCatalog(), []);
 
   return (
@@ -782,25 +516,11 @@ export function ModelsSettingsPanel({
           onDismiss={() => setProviderTestMessage(undefined)}
         />
       )}
-      {agentProfileTestMessage && (
-        <AppMessage
-          kind={agentProfileTestMessage.kind}
-          message={agentProfileTestMessage.message}
-          onDismiss={() => setAgentProfileTestMessage(undefined)}
-        />
-      )}
       {presetProfileMessage && (
         <AppMessage
           kind={presetProfileMessage.kind}
           message={presetProfileMessage.message}
           onDismiss={() => setPresetProfileMessage(undefined)}
-        />
-      )}
-      {profileArchiveMessage && (
-        <AppMessage
-          kind={profileArchiveMessage.kind}
-          message={profileArchiveMessage.message}
-          onDismiss={() => setProfileArchiveMessage(undefined)}
         />
       )}
 
@@ -904,141 +624,23 @@ export function ModelsSettingsPanel({
         </section>
       )}
 
-      {activeTab === "routes" && (
-        <section className="mcp-list-section models-routes-section">
-          <div className="mcp-list-toolbar mcp-list-toolbar--actions-end">
-            <div className="models-route-toolbar-actions">
-              <button
-                type="button"
-                className="models-section-button"
-                disabled={busy || profileArchiveBusy}
-                onClick={() => void importAgentProfiles()}
-              >
-                <ArrowUp size={14} />
-                {t("settings.models.importProfile")}
-              </button>
-              <button
-                type="button"
-                className="models-section-button"
-                disabled={busy || profileArchiveBusy}
-                onClick={() => void exportAgentProfiles()}
-              >
-                <Download size={14} />
-                {t("settings.models.exportProfile")}
-              </button>
-              <button
-                type="button"
-                className="mcp-add-button"
-                disabled={busy}
-                onClick={openCreateAgentProfile}
-              >
-                <Plus size={16} />
-                {t("settings.models.addProfile")}
-              </button>
-            </div>
-          </div>
-
-          {selectableProfileSummaries.length === 0 ? (
-            <p className="mcp-list-empty">{t("settings.models.noProfiles")}</p>
+      {activeTab === "compositionParts" && (
+        <>
+          {defaultOrchestrationSelection && hasCompleteOrchestrationSelection(defaultOrchestrationSelection) ? (
+            <p className="settings-section-subtitle">
+              当前默认编排：{defaultOrchestrationSelection.mainAgentConfigId}
+            </p>
           ) : (
-            <ul className="mcp-server-list">
-              {selectableProfileSummaries.map((summary) => {
-                const editableProfile = canEditStoredAgentProfile(summary.profile);
-                const testingProfile = testingAgentProfileId === summary.profile.id;
-                const defaultProfile = summary.profile.id === defaultAgentProfileId;
-                return (
-                  <li key={summary.profile.id} className="mcp-server-row models-agent-profile-row">
-                    <AgentProfileSummaryBlock summary={summary} isDefault={defaultProfile} />
-                    <div className="mcp-server-actions">
-                      <button
-                        type="button"
-                        className={defaultProfile ? "mcp-icon-button is-active" : "mcp-icon-button"}
-                        disabled={busy || defaultProfile}
-                        onClick={() => void onDefaultAgentProfileChange?.(summary.profile.id)}
-                        aria-label={
-                          defaultProfile
-                            ? t("settings.models.isDefaultAria", { name: summary.name })
-                            : t("settings.models.setDefaultAria", { name: summary.name })
-                        }
-                        title={
-                          defaultProfile
-                            ? t("settings.models.isDefault")
-                            : t("settings.models.setDefault")
-                        }
-                      >
-                        <Star size={18} fill={defaultProfile ? "currentColor" : "none"} />
-                      </button>
-                      <button
-                        type="button"
-                        className="mcp-icon-button"
-                        disabled={busy || testingAgentProfileId !== null}
-                        onClick={() => void testAgentProfile(summary.profile)}
-                        aria-label={t("settings.models.testConnectivity", { name: summary.name })}
-                        title={t("settings.models.testConnectivity", { name: summary.name })}
-                      >
-                        {testingProfile ? (
-                          <RefreshCw size={18} className="model-refresh-spin" />
-                        ) : (
-                          <LinkIcon size={18} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="mcp-icon-button"
-                        onClick={() => openCopyAgentProfile(summary.profile)}
-                        aria-label={t("settings.models.copyNamed", { name: summary.name })}
-                        title={t("settings.models.copyNamed", { name: summary.name })}
-                        disabled={busy}
-                      >
-                        <Copy size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        className="mcp-icon-button"
-                        onClick={() => void exportAgentProfiles([summary.profile.id])}
-                        aria-label={t("settings.models.exportNamed", { name: summary.name })}
-                        title={t("settings.models.exportNamed", { name: summary.name })}
-                        disabled={busy || profileArchiveBusy}
-                      >
-                        <Download size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        className="mcp-icon-button"
-                        onClick={() => openEditAgentProfile(summary.profile)}
-                        aria-label={
-                          editableProfile
-                            ? t("settings.models.editNamed", { name: summary.name })
-                            : t("settings.models.copyNamed", { name: summary.name })
-                        }
-                        title={
-                          editableProfile
-                            ? t("settings.models.editNamed", { name: summary.name })
-                            : t("settings.models.copyNamed", { name: summary.name })
-                        }
-                        disabled={busy}
-                      >
-                        <Pencil size={18} />
-                      </button>
-                      {editableProfile ? (
-                        <button
-                          type="button"
-                          className="mcp-icon-button danger"
-                          onClick={() => void deleteAgentProfile(summary.profile)}
-                          aria-label={t("settings.models.deleteNamed", { name: summary.name })}
-                          title={t("settings.models.deleteNamed", { name: summary.name })}
-                          disabled={busy}
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <p className="settings-section-subtitle">尚未设置默认编排组合。</p>
           )}
-        </section>
+          <AgentCompositionResourcesSection
+            settings={settings}
+            mcpServers={mcpServers}
+            busy={busy}
+            onRegistryChange={refreshSettings}
+            onSavingChange={onSavingChange}
+          />
+        </>
       )}
 
       {activeTab === "presets" && (
@@ -1046,7 +648,6 @@ export function ModelsSettingsPanel({
           <PresetOverview
             presets={presetCatalog}
             templates={settings.agentTemplates}
-            profiles={allProfileSummaries}
             busy={busy || Boolean(presetProfileBusyId)}
             copyingPresetId={presetProfileBusyId}
             onCopyPreset={copyPresetToProfile}
@@ -1074,916 +675,7 @@ export function ModelsSettingsPanel({
           onTestCandidate={(modelId) => void testProvider(providerForm, modelId)}
         />
       )}
-
-      {agentProfileModalOpen && (
-        <AgentProfileEditorModal
-          form={agentProfileForm}
-          setForm={setAgentProfileForm}
-          providers={settings.providers}
-          templates={settings.agentTemplates}
-          mcpServers={mcpServers}
-          error={agentProfileModalError}
-          busy={busy}
-          mode={agentProfileEditorMode}
-          onClose={closeAgentProfileModal}
-          onSave={() => void saveAgentProfile()}
-        />
-      )}
     </>
-  );
-}
-
-const AGENT_TEMPLATE_DRAG_TYPE = "application/x-eco-agent-template";
-
-type AgentProfileSelectedNode =
-  | { kind: "main" }
-  | { kind: "agent"; agentKey: string };
-
-export function AgentProfileEditorModal({
-  form,
-  setForm,
-  providers,
-  templates,
-  mcpServers,
-  error,
-  busy,
-  mode,
-  onClose,
-  onSave,
-}: {
-  form: AgentProfileFormState;
-  setForm: Dispatch<SetStateAction<AgentProfileFormState>>;
-  providers: ProviderConfigView[];
-  templates: AgentTemplate[];
-  mcpServers: McpServerConfigView[];
-  error?: string | undefined;
-  busy?: boolean | undefined;
-  mode: AgentProfileEditorMode;
-  onClose: () => void;
-  onSave: () => void;
-}) {
-  const { t } = useTranslation();
-  const modalTitle =
-    mode === "edit"
-      ? t("settings.models.editor.editTitle")
-      : mode === "copy"
-        ? t("settings.models.editor.copyTitle")
-        : t("settings.models.editor.createTitle");
-  const modalBadge =
-    mode === "edit"
-      ? t("common.edit")
-      : mode === "copy"
-        ? t("settings.models.editor.copyBadge")
-        : t("settings.models.editor.newBadge");
-  const modalHint =
-    mode === "edit"
-      ? t("settings.models.editor.editHint")
-      : mode === "copy"
-        ? t("settings.models.editor.copyHint")
-        : t("settings.models.editor.createHint");
-  const saveLabel =
-    mode === "edit"
-      ? t("settings.models.editor.saveChanges")
-      : mode === "copy"
-        ? t("settings.models.editor.createCopy")
-        : t("common.create");
-  const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
-  const selectedTemplateIds = useMemo(
-    () => new Set(form.agents.map((agent) => agent.templateId)),
-    [form.agents],
-  );
-  const selectableTemplates = useMemo(
-    () => templates.filter((template) => !selectedTemplateIds.has(template.id)),
-    [selectedTemplateIds, templates],
-  );
-  const [selectedNode, setSelectedNode] = useState<AgentProfileSelectedNode | null>(null);
-  const selectedAgentKey = selectedNode?.kind === "agent" ? selectedNode.agentKey : undefined;
-  const selectedAgentIndex =
-    selectedAgentKey !== undefined
-      ? form.agents.findIndex((agent) => agent.agentKey === selectedAgentKey)
-      : -1;
-  const selectedAgent = selectedAgentIndex >= 0 ? form.agents[selectedAgentIndex] : undefined;
-  const selectedAgentTemplate = selectedAgent
-    ? templates.find((template) => template.id === selectedAgent.templateId)
-    : undefined;
-
-  useEffect(() => {
-    if (selectedAgentKey !== undefined && selectedAgentIndex === -1) {
-      setSelectedNode(null);
-    }
-  }, [selectedAgentIndex, selectedAgentKey]);
-
-  function patch(patch: Partial<AgentProfileFormState>) {
-    setForm((current) => ({ ...current, ...patch }));
-  }
-
-  function patchAgent(index: number, patch: Partial<AgentProfileAgentFormState>) {
-    setForm((current) => ({
-      ...current,
-      agents: current.agents.map((agent, agentIndex) =>
-        agentIndex === index ? { ...agent, ...patch } : agent,
-      ),
-    }));
-  }
-
-  function patchMainToolPolicy(toolPatch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) {
-    setForm((current) => ({
-      ...current,
-      ...mainCapabilityPatchToProfileForm(toolPatch),
-    }));
-  }
-
-  function addAgent(templateId: string): string | undefined {
-    const existingAgent = form.agents.find((agent) => agent.templateId === templateId);
-    if (existingAgent) {
-      return existingAgent.agentKey;
-    }
-    const template = templates.find((entry) => entry.id === templateId);
-    if (!template) {
-      return undefined;
-    }
-    const provider = selectPresetDefaultProvider(providers);
-    const nextAgent = createProfileAgentFormFromTemplate(template, {
-      ...(provider && { provider }),
-      existingAgentKeys: form.agents.map((agent) => agent.agentKey),
-    });
-    setForm((current) => {
-      if (current.agents.some((agent) => agent.templateId === template.id)) {
-        return current;
-      }
-      return { ...current, agents: [...current.agents, nextAgent] };
-    });
-    return nextAgent.agentKey;
-  }
-
-  function handleTemplateDragStart(event: DragEvent<HTMLElement>, templateId: string) {
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData(AGENT_TEMPLATE_DRAG_TYPE, templateId);
-  }
-
-  function handleCanvasDragOver(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }
-
-  function handleCanvasDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const templateId = event.dataTransfer.getData(AGENT_TEMPLATE_DRAG_TYPE);
-    if (templateId) {
-      const agentKey = addAgent(templateId);
-      if (agentKey) {
-        setSelectedNode({ kind: "agent", agentKey });
-      }
-    }
-  }
-
-  function handlePaletteTemplateSelect(templateId: string) {
-    const agentKey = addAgent(templateId);
-    if (agentKey) {
-      setSelectedNode({ kind: "agent", agentKey });
-    }
-  }
-
-  function removeAgent(index: number) {
-    const removingAgentKey = form.agents[index]?.agentKey;
-    setForm((current) => ({
-      ...current,
-      agents: current.agents.filter((_, agentIndex) => agentIndex !== index),
-    }));
-    if (selectedAgentKey !== undefined && selectedAgentKey === removingAgentKey) {
-      setSelectedNode(null);
-    }
-  }
-
-  return (
-    <div className="settings-modal-backdrop">
-      <button
-        type="button"
-        className="settings-modal-backdrop-close"
-        onClick={onClose}
-        aria-label={t("common.close")}
-        title={t("common.close")}
-        disabled={busy}
-      />
-      <div
-        className="settings-modal settings-modal-agent-profile"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-profile-modal-title"
-      >
-        <header className="settings-modal-header">
-          <div className="models-agent-profile-modal-heading">
-            <div className="models-agent-profile-modal-title-row">
-              <h2 id="agent-profile-modal-title" className="settings-modal-title">
-                {modalTitle}
-              </h2>
-              <span className="models-agent-source-badge">{modalBadge}</span>
-            </div>
-            <p>{modalHint}</p>
-          </div>
-          <button
-            type="button"
-            className="mcp-icon-button"
-            onClick={onClose}
-            aria-label={t("common.close")}
-            title={t("common.close")}
-            disabled={busy}
-          >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="settings-modal-body mcp-editor-form models-agent-profile-form">
-          <section className="models-agent-profile-form-section">
-            <div className="models-agent-profile-meta-grid">
-              <label className="mcp-field">
-                <span className="mcp-field-label">{t("settings.models.editor.profileName")}</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.name}
-                  disabled={busy}
-                  onChange={(event) => patch({ name: event.target.value })}
-                />
-              </label>
-              <div className="models-agent-profile-meta-badges">
-                <span className="models-agent-domain-badge">{formatAgentDomainLabel(form.preset)}</span>
-                <span className="models-agent-source-badge">
-                  {form.source === "project"
-                    ? t("settings.models.editor.project")
-                    : t("settings.models.editor.user")}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <section className="models-agent-profile-form-section">
-            <div className="models-agent-profile-visual-builder">
-              <aside className="models-agent-profile-palette" aria-label={t("settings.models.library")}>
-                <div className="models-agent-profile-builder-head">
-                  <h3 className="models-route-profile-section-title">{t("settings.models.library")}</h3>
-                  <span className="models-agent-source-badge">{selectableTemplates.length} 可选</span>
-                </div>
-                {templates.length === 0 ? (
-                  <p className="mcp-list-empty">{t("settings.models.editor.libraryEmpty")}</p>
-                ) : selectableTemplates.length === 0 ? (
-                  <p className="mcp-list-empty">{t("settings.models.editor.libraryAllAdded")}</p>
-                ) : (
-                  <div className="models-agent-profile-palette-list">
-                    {selectableTemplates.map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        className="models-agent-profile-palette-card"
-                        draggable={!busy}
-                        disabled={busy}
-                        onClick={() => handlePaletteTemplateSelect(template.id)}
-                        onDragStart={(event) => handleTemplateDragStart(event, template.id)}
-                      >
-                        <span className="models-agent-profile-palette-card-main">
-                          <span className="models-agent-profile-palette-title">{template.name}</span>
-                          <span className="models-agent-domain-badge">
-                            {formatAgentDomainLabel(template.domain)}
-                          </span>
-                        </span>
-                        <span className="models-agent-profile-palette-desc">{template.description}</span>
-                        <span className="models-agent-profile-palette-card-action">
-                          <Plus size={14} />
-                          加入
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </aside>
-
-              <section
-                className="models-agent-profile-canvas"
-                aria-label={t("settings.models.editor.canvas")}
-                onDragOver={handleCanvasDragOver}
-                onDrop={handleCanvasDrop}
-              >
-                <div className="models-agent-profile-builder-head">
-                  <div>
-                    <h3 className="models-route-profile-section-title">{t("settings.models.editor.canvas")}</h3>
-                    <p className="models-agent-profile-builder-subtitle">
-                      主 Agent 和 {form.agents.length} 个子代理节点
-                    </p>
-                  </div>
-                  <span className="models-agent-source-badge">
-                    {form.mainSystemPromptPreset === "core_native"
-                      ? t("settings.models.editor.followAgent")
-                      : t("settings.models.editor.customInstructions")}
-                  </span>
-                </div>
-
-                <div className="models-agent-profile-canvas-stage">
-                  <button
-                    type="button"
-                    className="models-agent-profile-node models-agent-profile-node-main"
-                    disabled={busy}
-                    onClick={() => setSelectedNode({ kind: "main" })}
-                  >
-                    <span className="models-agent-profile-node-type">Main Agent</span>
-                    <span className="models-agent-profile-node-title">{form.mainName}</span>
-                    <span className="models-agent-profile-node-model">
-                      {(activeProvider?.name ?? form.mainProviderId) ||
-                        t("settings.models.editor.noProvider")}{" "}
-                      / {form.mainModelId || t("settings.models.editor.noModel")}
-                    </span>
-                    <span className="models-agent-profile-node-footer">
-                      <Settings2 size={14} />
-                      配置
-                    </span>
-                  </button>
-
-                  <div className="models-agent-profile-node-rail" aria-hidden />
-
-                  <div className="models-agent-profile-node-column">
-                    {form.agents.length === 0 ? (
-                      <div className="models-agent-profile-empty-drop">
-                        <span>{t("settings.models.editor.dropAgents")}</span>
-                        <small>{t("settings.models.editor.dropAgentsHint")}</small>
-                      </div>
-                    ) : (
-                      <div className="models-agent-profile-node-grid">
-                        {form.agents.map((agent, index) => {
-                          const provider = providers.find((entry) => entry.id === agent.providerId);
-                          const template = templates.find((entry) => entry.id === agent.templateId);
-                          const nodeTitle = (template?.name ?? agent.displayName) || agent.agentKey;
-                          return (
-                            <article key={agent.agentKey} className="models-agent-profile-node-shell">
-                              <button
-                                type="button"
-                                className="models-agent-profile-node"
-                                disabled={busy}
-                                onClick={() => setSelectedNode({ kind: "agent", agentKey: agent.agentKey })}
-                              >
-                                <span className="models-agent-profile-node-type">
-                                  {template
-                                    ? formatAgentDomainLabel(template.domain)
-                                    : t("settings.models.editor.templateMissing")}
-                                </span>
-                                <span className="models-agent-profile-node-title">{nodeTitle}</span>
-                                <span className="models-agent-profile-node-key">{agent.agentKey}</span>
-                                <span className="models-agent-profile-node-model">
-                                  {(provider?.name ?? agent.providerId) ||
-                                    t("settings.models.editor.noProvider")}{" "}
-                                  / {agent.modelId || t("settings.models.editor.noModel")}
-                                </span>
-                                <span className="models-agent-profile-node-footer">
-                                  <Settings2 size={14} />
-                                  模型
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                className="mcp-icon-button danger models-agent-profile-node-remove"
-                                disabled={busy}
-                                onClick={() => removeAgent(index)}
-                                aria-label={t("settings.models.editor.removeNode", { name: nodeTitle })}
-                                title={t("settings.models.editor.removeNode", { name: nodeTitle })}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-            </div>
-          </section>
-
-          {error && <p className="settings-form-error">{error}</p>}
-        </div>
-
-        {selectedNode ? (
-          <AgentProfileNodeConfigModal
-            node={selectedNode}
-            form={form}
-            agent={selectedAgent}
-            agentIndex={selectedAgentIndex}
-            template={selectedAgentTemplate}
-            templates={templates}
-            mcpServers={mcpServers}
-            providers={providers}
-            busy={busy}
-            onClose={() => setSelectedNode(null)}
-            onPatchProfile={patch}
-            onPatchAgent={patchAgent}
-            onPatchMainToolPolicy={patchMainToolPolicy}
-          />
-        ) : null}
-
-        <footer className="settings-modal-footer">
-          <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            {t("common.cancel")}
-          </button>
-          <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
-            {saveLabel}
-          </button>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-function CandidateModelSelectField({
-  value,
-  candidates,
-  loading,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  candidates: CandidateModelView[];
-  loading: boolean;
-  disabled?: boolean;
-  onChange: (candidateId: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="mcp-field">
-      <span className="mcp-field-label">{t("settings.models.candidateModels")}</span>
-      {loading ? (
-        <span className="mcp-field-hint">{t("settings.models.loading")}</span>
-      ) : candidates.length === 0 ? (
-        <span className="mcp-field-hint candidate-model-empty-hint">
-          {t("settings.models.addCandidatesFirst")}
-        </span>
-      ) : (
-        <select
-          className="mcp-field-input"
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          <option value="">{t("settings.models.selectCandidate")}</option>
-          {candidates.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.displayName || c.modelId}
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
-  );
-}
-
-function useCandidateModels(providerId: string): {
-  candidates: CandidateModelView[];
-  loading: boolean;
-} {
-  const [candidates, setCandidates] = useState<CandidateModelView[]>([]);
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (!providerId) {
-      setCandidates([]);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    window
-      .eco!.listCandidateModels(providerId)
-      .then((result) => {
-        if (!cancelled) setCandidates(result);
-      })
-      .catch(() => {
-        if (!cancelled) setCandidates([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [providerId]);
-  return { candidates, loading };
-}
-
-function ThinkingEffortSelect({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <label className="mcp-field">
-      <span className="mcp-field-label">{t("settings.models.thinkingEffort")}</span>
-      <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        <option value="">{t("common.default")}</option>
-        <option value="off">{t("settings.models.effort.off")}</option>
-        <option value="low">{t("settings.models.effort.low")}</option>
-        <option value="medium">{t("settings.models.effort.medium")}</option>
-        <option value="high">{t("settings.models.effort.high")}</option>
-        <option value="xhigh">{t("settings.models.effort.xhigh")}</option>
-        <option value="max">{t("settings.models.effort.max")}</option>
-      </select>
-    </label>
-  );
-}
-
-function ApiCompatSelect({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <label className="mcp-field">
-      <span className="mcp-field-label">{t("settings.models.apiCompat")}</span>
-      <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        <option value="">{t("common.default")}</option>
-        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function ProfileNodeCandidateModelFields({
-  providerId,
-  candidateModelId,
-  thinkingEffort,
-  apiCompat,
-  providers,
-  candidates,
-  candidatesLoading,
-  selectedCandidate,
-  busy,
-  onProviderChange,
-  onCandidateChange,
-  onThinkingEffortChange,
-  onApiCompatChange,
-}: {
-  providerId: string;
-  candidateModelId: string;
-  thinkingEffort: string;
-  apiCompat: string;
-  providers: ProviderConfigView[];
-  candidates: CandidateModelView[];
-  candidatesLoading: boolean;
-  selectedCandidate?: CandidateModelView;
-  busy?: boolean;
-  onProviderChange: (providerId: string) => void;
-  onCandidateChange: (candidateId: string, modelId: string) => void;
-  onThinkingEffortChange: (value: string) => void;
-  onApiCompatChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="profile-node-model-fields">
-      <div className="models-agent-template-form-grid">
-        <label className="mcp-field">
-          <span className="mcp-field-label">{t("settings.models.providers")}</span>
-          <select
-            className="mcp-field-input"
-            value={providerId}
-            disabled={busy}
-            onChange={(event) => onProviderChange(event.target.value)}
-          >
-            {providers.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <CandidateModelSelectField
-          value={candidateModelId}
-          candidates={candidates}
-          loading={candidatesLoading}
-          {...(busy !== undefined ? { disabled: busy } : {})}
-          onChange={(nextCandidateId) => {
-            const candidate = candidates.find((entry) => entry.id === nextCandidateId);
-            onCandidateChange(nextCandidateId, candidate?.modelId ?? "");
-          }}
-        />
-        <ThinkingEffortSelect
-          value={thinkingEffort}
-          {...(busy !== undefined ? { disabled: busy } : {})}
-          onChange={onThinkingEffortChange}
-        />
-        <ApiCompatSelect
-          value={apiCompat}
-          {...(busy !== undefined ? { disabled: busy } : {})}
-          onChange={onApiCompatChange}
-        />
-      </div>
-      <CandidateModelSpecPanel {...(selectedCandidate ? { candidate: selectedCandidate } : {})} />
-    </div>
-  );
-}
-
-function AgentProfileNodeConfigModal({
-  node,
-  form,
-  agent,
-  agentIndex,
-  template,
-  templates,
-  mcpServers,
-  providers,
-  busy,
-  onClose,
-  onPatchProfile,
-  onPatchAgent,
-  onPatchMainToolPolicy,
-}: {
-  node: AgentProfileSelectedNode;
-  form: AgentProfileFormState;
-  agent?: AgentProfileAgentFormState | undefined;
-  agentIndex: number;
-  template?: AgentTemplate | undefined;
-  templates: AgentTemplate[];
-  mcpServers: McpServerConfigView[];
-  providers: ProviderConfigView[];
-  busy?: boolean | undefined;
-  onClose: () => void;
-  onPatchProfile: (patch: Partial<AgentProfileFormState>) => void;
-  onPatchAgent: (index: number, patch: Partial<AgentProfileAgentFormState>) => void;
-  onPatchMainToolPolicy: (patch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) => void;
-}) {
-  const { t } = useTranslation();
-  const isMainNode = node.kind === "main";
-  const nodeProviderId = isMainNode ? form.mainProviderId : (agent?.providerId ?? "");
-  const { candidates: nodeCandidates, loading: nodeCandidatesLoading } = useCandidateModels(nodeProviderId);
-  const selectedCandidateId = isMainNode ? form.mainCandidateModelId : (agent?.candidateModelId ?? "");
-  const selectedCandidate = nodeCandidates.find((candidate) => candidate.id === selectedCandidateId);
-  const nodeTitle = isMainNode
-    ? t("settings.models.node.mainTitle")
-    : t("settings.models.node.agentTitle", {
-        name:
-          template?.name ??
-          agent?.displayName ??
-          agent?.agentKey ??
-          t("settings.models.node.subagent"),
-      });
-  const mainCapabilityOptions = useMemo(
-    () =>
-      buildAgentTemplateCapabilityOptions({
-        templates,
-        form: {
-          advancedDisallowedTools: form.mainAdvancedDisallowedTools,
-          mcpServers: form.mainMcpServers,
-          mcpTools: form.mainMcpTools,
-        },
-        mcpServers,
-      }),
-    [templates, form.mainAdvancedDisallowedTools, form.mainMcpServers, form.mainMcpTools, mcpServers],
-  );
-  const agentCapabilityOptions = useMemo(
-    () =>
-      agent
-        ? buildAgentTemplateCapabilityOptions({
-            templates,
-            form: {
-              advancedDisallowedTools: agent.advancedDisallowedTools,
-              mcpServers: agent.mcpServers,
-              mcpTools: agent.mcpTools,
-            },
-            mcpServers,
-          })
-        : { tools: [], mcpServers: [], mcpTools: [] },
-    [agent, templates, mcpServers],
-  );
-
-  if (!isMainNode && (!agent || agentIndex < 0)) {
-    return null;
-  }
-
-  function handleProviderChange(nextProviderId: string, fallbackModelId: string) {
-    return {
-      providerId: nextProviderId,
-      modelId: fallbackModelId,
-      candidateModelId: "",
-    };
-  }
-
-  return (
-    <div className="settings-modal-backdrop settings-modal-node-config-backdrop">
-      <button
-        type="button"
-        className="settings-modal-backdrop-close"
-        onClick={onClose}
-        aria-label={t("settings.models.node.close")}
-        title={t("settings.models.node.close")}
-        disabled={busy}
-      />
-      <div
-        className="settings-modal settings-modal-agent-node-config"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-profile-node-config-title"
-      >
-        <header className="settings-modal-header">
-          <h2 id="agent-profile-node-config-title" className="settings-modal-title">
-            {nodeTitle}
-          </h2>
-          <button
-            type="button"
-            className="mcp-icon-button"
-            onClick={onClose}
-            aria-label={t("common.close")}
-            title={t("common.close")}
-            disabled={busy}
-          >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="settings-modal-body mcp-editor-form models-agent-profile-node-config-form">
-          {isMainNode ? (
-            <>
-              <div className="models-agent-profile-template-summary">
-                <div className="models-agent-profile-title-row">
-                  <span className="models-route-role">{form.mainName}</span>
-                  <span className="models-agent-source-badge">
-                    {form.mainSystemPromptPreset === "core_native"
-                      ? t("settings.models.editor.followAgent")
-                      : t("settings.models.editor.customInstructions")}
-                  </span>
-                </div>
-                <p className="models-subagent-card-desc">
-                  {t("settings.models.node.mainDescription")}
-                </p>
-              </div>
-
-              <div className="models-agent-template-form-grid">
-                <label className="mcp-field">
-                  <span className="mcp-field-label">{t("settings.models.node.name")}</span>
-                  <input
-                    className="mcp-field-input"
-                    value={form.mainName}
-                    disabled={busy}
-                    onChange={(event) => onPatchProfile({ mainName: event.target.value })}
-                  />
-                </label>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">{t("settings.models.node.systemPrompt")}</span>
-                  <select
-                    className="mcp-field-input"
-                    value={form.mainSystemPromptPreset}
-                    disabled={busy}
-                    onChange={(event) =>
-                      onPatchProfile({
-                        mainSystemPromptPreset: event.target
-                          .value as AgentProfileFormState["mainSystemPromptPreset"],
-                      })
-                    }
-                  >
-                    <option value="core_native">{t("settings.models.editor.followAgent")}</option>
-                    <option value="custom_append">
-                      {t("settings.models.editor.customInstructions")}
-                    </option>
-                  </select>
-                </label>
-              </div>
-
-              <ProfileNodeCandidateModelFields
-                providerId={form.mainProviderId}
-                candidateModelId={form.mainCandidateModelId}
-                thinkingEffort={form.mainThinkingEffort}
-                apiCompat={form.mainApiCompat}
-                providers={providers}
-                candidates={nodeCandidates}
-                candidatesLoading={nodeCandidatesLoading}
-                {...(selectedCandidate ? { selectedCandidate } : {})}
-                {...(busy !== undefined ? { busy } : {})}
-                onProviderChange={(nextProviderId) => {
-                  const provider = providers.find((entry) => entry.id === nextProviderId);
-                  onPatchProfile({
-                    mainProviderId: nextProviderId,
-                    mainModelId: provider?.defaultModel || form.mainModelId,
-                    mainCandidateModelId: "",
-                  });
-                }}
-                onCandidateChange={(candidateId, modelId) =>
-                  onPatchProfile({
-                    mainCandidateModelId: candidateId,
-                    mainModelId: modelId,
-                  })
-                }
-                onThinkingEffortChange={(value) => onPatchProfile({ mainThinkingEffort: value })}
-                onApiCompatChange={(value) => onPatchProfile({ mainApiCompat: value })}
-              />
-
-              {form.mainSystemPromptPreset === "custom_append" ? (
-                <label className="mcp-field">
-                  <span className="mcp-field-label">{t("settings.models.node.mainPrompt")}</span>
-                  <textarea
-                    className="mcp-field-input mcp-field-textarea models-agent-prompt-textarea"
-                    value={form.mainPrompt}
-                    disabled={busy}
-                    onChange={(event) => onPatchProfile({ mainPrompt: event.target.value })}
-                  />
-                </label>
-              ) : null}
-              <ToolCapabilityPanel
-                values={mainCapabilityFromProfileForm(form)}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                capabilityOptions={mainCapabilityOptions}
-                showPresets
-                onChange={(patch) => onPatchMainToolPolicy(patch)}
-              />
-            </>
-          ) : (
-            <>
-              <div className="models-agent-profile-template-summary">
-                <div className="models-agent-profile-title-row">
-                  <span className="models-route-role">
-                    {template?.name ?? agent?.displayName ?? agent?.agentKey}
-                  </span>
-                  {template ? (
-                    <span className="models-agent-domain-badge">
-                      {formatAgentDomainLabel(template.domain)}
-                    </span>
-                  ) : (
-                    <span className="models-agent-source-badge">
-                      {t("settings.models.editor.templateMissing")}
-                    </span>
-                  )}
-                  <span className="models-route-role-id">{agent?.agentKey}</span>
-                </div>
-                <p className="models-subagent-card-desc">
-                  {template?.description ??
-                    t("settings.models.node.templateReference", {
-                      id: agent?.templateId ?? "",
-                    })}
-                </p>
-              </div>
-
-              {agent ? (
-                <ProfileNodeCandidateModelFields
-                  providerId={agent.providerId}
-                  candidateModelId={agent.candidateModelId}
-                  thinkingEffort={agent.thinkingEffort}
-                  apiCompat={agent.apiCompat}
-                  providers={providers}
-                  candidates={nodeCandidates}
-                  candidatesLoading={nodeCandidatesLoading}
-                  {...(selectedCandidate ? { selectedCandidate } : {})}
-                  {...(busy !== undefined ? { busy } : {})}
-                  onProviderChange={(nextProviderId) => {
-                    const provider = providers.find((entry) => entry.id === nextProviderId);
-                    onPatchAgent(agentIndex, {
-                      ...handleProviderChange(nextProviderId, provider?.defaultModel || agent.modelId || ""),
-                    });
-                  }}
-                  onCandidateChange={(candidateId, modelId) =>
-                    onPatchAgent(agentIndex, {
-                      candidateModelId: candidateId,
-                      modelId,
-                    })
-                  }
-                  onThinkingEffortChange={(value) => onPatchAgent(agentIndex, { thinkingEffort: value })}
-                  onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
-                />
-              ) : null}
-
-              {agent ? (
-                <AgentThemeColorField
-                  label={t("settings.models.node.themeColor")}
-                  agentKey={agent.agentKey}
-                  value={agent.themeColor}
-                  {...(busy !== undefined ? { disabled: busy } : {})}
-                  onChange={(value) => onPatchAgent(agentIndex, { themeColor: value })}
-                />
-              ) : null}
-
-              {agent ? (
-                <ToolCapabilityPanel
-                  values={{ ...agentCapabilityFromAgentForm(agent), allowDelegation: false }}
-                  {...(busy !== undefined ? { disabled: busy } : {})}
-                  capabilityOptions={agentCapabilityOptions}
-                  showDelegation={false}
-                  onChange={(patch) => onPatchAgent(agentIndex, agentCapabilityPatchToAgentForm(patch))}
-                />
-              ) : null}
-            </>
-          )}
-        </div>
-
-        <footer className="settings-modal-footer">
-          <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            {t("common.close")}
-          </button>
-        </footer>
-      </div>
-    </div>
   );
 }
 
@@ -2166,9 +858,7 @@ function ProviderEditorModal({
                 placeholder="https://api.deepseek.com"
                 onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
               />
-              <span className="mcp-field-hint">
-                {t("settings.models.provider.rootHint")}
-              </span>
+              <span className="mcp-field-hint">{t("settings.models.provider.rootHint")}</span>
             </label>
 
             <div className="mcp-field models-provider-endpoint-row">
@@ -2214,18 +904,12 @@ function ProviderEditorModal({
                   }))
                 }
               >
-                <option value="local_heuristic">
-                  {t("settings.models.provider.localHeuristic")}
-                </option>
-                <option value="anthropic_messages">
-                  {t("settings.models.provider.anthropicCount")}
-                </option>
+                <option value="local_heuristic">{t("settings.models.provider.localHeuristic")}</option>
+                <option value="anthropic_messages">{t("settings.models.provider.anthropicCount")}</option>
                 <option value="openai_responses">OpenAI /v1/responses/input_tokens</option>
                 <option value="llama_tokenize">llama.cpp /apply-template + /tokenize</option>
               </select>
-              <span className="mcp-field-hint">
-                {t("settings.models.provider.tokenCountHint")}
-              </span>
+              <span className="mcp-field-hint">{t("settings.models.provider.tokenCountHint")}</span>
             </label>
 
             <label className="mcp-field">
@@ -2248,9 +932,7 @@ function ProviderEditorModal({
                 type="password"
                 value={form.apiKey ?? ""}
                 placeholder={
-                  form.id
-                    ? t("settings.models.provider.keepKey")
-                    : t("settings.models.provider.optionalKey")
+                  form.id ? t("settings.models.provider.keepKey") : t("settings.models.provider.optionalKey")
                 }
                 onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
               />
@@ -2279,9 +961,7 @@ function ProviderEditorModal({
             ) : null}
 
             {error && <p className="settings-form-error">{error}</p>}
-            {candidateSaveError ? (
-              <p className="settings-form-error">{candidateSaveError}</p>
-            ) : null}
+            {candidateSaveError ? <p className="settings-form-error">{candidateSaveError}</p> : null}
           </div>
 
           {candidatesPanelOpen ? (
@@ -2304,9 +984,7 @@ function ProviderEditorModal({
                   <span className="candidate-panel-title">{t("settings.models.candidateModels")}</span>
                 </div>
                 <div className="candidate-panel-body">
-                  <p className="candidate-models-empty">
-                    {t("settings.models.provider.saveFirst")}
-                  </p>
+                  <p className="candidate-models-empty">{t("settings.models.provider.saveFirst")}</p>
                   <button
                     type="button"
                     className="settings-secondary-button"
@@ -2339,7 +1017,12 @@ function ProviderEditorModal({
             <span />
           )}
           <div className="settings-modal-footer-actions">
-            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy || ensuringProvider}>
+            <button
+              type="button"
+              className="settings-modal-cancel"
+              onClick={onClose}
+              disabled={busy || ensuringProvider}
+            >
               {t("common.cancel")}
             </button>
             <button
@@ -2357,81 +1040,15 @@ function ProviderEditorModal({
   );
 }
 
-function AgentProfileSummaryBlock({
-  summary,
-  isDefault,
-}: {
-  summary: AgentProfileSummary;
-  isDefault: boolean;
-}) {
-  const { t } = useTranslation();
-  const visibleAgents = summary.enabledAgents.slice(0, 5);
-  const hiddenCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
-  return (
-    <div className="models-agent-profile-main">
-      <div className="models-agent-profile-title-row">
-        <span className="mcp-server-name">{summary.name}</span>
-        <span className="models-agent-domain-badge">{summary.presetLabel}</span>
-        <span className="models-agent-source-badge">{summary.sourceLabel}</span>
-        {isDefault ? (
-          <span className="models-agent-default-badge">{t("common.default")}</span>
-        ) : null}
-      </div>
-      <div className="models-agent-profile-meta">
-        <span>{t("settings.models.summary.main", { model: summary.main.modelLabel })}</span>
-        <span>
-          {t("settings.models.summary.enabledAgents", {
-            count: summary.enabledAgents.length,
-          })}
-        </span>
-        {summary.disabledAgentCount > 0 ? (
-          <span>
-            {t("settings.models.summary.disabledAgents", {
-              count: summary.disabledAgentCount,
-            })}
-          </span>
-        ) : null}
-      </div>
-      {summary.highRiskLabels.length > 0 ? (
-        <div className="models-agent-profile-risks">
-          {summary.highRiskLabels.map((label) => (
-            <span key={label} className="models-agent-profile-risk">
-              {label}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <div className="models-agent-profile-agents">
-        {visibleAgents.map((agent) => (
-          <span key={agent.agentKey} className="models-agent-profile-agent-pill">
-            <span className="models-agent-profile-agent-name">{agent.name}</span>
-            <span className="models-agent-profile-agent-model" title={agent.modelLabel}>
-              {formatModelPreview(agent.modelLabel)}
-            </span>
-          </span>
-        ))}
-        {hiddenCount > 0 ? (
-          <span className="models-agent-profile-agent-pill">
-            <span className="models-agent-profile-agent-name">{t("settings.models.summary.more")}</span>
-            <span className="models-agent-profile-agent-model">+{hiddenCount}</span>
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function PresetOverview({
   presets,
   templates,
-  profiles,
   busy,
   copyingPresetId,
   onCopyPreset,
 }: {
   presets: readonly BuiltInPresetDefinition[];
   templates: readonly AgentTemplate[];
-  profiles: readonly AgentProfileSummary[];
   busy?: boolean;
   copyingPresetId?: string | null;
   onCopyPreset: (preset: BuiltInPresetDefinition) => void;
@@ -2442,11 +1059,10 @@ function PresetOverview({
     <div className="models-preset-grid">
       {presets.map((preset) => {
         const domainTemplates = templates.filter((template) => template.domain === preset.id);
-        const domainProfiles = profiles.filter((summary) => summary.profile.preset === preset.id);
         const missingDefaultAgents = preset.defaultAgents.filter(
           (agent) => !templateById.has(agent.templateId),
         );
-        const runnable = domainProfiles.some((profile) => profile.selectionId);
+        const runnable = missingDefaultAgents.length === 0;
         const primaryExample = preset.examples[0];
         return (
           <article
@@ -2459,9 +1075,7 @@ function PresetOverview({
                 <span className="models-preset-description">{preset.description}</span>
               </div>
               <span className={runnable ? "models-provider-badge on" : "models-provider-badge"}>
-                {runnable
-                  ? t("settings.models.preset.runnable")
-                  : t("settings.models.preset.templatesReady")}
+                {runnable ? t("settings.models.preset.runnable") : t("settings.models.preset.templatesReady")}
               </span>
             </div>
 
@@ -2473,10 +1087,6 @@ function PresetOverview({
               <span>
                 <strong>{domainTemplates.length}</strong>
                 {t("settings.models.preset.templates")}
-              </span>
-              <span>
-                <strong>{domainProfiles.length}</strong>
-                Profile
               </span>
             </div>
 
@@ -2520,7 +1130,7 @@ function PresetOverview({
                 <Plus size={14} />
                 {copyingPresetId === preset.id
                   ? t("settings.models.preset.creating")
-                  : t("settings.models.preset.copyProfile")}
+                  : t("settings.models.preset.createResources")}
               </button>
             </div>
           </article>

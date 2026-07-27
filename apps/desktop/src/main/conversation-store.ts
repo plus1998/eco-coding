@@ -1859,7 +1859,7 @@ export class ConversationStore {
          ORDER BY COALESCE(queue_position, 2147483647) ASC,
                   CASE priority WHEN 'escalated' THEN 0 ELSE 1 END,
                   created_at ASC,
-                  id ASC`,
+                  rowid ASC`,
       )
       .all(threadId, ...statuses) as unknown as ThreadPendingFollowUpRow[];
     return rows.map(rowToThreadPendingFollowUp);

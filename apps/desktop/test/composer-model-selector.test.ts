@@ -37,7 +37,7 @@ describe("ComposerModelSelector labels", () => {
 });
 
 describe("buildComposerModelOptions", () => {
-  test("only includes models from the current profile provider", () => {
+  test("only includes models from the current main-agent provider", () => {
     const options = buildComposerModelOptions({
       provider: {
         id: "provider-current",

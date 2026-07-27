@@ -1,6 +1,7 @@
 import {
-  collectProfileAssignedMcpServers,
+  collectOrchestrationAssignedMcpServers,
 } from "@eco/runtime/agent-orchestration";
+import { orchestrationConfigFromSnapshot } from "../shared/agent-orchestration";
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import {
   defaultSubagentAvailability,
@@ -62,7 +63,7 @@ import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   formatPromptCacheConfigDriftHint,
   resolvePromptCacheConfigDrift,
-  resolvePromptCacheProfileLabel,
+  resolvePromptCacheOrchestrationLabel,
 } from "../shared/prompt-cache-config";
 import {
   buildThreadRuntimeConfigFromDefaults,
@@ -72,17 +73,20 @@ import {
   type ClarificationRequest,
   type CoderTodoItem,
   type CoreAvailabilitySnapshot,
-  deriveSubagentEnabledFromProfile,
+  type OrchestrationSelection,
+  type ResolvedOrchestrationSnapshot,
+  type SubagentSelection,
+  deriveSubagentEnabledFromSnapshot,
   deriveMcpServersEnabled,
-  getDefaultAgentProfileId,
+  hasCompleteOrchestrationSelection,
   listEnabledGlobalMcpServerKeys,
   type LinkAgentsSkillsResult,
   type McpServerCheckResult,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
   type MainAgentModelOverride,
+  type MainAgentPromptSelection,
   type ModelSettingsSnapshot,
-  type OrchestrationProfile,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
@@ -90,9 +94,9 @@ import {
   type ProjectMcpSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
-  resolveThreadAgentProfile,
   resolveMainAgentModelOverrideForProvider,
-  runtimeRoleRoutesFromAgentProfile,
+  resolveThreadOrchestrationSnapshot,
+  runtimeRoleRoutesFromOrchestrationSnapshot,
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
@@ -117,13 +121,16 @@ import {
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
+import {
+  materializeThreadOrchestrationSnapshot,
+  threadRuntimeConfigsEquivalent,
+} from "../shared/thread-runtime-config";
 import {
   HOME_PROJECT_DISPLAY_NAME,
   HOME_PROJECT_IMPORTED_AT,
   isHomeProjectPath,
 } from "../shared/home-project";
-import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
-import { serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import {
   deriveSkillsEnabled,
   type ProjectSkillsSettingsSnapshot,
@@ -155,8 +162,8 @@ import {
   resolveFeedEarlierBeforeSequence,
   shouldLoadFeedEarlier,
 } from "./feed-earlier-history";
-import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
-import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
+import { isOrchestrationSnapshotReady } from "./orchestration-readiness";
+import { resolveThreadOrchestrationSummary } from "./orchestration-summary";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
@@ -344,15 +351,10 @@ const emptySettings: ModelSettingsSnapshot = {
   providers: [],
   routeProfiles: [],
   agentTemplates: [],
-  orchestrationProfiles: [],
+  mainAgentConfigs: [],
+  mainAgentPrompts: [],
+  subagentOrchestrations: [],
 };
-
-function findOrchestrationProfileBySelectionId(
-  settings: ModelSettingsSnapshot,
-  selectionId: string,
-): OrchestrationProfile | undefined {
-  return settings.orchestrationProfiles.find((profile) => profile.id === selectionId);
-}
 
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
@@ -407,8 +409,8 @@ const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
 
 const emptyGitSettings: GitSettingsSnapshot = {
-  commitMessageRoleByProfileId: {},
-  commitMessageCandidateModelIdByProfileId: {},
+  commitMessageRoleByMainAgentConfigId: {},
+  commitMessageCandidateModelIdByMainAgentConfigId: {},
 };
 
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
@@ -2585,10 +2587,7 @@ function App() {
   }, [activeThread?.id]);
 
   const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
-  const effectiveDefaultAgentProfileId = getDefaultAgentProfileId(
-    settings,
-    workflowSettings.defaultAgentProfileId,
-  );
+  const effectiveDefaultOrchestrationSelection = workflowSettings.defaultOrchestrationSelection;
   const composerAvailableSkills = useMemo(() => {
     const projectSkills = skillsSnapshot?.projectSkills ?? [];
     const userSkills = skillsSnapshot?.userSkills ?? [];
@@ -2658,10 +2657,10 @@ function App() {
   const buildComposerDefaultConfig = useCallback(
     (options?: {
       planModeOverride?: boolean;
-      preserveCurrentProfile?: boolean;
       workflowDefaults?: WorkflowSettingsSnapshot;
+      orchestrationSelection?: OrchestrationSelection;
     }): ThreadRuntimeConfig | undefined => {
-      if (settings.orchestrationProfiles.length === 0) {
+      if (settings.mainAgentConfigs.length === 0) {
         return undefined;
       }
       try {
@@ -2674,12 +2673,11 @@ function App() {
           projectMcpServersEnabled && Object.keys(projectMcpServersEnabled).length > 0
             ? projectMcpServersEnabled
             : defaults.mcpServersEnabled;
-        const preserveCurrentProfile = options?.preserveCurrentProfile !== false;
-        const agentProfileId =
-          (preserveCurrentProfile
-            ? composerRuntimeConfig?.agentProfileId ?? composerRuntimeConfig?.routeProfileId
-            : undefined) ?? getDefaultAgentProfileId(settings, defaults.defaultAgentProfileId);
-        const routeProfileId = preserveCurrentProfile ? composerRuntimeConfig?.routeProfileId : undefined;
+        const orchestrationSelection =
+          options?.orchestrationSelection ?? defaults.defaultOrchestrationSelection;
+        if (!hasCompleteOrchestrationSelection(orchestrationSelection)) {
+          return undefined;
+        }
         const workflowDefaults =
           options?.planModeOverride === undefined
             ? {
@@ -2699,8 +2697,7 @@ function App() {
           settings,
           workflowDefaults,
           mcpServers: mcpSettings.servers,
-          ...(agentProfileId && { agentProfileId }),
-          ...(routeProfileId && { routeProfileId }),
+          orchestrationSelection,
         });
       } catch {
         return undefined;
@@ -2708,8 +2705,6 @@ function App() {
     },
     [
       settings,
-      composerRuntimeConfig?.agentProfileId,
-      composerRuntimeConfig?.routeProfileId,
       workflowSettings,
       mcpSettings.servers,
       currentProjectPath,
@@ -2718,39 +2713,61 @@ function App() {
   );
 
   const resetComposerDefaultConfig = useCallback(() => {
-    setComposerRuntimeConfig(
-      buildComposerDefaultConfig({ planModeOverride: false, preserveCurrentProfile: false }) ?? null,
-    );
+    setComposerRuntimeConfig(buildComposerDefaultConfig() ?? null);
   }, [buildComposerDefaultConfig]);
 
   useEffect(() => {
-    const updateComposerRuntimeConfig = (next: ThreadRuntimeConfig) => {
-      setComposerRuntimeConfig((current) =>
-        current && serializeThreadRuntimeConfig(current) === serializeThreadRuntimeConfig(next)
-          ? current
-          : next,
-      );
-    };
     if (activeThread?.runtimeConfig) {
-      updateComposerRuntimeConfig(activeThread.runtimeConfig);
+      setComposerRuntimeConfig((current) => {
+        const next = activeThread.runtimeConfig!;
+        return current && threadRuntimeConfigsEquivalent(current, next) ? current : next;
+      });
       return;
     }
-    const defaults = buildComposerDefaultConfig();
-    if (defaults) {
-      updateComposerRuntimeConfig(defaults);
+    if (settings.mainAgentConfigs.length === 0) {
+      setComposerRuntimeConfig((current) => (current ? null : current));
+      return;
     }
+    setComposerRuntimeConfig((current) => {
+      if (current?.orchestrationSelection && hasCompleteOrchestrationSelection(current.orchestrationSelection)) {
+        try {
+          const refreshed = materializeThreadOrchestrationSnapshot(
+            settings,
+            current.orchestrationSelection,
+          );
+          const next: ThreadRuntimeConfig = {
+            ...current,
+            ...refreshed,
+            subagentEnabled: deriveSubagentEnabledFromSnapshot(
+              refreshed.resolvedOrchestrationSnapshot!,
+              current.subagentEnabled,
+            ),
+          };
+          return threadRuntimeConfigsEquivalent(current, next) ? current : next;
+        } catch {
+          return current;
+        }
+      }
+      const defaults = buildComposerDefaultConfig();
+      if (!defaults) {
+        return current;
+      }
+      return current && threadRuntimeConfigsEquivalent(current, defaults) ? current : defaults;
+    });
   }, [
     activeThread?.id,
     activeThread?.runtimeConfig,
     buildComposerDefaultConfig,
-    settings.orchestrationProfiles,
-    settings.routeProfiles,
+    settings.mainAgentConfigs,
+    settings.mainAgentPrompts,
+    settings.subagentOrchestrations,
   ]);
 
-  const selectedRuntimeProfileId =
-    composerRuntimeConfig?.agentProfileId ?? composerRuntimeConfig?.routeProfileId;
-  const selectedRuntimeProfile = useMemo(
-    () => (composerRuntimeConfig ? resolveThreadAgentProfile(settings, composerRuntimeConfig) : undefined),
+  const selectedOrchestrationSnapshot = useMemo(
+    () =>
+      composerRuntimeConfig
+        ? resolveThreadOrchestrationSnapshot(settings, composerRuntimeConfig)
+        : undefined,
     [settings, composerRuntimeConfig],
   );
   const composerMcpSettings = useMemo(() => {
@@ -2770,8 +2787,11 @@ function App() {
       ...(composerRuntimeConfig?.mcpServersEnabled
         ? { existing: composerRuntimeConfig.mcpServersEnabled }
         : {}),
-      profileAssignedServers: selectedRuntimeProfile
-        ? collectProfileAssignedMcpServers(selectedRuntimeProfile, settings.agentTemplates)
+      orchestrationAssignedServers: selectedOrchestrationSnapshot
+        ? collectOrchestrationAssignedMcpServers(
+            orchestrationConfigFromSnapshot(selectedOrchestrationSnapshot) as never,
+            settings.agentTemplates,
+          )
         : [],
       ...(projectRemembered ? { remembered: projectRemembered } : {}),
     });
@@ -2780,7 +2800,7 @@ function App() {
     currentProjectPath,
     mcpSettings.servers,
     projectMcpSettings,
-    selectedRuntimeProfile,
+    selectedOrchestrationSnapshot,
     settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
   ]);
@@ -2799,11 +2819,64 @@ function App() {
         : null,
     [composerRuntimeConfig, composerMcpSettings, composerSkillsEnabled],
   );
+  const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
+    const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
+    const selection =
+      (base?.orchestrationSelection &&
+      hasCompleteOrchestrationSelection(base.orchestrationSelection)
+        ? base.orchestrationSelection
+        : undefined) ??
+      (hasCompleteOrchestrationSelection(workflowSettings.defaultOrchestrationSelection)
+        ? workflowSettings.defaultOrchestrationSelection
+        : undefined);
+    if (!hasCompleteOrchestrationSelection(selection)) {
+      return null;
+    }
+    try {
+      const materialized = materializeThreadOrchestrationSnapshot(settings, selection);
+      const shell =
+        base ??
+        buildThreadRuntimeConfigFromDefaults({
+          settings,
+          workflowDefaults: workflowSettings,
+          orchestrationSelection: selection,
+          mcpServers: mcpSettings.servers,
+        });
+      return {
+        ...shell,
+        ...materialized,
+        ...(base?.mainAgentModelOverride ? { mainAgentModelOverride: base.mainAgentModelOverride } : {}),
+        ...(base?.mainAgentSystemPromptPresetOverride
+          ? { mainAgentSystemPromptPresetOverride: base.mainAgentSystemPromptPresetOverride }
+          : {}),
+        ...(effectiveComposerRuntimeConfig?.mcpServersEnabled
+          ? { mcpServersEnabled: effectiveComposerRuntimeConfig.mcpServersEnabled }
+          : {}),
+        ...(effectiveComposerRuntimeConfig?.skillsEnabled
+          ? { skillsEnabled: effectiveComposerRuntimeConfig.skillsEnabled }
+          : {}),
+        subagentEnabled: deriveSubagentEnabledFromSnapshot(
+          materialized.resolvedOrchestrationSnapshot!,
+          base?.subagentEnabled ?? shell.subagentEnabled,
+        ),
+        sessionMode: base?.sessionMode ?? shell.sessionMode,
+        bashReviewMode: base?.bashReviewMode ?? shell.bashReviewMode,
+      };
+    } catch {
+      return null;
+    }
+  }, [
+    composerRuntimeConfig,
+    effectiveComposerRuntimeConfig,
+    mcpSettings.servers,
+    settings,
+    workflowSettings,
+  ]);
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
-    if (!selectedRuntimeProfile) {
+    if (!selectedOrchestrationSnapshot) {
       return undefined;
     }
-    const route = runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile).find(
+    const route = runtimeRoleRoutesFromOrchestrationSnapshot(selectedOrchestrationSnapshot).find(
       (candidate) => candidate.role === "planner",
     );
     if (!route) {
@@ -2817,7 +2890,7 @@ function App() {
       ...(route.candidateModelId ? { candidateModelId: route.candidateModelId } : {}),
       ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
     };
-  }, [selectedRuntimeProfile, settings.providers]);
+  }, [selectedOrchestrationSnapshot, settings.providers]);
   const composerModelProvider = templateMainModel
     ? settings.providers.find((provider) => provider.id === templateMainModel.providerId)
     : undefined;
@@ -2876,13 +2949,13 @@ function App() {
       : [];
   }, [composerCandidateModels, composerModelProvider, templateMainModel]);
   const activeRoutes = useMemo(() => {
-    return selectedRuntimeProfile
-      ? runtimeRoleRoutesFromAgentProfile(
-          selectedRuntimeProfile,
+    return selectedOrchestrationSnapshot
+      ? runtimeRoleRoutesFromOrchestrationSnapshot(
+          selectedOrchestrationSnapshot,
           composerMainAgentModelOverride,
         )
       : [];
-  }, [composerMainAgentModelOverride, selectedRuntimeProfile]);
+  }, [composerMainAgentModelOverride, selectedOrchestrationSnapshot]);
 
   useEffect(() => {
     if (!window.eco || activeRoutes.length === 0) {
@@ -2904,14 +2977,13 @@ function App() {
     () => new Map(settings.providers.map((provider) => [provider.id, provider])),
     [settings.providers],
   );
-  const routesReady = selectedRuntimeProfile
-    ? isAgentProfileReady(
-        selectedRuntimeProfile,
+  const routesReady = selectedOrchestrationSnapshot
+    ? isOrchestrationSnapshotReady(
+        selectedOrchestrationSnapshot,
         providerById,
         composerMainAgentModelOverride,
-      ) &&
-      (selectedRuntimeProfile.preset !== "coding" || areCodingRoutesReady(activeRoutes, providerById))
-    : areCodingRoutesReady(activeRoutes, providerById);
+      )
+    : false;
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
     activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
@@ -2981,14 +3053,14 @@ function App() {
     runProjection?.timeline.length,
     settings,
   ]);
-  const composerPromptCacheProfileLabel =
-    composerPromptCacheDrift?.includes("profile") && composerRuntimeConfig
-      ? resolvePromptCacheProfileLabel(settings, composerRuntimeConfig)
+  const composerPromptCacheOrchestrationLabel =
+    composerPromptCacheDrift?.includes("orchestration") && composerRuntimeConfig
+      ? resolvePromptCacheOrchestrationLabel(settings, composerRuntimeConfig)
       : undefined;
   const composerPromptCacheHint = composerPromptCacheDrift
     ? formatPromptCacheConfigDriftHint(
         composerPromptCacheDrift,
-        composerPromptCacheProfileLabel ? { profileLabel: composerPromptCacheProfileLabel } : undefined,
+        composerPromptCacheOrchestrationLabel ? { orchestrationLabel: composerPromptCacheOrchestrationLabel } : undefined,
       )
     : null;
 
@@ -3375,14 +3447,9 @@ function App() {
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
-  const selectedAgentProfileSummary = useMemo(
-    () =>
-      findSelectableAgentProfileSummary(
-        settings,
-        selectedRuntimeProfileId,
-        composerRuntimeConfig ?? undefined,
-      ),
-    [settings, selectedRuntimeProfileId, composerRuntimeConfig],
+  const selectedOrchestrationSummary = useMemo(
+    () => resolveThreadOrchestrationSummary(settings, composerRuntimeConfig ?? undefined),
+    [settings, composerRuntimeConfig],
   );
   const canEditComposerConfig =
     !activeThread ||
@@ -3394,19 +3461,10 @@ function App() {
       buildComposerAgentModelLabels({
         routes: activeRoutes,
         threadModelByRole,
-        profile:
-          selectedRuntimeProfile && composerRuntimeConfig?.agentProfileId?.trim()
-            ? selectedRuntimeProfile
-            : undefined,
+        snapshot: selectedOrchestrationSnapshot,
         templates: settings.agentTemplates,
       }),
-    [
-      activeRoutes,
-      composerRuntimeConfig?.agentProfileId,
-      selectedRuntimeProfile,
-      settings.agentTemplates,
-      threadModelByRole,
-    ],
+    [activeRoutes, selectedOrchestrationSnapshot, settings.agentTemplates, threadModelByRole],
   );
   const activityModelByRole = useMemo(() => {
     const configured: Record<string, string> = {};
@@ -4330,8 +4388,7 @@ function App() {
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
         const acceptedRuntimeConfig = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
         if (acceptedRuntimeConfig) {
-          promptCacheBaselineByThreadRef.current[activeThread.id] =
-            acceptedRuntimeConfig;
+          promptCacheBaselineByThreadRef.current[activeThread.id] = acceptedRuntimeConfig;
           setPromptCacheBaselineVersion((v) => v + 1);
         }
       } catch (caught) {
@@ -4343,7 +4400,8 @@ function App() {
     }
 
     setIsStarting(true);
-    if (!composerRuntimeConfig) {
+    const runtimeConfigForSend = resolveComposerRuntimeConfigForSend();
+    if (!runtimeConfigForSend) {
       setError(t("app.configureOrchestration"));
       setIsStarting(false);
       return;
@@ -4359,7 +4417,7 @@ function App() {
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt: messagePrompt,
-          runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
+          runtimeConfig: runtimeConfigForSend,
           ...(rewindTarget && { rewindTarget }),
           ...(attachments && { attachments }),
         });
@@ -4379,17 +4437,15 @@ function App() {
           setError(t("app.sentSyncFailed", { detail: errorMessage(caught) }));
         }
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
-        if (effectiveComposerRuntimeConfig ?? composerRuntimeConfig) {
-          promptCacheBaselineByThreadRef.current[activeThread.id] =
-            result.thread.runtimeConfig ?? effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
-          setPromptCacheBaselineVersion((v) => v + 1);
-        }
+        promptCacheBaselineByThreadRef.current[activeThread.id] =
+          result.thread.runtimeConfig ?? runtimeConfigForSend;
+        setPromptCacheBaselineVersion((v) => v + 1);
       } else {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
           prompt: messagePrompt,
           coreKind: newThreadCoreKind,
-          runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
+          runtimeConfig: runtimeConfigForSend,
           ...(attachments && { attachments }),
         });
         setThreads((current) => [
@@ -4402,12 +4458,13 @@ function App() {
           ...current,
           [result.thread.id]: [],
         }));
-        // 用户已发送消息，接受当前的 prompt cache 配置漂移
-        if (effectiveComposerRuntimeConfig ?? composerRuntimeConfig) {
-          promptCacheBaselineByThreadRef.current[result.thread.id] =
-            result.thread.runtimeConfig ?? effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
-          setPromptCacheBaselineVersion((v) => v + 1);
+        if (result.thread.status === "blocked") {
+          setError(result.thread.message?.trim() || t("app.configureOrchestration"));
         }
+        // 用户已发送消息，接受当前的 prompt cache 配置漂移
+        promptCacheBaselineByThreadRef.current[result.thread.id] =
+          result.thread.runtimeConfig ?? runtimeConfigForSend;
+        setPromptCacheBaselineVersion((v) => v + 1);
       }
       removeComposerDraft(composerContextKey);
       setPrompt("");
@@ -4722,14 +4779,15 @@ function App() {
   }
 
   async function saveCommitMessageModelPreference(candidateModelId: string) {
-    if (!window.eco || !selectedRuntimeProfileId) {
+    if (!window.eco || !composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId) {
       return;
     }
+    const mainAgentConfigId = composerRuntimeConfig.orchestrationSelection.mainAgentConfigId;
     const next = {
       ...gitSettings,
-      commitMessageCandidateModelIdByProfileId: {
-        ...gitSettings.commitMessageCandidateModelIdByProfileId,
-        [selectedRuntimeProfileId]: candidateModelId,
+      commitMessageCandidateModelIdByMainAgentConfigId: {
+        ...gitSettings.commitMessageCandidateModelIdByMainAgentConfigId,
+        [mainAgentConfigId]: candidateModelId,
       },
     };
     const saved = await window.eco.saveGitSettings(next);
@@ -4930,63 +4988,112 @@ function App() {
     }
   }
 
-  async function selectComposerRouteProfile(profileId: string) {
-    if (!composerRuntimeConfig) {
+  function emptyOrchestrationSelection(): OrchestrationSelection {
+    return {
+      mainAgentConfigId: "",
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
+    };
+  }
+
+  async function applyComposerOrchestrationSelection(patch: {
+    mainAgentConfigId?: string;
+    mainPrompt?: MainAgentPromptSelection;
+    subagents?: SubagentSelection;
+  }) {
+    if (!canEditComposerConfig) {
       return;
     }
-    const profile = findOrchestrationProfileBySelectionId(settings, profileId);
-    const agentProfileId = profile?.id ?? profileId;
+    const current: OrchestrationSelection =
+      composerRuntimeConfig?.orchestrationSelection ??
+      workflowSettings.defaultOrchestrationSelection ??
+      emptyOrchestrationSelection();
+    const nextSelection: OrchestrationSelection = {
+      mainAgentConfigId: patch.mainAgentConfigId ?? current.mainAgentConfigId,
+      mainPrompt: patch.mainPrompt ?? current.mainPrompt,
+      subagents: patch.subagents ?? current.subagents,
+    };
+    if (!hasCompleteOrchestrationSelection(nextSelection)) {
+      const partialBase = composerRuntimeConfig ?? {
+        subagentEnabled: defaultSubagentAvailability(),
+        sessionMode: workflowSettings.sessionMode ?? "agent",
+        bashReviewMode: "auto" as const,
+      };
+      const { resolvedOrchestrationSnapshot: _removed, ...base } = partialBase;
+      await persistComposerRuntimeConfig({
+        ...base,
+        orchestrationSelection: nextSelection,
+      });
+      return;
+    }
+    let materialized: Pick<ThreadRuntimeConfig, "orchestrationSelection" | "resolvedOrchestrationSnapshot">;
+    try {
+      materialized = materializeThreadOrchestrationSnapshot(settings, nextSelection);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      return;
+    }
+    const snapshot = materialized.resolvedOrchestrationSnapshot!;
     const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
-    const {
-      mainAgentModelOverride: _previousMainAgentOverride,
-      mainAgentSystemPromptPresetOverride: _previousSystemPromptPresetOverride,
-      ...baseRuntimeConfig
-    } = composerRuntimeConfig;
     const projectMcpServersEnabled =
       projectMcpSettings?.workspacePath === currentProjectPath
         ? projectMcpSettings?.enabledByServer
         : undefined;
+    const bootstrapped =
+      composerRuntimeConfig ??
+      buildThreadRuntimeConfigFromDefaults({
+        settings,
+        workflowDefaults: workflowSettings,
+        orchestrationSelection: nextSelection,
+        mcpServers: mcpSettings.servers,
+      });
     const next: ThreadRuntimeConfig = {
-      ...baseRuntimeConfig,
-      routeProfileId: agentProfileId,
-      agentProfileId,
-      ...(profile
-        ? {
-            subagentEnabled: deriveSubagentEnabledFromProfile(profile, composerRuntimeConfig.subagentEnabled),
-          }
-        : {}),
+      ...bootstrapped,
+      ...materialized,
+      subagentEnabled: deriveSubagentEnabledFromSnapshot(
+        snapshot,
+        composerRuntimeConfig?.subagentEnabled ?? bootstrapped.subagentEnabled,
+      ),
       ...(availableMcpServerKeys.length > 0
         ? {
             mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
-              profileAssignedServers: profile
-                ? collectProfileAssignedMcpServers(profile, settings.agentTemplates)
-                : [],
-              ...(composerRuntimeConfig.mcpServersEnabled
+              orchestrationAssignedServers: collectOrchestrationAssignedMcpServers(
+                orchestrationConfigFromSnapshot(snapshot) as never,
+                settings.agentTemplates,
+              ),
+              ...(composerRuntimeConfig?.mcpServersEnabled
                 ? { existing: composerRuntimeConfig.mcpServersEnabled }
-                : {}),
+                : bootstrapped.mcpServersEnabled
+                  ? { existing: bootstrapped.mcpServersEnabled }
+                  : {}),
               ...(projectMcpServersEnabled && Object.keys(projectMcpServersEnabled).length > 0
                 ? { remembered: projectMcpServersEnabled }
                 : workflowSettings.mcpServersEnabled
                   ? { remembered: workflowSettings.mcpServersEnabled }
-                : {}),
+                  : {}),
             }),
           }
         : {}),
     };
     await persistComposerRuntimeConfig(next);
-    setComposerRoutePopoverOpen(false);
+    if (hasCompleteOrchestrationSelection(nextSelection)) {
+      void saveDefaultOrchestrationSelection(nextSelection);
+    }
   }
 
-  async function selectComposerSystemPromptPreset(
-    preset: ThreadRuntimeConfig["mainAgentSystemPromptPresetOverride"],
-  ) {
-    if (!composerRuntimeConfig || !preset || !canEditComposerConfig) {
+  async function selectComposerMainAgentConfig(id: string) {
+    if (!id.trim()) {
       return;
     }
-    await persistComposerRuntimeConfig({
-      ...composerRuntimeConfig,
-      mainAgentSystemPromptPresetOverride: preset,
-    });
+    await applyComposerOrchestrationSelection({ mainAgentConfigId: id });
+  }
+
+  async function selectComposerMainPrompt(selection: MainAgentPromptSelection) {
+    await applyComposerOrchestrationSelection({ mainPrompt: selection });
+  }
+
+  async function selectComposerSubagents(selection: SubagentSelection) {
+    await applyComposerOrchestrationSelection({ subagents: selection });
   }
 
   async function selectComposerMainAgentModel(override: MainAgentModelOverride | undefined) {
@@ -5104,7 +5211,7 @@ function App() {
     }
   }
 
-  async function saveDefaultConfigProfile(profileId: string | undefined) {
+  async function saveDefaultOrchestrationSelection(selection: OrchestrationSelection | undefined) {
     if (!window.eco?.saveWorkflowSettings) {
       return;
     }
@@ -5114,19 +5221,19 @@ function App() {
       const nextWorkflowSettings: WorkflowSettingsSnapshot = {
         ...workflowSettings,
       };
-      if (profileId) {
-        nextWorkflowSettings.defaultAgentProfileId = profileId;
+      if (selection && hasCompleteOrchestrationSelection(selection)) {
+        nextWorkflowSettings.defaultOrchestrationSelection = selection;
       } else {
-        delete nextWorkflowSettings.defaultAgentProfileId;
+        delete nextWorkflowSettings.defaultOrchestrationSelection;
       }
       const saved = await window.eco.saveWorkflowSettings(nextWorkflowSettings);
       setWorkflowSettings(saved);
       if (!activeThread) {
         setComposerRuntimeConfig(
-          profileId
+          selection
             ? (buildComposerDefaultConfig({
-                preserveCurrentProfile: false,
                 workflowDefaults: saved,
+                orchestrationSelection: selection,
               }) ?? null)
             : null,
         );
@@ -6043,7 +6150,7 @@ function App() {
         buttonRef={composerRouteButtonRef}
         open={composerRoutePopoverOpen}
         disabled={!canSwitchRouteProfile || isSavingSettings}
-        profileName={selectedAgentProfileSummary?.name}
+        orchestrationName={selectedOrchestrationSummary?.name}
         compact={composerCompact}
         onToggle={() => {
           if (!canSwitchRouteProfile) {
@@ -6059,10 +6166,10 @@ function App() {
         anchorRef={composerRouteButtonRef}
         runtimeConfig={composerRuntimeConfig ?? undefined}
         onClose={() => setComposerRoutePopoverOpen(false)}
-        onSelectProfile={selectComposerRouteProfile}
-        onSelectSystemPromptPreset={selectComposerSystemPromptPreset}
-        selectedProfileId={selectedRuntimeProfileId}
-        onOpenFullSettings={() => openModelsSettings("routes")}
+        onSelectMainAgentConfig={selectComposerMainAgentConfig}
+        onSelectMainPrompt={selectComposerMainPrompt}
+        onSelectSubagents={selectComposerSubagents}
+        onOpenFullSettings={() => openModelsSettings("compositionParts")}
       />
     </div>
   );
@@ -6666,7 +6773,9 @@ function App() {
                 onCheckoutGitBranch={handleGitCheckoutBranch}
                 onCreateGitBranch={handleGitCreateBranch}
                 onOpenGitSettings={openGitSettings}
-                {...(selectedRuntimeProfileId && { profileId: selectedRuntimeProfileId })}
+                {...(composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId && {
+                  mainAgentConfigId: composerRuntimeConfig.orchestrationSelection.mainAgentConfigId,
+                })}
                 gitSettings={gitSettings}
                 onSaveCommitModelPreference={saveCommitMessageModelPreference}
                 onCommitSuccess={() => void handleGitCommitSuccess()}
@@ -6882,12 +6991,14 @@ function App() {
                     initialTab={modelsSettingsTab}
                     mode="agentBuilder"
                     busy={isSavingSettings}
-                    {...(effectiveDefaultAgentProfileId && {
-                      defaultAgentProfileId: effectiveDefaultAgentProfileId,
+                    {...(effectiveDefaultOrchestrationSelection && {
+                      defaultOrchestrationSelection: effectiveDefaultOrchestrationSelection,
                     })}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
-                    onDefaultAgentProfileChange={(profileId) => saveDefaultConfigProfile(profileId)}
+                    onDefaultOrchestrationSelectionChange={(selection) =>
+                      void saveDefaultOrchestrationSelection(selection)
+                    }
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />
                 ) : (

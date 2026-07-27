@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/platform/system_speech_recognizer.dart';
 import '../../core/theme/eco_icons.dart';
@@ -14,6 +15,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
 import 'composer_toolbar_icon.dart';
+import '../threads/thread_providers.dart';
 import 'voice_dictation_overlay.dart';
 
 class SessionComposer extends ConsumerStatefulWidget {
@@ -119,6 +121,10 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   bool get _canSend {
     if (widget.sendBusy) {
+      return false;
+    }
+    final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
+    if (!isThreadOrchestrationReady(modelSettings, widget.runtimeConfig)) {
       return false;
     }
     if (widget.followUpMode) {

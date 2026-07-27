@@ -7,7 +7,7 @@ import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   applyCodexExecutionConfirmation,
   assertCodexRoleProvidersAvailable,
-  buildCodexMainAgentProfileAppend,
+  buildCodexMainAgentOrchestrationAppend,
   buildCodexSubagentFollowupPrompt,
   type CodexAppServerClient,
   CodexAppServerDriver,
@@ -45,7 +45,7 @@ import {
   rollbackCodexThread,
   syncCodexConfigFromEcoProviders,
   syncEcoCodexModelCatalog,
-  syncProfileAgentsToCodexRoles,
+  syncOrchestrationAgentsToCodexRoles,
   withCodexSkillConfig,
 } from "@eco/runtime";
 import type { CodexModelCatalogEntryView } from "../shared/models";
@@ -100,7 +100,7 @@ export interface RunThreadRequestWithRuntimeProxyInput {
    * Processes stay warm; unselected servers use a disabled tools sentinel.
    */
   resolveMcpServers?: () => readonly CodexMcpServerForConfigSync[];
-  /** Composer-selected MCP names, intersected with each actor's Profile assignment. */
+  /** Composer-selected MCP names, intersected with each actor's orchestration assignment. */
   resolveEnabledMcpServerKeys?: () => readonly string[];
   /** Exact per-thread Skill path visibility. */
   resolveSkillConfig?: () => readonly { path: string; enabled: boolean }[];
@@ -197,15 +197,15 @@ export interface PrepareCodexRuntimeInput {
 }
 
 export interface PreparedCodexRuntime {
-  profileAppend?: string;
-  profileToolPolicy?: CodexToolPolicy;
+  orchestrationAppend?: string;
+  orchestrationToolPolicy?: CodexToolPolicy;
   roleIds: readonly string[];
   roleToolPolicies: Readonly<Record<string, CodexToolPolicy>>;
   threadConfig: CodexThreadConfigOverrides;
   roleThreadConfigs: Readonly<Record<string, CodexThreadConfigOverrides>>;
 }
 
-/** Prepared configs are scoped by Eco thread; concurrent Profiles never share mutable state. */
+/** Prepared configs are scoped by Eco thread; concurrent orchestrations never share mutable state. */
 const preparedRuntimeByThread = new Map<string, PreparedCodexRuntime>();
 const controlPlaneAppliedConfigByClient = new WeakMap<object, Map<string, object>>();
 /** Used only for Feed role labels when no thread attribution is available yet. */
@@ -314,7 +314,7 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
     },
     getThreadAttributionRecord: (codexThreadId) => config.threadMap.getThreadAttribution(codexThreadId),
     dequeueSpawnPayloadMatching: (input) => dequeueCodexSpawnPayloadMatchingSync(codexHomeDir, input),
-    resolveProfileRoleIds: () => [
+    resolveOrchestrationRoleIds: () => [
       ...new Set([
         ...lastPreparedRoleIds,
         ...[...preparedRuntimeByThread.values()].flatMap((prepared) => prepared.roleIds),
@@ -408,7 +408,7 @@ export async function resumeCodexThreadForEcoThread(input: {
       "Codex resume cannot reapply this thread's runtime policy because no prepared config is bound.",
       {
         nextAction:
-          "Prepare the Eco thread with its current Agent Profile and MCP selection, then retry resume.",
+          "Prepare the Eco thread with its current orchestration and MCP selection, then retry resume.",
       },
     );
   }
@@ -456,7 +456,7 @@ export async function resumeCodexSubagentThread(input: {
       `Codex subagent resume cannot reapply the MCP policy for role '${roleId || "unknown"}'.`,
       {
         nextAction:
-          "Prepare the parent Eco thread with the same Agent Profile before resuming this subagent.",
+          "Prepare the parent Eco thread with the same orchestration before resuming this subagent.",
       },
     );
   }
@@ -540,7 +540,7 @@ export async function rollbackCodexThreadForEcoThread(input: {
     if (!prepared) {
       throw new CodexRollbackNotAvailable(
         "Codex rollback cannot load the thread before its session configuration is prepared.",
-        { nextAction: "Prepare the current Agent Profile and MCP selection, then retry rewind." },
+        { nextAction: "Prepare the current orchestration and MCP selection, then retry rewind." },
       );
     }
     await resumeCodexThread(client, {
@@ -735,28 +735,28 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   const providers = [...runtimeDeps.listProviders()];
   const mcpServers = input.mcpServers ?? [];
   const registryAppend = input.agentRegistry
-    ? buildCodexMainAgentProfileAppend(input.agentRegistry.profile, input.agentRegistry.templates, {
+    ? buildCodexMainAgentOrchestrationAppend(input.agentRegistry.orchestration, input.agentRegistry.templates, {
         ...(input.subagentAvailability ? { subagentAvailability: input.subagentAvailability } : {}),
       })
     : undefined;
-  const profileAppend = registryAppend?.trim() || undefined;
+  const orchestrationAppend = registryAppend?.trim() || undefined;
   const registryToolPolicy = input.agentRegistry
-    ? normalizeCodexToolPolicy(input.agentRegistry.profile.mainAgent.tools, { allowSpawnDefault: true })
+    ? normalizeCodexToolPolicy(input.agentRegistry.orchestration.mainAgent.tools, { allowSpawnDefault: true })
     : undefined;
-  const profileToolPolicy = input.executionConfirmationMode
+  const orchestrationToolPolicy = input.executionConfirmationMode
     ? applyCodexExecutionConfirmation(
         registryToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY,
         input.executionConfirmationMode,
-        input.agentRegistry?.profile.mainAgent.tools.coreOverrides?.codex?.approvalPolicy === "untrusted"
+        input.agentRegistry?.orchestration.mainAgent.tools.coreOverrides?.codex?.approvalPolicy === "untrusted"
           ? { minimumApprovalPolicy: "untrusted" }
           : {},
       )
     : registryToolPolicy;
   const roleSync =
     input.agentRegistry && input.enableSubagents !== false
-      ? await syncProfileAgentsToCodexRoles({
+      ? await syncOrchestrationAgentsToCodexRoles({
           codexHomeDir,
-          profile: input.agentRegistry.profile,
+          orchestration: input.agentRegistry.orchestration,
           templates: input.agentRegistry.templates,
           mcpServers,
           ...(input.threadEnabledMcpServerNames
@@ -773,8 +773,8 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   lastPreparedRoleIds = roleSync?.roleIds ?? [];
   const baseThreadConfig = roleSync?.threadConfig ?? buildDenyAllMcpThreadConfig(mcpServers);
   const prepared: PreparedCodexRuntime = {
-    ...(profileAppend ? { profileAppend } : {}),
-    ...(profileToolPolicy ? { profileToolPolicy } : {}),
+    ...(orchestrationAppend ? { orchestrationAppend } : {}),
+    ...(orchestrationToolPolicy ? { orchestrationToolPolicy } : {}),
     roleIds: roleSync?.roleIds ?? [],
     roleToolPolicies: Object.fromEntries(
       (roleSync?.roles ?? []).map((role) => [role.roleId, role.toolPolicy]),
@@ -789,7 +789,7 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   };
 
   runtimeDeps.onStderr?.(
-    `[eco-codex] multi-agent roles=${roleSync?.roleIds.join(",") || "(none)"} profileAppendChars=${profileAppend?.length ?? 0}`,
+    `[eco-codex] multi-agent roles=${roleSync?.roleIds.join(",") || "(none)"} orchestrationAppendChars=${orchestrationAppend?.length ?? 0}`,
   );
 
   // Push ProviderStore models into in-process eco-gateway before Codex calls /v1/responses.
@@ -1267,8 +1267,8 @@ export function createCodexRuntimeDriver(
   threadId: string,
   sessionMode: CodexSessionMode,
   options?: {
-    profileAppend?: string;
-    profileToolPolicy?: CodexToolPolicy;
+    orchestrationAppend?: string;
+    orchestrationToolPolicy?: CodexToolPolicy;
     existingCodexThreadId?: string;
     threadConfig?: Record<string, unknown>;
     threadConfigAlreadyApplied?: boolean;
@@ -1281,8 +1281,8 @@ export function createCodexRuntimeDriver(
   }
 
   const prepared = preparedRuntimeByThread.get(threadId);
-  const profileAppend = options?.profileAppend ?? prepared?.profileAppend;
-  const profileToolPolicy = options?.profileToolPolicy ?? prepared?.profileToolPolicy;
+  const orchestrationAppend = options?.orchestrationAppend ?? prepared?.orchestrationAppend;
+  const orchestrationToolPolicy = options?.orchestrationToolPolicy ?? prepared?.orchestrationToolPolicy;
   const existingCodexThreadId =
     options?.existingCodexThreadId?.trim() || runtimeDeps.threadMap.getCodexThreadId(threadId);
   const preparedThreadConfig = options?.threadConfig ?? prepared?.threadConfig;
@@ -1305,8 +1305,8 @@ export function createCodexRuntimeDriver(
     ...(options?.threadConfigAlreadyApplied || controlPlaneConfigApplied
       ? { threadConfigAlreadyApplied: true }
       : {}),
-    ...(profileAppend ? { profileAppend } : {}),
-    ...(profileToolPolicy ? { profileToolPolicy } : {}),
+    ...(orchestrationAppend ? { orchestrationAppend } : {}),
+    ...(orchestrationToolPolicy ? { orchestrationToolPolicy } : {}),
     ...(preparedThreadConfig ? { threadConfig: preparedThreadConfig } : {}),
     onThreadMapped: (ecoThreadId, codexThreadId) => {
       // Subagent resume passes parent eco id + child Codex id — never remap parent → child.
@@ -1420,7 +1420,7 @@ export function createCodexSubagentResumeDriver(input: {
   /** Subagent agentId (= Codex child thread id). */
   agentId: string;
   sessionMode?: CodexSessionMode;
-  profileAppend?: string;
+  orchestrationAppend?: string;
 }): { driver: CodexAppServerDriver; followupPromptFor: (task: string) => string; codexThreadId: string } {
   const runtimeDeps = requireDeps();
   const codexThreadId = requireCodexSubagentThreadId(
@@ -1440,7 +1440,7 @@ export function createCodexSubagentResumeDriver(input: {
       `Codex subagent resume cannot reapply the MCP policy for role '${roleId || "unknown"}'.`,
       {
         nextAction:
-          "Prepare the parent Eco thread with the same Agent Profile before resuming this subagent.",
+          "Prepare the parent Eco thread with the same orchestration before resuming this subagent.",
       },
     );
   }
@@ -1448,8 +1448,8 @@ export function createCodexSubagentResumeDriver(input: {
     existingCodexThreadId: codexThreadId,
     threadConfig: roleThreadConfig,
     threadConfigAlreadyApplied: true,
-    profileToolPolicy: roleToolPolicy,
-    ...(input.profileAppend ? { profileAppend: input.profileAppend } : {}),
+    orchestrationToolPolicy: roleToolPolicy,
+    ...(input.orchestrationAppend ? { orchestrationAppend: input.orchestrationAppend } : {}),
   });
   return {
     driver,

@@ -81,7 +81,7 @@ test("capEcoToolPolicyForPhase adds phase disallows without implicit bash infere
   expect(capped.filesystem).toEqual({ read: "workspace", write: "workspace" });
 });
 
-test("mergeSdkDisallowedTools deduplicates profile and phase denylists", () => {
+test("mergeSdkDisallowedTools deduplicates orchestration and phase denylists", () => {
   expect(mergeSdkDisallowedTools(["Write", "Bash"], ["Bash", "Edit"], undefined)).toEqual([
     "Write",
     "Bash",

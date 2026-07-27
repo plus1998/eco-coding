@@ -29,7 +29,7 @@ test("child Codex threads without a role use neutral subagent attribution", () =
   });
 });
 
-test("child Codex threads preserve an explicit profile role", () => {
+test("child Codex threads preserve an explicit orchestration role", () => {
   expect(
     resolveDefaultCodexThreadAttribution({
       codexThreadId: "thr_codex_child",

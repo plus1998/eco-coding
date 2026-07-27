@@ -1319,7 +1319,7 @@ abstract class AppLocalizations {
   /// No description provided for @bashReviewAllowAllDescription.
   ///
   /// In en, this message translates to:
-  /// **'Skip confirmations while respecting the current mode, profile, and security policy'**
+  /// **'Skip confirmations while respecting the current mode, orchestration, and security policy'**
   String get bashReviewAllowAllDescription;
 
   /// No description provided for @composerSettings.
@@ -1328,11 +1328,11 @@ abstract class AppLocalizations {
   /// **'Composer settings'**
   String get composerSettings;
 
-  /// No description provided for @composerAgentProfile.
+  /// No description provided for @composerOrchestrationSelection.
   ///
   /// In en, this message translates to:
-  /// **'Agent profile'**
-  String get composerAgentProfile;
+  /// **'Orchestration'**
+  String get composerOrchestrationSelection;
 
   /// No description provided for @activityToolIncomplete.
   ///
@@ -1850,11 +1850,11 @@ abstract class AppLocalizations {
   /// **'Start the session before viewing task progress'**
   String get threadStartFirstForTasks;
 
-  /// No description provided for @threadSelectAgentProfileFirst.
+  /// No description provided for @threadSelectOrchestrationFirst.
   ///
   /// In en, this message translates to:
-  /// **'Select an agent profile in Composer settings first'**
-  String get threadSelectAgentProfileFirst;
+  /// **'Select an orchestration in Composer settings first'**
+  String get threadSelectOrchestrationFirst;
 
   /// No description provided for @threadLoadingCommit.
   ///
@@ -2531,14 +2531,14 @@ abstract class AppLocalizations {
   /// No description provided for @composerNoSubagents.
   ///
   /// In en, this message translates to:
-  /// **'The current profile has no subagents'**
+  /// **'The current orchestration has no subagents'**
   String get composerNoSubagents;
 
-  /// No description provided for @composerProfileNotConfigured.
+  /// No description provided for @composerOrchestrationNotConfigured.
   ///
   /// In en, this message translates to:
-  /// **'Profile not configured'**
-  String get composerProfileNotConfigured;
+  /// **'Orchestration not configured'**
+  String get composerOrchestrationNotConfigured;
 
   /// No description provided for @composerModel.
   ///
@@ -2552,11 +2552,11 @@ abstract class AppLocalizations {
   /// **'Reasoning'**
   String get composerReasoning;
 
-  /// No description provided for @composerProfile.
+  /// No description provided for @composerOrchestration.
   ///
   /// In en, this message translates to:
-  /// **'Profile'**
-  String get composerProfile;
+  /// **'Orchestration'**
+  String get composerOrchestration;
 
   /// No description provided for @composerSubagents.
   ///
@@ -2564,11 +2564,11 @@ abstract class AppLocalizations {
   /// **'Subagents'**
   String get composerSubagents;
 
-  /// No description provided for @composerProfileOrchestration.
+  /// No description provided for @composerOrchestrationComponents.
   ///
   /// In en, this message translates to:
-  /// **'Profile and orchestration'**
-  String get composerProfileOrchestration;
+  /// **'Orchestration components'**
+  String get composerOrchestrationComponents;
 
   /// No description provided for @composerSessionOnly.
   ///
@@ -2621,20 +2621,20 @@ abstract class AppLocalizations {
   /// No description provided for @composerNoSwitchableModel.
   ///
   /// In en, this message translates to:
-  /// **'The current profile has no switchable models'**
+  /// **'The current orchestration has no switchable models'**
   String get composerNoSwitchableModel;
 
   /// No description provided for @composerNoReasoningOptions.
   ///
   /// In en, this message translates to:
-  /// **'The current profile has no reasoning options'**
+  /// **'The current orchestration has no reasoning options'**
   String get composerNoReasoningOptions;
 
-  /// No description provided for @composerNoProfiles.
+  /// No description provided for @composerNoOrchestrationResources.
   ///
   /// In en, this message translates to:
-  /// **'No profiles available'**
-  String get composerNoProfiles;
+  /// **'No orchestration resources available'**
+  String get composerNoOrchestrationResources;
 
   /// No description provided for @composerNoMcpServers.
   ///
@@ -2675,7 +2675,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerModelCandidatesHint.
   ///
   /// In en, this message translates to:
-  /// **'Only models from the current profile provider are shown'**
+  /// **'Only models from the selected main-agent provider are shown'**
   String get composerModelCandidatesHint;
 
   /// No description provided for @composerModelLocked.
@@ -2684,11 +2684,11 @@ abstract class AppLocalizations {
   /// **'Models cannot be switched for this session'**
   String get composerModelLocked;
 
-  /// No description provided for @composerFollowProfile.
+  /// No description provided for @composerFollowOrchestration.
   ///
   /// In en, this message translates to:
-  /// **'Follow profile'**
-  String get composerFollowProfile;
+  /// **'Follow orchestration'**
+  String get composerFollowOrchestration;
 
   /// No description provided for @composerModelLoadFailed.
   ///
@@ -2708,17 +2708,17 @@ abstract class AppLocalizations {
   /// **'Affects only this session'**
   String get composerSessionReasoningOnly;
 
-  /// No description provided for @composerSelectProfile.
+  /// No description provided for @composerSelectOrchestration.
   ///
   /// In en, this message translates to:
-  /// **'Select profile'**
-  String get composerSelectProfile;
+  /// **'Select orchestration'**
+  String get composerSelectOrchestration;
 
-  /// No description provided for @composerSelectAgentProfile.
+  /// No description provided for @composerSelectOrchestrationSelection.
   ///
   /// In en, this message translates to:
-  /// **'Select agent profile'**
-  String get composerSelectAgentProfile;
+  /// **'Select orchestration'**
+  String get composerSelectOrchestrationSelection;
 
   /// No description provided for @composerOrchestrationSummary.
   ///

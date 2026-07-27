@@ -1,8 +1,7 @@
-import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type {
   AgentRole,
   ModelSettingsSnapshot,
-  OrchestrationProfile,
+  ResolvedOrchestrationSnapshot,
   RuntimeAgentRole,
   RuntimeRoleRouteConfig,
   SubagentRole,
@@ -32,11 +31,11 @@ export interface ComposerAgentModelLabel {
 export function buildComposerAgentModelLabels(input: {
   routes: readonly RuntimeRoleRouteConfig[];
   threadModelByRole?: Record<string, string> | undefined;
-  profile?: OrchestrationProfile | undefined;
+  snapshot?: ResolvedOrchestrationSnapshot | undefined;
   templates?: ModelSettingsSnapshot["agentTemplates"] | undefined;
 }): ComposerAgentModelLabel[] {
-  if (input.profile) {
-    return buildProfileAgentModelLabels({ ...input, profile: input.profile });
+  if (input.snapshot) {
+    return buildSnapshotAgentModelLabels({ ...input, snapshot: input.snapshot });
   }
   return AGENT_ROLES.map((role) =>
     buildLabelForRoute({
@@ -50,13 +49,13 @@ export function buildComposerAgentModelLabels(input: {
   );
 }
 
-function buildProfileAgentModelLabels(input: {
+function buildSnapshotAgentModelLabels(input: {
   routes: readonly RuntimeRoleRouteConfig[];
   threadModelByRole?: Record<string, string> | undefined;
-  profile: OrchestrationProfile;
+  snapshot: ResolvedOrchestrationSnapshot;
   templates?: ModelSettingsSnapshot["agentTemplates"] | undefined;
 }): ComposerAgentModelLabel[] {
-  const displayNames = profileDisplayNames(input.profile, input.templates ?? []);
+  const displayNames = snapshotDisplayNames(input.snapshot, input.templates ?? []);
   return input.routes.map((route) =>
     buildLabelForRoute({
       role: route.role,
@@ -89,14 +88,14 @@ function buildLabelForRoute(input: {
   };
 }
 
-function profileDisplayNames(
-  profile: OrchestrationProfile,
+function snapshotDisplayNames(
+  snapshot: ResolvedOrchestrationSnapshot,
   templates: ModelSettingsSnapshot["agentTemplates"],
 ): Map<string, string> {
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const names = new Map<string, string>();
-  names.set("planner", profile.mainAgent.name.trim() || i18n.t("agent.role.mainAgent"));
-  for (const agent of listOrchestrationProfileAgents(profile)) {
+  names.set("planner", snapshot.mainAgent.name.trim() || i18n.t("agent.role.mainAgent"));
+  for (const agent of snapshot.agents) {
     const template = templateById.get(agent.templateId);
     names.set(agent.agentKey, agent.displayName?.trim() || template?.name || agent.agentKey);
   }

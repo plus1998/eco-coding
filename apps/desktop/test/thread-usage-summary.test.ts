@@ -57,7 +57,7 @@ test("buildThreadUsageSummary always includes context when tokens known", () => 
   expect(summary.context?.roles?.find((role) => role.role === "coder")?.occupied).toBe(80_000);
 });
 
-test("buildThreadUsageSummary preserves dynamic Agent Profile context roles", () => {
+test("buildThreadUsageSummary preserves dynamic orchestration context roles", () => {
   const summary = buildThreadUsageSummary({
     usageByRole: {
       researcher: {

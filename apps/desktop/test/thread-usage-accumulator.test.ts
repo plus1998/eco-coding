@@ -124,7 +124,7 @@ test("ThreadUsageAccumulator recordRunUsage attributes per-model role", () => {
   expect(billing?.plannerTokenCostUsd).toBeCloseTo(0.045, 4);
 });
 
-test("ThreadUsageAccumulator preserves dynamic Agent Profile roles", () => {
+test("ThreadUsageAccumulator preserves dynamic orchestration roles", () => {
   const accumulator = new ThreadUsageAccumulator();
   const delta = { inputTokens: 12_000, outputTokens: 1_200, cacheReadTokens: 0, cacheCreationTokens: 0 };
 

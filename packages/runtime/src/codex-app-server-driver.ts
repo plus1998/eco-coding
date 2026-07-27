@@ -93,9 +93,9 @@ export interface CodexTurnStartResult {
 export interface CodexAppServerDriverOptions {
   client: CodexAppServerClient;
   sessionMode?: CodexSessionMode;
-  profileAppend?: string;
-  /** Profile mainAgent.tools — intersects sessionMode for sandbox / approvalPolicy. */
-  profileToolPolicy?: import("./codex-tool-policy.js").EcoToolPolicy;
+  orchestrationAppend?: string;
+  /** Orchestration mainAgent.tools; intersects sessionMode for sandbox / approvalPolicy. */
+  orchestrationToolPolicy?: import("./codex-tool-policy.js").EcoToolPolicy;
   /** Reapplied on both thread/start and thread/resume. */
   threadConfig?: Record<string, unknown>;
   existingCodexThreadId?: string;
@@ -148,8 +148,8 @@ async function startCodexThreadSerially<T>(
 export class CodexAppServerDriver implements AgentRuntimeDriver {
   private readonly client: CodexAppServerClient;
   private readonly sessionMode: CodexSessionMode;
-  private readonly profileAppend: string | undefined;
-  private readonly profileToolPolicy: import("./codex-tool-policy.js").EcoToolPolicy | undefined;
+  private readonly orchestrationAppend: string | undefined;
+  private readonly orchestrationToolPolicy: import("./codex-tool-policy.js").EcoToolPolicy | undefined;
   private readonly threadConfig: Record<string, unknown> | undefined;
   private readonly existingCodexThreadId: string | undefined;
   private readonly threadConfigAlreadyApplied: boolean;
@@ -164,8 +164,8 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   constructor(options: CodexAppServerDriverOptions) {
     this.client = options.client;
     this.sessionMode = options.sessionMode ?? "agent";
-    this.profileAppend = options.profileAppend;
-    this.profileToolPolicy = options.profileToolPolicy;
+    this.orchestrationAppend = options.orchestrationAppend;
+    this.orchestrationToolPolicy = options.orchestrationToolPolicy;
     this.threadConfig = options.threadConfig;
     this.existingCodexThreadId = options.existingCodexThreadId;
     this.threadConfigAlreadyApplied = options.threadConfigAlreadyApplied ?? false;
@@ -190,8 +190,8 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   private materializeTurnOptions(sessionMode: CodexSessionMode) {
     return buildCodexTurnOptions({
       sessionMode,
-      ...(this.profileAppend ? { profileAppend: this.profileAppend } : {}),
-      ...(this.profileToolPolicy ? { profileToolPolicy: this.profileToolPolicy } : {}),
+      ...(this.orchestrationAppend ? { orchestrationAppend: this.orchestrationAppend } : {}),
+      ...(this.orchestrationToolPolicy ? { orchestrationToolPolicy: this.orchestrationToolPolicy } : {}),
     });
   }
 

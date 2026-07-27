@@ -39,7 +39,7 @@ function routes(providerId = "p1"): RoleRouteConfig[] {
 
 test("resolveThreadRuntimeConfig validates full role routes and keeps route metadata", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
     [provider("p1")],
     routes(),
   );
@@ -64,14 +64,14 @@ test("resolveThreadRuntimeConfig validates full role routes and keeps route meta
 test("resolveThreadRuntimeConfig reports missing providers and disabled providers", () => {
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
       [],
       routes(),
     ).ok,
   ).toBe(false);
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
       [provider("p1", false)],
       routes(),
     ),
@@ -81,9 +81,9 @@ test("resolveThreadRuntimeConfig reports missing providers and disabled provider
   });
 });
 
-test("resolveThreadRuntimeConfig accepts partial routes for generic Agent Profiles", () => {
+test("resolveThreadRuntimeConfig accepts partial routes for generic orchestrations", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
     [provider("p1")],
     [{ role: "planner", providerId: "p1", modelId: "research-model" }],
     { requireCompleteCodingRoutes: false },
@@ -96,20 +96,20 @@ test("resolveThreadRuntimeConfig accepts partial routes for generic Agent Profil
 
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
       [provider("p1")],
       [],
       { requireCompleteCodingRoutes: false },
     ),
   ).toEqual({
     ok: false,
-    reason: "At least one model route is required for this Agent Profile.",
+    reason: "At least one model route is required for this orchestration.",
   });
 });
 
-test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic Agent Profiles", () => {
+test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic orchestrations", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
     [provider("p1")],
     [
       { role: "planner", providerId: "p1", modelId: "main-model" },
@@ -137,7 +137,7 @@ test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic Age
 test("resolveThreadRuntimeConfig still requires full coding routes by default", () => {
   expect(
     resolveThreadRuntimeConfig(
-      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
       [provider("p1")],
       [{ role: "planner", providerId: "p1", modelId: "planner-model" }],
     ),
@@ -149,7 +149,7 @@ test("resolveThreadRuntimeConfig still requires full coding routes by default", 
 
 test("buildDriverRoutes and buildDriverRoutesFromRuntime both expose eco aliases to the SDK", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
     [provider("p1")],
     routes(),
   );

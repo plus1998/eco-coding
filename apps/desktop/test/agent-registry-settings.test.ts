@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { mergeAgentRegistrySettings } from "../src/main/agent-registry-settings";
 import { createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
-import type { AgentTemplate, ModelSettingsSnapshot, OrchestrationProfile } from "../src/shared/ipc";
+import type {
+  AgentTemplate,
+  MainAgentConfigResource,
+  MainAgentPromptResource,
+  ModelSettingsSnapshot,
+  SubagentOrchestrationResource,
+} from "../src/shared/ipc";
 
 function customTemplate(id: string): AgentTemplate {
   return {
@@ -21,21 +27,36 @@ function customTemplate(id: string): AgentTemplate {
   };
 }
 
-function customProfile(id: string): OrchestrationProfile {
+function customMainAgentConfig(id: string): MainAgentConfigResource {
   return {
     id,
-    name: "Custom Research",
-    preset: "research",
-    mainAgent: {
-      agentKey: "main",
-      name: "Research Lead",
-      domain: "research",
-      systemPromptPreset: "custom_append",
-      prompt: "Coordinate research.",
-      modelRef: { providerId: "p1", modelId: "m1" },
-      tools: { allowed: ["Agent", "WebSearch"], disallowed: [] },
-      skills: [],
-    },
+    name: "Main Config",
+    agentKey: "main",
+    domain: "research",
+    modelRef: { providerId: "p1", modelId: "m1" },
+    tools: { allowed: ["Agent"], disallowed: [] },
+    skills: [],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    source: "user",
+  };
+}
+
+function customMainAgentPrompt(id: string): MainAgentPromptResource {
+  return {
+    id,
+    name: "Main Prompt",
+    mode: "custom_append",
+    prompt: "Append research guidance.",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    source: "user",
+  };
+}
+
+function customSubagentOrchestration(id: string): SubagentOrchestrationResource {
+  return {
+    id,
+    name: "Subagents",
+    domain: "research",
     agents: [],
     strategy: { kind: "autonomous" },
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -43,26 +64,56 @@ function customProfile(id: string): OrchestrationProfile {
   };
 }
 
-test("registry settings merge keeps built-in templates and user orchestration profiles", () => {
+test("registry settings merge keeps built-in templates and user orchestration resources", () => {
   const protectedTemplate = createBuiltInAgentTemplates()[0] as AgentTemplate;
   const base: ModelSettingsSnapshot = {
     providers: [],
     routeProfiles: [],
     agentTemplates: [protectedTemplate],
-    orchestrationProfiles: [],
+    mainAgentConfigs: [],
+    mainAgentPrompts: [],
+    subagentOrchestrations: [],
   };
 
   const merged = mergeAgentRegistrySettings(base, {
     listAgentTemplates: () => [customTemplate("user.researcher"), customTemplate(protectedTemplate.id)],
-    listOrchestrationProfiles: () => [customProfile("user.research"), customProfile("user.coding")],
+    listMainAgentConfigs: () => [customMainAgentConfig("user.main.config")],
+    listMainAgentPrompts: () => [customMainAgentPrompt("user.main.prompt")],
+    listSubagentOrchestrations: () => [customSubagentOrchestration("user.subagents")],
   });
 
   expect(merged.agentTemplates.map((template) => template.id)).toEqual([
     protectedTemplate.id,
     "user.researcher",
   ]);
-  expect(merged.orchestrationProfiles.map((profile) => profile.id)).toEqual([
-    "user.research",
-    "user.coding",
+  expect(merged.mainAgentConfigs.map((config) => config.id)).toEqual(["user.main.config"]);
+  expect(merged.mainAgentPrompts.map((prompt) => prompt.id)).toEqual(["user.main.prompt"]);
+  expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual([
+    "user.subagents",
+  ]);
+});
+
+test("registry settings merge replaces three resource tables from store", () => {
+  const protectedTemplate = createBuiltInAgentTemplates()[0] as AgentTemplate;
+  const base: ModelSettingsSnapshot = {
+    providers: [],
+    routeProfiles: [],
+    agentTemplates: [protectedTemplate],
+    mainAgentConfigs: [customMainAgentConfig("base.config")],
+    mainAgentPrompts: [],
+    subagentOrchestrations: [],
+  };
+
+  const merged = mergeAgentRegistrySettings(base, {
+    listAgentTemplates: () => [],
+    listMainAgentConfigs: () => [customMainAgentConfig("user.main.config")],
+    listMainAgentPrompts: () => [customMainAgentPrompt("user.main.prompt")],
+    listSubagentOrchestrations: () => [customSubagentOrchestration("user.subagents")],
+  });
+
+  expect(merged.mainAgentConfigs.map((config) => config.id)).toEqual(["user.main.config"]);
+  expect(merged.mainAgentPrompts.map((prompt) => prompt.id)).toEqual(["user.main.prompt"]);
+  expect(merged.subagentOrchestrations.map((orchestration) => orchestration.id)).toEqual([
+    "user.subagents",
   ]);
 });

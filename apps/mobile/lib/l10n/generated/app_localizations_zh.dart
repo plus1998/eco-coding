@@ -655,13 +655,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bashReviewAllowAll => '自动执行';
 
   @override
-  String get bashReviewAllowAllDescription => '跳过确认（仍受当前模式、Profile 与安全策略限制）';
+  String get bashReviewAllowAllDescription => '跳过确认（仍受当前模式、编排与安全策略限制）';
 
   @override
   String get composerSettings => 'Composer 设置';
 
   @override
-  String get composerAgentProfile => '智能体配置';
+  String get composerOrchestrationSelection => '编排组合';
 
   @override
   String activityToolIncomplete(Object text) {
@@ -956,7 +956,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadStartFirstForTasks => '请先开始会话后再查看任务进度';
 
   @override
-  String get threadSelectAgentProfileFirst => '请先在 Composer 设置中选择智能体配置';
+  String get threadSelectOrchestrationFirst => '请先在 Composer 设置中选择编排组合';
 
   @override
   String get threadLoadingCommit => '正在加载提交信息…';
@@ -1330,7 +1330,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerNoSubagents => '当前方案未配置子代理';
 
   @override
-  String get composerProfileNotConfigured => 'Profile 未配置';
+  String get composerOrchestrationNotConfigured => '编排未配置';
 
   @override
   String get composerModel => '模型';
@@ -1339,13 +1339,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerReasoning => '推理';
 
   @override
-  String get composerProfile => '方案';
+  String get composerOrchestration => '编排';
 
   @override
   String get composerSubagents => '子代理';
 
   @override
-  String get composerProfileOrchestration => '方案与编排';
+  String get composerOrchestrationComponents => '编排组件';
 
   @override
   String get composerSessionOnly => '配置仅作用于当前会话';
@@ -1378,7 +1378,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerNoReasoningOptions => '当前方案未配置推理强度';
 
   @override
-  String get composerNoProfiles => '暂无可用方案';
+  String get composerNoOrchestrationResources => '暂无可用编排资源';
 
   @override
   String get composerNoMcpServers => '未配置 MCP 服务器';
@@ -1409,7 +1409,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerModelLocked => '当前会话不可切换模型';
 
   @override
-  String get composerFollowProfile => '跟随方案';
+  String get composerFollowOrchestration => '跟随编排';
 
   @override
   String get composerModelLoadFailed => '候选模型加载失败';
@@ -1421,10 +1421,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerSessionReasoningOnly => '仅影响当前会话';
 
   @override
-  String get composerSelectProfile => '选择方案';
+  String get composerSelectOrchestration => '选择编排';
 
   @override
-  String get composerSelectAgentProfile => '选择智能体配置';
+  String get composerSelectOrchestrationSelection => '选择编排组合';
 
   @override
   String composerOrchestrationSummary(Object summary) {

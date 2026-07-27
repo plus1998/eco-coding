@@ -1,8 +1,7 @@
-import { listOrchestrationProfileAgents } from "../shared/agent-orchestration";
 import type {
   MainAgentModelOverride,
   ModelSettingsSnapshot,
-  OrchestrationProfile,
+  ResolvedOrchestrationSnapshot,
   RuntimeRoleRouteConfig,
 } from "../shared/ipc";
 import { resolveMainAgentModelOverrideForProvider } from "../shared/thread-runtime-config";
@@ -10,24 +9,24 @@ import { resolveMainAgentModelOverrideForProvider } from "../shared/thread-runti
 type ProviderView = ModelSettingsSnapshot["providers"][number];
 
 export function isModelRefReady(
-  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
+  modelRef: ResolvedOrchestrationSnapshot["mainAgent"]["modelRef"],
   providersById: ReadonlyMap<string, ProviderView>,
 ): boolean {
   const provider = providersById.get(modelRef.providerId);
   return Boolean(modelRef.modelId.trim() && provider?.enabled);
 }
 
-export function isAgentProfileReady(
-  profile: OrchestrationProfile,
+export function isOrchestrationSnapshotReady(
+  snapshot: ResolvedOrchestrationSnapshot,
   providersById: ReadonlyMap<string, ProviderView>,
   mainAgentModelOverride?: MainAgentModelOverride,
 ): boolean {
   const effectiveMainModel =
-    resolveMainAgentModelOverrideForProvider(profile.mainAgent.modelRef.providerId, mainAgentModelOverride) ??
-    profile.mainAgent.modelRef;
+    resolveMainAgentModelOverrideForProvider(snapshot.mainAgent.modelRef.providerId, mainAgentModelOverride) ??
+    snapshot.mainAgent.modelRef;
   return (
     isModelRefReady(effectiveMainModel, providersById) &&
-    listOrchestrationProfileAgents(profile)
+    snapshot.agents
       .filter((agent) => agent.enabled)
       .every((agent) => isModelRefReady(agent.modelRef, providersById))
   );

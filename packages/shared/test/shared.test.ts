@@ -129,9 +129,14 @@ test("registers git remote command definitions", () => {
   expect(isRemoteCommandChannel("git:push")).toBe(true);
   expect(
     validateRemoteCommandArgs("git:commit", [
-      { workspacePath: "/repo", profileId: "prof_1", includeUnstaged: true },
+      { workspacePath: "/repo", mainAgentConfigId: "main_1", includeUnstaged: true },
     ]),
   ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("git:commit", [
+      { workspacePath: "/repo", profileId: "legacy", includeUnstaged: true },
+    ]),
+  ).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("git:push", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
   expect(isRemoteCommandChannel("git:fetch")).toBe(true);
   expect(validateRemoteCommandArgs("git:fetch", [{ workspacePath: "/repo" }])).toEqual({ ok: true });

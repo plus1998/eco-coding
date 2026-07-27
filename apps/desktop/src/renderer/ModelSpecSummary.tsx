@@ -11,14 +11,14 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { CandidateModelView, RouteCapabilityHint, RoutePricingHint } from "../shared/ipc";
-import type { ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
+import type { ManualSpecOverrideField } from "./agent-resource-manual-spec-form";
 import {
   catalogCapabilityHint,
   catalogPricingHint,
   formatCatalogMappingLabel,
   listManualOverrideFields,
   manualSpecToForm,
-} from "./agent-profile-manual-spec-form";
+} from "./agent-resource-manual-spec-form";
 
 function formatTokenCount(value: number): string {
   if (value >= 1_000_000) {

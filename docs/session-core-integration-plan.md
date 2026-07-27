@@ -13,9 +13,9 @@
 - `thread_core_sessions` 是 Codex external thread binding 的唯一真相；start、continue、重启恢复和 compact 已用真实 app-server 验证。
 - Codex CLI probe 同时在 UI 和 main admission 生效；CLI 不可用时不回落 Claude。
 - Gateway usage 进入统一 ledger、billing 和 context 管线；根 turn、continue 与 compaction 均使用持久化 attribution，首次 binding 竞态会缓冲后再结算。
-- Codex 主代理 Profile prompt/tool sandbox 已接入；Profile agent role 会按会话配置物化，子代理事件归因到父 Eco Thread。
+- Codex 主代理 orchestration prompt/tool sandbox 已接入；orchestration agent role 会按会话配置物化，子代理事件归因到父 Eco Thread。
 - Composer 执行确认映射为 `always -> untrusted`、`auto -> on-request`、`allow_all -> never`。Codex 没有“每条命令强制弹窗”的原生策略，`untrusted` 仍可能自动执行 Codex 判定为可信的命令，这一语义差异不能写成完全等价。
-- Codex MCP 按全局启用、会话选择与 Profile 分配做权限交集；Skills 只为 prompt 中显式 `$skill` 生成结构化输入；图片落入 turn scoped 临时目录并校验格式/大小；rewind 同步 app-server history、Eco projection 与本地文件 checkpoint。
+- Codex MCP 按全局启用、会话选择与 orchestration 分配做权限交集；Skills 只为 prompt 中显式 `$skill` 生成结构化输入；图片落入 turn scoped 临时目录并校验格式/大小；rewind 同步 app-server history、Eco projection 与本地文件 checkpoint。
 
 ## 1. 结论与实施策略
 
@@ -265,7 +265,7 @@ interface CorePreferences {
 - Agent / Plan / Ask 三种模式；
 - Plan 提交、用户修改、批准后执行；
 - Bash 与普通工具审批、拒绝、取消；
-- MCP、Skills、Profile、子代理；
+- MCP、Skills、orchestration、子代理；
 - compact、context usage、rewind / checkpoint；
 - provider 路由、proxy 转换、usage/计费归因；
 - Desktop feed、Mobile feed 与审批；
@@ -316,12 +316,12 @@ interface CorePreferences {
 | 继续/重启恢复 | 必须 | 已真实验收 | binding 缺失时阻止继续 |
 | 取消 | 必须 | 已接入，自动测试覆盖 | 正式发布前补 live 取消 |
 | 工具审批 | 必须 | 已真实验收 command approval | `always` 仅能映射为 Codex `untrusted` |
-| MCP | 必须 | 已接入并实测 | 会话选择与 Profile 分配取交集 |
+| MCP | 必须 | 已接入并实测 | 会话选择与 orchestration 分配取交集 |
 | Skills | 必须 | 已接入并实测 | 只注入显式 `$skill` |
 | Compact | 保持现状 | 原生 compact，已真实验收 | 不用摘要续写冒充原生成功 |
 | 文件回退 | 保持现状 | 已接入并实测 | 配置预备后依次同步 app-server、文件 checkpoint 与投影 |
 | 图片输入 | 保持现状 | 已接入并实测 | 解码校验、10 张/单张 20 MB 上限、turn 后清理 |
-| 子代理 | 保持现状 | 已接入并实测 | Profile role、会话开关与父子事件归因 |
+| 子代理 | 保持现状 | 已接入并实测 | orchestration role、会话开关与父子事件归因 |
 | 精确 usage | 必须 | 已真实验收 | attribution/route 不完整时拒绝结算 |
 | Mobile feed/审批 | 必须 | 未实现/未验收 | Codex 正式发布前门禁 |
 
@@ -482,12 +482,12 @@ interface CorePreferences {
 - continue 保持同一 Codex Thread ID，返回 `CODEX_CONTINUE_BILLING_OK`；两轮累计 input `985`、output `22`、cache read `19840`、cache creation `1920`，UI 累计成本 `$0.0138`，SQLite ledger 为两笔独立事件。
 - 重启应用后按需执行 `thread/read -> thread/resume`，随后原生 compact 成功；最新一次压缩到 `5900 tokens`，新增 ledger event `ule_e619ccb3846b4ef732412882` 为 `source=codex`、`role=planner`、`attributionStatus=attributed`。
 - command approval live smoke 产生 pending approval `call_QnRqAW6ns5AZFjqL7UfFYqI5`，批准 `/bin/zsh -lc 'sleep 2 && printf CODEX_APPROVAL_LIVE_OK'` 后同一会话完成并返回 marker。
-- 主 Profile 与 Profile agent roles 已应用；真实 smoke 已创建 `explore` child thread，并在父 Thread Feed 中完成归因。
+- 主 orchestration 与 orchestration agent roles 已应用；真实 smoke 已创建 `explore` child thread，并在父 Thread Feed 中完成归因。
 - Electron CDP capability smoke 验证 Codex 新会话 MCP 为 `0/1` 且配置可编辑，子代理为 `3/3` 且三个角色可编辑；另用显式 `$Bun` 完成结构化 Skill 输入实测。
 - Ask live smoke：Eco Thread `thr_1784087228184` 使用 `sessionMode=ask`，返回 marker `CODEX_ASK_LIVE_OK_1784087227339`，终态 `completed`，投影含原生 app-server 事件且无工具调用。
 - Plan live smoke：Eco Thread `thr_1784087232512` 使用 `sessionMode=plan`，原生 `itemType=plan` 返回 marker `CODEX_PLAN_LIVE_OK_1784087227339`；Desktop 持久化 pending plan 并停在 `awaiting_plan`，无工具调用、未批准执行。
 - Responses-native 三代理对照：Eco Thread `thr_1784089827238` 的 `explore/coder/tester` 均产生独立 session、ledger 和 context instance；`contextOccupied` 分别为 `10005/10493/10493`，用于确认 Codex 原生多代理归因链路本身可工作。
-- 实际 Profile 三代理验收：Eco Thread `thr_1784090586107` 使用 `user.custom.profile` 的 Anthropic-compatible `deepseek-v4-flash` 子代理；三个角色均包含 `agent.started -> child events -> agent.stopped`，并返回各自唯一 marker。
+- 实际 orchestration 三代理验收：Eco Thread `thr_1784090586107` 使用 `user.custom.orchestration` 的 Anthropic-compatible `deepseek-v4-flash` 子代理；三个角色均包含 `agent.started -> child events -> agent.stopped`，并返回各自唯一 marker。
 - `explore`：input `54`、output `45`、cache read `11008`、context `11062 / 258000`、成本 `$0.00009104`。
 - `coder`：input `92`、output `44`、cache read `10880`、context `10972 / 258000`、成本 `$0.0000994`。
 - `tester`：input `92`、output `42`、cache read `10880`、context `10972 / 258000`、成本 `$0.0000984`。

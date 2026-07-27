@@ -99,7 +99,7 @@ test("projectBillingFromUsageLedger projects agent subagent and run attempt tota
   expect(projection.snapshot?.subagents?.[0]?.modelId).toBe("haiku");
 });
 
-test("projectBillingFromUsageLedger preserves dynamic Agent Profile roles", () => {
+test("projectBillingFromUsageLedger preserves dynamic orchestration roles", () => {
   const usage = { inputTokens: 12_000, outputTokens: 1_200, cacheReadTokens: 0, cacheCreationTokens: 0 };
   const events = [
     buildSingleUsageLedgerEvent({

@@ -1,6 +1,6 @@
 import { formatRoleModelLabel } from "@eco/runtime/usage";
 import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
-import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
+import { resolveThreadOrchestrationSummary } from "./orchestration-summary";
 
 export type RuntimeAgentDisplayNames = Record<string, string>;
 
@@ -8,11 +8,7 @@ export function buildRuntimeAgentDisplayNames(
   settings: ModelSettingsSnapshot,
   runtimeConfig: ThreadRuntimeConfig | undefined,
 ): RuntimeAgentDisplayNames {
-  const summary = findSelectableAgentProfileSummary(
-    settings,
-    runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId,
-    runtimeConfig,
-  );
+  const summary = resolveThreadOrchestrationSummary(settings, runtimeConfig);
   if (!summary) {
     return {};
   }

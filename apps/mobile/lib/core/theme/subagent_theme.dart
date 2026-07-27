@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/thread_models.dart';
+import '../models/agent_orchestration.dart';
 import '../utils/activity_display.dart';
 
 const subagentDefaultThemeColors = <String, Color>{
@@ -28,42 +28,39 @@ String stripEcoAgentKeyPrefix(String value) {
   return value.startsWith('eco_') ? value.substring(4) : value;
 }
 
-Color resolveSubagentThemeColor(String role, {OrchestrationProfile? profile}) {
+Color resolveSubagentThemeColor(
+  String role, {
+  List<AgentInstanceConfig> agents = const [],
+}) {
   final normalized = normalizeAgentDisplayRole(role) ?? role;
   final agentKey = stripEcoAgentKeyPrefix(normalized);
 
-  if (profile != null) {
-    for (final agent in profile.agents) {
-      if (agent.agentKey == agentKey) {
-        final themeColor = agent.themeColor?.trim();
-        if (themeColor != null && themeColor.isNotEmpty) {
-          return parseSubagentThemeHex(themeColor);
-        }
-        break;
+  for (final agent in agents) {
+    if (agent.agentKey == agentKey) {
+      final themeColor = agent.themeColor?.trim();
+      if (themeColor != null && themeColor.isNotEmpty) {
+        return parseSubagentThemeHex(themeColor);
       }
-    }
-  }
-
-  if (agentKey == 'explore') {
-    final legacyExploreColor = profile?.builtinExploreThemeColor?.trim();
-    if (legacyExploreColor != null && legacyExploreColor.isNotEmpty) {
-      return parseSubagentThemeHex(legacyExploreColor);
+      break;
     }
   }
 
   return subagentDefaultThemeColors[agentKey] ?? subagentUnknownThemeColor;
 }
 
-Color subagentMissionBorderColor(String role, {OrchestrationProfile? profile}) {
-  final accent = resolveSubagentThemeColor(role, profile: profile);
+Color subagentMissionBorderColor(
+  String role, {
+  List<AgentInstanceConfig> agents = const [],
+}) {
+  final accent = resolveSubagentThemeColor(role, agents: agents);
   return accent.withValues(alpha: 0.28);
 }
 
 Color subagentMissionSurfaceColor(
   String role, {
-  OrchestrationProfile? profile,
+  List<AgentInstanceConfig> agents = const [],
   double alpha = 0.08,
 }) {
-  final accent = resolveSubagentThemeColor(role, profile: profile);
+  final accent = resolveSubagentThemeColor(role, agents: agents);
   return accent.withValues(alpha: alpha);
 }

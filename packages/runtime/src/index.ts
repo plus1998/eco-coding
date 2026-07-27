@@ -22,7 +22,7 @@ export interface EcoSdkSessionOptions {
   settingSources?: EcoSettingSource[];
   /** Main session (Planner) skill directories to preload */
   skills?: string[];
-  /** Per-agent skill directories for subagent definitions. Keys may be built-in roles, profile agentKeys, or SDK eco_* keys. */
+  /** Per-agent skill directories for subagent definitions. Keys may be built-in roles, orchestration agentKeys, or SDK eco_* keys. */
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>;
   /** File read roots for project skills and explicitly referenced user skills in this SDK run. */
   implicitReadAllowRoots?: string[];
@@ -30,7 +30,7 @@ export interface EcoSdkSessionOptions {
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];
-  /** Composer-selected MCP servers for this session (merged with profile assignment). */
+  /** Composer-selected MCP servers for this session (merged with orchestration assignment). */
   runtimeMcpServers?: string[];
 }
 
@@ -72,7 +72,7 @@ export interface AgentRuntimeRunInput {
   resume?: EcoSdkResumeOptions;
   /** Stopped subagent sessions Eco may auto-Resume via PreToolUse. */
   resumableSubagents?: readonly ResumableSubagentRef[];
-  /** Optional universal agent registry/profile used to generate SDK AgentDefinitions dynamically. */
+  /** Optional universal agent registry used to generate SDK AgentDefinitions dynamically. */
   agentRegistry?: EcoAgentRuntimeConfig;
 }
 

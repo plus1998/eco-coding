@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import {
-  buildToolPermissionPolicyFromProfile,
+  buildToolPermissionPolicyFromOrchestration,
   type EcoAgentRuntimeConfig,
   type EcoToolPolicy,
 } from "../src/agent-orchestration";
@@ -45,7 +45,7 @@ const registry: EcoAgentRuntimeConfig = {
       updatedAt: "2026-06-08T00:00:00.000Z",
     },
   ],
-  profile: {
+  orchestration: {
     id: "user.redteam.research",
     name: "Red Team Research",
     preset: "research",
@@ -115,10 +115,10 @@ interface RedTeamCase {
   reasonIncludes?: string;
 }
 
-test("Agent profile tool permission red-team suite covers main and subagent actors", async () => {
+test("Agent orchestration tool permission red-team suite covers main and subagent actors", async () => {
   const decisions: Array<{ actor: string; toolName: string; reason: string }> = [];
   const hook = createToolPermissionPreToolHook(
-    buildToolPermissionPolicyFromProfile(registry.profile, registry.templates),
+    buildToolPermissionPolicyFromOrchestration(registry.orchestration, registry.templates),
     {
       workspacePath: "/workspace/project",
       bashReviewMode: "auto",

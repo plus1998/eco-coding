@@ -14,7 +14,7 @@ import {
   tryFormToManualSpec,
   type ManualSpecFormFields,
   type ManualTriState,
-} from "./agent-profile-manual-spec-form";
+} from "./agent-resource-manual-spec-form";
 import { ModelsDevCatalogReferencePanel } from "./ModelSpecSummary";
 import { multiplyUnitRate } from "../shared/manual-spec-pricing";
 

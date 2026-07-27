@@ -5,27 +5,27 @@ import {
   normalizeGitSettingsSnapshot,
 } from "../src/main/git-settings-store";
 
-test("normalizeGitSettingsSnapshot keeps per-profile role map", () => {
+test("normalizeGitSettingsSnapshot keeps the per-main-agent-config role map", () => {
   expect(
     normalizeGitSettingsSnapshot({
-      commitMessageRoleByProfileId: { profile_a: "explore", profile_b: "auto" },
+      commitMessageRoleByMainAgentConfigId: { main_config_a: "explore", main_config_b: "auto" },
     }),
   ).toEqual({
-    commitMessageRoleByProfileId: { profile_a: "explore", profile_b: "auto" },
-    commitMessageCandidateModelIdByProfileId: {},
+    commitMessageRoleByMainAgentConfigId: { main_config_a: "explore", main_config_b: "auto" },
+    commitMessageCandidateModelIdByMainAgentConfigId: {},
     autofetch: true,
     autofetchPeriod: 180,
   });
 });
 
-test("normalizeGitSettingsSnapshot keeps per-profile candidate model map", () => {
+test("normalizeGitSettingsSnapshot keeps the per-main-agent-config candidate model map", () => {
   expect(
     normalizeGitSettingsSnapshot({
-      commitMessageCandidateModelIdByProfileId: { profile_a: "cand-1", profile_b: "auto" },
+      commitMessageCandidateModelIdByMainAgentConfigId: { main_config_a: "cand-1", main_config_b: "auto" },
     }),
   ).toEqual({
-    commitMessageRoleByProfileId: {},
-    commitMessageCandidateModelIdByProfileId: { profile_a: "cand-1", profile_b: "auto" },
+    commitMessageRoleByMainAgentConfigId: {},
+    commitMessageCandidateModelIdByMainAgentConfigId: { main_config_a: "cand-1", main_config_b: "auto" },
     autofetch: true,
     autofetchPeriod: 180,
   });
@@ -34,12 +34,12 @@ test("normalizeGitSettingsSnapshot keeps per-profile candidate model map", () =>
 test("normalizeGitSettingsSnapshot keeps commit message instructions", () => {
   expect(
     normalizeGitSettingsSnapshot({
-      commitMessageRoleByProfileId: {},
+      commitMessageRoleByMainAgentConfigId: {},
       commitMessageInstructions: "  使用中文  ",
     }),
   ).toEqual({
-    commitMessageRoleByProfileId: {},
-    commitMessageCandidateModelIdByProfileId: {},
+    commitMessageRoleByMainAgentConfigId: {},
+    commitMessageCandidateModelIdByMainAgentConfigId: {},
     commitMessageInstructions: "使用中文",
     autofetch: true,
     autofetchPeriod: 180,
@@ -49,12 +49,12 @@ test("normalizeGitSettingsSnapshot keeps commit message instructions", () => {
 test("normalizeGitSettingsSnapshot drops empty commit message instructions", () => {
   expect(
     normalizeGitSettingsSnapshot({
-      commitMessageRoleByProfileId: {},
+      commitMessageRoleByMainAgentConfigId: {},
       commitMessageInstructions: "   ",
     }),
   ).toEqual({
-    commitMessageRoleByProfileId: {},
-    commitMessageCandidateModelIdByProfileId: {},
+    commitMessageRoleByMainAgentConfigId: {},
+    commitMessageCandidateModelIdByMainAgentConfigId: {},
     autofetch: true,
     autofetchPeriod: 180,
   });
@@ -62,6 +62,6 @@ test("normalizeGitSettingsSnapshot drops empty commit message instructions", () 
 
 test("isGitSettingsSnapshot validates shape", () => {
   expect(isGitSettingsSnapshot(defaultGitSettings())).toBe(true);
-  expect(isGitSettingsSnapshot({ commitMessageCandidateModelIdByProfileId: {} })).toBe(true);
-  expect(isGitSettingsSnapshot({ commitMessageRoleByProfileId: null })).toBe(false);
+  expect(isGitSettingsSnapshot({ commitMessageCandidateModelIdByMainAgentConfigId: {} })).toBe(true);
+  expect(isGitSettingsSnapshot({ commitMessageRoleByMainAgentConfigId: null })).toBe(false);
 });

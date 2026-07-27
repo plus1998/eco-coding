@@ -1,28 +1,50 @@
 import { expect, test } from "bun:test";
 import {
-  buildCodingOrchestrationProfileFromRouteProfile,
-  buildOrchestrationProfileFromPreset,
+  buildPresetResourcesFromDefinition,
   createBuiltInPresetCatalog,
+  resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
   buildThreadRuntimeConfigFromDefaults,
-  deriveSubagentEnabledFromProfile,
-  getDefaultAgentProfileId,
-  getDefaultRouteProfileId,
-  getRoutesForProfile,
+  deriveSubagentEnabledFromSnapshot,
+  hasCompleteOrchestrationSelection,
   isAutonomousThreadRuntime,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
+  materializeThreadOrchestrationSnapshot,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
   resolveMainAgentSystemPromptPreset,
-  resolveThreadAgentProfile,
+  resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
-  runtimeRoleRoutesFromAgentProfile,
+  runtimeRoleRoutesFromOrchestrationSnapshot,
   serializeThreadRuntimeConfig,
+  threadRuntimeConfigsEquivalent,
   withAgentSessionMode,
 } from "../src/shared/thread-runtime-config";
+
+const codingPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
+if (!codingPreset) {
+  throw new Error("Missing built-in coding preset.");
+}
+
+const presetBundle = buildPresetResourcesFromDefinition(codingPreset, {
+  mainAgentConfigId: "user.coding.main",
+  mainAgentConfigName: "Coding Main",
+  subagentOrchestrationId: "user.coding.subagents",
+  subagentOrchestrationName: "Coding Subagents",
+  modelRef: { providerId: "p1", modelId: "m1" },
+});
+
+const settings: ModelSettingsSnapshot = {
+  providers: [],
+  routeProfiles: [],
+  agentTemplates: [],
+  mainAgentConfigs: [presetBundle.mainAgentConfig],
+  mainAgentPrompts: presetBundle.mainAgentPrompt ? [presetBundle.mainAgentPrompt] : [],
+  subagentOrchestrations: [presetBundle.subagentOrchestration],
+};
 
 const threadSubagentEnabled: SubagentEnabledSettings = {
   explore: true,
@@ -32,609 +54,215 @@ const threadSubagentEnabled: SubagentEnabledSettings = {
   tester: true,
 };
 
-const settings: ModelSettingsSnapshot = {
-  providers: [],
-  agentTemplates: [],
-  orchestrationProfiles: [],
-  routeProfiles: [
+test("hasCompleteOrchestrationSelection accepts builtin prompt and orchestration subagents", () => {
+  expect(hasCompleteOrchestrationSelection(presetBundle.selection)).toBe(true);
+});
+
+test("hasCompleteOrchestrationSelection accepts none subagents", () => {
+  expect(
+    hasCompleteOrchestrationSelection({
+      mainAgentConfigId: "user.coding.main",
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
+    }),
+  ).toBe(true);
+});
+
+test("resolveOrchestrationSnapshot returns empty agents for none subagents", () => {
+  const snapshot = resolveOrchestrationSnapshot(
     {
-      id: "profile-a",
-      name: "方案 A",
-      routes: [
-        { role: "planner", providerId: "p1", modelId: "m1" },
-        { role: "explore", providerId: "p1", modelId: "m1" },
-        { role: "architect", providerId: "p1", modelId: "m1" },
-        { role: "coder", providerId: "p1", modelId: "m1" },
-        { role: "reviewer", providerId: "p1", modelId: "m1" },
-        { role: "tester", providerId: "p1", modelId: "m1" },
-      ],
-      createdAt: "2020-01-01T00:00:00.000Z",
-      updatedAt: "2020-01-01T00:00:00.000Z",
+      mainAgentConfigId: presetBundle.mainAgentConfig.id,
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
     },
     {
-      id: "profile-b",
-      name: "方案 B",
-      routes: [
-        { role: "planner", providerId: "p1", modelId: "m2" },
-        { role: "explore", providerId: "p1", modelId: "m2" },
-        { role: "architect", providerId: "p1", modelId: "m2" },
-        { role: "coder", providerId: "p1", modelId: "m2" },
-        { role: "reviewer", providerId: "p1", modelId: "m2" },
-        { role: "tester", providerId: "p1", modelId: "m2" },
-      ],
-      createdAt: "2020-01-02T00:00:00.000Z",
-      updatedAt: "2020-01-02T00:00:00.000Z",
+      mainAgentConfigs: settings.mainAgentConfigs,
+      mainAgentPrompts: settings.mainAgentPrompts,
+      subagentOrchestrations: settings.subagentOrchestrations,
     },
-  ],
-};
-
-const codingPresetForGeneric = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
-if (!codingPresetForGeneric) {
-  throw new Error("Missing built-in coding preset.");
-}
-
-const genericProfile = buildOrchestrationProfileFromPreset(codingPresetForGeneric, {
-  id: "generic-copy",
-  name: "通用副本",
-  modelRef: { providerId: "p1", modelId: "m-generic" },
-  updatedAt: "2026-06-07T00:00:00.000Z",
+  );
+  expect(snapshot.agents).toEqual([]);
 });
 
-const genericAgent = genericProfile.agents[0];
-if (!genericAgent) {
-  throw new Error("Coding preset must include at least one agent.");
-}
-
-const routeProfileA = settings.routeProfiles[0];
-const routeProfileB = settings.routeProfiles[1];
-if (!routeProfileA || !routeProfileB) {
-  throw new Error("Missing route profile fixtures.");
-}
-
-const profileA = {
-  ...buildCodingOrchestrationProfileFromRouteProfile(routeProfileA),
-  id: "profile-a",
-  source: "user" as const,
-  sourceRouteProfileId: undefined,
-};
-const profileB = {
-  ...buildCodingOrchestrationProfileFromRouteProfile(routeProfileB),
-  id: "profile-b",
-  source: "user" as const,
-  sourceRouteProfileId: undefined,
-};
-
-const agentSettings: ModelSettingsSnapshot = {
-  ...settings,
-  orchestrationProfiles: [profileA, profileB],
-};
-
-const genericSettings: ModelSettingsSnapshot = {
-  providers: [],
-  routeProfiles: [],
-  agentTemplates: [],
-  orchestrationProfiles: [genericProfile],
-};
-
-const mixedSettings: ModelSettingsSnapshot = {
-  ...genericSettings,
-  routeProfiles: settings.routeProfiles,
-};
-
-test("getDefaultRouteProfileId returns first profile", () => {
-  expect(getDefaultRouteProfileId(settings)).toBe("profile-a");
-});
-
-test("getRoutesForProfile resolves routes by id", () => {
-  expect(getRoutesForProfile(settings, "profile-b")?.[0]?.modelId).toBe("m2");
-});
-
-test("getDefaultAgentProfileId returns first orchestration profile", () => {
-  expect(getDefaultAgentProfileId(genericSettings)).toBe("generic-copy");
-});
-
-test("getDefaultAgentProfileId returns a valid preferred profile", () => {
-  expect(getDefaultAgentProfileId(agentSettings, "profile-b")).toBe("profile-b");
-  expect(getDefaultAgentProfileId(agentSettings, "missing-profile")).toBe("profile-a");
-});
-
-test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () => {
+test("buildThreadRuntimeConfigFromDefaults materializes orchestration snapshot", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent" },
-    agentProfileId: "profile-b",
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
   });
-  expect(config.routeProfileId).toBe("profile-b");
-  expect(config.agentProfileId).toBe("profile-b");
-  expect(config.sessionMode).toBe("agent");
-  expect(config.subagentEnabled.reviewer).toBe(true);
+  expect(config.orchestrationSelection).toEqual(presetBundle.selection);
+  expect(config.resolvedOrchestrationSnapshot?.mainAgent.modelRef.modelId).toBe("m1");
   expect(isAutonomousThreadRuntime(config)).toBe(true);
 });
 
-test("buildThreadRuntimeConfigFromDefaults maps profile confirmation to the session", () => {
-  const strictProfile = {
-    ...profileA,
-    mainAgent: {
-      ...profileA.mainAgent,
-      tools: { ...profileA.mainAgent.tools, confirmation: "never" as const },
+test("threadRuntimeConfigsEquivalent ignores resolvedAt churn", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
     },
+  });
+  const refreshed = materializeThreadOrchestrationSnapshot(settings, presetBundle.selection);
+  const other = {
+    ...config,
+    ...refreshed,
   };
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: { ...agentSettings, orchestrationProfiles: [strictProfile] },
-    workflowDefaults: { sessionMode: "agent" },
-  });
-  expect(config.bashReviewMode).toBe("allow_all");
+  expect(threadRuntimeConfigsEquivalent(config, other)).toBe(true);
 });
 
-test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan session mode", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "plan" },
-  });
-  expect(config.agentProfileId).toBe("profile-a");
-  expect(config.sessionMode).toBe("plan");
-  expect(config.subagentEnabled.reviewer).toBe(true);
-});
-
-test("buildThreadRuntimeConfigFromDefaults uses the saved default Agent profile", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent", defaultAgentProfileId: "profile-b" },
-  });
-  expect(config.agentProfileId).toBe("profile-b");
-  expect(config.routeProfileId).toBe("profile-b");
-});
-
-test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile without routes", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: genericSettings,
-    workflowDefaults: { sessionMode: "agent" },
-    agentProfileId: "generic-copy",
-  });
-
-  expect(config.agentProfileId).toBe("generic-copy");
-  expect(config.routeProfileId).toBe("generic-copy");
-  expect(resolveThreadAgentProfile(genericSettings, config)?.preset).toBe("coding");
-});
-
-test("buildThreadRuntimeConfigFromDefaults does not let default routes override selected Agent Profile", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: mixedSettings,
-    workflowDefaults: { sessionMode: "agent" },
-    agentProfileId: "generic-copy",
-    routeProfileId: "profile-a",
-  });
-
-  expect(config.agentProfileId).toBe("generic-copy");
-  expect(config.routeProfileId).toBe("generic-copy");
-  expect(getRoutesForProfile(mixedSettings, config.routeProfileId)).toBeUndefined();
-});
-
-test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => {
-  const profile = {
-    ...genericProfile,
-    mainAgent: {
-      ...genericProfile.mainAgent,
-      modelRef: { providerId: "main-provider", modelId: "main-model" },
-    },
-    agents: [
-      {
-        ...genericAgent,
-        agentKey: "coding lead",
-        modelRef: { providerId: "agent-provider", modelId: "agent-model" },
-        enabled: true,
-      },
-      {
-        ...genericAgent,
-        agentKey: "disabled_agent",
-        modelRef: { providerId: "disabled-provider", modelId: "disabled-model" },
-        enabled: false,
-      },
-    ],
-  };
-
-  expect(runtimeRoleRoutesFromAgentProfile(profile)).toEqual([
-    { role: "planner", providerId: "main-provider", modelId: "main-model" },
-    { role: "coding lead", providerId: "agent-provider", modelId: "agent-model" },
-  ]);
-});
-
-test("runtimeRoleRoutesFromAgentProfile includes Explore only while its profile node exists", () => {
-  const codingPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
-  if (!codingPreset) {
-    throw new Error("Missing built-in coding preset.");
-  }
-  const profile = buildOrchestrationProfileFromPreset(codingPreset, {
-    id: "coding-copy",
-    name: "编程副本",
-    modelRef: { providerId: "main-provider", modelId: "main-model" },
-    updatedAt: "2026-06-07T00:00:00.000Z",
-  });
-  profile.agents = profile.agents.map((agent) =>
-    agent.agentKey === "explore"
-      ? {
-          ...agent,
-          modelRef: { providerId: "explore-provider", modelId: "gpt-5.4-mini" },
-        }
-      : agent,
-  );
-
-  const routes = runtimeRoleRoutesFromAgentProfile(profile);
-  expect(routes).toContainEqual({
-    role: "explore",
-    providerId: "explore-provider",
-    modelId: "gpt-5.4-mini",
-  });
-  profile.agents = profile.agents.filter((agent) => agent.agentKey !== "explore");
-  expect(runtimeRoleRoutesFromAgentProfile(profile).map((route) => route.role)).not.toContain("explore");
-});
-
-test("deriveSubagentEnabledFromProfile disables roles missing from the profile", () => {
-  const profile = {
-    ...genericProfile,
-    agents: genericProfile.agents.filter((agent) => agent.agentKey !== "architect"),
-  };
-  expect(deriveSubagentEnabledFromProfile(profile).architect).toBe(false);
-  expect(deriveSubagentEnabledFromProfile(profile).coder).toBe(true);
-});
-
-test("deriveSubagentEnabledFromProfile preserves a disabled Explore", () => {
-  expect(deriveSubagentEnabledFromProfile(genericProfile, { explore: false }).explore).toBe(false);
-});
-
-test("serialize and parse thread runtime config round-trip", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "plan" },
-  });
-  const json = serializeThreadRuntimeConfig(config);
-  expect(json).toContain("sessionMode");
-  expect(json).not.toContain("planModeEnabled");
-  expect(json).not.toContain("orchestrationMode");
-  expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
-});
-
-test("thread runtime config preserves per-project Skill choices", () => {
-  const config = {
-    ...buildThreadRuntimeConfigFromDefaults({
-      settings: agentSettings,
+test("buildThreadRuntimeConfigFromDefaults throws without main agent configs", () => {
+  expect(() =>
+    buildThreadRuntimeConfigFromDefaults({
+      settings: { ...settings, mainAgentConfigs: [] },
       workflowDefaults: { sessionMode: "agent" },
     }),
-    skillsEnabled: { "project:agents:.agents/skills/local/SKILL.md": true, "user:one": false },
-  };
-  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))?.skillsEnabled).toEqual(
-    config.skillsEnabled,
-  );
+  ).toThrow(/主代理.*提示词.*子代理编排|main agent.*prompt.*subagent orchestration/i);
 });
 
-test("thread runtime config preserves and normalizes a main-agent model override", () => {
-  const config = {
-    ...buildThreadRuntimeConfigFromDefaults({
-      settings: agentSettings,
+test("buildThreadRuntimeConfigFromDefaults rejects a missing selection", () => {
+  expect(() =>
+    buildThreadRuntimeConfigFromDefaults({
+      settings,
       workflowDefaults: { sessionMode: "agent" },
     }),
-    mainAgentModelOverride: {
-      providerId: " provider-alt ",
-      modelId: " gpt-5.6-sol ",
-      candidateModelId: " candidate-sol ",
-      thinkingEffort: "high" as const,
-    },
-  };
-
-  const normalized = normalizeThreadRuntimeConfig(config);
-  expect(normalized.mainAgentModelOverride).toEqual({
-    providerId: "provider-alt",
-    modelId: "gpt-5.6-sol",
-    candidateModelId: "candidate-sol",
-    thinkingEffort: "high",
-  });
-  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(normalized);
+  ).toThrow(/主代理.*提示词.*子代理编排|main agent.*prompt.*subagent orchestration/i);
 });
 
-test("thread runtime config preserves a temporary main-agent system prompt preset", () => {
-  const config = {
-    ...buildThreadRuntimeConfigFromDefaults({
-      settings: agentSettings,
-      workflowDefaults: { sessionMode: "agent" },
-    }),
-    mainAgentSystemPromptPresetOverride: "custom_append" as const,
-  };
-
-  const normalized = normalizeThreadRuntimeConfig(config);
-  expect(normalized.mainAgentSystemPromptPresetOverride).toBe("custom_append");
-  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(normalized);
-  expect(resolveMainAgentSystemPromptPreset(profileA, normalized)).toBe("custom_append");
-});
-
-test("main-agent system prompt preset falls back to the selected profile", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent" },
-  });
-
-  expect(resolveMainAgentSystemPromptPreset(profileA, config)).toBe(profileA.mainAgent.systemPromptPreset);
-});
-
-test("thread runtime config accepts a main-agent model override without thinking effort", () => {
-  const config = {
-    ...buildThreadRuntimeConfigFromDefaults({
-      settings: agentSettings,
-      workflowDefaults: { sessionMode: "agent" },
-    }),
-    mainAgentModelOverride: {
-      providerId: " p1 ",
-      modelId: " gpt-5.6-sol ",
-    },
-  };
-
-  expect(isThreadRuntimeConfig(config)).toBe(true);
-  expect(normalizeThreadRuntimeConfig(config).mainAgentModelOverride).toEqual({
-    providerId: "p1",
-    modelId: "gpt-5.6-sol",
-  });
-  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))).toEqual(
-    normalizeThreadRuntimeConfig(config),
-  );
-});
-
-test("thread runtime config rejects malformed main-agent model overrides", () => {
-  const base = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent" },
-  });
-  expect(
-    isThreadRuntimeConfig({ ...base, mainAgentModelOverride: { modelId: "m2", thinkingEffort: "high" } }),
-  ).toBe(false);
-  expect(
-    isThreadRuntimeConfig({
-      ...base,
-      mainAgentModelOverride: { providerId: "p1", modelId: "m2", thinkingEffort: "ultra" },
-    }),
-  ).toBe(false);
-  expect(
-    parseThreadRuntimeConfigJson(
-      JSON.stringify({
-        ...base,
-        mainAgentModelOverride: { providerId: "p1", modelId: "m2", thinkingEffort: "ultra" },
-      }),
-    ),
-  ).toBeUndefined();
-});
-
-test("thread runtime config rejects malformed system prompt preset overrides", () => {
-  const base = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent" },
-  });
-  expect(isThreadRuntimeConfig({ ...base, mainAgentSystemPromptPresetOverride: "unknown" })).toBe(false);
-});
-
-test("runtime profile routes replace only the main agent with the temporary model", () => {
-  const originalPlanner = profileA.mainAgent.modelRef;
-  const routes = runtimeRoleRoutesFromAgentProfile(profileA, {
-    providerId: "p1",
-    modelId: "gpt-5.6-sol",
-    candidateModelId: "candidate-sol",
-    thinkingEffort: "high",
-  });
-
-  expect(routes.find((route) => route.role === "planner")).toEqual({
-    role: "planner",
-    providerId: "p1",
-    modelId: "gpt-5.6-sol",
-    candidateModelId: "candidate-sol",
-    thinkingEffort: "high",
-  });
-  expect(routes.find((route) => route.role === "explore")?.modelId).toBe("m1");
-  expect(profileA.mainAgent.modelRef).toEqual(originalPlanner);
-});
-
-test("runtime profile routes do not add thinking effort when the override omits it", () => {
-  const routes = runtimeRoleRoutesFromAgentProfile(profileA, {
-    providerId: "p1",
-    modelId: "gpt-5.6-sol",
-  });
-
-  expect(routes.find((route) => route.role === "planner")).toEqual({
-    role: "planner",
-    providerId: "p1",
-    modelId: "gpt-5.6-sol",
-  });
-});
-
-test("runtime profile routes ignore a main-agent override from another provider", () => {
-  const routes = runtimeRoleRoutesFromAgentProfile(profileA, {
-    providerId: "provider-alt",
-    modelId: "gpt-5.6-sol",
-    thinkingEffort: "high",
-  });
-
-  expect(routes.find((route) => route.role === "planner")).toEqual({
-    role: "planner",
-    providerId: "p1",
-    modelId: "m1",
-  });
-});
-
-test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads with sessionMode", () => {
-  expect(
-    parseThreadRuntimeConfigJson(
-      JSON.stringify({
-        agentProfileId: "generic-copy",
-        subagentEnabled: threadSubagentEnabled,
-        sessionMode: "agent",
-      }),
-    ),
-  ).toEqual({
-    routeProfileId: "",
-    agentProfileId: "generic-copy",
+test("parseThreadRuntimeConfigJson rejects legacy profile fields", () => {
+  const legacy = {
+    routeProfileId: "old-profile",
+    agentProfileId: "old-profile",
+    mainAgentConfigId: presetBundle.mainAgentConfig.id,
+    subagentOrchestrationId: presetBundle.subagentOrchestration.id,
+    mainPrompt: { mode: "builtin" },
     subagentEnabled: threadSubagentEnabled,
     sessionMode: "agent",
-    bashReviewMode: "always",
-  });
+    bashReviewMode: "auto",
+  };
+  expect(parseThreadRuntimeConfigJson(JSON.stringify(legacy))).toBeUndefined();
 });
 
-test("buildThreadRuntimeConfigFromDefaults supports ask workflow default", () => {
+test("materializeThreadOrchestrationSnapshot persists selection and snapshot", () => {
+  const materialized = materializeThreadOrchestrationSnapshot(settings, presetBundle.selection);
+  expect(materialized.orchestrationSelection).toEqual(presetBundle.selection);
+  expect(materialized.resolvedOrchestrationSnapshot?.agents.length).toBeGreaterThan(0);
+});
+
+test("runtimeRoleRoutesFromOrchestrationSnapshot includes planner and enabled agents", () => {
+  const snapshot = resolveOrchestrationSnapshot(presetBundle.selection, {
+    mainAgentConfigs: settings.mainAgentConfigs,
+    mainAgentPrompts: settings.mainAgentPrompts,
+    subagentOrchestrations: settings.subagentOrchestrations,
+  });
+  const routes = runtimeRoleRoutesFromOrchestrationSnapshot(snapshot);
+  expect(routes.some((route) => route.role === "planner")).toBe(true);
+  expect(routes.some((route) => route.role === "coder")).toBe(true);
+});
+
+test("deriveSubagentEnabledFromSnapshot intersects with roster", () => {
+  const snapshot = resolveOrchestrationSnapshot(
+    {
+      mainAgentConfigId: presetBundle.mainAgentConfig.id,
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
+    },
+    {
+      mainAgentConfigs: settings.mainAgentConfigs,
+      mainAgentPrompts: settings.mainAgentPrompts,
+      subagentOrchestrations: settings.subagentOrchestrations,
+    },
+  );
+  const enabled = deriveSubagentEnabledFromSnapshot(snapshot);
+  expect(enabled.coder).toBe(false);
+});
+
+test("serialize and parse round-trip new runtime config", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "ask" },
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
   });
-  expect(config.sessionMode).toBe("ask");
+  const parsed = parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config));
+  expect(parsed?.orchestrationSelection).toEqual(presetBundle.selection);
+  expect(parsed?.resolvedOrchestrationSnapshot?.mainAgentConfigName).toBe("Coding Main");
 });
 
-test("withAgentSessionMode switches plan to agent without mutating the original config", () => {
-  const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "plan" },
+test("isBashReviewModeOnlyRuntimeConfigUpdate ignores bashReviewMode-only changes", () => {
+  const base = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
   });
-  expect(withAgentSessionMode(config, "agent")).toEqual({ ...config, sessionMode: "agent" });
-  expect(config.sessionMode).toBe("plan");
-  expect(withAgentSessionMode({ ...config, sessionMode: "agent" }, "agent")).toEqual({
-    ...config,
-    sessionMode: "agent",
-  });
+  const next = JSON.parse(JSON.stringify({ ...base, bashReviewMode: "always" })) as typeof base;
+  expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, next)).toBe(true);
 });
 
-test("normalizeThreadRuntimeConfig preserves sessionMode", () => {
-  expect(
-    normalizeThreadRuntimeConfig({
-      routeProfileId: "profile-a",
-      subagentEnabled: threadSubagentEnabled,
-      sessionMode: "plan",
-    } as never),
-  ).toEqual({
-    routeProfileId: "profile-a",
+test("withAgentSessionMode updates session mode", () => {
+  const config = normalizeThreadRuntimeConfig({
+    orchestrationSelection: presetBundle.selection,
     subagentEnabled: threadSubagentEnabled,
     sessionMode: "plan",
-    bashReviewMode: "always",
+    bashReviewMode: "auto",
   });
+  expect(withAgentSessionMode(config).sessionMode).toBe("agent");
 });
 
-test("parseThreadRuntimeConfigJson rejects legacy orchestrationMode-only payloads", () => {
-  expect(
-    parseThreadRuntimeConfigJson(
-      JSON.stringify({
-        routeProfileId: "profile-a",
-        subagentEnabled: threadSubagentEnabled,
-        orchestrationMode: "manual",
-      }),
-    ),
-  ).toBeUndefined();
-});
-
-test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only", () => {
-  const base = {
-    routeProfileId: "profile-a",
-    agentProfileId: "profile-a",
-    subagentEnabled: threadSubagentEnabled,
-    sessionMode: "plan" as const,
-    bashReviewMode: "always" as const,
-  };
-  expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" })).toBe(true);
-  expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, sessionMode: "agent" })).toBe(false);
-  expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
-      ...base,
-      skillsEnabled: { "user:a": true },
-    }),
-  ).toBe(false);
-  expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
-      ...base,
-      subagentEnabled: { ...threadSubagentEnabled, coder: false },
-    }),
-  ).toBe(false);
-  expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
-      ...base,
-      mainAgentModelOverride: {
-        providerId: "p2",
-        modelId: "gpt-5.6-sol",
-        thinkingEffort: "high",
-      },
-    }),
-  ).toBe(false);
-  expect(
-    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
-      ...base,
-      mainAgentSystemPromptPresetOverride: "custom_append",
-    }),
-  ).toBe(false);
-});
-
-test("isThreadRuntimeConfig rejects invalid payloads", () => {
-  expect(isThreadRuntimeConfig(null)).toBe(false);
-  expect(
-    isThreadRuntimeConfig({ routeProfileId: "", orchestrationMode: "manual", subagentEnabled: {} }),
-  ).toBe(false);
-});
-
-test("buildThreadRuntimeConfigFromDefaults seeds MCP from profile and remembered workflow defaults", () => {
+test("resolveThreadOrchestrationSnapshot prefers stored snapshot", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent", mcpServersEnabled: { mongo: true } },
-    mcpServers: [
-      {
-        id: "m1",
-        name: "mongo",
-        transport: "stdio",
-        enabled: true,
-        command: "npx",
-        args: [],
-        env: {},
-        updatedAt: "2020-01-01T00:00:00.000Z",
-      },
-      {
-        id: "m2",
-        name: "browser",
-        transport: "stdio",
-        enabled: true,
-        command: "npx",
-        args: [],
-        env: {},
-        updatedAt: "2020-01-01T00:00:00.000Z",
-      },
-    ],
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
   });
-  expect(config.mcpServersEnabled).toEqual({ mongo: true, browser: false });
+  expect(resolveThreadOrchestrationSnapshot(settings, config)?.mainAgentConfigName).toBe("Coding Main");
 });
 
-test("resolveThreadRuntimeMcpServerKeys uses composer overrides when present", () => {
-  const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
-    settings: agentSettings,
-    workflowDefaults: { sessionMode: "agent" },
-    mcpServers: [
-      {
-        id: "m1",
-        name: "mongo",
-        transport: "stdio",
-        enabled: true,
-        command: "npx",
-        args: [],
-        env: {},
-        updatedAt: "2020-01-01T00:00:00.000Z",
-      },
-      {
-        id: "m2",
-        name: "browser",
-        transport: "stdio",
-        enabled: true,
-        command: "npx",
-        args: [],
-        env: {},
-        updatedAt: "2020-01-01T00:00:00.000Z",
-      },
-    ],
+test("resolveMainAgentSystemPromptPreset honors override", () => {
+  const snapshot = resolveOrchestrationSnapshot(presetBundle.selection, {
+    mainAgentConfigs: settings.mainAgentConfigs,
+    mainAgentPrompts: settings.mainAgentPrompts,
+    subagentOrchestrations: settings.subagentOrchestrations,
   });
-  const withOverride = {
-    ...runtimeConfig,
-    mcpServersEnabled: { mongo: false, browser: true },
-  };
+  const config = normalizeThreadRuntimeConfig({
+    orchestrationSelection: presetBundle.selection,
+    resolvedOrchestrationSnapshot: snapshot,
+    mainAgentSystemPromptPresetOverride: "custom_append",
+    subagentEnabled: threadSubagentEnabled,
+    sessionMode: "agent",
+    bashReviewMode: "auto",
+  });
+  expect(resolveMainAgentSystemPromptPreset(snapshot, config)).toBe("custom_append");
+});
+
+test("isThreadRuntimeConfig validates orchestration selection", () => {
+  expect(
+    isThreadRuntimeConfig({
+      orchestrationSelection: presetBundle.selection,
+      subagentEnabled: threadSubagentEnabled,
+      sessionMode: "agent",
+      bashReviewMode: "auto",
+    }),
+  ).toBe(true);
+});
+
+test("resolveThreadRuntimeMcpServerKeys returns empty without snapshot", () => {
   expect(
     resolveThreadRuntimeMcpServerKeys({
-      runtimeConfig: withOverride,
-      settings: agentSettings,
-      availableMcpServerKeys: ["mongo", "browser"],
+      settings,
+      availableMcpServerKeys: ["browser"],
+      runtimeConfig: {
+        subagentEnabled: threadSubagentEnabled,
+        sessionMode: "agent",
+        bashReviewMode: "auto",
+      },
     }),
-  ).toEqual(["browser"]);
+  ).toEqual([]);
 });

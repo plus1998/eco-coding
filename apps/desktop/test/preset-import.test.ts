@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { buildPresetTemplateImportPlan, createPresetTemplateCopyBaseId } from "../src/renderer/preset-import";
 import {
-  buildOrchestrationProfileFromPreset,
+  buildPresetResourcesFromDefinition,
   createBuiltInAgentTemplates,
   createBuiltInPresetCatalog,
 } from "../src/shared/agent-orchestration";
@@ -14,7 +14,7 @@ function requireCodingPreset() {
   return preset;
 }
 
-test("preset import copies library templates and rewrites profile agent template references", () => {
+test("preset import copies library templates and rewrites subagent template references", () => {
   const preset = requireCodingPreset();
   const templates = createBuiltInAgentTemplates();
   const plan = buildPresetTemplateImportPlan(preset, templates, {
@@ -30,18 +30,20 @@ test("preset import copies library templates and rewrites profile agent template
   expect(plan.templatesToSave.every((template) => template.updatedAt === "2026-06-08T00:00:00.000Z")).toBe(
     true,
   );
-  expect(plan.presetForProfile.defaultAgents.map((agent) => agent.templateId)).toEqual(
+  expect(plan.presetDefinition.defaultAgents.map((agent) => agent.templateId)).toEqual(
     plan.templatesToSave.map((template) => template.id),
   );
 
-  const profile = buildOrchestrationProfileFromPreset(plan.presetForProfile, {
-    id: "user.coding.profile",
-    name: "Coding Profile",
+  const bundle = buildPresetResourcesFromDefinition(plan.presetDefinition, {
+    mainAgentConfigId: "user.coding.main",
+    mainAgentConfigName: "Coding Main",
+    subagentOrchestrationId: "user.coding.subagents",
+    subagentOrchestrationName: "Coding Subagents",
     modelRef: { providerId: "p1", modelId: "model-1" },
-    templates: plan.templatesForProfile,
+    templates: plan.templatesForPreset,
   });
-  expect(profile.agents.map((agent) => agent.templateId)).toEqual(
-    plan.presetForProfile.defaultAgents.map((agent) => agent.templateId),
+  expect(bundle.subagentOrchestration.agents.map((agent) => agent.templateId)).toEqual(
+    plan.presetDefinition.defaultAgents.map((agent) => agent.templateId),
   );
 });
 
@@ -72,7 +74,7 @@ test("preset import reuses existing user template copies", () => {
   expect(plan.copiedTemplateIds[sourceTemplate.id]).toBe(existingCopy.id);
   expect(plan.templatesToSave.map((template) => template.id)).not.toContain(existingCopy.id);
   expect(plan.templatesToSave).toHaveLength(preset.defaultAgents.length - 1);
-  expect(plan.presetForProfile.defaultAgents[0]?.templateId).toBe(existingCopy.id);
+  expect(plan.presetDefinition.defaultAgents[0]?.templateId).toBe(existingCopy.id);
 });
 
 test("preset import reuses numbered user copies after base id conflicts", () => {
@@ -106,5 +108,5 @@ test("preset import reuses numbered user copies after base id conflicts", () => 
 
   expect(plan.copiedTemplateIds[sourceTemplate.id]).toBe(existingNumberedCopy.id);
   expect(plan.templatesToSave.map((template) => template.id)).not.toContain(`${baseId}.3`);
-  expect(plan.presetForProfile.defaultAgents[0]?.templateId).toBe(existingNumberedCopy.id);
+  expect(plan.presetDefinition.defaultAgents[0]?.templateId).toBe(existingNumberedCopy.id);
 });

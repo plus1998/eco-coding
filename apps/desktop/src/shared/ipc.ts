@@ -39,11 +39,12 @@ export const IPC_CHANNELS = {
   agentTemplateDelete: "agent-template:delete",
   agentTemplateExport: "agent-template:export",
   agentTemplateImport: "agent-template:import",
-  orchestrationProfileList: "orchestration-profile:list",
-  orchestrationProfileSave: "orchestration-profile:save",
-  orchestrationProfileDelete: "orchestration-profile:delete",
-  orchestrationProfileExport: "orchestration-profile:export",
-  orchestrationProfileImport: "orchestration-profile:import",
+  mainAgentConfigSave: "main-agent-config:save",
+  mainAgentConfigDelete: "main-agent-config:delete",
+  mainAgentPromptSave: "main-agent-prompt:save",
+  mainAgentPromptDelete: "main-agent-prompt:delete",
+  subagentOrchestrationSave: "subagent-orchestration:save",
+  subagentOrchestrationDelete: "subagent-orchestration:delete",
   threadStart: "thread:start",
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
@@ -455,7 +456,7 @@ export type OrchestrationModeSetting = "autonomous" | "manual";
 export interface WorkflowSettingsSnapshot {
   sessionMode: import("./session-mode").SessionMode;
   defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
-  defaultAgentProfileId?: string;
+  defaultOrchestrationSelection?: import("./agent-orchestration").OrchestrationSelection;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -533,7 +534,7 @@ export interface GitListCommitsResult {
 
 export interface GitGenerateCommitMessageRequest {
   workspacePath: string;
-  profileId: string;
+  mainAgentConfigId: string;
   includeUnstaged: boolean;
   /** Correlates streaming deltas pushed on gitGenerateCommitMessageDelta. */
   requestId?: string;
@@ -559,7 +560,7 @@ export interface GitGenerateCommitMessageResult {
 
 export interface GitCommitRequest {
   workspacePath: string;
-  profileId: string;
+  mainAgentConfigId: string;
   includeUnstaged: boolean;
   message?: string;
   /** @deprecated Use candidateModelId */
@@ -568,7 +569,7 @@ export interface GitCommitRequest {
 }
 
 export interface GitListCommitModelOptionsRequest {
-  profileId: string;
+  mainAgentConfigId: string;
 }
 
 export interface GitListCommitModelOptionsResult {
@@ -628,9 +629,8 @@ export interface GitPullResult {
 }
 
 export interface GitSettingsSnapshot {
-  /** @deprecated Migrated to commitMessageCandidateModelIdByProfileId */
-  commitMessageRoleByProfileId: Record<string, RuntimeAgentRole | "auto">;
-  commitMessageCandidateModelIdByProfileId: Record<string, string | "auto">;
+  commitMessageRoleByMainAgentConfigId: Record<string, RuntimeAgentRole | "auto">;
+  commitMessageCandidateModelIdByMainAgentConfigId: Record<string, string | "auto">;
   /** 生成提交信息时附加给大模型的额外指令（格式、语言、长度等） */
   commitMessageInstructions?: string;
   /** 窗口聚焦且仓库空闲时周期性 git fetch，对齐 VS Code git.autofetch */
@@ -644,7 +644,7 @@ export interface ProxyBridgeSettingsSnapshot {
   upstreamUserAgent?: string;
 }
 
-import type { AgentTemplate, OrchestrationProfile } from "./agent-orchestration";
+import type { AgentTemplate } from "./agent-orchestration";
 import type { UpstreamApiCompat } from "./api-compat";
 import type { ProviderTokenCountMode } from "./provider-token-count";
 import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
@@ -653,14 +653,20 @@ export type {
   AgentDomain,
   AgentInstanceConfig,
   AgentTemplate,
-  BuiltinAgentConfig,
-  BuiltinAgentsConfig,
+  EcoOrchestrationConfig,
   MainAgentConfig,
+  MainAgentConfigResource,
+  MainAgentPromptMode,
+  MainAgentPromptResource,
+  MainAgentPromptSelection,
   ModelRef,
   ModelRequirementCapability,
   ModelRequirements,
-  OrchestrationProfile,
+  OrchestrationSelection,
   OrchestrationStrategy,
+  ResolvedOrchestrationSnapshot,
+  SubagentOrchestrationResource,
+  SubagentSelection,
   ToolPolicy,
 } from "./agent-orchestration";
 export type { ProviderTokenCountMode, UpstreamApiCompat };
@@ -800,21 +806,23 @@ export type {
 } from "./thread-runtime-config";
 export {
   buildThreadRuntimeConfigFromDefaults,
-  deriveSubagentEnabledFromProfile,
-  getAgentProfileById,
-  getDefaultAgentProfileId,
-  getDefaultRouteProfileId,
-  getRoutesForProfile,
+  deriveSubagentEnabledFromSnapshot,
+  hasCompleteOrchestrationSelection,
+  materializeThreadOrchestrationSnapshot,
+  serializeThreadRuntimeConfigForCompare,
+  threadRuntimeConfigsEquivalent,
   isAskSessionMode,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
+  orchestrationResourceLookupFromSettings,
   resolveMainAgentModelOverrideForProvider,
   resolveMainAgentSystemPromptPreset,
   resolveSessionMode,
-  resolveThreadAgentProfile,
+  resolveThreadOrchestrationConfig,
+  resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
-  runtimeRoleRoutesFromAgentProfile,
+  runtimeRoleRoutesFromOrchestrationSnapshot,
   withAgentSessionMode,
 } from "./thread-runtime-config";
 
@@ -828,7 +836,9 @@ export interface ModelSettingsSnapshot {
   providers: ProviderConfigView[];
   routeProfiles: RouteProfileView[];
   agentTemplates: AgentTemplate[];
-  orchestrationProfiles: OrchestrationProfile[];
+  mainAgentConfigs: import("./agent-orchestration").MainAgentConfigResource[];
+  mainAgentPrompts: import("./agent-orchestration").MainAgentPromptResource[];
+  subagentOrchestrations: import("./agent-orchestration").SubagentOrchestrationResource[];
   mcpSettings?: McpSettingsSnapshot;
 }
 
@@ -848,25 +858,6 @@ export interface AgentTemplateImportResult {
   canceled: boolean;
   imported: number;
   templates: AgentTemplate[];
-  errors: string[];
-}
-
-export interface OrchestrationProfileExportRequest {
-  profileIds?: string[];
-}
-
-export interface OrchestrationProfileExportResult {
-  ok: true;
-  canceled: boolean;
-  exported: number;
-  path?: string;
-}
-
-export interface OrchestrationProfileImportResult {
-  ok: true;
-  canceled: boolean;
-  imported: number;
-  profiles: OrchestrationProfile[];
   errors: string[];
 }
 
@@ -919,7 +910,7 @@ export interface ThreadSummary {
   sdkSessionId?: string;
   /** Worktree path used as SDK cwd when the session was created. */
   sdkCwd?: string;
-  /** Per-thread route profile, subagent, and plan mode (snapshotted at start). */
+  /** Per-thread orchestration, subagent switches, and session mode (snapshotted at start). */
   runtimeConfig?: ThreadRuntimeConfig;
 }
 
@@ -1649,9 +1640,32 @@ export function isGitGenerateCommitMessageRequest(value: unknown): value is GitG
   const record = value as Record<string, unknown>;
   return (
     typeof record.workspacePath === "string" &&
-    typeof record.profileId === "string" &&
+    typeof record.mainAgentConfigId === "string" &&
     typeof record.includeUnstaged === "boolean"
   );
+}
+
+export function parseGitListCommitModelOptionsRequest(value: unknown): GitListCommitModelOptionsRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid git list commit model options request.");
+  }
+  const record = value as Record<string, unknown>;
+  const mainAgentConfigId =
+    typeof record.mainAgentConfigId === "string" ? record.mainAgentConfigId.trim() : "";
+  if (!mainAgentConfigId) {
+    throw new Error("Invalid git list commit model options request.");
+  }
+  return { mainAgentConfigId };
+}
+
+export function isGitListCommitModelOptionsRequest(value: unknown): value is GitListCommitModelOptionsRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  const mainAgentConfigId =
+    typeof record.mainAgentConfigId === "string" ? record.mainAgentConfigId.trim() : "";
+  return Boolean(mainAgentConfigId);
 }
 
 export function isGitListCommitsRequest(value: unknown): value is GitListCommitsRequest {
@@ -1676,7 +1690,7 @@ export function isGitCommitRequest(value: unknown): value is GitCommitRequest {
   const record = value as Record<string, unknown>;
   return (
     typeof record.workspacePath === "string" &&
-    typeof record.profileId === "string" &&
+    typeof record.mainAgentConfigId === "string" &&
     typeof record.includeUnstaged === "boolean"
   );
 }

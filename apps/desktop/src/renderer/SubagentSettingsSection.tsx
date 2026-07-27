@@ -528,7 +528,7 @@ function formatModelBinding(template: AgentTemplate): string {
       capabilities: template.modelRequirements.capabilities.join("/"),
     });
   }
-  return i18n.t("subagentSettings.profileBindsModel");
+  return i18n.t("subagentSettings.orchestrationBindsModel");
 }
 
 function formatTools(template: AgentTemplate): string {

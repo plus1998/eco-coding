@@ -37,7 +37,7 @@ const sqliteAvailable = await (async () => {
 const settings: ModelSettingsSnapshot = {
   providers: [],
   agentTemplates: [],
-  orchestrationProfiles: [],
+  mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [],
   routeProfiles: [
     {
       id: "profile-a",
@@ -122,7 +122,6 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   store.saveThreadRuntimeConfig("thr_test", {
     ...runtimeConfig,
     sessionMode: "agent",
-    routeProfileId: "profile-a",
   });
   expect(store.getThread("thr_test")?.runtimeConfig?.sessionMode).toBe("agent");
 });

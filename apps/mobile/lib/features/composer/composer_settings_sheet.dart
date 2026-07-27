@@ -5,6 +5,7 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
+import '../composer/composer_controls.dart';
 import '../threads/thread_providers.dart';
 
 Future<void> showComposerSettingsSheet({
@@ -43,6 +44,9 @@ class _ComposerSettingsSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final modelSettings = ref.watch(modelSettingsProvider);
+    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
+    final mcpServers =
+        ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final eco = ecoColors(context);
 
     return SafeArea(
@@ -104,36 +108,17 @@ class _ComposerSettingsSheet extends ConsumerWidget {
             const SizedBox(height: 12),
             modelSettings.when(
               data: (ModelSettingsSnapshot? settings) {
-                final profiles = settings?.orchestrationProfiles ?? [];
-                if (profiles.isEmpty) return const SizedBox.shrink();
-                return DropdownMenu<String>(
-                  initialSelection:
-                      runtimeConfig.agentProfileId ??
-                      runtimeConfig.routeProfileId,
-                  label: Text(context.l10n.composerAgentProfile),
-                  expandedInsets: EdgeInsets.zero,
-                  dropdownMenuEntries: profiles
-                      .map(
-                        (profile) => DropdownMenuEntry(
-                          value: profile.id,
-                          label: profile.name,
-                        ),
-                      )
-                      .toList(),
-                  onSelected: (value) {
-                    if (value == null) return;
-                    _update(
-                      ref,
-                      ThreadRuntimeConfig(
-                        routeProfileId: value,
-                        agentProfileId: value,
-                        subagentEnabled: runtimeConfig.subagentEnabled,
-                        mainAgentModelOverride: null,
-                        sessionMode: runtimeConfig.sessionMode,
-                        bashReviewMode: runtimeConfig.bashReviewMode,
-                      ),
-                    );
-                  },
+                if (settings == null || settings.mainAgentConfigs.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return OrchestrationCompositionSelectors(
+                  settings: settings,
+                  runtimeConfig: runtimeConfig,
+                  threadId: threadId,
+                  canEdit: true,
+                  onChanged: onChanged,
+                  mcpServers: mcpServers,
+                  rememberedMcp: workflow?.mcpServersEnabled,
                 );
               },
               loading: () => const LinearProgressIndicator(),

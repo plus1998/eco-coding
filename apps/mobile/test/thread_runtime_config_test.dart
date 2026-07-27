@@ -4,18 +4,86 @@ import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/features/composer/composer_controls.dart';
 
-OrchestrationProfile _profile({
-  required List<OrchestrationAgentInstance> agents,
+MainAgentConfigResource _mainConfig({String id = 'main-1'}) {
+  return MainAgentConfigResource(
+    id: id,
+    name: 'Coding Main',
+    agentKey: 'main',
+    domain: 'coding',
+    modelRef: const OrchestrationModelRef(
+      providerId: 'provider-1',
+      modelId: 'gpt-5.6-sol',
+      thinkingEffort: 'high',
+    ),
+    tools: const ToolPolicy(
+      mcp: ToolPolicyMcp(allowedServers: ['mongo']),
+      confirmation: 'always',
+    ),
+  );
+}
+
+SubagentOrchestrationResource _subagentOrchestration() {
+  return SubagentOrchestrationResource(
+    id: 'orch-1',
+    name: 'Coding Subagents',
+    domain: 'coding',
+    agents: const [
+      AgentInstanceConfig(
+        agentKey: 'coder',
+        templateId: 'builtin.coding.coder',
+        enabled: true,
+        modelRef: OrchestrationModelRef(
+          providerId: 'provider-1',
+          modelId: 'gpt-5.6-sol',
+        ),
+        tools: ToolPolicy(),
+      ),
+      AgentInstanceConfig(
+        agentKey: 'explore',
+        templateId: 'builtin.coding.explore',
+        enabled: true,
+        modelRef: OrchestrationModelRef(
+          providerId: 'provider-1',
+          modelId: 'gpt-5.6-sol',
+        ),
+        tools: ToolPolicy(),
+      ),
+    ],
+    strategy: OrchestrationStrategy(kind: 'autonomous'),
+  );
+}
+
+ModelSettingsSnapshot _settings({
+  List<MainAgentConfigResource>? mainAgentConfigs,
+  List<SubagentOrchestrationResource>? subagentOrchestrations,
 }) {
-  return OrchestrationProfile(id: 'p1', name: 'Test', agents: agents);
+  return ModelSettingsSnapshot(
+    mainAgentConfigs: mainAgentConfigs ?? [_mainConfig()],
+    subagentOrchestrations:
+        subagentOrchestrations ?? [_subagentOrchestration()],
+  );
+}
+
+OrchestrationSelection _selection({
+  SubagentSelection subagents = const OrchestrationSubagentSelection(
+    orchestrationId: 'orch-1',
+  ),
+}) {
+  return OrchestrationSelection(
+    mainAgentConfigId: 'main-1',
+    mainPrompt: const BuiltinMainAgentPromptSelection(),
+    subagents: subagents,
+  );
 }
 
 ThreadRuntimeConfig _runtimeConfig({
+  OrchestrationSelection? orchestrationSelection,
+  ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot,
   MainAgentModelOverride? mainAgentModelOverride,
 }) {
   return ThreadRuntimeConfig(
-    routeProfileId: 'p1',
-    agentProfileId: 'p1',
+    orchestrationSelection: orchestrationSelection ?? _selection(),
+    resolvedOrchestrationSnapshot: resolvedOrchestrationSnapshot,
     subagentEnabled: defaultSubagentAvailability(),
     mainAgentModelOverride: mainAgentModelOverride,
     sessionMode: 'agent',
@@ -25,15 +93,41 @@ ThreadRuntimeConfig _runtimeConfig({
 
 void main() {
   test(
-    'deriveSubagentEnabledFromProfile disables roles missing from profile',
+    'deriveSubagentEnabledFromSnapshot disables roles missing from snapshot',
     () {
-      final profile = _profile(
-        agents: const [
-          OrchestrationAgentInstance(agentKey: 'coder', enabled: true),
-        ],
+      final snapshot = resolveOrchestrationSnapshot(
+        _selection(
+          subagents: const OrchestrationSubagentSelection(
+            orchestrationId: 'orch-1',
+          ),
+        ),
+        OrchestrationResourceLookup(
+          mainAgentConfigs: [_mainConfig()],
+          mainAgentPrompts: const [],
+          subagentOrchestrations: [
+            SubagentOrchestrationResource(
+              id: 'orch-1',
+              name: 'Coding Subagents',
+              domain: 'coding',
+              agents: const [
+                AgentInstanceConfig(
+                  agentKey: 'coder',
+                  templateId: 'builtin.coding.coder',
+                  enabled: true,
+                  modelRef: OrchestrationModelRef(
+                    providerId: 'provider-1',
+                    modelId: 'gpt-5.6-sol',
+                  ),
+                  tools: ToolPolicy(),
+                ),
+              ],
+              strategy: OrchestrationStrategy(kind: 'autonomous'),
+            ),
+          ],
+        ),
       );
 
-      final derived = deriveSubagentEnabledFromProfile(profile);
+      final derived = deriveSubagentEnabledFromSnapshot(snapshot);
 
       expect(derived['architect'], isFalse);
       expect(derived['coder'], isTrue);
@@ -42,24 +136,25 @@ void main() {
   );
 
   test(
-    'deriveSubagentEnabledFromProfile preserves existing runtime toggles',
+    'deriveSubagentEnabledFromSnapshot preserves existing runtime toggles',
     () {
-      final profile = _profile(
-        agents: const [
-          OrchestrationAgentInstance(agentKey: 'explore', enabled: true),
-          OrchestrationAgentInstance(agentKey: 'coder', enabled: true),
-          OrchestrationAgentInstance(agentKey: 'reviewer', enabled: true),
-        ],
+      final snapshot = resolveOrchestrationSnapshot(
+        _selection(),
+        OrchestrationResourceLookup(
+          mainAgentConfigs: [_mainConfig()],
+          mainAgentPrompts: const [],
+          subagentOrchestrations: [_subagentOrchestration()],
+        ),
       );
 
-      final derived = deriveSubagentEnabledFromProfile(
-        profile,
+      final derived = deriveSubagentEnabledFromSnapshot(
+        snapshot,
         existing: const {'explore': false, 'coder': false, 'reviewer': true},
       );
 
       expect(derived['explore'], isFalse);
       expect(derived['coder'], isFalse);
-      expect(derived['reviewer'], isTrue);
+      expect(derived['reviewer'], isFalse);
     },
   );
 
@@ -77,13 +172,16 @@ void main() {
   });
 
   test('Explore is toggleable and included in subagent counts', () {
-    final profile = _profile(
-      agents: const [
-        OrchestrationAgentInstance(agentKey: 'explore', enabled: true),
-      ],
+    final snapshot = resolveOrchestrationSnapshot(
+      _selection(),
+      OrchestrationResourceLookup(
+        mainAgentConfigs: [_mainConfig()],
+        mainAgentPrompts: const [],
+        subagentOrchestrations: [_subagentOrchestration()],
+      ),
     );
     expect(isSubagentToggleable(null, 'explore'), isFalse);
-    expect(isSubagentToggleable(profile, 'explore'), isTrue);
+    expect(isSubagentToggleable(snapshot, 'explore'), isTrue);
     expect(
       countEnabledSubagents(const {
         'explore': true,
@@ -95,7 +193,7 @@ void main() {
       1,
     );
     expect(countConfiguredSubagents(null), 0);
-    expect(countConfiguredSubagents(profile), 1);
+    expect(countConfiguredSubagents(snapshot), 2);
   });
 
   test('main agent model override JSON round-trips without losing fields', () {
@@ -115,8 +213,7 @@ void main() {
     expect(restored.mainAgentModelOverride?.thinkingEffort, 'high');
     expect(restored.mainAgentModelOverride?.candidateModelId, 'candidate-1');
     expect(restored.toJson(), {
-      'routeProfileId': 'p1',
-      'agentProfileId': 'p1',
+      'orchestrationSelection': _selection().toJson(),
       'subagentEnabled': defaultSubagentAvailability(),
       'mainAgentModelOverride': {
         'providerId': 'provider-1',
@@ -129,80 +226,42 @@ void main() {
     });
   });
 
-  test('main agent model override omits an unset thinking effort', () {
-    final config = _runtimeConfig(
-      mainAgentModelOverride: const MainAgentModelOverride(
-        providerId: 'provider-1',
-        modelId: 'gpt-5.6-sol',
-      ),
-    );
-
-    final restored = ThreadRuntimeConfig.fromJson(config.toJson());
-
-    expect(restored.mainAgentModelOverride?.thinkingEffort, isNull);
-    expect(restored.mainAgentModelOverride?.toJson(), {
-      'providerId': 'provider-1',
-      'modelId': 'gpt-5.6-sol',
-    });
-  });
-
-  test('main agent model override rejects invalid JSON', () {
-    Map<String, dynamic> runtimeJson(Map<String, dynamic> override) => {
-      ..._runtimeConfig().toJson(),
-      'mainAgentModelOverride': override,
-    };
-
-    expect(
-      () => ThreadRuntimeConfig.fromJson(
-        runtimeJson({
-          'providerId': 'provider-1',
-          'modelId': 'gpt-5.6-sol',
-          'thinkingEffort': 'ultra',
-        }),
-      ),
-      throwsA(isA<FormatException>()),
-    );
-    expect(
-      () => ThreadRuntimeConfig.fromJson(
-        runtimeJson({'modelId': 'gpt-5.6-sol', 'thinkingEffort': 'high'}),
-      ),
-      throwsA(isA<FormatException>()),
-    );
+  test('legacy runtime config fields are rejected', () {
     expect(
       () => ThreadRuntimeConfig.fromJson({
-        ..._runtimeConfig().toJson(),
-        'mainAgentModelOverride': null,
+        'agentProfileId': 'legacy',
+        'subagentEnabled': defaultSubagentAvailability(),
+        'sessionMode': 'agent',
+        'bashReviewMode': 'always',
       }),
-      throwsA(isA<FormatException>()),
+      throwsFormatException,
     );
   });
 
-  test('copyWith preserves main agent model override', () {
-    const override = MainAgentModelOverride(
-      providerId: 'provider-1',
-      modelId: 'gpt-5.6-sol',
-      thinkingEffort: 'high',
-    );
-    final copied = _runtimeConfig(
-      mainAgentModelOverride: override,
-    ).copyWith(sessionMode: 'plan');
-
-    expect(copied.mainAgentModelOverride, same(override));
-    expect(copied.sessionMode, 'plan');
-  });
-
-  test('copyWith clears main agent model override explicitly', () {
-    final copied = _runtimeConfig(
-      mainAgentModelOverride: const MainAgentModelOverride(
-        providerId: 'provider-1',
-        modelId: 'gpt-5.6-sol',
+  test('hasCompleteOrchestrationSelection validates composition', () {
+    expect(
+      hasCompleteOrchestrationSelection(
+        const OrchestrationSelection(
+          mainAgentConfigId: 'main-1',
+          mainPrompt: BuiltinMainAgentPromptSelection(),
+          subagents: NoneSubagentSelection(),
+        ),
       ),
-    ).copyWith(clearMainAgentModelOverride: true);
-
-    expect(copied.mainAgentModelOverride, isNull);
+      isTrue,
+    );
+    expect(
+      hasCompleteOrchestrationSelection(
+        const OrchestrationSelection(
+          mainAgentConfigId: '',
+          mainPrompt: BuiltinMainAgentPromptSelection(),
+          subagents: NoneSubagentSelection(),
+        ),
+      ),
+      isFalse,
+    );
   });
 
-  test('model settings parse provider and profile main model', () {
+  test('model settings parse main agent config resources', () {
     final settings = ModelSettingsSnapshot.fromJson({
       'providers': [
         {
@@ -212,33 +271,30 @@ void main() {
           'enabled': true,
         },
       ],
-      'routeProfiles': const [],
-      'orchestrationProfiles': [
+      'mainAgentConfigs': [
         {
-          'id': 'p1',
+          'id': 'main-1',
           'name': 'Coding',
-          'mainAgent': {
-            'modelRef': {
-              'providerId': 'provider-1',
-              'modelId': 'gpt-5.6-sol',
-              'thinkingEffort': 'high',
-              'candidateModelId': 'candidate-template',
-            },
+          'agentKey': 'main',
+          'domain': 'coding',
+          'modelRef': {
+            'providerId': 'provider-1',
+            'modelId': 'gpt-5.6-sol',
+            'thinkingEffort': 'high',
           },
-          'agents': const [],
+          'tools': {'allowed': [], 'disallowed': []},
+          'skills': [],
+          'updatedAt': '2026-01-01T00:00:00.000Z',
+          'source': 'user',
         },
       ],
+      'mainAgentPrompts': [],
+      'subagentOrchestrations': [],
     });
 
     expect(settings.providers.single.name, 'OpenAI');
-    expect(
-      settings.orchestrationProfiles.single.mainModelRef?.modelId,
-      'gpt-5.6-sol',
-    );
-    expect(
-      settings.orchestrationProfiles.single.mainModelRef?.thinkingEffort,
-      'high',
-    );
+    expect(settings.mainAgentConfigs.single.modelRef.modelId, 'gpt-5.6-sol');
+    expect(settings.mainAgentConfigs.single.modelRef.thinkingEffort, 'high');
   });
 
   test('temporary model options follow desktop candidate behavior', () {
@@ -295,52 +351,10 @@ void main() {
     expect(options[1].supportsReasoning, isFalse);
   });
 
-  test('temporary model overrides preserve desktop effort behavior', () {
-    const template = OrchestrationModelRef(
-      providerId: 'provider-1',
-      modelId: 'gpt-template',
-      thinkingEffort: 'high',
-      candidateModelId: 'candidate-template',
-    );
-    const templateOption = ComposerTemporaryModelOption(
-      providerId: 'provider-1',
-      modelId: 'gpt-template',
-      candidateModelId: 'candidate-template',
-    );
-    const otherOption = ComposerTemporaryModelOption(
-      providerId: 'provider-1',
-      modelId: 'gpt-fast',
-      candidateModelId: 'candidate-fast',
-    );
-
-    expect(
-      buildComposerTemporaryModelOverride(
-        model: templateOption,
-        thinkingEffort: 'high',
-        templateModel: template,
-      ),
-      isNull,
-    );
-    final effortOverride = buildComposerTemporaryModelOverride(
-      model: templateOption,
-      thinkingEffort: 'max',
-      templateModel: template,
-    );
-    expect(effortOverride?.thinkingEffort, 'max');
-    expect(composerTemporaryModelEffort(effortOverride, template), 'max');
-
-    final modelOverride = buildComposerTemporaryModelOverride(
-      model: otherOption,
-      thinkingEffort: null,
-      templateModel: template,
-    );
-    expect(modelOverride?.candidateModelId, 'candidate-fast');
-    expect(composerTemporaryModelEffort(modelOverride, template), isNull);
-  });
-
-  test('switching profiles clears main agent model override', () {
-    final switched = buildRuntimeConfigForProfile(
-      profile: _profile(agents: const []),
+  test('switching orchestration clears main agent model override', () {
+    final switched = buildRuntimeConfigForSelection(
+      settings: _settings(),
+      selection: _selection(),
       runtimeConfig: _runtimeConfig(
         mainAgentModelOverride: const MainAgentModelOverride(
           providerId: 'provider-1',
@@ -353,4 +367,23 @@ void main() {
 
     expect(switched.mainAgentModelOverride, isNull);
   });
+
+  test(
+    'buildDefaultRuntimeConfig returns pending config without complete selection',
+    () {
+      final config = buildDefaultRuntimeConfig(
+        modelSettings: _settings(),
+        workflow: const WorkflowSettingsSnapshot(sessionMode: 'agent'),
+        mcpServers: const [],
+        orchestrationSelection: const OrchestrationSelection(
+          mainAgentConfigId: '',
+          mainPrompt: BuiltinMainAgentPromptSelection(),
+          subagents: NoneSubagentSelection(),
+        ),
+      );
+
+      expect(config.resolvedOrchestrationSnapshot, isNull);
+      expect(isThreadOrchestrationReady(_settings(), config), isFalse);
+    },
+  );
 }

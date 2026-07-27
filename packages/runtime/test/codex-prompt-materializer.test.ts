@@ -8,23 +8,23 @@ import {
   buildPlanHandoffSameThread,
 } from "../src/codex-plan-handoff.js";
 
-const CUSTOM_PROFILE_APPEND = "You coordinate research work without assuming a coding task.";
+const CUSTOM_ORCHESTRATION_APPEND = "You coordinate research work without assuming a coding task.";
 
 test("agent sessionMode maps to default + workspaceWrite", () => {
   const options = buildCodexTurnOptions({
     sessionMode: "agent",
-    profileAppend: CUSTOM_PROFILE_APPEND,
+    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
   });
 
   expect(options).toMatchSnapshot();
   expect(options.collaborationMode.mode).toBe("default");
   expect(options.sandboxPolicy).toBe("workspaceWrite");
   expect(options.approvalPolicy).toBe("on-request");
-  expect(options.developer_instructions).toBe(CUSTOM_PROFILE_APPEND);
-  expect(options.collaborationMode.settings?.developer_instructions).toBe(CUSTOM_PROFILE_APPEND);
+  expect(options.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
+  expect(options.collaborationMode.settings?.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
 });
 
-test("agent sessionMode omits developer instructions when profile has no custom prompt", () => {
+test("agent sessionMode omits developer instructions when orchestration has no custom prompt", () => {
   const options = buildCodexTurnOptions({ sessionMode: "agent" });
 
   expect(options.developer_instructions).toBe("");
@@ -34,25 +34,25 @@ test("agent sessionMode omits developer instructions when profile has no custom 
 test("plan sessionMode maps to plan collaboration without developer instructions", () => {
   const options = buildCodexTurnOptions({
     sessionMode: "plan",
-    profileAppend: CUSTOM_PROFILE_APPEND,
+    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
   });
 
   expect(options).toMatchSnapshot();
   expect(options.collaborationMode.mode).toBe("plan");
   expect(options.collaborationMode.settings?.developer_instructions).toBeUndefined();
-  expect(options.developer_instructions).toBe(CUSTOM_PROFILE_APPEND);
+  expect(options.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
 });
 
 test("ask sessionMode maps to default + readOnly without Eco ask append", () => {
   const options = buildCodexTurnOptions({
     sessionMode: "ask",
-    profileAppend: CUSTOM_PROFILE_APPEND,
+    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
   });
 
   expect(options).toMatchSnapshot();
   expect(options.collaborationMode.mode).toBe("default");
   expect(options.sandboxPolicy).toBe("readOnly");
-  expect(options.developer_instructions).toBe(CUSTOM_PROFILE_APPEND);
+  expect(options.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
   expect(options.developer_instructions).not.toContain("Ask mode:");
 });
 
@@ -104,10 +104,10 @@ test("applyCodexTurnModel requires model on collaborationMode.settings", () => {
 
   const customDraft = buildCodexTurnOptions({
     sessionMode: "agent",
-    profileAppend: CUSTOM_PROFILE_APPEND,
+    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
   }).collaborationMode;
   const customWired = applyCodexTurnModel(customDraft, "claude-sonnet-4");
-  expect(customWired.settings.developer_instructions).toBe(CUSTOM_PROFILE_APPEND);
+  expect(customWired.settings.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
 
   const planWired = applyCodexTurnModel(
     buildCodexTurnOptions({ sessionMode: "plan" }).collaborationMode,

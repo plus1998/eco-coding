@@ -1,8 +1,16 @@
-import type { AgentTemplate, ModelSettingsSnapshot, OrchestrationProfile } from "../shared/ipc";
+import type {
+  AgentTemplate,
+  MainAgentConfigResource,
+  MainAgentPromptResource,
+  ModelSettingsSnapshot,
+  SubagentOrchestrationResource,
+} from "../shared/ipc";
 
 export interface AgentRegistrySettingsSource {
   listAgentTemplates(): AgentTemplate[];
-  listOrchestrationProfiles(): OrchestrationProfile[];
+  listMainAgentConfigs(): MainAgentConfigResource[];
+  listMainAgentPrompts(): MainAgentPromptResource[];
+  listSubagentOrchestrations(): SubagentOrchestrationResource[];
 }
 
 export function mergeAgentRegistrySettings(
@@ -12,7 +20,9 @@ export function mergeAgentRegistrySettings(
   return {
     ...base,
     agentTemplates: mergeUniqueById(base.agentTemplates, registry.listAgentTemplates()),
-    orchestrationProfiles: registry.listOrchestrationProfiles(),
+    mainAgentConfigs: registry.listMainAgentConfigs(),
+    mainAgentPrompts: registry.listMainAgentPrompts(),
+    subagentOrchestrations: registry.listSubagentOrchestrations(),
   };
 }
 

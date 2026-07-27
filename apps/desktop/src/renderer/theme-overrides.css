@@ -440,6 +440,17 @@
   background: transparent;
 }
 
+.settings-page .composition-resources-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 16px;
+}
+
+.settings-page .composition-resources-block.mcp-list-section {
+  margin-top: 0;
+}
+
 /* Skills */
 .settings-page .settings-skills-link-block {
   padding: 12px 14px;
@@ -896,25 +907,25 @@
 }
 
 /* Agent profile cards */
-.settings-page .models-agent-profile-card {
+.settings-page .models-agent-resource-card {
   border-color: var(--border-subtle);
   background: var(--bg-elevated);
 }
 
-.settings-page .models-agent-profile-card:hover {
+.settings-page .models-agent-resource-card:hover {
   background: var(--bg-elevated-hover);
 }
 
-.settings-page .models-agent-profile-card.active {
+.settings-page .models-agent-resource-card.active {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.settings-page .models-agent-profile-card-title {
+.settings-page .models-agent-resource-card-title {
   color: var(--text-primary);
 }
 
-.settings-page .models-agent-profile-card-desc {
+.settings-page .models-agent-resource-card-desc {
   color: var(--text-muted);
 }
 
@@ -924,7 +935,7 @@
 }
 
 /* Agent profile list cards */
-.settings-page .models-agent-profile-stack .settings-row,
+.settings-page .models-agent-resource-stack .settings-row,
 .settings-page .models-agent-library .settings-row {
   border-radius: 0;
 }
@@ -959,53 +970,53 @@
   transform: scale(0.97);
 }
 
-.settings-page .models-agent-profile-form-section {
+.settings-page .models-agent-resource-form-section {
   border-top-color: var(--border-subtle);
 }
 
-.settings-page .models-agent-profile-modal-heading p,
-.settings-page .models-agent-profile-builder-subtitle {
+.settings-page .models-agent-resource-modal-heading p,
+.settings-page .models-agent-resource-builder-subtitle {
   color: var(--text-muted);
 }
 
-.settings-page .models-agent-profile-palette,
-.settings-page .models-agent-profile-canvas {
+.settings-page .models-agent-resource-palette,
+.settings-page .models-agent-resource-canvas {
   border-color: var(--border-subtle);
   background: var(--bg-elevated-hover);
 }
 
-.settings-page .models-agent-profile-palette-card {
+.settings-page .models-agent-resource-palette-card {
   border-color: var(--border-subtle);
   background: var(--bg-elevated);
   color: var(--text-primary);
 }
 
-.settings-page .models-agent-profile-palette-card:hover:not(:disabled),
-.settings-page .models-agent-profile-node:hover:not(:disabled) {
+.settings-page .models-agent-resource-palette-card:hover:not(:disabled),
+.settings-page .models-agent-resource-node:hover:not(:disabled) {
   border-color: var(--border-strong);
   background: var(--bg-elevated-hover);
 }
 
-.settings-page .models-agent-profile-node-builtin {
+.settings-page .models-agent-resource-node-builtin {
   border-style: dashed;
 }
 
-.settings-page .models-agent-profile-node-title {
+.settings-page .models-agent-resource-node-title {
   color: var(--text-primary);
 }
 
-.settings-page .models-agent-profile-node-desc,
-.settings-page .models-agent-profile-node-meta {
+.settings-page .models-agent-resource-node-desc,
+.settings-page .models-agent-resource-node-meta {
   color: var(--text-muted);
 }
 
-.settings-page .models-agent-profile-empty-drop {
+.settings-page .models-agent-resource-empty-drop {
   border-color: color-mix(in srgb, var(--border-subtle) 90%, var(--text-muted));
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   color: var(--text-secondary);
 }
 
-.settings-page .models-agent-profile-empty-drop small {
+.settings-page .models-agent-resource-empty-drop small {
   color: var(--text-muted);
 }
 
@@ -1061,37 +1072,37 @@
   border-bottom-color: var(--border-subtle);
 }
 
-.settings-page .models-agent-profile-agent-name {
+.settings-page .models-agent-resource-agent-name {
   color: var(--text-muted);
 }
 
-.settings-page .models-agent-profile-agent-model {
+.settings-page .models-agent-resource-agent-model {
   color: var(--text-secondary);
 }
 
-.settings-page .models-agent-profile-canvas {
+.settings-page .models-agent-resource-canvas {
   background-color: var(--bg-elevated-hover);
   background-image:
     linear-gradient(color-mix(in srgb, var(--border-subtle) 80%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--border-subtle) 80%, transparent) 1px, transparent 1px);
 }
 
-.settings-page .models-agent-profile-node {
+.settings-page .models-agent-resource-node {
   border-color: var(--card-surface-border);
   background: var(--card-surface-bg);
   color: var(--text-primary);
 }
 
-.settings-page .models-agent-profile-node-main {
+.settings-page .models-agent-resource-node-main {
   border-color: var(--status-allow-border);
   background: var(--status-allow-bg);
 }
 
-.settings-page .models-agent-profile-palette-title {
+.settings-page .models-agent-resource-palette-title {
   color: var(--text-heading);
 }
 
-.settings-page .models-agent-profile-palette-desc {
+.settings-page .models-agent-resource-palette-desc {
   color: var(--text-muted);
 }
 

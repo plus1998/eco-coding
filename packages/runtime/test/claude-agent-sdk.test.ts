@@ -167,10 +167,7 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       updatedAt: "2026-06-07T00:00:00.000Z",
     },
   ],
-  profile: {
-    id: "profile.research",
-    name: "Research Desk",
-    preset: "research",
+  orchestration: {
     mainAgent: {
       agentKey: "main",
       name: "Research Coordinator",
@@ -207,8 +204,6 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       },
     ],
     strategy: { kind: "autonomous", guidancePrompt: "Delegate when evidence quality improves." },
-    updatedAt: "2026-06-07T00:00:00.000Z",
-    source: "user",
   },
 };
 
@@ -232,12 +227,10 @@ const guidedResearchAgentRegistry: EcoAgentRuntimeConfig = {
       updatedAt: "2026-06-07T00:00:00.000Z",
     },
   ],
-  profile: {
-    ...universalAgentRegistry.profile,
-    id: "profile.guided_research",
-    name: "Guided Research Desk",
+  orchestration: {
+    ...universalAgentRegistry.orchestration,
     agents: [
-      ...universalAgentRegistry.profile.agents,
+      ...universalAgentRegistry.orchestration.agents,
       {
         agentKey: "synthesizer",
         templateId: "user.synthesizer",
@@ -1895,7 +1888,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   const systemPromptAppend = String(systemPrompt.append);
   expect(systemPromptAppend).toContain("Session mode: ask (read-only).");
   expect(systemPromptAppend).toContain("Do not draft implementation plans");
-  expect(systemPromptAppend).toContain("Research Desk");
+  expect(systemPromptAppend).toContain("Delegate when evidence quality improves.");
   expect(systemPromptAppend).not.toContain("CHILD SECRET PROMPT");
   expect(systemPromptAppend).not.toContain("File edits apply directly");
   expect(systemPromptAppend).not.toContain("Eco universal orchestration.");
@@ -1921,11 +1914,11 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   const disabledExploreAgents = capturedQueries[1]?.options.agents as Record<string, Record<string, unknown>>;
   expect(Object.keys(disabledExploreAgents)).toEqual(["eco_researcher"]);
 
-  const profileWithoutExplore: EcoAgentRuntimeConfig = {
+  const orchestrationWithoutExplore: EcoAgentRuntimeConfig = {
     ...universalAgentRegistry,
-    profile: {
-      ...universalAgentRegistry.profile,
-      agents: universalAgentRegistry.profile.agents.filter((agent) => agent.agentKey !== "explore"),
+    orchestration: {
+      ...universalAgentRegistry.orchestration,
+      agents: universalAgentRegistry.orchestration.agents.filter((agent) => agent.agentKey !== "explore"),
     },
   };
   for await (const _event of driver.runAsk({
@@ -1935,7 +1928,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     worktreePath: "/tmp/worktree",
     routes: routes.filter((route) => route.role !== "explore"),
     signal: new AbortController().signal,
-    agentRegistry: profileWithoutExplore,
+    agentRegistry: orchestrationWithoutExplore,
   })) {
     // drain
   }
@@ -2024,7 +2017,7 @@ test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic per
   );
 });
 
-test("ClaudeAgentSdkDriver treats profile guidance as main-agent guidance", async () => {
+test("ClaudeAgentSdkDriver treats orchestration guidance as main-agent guidance", async () => {
   const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",

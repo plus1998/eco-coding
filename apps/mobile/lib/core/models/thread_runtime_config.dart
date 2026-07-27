@@ -3,34 +3,73 @@ import 'composer_mcp.dart';
 import 'mcp_models.dart';
 import 'thread_models.dart';
 
-OrchestrationProfile? agentProfileById(
-  ModelSettingsSnapshot? settings,
-  String? profileId,
+OrchestrationResourceLookup orchestrationResourceLookupFromSettings(
+  ModelSettingsSnapshot settings,
 ) {
-  final id = profileId?.trim();
-  if (id == null || id.isEmpty || settings == null) return null;
-  for (final profile in settings.orchestrationProfiles) {
-    if (profile.id == id) return profile;
-  }
-  return null;
+  return OrchestrationResourceLookup(
+    mainAgentConfigs: settings.mainAgentConfigs,
+    mainAgentPrompts: settings.mainAgentPrompts,
+    subagentOrchestrations: settings.subagentOrchestrations,
+  );
 }
 
-OrchestrationProfile? resolveThreadAgentProfile(
+ResolvedOrchestrationSnapshot? resolveThreadOrchestrationSnapshot(
   ModelSettingsSnapshot? settings,
   ThreadRuntimeConfig config,
 ) {
-  return agentProfileById(settings, config.agentProfileId) ??
-      agentProfileById(settings, config.routeProfileId);
+  final stored = config.resolvedOrchestrationSnapshot;
+  if (stored != null) return stored;
+  final selection = config.orchestrationSelection;
+  if (settings == null || !hasCompleteOrchestrationSelection(selection)) {
+    return null;
+  }
+  return resolveOrchestrationSnapshot(
+    selection!,
+    orchestrationResourceLookupFromSettings(settings),
+  );
 }
 
-Map<String, bool> deriveSubagentEnabledFromProfile(
-  OrchestrationProfile profile, {
+bool isThreadOrchestrationReady(
+  ModelSettingsSnapshot? settings,
+  ThreadRuntimeConfig config,
+) {
+  return resolveThreadOrchestrationSnapshot(settings, config) != null;
+}
+
+String orchestrationCompositionSummary(
+  ModelSettingsSnapshot? settings,
+  ThreadRuntimeConfig config,
+) {
+  final snapshot = resolveThreadOrchestrationSnapshot(settings, config);
+  if (snapshot != null) {
+    final parts = <String>[
+      snapshot.mainAgentConfigName,
+      snapshot.mainPromptDisplayName,
+    ];
+    final subagentName = snapshot.subagentOrchestrationDisplayName;
+    if (subagentName != null && subagentName.isNotEmpty) {
+      parts.add(subagentName);
+    } else if (snapshot.selection.subagents is NoneSubagentSelection) {
+      parts.add('无子代理');
+    }
+    return parts.join(' · ');
+  }
+  final selection = config.orchestrationSelection;
+  if (selection == null) {
+    return '';
+  }
+  return selection.mainAgentConfigId;
+}
+
+Map<String, bool> deriveSubagentEnabledFromSnapshot(
+  ResolvedOrchestrationSnapshot snapshot, {
   Map<String, bool>? existing,
 }) {
   final subagentEnabled = defaultSubagentAvailability();
+  final orchestrationAgents = snapshot.agents;
   for (final role in subagentRoles) {
-    OrchestrationAgentInstance? agent;
-    for (final candidate in profile.agents) {
+    AgentInstanceConfig? agent;
+    for (final candidate in orchestrationAgents) {
       if (candidate.agentKey == role) {
         agent = candidate;
         break;
@@ -48,14 +87,20 @@ Map<String, bool> deriveSubagentEnabledFromProfile(
   return subagentEnabled;
 }
 
-List<String> collectProfileAssignedMcpServers(OrchestrationProfile profile) {
+List<String> collectSnapshotAssignedMcpServers(
+  ResolvedOrchestrationSnapshot snapshot,
+) {
   final servers = <String>{};
-  for (final server in profile.mainAssignedMcpServers) {
+  for (final server
+      in snapshot.mainAgent.tools.mcp?.allowedServers ?? const []) {
     servers.add(sanitizeMcpServerName(server));
   }
-  for (final agent in profile.agents) {
+  for (final agent in snapshot.agents) {
     if (!agent.enabled) continue;
     for (final server in agent.mcpServers) {
+      servers.add(sanitizeMcpServerName(server));
+    }
+    for (final server in agent.tools.mcp?.allowedServers ?? const []) {
       servers.add(sanitizeMcpServerName(server));
     }
   }
@@ -65,7 +110,7 @@ List<String> collectProfileAssignedMcpServers(OrchestrationProfile profile) {
 Map<String, bool> resolveComposerMcpSettings({
   required List<McpServerConfigView> servers,
   required ThreadRuntimeConfig runtimeConfig,
-  OrchestrationProfile? profile,
+  ResolvedOrchestrationSnapshot? snapshot,
   Map<String, bool>? remembered,
 }) {
   final availableServerKeys = listEnabledGlobalMcpServerKeys(servers);
@@ -80,32 +125,58 @@ Map<String, bool> resolveComposerMcpSettings({
   }
   return deriveMcpServersEnabled(
     availableServerKeys,
-    profileAssignedServers: profile == null
+    orchestrationAssignedServers: snapshot == null
         ? const []
-        : collectProfileAssignedMcpServers(profile),
+        : collectSnapshotAssignedMcpServers(snapshot),
     remembered: remembered,
   );
 }
 
-ThreadRuntimeConfig buildRuntimeConfigForProfile({
-  required OrchestrationProfile profile,
+({
+  OrchestrationSelection orchestrationSelection,
+  ResolvedOrchestrationSnapshot resolvedOrchestrationSnapshot,
+})
+materializeThreadOrchestrationSnapshot(
+  ModelSettingsSnapshot settings,
+  OrchestrationSelection selection,
+) {
+  final resolvedOrchestrationSnapshot = resolveOrchestrationSnapshot(
+    selection,
+    orchestrationResourceLookupFromSettings(settings),
+  );
+  return (
+    orchestrationSelection: selection,
+    resolvedOrchestrationSnapshot: resolvedOrchestrationSnapshot,
+  );
+}
+
+ThreadRuntimeConfig buildRuntimeConfigForSelection({
+  required ModelSettingsSnapshot settings,
+  required OrchestrationSelection selection,
   required ThreadRuntimeConfig runtimeConfig,
   required List<McpServerConfigView> servers,
   Map<String, bool>? remembered,
 }) {
+  final materialized = materializeThreadOrchestrationSnapshot(
+    settings,
+    selection,
+  );
+  final snapshot = materialized.resolvedOrchestrationSnapshot;
   final availableKeys = listEnabledGlobalMcpServerKeys(servers);
   return ThreadRuntimeConfig(
-    routeProfileId: profile.id,
-    agentProfileId: profile.id,
-    subagentEnabled: deriveSubagentEnabledFromProfile(
-      profile,
+    orchestrationSelection: materialized.orchestrationSelection,
+    resolvedOrchestrationSnapshot: snapshot,
+    subagentEnabled: deriveSubagentEnabledFromSnapshot(
+      snapshot,
       existing: runtimeConfig.subagentEnabled,
     ),
     mcpServersEnabled: availableKeys.isEmpty
         ? null
         : deriveMcpServersEnabled(
             availableKeys,
-            profileAssignedServers: collectProfileAssignedMcpServers(profile),
+            orchestrationAssignedServers: collectSnapshotAssignedMcpServers(
+              snapshot,
+            ),
             existing: runtimeConfig.mcpServersEnabled,
             remembered: remembered,
           ),
@@ -116,30 +187,62 @@ ThreadRuntimeConfig buildRuntimeConfigForProfile({
   );
 }
 
+ThreadRuntimeConfig applyOrchestrationSelectionPatch({
+  required ModelSettingsSnapshot? settings,
+  required ThreadRuntimeConfig runtimeConfig,
+  required List<McpServerConfigView> servers,
+  Map<String, bool>? remembered,
+  String? mainAgentConfigId,
+  MainAgentPromptSelection? mainPrompt,
+  SubagentSelection? subagents,
+}) {
+  final current =
+      runtimeConfig.orchestrationSelection ?? emptyOrchestrationSelection();
+  final nextSelection = current.copyWith(
+    mainAgentConfigId: mainAgentConfigId,
+    mainPrompt: mainPrompt,
+    subagents: subagents,
+  );
+  if (settings == null || !hasCompleteOrchestrationSelection(nextSelection)) {
+    return runtimeConfig.copyWith(
+      orchestrationSelection: nextSelection,
+      clearOrchestrationSnapshot: true,
+      clearMainAgentModelOverride: true,
+    );
+  }
+  return buildRuntimeConfigForSelection(
+    settings: settings,
+    selection: nextSelection,
+    runtimeConfig: runtimeConfig,
+    servers: servers,
+    remembered: remembered,
+  );
+}
+
 ThreadRuntimeConfig buildDefaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,
   WorkflowSettingsSnapshot? workflow,
   List<McpServerConfigView>? mcpServers,
-  String? profileId,
+  OrchestrationSelection? orchestrationSelection,
 }) {
-  final profiles = modelSettings?.orchestrationProfiles ?? [];
-  if (profiles.isEmpty) {
+  final selection =
+      orchestrationSelection ?? workflow?.defaultOrchestrationSelection;
+  if (modelSettings == null ||
+      modelSettings.mainAgentConfigs.isEmpty ||
+      !hasCompleteOrchestrationSelection(selection)) {
     return ThreadRuntimeConfig(
-      routeProfileId: '',
+      orchestrationSelection: selection,
       subagentEnabled: defaultSubagentAvailability(),
       sessionMode: resolveSessionMode(sessionMode: workflow?.sessionMode),
       bashReviewMode: 'always',
     );
   }
 
-  OrchestrationProfile? profile;
-  final requestedId =
-      profileId?.trim() ?? workflow?.defaultAgentProfileId?.trim();
-  if (requestedId != null && requestedId.isNotEmpty) {
-    profile = agentProfileById(modelSettings, requestedId);
-  }
-  profile ??= profiles.first;
-
+  final materialized = materializeThreadOrchestrationSnapshot(
+    modelSettings,
+    selection!,
+  );
+  final snapshot = materialized.resolvedOrchestrationSnapshot;
   final availableMcpServerKeys = listEnabledGlobalMcpServerKeys(
     mcpServers ?? [],
   );
@@ -147,23 +250,34 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
       ? null
       : deriveMcpServersEnabled(
           availableMcpServerKeys,
-          profileAssignedServers: collectProfileAssignedMcpServers(profile),
+          orchestrationAssignedServers: collectSnapshotAssignedMcpServers(
+            snapshot,
+          ),
           remembered: workflow?.mcpServersEnabled,
         );
+  final confirmation = snapshot.mainAgent.tools.confirmation;
+  final bashReviewMode = confirmation == 'never'
+      ? 'allow_all'
+      : confirmation == 'always'
+      ? 'always'
+      : 'auto';
 
   return ThreadRuntimeConfig(
-    routeProfileId: profile.id,
-    agentProfileId: profile.id,
-    subagentEnabled: deriveSubagentEnabledFromProfile(profile),
+    orchestrationSelection: materialized.orchestrationSelection,
+    resolvedOrchestrationSnapshot: snapshot,
+    subagentEnabled: deriveSubagentEnabledFromSnapshot(snapshot),
     mcpServersEnabled: mcpServersEnabled,
     sessionMode: normalizeSessionMode(workflow?.sessionMode),
-    bashReviewMode: 'always',
+    bashReviewMode: bashReviewMode,
   );
 }
 
-bool isSubagentConfiguredInProfile(OrchestrationProfile? profile, String role) {
-  if (profile == null) return false;
-  for (final agent in profile.agents) {
+bool isSubagentConfiguredInSnapshot(
+  ResolvedOrchestrationSnapshot? snapshot,
+  String role,
+) {
+  if (snapshot == null) return false;
+  for (final agent in snapshot.agents) {
     if (agent.agentKey == role) {
       return agent.enabled;
     }
@@ -181,23 +295,50 @@ bool isRuntimeSubagentEnabled(Map<String, bool> subagentEnabled, String role) {
   return normalizedRuntimeSubagentEnabled(subagentEnabled)[role] ?? true;
 }
 
-bool isSubagentToggleable(OrchestrationProfile? profile, String role) {
-  return isSubagentConfiguredInProfile(profile, role);
+bool isSubagentToggleable(
+  ResolvedOrchestrationSnapshot? snapshot,
+  String role,
+) {
+  return isSubagentConfiguredInSnapshot(snapshot, role);
 }
 
 int countEnabledSubagents(Map<String, bool> subagentEnabled) {
   return subagentRoles.where((role) => subagentEnabled[role] ?? false).length;
 }
 
-int countConfiguredSubagents(OrchestrationProfile? profile) {
-  return configuredOrchestrationSubagentRoles(profile).length;
+int countConfiguredSubagents(ResolvedOrchestrationSnapshot? snapshot) {
+  return configuredOrchestrationSubagentRoles(snapshot).length;
 }
 
-/// Sub-agent roles shown in orchestration UI (aligned with desktop profile routes).
 List<String> configuredOrchestrationSubagentRoles(
-  OrchestrationProfile? profile,
+  ResolvedOrchestrationSnapshot? snapshot,
 ) {
-  return subagentRoles
-      .where((role) => isSubagentConfiguredInProfile(profile, role))
+  if (snapshot == null) return const [];
+  return snapshot.agents
+      .where((agent) => agent.enabled)
+      .map((agent) => agent.agentKey)
+      .where(subagentRoles.contains)
       .toList(growable: false);
+}
+
+List<AgentInstanceConfig> orchestrationAgentsForTheme(
+  ResolvedOrchestrationSnapshot? snapshot,
+) {
+  if (snapshot == null) return const [];
+  return snapshot.agents;
+}
+
+class SubagentThemeSource {
+  const SubagentThemeSource({required this.agents});
+
+  factory SubagentThemeSource.fromSnapshot(
+    ResolvedOrchestrationSnapshot? snapshot,
+  ) {
+    if (snapshot == null) {
+      return const SubagentThemeSource(agents: []);
+    }
+    return SubagentThemeSource(agents: orchestrationAgentsForTheme(snapshot));
+  }
+
+  final List<AgentInstanceConfig> agents;
 }

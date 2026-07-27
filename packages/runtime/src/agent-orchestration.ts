@@ -112,34 +112,17 @@ export interface EcoAgentInstanceConfig {
   enabled: boolean;
 }
 
-export interface EcoBuiltinAgentConfig {
-  modelRef: EcoModelRef;
-  themeColor?: string;
-}
-
-export interface EcoBuiltinAgentsConfig {
-  explore: EcoBuiltinAgentConfig;
-}
-
 export type EcoOrchestrationStrategy = { kind: "autonomous"; guidancePrompt?: string };
 
-export interface EcoOrchestrationProfileConfig {
-  id: string;
-  name: string;
-  preset: EcoAgentDomain;
+export interface EcoOrchestrationConfig {
   mainAgent: EcoMainAgentConfig;
-  /** @deprecated Legacy desktop profiles stored Explore outside agents. */
-  builtinAgents?: EcoBuiltinAgentsConfig;
   agents: EcoAgentInstanceConfig[];
   strategy: EcoOrchestrationStrategy;
-  updatedAt: string;
-  source: EcoAgentConfigSource;
-  sourceRouteProfileId?: string;
 }
 
 export interface EcoAgentRuntimeConfig {
   templates: EcoAgentTemplateConfig[];
-  profile: EcoOrchestrationProfileConfig;
+  orchestration: EcoOrchestrationConfig;
 }
 
 export interface EcoResolvedAgentDefinitionSet {
@@ -203,18 +186,18 @@ export function resolveEffectiveBashPolicy(policy: EcoToolPolicy): NonNullable<E
   return { enabled: true };
 }
 
-export function collectProfileAssignedMcpServers(
-  profile: EcoOrchestrationProfileConfig,
+export function collectOrchestrationAssignedMcpServers(
+  orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
 ): string[] {
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const servers = new Set<string>();
 
-  for (const server of resolveAssignedMcpServers(profile.mainAgent.tools)) {
+  for (const server of resolveAssignedMcpServers(orchestration.mainAgent.tools)) {
     servers.add(server);
   }
 
-  for (const agent of profile.agents) {
+  for (const agent of orchestration.agents) {
     if (!agent.enabled) {
       continue;
     }
@@ -260,7 +243,7 @@ export function buildBuiltinPlanToolPermissionEntry(): EcoRuntimeToolPermissionE
 
 type SdkBuiltinToolPolicyRule = "inherit_main_without_delegation" | "plan_readonly";
 
-/** Allowed SDK built-in subagents that need explicit tool policy resolution (not Profile-generated). */
+/** Allowed SDK built-in subagents that need explicit tool policy resolution (not Orchestration-generated). */
 const SDK_BUILTIN_TOOL_POLICY_RULES: Record<string, SdkBuiltinToolPolicyRule> = {
   [SDK_GENERAL_PURPOSE_AGENT_KEY]: "inherit_main_without_delegation",
   [SDK_PLAN_AGENT_KEY]: "plan_readonly",
@@ -323,25 +306,25 @@ export interface MainAgentHandsOnCapability {
 }
 
 /**
- * What the main orchestrator can do hands-on under the active profile tool policy.
+ * What the main orchestrator can do hands-on under the active orchestration tool policy.
  * Mirrors PreToolUse enforcement: only explicit disallow rules or structured flags apply.
  */
 export function resolveMainAgentHandsOnCapability(
-  profile?: EcoOrchestrationProfileConfig,
+  orchestration?: EcoOrchestrationConfig,
 ): MainAgentHandsOnCapability {
-  if (!profile) {
+  if (!orchestration) {
     return { canEditFiles: true, canRunBash: true };
   }
-  return resolveMainAgentHandsOnFromPolicy(profile.mainAgent.tools);
+  return resolveMainAgentHandsOnFromPolicy(orchestration.mainAgent.tools);
 }
 
-export function createAgentDefinitionsFromProfile(
-  profile: EcoOrchestrationProfileConfig,
+export function createAgentDefinitionsFromOrchestration(
+  orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
   options: {
     agentSkills?: Partial<Record<string, string[]>>;
     /**
-     * Maps a profile agent's raw model id to the id the SDK should request (e.g. the local
+     * Maps a orchestration agent's raw model id to the id the SDK should request (e.g. the local
      * proxy role alias), so usage billing can attribute requests to the right agent role.
      */
     resolveModelId?: (agentKey: string, modelId: string) => string;
@@ -350,7 +333,7 @@ export function createAgentDefinitionsFromProfile(
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const definitions: Record<string, unknown> = {};
   const agentKeys: string[] = [];
-  for (const agent of profile.agents) {
+  for (const agent of orchestration.agents) {
     if (!agent.enabled) {
       continue;
     }
@@ -358,11 +341,11 @@ export function createAgentDefinitionsFromProfile(
     if (!template) {
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
-    const sdkKey = sdkAgentKeyForProfileAgent(agent.agentKey);
+    const sdkKey = sdkAgentKeyForOrchestrationAgent(agent.agentKey);
     definitions[sdkKey] = buildSdkAgentDefinition(
       agent,
       template,
-      resolveProfileAgentSkills(agent.agentKey, sdkKey, options),
+      resolveOrchestrationAgentSkills(agent.agentKey, sdkKey, options),
       options.resolveModelId,
     );
     agentKeys.push(sdkKey);
@@ -370,8 +353,8 @@ export function createAgentDefinitionsFromProfile(
   return { definitions, agentKeys };
 }
 
-export function buildToolPermissionPolicyFromProfile(
-  profile: EcoOrchestrationProfileConfig,
+export function buildToolPermissionPolicyFromOrchestration(
+  orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
   options: {
     agentKeys?: readonly string[];
@@ -387,11 +370,11 @@ export function buildToolPermissionPolicyFromProfile(
   const phaseCapTools =
     options.phaseAllowedTools && options.phaseAllowedTools.length > 0 ? options.phaseAllowedTools : undefined;
   const agents: Record<string, EcoRuntimeToolPermissionEntry> = {};
-  for (const agent of profile.agents) {
+  for (const agent of orchestration.agents) {
     if (!agent.enabled) {
       continue;
     }
-    const sdkKey = sdkAgentKeyForProfileAgent(agent.agentKey);
+    const sdkKey = sdkAgentKeyForOrchestrationAgent(agent.agentKey);
     if (explicitAgentKeys && !explicitAgentKeys.has(sdkKey)) {
       continue;
     }
@@ -402,8 +385,8 @@ export function buildToolPermissionPolicyFromProfile(
     agents[sdkKey] = resolveAgentToolPermission(agent, template, phaseCapTools);
   }
   const mainToolPolicy = phaseCapTools
-    ? capEcoToolPolicyForPhase(profile.mainAgent.tools, phaseCapTools)
-    : materializeEcoToolPolicy(profile.mainAgent.tools);
+    ? capEcoToolPolicyForPhase(orchestration.mainAgent.tools, phaseCapTools)
+    : materializeEcoToolPolicy(orchestration.mainAgent.tools);
   const runtimeMcp = (options.runtimeMcpServers ?? []).map((server) => sanitizeMcpServerName(server));
   const mainAssignedMcp = [...new Set([...resolveAssignedMcpServers(mainToolPolicy), ...runtimeMcp])];
   return {
@@ -428,8 +411,8 @@ function resolveMainToolPermissionExtraAllowed(
   return extras.filter((tool) => phaseAllowed.has(tool));
 }
 
-export function buildMainAgentStrategySummary(profile: EcoOrchestrationProfileConfig): string {
-  const strategy = profile.strategy;
+export function buildMainAgentStrategySummary(orchestration: EcoOrchestrationConfig): string {
+  const strategy = orchestration.strategy;
   return [
     "Main-agent delegation guidance.",
     strategy.guidancePrompt?.trim() || "Choose subagents only when they materially improve the result.",
@@ -441,23 +424,24 @@ const ORCHESTRATION_CONVERGENCE_POLICY = [
   "Never treat subagents as free or unlimited. Reuse active agents, avoid repeated delegation rounds, and converge once the requested result is verified.",
 ].join("\n");
 
-export function buildMainAgentProfileAppend(
-  profile: EcoOrchestrationProfileConfig,
+export function buildMainAgentOrchestrationAppend(
+  config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
+  options?: { summaryLabel?: string },
 ): string {
   return [
-    `Eco orchestration profile: ${profile.name} (${profile.preset}).`,
-    buildMainAgentStrategySummary(profile),
+    options?.summaryLabel?.trim() || "Eco orchestration.",
+    buildMainAgentStrategySummary(config),
     ORCHESTRATION_CONVERGENCE_POLICY,
   ].join("\n\n");
 }
 
-export function buildCodexMainAgentProfileAppend(
-  profile: EcoOrchestrationProfileConfig,
+export function buildCodexMainAgentOrchestrationAppend(
+  config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
   options?: { subagentAvailability?: Partial<Record<string, boolean>> },
 ): string {
-  const availableRoles = profile.agents
+  const availableRoles = config.agents
     .filter((agent) => {
       if (!agent.enabled) return false;
       const role = agent.agentKey.trim().toLowerCase();
@@ -465,11 +449,8 @@ export function buildCodexMainAgentProfileAppend(
     })
     .map((agent) => agent.agentKey.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase())
     .filter(Boolean);
-  if (profile.builtinAgents?.explore && options?.subagentAvailability?.explore !== false) {
-    availableRoles.unshift("explore");
-  }
   const customPrompt =
-    profile.mainAgent.systemPromptPreset === "custom_append" ? profile.mainAgent.prompt.trim() : "";
+    config.mainAgent.systemPromptPreset === "custom_append" ? config.mainAgent.prompt.trim() : "";
   const subagentProtocol = availableRoles.length > 0
     ? [
         `Available Codex subagent types: ${[...new Set(availableRoles)].join(", ")}.`,
@@ -480,14 +461,14 @@ export function buildCodexMainAgentProfileAppend(
 }
 
 export function buildMainAgentSystemPrompt(
-  profile: EcoOrchestrationProfileConfig,
+  orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
   phaseAppend: string,
   options: { excludeDynamicSections?: boolean } = {},
 ): string | Record<string, unknown> {
   const customInstructions =
-    profile.mainAgent.systemPromptPreset === "custom_append" ? profile.mainAgent.prompt.trim() : "";
-  const append = [customInstructions, phaseAppend, buildMainAgentProfileAppend(profile, templates)]
+    orchestration.mainAgent.systemPromptPreset === "custom_append" ? orchestration.mainAgent.prompt.trim() : "";
+  const append = [customInstructions, phaseAppend, buildMainAgentOrchestrationAppend(orchestration, templates)]
     .filter((entry) => entry.trim())
     .join("\n\n");
   return {
@@ -499,7 +480,7 @@ export function buildMainAgentSystemPrompt(
 }
 
 export function resolveMainAgentAllowedTools(
-  profile: EcoOrchestrationProfileConfig,
+  orchestration: EcoOrchestrationConfig,
   phaseAllowedTools: readonly string[],
 ): string[] {
   const extras = [SDK_SKILL_TOOL_NAME, ...SDK_TASK_PROGRESS_TOOL_NAMES];
@@ -510,11 +491,11 @@ export function resolveMainAgentAllowedTools(
   const phaseToolSet = new Set(phaseExpanded);
   const phaseBlocksWrites = !hasAnyToolPattern(phaseToolSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES);
   const phaseBlocksBash = !phaseToolSet.has("Bash");
-  const profileExpanded = allowedToolPatternsFromPolicy(profile.mainAgent.tools, extras);
+  const orchestrationExpanded = allowedToolPatternsFromPolicy(orchestration.mainAgent.tools, extras);
   const mainMcpAutoApprove = mcpAutoApprovePatternsForServers(
-    resolveAssignedMcpServers(profile.mainAgent.tools),
+    resolveAssignedMcpServers(orchestration.mainAgent.tools),
   );
-  const profileExtras = profileExpanded.filter((tool) => {
+  const orchestrationExtras = orchestrationExpanded.filter((tool) => {
     if (phaseToolSet.has(tool)) {
       return false;
     }
@@ -526,10 +507,10 @@ export function resolveMainAgentAllowedTools(
     }
     return true;
   });
-  return uniqueToolPatterns([...phaseExpanded, ...profileExtras, ...mainMcpAutoApprove]);
+  return uniqueToolPatterns([...phaseExpanded, ...orchestrationExtras, ...mainMcpAutoApprove]);
 }
 
-export function sdkAgentKeyForProfileAgent(agentKey: string): string {
+export function sdkAgentKeyForOrchestrationAgent(agentKey: string): string {
   const sanitized = agentKey
     .trim()
     .replace(/[^a-zA-Z0-9_-]+/g, "_")
@@ -566,7 +547,7 @@ function buildSdkAgentDefinition(
   };
 }
 
-function resolveProfileAgentSkills(
+function resolveOrchestrationAgentSkills(
   agentKey: string,
   sdkKey: string,
   options: { agentSkills?: Partial<Record<string, string[]>> },
