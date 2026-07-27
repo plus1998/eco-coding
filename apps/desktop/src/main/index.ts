@@ -411,6 +411,7 @@ import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliat
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { prepareSdkRunContextAfterCompaction } from "./sdk-run-context-compaction";
+import { validateSdkExecutionCompletion } from "./sdk-execution-completion";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
@@ -4712,10 +4713,7 @@ async function runCodingThreadAutonomous(
                 taskRuntime.handleEvent(event);
               },
             });
-            if (!result.ok) {
-              return result;
-            }
-            return { ok: true };
+            return validateSdkExecutionCompletion(result, taskRunHooks.getCompletionState());
           } catch (error) {
             if (controller.signal.aborted) {
               return { ok: false, reason: "cancelled by user", aborted: true };
@@ -4744,6 +4742,11 @@ async function runCodingThreadAutonomous(
           taskRunHooks.stopIfUnhandled("blocked");
           cancelClarificationsForThread(thread.id, reason);
           clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
+          markThreadInterrupted(thread.id, reason);
+        },
+        onIncomplete: (reason) => {
+          taskRunHooks.stopIfUnhandled("blocked");
+          cancelClarificationsForThread(thread.id, reason);
           markThreadInterrupted(thread.id, reason);
         },
       })
@@ -4878,7 +4881,7 @@ async function runCodingThreadExecution(
                     ...(planning.planFilePath ? { planFilePath: planning.planFilePath } : {}),
                     ...(planning.planUserEdited ? { planUserEdited: true } : {}),
                   };
-              return await consumeSdkRunEvents({
+              const result = await consumeSdkRunEvents({
                 events: driver.runContinuation(
                   buildSdkRunInput({
                     threadId,
@@ -4907,6 +4910,7 @@ async function runCodingThreadExecution(
                   taskRuntime.handleEvent(event);
                 },
               });
+              return validateSdkExecutionCompletion(result, taskRunHooks.getCompletionState());
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -4931,6 +4935,10 @@ async function runCodingThreadExecution(
         onFailed: async (reason) => {
           taskRunHooks.stopIfUnhandled("blocked");
           await restoreAfterExecutionFailure(threadId, worktreePlan, reason, executionPlan);
+        },
+        onIncomplete: (reason) => {
+          taskRunHooks.stopIfUnhandled("blocked");
+          markThreadInterrupted(threadId, reason);
         },
       })
     ) {
@@ -6569,7 +6577,7 @@ async function runThreadContinuation(
               }
               eventStream = driver.runContinuation(runInput, mode, planningContext);
 
-              return await consumeSdkRunEvents({
+              const result = await consumeSdkRunEvents({
                 events: eventStream,
                 threadId: thread.id,
                 worktreePath: cwd,
@@ -6591,6 +6599,10 @@ async function runThreadContinuation(
                   taskRuntime?.handleEvent(event);
                 },
               });
+              if (mode !== "execution" || !taskRunHooks) {
+                return result;
+              }
+              return validateSdkExecutionCompletion(result, taskRunHooks.getCompletionState());
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -6619,6 +6631,10 @@ async function runThreadContinuation(
         onFailed: (reason) => {
           taskRunHooks?.stopIfUnhandled("blocked");
           clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
+          markThreadInterrupted(thread.id, reason);
+        },
+        onIncomplete: (reason) => {
+          taskRunHooks?.stopIfUnhandled("blocked");
           markThreadInterrupted(thread.id, reason);
         },
         onCompleted: async (message) => {

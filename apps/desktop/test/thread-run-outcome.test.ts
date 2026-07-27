@@ -54,6 +54,12 @@ test("resolveExecutionRunOutcome returns completed on success", () => {
     kind: "failed",
     reason: "blocked",
   });
+  expect(
+    resolveExecutionRunOutcome({ ok: false, reason: "tasks remain", incomplete: true }),
+  ).toEqual({
+    kind: "incomplete",
+    reason: "tasks remain",
+  });
 });
 
 test("resolveContinuationRunOutcome keeps mode-specific success decisions", () => {

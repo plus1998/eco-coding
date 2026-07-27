@@ -23,6 +23,7 @@ import {
   createToolPermissionDeniedEvent,
   deleteClaudeAgentSdkSession,
   extractSdkRunFailure,
+  extractSdkRunIncompleteReason,
   formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
@@ -790,6 +791,33 @@ test("extracts SDK terminal_reason failures without treating deferred plans as e
       terminal_reason: "turn_setup_failed",
     }),
   ).toBe("turn setup failed");
+});
+
+test("extracts structured incomplete SDK terminal results", () => {
+  expect(
+    extractSdkRunIncompleteReason({
+      type: "result",
+      subtype: "success",
+      stop_reason: "max_tokens",
+      terminal_reason: "completed",
+    }),
+  ).toContain("max_tokens");
+  expect(
+    extractSdkRunIncompleteReason({
+      type: "result",
+      subtype: "success",
+      stop_reason: "end_turn",
+      terminal_reason: "stop_hook_prevented",
+    }),
+  ).toContain("完成条件检查");
+  expect(
+    extractSdkRunIncompleteReason({
+      type: "result",
+      subtype: "success",
+      stop_reason: "end_turn",
+      terminal_reason: "completed",
+    }),
+  ).toBeNull();
 });
 
 test("creates plan.ready event with transcript payload", () => {

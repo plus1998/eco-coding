@@ -120,7 +120,7 @@ test("subagent task_started fallback marks matching checklist item running", () 
   expect(store.getTodos()[0]?.status).toBe("running");
 });
 
-test("SubagentStart and SubagentStop update todo status", () => {
+test("SubagentStop does not imply that the linked todo completed", () => {
   const { store, hooks } = createTracker([
     {
       id: "thr_1:task:0",
@@ -137,7 +137,7 @@ test("SubagentStart and SubagentStop update todo status", () => {
   expect(store.getTodos()[0]?.status).toBe("running");
 
   hooks.onSubagentStop({ agentId: "agent_1", agentType: "coder" });
-  expect(store.getTodos()[0]?.status).toBe("completed");
+  expect(store.getTodos()[0]?.status).toBe("running");
 });
 
 test("SubagentStart does not mark the first pending todo without a structured link", () => {
@@ -170,7 +170,7 @@ test("SubagentStart resolves todo through matching SDK task id", () => {
   });
 });
 
-test("onStop completes running todos", () => {
+test("completed stop preserves running todos while blocked stop marks them blocked", () => {
   const { store, hooks } = createTracker([
     {
       id: "thr_1:task:0",
@@ -184,7 +184,34 @@ test("onStop completes running todos", () => {
   ]);
 
   hooks.onStop("completed");
+  expect(store.getTodos()[0]?.status).toBe("running");
+
+  hooks.onStop("blocked");
+  expect(store.getTodos()[0]?.status).toBe("blocked");
+});
+
+test("TaskUpdate completion waits for TaskCompleted and records substantive tool evidence", () => {
+  const { store, tracker, hooks } = createTracker();
+
+  hooks.onTaskCreated({ taskId: "task_1", subject: "Implement panel" });
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_1", status: "in_progress" });
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_1", status: "completed" });
+
+  expect(store.getTodos()[0]?.status).toBe("running");
+  expect(tracker.getCompletionState()).toMatchObject({
+    hasSubstantiveToolUse: false,
+    openTasks: [{ title: "Implement panel", status: "running" }],
+  });
+
+  hooks.onPostToolUse?.("Edit", { file_path: "panel.ts" }, { ok: true });
+  expect(tracker.getCompletionState()).toMatchObject({
+    hasSubstantiveToolUse: true,
+    substantiveToolNames: ["Edit"],
+  });
+
+  hooks.onTaskCompleted({ taskId: "task_1", subject: "Implement panel" });
   expect(store.getTodos()[0]?.status).toBe("completed");
+  expect(tracker.getCompletionState().openTasks).toEqual([]);
 });
 
 test("task_notification completes the exact linked SDK task and preserves summary", () => {

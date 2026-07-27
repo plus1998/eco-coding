@@ -1,4 +1,4 @@
-import { extractSdkRunFailure } from "@eco/runtime/sdk";
+import { extractSdkRunFailure, extractSdkRunIncompleteReason } from "@eco/runtime/sdk";
 import type { RequestAttemptResult } from "./request-retry";
 
 export interface SdkRunEventLike {
@@ -21,10 +21,16 @@ export async function consumeSdkRunEvents<TEvent extends SdkRunEventLike>(
   input: ConsumeSdkRunEventsInput<TEvent>,
 ): Promise<RequestAttemptResult> {
   let sdkFailure: string | undefined;
+  let sdkIncomplete: string | undefined;
 
   for await (const event of input.events) {
     if (event.type === "usage.recorded") {
-      sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+      const incompleteReason = extractSdkRunIncompleteReason(event.payload);
+      if (incompleteReason) {
+        sdkIncomplete = incompleteReason;
+      } else {
+        sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+      }
       input.onUsageRecorded(input.threadId, event);
       continue;
     }
@@ -39,6 +45,9 @@ export async function consumeSdkRunEvents<TEvent extends SdkRunEventLike>(
   }
   if (sdkFailure) {
     return { ok: false, reason: sdkFailure };
+  }
+  if (sdkIncomplete) {
+    return { ok: false, reason: sdkIncomplete, incomplete: true };
   }
   return { ok: true };
 }

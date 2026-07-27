@@ -4,10 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import type {
   PreCompactHookInput,
+  PostToolUseHookInput,
   PreToolUseHookInput,
+  StopHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
   TaskCreatedHookInput,
+  TaskCompletedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   buildEcoSdkHooks,
@@ -28,9 +31,12 @@ import {
   createSubagentStopHook,
   createSubagentToolAttributionPreToolHook,
   createTaskCreatedHook,
+  createTaskCompletedHook,
+  createTaskEvidencePostToolHook,
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
+  createStopHook,
   parseDeferredExitPlanModeResult,
   parseExitPlanModeInput,
   parseExitPlanModeOutput,
@@ -527,6 +533,115 @@ test("createTaskToolPreToolHook forwards tool input to tracker", async () => {
   );
 
   expect(calls).toEqual([{ toolName: "TaskCreate", input: { subject: "Run tests" } }]);
+});
+
+test("task evidence and completion hooks block unsupported completion", async () => {
+  let substantive = false;
+  const completed: string[] = [];
+  const tracker = {
+    onPreToolUse() {},
+    onPostToolUse() {
+      substantive = true;
+    },
+    onTaskCreated() {},
+    onTaskCompleted(input: { taskId: string }) {
+      completed.push(input.taskId);
+    },
+    onSubagentStart() {},
+    onSubagentStop() {},
+    onStop() {},
+    getCompletionState: () => ({
+      openTasks: [],
+      hasSubstantiveToolUse: substantive,
+      substantiveToolNames: substantive ? ["Edit"] : [],
+    }),
+  };
+  const completedHook = createTaskCompletedHook(tracker);
+  const completedInput = {
+    hook_event_name: "TaskCompleted",
+    task_id: "task_1",
+    task_subject: "Implement panel",
+    session_id: "s1",
+    cwd: "/tmp",
+  } satisfies TaskCompletedHookInput;
+
+  expect(
+    await completedHook(completedInput, undefined, { signal: new AbortController().signal }),
+  ).toMatchObject({ decision: "block" });
+  expect(completed).toEqual([]);
+
+  const evidenceHook = createTaskEvidencePostToolHook(tracker);
+  await evidenceHook(
+    {
+      hook_event_name: "PostToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: "panel.ts" },
+      tool_response: { ok: true },
+      tool_use_id: "tool_edit",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PostToolUseHookInput,
+    "tool_edit",
+    { signal: new AbortController().signal },
+  );
+
+  expect(
+    await completedHook(completedInput, undefined, { signal: new AbortController().signal }),
+  ).toEqual({});
+  expect(completed).toEqual(["task_1"]);
+});
+
+test("Stop hook blocks open or actionless executions once", async () => {
+  let state = {
+    openTasks: [{ id: "task_1", title: "Implement panel", status: "running" as const }],
+    hasSubstantiveToolUse: false,
+    substantiveToolNames: [] as string[],
+  };
+  const stopped: string[] = [];
+  const hook = createStopHook({
+    taskTracker: {
+      onPreToolUse() {},
+      onTaskCreated() {},
+      onTaskCompleted() {},
+      onSubagentStart() {},
+      onSubagentStop() {},
+      onStop(status) {
+        stopped.push(status);
+      },
+      getCompletionState: () => state,
+    },
+  });
+  if (!hook) {
+    throw new Error("Expected Stop hook");
+  }
+  const stopInput = {
+    hook_event_name: "Stop",
+    stop_hook_active: false,
+    session_id: "s1",
+    cwd: "/tmp",
+  } satisfies StopHookInput;
+
+  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
+    decision: "block",
+  });
+  expect(stopped).toEqual([]);
+
+  state = { openTasks: [], hasSubstantiveToolUse: false, substantiveToolNames: [] };
+  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
+    decision: "block",
+  });
+
+  state = { openTasks: [], hasSubstantiveToolUse: true, substantiveToolNames: ["Bash"] };
+  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toEqual({});
+  expect(stopped).toEqual(["completed"]);
+
+  expect(
+    await hook(
+      { ...stopInput, stop_hook_active: true },
+      undefined,
+      { signal: new AbortController().signal },
+    ),
+  ).toEqual({});
 });
 
 test("createSubagentToolAttributionPreToolHook forwards tool use id with role", async () => {
@@ -2428,6 +2543,7 @@ test("buildEcoSdkHooks registers expected hook events", () => {
     resolveChangedFiles: async () => [],
     taskTracker: {
       onPreToolUse() {},
+      onPostToolUse() {},
       onTaskCreated() {},
       onTaskCompleted() {},
       onSubagentStart() {},
@@ -2454,6 +2570,7 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(withResume.PreToolUse?.length).toBeGreaterThanOrEqual(2);
   expect(hooks.TaskCreated).toHaveLength(1);
   expect(hooks.TaskCompleted).toHaveLength(1);
+  expect(hooks.PostToolUse).toHaveLength(1);
   expect(hooks.SubagentStart).toHaveLength(1);
   expect(hooks.SubagentStop).toHaveLength(1);
   expect(hooks.Stop).toHaveLength(1);

@@ -51,6 +51,13 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
   expect(
     await applyThreadRunDecisionEffects({
       threadId: "thr_decision",
+      decision: { kind: "incomplete", reason: "任务尚未完成。" },
+      effects,
+    }),
+  ).toBe(true);
+  expect(
+    await applyThreadRunDecisionEffects({
+      threadId: "thr_decision",
       decision: { kind: "awaiting_plan", message: "等待你确认计划。" },
       effects,
     }),
@@ -71,6 +78,10 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
   ).toBe(true);
 
   expect(updates).toEqual([
+    {
+      threadId: "thr_decision",
+      patch: { status: "blocked", message: "任务尚未完成。" },
+    },
     {
       threadId: "thr_decision",
       patch: { status: "awaiting_plan", message: "等待你确认计划。" },

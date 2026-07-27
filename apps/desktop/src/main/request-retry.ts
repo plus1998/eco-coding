@@ -1,4 +1,6 @@
-export type RequestAttemptResult = { ok: true } | { ok: false; reason: string; aborted?: boolean };
+export type RequestAttemptResult =
+  | { ok: true }
+  | { ok: false; reason: string; aborted?: boolean; incomplete?: boolean };
 
 import {
   formatApiErrorUserMessage,

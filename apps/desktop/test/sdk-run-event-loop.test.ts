@@ -45,6 +45,36 @@ test("consumeSdkRunEvents records usage failures without emitting activity", asy
   expect(harness.calls).toEqual(["usage:thr_usage:usage.recorded"]);
 });
 
+test("consumeSdkRunEvents preserves resumable incomplete terminal results", async () => {
+  const harness = createHarness();
+
+  const result = await consumeSdkRunEvents({
+    events: events([
+      {
+        type: "usage.recorded",
+        payload: {
+          type: "result",
+          subtype: "success",
+          stop_reason: "max_tokens",
+          terminal_reason: "completed",
+        },
+      },
+    ]),
+    threadId: "thr_truncated",
+    worktreePath: "/tmp/worktree",
+    signal: new AbortController().signal,
+    onUsageRecorded: harness.onUsageRecorded,
+    captureSession: harness.captureSession,
+    emitActivity: harness.emitActivity,
+  });
+
+  expect(result).toMatchObject({ ok: false, incomplete: true });
+  if (!result.ok) {
+    expect(result.reason).toContain("max_tokens");
+  }
+  expect(harness.calls).toEqual(["usage:thr_truncated:usage.recorded"]);
+});
+
 test("consumeSdkRunEvents captures sessions, runs custom handler, then emits activity", async () => {
   const harness = createHarness();
 

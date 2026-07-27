@@ -1866,6 +1866,28 @@ export function extractSdkRunFailure(payload: unknown): string | null {
   return `Agent run failed (${String(payload.subtype ?? "error")}).`;
 }
 
+export function extractSdkRunIncompleteReason(payload: unknown): string | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const isTerminalResult =
+    payload.type === "result" || (payloadHasSdkResultShape(payload) && typeof payload.subtype === "string");
+  if (!isTerminalResult) {
+    return null;
+  }
+
+  if (payload.stop_reason === "max_tokens") {
+    return "模型输出达到 max_tokens 上限，响应已被截断；执行尚未完成，请继续执行或提高模型输出上限。";
+  }
+
+  if (payload.terminal_reason === "stop_hook_prevented") {
+    return "执行被完成条件检查阻止：仍有任务未完成，或尚无足够的实际操作证据。";
+  }
+
+  return null;
+}
+
 function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
   return (
     "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload)

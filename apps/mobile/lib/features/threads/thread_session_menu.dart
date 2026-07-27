@@ -297,7 +297,7 @@ Future<void> openCommitPushFromMenu({
             .resolvedOrchestrationSnapshot
             ?.selection
             .mainAgentConfigId ??
-        '';
+        'main';
     final committed = await showCommitPushSheet(
       context: context,
       ref: ref,
