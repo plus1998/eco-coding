@@ -1,5 +1,6 @@
 import { ChevronRight, Plus, Trash2, Users } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AgentTemplate, ProviderConfigView } from "../shared/ipc";
 import { defaultThemeColorForAgentKey } from "../shared/subagent-theme";
 import type { AgentResourceAgentFormState } from "./agent-resource-form";
@@ -26,6 +27,7 @@ export function SubagentOrchestrationRosterEditor({
   onEditAgent,
   onToggleEnabled,
 }: SubagentOrchestrationRosterEditorProps) {
+  const { t } = useTranslation();
   const [pendingTemplateId, setPendingTemplateId] = useState("");
 
   const rosterTemplateIds = useMemo(
@@ -47,31 +49,31 @@ export function SubagentOrchestrationRosterEditor({
   }
 
   return (
-    <section className="orchestration-roster" aria-label="子代理 roster">
+    <section className="orchestration-roster" aria-label={t("settings.models.editor.rosterAria")}>
       <header className="orchestration-roster-header">
         <div className="orchestration-roster-header-copy">
-          <h3 className="orchestration-roster-title">子代理</h3>
+          <h3 className="orchestration-roster-title">{t("settings.models.editor.rosterLabel")}</h3>
           <p className="orchestration-roster-subtitle">
-            选择模板加入 roster，再为每个节点配置模型与工具能力。
+            {t("settings.models.editor.rosterSubtitle")}
           </p>
         </div>
-        <span className="orchestration-roster-count" aria-label={`${agents.length} 个子代理`}>
+        <span className="orchestration-roster-count" aria-label={t("settings.models.editor.rosterCountAria", { count: agents.length })}>
           {agents.length}
         </span>
       </header>
 
       <div className="orchestration-roster-add-bar">
         <label className="orchestration-roster-add-field">
-          <span className="orchestration-roster-add-label">添加模板</span>
+          <span className="orchestration-roster-add-label">{t("settings.models.editor.rosterAddLabel")}</span>
           <select
             className="mcp-field-input orchestration-roster-add-select"
             value={pendingTemplateId}
             disabled={busy || addableTemplates.length === 0}
             onChange={(event) => setPendingTemplateId(event.target.value)}
-            aria-label="选择要添加的子代理模板"
+            aria-label={t("settings.models.editor.rosterSelectAria")}
           >
             <option value="">
-              {addableTemplates.length === 0 ? "已全部加入" : "选择模板…"}
+              {addableTemplates.length === 0 ? t("settings.models.editor.rosterAllAdded") : t("settings.models.editor.rosterSelectPlaceholder")}
             </option>
             {addableTemplates.map((template) => (
               <option key={template.id} value={template.id}>
@@ -87,7 +89,7 @@ export function SubagentOrchestrationRosterEditor({
           onClick={handleAddAgent}
         >
           <Plus size={16} strokeWidth={2.25} />
-          添加
+          {t("settings.models.editor.rosterAddButton")}
         </button>
       </div>
 
@@ -96,9 +98,9 @@ export function SubagentOrchestrationRosterEditor({
           <span className="orchestration-roster-empty-icon" aria-hidden>
             <Users size={22} strokeWidth={1.75} />
           </span>
-          <p className="orchestration-roster-empty-title">Roster 为空</p>
+          <p className="orchestration-roster-empty-title">{t("settings.models.editor.rosterEmptyTitle")}</p>
           <p className="orchestration-roster-empty-copy">
-            从上方选择一个内置或自定义模板，添加第一个子代理节点。
+            {t("settings.models.editor.rosterEmptyCopy")}
           </p>
         </div>
       ) : (
@@ -110,7 +112,7 @@ export function SubagentOrchestrationRosterEditor({
             const themeColor = agent.themeColor.trim() || defaultThemeColorForAgentKey(agent.agentKey);
             const modelLabel = agent.modelId
               ? `${provider?.name ?? agent.providerId} / ${agent.modelId}`
-              : "未配置模型";
+              : t("settings.models.editor.rosterNoModel");
             return (
               <li
                 key={agent.agentKey}
@@ -122,7 +124,7 @@ export function SubagentOrchestrationRosterEditor({
                   className="orchestration-roster-row-hit"
                   disabled={busy}
                   onClick={() => onEditAgent(agent.agentKey)}
-                  aria-label={`配置 ${displayName}`}
+                  aria-label={t("settings.models.editor.editAria", { name: displayName })}
                 >
                   <span className="orchestration-roster-avatar" aria-hidden>
                     {displayName.slice(0, 1).toUpperCase()}
@@ -131,13 +133,13 @@ export function SubagentOrchestrationRosterEditor({
                     <span className="orchestration-roster-row-top">
                       <span className="orchestration-roster-row-name">{displayName}</span>
                       <span className="orchestration-roster-status">
-                        {agent.enabled ? "已启用" : "已暂停"}
+                        {agent.enabled ? t("settings.models.editor.rosterEnabled") : t("settings.models.editor.rosterDisabled")}
                       </span>
                     </span>
                     <span className="orchestration-roster-row-meta">{modelLabel}</span>
                     <span className="orchestration-roster-row-foot">
                       <span className="orchestration-roster-domain">
-                        {template ? formatAgentDomainLabel(template.domain) : "模板缺失"}
+                        {template ? formatAgentDomainLabel(template.domain) : t("settings.models.editor.rosterTemplateMissing")}
                       </span>
                       <span className="orchestration-roster-key">{agent.agentKey}</span>
                     </span>
@@ -147,7 +149,7 @@ export function SubagentOrchestrationRosterEditor({
                 <div className="orchestration-roster-row-controls">
                   <label
                     className="mcp-toggle mcp-toggle-sm orchestration-roster-toggle"
-                    title={agent.enabled ? "已启用" : "已禁用"}
+                    title={agent.enabled ? t("settings.models.editor.rosterToggleEnabled") : t("settings.models.editor.rosterToggleDisabled")}
                     onClick={(event) => event.stopPropagation()}
                   >
                     <input
@@ -163,8 +165,8 @@ export function SubagentOrchestrationRosterEditor({
                     className="mcp-icon-button danger orchestration-roster-remove"
                     disabled={busy}
                     onClick={() => onRemoveAgent(index)}
-                    aria-label={`移除 ${displayName}`}
-                    title={`移除 ${displayName}`}
+                    aria-label={t("settings.models.editor.rosterRemoveAria", { name: displayName })}
+                    title={t("settings.models.editor.rosterRemoveTitle", { name: displayName })}
                   >
                     <Trash2 size={17} strokeWidth={2} />
                   </button>

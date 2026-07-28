@@ -447,7 +447,7 @@
   margin-top: 16px;
 }
 
-.settings-page .composition-resources-block.mcp-list-section {
+.settings-page .composition-resources-block.mcp-list-section:first-child {
   margin-top: 0;
 }
 

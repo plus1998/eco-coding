@@ -4182,11 +4182,10 @@ async function startCodexThreadRun(
             }
             await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
           },
-          onConfigReloadWait: ({ reason, activeThreadIds }) => {
-            const subject = reason === "model_catalog" ? "模型目录" : "会话配置";
+          onConfigReloadWait: ({ activeThreadIds }) => {
             updateThread(input.thread.id, {
               status: "running",
-              message: `Codex ${subject}已变更，正在等待活动会话结束：${activeThreadIds.join(", ")}`,
+              message: `Codex 模型目录已变更，正在等待活动会话结束：${activeThreadIds.join(", ")}`,
             });
           },
           recordRouteFingerprint: recordThreadRouteFingerprint,

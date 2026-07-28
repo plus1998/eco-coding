@@ -1667,7 +1667,7 @@ class _ActionTileState extends State<_ActionTile> {
         Expanded(
           child: Text(
             widget.label,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: activityFeedBodyStyle(
               context,
@@ -1763,6 +1763,8 @@ class _ActionSummaryLine extends StatelessWidget {
                           color: eco.textMuted,
                           height: 1.35,
                         )?.copyWith(fontWeight: FontWeight.w500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       )
                     : Text(
                         label,

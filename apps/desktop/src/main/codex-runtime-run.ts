@@ -35,7 +35,6 @@ import {
   type EcoAgentRuntimeConfig,
   type EcoProviderForCodexConfig,
   ensureCodexSkillsExtraRoots,
-  isCodexThreadConfigApplied,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
   readCodexThreadStatus,
@@ -110,7 +109,7 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   onPrepared?: (prepared: PreparedCodexRuntime) => void | Promise<void>;
   /** Reports active Codex turns that temporarily prevent an app-server config reload. */
   onConfigReloadWait?: (input: {
-    reason: "model_catalog" | "thread_config";
+    reason: "model_catalog";
     activeThreadIds: readonly string[];
   }) => void;
   recordRouteFingerprint: (threadId: string, routes: readonly RuntimeRoute[]) => void;
@@ -1104,7 +1103,6 @@ export async function runThreadRequestWithRuntimeProxy(
   ];
 
   try {
-    const previousPrepared = preparedRuntimeByThread.get(input.threadId);
     const mcpServers = input.resolveMcpServers?.() ?? [];
     const threadEnabledMcpServerNames = input.resolveEnabledMcpServerKeys?.() ?? [];
     const skillConfig = input.resolveSkillConfig?.() ?? [];
@@ -1152,20 +1150,8 @@ export async function runThreadRequestWithRuntimeProxy(
     });
     // Wait for readiness AFTER prepare: reload (when it runs) restarts MCP processes.
     await input.ensureMcpReady?.();
-    const currentClient = getGlobalCodexRuntimeLifecycle()?.getClient();
-    const codexThreadId = requireDeps().threadMap.getCodexThreadId(input.threadId);
-    const configChanged =
-      previousPrepared &&
-      JSON.stringify(previousPrepared.threadConfig) !== JSON.stringify(prepared.threadConfig);
-    const configNotApplied =
-      currentClient &&
-      codexThreadId &&
-      !isCodexThreadConfigApplied(currentClient, codexThreadId, prepared.threadConfig);
-    if (configChanged || configNotApplied) {
-      await coldReloadIdleCodexThreadForConfigChange(input.threadId, input);
-    }
-    // Commit only after the whole admission succeeds. A failed readiness check
-    // must not replace the last known-good policy for this Eco thread.
+    // The driver passes thread overrides to thread/start and thread/resume.
+    // Do not restart the shared app-server or block unrelated active threads.
     bindPreparedCodexRuntimeToThread(input.threadId, prepared);
     await input.onPrepared?.(prepared);
   } catch (error) {
@@ -1185,65 +1171,6 @@ export async function runThreadRequestWithRuntimeProxy(
 
   await input.onProxyReady?.(attempt);
   return input.run(attempt);
-}
-
-async function coldReloadIdleCodexThreadForConfigChange(
-  ecoThreadId: string,
-  waitOptions: Pick<RunThreadRequestWithRuntimeProxyInput, "signal" | "onConfigReloadWait">,
-): Promise<void> {
-  const runtimeDeps = requireDeps();
-  const codexThreadId = runtimeDeps.threadMap.getCodexThreadId(ecoThreadId.trim());
-  const lifecycle = getGlobalCodexRuntimeLifecycle();
-  const client = lifecycle?.getClient();
-  if (!codexThreadId || !client) {
-    return;
-  }
-
-  const reload = await waitForCodexConfigReload({
-    ...(waitOptions.signal ? { signal: waitOptions.signal } : {}),
-    check: async () => {
-      const targetStatus = await readCodexThreadStatus(client, codexThreadId);
-      if (targetStatus === "notLoaded") {
-        return { kind: "skip" };
-      }
-      if (targetStatus === "active") {
-        return { kind: "busy", activeThreadIds: [codexThreadId] };
-      }
-      if (targetStatus !== "idle" && targetStatus !== "systemError") {
-        throw new CodexResumeNotAvailable(
-          `Codex cannot reload changed session config while thread '${codexThreadId}' is ${targetStatus}.`,
-          { nextAction: "Restore a readable Codex thread status, then retry the message." },
-        );
-      }
-
-      const loadedThreadIds = await listLoadedCodexThreadIds(client);
-      const activeThreadIds = await filterActiveCodexThreadIds(
-        client,
-        loadedThreadIds.filter((loadedThreadId) => loadedThreadId !== codexThreadId),
-      );
-      return activeThreadIds.length > 0 ? { kind: "busy", activeThreadIds } : { kind: "ready" };
-    },
-    onWaiting: (activeThreadIds) => {
-      runtimeDeps.onStderr?.(
-        `[eco-codex] waiting to reload thread config ecoThread=${ecoThreadId}; active threads=${activeThreadIds.join(",")}`,
-      );
-      waitOptions.onConfigReloadWait?.({ reason: "thread_config", activeThreadIds });
-    },
-  });
-  if (reload === "skip") {
-    return;
-  }
-
-  runtimeDeps.onStderr?.(
-    `[eco-codex] cold reload app-server for changed thread config ecoThread=${ecoThreadId} codexThread=${codexThreadId}`,
-  );
-  await stopGlobalCodexRuntimeLifecycle();
-  const codexExecutable = resolveCodexExecutable();
-  if (!codexExecutable) {
-    throw new Error("Codex CLI is unavailable after stopping app-server for session config reload.");
-  }
-  await startSharedCodexRuntimeLifecycle(runtimeDeps, codexExecutable);
-  clearCodexModelCatalogCache();
 }
 
 async function listLoadedCodexThreadIds(client: CodexAppServerClient): Promise<string[]> {

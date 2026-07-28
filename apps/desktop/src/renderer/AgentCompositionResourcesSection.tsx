@@ -1,5 +1,6 @@
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type MainAgentConfigResource,
   type MainAgentPromptResource,
@@ -51,6 +52,7 @@ export function AgentCompositionResourcesSection({
 }: AgentCompositionResourcesSectionProps) {
   const [error, setError] = useState("");
   const [editorSession, setEditorSession] = useState<CompositionEditorSession>();
+  const { t } = useTranslation();
 
   const clearError = useCallback(() => {
     setError("");
@@ -187,7 +189,7 @@ export function AgentCompositionResourcesSection({
 
   const handleDeleteMainAgent = useCallback(
     async (config: MainAgentConfigResource) => {
-      if (!window.confirm(`确定要删除主代理配置「${config.name}」吗？`)) {
+      if (!window.confirm(t("settings.models.resources.confirmDeleteMainConfig", { name: config.name }))) {
         return;
       }
       await handleAsyncOperation(() => window.eco!.deleteMainAgentConfig(config.id));
@@ -207,7 +209,7 @@ export function AgentCompositionResourcesSection({
 
   const handleDeleteMainPrompt = useCallback(
     async (prompt: MainAgentPromptResource) => {
-      if (!window.confirm(`确定删除提示词「${prompt.name}」吗？`)) {
+      if (!window.confirm(t("settings.models.resources.confirmDeletePrompt", { name: prompt.name }))) {
         return;
       }
       await handleAsyncOperation(() => window.eco!.deleteMainAgentPrompt(prompt.id));
@@ -228,7 +230,7 @@ export function AgentCompositionResourcesSection({
 
   const handleDeleteSubagentOrchestration = useCallback(
     async (orchestration: SubagentOrchestrationResource) => {
-      if (!window.confirm(`确定删除子代理编排「${orchestration.name}」吗？`)) {
+      if (!window.confirm(t("settings.models.resources.confirmDeleteOrchestration", { name: orchestration.name }))) {
         return;
       }
       await handleAsyncOperation(() => window.eco!.deleteSubagentOrchestration(orchestration.id));
@@ -242,19 +244,19 @@ export function AgentCompositionResourcesSection({
 
       <section className="mcp-list-section composition-resources-block">
         <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">主代理配置</span>
+          <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainConfig")}</span>
           <button
             type="button"
             className="mcp-add-button"
             onClick={() => openCreateEditor("mainConfig")}
-            aria-label="新增主代理配置"
+            aria-label={t("settings.models.resources.mainConfigAdd")}
             disabled={busy}
           >
-            <Plus size={18} /> 新增
+            <Plus size={18} /> {t("settings.models.resources.add")}
           </button>
         </div>
         {userMainAgentConfigs.length === 0 ? (
-          <p className="mcp-list-empty">暂无主代理配置。点击「新增」配置模型、工具与 MCP 能力。</p>
+          <p className="mcp-list-empty">{t("settings.models.resources.mainConfigEmpty")}</p>
         ) : (
           <ul className="mcp-server-list">
             {userMainAgentConfigs.map((config) => (
@@ -270,7 +272,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => openEditEditor("mainConfig", config)}
-                    aria-label={`编辑 ${config.name}`}
+                    aria-label={t("settings.models.editor.editAria", { name: config.name })}
                     disabled={busy}
                   >
                     <Pencil size={18} />
@@ -279,7 +281,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => void handleCopyMainAgent(config)}
-                    aria-label={`复制 ${config.name}`}
+                    aria-label={t("settings.models.editor.copyAria", { name: config.name })}
                     disabled={busy}
                   >
                     <Copy size={18} />
@@ -288,7 +290,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button danger"
                     onClick={() => void handleDeleteMainAgent(config)}
-                    aria-label={`删除 ${config.name}`}
+                    aria-label={t("settings.models.editor.deleteAria", { name: config.name })}
                     disabled={busy}
                   >
                     <Trash2 size={18} />
@@ -302,21 +304,19 @@ export function AgentCompositionResourcesSection({
 
       <section className="mcp-list-section composition-resources-block">
         <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">主提示词</span>
+          <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainPrompt")}</span>
           <button
             type="button"
             className="mcp-add-button"
             onClick={() => openCreateEditor("prompt")}
-            aria-label="新增提示词"
+            aria-label={t("settings.models.resources.mainPromptAdd")}
             disabled={busy}
           >
-            <Plus size={18} /> 新增
+            <Plus size={18} /> {t("settings.models.resources.add")}
           </button>
         </div>
         {userMainPrompts.length === 0 ? (
-          <p className="mcp-list-empty">
-            暂无自定义提示词。「跟随核心内置提示词」不是持久化资源，请在 Composer 中选择内置模式。
-          </p>
+          <p className="mcp-list-empty">{t("settings.models.resources.mainPromptEmpty")}</p>
         ) : (
           <ul className="mcp-server-list">
             {userMainPrompts.map((prompt) => (
@@ -333,7 +333,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => openEditEditor("prompt", prompt)}
-                    aria-label={`编辑 ${prompt.name}`}
+                    aria-label={t("settings.models.editor.editAria", { name: prompt.name })}
                     disabled={busy}
                   >
                     <Pencil size={18} />
@@ -342,7 +342,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => void handleCopyMainPrompt(prompt)}
-                    aria-label={`复制 ${prompt.name}`}
+                    aria-label={t("settings.models.editor.copyAria", { name: prompt.name })}
                     disabled={busy}
                   >
                     <Copy size={18} />
@@ -351,7 +351,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button danger"
                     onClick={() => void handleDeleteMainPrompt(prompt)}
-                    aria-label={`删除 ${prompt.name}`}
+                    aria-label={t("settings.models.editor.deleteAria", { name: prompt.name })}
                     disabled={busy}
                   >
                     <Trash2 size={18} />
@@ -365,19 +365,19 @@ export function AgentCompositionResourcesSection({
 
       <section className="mcp-list-section composition-resources-block">
         <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">子代理编排</span>
+          <span className="mcp-list-toolbar-label">{t("settings.models.resources.subagentOrchestration")}</span>
           <button
             type="button"
             className="mcp-add-button"
             onClick={() => openCreateEditor("orchestration")}
-            aria-label="新增子代理编排"
+            aria-label={t("settings.models.resources.subagentOrchestrationAdd")}
             disabled={busy}
           >
-            <Plus size={18} /> 新增
+            <Plus size={18} /> {t("settings.models.resources.add")}
           </button>
         </div>
         {userSubagentOrchestrationResources.length === 0 ? (
-          <p className="mcp-list-empty">暂无子代理编排。点击「新增」配置子代理 roster、模型与工具。</p>
+          <p className="mcp-list-empty">{t("settings.models.resources.subagentOrchestrationEmpty")}</p>
         ) : (
           <ul className="mcp-server-list">
             {userSubagentOrchestrationResources.map((orchestration) => (
@@ -385,7 +385,7 @@ export function AgentCompositionResourcesSection({
                 <div className="mcp-server-summary">
                   <span className="mcp-server-name">{orchestration.name}</span>
                   <span className="mcp-server-meta">
-                    {orchestration.domain} · {orchestration.agents.length} 个子代理
+                    {orchestration.domain} · {t("settings.models.resources.agentCount", { count: orchestration.agents.length })}
                   </span>
                 </div>
                 <div className="mcp-server-actions">
@@ -393,7 +393,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => openEditEditor("orchestration", orchestration)}
-                    aria-label={`编辑 ${orchestration.name}`}
+                    aria-label={t("settings.models.editor.editAria", { name: orchestration.name })}
                     disabled={busy}
                   >
                     <Pencil size={18} />
@@ -402,7 +402,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button"
                     onClick={() => void handleCopySubagentOrchestration(orchestration)}
-                    aria-label={`复制 ${orchestration.name}`}
+                    aria-label={t("settings.models.editor.copyAria", { name: orchestration.name })}
                     disabled={busy}
                   >
                     <Copy size={18} />
@@ -411,7 +411,7 @@ export function AgentCompositionResourcesSection({
                     type="button"
                     className="mcp-icon-button danger"
                     onClick={() => void handleDeleteSubagentOrchestration(orchestration)}
-                    aria-label={`删除 ${orchestration.name}`}
+                    aria-label={t("settings.models.editor.deleteAria", { name: orchestration.name })}
                     disabled={busy}
                   >
                     <Trash2 size={18} />

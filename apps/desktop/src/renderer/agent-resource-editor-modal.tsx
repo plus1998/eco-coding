@@ -73,21 +73,21 @@ export function AgentResourceEditorModal({
   const scopeTitle =
     scope === "mainConfig"
       ? mode === "edit"
-        ? "编辑主代理配置"
+        ? t("settings.models.editor.mainConfigEdit")
         : mode === "copy"
-          ? "复制主代理配置"
-          : "新增主代理配置"
+          ? t("settings.models.editor.mainConfigCopy")
+          : t("settings.models.editor.mainConfigCreate")
       : scope === "prompt"
         ? mode === "edit"
-          ? "编辑提示词"
+          ? t("settings.models.editor.promptEdit")
           : mode === "copy"
-            ? "复制提示词"
-            : "新增提示词"
+            ? t("settings.models.editor.promptCopy")
+            : t("settings.models.editor.promptCreate")
         : mode === "edit"
-          ? "编辑子代理编排"
+          ? t("settings.models.editor.orchestrationEdit")
           : mode === "copy"
-            ? "复制子代理编排"
-            : "新增子代理编排";
+            ? t("settings.models.editor.orchestrationCopy")
+            : t("settings.models.editor.orchestrationCreate");
   const modalTitle =
     scopeTitle ||
     (mode === "edit"
@@ -276,7 +276,7 @@ export function AgentResourceEditorModal({
               </label>
               {scope !== "prompt" ? (
                 <label className="mcp-field">
-                  <span className="mcp-field-label">场景域</span>
+                  <span className="mcp-field-label">{t("settings.models.editor.domain")}</span>
                   <select
                     className="mcp-field-input"
                     value={form.preset}
@@ -310,13 +310,13 @@ export function AgentResourceEditorModal({
             <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--prompt">
               <label className="mcp-field composition-guidance-field">
                 <span className="mcp-field-label">{t("settings.models.node.mainPrompt")}</span>
-                <span className="composition-field-hint">将作为自定义追加提示词保存为独立资源。</span>
+                <span className="composition-field-hint">{t("settings.models.editor.promptHint")}</span>
                 <textarea
                   className="mcp-field-input mcp-field-textarea composition-guidance-textarea models-agent-prompt-textarea"
                   value={form.mainPrompt}
                   disabled={busy}
                   onChange={(event) => patch({ mainPrompt: event.target.value })}
-                  placeholder="补充主代理的行为说明、风格约束或领域偏好…"
+                  placeholder={t("settings.models.editor.promptPlaceholder")}
                 />
               </label>
             </section>
@@ -325,14 +325,14 @@ export function AgentResourceEditorModal({
           {scope === "orchestration" ? (
             <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--guidance">
               <label className="mcp-field composition-guidance-field">
-                <span className="mcp-field-label">编排策略说明</span>
-                <span className="composition-field-hint">写给主代理的调度说明，可选。</span>
+                <span className="mcp-field-label">{t("settings.models.editor.guidanceLabel")}</span>
+                <span className="composition-field-hint">{t("settings.models.editor.guidanceHint")}</span>
                 <textarea
                   className="mcp-field-input mcp-field-textarea composition-guidance-textarea"
                   value={form.guidancePrompt}
                   disabled={busy}
                   onChange={(event) => patch({ guidancePrompt: event.target.value })}
-                  placeholder="例如：仅在需要代码探索时调用 Explore，复杂实现交给 Coder。"
+                  placeholder={t("settings.models.editor.guidancePlaceholder")}
                 />
               </label>
             </section>

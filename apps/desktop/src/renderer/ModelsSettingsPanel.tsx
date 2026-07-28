@@ -113,7 +113,7 @@ export function ModelsSettingsPanel({
   const { t } = useTranslation();
   const modelsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
     { id: "subagents", label: t("settings.models.library") },
-    { id: "compositionParts", label: "编排组件" },
+    { id: "compositionParts", label: t("settings.models.resources.compositionParts") },
     { id: "presets", label: t("settings.models.presets") },
   ];
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
@@ -628,10 +628,10 @@ export function ModelsSettingsPanel({
         <>
           {defaultOrchestrationSelection && hasCompleteOrchestrationSelection(defaultOrchestrationSelection) ? (
             <p className="settings-section-subtitle">
-              当前默认编排：{defaultOrchestrationSelection.mainAgentConfigId}
+              {t("settings.models.resources.currentOrchestration", { id: defaultOrchestrationSelection.mainAgentConfigId })}
             </p>
           ) : (
-            <p className="settings-section-subtitle">尚未设置默认编排组合。</p>
+            <p className="settings-section-subtitle">{t("settings.models.resources.noOrchestration")}</p>
           )}
           <AgentCompositionResourcesSection
             settings={settings}

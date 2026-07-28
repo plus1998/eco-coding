@@ -11,6 +11,8 @@ class ShimmerText extends StatefulWidget {
     required this.baseColor,
     this.highlightColor,
     this.duration = const Duration(milliseconds: 1800),
+    this.maxLines,
+    this.overflow,
   });
 
   final String text;
@@ -18,6 +20,8 @@ class ShimmerText extends StatefulWidget {
   final Color baseColor;
   final Color? highlightColor;
   final Duration duration;
+  final int? maxLines;
+  final TextOverflow? overflow;
 
   @override
   State<ShimmerText> createState() => _ShimmerTextState();
@@ -83,7 +87,7 @@ class _ShimmerTextState extends State<ShimmerText>
               ],
             ).createShader(bounds);
           },
-          child: Text(widget.text, style: resolvedStyle),
+          child: Text(widget.text, style: resolvedStyle, maxLines: widget.maxLines, overflow: widget.overflow ?? TextOverflow.clip),
         );
       },
     );

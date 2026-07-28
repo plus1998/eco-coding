@@ -15067,8 +15067,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .composition-resources-panel > .composition-resources-block + .composition-resources-block {
   margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border-subtle);
 }
 
 .composition-resources-block .mcp-list-toolbar {
