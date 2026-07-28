@@ -156,3 +156,104 @@ test.skipIf(!sqliteAvailable)("candidate model manual pricing preserves zero val
   });
   expect(store.listCandidateModels(provider.id)[0]?.manualSpec).toEqual(saved.manualSpec);
 });
+
+test.skipIf(!sqliteAvailable)("deletes the only unreferenced provider and its candidate models", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-only-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const provider = store.saveProvider({
+    name: "Only",
+    baseUrl: "https://api.example.com",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  store.saveCandidateModel({
+    providerId: provider.id,
+    modelId: "m1",
+  });
+
+  store.deleteProvider(provider.id);
+
+  expect(store.listProviders()).toEqual([]);
+  expect(store.listCandidateModels(provider.id)).toEqual([]);
+});
+
+test.skipIf(!sqliteAvailable)("rejects deleting a provider referenced by a route profile", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-route-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const provider = store.saveProvider({
+    name: "Referenced",
+    baseUrl: "https://api.example.com",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  const candidate = store.saveCandidateModel({
+    providerId: provider.id,
+    modelId: "m1",
+  });
+  store.saveRouteProfile({
+    name: "Uses provider",
+    routes: [
+      { role: "planner", providerId: provider.id, modelId: "m1" },
+      { role: "explore", providerId: provider.id, modelId: "m1" },
+      { role: "architect", providerId: provider.id, modelId: "m1" },
+      { role: "coder", providerId: provider.id, modelId: "m1" },
+      { role: "reviewer", providerId: provider.id, modelId: "m1" },
+      { role: "tester", providerId: provider.id, modelId: "m1" },
+    ],
+  });
+
+  expect(() => store.deleteProvider(provider.id)).toThrow("referenced by route profile");
+  expect(store.listProviders().map((entry) => entry.id)).toEqual([provider.id]);
+  expect(store.listCandidateModels(provider.id).map((entry) => entry.id)).toEqual([candidate.id]);
+  expect(store.listRouteProfiles()[0]?.routes.every((route) => route.providerId === provider.id)).toBe(
+    true,
+  );
+});
+
+test.skipIf(!sqliteAvailable)("deleting an unreferenced provider does not rewrite routes", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-unreferenced-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const retained = store.saveProvider({
+    name: "Retained",
+    baseUrl: "https://retained.example.com",
+    apiKey: "k",
+    defaultModel: "retained-model",
+    enabled: true,
+  });
+  const removed = store.saveProvider({
+    name: "Removed",
+    baseUrl: "https://removed.example.com",
+    apiKey: "k",
+    defaultModel: "removed-model",
+    enabled: true,
+  });
+  store.saveRouteProfile({
+    name: "Retained routes",
+    routes: [
+      { role: "planner", providerId: retained.id, modelId: "planner-model" },
+      { role: "explore", providerId: retained.id, modelId: "explore-model" },
+      { role: "architect", providerId: retained.id, modelId: "architect-model" },
+      { role: "coder", providerId: retained.id, modelId: "coder-model" },
+      { role: "reviewer", providerId: retained.id, modelId: "reviewer-model" },
+      { role: "tester", providerId: retained.id, modelId: "tester-model" },
+    ],
+  });
+  const routesBeforeDelete = store.listRouteProfiles()[0]?.routes;
+
+  store.deleteProvider(removed.id);
+
+  expect(store.listProviders().map((entry) => entry.id)).toEqual([retained.id]);
+  expect(store.listRouteProfiles()[0]?.routes).toEqual(routesBeforeDelete);
+});
+
+test.skipIf(!sqliteAvailable)("rejects deleting an unknown provider", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-missing-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  expect(() => store.deleteProvider("missing")).toThrow("找不到 Provider：missing");
+});

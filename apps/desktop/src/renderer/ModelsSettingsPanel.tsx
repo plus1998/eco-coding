@@ -41,6 +41,7 @@ import type {
   OrchestrationSelection,
   ProviderConfigInput,
   ProviderConfigView,
+  ProviderDeleteReference,
   ProxyBridgeSettingsSnapshot,
   SkillsListResult,
 } from "../shared/ipc";
@@ -409,10 +410,6 @@ export function ModelsSettingsPanel({
     if (!window.eco || !providerForm.id) {
       return;
     }
-    if (settings.providers.length <= 1) {
-      setModalError(t("settings.models.keepProvider"));
-      return;
-    }
     const providerName = providerForm.name.trim() || t("settings.models.providerFallback");
     if (!window.confirm(t("settings.models.confirmDeleteProvider", { name: providerName }))) {
       return;
@@ -422,7 +419,22 @@ export function ModelsSettingsPanel({
     setModalError(undefined);
     onSavingChange?.(true);
     try {
-      await window.eco.deleteProvider(deletedId);
+      const result = await window.eco.deleteProvider(deletedId);
+      if (!result.ok) {
+        if (result.reason === "not_found") {
+          setModalError(t("settings.models.providerDeleteNotFound"));
+          await refreshSettings();
+          return;
+        }
+        setModalError(
+          t("settings.models.providerDeleteInUse", {
+            references: result.references
+              .map((reference) => formatProviderDeleteReference(reference, t))
+              .join(t("settings.models.providerDeleteReferenceSeparator")),
+          }),
+        );
+        return;
+      }
       await refreshSettings();
       setModelsCache((current) => {
         const next = { ...current };
@@ -667,7 +679,6 @@ export function ModelsSettingsPanel({
           error={modalError}
           testingModelKey={testingProviderKey}
           busy={busy}
-          canDelete={settings.providers.length > 1}
           onClose={closeProviderModal}
           onSave={(options) => saveProvider(options)}
           onDelete={() => void deleteProvider()}
@@ -690,7 +701,6 @@ function ProviderEditorModal({
   error,
   testingModelKey,
   busy,
-  canDelete,
   onClose,
   onSave,
   onDelete,
@@ -707,7 +717,6 @@ function ProviderEditorModal({
   error?: string | undefined;
   testingModelKey?: string | null | undefined;
   busy?: boolean | undefined;
-  canDelete: boolean;
   onClose: () => void;
   onSave: (options?: { closeOnSuccess?: boolean }) => void | Promise<ProviderConfigView | undefined>;
   onDelete: () => void;
@@ -1007,8 +1016,7 @@ function ProviderEditorModal({
               type="button"
               className="mcp-uninstall-button"
               onClick={onDelete}
-              disabled={busy || ensuringProvider || !canDelete}
-              title={canDelete ? undefined : t("settings.models.keepProvider")}
+              disabled={busy || ensuringProvider}
             >
               <Trash2 size={16} />
               {t("common.delete")}
@@ -1146,6 +1154,19 @@ function formatModelPreview(modelId: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 10)}…${normalized.slice(-10)}`;
+}
+
+function formatProviderDeleteReference(
+  reference: ProviderDeleteReference,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  const key = {
+    route_profile: "settings.models.providerDeleteReference.routeProfile",
+    main_agent_config: "settings.models.providerDeleteReference.mainAgentConfig",
+    subagent_orchestration: "settings.models.providerDeleteReference.subagentOrchestration",
+    active_thread: "settings.models.providerDeleteReference.activeThread",
+  }[reference.kind];
+  return t(key, { name: reference.name });
 }
 
 function selectPresetDefaultProvider(

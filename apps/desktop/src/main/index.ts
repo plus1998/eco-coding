@@ -261,6 +261,7 @@ import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
+import { collectProviderDeleteReferences } from "./provider-deletion";
 import {
   type AnthropicProxyRoute,
   type AnthropicProxyStartOptions,
@@ -2461,7 +2462,19 @@ function registerIpcHandlers(): void {
     if (typeof providerId !== "string" || !providerId.trim()) {
       throw new Error("Provider id is required.");
     }
-    providerStore.deleteProvider(providerId.trim());
+    const trimmedProviderId = providerId.trim();
+    if (!providerStore.getProviderWithSecret(trimmedProviderId)) {
+      return { ok: false as const, reason: "not_found" as const, references: [] };
+    }
+    const references = collectProviderDeleteReferences(
+      trimmedProviderId,
+      getModelSettingsSnapshot(),
+      conversationStore.listThreads(),
+    );
+    if (references.length > 0) {
+      return { ok: false as const, reason: "in_use" as const, references };
+    }
+    providerStore.deleteProvider(trimmedProviderId);
     emitSettingsUpdated();
     return { ok: true as const };
   });

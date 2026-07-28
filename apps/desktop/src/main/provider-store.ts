@@ -218,34 +218,26 @@ export class ProviderStore {
   }
 
   deleteProvider(id: string): void {
-    const providers = this.listProviderRows();
-    if (providers.length <= 1) {
-      throw new Error("至少保留一个 Provider。");
-    }
     if (!this.getProviderRow(id)) {
       throw new Error(`找不到 Provider：${id}`);
     }
 
-    const fallback = providers.find((provider) => provider.id !== id);
-    if (!fallback) {
-      throw new Error("至少保留一个 Provider。");
+    const referencedRoute = this.db
+      .prepare("SELECT profile_id FROM role_routes WHERE provider_id = ? LIMIT 1")
+      .get(id) as { profile_id: string } | undefined;
+    if (referencedRoute) {
+      throw new Error(`Provider ${id} is referenced by route profile ${referencedRoute.profile_id}.`);
     }
 
-    for (const profile of this.listRouteProfiles()) {
-      const nextRoutes = profile.routes.map((route) => {
-        if (route.providerId !== id) {
-          return route;
-        }
-        return {
-          ...route,
-          providerId: fallback.id,
-          modelId: fallback.default_model,
-        };
-      });
-      this.saveProfileRoutes(profile.id, nextRoutes);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM provider_candidate_models WHERE provider_id = ?").run(id);
+      this.db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
     }
-
-    this.db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
   }
 
   listRouteProfiles(): RouteProfileView[] {

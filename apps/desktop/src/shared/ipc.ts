@@ -703,6 +703,26 @@ export interface ProviderConfigView {
   updatedAt: string;
 }
 
+export type ProviderDeleteReferenceKind =
+  | "route_profile"
+  | "main_agent_config"
+  | "subagent_orchestration"
+  | "active_thread";
+
+export interface ProviderDeleteReference {
+  kind: ProviderDeleteReferenceKind;
+  id: string;
+  name: string;
+}
+
+export type ProviderDeleteResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "not_found" | "in_use";
+      references: ProviderDeleteReference[];
+    };
+
 export type ThinkingEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ModelsDevMapping {
