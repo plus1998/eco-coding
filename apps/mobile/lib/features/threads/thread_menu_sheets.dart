@@ -12,6 +12,7 @@ import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
+import '../../core/utils/package_script_search.dart';
 import '../../core/utils/strip_ansi.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../projects/project_providers.dart';
@@ -403,6 +404,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   Map<String, String> _scriptArgsByName = {};
   String? _editingScript;
   final TextEditingController _argsInputController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   bool _running = false;
   bool _stopping = false;
   String? _errorMessage;
@@ -443,6 +445,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   void dispose() {
     _taskPollTimer?.cancel();
     _argsInputController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -585,6 +588,10 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                     ? '${listing.packageName} · ${listing.packageManager}'
                     : listing.packageManager;
                 final isRunning = _running || (_activeTask?.isActive ?? false);
+                final filteredScripts = filterPackageScripts(
+                  listing.scripts,
+                  _searchController.text,
+                );
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -593,12 +600,44 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                         onRefresh: _refresh,
                         child: ListView(
                           controller: widget.scrollController,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                           children: [
                             _SheetHeader(
                               title: context.l10n.threadNpmScripts,
                               subtitle: subtitle,
                             ),
+                            if (listing.scripts.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: _searchController,
+                                textInputAction: TextInputAction.search,
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                  hintText:
+                                      context.l10n.threadNpmScriptsSearchHint,
+                                  prefixIcon: const Icon(
+                                    EcoIcons.search,
+                                    size: 19,
+                                  ),
+                                  suffixIcon: _searchController.text.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          tooltip:
+                                              context.l10n.threadSearchClear,
+                                          icon: const Icon(
+                                            EcoIcons.close,
+                                            size: 18,
+                                          ),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() {});
+                                          },
+                                        ),
+                                ),
+                              ),
+                            ],
                             if (_errorMessage != null) ...[
                               const SizedBox(height: 12),
                               _PackageScriptErrorNotice(
@@ -618,8 +657,18 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                   ),
                                 ),
                               )
+                            else if (filteredScripts.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 24),
+                                child: Center(
+                                  child: Text(
+                                    context.l10n.threadNpmScriptsNoMatches,
+                                    style: TextStyle(color: eco.textMuted),
+                                  ),
+                                ),
+                              )
                             else
-                              ...listing.scripts.map((script) {
+                              ...filteredScripts.map((script) {
                                 final savedArgs =
                                     _scriptArgsByName[script.name] ?? '';
                                 final isEditingArgs =

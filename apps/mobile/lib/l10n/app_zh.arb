@@ -314,6 +314,8 @@
   "threadTaskPending": "待执行",
   "threadDesktopDisconnected": "未连接 Desktop",
   "threadNpmScriptsEmpty": "未找到 package.json scripts",
+  "threadNpmScriptsSearchHint": "搜索脚本",
+  "threadNpmScriptsNoMatches": "没有匹配的脚本",
   "threadExtraArgs": "附加参数",
   "threadExtraArgsValue": "附加参数：{args}",
   "threadRun": "运行",

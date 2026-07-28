@@ -359,6 +359,8 @@
   "threadTaskPending": "Pending",
   "threadDesktopDisconnected": "Desktop is not connected",
   "threadNpmScriptsEmpty": "No package.json scripts found",
+  "threadNpmScriptsSearchHint": "Search scripts",
+  "threadNpmScriptsNoMatches": "No matching scripts",
   "threadExtraArgs": "Extra arguments",
   "threadExtraArgsValue": "Extra arguments: {args}",
   "threadRun": "Run",

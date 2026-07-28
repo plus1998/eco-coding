@@ -1026,6 +1026,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNpmScriptsEmpty => '未找到 package.json scripts';
 
   @override
+  String get threadNpmScriptsSearchHint => '搜索脚本';
+
+  @override
+  String get threadNpmScriptsNoMatches => '没有匹配的脚本';
+
+  @override
   String get threadExtraArgs => '附加参数';
 
   @override

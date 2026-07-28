@@ -1095,6 +1095,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadNpmScriptsEmpty => 'No package.json scripts found';
 
   @override
+  String get threadNpmScriptsSearchHint => 'Search scripts';
+
+  @override
+  String get threadNpmScriptsNoMatches => 'No matching scripts';
+
+  @override
   String get threadExtraArgs => 'Extra arguments';
 
   @override

@@ -1982,6 +1982,18 @@ abstract class AppLocalizations {
   /// **'No package.json scripts found'**
   String get threadNpmScriptsEmpty;
 
+  /// No description provided for @threadNpmScriptsSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search scripts'**
+  String get threadNpmScriptsSearchHint;
+
+  /// No description provided for @threadNpmScriptsNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching scripts'**
+  String get threadNpmScriptsNoMatches;
+
   /// No description provided for @threadExtraArgs.
   ///
   /// In en, this message translates to:
