@@ -22,9 +22,22 @@ export interface ListUpstreamModelsRequest {
   apiKey?: string;
 }
 
+export type ProviderRequestErrorCode =
+  | "provider_not_found"
+  | "provider_base_url_missing"
+  | "base_url_missing";
+
+export interface ProviderRequestError {
+  ok: false;
+  error: string;
+  errorCode?: ProviderRequestErrorCode;
+  providerId?: string;
+  providerName?: string;
+}
+
 export type ListUpstreamModelsResult =
   | { ok: true; models: UpstreamModelOption[] }
-  | { ok: false; error: string };
+  | ProviderRequestError;
 
 /** Thinking effort sent on connectivity tests (always disabled). */
 export const ROUTE_TEST_THINKING_EFFORT = "off" as const;
@@ -41,7 +54,7 @@ export interface TestProviderConnectionRequest {
 
 export type TestProviderConnectionResult =
   | { ok: true; reply: string }
-  | { ok: false; error: string };
+  | ProviderRequestError;
 
 export interface TestRoleRouteItem {
   role: string;

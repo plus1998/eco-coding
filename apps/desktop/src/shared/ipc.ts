@@ -222,6 +222,7 @@ export type {
 export type {
   ListUpstreamModelsRequest,
   ListUpstreamModelsResult,
+  ProviderRequestError,
   RoleRouteTestResult,
   TestProviderConnectionRequest,
   TestProviderConnectionResult,

@@ -42,6 +42,7 @@ import type {
   ProviderConfigInput,
   ProviderConfigView,
   ProviderDeleteReference,
+  ProviderRequestError,
   ProxyBridgeSettingsSnapshot,
   SkillsListResult,
 } from "../shared/ipc";
@@ -295,12 +296,13 @@ export function ModelsSettingsPanel({
       };
       const result = await window.eco.listProviderModels(request);
       if (!result.ok) {
+        const error = localizeProviderRequestError(result, t);
         setModelsCache((current) => ({
           ...current,
-          [cacheKey]: { models: current[cacheKey]?.models ?? [], error: result.error },
+          [cacheKey]: { models: current[cacheKey]?.models ?? [], error },
         }));
         if (!options?.silent) {
-          setModalError(result.error);
+          setModalError(error);
         }
         return;
       }
@@ -507,7 +509,7 @@ export function ModelsSettingsPanel({
           }),
         );
       } else {
-        showProviderTestMessage("error", result.error ?? t("settings.models.testFailed"));
+        showProviderTestMessage("error", localizeProviderRequestError(result, t));
       }
     } catch (caught) {
       showProviderTestMessage("error", caught instanceof Error ? caught.message : String(caught));
@@ -1167,6 +1169,26 @@ function formatProviderDeleteReference(
     active_thread: "settings.models.providerDeleteReference.activeThread",
   }[reference.kind];
   return t(key, { name: reference.name });
+}
+
+function localizeProviderRequestError(
+  error: ProviderRequestError,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  switch (error.errorCode) {
+    case "provider_not_found":
+      return t("settings.models.providerNotFound", {
+        id: error.providerId || t("settings.models.providerFallback"),
+      });
+    case "provider_base_url_missing":
+      return t("settings.models.providerBaseUrlMissing", {
+        name: error.providerName || t("settings.models.providerFallback"),
+      });
+    case "base_url_missing":
+      return t("settings.models.baseUrlRequired");
+    default:
+      return error.error || t("settings.models.testFailed");
+  }
 }
 
 function selectPresetDefaultProvider(

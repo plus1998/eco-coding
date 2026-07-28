@@ -191,6 +191,9 @@ export const i18nCatalogs = {
       "settings.models.dedupeHint": "（{{groups}} 组模型服务商+模型，共 {{count}} 个 Agent）",
       "settings.models.failedFallback": "失败",
       "settings.models.baseUrlRequired": "请先填写 baseURL。",
+      "settings.models.providerBaseUrlMissing":
+        "模型服务商「{{name}}」的 baseURL 为空，请在设置中填写服务地址。",
+      "settings.models.providerNotFound": "找不到模型服务商：{{id}}。",
       "settings.models.testModelRequired": "请先在候选模型中选择要测试的模型。",
       "settings.models.providerTestPassed": "「{{provider}} / {{model}}」测试成功，耗时 {{duration}}",
       "settings.models.testFailed": "测试失败。",
@@ -1429,6 +1432,9 @@ export const i18nCatalogs = {
       "settings.models.dedupeHint": " ({{groups}} provider/model groups across {{count}} Agents)",
       "settings.models.failedFallback": "Failed",
       "settings.models.baseUrlRequired": "Enter a baseURL first.",
+      "settings.models.providerBaseUrlMissing":
+        "Model provider “{{name}}” has no baseURL. Enter its service URL in settings.",
+      "settings.models.providerNotFound": "Model provider not found: {{id}}.",
       "settings.models.testModelRequired": "Choose a candidate model to test first.",
       "settings.models.providerTestPassed": "“{{provider}} / {{model}}” passed in {{duration}}",
       "settings.models.testFailed": "Test failed.",

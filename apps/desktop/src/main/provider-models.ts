@@ -8,6 +8,7 @@ import type {
   TestRoleRoutesRequest,
   TestRoleRoutesResult,
   UpstreamModelOption,
+  ProviderRequestError,
 } from "../shared/models";
 import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
@@ -947,7 +948,7 @@ function resolveProviderCredentials(
   request: ListUpstreamModelsRequest | TestProviderConnectionRequest,
 ):
   | { ok: true; baseUrl: string; requestPath: string; apiCompat: UpstreamApiCompat; apiKey: string }
-  | { ok: false; error: string } {
+  | ProviderRequestError {
   const baseUrl = request.baseUrl?.trim();
   const inlineApiKey = request.apiKey?.trim();
   const inlineRequestPath =
@@ -956,13 +957,21 @@ function resolveProviderCredentials(
   if (request.providerId) {
     const provider = store.getProviderWithSecret(request.providerId);
     if (!provider) {
-      return { ok: false, error: `找不到 Provider：${request.providerId}` };
+      return {
+        ok: false,
+        error: `找不到 Provider：${request.providerId}`,
+        errorCode: "provider_not_found",
+        providerId: request.providerId,
+      };
     }
     const resolvedBaseUrl = (baseUrl || provider.baseUrl).trim();
     if (!resolvedBaseUrl) {
       return {
         ok: false,
         error: `Provider「${provider.name}」的 baseURL 为空，请在设置中填写服务地址。`,
+        errorCode: "provider_base_url_missing",
+        providerId: provider.id,
+        providerName: provider.name,
       };
     }
     const resolvedRequestPath =
@@ -986,7 +995,7 @@ function resolveProviderCredentials(
   }
 
   if (!baseUrl) {
-    return { ok: false, error: "请先填写 baseURL。" };
+    return { ok: false, error: "请先填写 baseURL。", errorCode: "base_url_missing" };
   }
 
   const inlineApiCompat =

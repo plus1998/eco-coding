@@ -48,10 +48,37 @@ import {
   resolveModelsListUrl,
   splitBaseUrlAndRequestPath,
   buildRouteTestDedupeKey,
+  listProviderUpstreamModels,
   testProviderConnection,
   testRoleRoutes,
 } from "../src/main/provider-models";
 import type { ProviderStore } from "../src/main/provider-store";
+
+describe("listProviderUpstreamModels", () => {
+  test("returns localizable details when a saved provider has no baseURL", async () => {
+    const store = {
+      getProviderWithSecret: () => ({
+        id: "omlx",
+        name: "oMLX",
+        baseUrl: "",
+        requestPath: "",
+        apiCompat: "anthropic",
+        apiKey: "",
+        enabled: true,
+      }),
+    } as unknown as ProviderStore;
+
+    const result = await listProviderUpstreamModels(store, { providerId: "omlx" });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Provider「oMLX」的 baseURL 为空，请在设置中填写服务地址。",
+      errorCode: "provider_base_url_missing",
+      providerId: "omlx",
+      providerName: "oMLX",
+    });
+  });
+});
 
 describe("splitBaseUrlAndRequestPath", () => {
   test("splits legacy baseURL with path suffix", () => {
@@ -288,6 +315,33 @@ describe("buildOpenAICompatTestRequestBody", () => {
 });
 
 describe("testProviderConnection", () => {
+  test("returns localizable details when a saved provider has no baseURL", async () => {
+    const store = {
+      getProviderWithSecret: () => ({
+        id: "omlx",
+        name: "oMLX",
+        baseUrl: "",
+        requestPath: "",
+        apiCompat: "anthropic",
+        apiKey: "",
+        enabled: true,
+      }),
+    } as unknown as ProviderStore;
+
+    const result = await testProviderConnection(store, {
+      providerId: "omlx",
+      defaultModel: "model-a",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Provider「oMLX」的 baseURL 为空，请在设置中填写服务地址。",
+      errorCode: "provider_base_url_missing",
+      providerId: "omlx",
+      providerName: "oMLX",
+    });
+  });
+
   test("requires default model", async () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const result = await testProviderConnection(store, {
