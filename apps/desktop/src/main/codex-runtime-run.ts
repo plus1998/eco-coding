@@ -1517,7 +1517,6 @@ export function createCodexRuntimeDriver(
         runtimeDeps.threadMap.setMapping(ecoThreadId, codexThreadId);
         runtimeDeps.onCodexThreadMapped?.(codexThreadId);
       }
-      // Child events may have been buffered while only the parent Codex link was known.
       eventAdapter?.flushAllPendingEvents();
     },
   });

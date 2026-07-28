@@ -102,6 +102,8 @@ export interface CodexAppServerDriverOptions {
   /** Exact immutable role config is known to own the existing child on this client. */
   threadConfigAlreadyApplied?: boolean;
   onThreadMapped?: (ecoThreadId: string, codexThreadId: string) => void;
+  /** Fires as soon as turn/start returns a turn id (before tools run). */
+  onTurnBound?: (input: { ecoThreadId: string; codexThreadId: string; turnId: string }) => void;
   onNotification?: CodexAppServerNotificationHandler;
   onItemNotification?: (method: string, params: unknown) => void;
   logNotifications?: boolean;
@@ -154,6 +156,9 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   private readonly existingCodexThreadId: string | undefined;
   private readonly threadConfigAlreadyApplied: boolean;
   private readonly onThreadMapped: ((ecoThreadId: string, codexThreadId: string) => void) | undefined;
+  private readonly onTurnBound:
+    | ((input: { ecoThreadId: string; codexThreadId: string; turnId: string }) => void)
+    | undefined;
   private readonly onItemNotification: ((method: string, params: unknown) => void) | undefined;
   private readonly logNotifications: boolean;
   private readonly turnRouteRegistry: CodexTurnRouteRegistry | undefined;
@@ -170,6 +175,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
     this.existingCodexThreadId = options.existingCodexThreadId;
     this.threadConfigAlreadyApplied = options.threadConfigAlreadyApplied ?? false;
     this.onThreadMapped = options.onThreadMapped;
+    this.onTurnBound = options.onTurnBound;
     this.onItemNotification = options.onItemNotification;
     this.logNotifications = options.logNotifications ?? false;
     this.turnRouteRegistry = options.turnRouteRegistry;
@@ -421,6 +427,11 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
               routeBound = true;
               this.activeTurnRoutes.set(activeTurnKey, { codexThreadId, turnId });
             }
+            this.onTurnBound?.({
+              ecoThreadId: input.threadId,
+              codexThreadId,
+              turnId,
+            });
           },
         },
       );

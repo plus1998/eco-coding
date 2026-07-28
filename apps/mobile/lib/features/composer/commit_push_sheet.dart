@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
+import '../../core/widgets/eco_pressable.dart';
 import '../threads/thread_providers.dart';
 
 Future<String?> showCommitPushSheet({
@@ -423,72 +428,46 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
 
   Future<void> _pickModel() async {
     if (_modelOptions.isEmpty || _loadingModels) return;
-    final selected = await showEcoModalBottomSheet<String>(
+    final selected = await showEcoActionSheet<String>(
       context: context,
-      backgroundColor: ecoColors(context).bgMenu,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      isScrollControlled: true,
+      builder: (sheetContext) => EcoSheetScaffold(
+        title: context.l10n.commitSelectModel,
+        maxHeightFactor: 0.62,
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 8),
+          children: [
+            EcoGroupedSection(
+              topSpacing: 4,
+              child: Column(
+                children: [
+                  for (var i = 0; i < _modelOptions.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 34),
+                    _CommitModelOptionTile(
+                      option: _modelOptions[i],
+                      selected:
+                          _modelOptions[i].candidateModelId ==
+                          _selectedCandidateModelId,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.pop(
+                          sheetContext,
+                          _modelOptions[i].candidateModelId,
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Text(
-                context.l10n.commitSelectModel,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _modelOptions.length,
-                  itemBuilder: (context, index) {
-                    final option = _modelOptions[index];
-                    final isActive =
-                        option.candidateModelId == _selectedCandidateModelId;
-                    return ListTile(
-                      leading: CircleAvatar(
-                        radius: 6,
-                        backgroundColor: _parseColor(option.providerColor),
-                      ),
-                      title: Text(option.modelLabel),
-                      subtitle: Text(
-                        [
-                          option.providerName,
-                          if (option.hint?.pricingLabel?.trim().isNotEmpty ==
-                              true)
-                            option.hint!.pricingLabel!.trim(),
-                        ].join(' · '),
-                      ),
-                      trailing: isActive ? const Icon(Icons.check) : null,
-                      onTap: () =>
-                          Navigator.of(context).pop(option.candidateModelId),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
     if (selected != null && mounted) {
       setState(() => _selectedCandidateModelId = selected);
     }
-  }
-
-  Color _parseColor(String raw) {
-    final value = raw.trim();
-    if (value.startsWith('#') && value.length == 7) {
-      final hex = value.substring(1);
-      final parsed = int.tryParse(hex, radix: 16);
-      if (parsed != null) {
-        return Color(0xFF000000 | parsed);
-      }
-    }
-    return ecoColors(context).textMuted;
   }
 
   @override
@@ -566,28 +545,16 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
               children: [
                 if (showModelPicker) ...[
                   const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed:
-                        controlsBusy || _loadingModels || _modelOptions.isEmpty
-                        ? null
-                        : _pickModel,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _loadingModels
-                                ? context.l10n.commitLoadingModels
-                                : selectedModel == null
-                                ? context.l10n.commitNoModel
-                                : '${selectedModel.providerName} · ${selectedModel.modelLabel}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(Icons.expand_more, size: 18),
-                      ],
-                    ),
+                  _CommitModelTrigger(
+                    loading: _loadingModels,
+                    enabled:
+                        !controlsBusy &&
+                        !_loadingModels &&
+                        _modelOptions.isNotEmpty,
+                    option: selectedModel,
+                    emptyLabel: context.l10n.commitNoModel,
+                    loadingLabel: context.l10n.commitLoadingModels,
+                    onTap: _pickModel,
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -714,3 +681,325 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
     );
   }
 }
+
+class _CommitModelTrigger extends StatelessWidget {
+  const _CommitModelTrigger({
+    required this.loading,
+    required this.enabled,
+    required this.option,
+    required this.emptyLabel,
+    required this.loadingLabel,
+    required this.onTap,
+  });
+
+  final bool loading;
+  final bool enabled;
+  final CommitModelOptionView? option;
+  final String emptyLabel;
+  final String loadingLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final label = loading
+        ? loadingLabel
+        : option == null
+        ? emptyLabel
+        : option!.modelLabel;
+    final subtitle = !loading && option != null ? option!.providerName : null;
+
+    return EcoGroupedSurface(
+      margin: EdgeInsets.zero,
+      child: EcoPressable(
+        enabled: enabled,
+        onTap: enabled ? onTap : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            child: Row(
+              children: [
+                _CommitModelProviderDot(
+                  color: option?.providerColor,
+                  muted: !enabled || option == null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: -0.2,
+                          color: enabled ? eco.textPrimary : eco.textMuted,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textMuted,
+                            height: 1.25,
+                            letterSpacing: -0.08,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (option?.hint != null) ...[
+                  const SizedBox(width: 8),
+                  _CommitModelPricingCompact(hint: option!.hint),
+                ],
+                const SizedBox(width: 6),
+                if (loading)
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: eco.textMuted,
+                    ),
+                  )
+                else
+                  Icon(
+                    EcoIcons.expandDown,
+                    size: 18,
+                    color: eco.textMuted.withValues(alpha: enabled ? 0.9 : 0.45),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CommitModelOptionTile extends StatelessWidget {
+  const _CommitModelOptionTile({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final CommitModelOptionView option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return EcoGroupedTile(
+      onTap: onTap,
+      highlighted: selected,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      minHeight: 56,
+      child: Row(
+        children: [
+          _CommitModelProviderDot(color: option.providerColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  option.modelLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontSize: 17,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    letterSpacing: -0.2,
+                    color: eco.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  option.providerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: eco.textMuted,
+                    height: 1.3,
+                    letterSpacing: -0.08,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _CommitModelPricingCompact(hint: option.hint),
+          if (selected) ...[
+            const SizedBox(width: 8),
+            Icon(EcoIcons.check, size: 18, color: eco.accent),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CommitModelProviderDot extends StatelessWidget {
+  const _CommitModelProviderDot({this.color, this.muted = false});
+
+  final String? color;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final parsed = _parseProviderColor(color);
+    final fill = muted
+        ? eco.textMuted.withValues(alpha: 0.35)
+        : (parsed ?? eco.textMuted.withValues(alpha: 0.45));
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: fill,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.black.withValues(alpha: 0.08),
+          width: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _CommitModelPricingCompact extends StatelessWidget {
+  const _CommitModelPricingCompact({this.hint});
+
+  final CommitModelPricingHint? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final input = hint?.inputPerM;
+    final output = hint?.outputPerM;
+    if (input != null &&
+        output != null &&
+        input.toDouble() > 0 &&
+        output.toDouble() > 0) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _PriceChip(
+            icon: LucideIcons.arrowUp,
+            value: _formatCompactRate(input.toDouble()),
+            iconColor: const Color(0xFF7DD3A8),
+            textColor: eco.textMuted,
+          ),
+          const SizedBox(width: 6),
+          _PriceChip(
+            icon: LucideIcons.arrowDown,
+            value: _formatCompactRate(output.toDouble()),
+            iconColor: const Color(0xFFF0A8A8),
+            textColor: eco.textMuted,
+          ),
+        ],
+      );
+    }
+
+    if (hint != null && !hint!.pricingResolved) {
+      return Text(
+        '—',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: eco.textMuted,
+          fontSize: 11,
+          letterSpacing: 0,
+        ),
+      );
+    }
+
+    final label = hint?.pricingLabel?.trim();
+    if (label != null && label.isNotEmpty) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 96),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: eco.textMuted,
+            fontSize: 11,
+            letterSpacing: -0.05,
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+}
+
+class _PriceChip extends StatelessWidget {
+  const _PriceChip({
+    required this.icon,
+    required this.value,
+    required this.iconColor,
+    required this.textColor,
+  });
+
+  final IconData icon;
+  final String value;
+  final Color iconColor;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: iconColor),
+        const SizedBox(width: 2),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: textColor,
+            fontSize: 11,
+            fontFeatures: const [FontFeature.tabularFigures()],
+            letterSpacing: 0,
+            height: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Color? _parseProviderColor(String? raw) {
+  final value = raw?.trim() ?? '';
+  if (value.startsWith('#') && value.length == 7) {
+    final hex = value.substring(1);
+    final parsed = int.tryParse(hex, radix: 16);
+    if (parsed != null) {
+      return Color(0xFF000000 | parsed);
+    }
+  }
+  return null;
+}
+
+String _formatCompactRate(double usd) {
+  if (!usd.isFinite) return '?';
+  final text = usd >= 10
+      ? usd.toStringAsFixed(0)
+      : usd == usd.roundToDouble()
+      ? usd.toStringAsFixed(0)
+      : usd.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+  return text;
+}
+

@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import { BASH_REVIEW_UI, bashReviewUi } from "../shared/bash-review-ui";
+import { useTranslation } from "react-i18next";
 import {
   COMPOSER_TOOLBAR_ICON_PX,
   COMPOSER_TOOLBAR_ICON_STROKE,
@@ -54,6 +55,7 @@ export function ComposerBashReviewToggle({
   saving,
   onToggle,
 }: ComposerBashReviewToggleProps) {
+  const { t } = useTranslation();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -124,22 +126,22 @@ export function ComposerBashReviewToggle({
       className={className}
       disabled={saving}
       aria-pressed={bashReviewMode !== "allow_all"}
-      aria-label={current.title}
+      aria-label={t(current.title)}
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
       <span className="composer-toolbar-trigger-icon" aria-hidden>
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>
-      <span className="composer-toolbar-trigger-label">{current.title}</span>
+      <span className="composer-toolbar-trigger-label">{t(current.title)}</span>
       <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
-    <span className={className} title="Bash 审批模式不可修改">
+    <span className={className} title={t("bash.review.readonlyTitle")}>
       <span className="composer-toolbar-trigger-icon" aria-hidden>
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>
-      <span className="composer-toolbar-trigger-label">{current.title}</span>
+      <span className="composer-toolbar-trigger-label">{t(current.title)}</span>
     </span>
   );
 
@@ -172,16 +174,17 @@ function ComposerBashReviewPopover({
   disabled: boolean;
   onSelect: (mode: BashReviewMode) => void;
 }) {
+  const { t } = useTranslation();
   return createPortal(
     <div
       ref={panelRef}
       className="composer-codex-popover composer-bash-review-popover"
       role="dialog"
-      aria-label="Bash 审批模式"
+      aria-label={t("bash.review.popoverLabel")}
       style={panelStyle}
     >
       <header className="composer-codex-popover-header">
-        <p className="composer-codex-popover-title">应如何批准 Bash 操作？</p>
+        <p className="composer-codex-popover-title">{t("bash.review.popoverTitle")}</p>
       </header>
       <ul className="composer-codex-popover-list">
         {BASH_REVIEW_UI.map((option) => {
@@ -203,8 +206,8 @@ function ComposerBashReviewPopover({
                   <BashReviewModeIcon mode={option.value} />
                 </span>
                 <span className="composer-codex-popover-body">
-                  <span className="composer-codex-popover-item-title">{option.title}</span>
-                  <span className="composer-codex-popover-item-desc">{option.description}</span>
+                  <span className="composer-codex-popover-item-title">{t(option.title)}</span>
+                  <span className="composer-codex-popover-item-desc">{t(option.description)}</span>
                 </span>
                 <span
                   className={

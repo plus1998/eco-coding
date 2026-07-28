@@ -234,6 +234,7 @@ function ComposerRouteCompositionControls({
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   disabled?: boolean | undefined;
 } & CompositionControlHandlers) {
+  const { t } = useTranslation();
   const mainAgentConfigs = settings.mainAgentConfigs ?? [];
   const mainAgentPrompts = (settings.mainAgentPrompts ?? []).filter(
     (prompt) => prompt.mode === "custom_append",
@@ -262,14 +263,14 @@ function ComposerRouteCompositionControls({
   return (
     <div className="composer-route-composition-controls">
       <div className="composer-route-prompt-control">
-        <span className="composer-route-prompt-label">主代理</span>
+        <span className="composer-route-prompt-label">{t("composer.route.mainAgent")}</span>
         <select
           className="composer-route-prompt-segments"
           value={mainAgentConfigId}
           disabled={disabled || mainAgentConfigs.length === 0}
           onChange={(event) => void onSelectMainAgentConfig(event.target.value)}
         >
-          {!mainAgentConfigId || mainAgentConfigs.length === 0 ? <option value="">未配置</option> : null}
+          {!mainAgentConfigId || mainAgentConfigs.length === 0 ? <option value="">{t("composer.route.notConfigured")}</option> : null}
           {mainAgentConfigs.map((config) => (
             <option key={config.id} value={config.id}>
               {config.name} ({config.modelRef.modelId})
@@ -278,7 +279,7 @@ function ComposerRouteCompositionControls({
         </select>
       </div>
       <div className="composer-route-prompt-control">
-        <span className="composer-route-prompt-label">提示词</span>
+        <span className="composer-route-prompt-label">{t("composer.route.prompt")}</span>
         <select
           className="composer-route-prompt-segments"
           value={mainPromptValue}
@@ -295,8 +296,8 @@ function ComposerRouteCompositionControls({
             );
           }}
         >
-          {mainPromptValue ? null : <option value="">未配置</option>}
-          <option value={BUILTIN_PROMPT_VALUE}>跟随 Agent 内置提示词</option>
+          {mainPromptValue ? null : <option value="">{t("composer.route.notConfigured")}</option>}
+          <option value={BUILTIN_PROMPT_VALUE}>{t("composer.route.defaultBuiltinPrompt")}</option>
           {mainAgentPrompts.map((prompt) => (
             <option key={prompt.id} value={prompt.id}>
               {prompt.name}
@@ -305,7 +306,7 @@ function ComposerRouteCompositionControls({
         </select>
       </div>
       <div className="composer-route-prompt-control">
-        <span className="composer-route-prompt-label">子代理编排</span>
+        <span className="composer-route-prompt-label">{t("composer.route.subagentOrchestration")}</span>
         <select
           className="composer-route-prompt-segments"
           value={subagentOrchestrationId}
@@ -322,7 +323,7 @@ function ComposerRouteCompositionControls({
             );
           }}
         >
-          <option value={SUBAGENTS_NONE_VALUE}>不使用子代理</option>
+          <option value={SUBAGENTS_NONE_VALUE}>{t("composer.route.noSubagents")}</option>
           {subagentOrchestrations.map((orchestration) => (
             <option key={orchestration.id} value={orchestration.id}>
               {orchestration.name} ({orchestration.agents.length})

@@ -141,9 +141,9 @@ export function computeThreadBillingTotals(
 
 export function formatSavingsLine(savedUsd: number, savedPct: number): string {
   if (savedUsd >= 0) {
-    return `eco-coding 为你节省了 $${savedUsd.toFixed(4)}（${savedPct.toFixed(1)}%）`;
+    return `eco-coding saved $${savedUsd.toFixed(4)} (${savedPct.toFixed(1)}%) for you`;
   }
-  return `eco-coding 多花费 $${Math.abs(savedUsd).toFixed(4)}（${Math.abs(savedPct).toFixed(1)}%）`;
+  return `eco-coding overpaid by $${Math.abs(savedUsd).toFixed(4)} (${Math.abs(savedPct).toFixed(1)}%)`;
 }
 
 export function formatSavingsPct(savedPct: number): string {

@@ -110,6 +110,8 @@ export interface CodexEventAdapterOptions {
   orchestrationRoleIds?: readonly string[];
   /** Runtime getter for role ids when the adapter is configured before role sync finishes. */
   resolveOrchestrationRoleIds?: () => readonly string[] | undefined;
+  /** Called when `turn/started` is observed (main or child). */
+  onTurnStarted?: (input: { codexThreadId: string; turnId: string }) => void;
   /** Called when `thread/tokenUsage/updated` yields context occupancy (§4.4). */
   onTokenUsageUpdated?: (resolution: CodexContextSnapshotResolution) => void;
   /** Called when app-server completes a native Plan item. */
@@ -275,6 +277,8 @@ function handleTurnStarted(ctx: AdapterContext, params: Record<string, unknown>)
   if (!codexThreadId || !turnId) {
     return;
   }
+
+  ctx.onTurnStarted?.({ codexThreadId, turnId });
 
   emit(ctx, {
     eventType: "run.attempt.started",

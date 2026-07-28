@@ -10,21 +10,21 @@ export interface BashReviewUiOption {
 export const BASH_REVIEW_UI: BashReviewUiOption[] = [
   {
     value: "always",
-    title: "每次确认",
+    title: "bash.review.always",
     subtitle: "always",
-    description: "执行命令或访问工作区外路径前都询问",
+    description: "bash.review.alwaysDesc",
   },
   {
     value: "auto",
-    title: "风险时确认",
+    title: "bash.review.auto",
     subtitle: "auto",
-    description: "低风险自动执行；高风险命令或外路径访问仍询问",
+    description: "bash.review.autoDesc",
   },
   {
     value: "allow_all",
-    title: "自动执行",
+    title: "bash.review.allowAll",
     subtitle: "allow",
-    description: "跳过确认（仍受当前模式、编排与安全策略限制）",
+    description: "bash.review.allowAllDesc",
   },
 ];
 

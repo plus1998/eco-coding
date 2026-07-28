@@ -32,7 +32,7 @@ export function evaluateThreadToolConfirmation(
     return {
       action: "allow",
       reason: "Previously approved for commands with this prefix in the current session.",
-      userMessage: "将自动执行（本会话已记住此前缀）",
+      userMessage: "bash.session.rememberedPrefix",
       matchedRule: "session_bash_prefix",
     };
   }

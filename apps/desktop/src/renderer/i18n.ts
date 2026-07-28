@@ -50,3 +50,16 @@ export async function applyLocalePreference(preference: AppLocalePreference): Pr
   await window.eco?.setLocalePreference?.(preference);
   return locale;
 }
+
+// HMR: i18n-catalogs.ts 热替换后重新注入资源，避免新 key 找不到。
+if (typeof window !== "undefined" && "hot" in import.meta) {
+  const viteMeta = import.meta as { hot?: { accept: (path: string, cb: (mod: unknown) => void) => void } };
+  viteMeta.hot?.accept("../shared/i18n-catalogs", (mod: unknown) => {
+    const m = mod as { i18nCatalogs?: Record<string, { translation: Record<string, string> }> } | undefined;
+    if (m?.i18nCatalogs) {
+      for (const [locale, catalog] of Object.entries(m.i18nCatalogs)) {
+        i18n.addResourceBundle(locale, "translation", catalog.translation, true);
+      }
+    }
+  });
+}

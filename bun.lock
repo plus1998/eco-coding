@@ -68,6 +68,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@eco/openai-anthropic-bridge": "workspace:*",
+        "@eco/runtime": "workspace:*",
         "@eco/shared": "workspace:*",
       },
       "devDependencies": {
