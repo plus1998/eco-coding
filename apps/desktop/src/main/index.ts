@@ -12,6 +12,7 @@ import {
   createAskUserQuestionHandler,
   defaultSubagentAvailability,
   type EcoAgentRuntimeConfig,
+  type CodexGatewayCatalogRoute,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
@@ -329,6 +330,7 @@ import {
   registerResolvedCodexGatewayTurnRoute,
   rollbackCodexThreadForEcoThread,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
+  scheduleCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
@@ -1087,6 +1089,14 @@ app.whenReady().then(async () => {
       }
       return routes;
     },
+    listCatalogOrchestrationAgents: () => listCodexCatalogRoutesFromSettings(),
+    listCatalogThreadRoutes: () => listCodexCatalogRoutesFromThreadSnapshots(),
+    listGlobalMcpServers: () => {
+      const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
+      return prepareCodexMcpServersForRuntime(
+        buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
+      );
+    },
     threadMap: codexThreadMap,
     resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
     appendThreadRunEvent: (event) => {
@@ -1427,6 +1437,87 @@ function getModelSettingsSnapshot(): ModelSettingsSnapshot {
     ...mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore),
     mcpSettings: mcpStore.getSettings(),
   };
+}
+
+function listCodexCatalogRoutesFromSettings(): CodexGatewayCatalogRoute[] {
+  const settings = getModelSettingsSnapshot();
+  const refs = [
+    ...settings.mainAgentConfigs.map((config) => config.modelRef),
+    ...settings.subagentOrchestrations.flatMap((orchestration) =>
+      orchestration.agents.map((agent) => agent.modelRef),
+    ),
+  ];
+  return collectCodexCatalogRoutesFromModelRefs(refs, settings.providers);
+}
+
+function listCodexCatalogRoutesFromThreadSnapshots(): CodexGatewayCatalogRoute[] {
+  const settings = getModelSettingsSnapshot();
+  const refs: Array<{
+    providerId: string;
+    modelId: string;
+    apiCompat?: UpstreamApiCompat;
+    manualSpec?: RouteManualSpec;
+    candidateModelId?: string;
+  }> = [];
+
+  for (const thread of conversationStore.listThreads()) {
+    const config = thread.runtimeConfig;
+    const snapshot = config?.resolvedOrchestrationSnapshot;
+    if (snapshot) {
+      refs.push(snapshot.mainAgent.modelRef, ...snapshot.agents.map((agent) => agent.modelRef));
+    }
+    if (config?.mainAgentModelOverride) {
+      refs.push(config.mainAgentModelOverride);
+    }
+  }
+  return collectCodexCatalogRoutesFromModelRefs(refs, settings.providers);
+}
+
+function collectCodexCatalogRoutesFromModelRefs(
+  refs: readonly {
+    providerId: string;
+    modelId: string;
+    apiCompat?: UpstreamApiCompat;
+    manualSpec?: RouteManualSpec;
+    candidateModelId?: string;
+  }[],
+  providers: readonly { id: string; name: string; apiCompat: UpstreamApiCompat }[],
+): CodexGatewayCatalogRoute[] {
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  return refs.flatMap((ref) => {
+    const providerId = ref.providerId.trim();
+    const candidate = ref.candidateModelId
+      ? providerStore
+          .listCandidateModels(providerId)
+          .find((model) => model.id === ref.candidateModelId)
+      : undefined;
+    const modelId = (candidate?.modelId || ref.modelId).trim();
+    const manualSpec = mergeRouteManualSpec(candidate?.manualSpec, ref.manualSpec);
+    const provider = providerById.get(providerId);
+    if (!providerId || !modelId || !provider) {
+      return [];
+    }
+    return [
+      {
+        providerId,
+        modelId,
+        apiCompat: ref.apiCompat ?? provider.apiCompat,
+        displayName: `${provider.name} / ${modelId}`,
+        ...(manualSpec
+          ? {
+              manualSpec: {
+                ...(manualSpec.contextTokens !== undefined
+                  ? { contextTokens: manualSpec.contextTokens }
+                  : {}),
+                ...(manualSpec.supportsImageInput !== undefined
+                  ? { supportsImageInput: manualSpec.supportsImageInput }
+                  : {}),
+              },
+            }
+          : {}),
+      } satisfies CodexGatewayCatalogRoute,
+    ];
+  });
 }
 
 function assertCanWriteAgentTemplateId(id: string): void {
@@ -4182,10 +4273,11 @@ async function startCodexThreadRun(
             }
             await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
           },
-          onConfigReloadWait: ({ activeThreadIds }) => {
+          onConfigReloadWait: ({ reason, activeThreadIds }) => {
+            const subject = reason === "model_catalog" ? "模型目录" : "全局运行时配置";
             updateThread(input.thread.id, {
               status: "running",
-              message: `Codex 模型目录已变更，正在等待活动会话结束：${activeThreadIds.join(", ")}`,
+              message: `Codex ${subject}已变更，正在等待活动会话结束：${activeThreadIds.join(", ")}`,
             });
           },
           recordRouteFingerprint: recordThreadRouteFingerprint,
@@ -9192,6 +9284,7 @@ function emitSettingsUpdated(): void {
     type: "settings.updated",
     message: "Model provider settings saved.",
   });
+  scheduleCodexGlobalRuntimeRefresh();
 }
 
 const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();

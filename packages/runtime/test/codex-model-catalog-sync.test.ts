@@ -216,6 +216,53 @@ test("collectCodexGatewayCatalogRoutes expands providers and prioritizes effecti
   expect(pro?.manualSpec?.contextTokens).toBe(128_000);
 });
 
+test("collectCodexGatewayCatalogRoutes retains all configured orchestration and historical thread routes", () => {
+  const routes = collectCodexGatewayCatalogRoutes({
+    providers: [
+      {
+        id: "provider",
+        enabled: true,
+        apiCompat: "openai_responses",
+        models: [{ modelId: "candidate" }],
+      },
+    ],
+    orchestrationAgents: [
+      {
+        providerId: "provider",
+        modelId: "subagent-model",
+        apiCompat: "anthropic",
+        manualSpec: { supportsImageInput: true },
+      },
+    ],
+    effectiveRoutes: [
+      {
+        providerId: "retired-provider",
+        modelId: "historical-thread-model",
+        apiCompat: "openai_chat_completions",
+        manualSpec: { contextTokens: 96_000 },
+      },
+    ],
+  });
+
+  expect(routes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ providerId: "provider", modelId: "candidate" }),
+      expect.objectContaining({
+        providerId: "provider",
+        modelId: "subagent-model",
+        apiCompat: "anthropic",
+        manualSpec: { supportsImageInput: true },
+      }),
+      expect.objectContaining({
+        providerId: "retired-provider",
+        modelId: "historical-thread-model",
+        apiCompat: "openai_chat_completions",
+        manualSpec: { contextTokens: 96_000 },
+      }),
+    ]),
+  );
+});
+
 test("buildEcoCodexModelCatalogDocument keeps native entries and adds freeform aliases", () => {
   const document = buildEcoCodexModelCatalogDocument(nativeModelsFixture(), [
     {

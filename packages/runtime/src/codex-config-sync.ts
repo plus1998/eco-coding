@@ -227,7 +227,7 @@ export async function syncCodexConfigFromEcoProviders(
   const configToml = buildCodexConfigToml({ ...input, gatewayBaseUrl, mcpServers });
 
   await fs.mkdir(codexHomeDir, { recursive: true });
-  await fs.writeFile(configPath, configToml, "utf8");
+  let managedHookTrust = "";
 
   // When orchestration agents exist, install PreToolUse hook so spawn_agent always uses
   // fork_turns=none (agent model from agents/*.toml) without teaching the main agent.
@@ -236,8 +236,9 @@ export async function syncCodexConfigFromEcoProviders(
   if (input.enableMultiAgent === true || (input.agentRoles ?? []).length > 0) {
     const { syncCodexSpawnAgentHook } = await import("./codex-spawn-agent-hook.js");
     const hook = await syncCodexSpawnAgentHook(codexHomeDir);
-    await fs.appendFile(configPath, hook.trustTomlBlock, "utf8");
+    managedHookTrust = hook.trustTomlBlock;
   }
+  await writeUtf8FileIfChanged(configPath, `${configToml}${managedHookTrust}`);
 
   const modelCatalogJsonPath = input.modelCatalogJsonPath?.trim() || undefined;
   return {
@@ -249,6 +250,21 @@ export async function syncCodexConfigFromEcoProviders(
     ...(providerSlugs[0] ? { defaultProviderSlug: providerSlugs[0] } : {}),
     ...(modelCatalogJsonPath ? { modelCatalogJsonPath } : {}),
   };
+}
+
+async function writeUtf8FileIfChanged(filePath: string, content: string): Promise<void> {
+  try {
+    if ((await fs.readFile(filePath, "utf8")) === content) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tempPath, content, "utf8");
+  await fs.rename(tempPath, filePath);
 }
 
 export function codexConfigContainsUpstreamSecret(

@@ -35,10 +35,10 @@ export async function syncCodexSpawnAgentHook(codexHomeDir: string): Promise<{
   const command = `node ${JSON.stringify(scriptPath)}`;
 
   await fs.mkdir(hooksDir, { recursive: true });
-  await fs.writeFile(scriptPath, ECO_SPAWN_AGENT_PRETOOL_SCRIPT, "utf8");
+  await writeUtf8FileIfChanged(scriptPath, ECO_SPAWN_AGENT_PRETOOL_SCRIPT);
   // Codex treats alphanumeric/_/| matchers as exact names (not substring regex).
   // Live MultiAgentV2 hook tool_name is `collaborationspawn_agent` (no `__`).
-  await fs.writeFile(
+  await writeUtf8FileIfChanged(
     hooksPath,
     `${JSON.stringify(
       {
@@ -60,7 +60,6 @@ export async function syncCodexSpawnAgentHook(codexHomeDir: string): Promise<{
       null,
       2,
     )}\n`,
-    "utf8",
   );
 
   // key_source is hooks.json path.display(); event label pre_tool_use; group 0; handler 0.
@@ -79,6 +78,19 @@ export async function syncCodexSpawnAgentHook(codexHomeDir: string): Promise<{
   ].join("\n");
 
   return { hooksPath, scriptPath, trustKey, trustHash, trustTomlBlock };
+}
+
+async function writeUtf8FileIfChanged(filePath: string, content: string): Promise<void> {
+  try {
+    if ((await fs.readFile(filePath, "utf8")) === content) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  await fs.writeFile(filePath, content, "utf8");
 }
 
 /** Mirror codex-rs/config fingerprint::version_for_toml + hooks discovery::command_hook_hash. */
