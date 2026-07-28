@@ -222,16 +222,28 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
   return ids.length == 1 ? ids.single : null;
 }
 
+/// Prefer human-readable bash title over the raw command for collapsed
+/// action-group summaries (especially while a command is still running).
+String _actionSummaryTarget(ActivityFeedEntry entry) {
+  final bashRun = entry.bashRun;
+  if (bashRun != null) {
+    final title = bashRun.title.trim();
+    if (title.isNotEmpty && title != 'Shell') return title;
+    final command = bashRun.command?.trim() ?? '';
+    if (command.isNotEmpty) return command;
+  }
+  final path = entry.fileChange?.path.trim();
+  if (path != null && path.isNotEmpty) return path;
+  return entry.text;
+}
+
 ({String label, ActivityActionIcon icon}) _summarizeActionEntries(
   List<ActivityFeedEntry> entries,
   AppLocalizations l10n,
 ) {
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.failed) {
-      final target = clampActivityPreviewLine(
-        entry.bashRun?.command ?? entry.text,
-        64,
-      );
+      final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);
       final suffix = target.isEmpty ? '' : ' $target';
       return (
         label: l10n.activityRanSuffix(suffix),
@@ -346,10 +358,7 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
   required bool running,
   required AppLocalizations l10n,
 }) {
-  final target = clampActivityPreviewLine(
-    entry.bashRun?.command ?? entry.fileChange?.path ?? entry.text,
-    64,
-  );
+  final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);
   final suffix = target.isEmpty ? '' : ' $target';
   final toolName = entry.toolName;
   final verb = switch (toolName) {

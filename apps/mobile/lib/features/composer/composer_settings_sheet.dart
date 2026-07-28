@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../composer/composer_controls.dart';
 import '../threads/thread_providers.dart';
@@ -48,10 +50,15 @@ class _ComposerSettingsSheet extends ConsumerWidget {
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final eco = ecoColors(context);
+    final bashReviewOptions = [
+      (value: 'always', label: context.l10n.bashReviewAlways),
+      (value: 'auto', label: context.l10n.bashReviewAuto),
+      (value: 'allow_all', label: context.l10n.bashReviewAllowAll),
+    ];
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,69 +66,84 @@ class _ComposerSettingsSheet extends ConsumerWidget {
             Center(
               child: Container(
                 width: 36,
-                height: 4,
+                height: 5,
                 decoration: BoxDecoration(
-                  color: eco.borderSubtle,
-                  borderRadius: BorderRadius.circular(2),
+                  color: eco.textMuted.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(2.5),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              context.l10n.composerSettings,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 16),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(context.l10n.composerPlanMode),
-              value: runtimeConfig.sessionMode == 'plan',
-              onChanged: (value) => _update(
-                ref,
-                runtimeConfig.copyWith(sessionMode: value ? 'plan' : 'agent'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            DropdownMenu<String>(
-              initialSelection: runtimeConfig.bashReviewMode,
-              label: Text(context.l10n.composerBashReview),
-              expandedInsets: EdgeInsets.zero,
-              dropdownMenuEntries: [
-                DropdownMenuEntry(
-                  value: 'always',
-                  label: context.l10n.bashReviewAlways,
-                ),
-                DropdownMenuEntry(
-                  value: 'auto',
-                  label: context.l10n.bashReviewAuto,
-                ),
-                DropdownMenuEntry(
-                  value: 'allow_all',
-                  label: context.l10n.bashReviewAllowAll,
-                ),
-              ],
-              onSelected: (value) {
-                if (value == null) return;
-                _update(ref, runtimeConfig.copyWith(bashReviewMode: value));
-              },
             ),
             const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Center(
+                child: Text(
+                  context.l10n.composerSettings,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.25,
+                  ),
+                ),
+              ),
+            ),
+            EcoGroupedSection(
+              label: context.l10n.composerPlanMode,
+              topSpacing: 20,
+              child: EcoSheetSwitchTile(
+                title: context.l10n.composerPlanMode,
+                value: runtimeConfig.sessionMode == 'plan',
+                onChanged: (value) => _update(
+                  ref,
+                  runtimeConfig.copyWith(sessionMode: value ? 'plan' : 'agent'),
+                ),
+              ),
+            ),
+            EcoGroupedSection(
+              label: context.l10n.composerBashReview,
+              topSpacing: 20,
+              child: Column(
+                children: [
+                  for (var i = 0; i < bashReviewOptions.length; i++) ...[
+                    if (i > 0) const EcoGroupedDivider(indent: 16),
+                    EcoSheetOptionTile(
+                      title: bashReviewOptions[i].label,
+                      selected:
+                          runtimeConfig.bashReviewMode ==
+                          bashReviewOptions[i].value,
+                      onTap: () => _update(
+                        ref,
+                        runtimeConfig.copyWith(
+                          bashReviewMode: bashReviewOptions[i].value,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
             modelSettings.when(
               data: (ModelSettingsSnapshot? settings) {
                 if (settings == null || settings.mainAgentConfigs.isEmpty) {
                   return const SizedBox.shrink();
                 }
-                return OrchestrationCompositionSelectors(
-                  settings: settings,
-                  runtimeConfig: runtimeConfig,
-                  threadId: threadId,
-                  canEdit: true,
-                  onChanged: onChanged,
-                  mcpServers: mcpServers,
-                  rememberedMcp: workflow?.mcpServersEnabled,
+                return EcoGroupedSection(
+                  label: context.l10n.composerOrchestrationSelection,
+                  topSpacing: 20,
+                  child: OrchestrationCompositionSelectors(
+                    settings: settings,
+                    runtimeConfig: runtimeConfig,
+                    threadId: threadId,
+                    canEdit: true,
+                    onChanged: onChanged,
+                    mcpServers: mcpServers,
+                    rememberedMcp: workflow?.mcpServersEnabled,
+                  ),
                 );
               },
-              loading: () => const LinearProgressIndicator(),
+              loading: () => const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
               error: (_, _) => const SizedBox.shrink(),
             ),
           ],

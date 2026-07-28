@@ -1363,6 +1363,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerMainAgent => '主 Agent';
 
   @override
+  String get composerMainAgentPrompt => '提示词';
+
+  @override
+  String get composerBuiltinMainAgentPrompt => '跟随 Agent 内置提示词';
+
+  @override
+  String get composerNoSubagentOrchestration => '不使用子代理';
+
+  @override
+  String composerAgentsCount(int count) {
+    return '$count 个代理';
+  }
+
+  @override
   String get composerAlwaysEnabled => '始终启用';
 
   @override

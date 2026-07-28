@@ -1445,6 +1445,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerMainAgent => 'Main Agent';
 
   @override
+  String get composerMainAgentPrompt => 'Prompt';
+
+  @override
+  String get composerBuiltinMainAgentPrompt => 'Follow built-in agent prompt';
+
+  @override
+  String get composerNoSubagentOrchestration => 'No subagents';
+
+  @override
+  String composerAgentsCount(int count) {
+    return '$count agents';
+  }
+
+  @override
   String get composerAlwaysEnabled => 'Always enabled';
 
   @override

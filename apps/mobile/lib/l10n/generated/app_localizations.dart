@@ -2600,6 +2600,30 @@ abstract class AppLocalizations {
   /// **'Main Agent'**
   String get composerMainAgent;
 
+  /// No description provided for @composerMainAgentPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt'**
+  String get composerMainAgentPrompt;
+
+  /// No description provided for @composerBuiltinMainAgentPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow built-in agent prompt'**
+  String get composerBuiltinMainAgentPrompt;
+
+  /// No description provided for @composerNoSubagentOrchestration.
+  ///
+  /// In en, this message translates to:
+  /// **'No subagents'**
+  String get composerNoSubagentOrchestration;
+
+  /// No description provided for @composerAgentsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} agents'**
+  String composerAgentsCount(int count);
+
   /// No description provided for @composerAlwaysEnabled.
   ///
   /// In en, this message translates to:

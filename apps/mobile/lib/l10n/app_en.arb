@@ -480,6 +480,17 @@
   "composerRuntimeCoreLocked": "The runtime core is locked for this session",
   "composerOrchestrationLocked": "Orchestration cannot be edited for this session",
   "composerMainAgent": "Main Agent",
+  "composerMainAgentPrompt": "Prompt",
+  "composerBuiltinMainAgentPrompt": "Follow built-in agent prompt",
+  "composerNoSubagentOrchestration": "No subagents",
+  "composerAgentsCount": "{count} agents",
+  "@composerAgentsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "composerAlwaysEnabled": "Always enabled",
   "composerMcpDisabledHint": "When disabled, this session will not call tools from this server",
   "composerNoSwitchableAgent": "No switchable Agent is available for this session",

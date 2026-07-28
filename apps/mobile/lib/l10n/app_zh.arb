@@ -435,6 +435,17 @@
   "composerRuntimeCoreLocked": "当前会话的运行核心已锁定",
   "composerOrchestrationLocked": "当前会话不可编辑编排",
   "composerMainAgent": "主 Agent",
+  "composerMainAgentPrompt": "提示词",
+  "composerBuiltinMainAgentPrompt": "跟随 Agent 内置提示词",
+  "composerNoSubagentOrchestration": "不使用子代理",
+  "composerAgentsCount": "{count} 个代理",
+  "@composerAgentsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "composerAlwaysEnabled": "始终启用",
   "composerMcpDisabledHint": "关闭后当前会话不再调用该服务器工具",
   "composerNoSwitchableAgent": "当前会话未提供可切换的 Agent",

@@ -285,83 +285,284 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
       );
     }
 
+    final selectedMainAgent = mainAgentConfigs
+        .where((config) => config.id == mainAgentConfigId)
+        .firstOrNull;
+    final selectedMainAgentLabel = selectedMainAgent == null
+        ? context.l10n.commonNotConfigured
+        : selectedMainAgent.name;
+    final selectedMainAgentDetail = selectedMainAgent == null
+        ? null
+        : shortenModelId(selectedMainAgent.modelRef.modelId);
+
+    final selectedPromptLabel = mainPromptValue.isEmpty
+        ? context.l10n.commonNotConfigured
+        : mainPromptValue == builtinMainPromptValue
+        ? context.l10n.composerBuiltinMainAgentPrompt
+        : mainAgentPrompts
+                  .where((prompt) => prompt.id == mainPromptValue)
+                  .firstOrNull
+                  ?.name ??
+              context.l10n.commonNotConfigured;
+
+    final selectedSubagent = subagentOrchestrations
+        .where((orchestration) => orchestration.id == subagentOrchestrationId)
+        .firstOrNull;
+    final selectedSubagentLabel = subagentOrchestrationId.isEmpty
+        ? context.l10n.commonNotConfigured
+        : subagentOrchestrationId == subagentsNoneValue
+        ? context.l10n.composerNoSubagentOrchestration
+        : selectedSubagent?.name ?? context.l10n.commonNotConfigured;
+    final selectedSubagentDetail = selectedSubagent == null
+        ? null
+        : context.l10n.composerAgentsCount(selectedSubagent.agents.length);
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownMenu<String>(
-          initialSelection: mainAgentConfigId.isEmpty
-              ? null
-              : mainAgentConfigId,
-          label: const Text('主代理'),
-          expandedInsets: EdgeInsets.zero,
+        _OrchestrationPickerRow(
+          label: context.l10n.composerMainAgent,
+          value: selectedMainAgentLabel,
+          detail: selectedMainAgentDetail,
           enabled: canEdit && mainAgentConfigs.isNotEmpty,
-          dropdownMenuEntries: [
-            if (mainAgentConfigId.isEmpty)
-              const DropdownMenuEntry(value: '', label: '未配置'),
-            for (final config in mainAgentConfigs)
-              DropdownMenuEntry(
-                value: config.id,
-                label: '${config.name} (${config.modelRef.modelId})',
-              ),
-          ],
-          onSelected: (value) {
-            if (value == null || value.isEmpty) return;
-            applyPatch(mainAgentConfigId: value);
-          },
-        ),
-        const SizedBox(height: 12),
-        DropdownMenu<String>(
-          initialSelection: mainPromptValue.isEmpty ? null : mainPromptValue,
-          label: const Text('提示词'),
-          expandedInsets: EdgeInsets.zero,
-          enabled: canEdit,
-          dropdownMenuEntries: [
-            if (mainPromptValue.isEmpty)
-              const DropdownMenuEntry(value: '', label: '未配置'),
-            const DropdownMenuEntry(
-              value: builtinMainPromptValue,
-              label: '跟随 Agent 内置提示词',
-            ),
-            for (final prompt in mainAgentPrompts)
-              DropdownMenuEntry(value: prompt.id, label: prompt.name),
-          ],
-          onSelected: (value) {
-            if (value == null || value.isEmpty) return;
-            applyPatch(
-              mainPrompt: value == builtinMainPromptValue
-                  ? const BuiltinMainAgentPromptSelection()
-                  : CustomAppendMainAgentPromptSelection(promptId: value),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        DropdownMenu<String>(
-          initialSelection: subagentOrchestrationId.isEmpty
+          onTap: !canEdit || mainAgentConfigs.isEmpty
               ? null
-              : subagentOrchestrationId,
-          label: const Text('子代理编排'),
-          expandedInsets: EdgeInsets.zero,
+              : () => _showOrchestrationOptionSheet(
+                  context,
+                  title: context.l10n.composerMainAgent,
+                  options: [
+                    for (final config in mainAgentConfigs)
+                      _OrchestrationPickerOption(
+                        value: config.id,
+                        title: config.name,
+                        subtitle: shortenModelId(config.modelRef.modelId),
+                      ),
+                  ],
+                  selectedValue: mainAgentConfigId,
+                  onSelected: (value) => applyPatch(mainAgentConfigId: value),
+                ),
+        ),
+        const EcoGroupedDivider(indent: 16),
+        _OrchestrationPickerRow(
+          label: context.l10n.composerMainAgentPrompt,
+          value: selectedPromptLabel,
           enabled: canEdit,
-          dropdownMenuEntries: [
-            const DropdownMenuEntry(value: subagentsNoneValue, label: '不使用子代理'),
-            for (final orchestration in subagentOrchestrations)
-              DropdownMenuEntry(
-                value: orchestration.id,
-                label: '${orchestration.name} (${orchestration.agents.length})',
-              ),
-          ],
-          onSelected: (value) {
-            if (value == null || value.isEmpty) return;
-            applyPatch(
-              subagents: value == subagentsNoneValue
-                  ? const NoneSubagentSelection()
-                  : OrchestrationSubagentSelection(orchestrationId: value),
-            );
-          },
+          onTap: !canEdit
+              ? null
+              : () => _showOrchestrationOptionSheet(
+                  context,
+                  title: context.l10n.composerMainAgentPrompt,
+                  options: [
+                    _OrchestrationPickerOption(
+                      value: builtinMainPromptValue,
+                      title: context.l10n.composerBuiltinMainAgentPrompt,
+                    ),
+                    for (final prompt in mainAgentPrompts)
+                      _OrchestrationPickerOption(
+                        value: prompt.id,
+                        title: prompt.name,
+                      ),
+                  ],
+                  selectedValue: mainPromptValue,
+                  onSelected: (value) => applyPatch(
+                    mainPrompt: value == builtinMainPromptValue
+                        ? const BuiltinMainAgentPromptSelection()
+                        : CustomAppendMainAgentPromptSelection(promptId: value),
+                  ),
+                ),
+        ),
+        const EcoGroupedDivider(indent: 16),
+        _OrchestrationPickerRow(
+          label: context.l10n.composerSubagentOrchestration,
+          value: selectedSubagentLabel,
+          detail: selectedSubagentDetail,
+          enabled: canEdit,
+          onTap: !canEdit
+              ? null
+              : () => _showOrchestrationOptionSheet(
+                  context,
+                  title: context.l10n.composerSubagentOrchestration,
+                  options: [
+                    _OrchestrationPickerOption(
+                      value: subagentsNoneValue,
+                      title: context.l10n.composerNoSubagentOrchestration,
+                    ),
+                    for (final orchestration in subagentOrchestrations)
+                      _OrchestrationPickerOption(
+                        value: orchestration.id,
+                        title: orchestration.name,
+                        subtitle: context.l10n.composerAgentsCount(
+                          orchestration.agents.length,
+                        ),
+                      ),
+                  ],
+                  selectedValue: subagentOrchestrationId,
+                  onSelected: (value) => applyPatch(
+                    subagents: value == subagentsNoneValue
+                        ? const NoneSubagentSelection()
+                        : OrchestrationSubagentSelection(
+                            orchestrationId: value,
+                          ),
+                  ),
+                ),
         ),
       ],
     );
   }
+}
+
+class _OrchestrationPickerOption {
+  const _OrchestrationPickerOption({
+    required this.value,
+    required this.title,
+    this.subtitle,
+  });
+
+  final String value;
+  final String title;
+  final String? subtitle;
+}
+
+class _OrchestrationPickerRow extends StatelessWidget {
+  const _OrchestrationPickerRow({
+    required this.label,
+    required this.value,
+    this.detail,
+    required this.enabled,
+    this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final String? detail;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ecoColors(context);
+    final canTap = enabled && onTap != null;
+    final valueColor = enabled ? colors.textSecondary : colors.textMuted;
+
+    return EcoGroupedTile(
+      onTap: canTap
+          ? () {
+              HapticFeedback.selectionClick();
+              onTap!();
+            }
+          : null,
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                fontSize: 17,
+                letterSpacing: -0.2,
+                color: enabled ? colors.textPrimary : colors.textMuted,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 7,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: valueColor,
+                      fontSize: 15,
+                      letterSpacing: -0.1,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                if (detail != null && detail!.trim().isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      detail!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textMuted,
+                        fontSize: 13,
+                        letterSpacing: -0.08,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
+                if (canTap) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    EcoIcons.chevronRight,
+                    size: 16,
+                    color: colors.textMuted.withValues(alpha: 0.7),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showOrchestrationOptionSheet(
+  BuildContext context, {
+  required String title,
+  required List<_OrchestrationPickerOption> options,
+  required String selectedValue,
+  required ValueChanged<String> onSelected,
+}) {
+  return showEcoActionSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => EcoSheetScaffold(
+      title: title,
+      maxHeightFactor: 0.62,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          EcoGroupedSection(
+            topSpacing: 4,
+            child: Column(
+              children: [
+                for (var i = 0; i < options.length; i++) ...[
+                  if (i > 0) const EcoGroupedDivider(indent: 16),
+                  EcoSheetOptionTile(
+                    title: options[i].title,
+                    subtitle: options[i].subtitle,
+                    selected: options[i].value == selectedValue,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onSelected(options[i].value);
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _ComposerSubagentSwitchList extends ConsumerWidget {
@@ -488,14 +689,35 @@ class ComposerRouteSheet extends ConsumerStatefulWidget {
 
 class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
   _ComposerRouteCategory _selectedCategory = _ComposerRouteCategory.agent;
+  late String? _coreKind = widget.coreKind;
 
   ThreadRuntimeConfigInput get fallbackConfig => widget.fallbackConfig;
   String get threadId => widget.threadId;
   bool get canEdit => widget.canEdit;
   ValueChanged<ThreadRuntimeConfigInput> get onChanged => widget.onChanged;
   String get workspacePath => widget.workspacePath;
-  String? get coreKind => widget.coreKind;
+  String? get coreKind => _coreKind;
   ValueChanged<String>? get onCoreKindChanged => widget.onCoreKindChanged;
+
+  @override
+  void didUpdateWidget(covariant ComposerRouteSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Parent may push a new coreKind after the sheet is already open (rare,
+    // but keep local selection in sync if it does).
+    if (oldWidget.coreKind != widget.coreKind &&
+        widget.coreKind != _coreKind) {
+      _coreKind = widget.coreKind;
+    }
+  }
+
+  void _selectCoreKind(String value) {
+    if (_coreKind == value) return;
+    HapticFeedback.selectionClick();
+    // Update local state immediately so the open sheet reflects the change
+    // without waiting for the parent route to rebuild (modal sheets don't).
+    setState(() => _coreKind = value);
+    onCoreKindChanged?.call(value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -725,9 +947,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                               enabled: canEdit && onCoreKindChanged != null,
                               onTap: !canEdit || onCoreKindChanged == null
                                   ? null
-                                  : () => onCoreKindChanged!(
-                                      _coreOptions[i].value,
-                                    ),
+                                  : () => _selectCoreKind(_coreOptions[i].value),
                             ),
                           ],
                         ],
@@ -740,17 +960,14 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                     EcoGroupedSection(
                       label: context.l10n.composerOrchestration,
                       topSpacing: coreKind == null ? 4 : 20,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                        child: OrchestrationCompositionSelectors(
-                          settings: modelSettings,
-                          runtimeConfig: runtimeConfig,
-                          threadId: threadId,
-                          canEdit: canEdit,
-                          onChanged: onChanged,
-                          mcpServers: mcpServers,
-                          rememberedMcp: workflow?.mcpServersEnabled,
-                        ),
+                      child: OrchestrationCompositionSelectors(
+                        settings: modelSettings,
+                        runtimeConfig: runtimeConfig,
+                        threadId: threadId,
+                        canEdit: canEdit,
+                        onChanged: onChanged,
+                        mcpServers: mcpServers,
+                        rememberedMcp: workflow?.mcpServersEnabled,
                       ),
                     ),
                   if ((_selectedCategory == _ComposerRouteCategory.model ||
@@ -1572,16 +1789,19 @@ class ComposerCompositionControl extends ConsumerWidget {
         maxHeightFactor: 0.7,
         child: ListView(
           shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.only(bottom: 8),
           children: [
-            OrchestrationCompositionSelectors(
-              settings: settings,
-              runtimeConfig: runtimeConfig,
-              threadId: threadId,
-              canEdit: true,
-              onChanged: onChanged,
-              mcpServers: mcpServers?.servers ?? const [],
-              rememberedMcp: workflow?.mcpServersEnabled,
+            EcoGroupedSection(
+              topSpacing: 4,
+              child: OrchestrationCompositionSelectors(
+                settings: settings,
+                runtimeConfig: runtimeConfig,
+                threadId: threadId,
+                canEdit: true,
+                onChanged: onChanged,
+                mcpServers: mcpServers?.servers ?? const [],
+                rememberedMcp: workflow?.mcpServersEnabled,
+              ),
             ),
           ],
         ),
