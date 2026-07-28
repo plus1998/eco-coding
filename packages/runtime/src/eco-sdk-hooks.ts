@@ -6,6 +6,7 @@ import type {
   NotificationHookInput,
   PermissionRequestHookInput,
   PostToolUseHookInput,
+  PostToolUseFailureHookInput,
   PreCompactHookInput,
   PreToolUseHookInput,
   StopHookInput,
@@ -70,11 +71,14 @@ export interface EcoTaskCompletionState {
   openTasks: EcoOpenTask[];
   hasSubstantiveToolUse: boolean;
   substantiveToolNames: string[];
+  successfulMutationToolNames: string[];
+  failedMutationToolNames: string[];
 }
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
   onPostToolUse?(toolName: string, input: Record<string, unknown>, response: unknown): void;
+  onPostToolUseFailure?(toolName: string, input: Record<string, unknown>, error: string): void;
   onTaskCreated(input: { taskId: string; subject: string; description?: string }): void;
   onTaskCompleted(input: { taskId: string; subject: string }): void;
   onSubagentStart(input: {
@@ -88,6 +92,10 @@ export interface EcoTaskTrackerHooks {
   onStop(status: "completed" | "blocked" | "cancelled"): void;
   getCompletionState?(): EcoTaskCompletionState;
   peekPendingCoderTodoId?: () => string | undefined;
+}
+
+function hasFailedMutationWithoutSuccess(state: EcoTaskCompletionState): boolean {
+  return state.failedMutationToolNames.length > 0 && state.successfulMutationToolNames.length === 0;
 }
 
 export interface EcoPreCompactHookInput {
@@ -1364,6 +1372,18 @@ export function createTaskEvidencePostToolHook(taskTracker: EcoTaskTrackerHooks)
   };
 }
 
+export function createTaskEvidencePostToolFailureHook(taskTracker: EcoTaskTrackerHooks): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PostToolUseFailure" || !taskTracker.onPostToolUseFailure) {
+      return {};
+    }
+    const failureInput = input as PostToolUseFailureHookInput;
+    const toolInput = isRecord(failureInput.tool_input) ? failureInput.tool_input : {};
+    taskTracker.onPostToolUseFailure(failureInput.tool_name, toolInput, failureInput.error);
+    return {};
+  };
+}
+
 export function createTaskCreatedHook(
   taskTracker: EcoTaskTrackerHooks,
   subagentLaunchRegistry?: SubagentLaunchRegistry,
@@ -1393,6 +1413,12 @@ export function createTaskCompletedHook(taskTracker: EcoTaskTrackerHooks): HookC
     }
     const completed = input as TaskCompletedHookInput;
     const completionState = taskTracker.getCompletionState?.();
+    if (completionState && hasFailedMutationWithoutSuccess(completionState)) {
+      return {
+        decision: "block",
+        reason: "文件写入全部失败，不能将任务标记为完成。请重新读取目标文件，使用完全一致的缩进后再修改。",
+      };
+    }
     if (completionState && !completionState.hasSubstantiveToolUse) {
       return {
         decision: "block",
@@ -1513,6 +1539,12 @@ export function createStopHook(ctx: EcoHookContext): HookCallback | undefined {
         return {
           decision: "block",
           reason: `仍有 ${completionState.openTasks.length} 个未完成任务：${titles}。请继续实施并验证，完成后显式更新任务状态。`,
+        };
+      }
+      if (hasFailedMutationWithoutSuccess(completionState)) {
+        return {
+          decision: "block",
+          reason: "文件写入全部失败，不能结束执行。请重新读取目标文件，使用完全一致的缩进后再修改并验证。",
         };
       }
       if (!completionState.hasSubstantiveToolUse) {
@@ -1720,6 +1752,14 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
         hooks,
         "PostToolUse",
         createTaskEvidencePostToolHook(ctx.taskTracker),
+        "Write|Edit|MultiEdit|NotebookEdit|Bash",
+      );
+    }
+    if (ctx.taskTracker.onPostToolUseFailure) {
+      pushHook(
+        hooks,
+        "PostToolUseFailure",
+        createTaskEvidencePostToolFailureHook(ctx.taskTracker),
         "Write|Edit|MultiEdit|NotebookEdit|Bash",
       );
     }

@@ -45,6 +45,8 @@ const SUBSTANTIVE_EXECUTION_TOOL_NAMES = new Set([
   "Bash",
 ]);
 
+const MUTATION_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
 function readString(input: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const value = input[key];
@@ -89,6 +91,8 @@ export function createSdkTaskTracker(
   const subagentTodoLinks = new Map<string, string>();
   let progressFromSdk = false;
   const substantiveToolNames = new Set<string>();
+  const successfulMutationToolNames = new Set<string>();
+  const failedMutationToolNames = new Set<string>();
 
   const persist = (nextTodos: CoderTodoItem[]) => {
     const ordered = reorderTodos(nextTodos);
@@ -370,6 +374,8 @@ export function createSdkTaskTracker(
       .map((todo) => ({ id: todo.id, title: todo.title, status: todo.status })),
     hasSubstantiveToolUse: substantiveToolNames.size > 0,
     substantiveToolNames: [...substantiveToolNames],
+    successfulMutationToolNames: [...successfulMutationToolNames],
+    failedMutationToolNames: [...failedMutationToolNames],
   });
 
   return {
@@ -412,6 +418,14 @@ export function createSdkTaskTracker(
         onPostToolUse(toolName) {
           if (SUBSTANTIVE_EXECUTION_TOOL_NAMES.has(toolName)) {
             substantiveToolNames.add(toolName);
+          }
+          if (MUTATION_TOOL_NAMES.has(toolName)) {
+            successfulMutationToolNames.add(toolName);
+          }
+        },
+        onPostToolUseFailure(toolName) {
+          if (MUTATION_TOOL_NAMES.has(toolName)) {
+            failedMutationToolNames.add(toolName);
           }
         },
         onTaskCreated: applyTaskCreated,

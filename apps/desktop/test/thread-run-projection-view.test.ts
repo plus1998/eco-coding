@@ -3408,6 +3408,50 @@ test("buildProjectionDisplayTimelineItems replaces placeholder Read by toolUseId
   });
 });
 
+test("buildProjectionDisplayTimelineItems replaces Edit preview with its failed result", () => {
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "edit-preview",
+        eventType: "tool.started",
+        sequence: 1,
+        text: "Tool: Edit · panel.dart",
+        metadata: {
+          tool: {
+            name: "Edit",
+            toolUseId: "call_edit",
+            fileChange: { path: "panel.dart", kind: "edit", additions: 1, deletions: 0 },
+          },
+        },
+      }),
+      item({
+        id: "edit-failed",
+        eventType: "tool.failed",
+        sequence: 2,
+        text: "Tool failed: Edit: String to replace not found in file.",
+        metadata: {
+          tool: {
+            name: "Edit",
+            toolUseId: "call_edit",
+            status: "failed",
+            output: "String to replace not found in file.",
+            fileChange: { path: "panel.dart", kind: "edit", additions: 1, deletions: 0 },
+          },
+        },
+      }),
+    ],
+    new Map(),
+  );
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.id).toBe("edit-failed");
+  expect(projectionItemToDetailBlock(requireValue(rows[0], "failed edit row"))).toMatchObject({
+    kind: "tool-failed",
+    tool: "Edit",
+    error: "String to replace not found in file.",
+  });
+});
+
 test("projectionItemToDetailBlock suppresses bare Read placeholder until file detail exists", () => {
   const detail = projectionItemToDetailBlock(
     item({

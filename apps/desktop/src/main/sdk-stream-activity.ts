@@ -390,7 +390,7 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
     return resolveSdkToolSummaryMetadata(event.payload);
   }
   if (event.type === "tool.failed") {
-    return resolveSdkToolPermissionDeniedMetadata(event.payload);
+    return resolveSdkToolFailedMetadata(event.payload);
   }
   if (event.type === "todo.updated") {
     return resolveSdkTaskProgressToolMetadata(event.payload);
@@ -443,18 +443,29 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
   };
 }
 
-function resolveSdkToolPermissionDeniedMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
+function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object") {
     return undefined;
   }
   const record = payload as Record<string, unknown>;
-  if (record.type !== "tool_permission_denied" || typeof record.tool_name !== "string") {
+  if (
+    (record.type !== "tool_permission_denied" && record.type !== "tool_result_error") ||
+    typeof record.tool_name !== "string"
+  ) {
     return undefined;
   }
+  const name = record.tool_name;
+  const message = typeof record.message === "string" ? record.message : undefined;
+  const isExecutionFailure = record.type === "tool_result_error";
+  const fileChange = isFileChangeToolName(name)
+    ? resolveFileChangeFromToolInput(name, record.input)
+    : undefined;
   return {
-    name: record.tool_name,
-    ...(typeof record.message === "string" && { detail: record.message }),
+    name,
+    ...(message && { detail: message }),
+    ...(message && isExecutionFailure && { output: message }),
     ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
+    ...(fileChange && { fileChange }),
     status: "failed",
   };
 }

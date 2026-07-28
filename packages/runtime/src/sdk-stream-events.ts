@@ -23,6 +23,7 @@ export interface SdkStreamContext {
   activeBlockIndex?: number;
   emittedStreamBlockKeys: Set<string>;
   emittedToolUseIds: Set<string>;
+  toolUseById: Map<string, { name: string; input?: Record<string, unknown> }>;
   resolveSubagentAgentId?: (input: {
     role: RuntimeAgentRole;
     parentToolUseId?: string;
@@ -42,6 +43,7 @@ export function createSdkStreamContext(options?: {
     registeredSubagentByParentToolUseId: new Map(),
     emittedStreamBlockKeys: new Set(),
     emittedToolUseIds: new Set(),
+    toolUseById: new Map(),
     ...(options?.resolveSubagentAgentId && { resolveSubagentAgentId: options.resolveSubagentAgentId }),
   };
 }
@@ -322,6 +324,7 @@ export function mapStreamEventToEvents(
       ctx.currentToolInputJson = "";
       if (ctx.currentToolUseId) {
         ctx.emittedToolUseIds.add(ctx.currentToolUseId);
+        ctx.toolUseById.set(ctx.currentToolUseId, { name: block.name });
       }
       events.push(
         createToolStartedEvent(
@@ -455,6 +458,10 @@ export function mapStreamEventToEvents(
             }
             if (toolUseId) {
               ctx.emittedToolUseIds.add(toolUseId);
+              ctx.toolUseById.set(toolUseId, {
+                name: block.name,
+                ...(isRecord(block.input) && { input: block.input }),
+              });
             }
             events.push(
               createToolStartedEvent(
@@ -527,6 +534,12 @@ export function mapStreamEventToEvents(
     if (ctx.inToolBlock) {
       const parsedInput = parseToolInputJson(ctx.currentToolInputJson);
       if (ctx.currentToolName) {
+        if (ctx.currentToolUseId) {
+          ctx.toolUseById.set(ctx.currentToolUseId, {
+            name: ctx.currentToolName,
+            ...(parsedInput && { input: parsedInput }),
+          });
+        }
         events.push(
           createToolStartedEvent(
             threadId,

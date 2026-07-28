@@ -9,6 +9,8 @@ test("execution completion rejects open tasks", () => {
         openTasks: [{ id: "task_1", title: "Implement panel", status: "running" }],
         hasSubstantiveToolUse: true,
         substantiveToolNames: ["Edit"],
+        successfulMutationToolNames: ["Edit"],
+        failedMutationToolNames: [],
       },
     ),
   ).toMatchObject({ ok: false, incomplete: true });
@@ -18,7 +20,13 @@ test("execution completion rejects actionless SDK success", () => {
   expect(
     validateSdkExecutionCompletion(
       { ok: true },
-      { openTasks: [], hasSubstantiveToolUse: false, substantiveToolNames: [] },
+      {
+        openTasks: [],
+        hasSubstantiveToolUse: false,
+        substantiveToolNames: [],
+        successfulMutationToolNames: [],
+        failedMutationToolNames: [],
+      },
     ),
   ).toEqual({
     ok: false,
@@ -34,6 +42,8 @@ test("execution completion accepts completed tasks with substantive evidence", (
       openTasks: [],
       hasSubstantiveToolUse: true,
       substantiveToolNames: ["Bash", "Edit"],
+      successfulMutationToolNames: ["Edit"],
+      failedMutationToolNames: [],
     }),
   ).toBe(result);
 });
@@ -45,6 +55,27 @@ test("execution completion preserves SDK failures", () => {
       openTasks: [],
       hasSubstantiveToolUse: false,
       substantiveToolNames: [],
+      successfulMutationToolNames: [],
+      failedMutationToolNames: [],
     }),
   ).toBe(result);
+});
+
+test("execution completion rejects successful verification after all writes failed", () => {
+  expect(
+    validateSdkExecutionCompletion(
+      { ok: true },
+      {
+        openTasks: [],
+        hasSubstantiveToolUse: true,
+        substantiveToolNames: ["Bash"],
+        successfulMutationToolNames: [],
+        failedMutationToolNames: ["Edit"],
+      },
+    ),
+  ).toEqual({
+    ok: false,
+    incomplete: true,
+    reason: "执行未完成：Edit 写入全部失败，没有文件被实际修改。",
+  });
 });

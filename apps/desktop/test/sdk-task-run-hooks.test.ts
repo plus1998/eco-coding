@@ -8,6 +8,8 @@ function createBaseHooks(input: { calls: string[] }): {
     openTasks: [];
     hasSubstantiveToolUse: boolean;
     substantiveToolNames: string[];
+    successfulMutationToolNames: string[];
+    failedMutationToolNames: string[];
   };
 } {
   return {
@@ -15,6 +17,8 @@ function createBaseHooks(input: { calls: string[] }): {
       openTasks: [],
       hasSubstantiveToolUse: false,
       substantiveToolNames: [],
+      successfulMutationToolNames: [],
+      failedMutationToolNames: [],
     }),
     createHookHandlers: (getStopStatus) => ({
       peekPendingCoderTodoId: () => "todo_pending",

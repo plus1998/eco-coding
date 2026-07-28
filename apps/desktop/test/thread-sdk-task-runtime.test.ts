@@ -55,6 +55,8 @@ test("createThreadSdkTaskRuntime wires task tracker hooks through thread store a
   expect(runtime.taskRunHooks.hookContextExtras.getStopTodoStatus?.()).toBe("completed");
   expect(runtime.taskRunHooks.getCompletionState()).toMatchObject({
     hasSubstantiveToolUse: false,
+    successfulMutationToolNames: [],
+    failedMutationToolNames: [],
     openTasks: [{ title: "Spawn coders", status: "pending" }],
   });
 });

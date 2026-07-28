@@ -5,6 +5,7 @@ import path from "node:path";
 import type {
   PreCompactHookInput,
   PostToolUseHookInput,
+  PostToolUseFailureHookInput,
   PreToolUseHookInput,
   StopHookInput,
   SubagentStartHookInput,
@@ -33,6 +34,7 @@ import {
   createTaskCreatedHook,
   createTaskCompletedHook,
   createTaskEvidencePostToolHook,
+  createTaskEvidencePostToolFailureHook,
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
@@ -554,6 +556,8 @@ test("task evidence and completion hooks block unsupported completion", async ()
       openTasks: [],
       hasSubstantiveToolUse: substantive,
       substantiveToolNames: substantive ? ["Edit"] : [],
+      successfulMutationToolNames: substantive ? ["Edit"] : [],
+      failedMutationToolNames: [],
     }),
   };
   const completedHook = createTaskCompletedHook(tracker);
@@ -591,11 +595,46 @@ test("task evidence and completion hooks block unsupported completion", async ()
   expect(completed).toEqual(["task_1"]);
 });
 
+test("task evidence records failed file mutations through PostToolUseFailure", async () => {
+  const failures: Array<{ toolName: string; error: string }> = [];
+  const hook = createTaskEvidencePostToolFailureHook({
+    onPreToolUse() {},
+    onPostToolUseFailure(toolName, _input, error) {
+      failures.push({ toolName, error });
+    },
+    onTaskCreated() {},
+    onTaskCompleted() {},
+    onSubagentStart() {},
+    onSubagentStop() {},
+    onStop() {},
+  });
+
+  await hook(
+    {
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Edit",
+      tool_input: { file_path: "panel.ts" },
+      tool_use_id: "call_edit",
+      error: "String to replace not found in file.",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PostToolUseFailureHookInput,
+    "call_edit",
+    { signal: new AbortController().signal },
+  );
+
+  expect(failures).toEqual([
+    { toolName: "Edit", error: "String to replace not found in file." },
+  ]);
+});
+
 test("Stop hook blocks open or actionless executions once", async () => {
   let state = {
     openTasks: [{ id: "task_1", title: "Implement panel", status: "running" as const }],
     hasSubstantiveToolUse: false,
     substantiveToolNames: [] as string[],
+    successfulMutationToolNames: [] as string[],
+    failedMutationToolNames: [] as string[],
   };
   const stopped: string[] = [];
   const hook = createStopHook({
@@ -626,12 +665,36 @@ test("Stop hook blocks open or actionless executions once", async () => {
   });
   expect(stopped).toEqual([]);
 
-  state = { openTasks: [], hasSubstantiveToolUse: false, substantiveToolNames: [] };
+  state = {
+    openTasks: [],
+    hasSubstantiveToolUse: false,
+    substantiveToolNames: [],
+    successfulMutationToolNames: [],
+    failedMutationToolNames: [],
+  };
   expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
     decision: "block",
   });
 
-  state = { openTasks: [], hasSubstantiveToolUse: true, substantiveToolNames: ["Bash"] };
+  state = {
+    openTasks: [],
+    hasSubstantiveToolUse: true,
+    substantiveToolNames: ["Bash"],
+    successfulMutationToolNames: [],
+    failedMutationToolNames: ["Edit"],
+  };
+  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
+    decision: "block",
+    reason: expect.stringContaining("文件写入全部失败"),
+  });
+
+  state = {
+    openTasks: [],
+    hasSubstantiveToolUse: true,
+    substantiveToolNames: ["Bash"],
+    successfulMutationToolNames: [],
+    failedMutationToolNames: [],
+  };
   expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toEqual({});
   expect(stopped).toEqual(["completed"]);
 

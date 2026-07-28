@@ -269,6 +269,46 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
+test("emits failed Edit results with the original file change metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];
+
+  bridge.handleEvent(
+    "thr_edit",
+    {
+      type: "tool.failed",
+      role: "planner",
+      payload: {
+        type: "tool_result_error",
+        tool_name: "Edit",
+        tool_use_id: "call_edit",
+        input: {
+          file_path: "panel.ts",
+          old_string: "\tline",
+          new_string: "  line",
+        },
+        message: "String to replace not found in file.",
+      },
+    },
+    (_threadId, type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({ type, message, ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted).toHaveLength(1);
+  expect(emitted[0]).toMatchObject({
+    type: "tool.failed",
+    message: "Tool failed: Edit: String to replace not found in file.",
+    tool: {
+      name: "Edit",
+      toolUseId: "call_edit",
+      output: "String to replace not found in file.",
+      status: "failed",
+      fileChange: { path: "panel.ts" },
+    },
+  });
+});
+
 test("defers streaming tool placeholder until input is complete", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];

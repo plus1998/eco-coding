@@ -207,11 +207,27 @@ test("TaskUpdate completion waits for TaskCompleted and records substantive tool
   expect(tracker.getCompletionState()).toMatchObject({
     hasSubstantiveToolUse: true,
     substantiveToolNames: ["Edit"],
+    successfulMutationToolNames: ["Edit"],
+    failedMutationToolNames: [],
   });
 
   hooks.onTaskCompleted({ taskId: "task_1", subject: "Implement panel" });
   expect(store.getTodos()[0]?.status).toBe("completed");
   expect(tracker.getCompletionState().openTasks).toEqual([]);
+});
+
+test("failed edits are tracked separately from successful verification commands", () => {
+  const { tracker, hooks } = createTracker();
+
+  hooks.onPostToolUseFailure?.("Edit", { file_path: "panel.ts" }, "String not found");
+  hooks.onPostToolUse?.("Bash", { command: "flutter analyze" }, { ok: true });
+
+  expect(tracker.getCompletionState()).toMatchObject({
+    hasSubstantiveToolUse: true,
+    substantiveToolNames: ["Bash"],
+    successfulMutationToolNames: [],
+    failedMutationToolNames: ["Edit"],
+  });
 });
 
 test("task_notification completes the exact linked SDK task and preserves summary", () => {

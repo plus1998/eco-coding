@@ -21,6 +21,17 @@ export function validateSdkExecutionCompletion(
     };
   }
 
+  if (
+    state.failedMutationToolNames.length > 0 &&
+    state.successfulMutationToolNames.length === 0
+  ) {
+    return {
+      ok: false,
+      incomplete: true,
+      reason: `执行未完成：${state.failedMutationToolNames.join("、")} 写入全部失败，没有文件被实际修改。`,
+    };
+  }
+
   if (!state.hasSubstantiveToolUse) {
     return {
       ok: false,

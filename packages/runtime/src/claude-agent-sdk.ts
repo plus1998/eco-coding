@@ -2234,7 +2234,10 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "user") {
-    return mapUserAgentOutputToEvents(message, threadId, role, uuid);
+    return [
+      ...mapUserToolResultFailureEvents(message, threadId, sessionId, role, uuid, streamCtx),
+      ...mapUserAgentOutputToEvents(message, threadId, role, uuid),
+    ];
   }
 
   if (message.type === "tool_progress") {
@@ -2358,6 +2361,72 @@ export function mapSdkMessageToEvents(
   }
 
   return [];
+}
+
+function mapUserToolResultFailureEvents(
+  message: Record<string, unknown>,
+  threadId: string,
+  sessionId: string,
+  fallbackRole: RuntimeAgentRole,
+  uuid: string,
+  streamCtx?: SdkStreamContext,
+): AgentEvent[] {
+  if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
+    return [];
+  }
+  const messageParentToolUseId =
+    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
+  const role = resolveSdkMessageStreamRole(message, streamCtx, fallbackRole);
+  const events: AgentEvent[] = [];
+  for (const [index, block] of message.message.content.entries()) {
+    if (!isRecord(block) || block.type !== "tool_result" || block.is_error !== true) {
+      continue;
+    }
+    const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id.trim() : "";
+    const descriptor = toolUseId ? streamCtx?.toolUseById.get(toolUseId) : undefined;
+    const error = extractToolResultErrorText(block.content) || "Tool execution failed.";
+    events.push(
+      createAttributedAgentEvent(
+        {
+          id: `${uuid}:tool-failed:${index}`,
+          threadId,
+          sessionId,
+          role,
+          type: "tool.failed",
+          payload: {
+            type: "tool_result_error",
+            tool_name: descriptor?.name ?? "Tool",
+            ...(toolUseId && { tool_use_id: toolUseId }),
+            ...(descriptor?.input && { input: descriptor.input }),
+            message: error,
+          },
+          messageParentToolUseId,
+        },
+        streamCtx,
+      ),
+    );
+  }
+  return events;
+}
+
+function extractToolResultErrorText(content: unknown): string {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .flatMap((entry): string[] => {
+      if (typeof entry === "string") {
+        return entry.trim() ? [entry.trim()] : [];
+      }
+      if (isRecord(entry) && typeof entry.text === "string" && entry.text.trim()) {
+        return [entry.text.trim()];
+      }
+      return [];
+    })
+    .join("\n");
 }
 
 function mapUserAgentOutputToEvents(
@@ -2555,6 +2624,12 @@ function mapAssistantMessageToEvents(
     }
 
     const toolUseId = typeof block.id === "string" ? block.id : undefined;
+    if (toolUseId) {
+      streamCtx?.toolUseById.set(toolUseId, {
+        name: block.name,
+        ...(isRecord(block.input) && { input: block.input }),
+      });
+    }
     if (toolUseId && streamCtx?.emittedToolUseIds.has(toolUseId)) {
       continue;
     }
@@ -2850,7 +2925,10 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
   }
 
   if (isRecord(event.payload)) {
-    if (event.payload.type === "tool_permission_denied") {
+    if (
+      event.payload.type === "tool_permission_denied" ||
+      event.payload.type === "tool_result_error"
+    ) {
       return "tool";
     }
     if (event.payload.type === "tool_progress" || event.payload.type === "tool_use_summary") {
@@ -2984,6 +3062,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   if (payload.type === "tool_permission_denied" && typeof payload.tool_name === "string") {
     const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
     return `Permission denied for ${payload.tool_name}${reason}`;
+  }
+
+  if (payload.type === "tool_result_error" && typeof payload.tool_name === "string") {
+    const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
+    return `Tool failed: ${payload.tool_name}${reason}`;
   }
 
   if (typeof payload.label === "string" && typeof payload.ecoPhase === "string") {

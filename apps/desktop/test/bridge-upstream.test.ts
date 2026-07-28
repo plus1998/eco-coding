@@ -9,6 +9,7 @@ import {
   buildBridgePromptCacheKey,
   buildBridgeUpstreamMessagesPayload,
   createStreamUtf8Decoder,
+  exposeReadToolLineSeparators,
   finalizeStreamUtf8Decoder,
   forwardMessagesViaBridge,
   parseAnthropicStreamEventBlock,
@@ -166,6 +167,74 @@ test("buildBridgeUpstreamMessagesPayload sends Responses input as a list", () =>
       content: [{ type: "input_text", text: "hi" }],
     },
   ]);
+});
+
+test("exposeReadToolLineSeparators makes only the Read line-number tab visible", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "call_read", name: "Read", input: { file_path: "main.go" } },
+          { type: "tool_use", id: "call_bash", name: "Bash", input: { command: "printf x" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_read",
+            content: "  41\t        spaces()\n  42\t\trealTab()",
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "call_bash",
+            content: "  41\tleave bash output unchanged",
+          },
+        ],
+      },
+    ],
+  };
+
+  const normalized = exposeReadToolLineSeparators(request);
+  const results = normalized.messages[1]?.content as Array<Record<string, unknown>>;
+  expect(results[0]?.content).toBe("  41→        spaces()\n  42→\trealTab()");
+  expect(results[1]?.content).toBe("  41\tleave bash output unchanged");
+  expect((request.messages[1]?.content as Array<Record<string, unknown>>)[0]?.content).toContain("\t");
+});
+
+test("OpenAI bridge exposes Read line separators before sending tool output upstream", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "call_read", name: "Read", input: { file_path: "panel.dart" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_read",
+            content: "291\t        DropdownMenu<String>(",
+          },
+        ],
+      },
+    ],
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload("openai_responses", request, "local-model", true);
+  const output = (body.input as Array<Record<string, unknown>>).find(
+    (item) => item.type === "function_call_output",
+  );
+  expect(output?.output).toBe("291→        DropdownMenu<String>(");
 });
 
 test("buildBridgeUpstreamMessagesPayload does not send Anthropic cache_control to Responses", () => {

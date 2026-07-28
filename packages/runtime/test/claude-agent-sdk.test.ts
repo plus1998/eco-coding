@@ -2897,3 +2897,62 @@ test("maps completed AgentOutput as an exact terminal event without billing dupl
   });
   expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
 });
+
+test("maps failed SDK tool results onto the original tool use", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_edit",
+      session_id: "session_planner",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "call_edit",
+            name: "Edit",
+            input: { file_path: "panel.ts", old_string: "\tline", new_string: "  line" },
+          },
+        ],
+      },
+    },
+    "thr_edit",
+    ctx,
+  );
+
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "result_edit",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_edit",
+            is_error: true,
+            content: "String to replace not found in file.",
+          },
+        ],
+      },
+    },
+    "thr_edit",
+    ctx,
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "tool.failed",
+    payload: {
+      type: "tool_result_error",
+      tool_name: "Edit",
+      tool_use_id: "call_edit",
+      input: { file_path: "panel.ts" },
+      message: "String to replace not found in file.",
+    },
+  });
+  expect(formatAgentEventLine(events[0]!)).toBe(
+    "Tool failed: Edit: String to replace not found in file.",
+  );
+});

@@ -618,7 +618,8 @@ export function buildBridgeUpstreamMessagesPayload(
     return payload;
   }
 
-  const polyfill = applyGatewayContextManagementPolyfill(sanitizedAnthropicRequest);
+  const readableAnthropicRequest = exposeReadToolLineSeparators(sanitizedAnthropicRequest);
+  const polyfill = applyGatewayContextManagementPolyfill(readableAnthropicRequest);
   const effectiveAnthropicRequest = polyfill.request;
   if (polyfill.appliedEdits.length > 0) {
     logGatewayContextManagementPolyfill({
@@ -653,6 +654,95 @@ export function buildBridgeUpstreamMessagesPayload(
   applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
   applyDisableThinkingUpstreamPatch(payload, apiCompat, effectiveAnthropicRequest);
   return payload;
+}
+
+/**
+ * Claude Code's Read result uses a literal tab between each line number and source line.
+ * OpenAI-compatible models can copy that presentation delimiter into Edit.old_string.
+ */
+export function exposeReadToolLineSeparators(request: AnthropicRequest): AnthropicRequest {
+  const readToolUseIds = new Set<string>();
+  for (const message of request.messages) {
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    for (const block of message.content) {
+      if (
+        isBridgeRecord(block) &&
+        block.type === "tool_use" &&
+        block.name === "Read" &&
+        typeof block.id === "string"
+      ) {
+        readToolUseIds.add(block.id);
+      }
+    }
+  }
+  if (readToolUseIds.size === 0) {
+    return request;
+  }
+
+  let changed = false;
+  const messages = request.messages.map((message) => {
+    if (!Array.isArray(message.content)) {
+      return message;
+    }
+    let messageChanged = false;
+    const content = message.content.map((block) => {
+      if (
+        !isBridgeRecord(block) ||
+        block.type !== "tool_result" ||
+        typeof block.tool_use_id !== "string" ||
+        !readToolUseIds.has(block.tool_use_id)
+      ) {
+        return block;
+      }
+      const normalizedContent = exposeReadLineNumberTabs(block.content);
+      if (normalizedContent === block.content) {
+        return block;
+      }
+      changed = true;
+      messageChanged = true;
+      return { ...block, content: normalizedContent };
+    });
+    return messageChanged ? { ...message, content } : message;
+  });
+
+  return changed ? { ...request, messages } : request;
+}
+
+function exposeReadLineNumberTabs(content: unknown): unknown {
+  if (typeof content === "string") {
+    return exposeReadLineNumberTabsInText(content);
+  }
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  let changed = false;
+  const entries = content.map((entry) => {
+    if (typeof entry === "string") {
+      const normalized = exposeReadLineNumberTabsInText(entry);
+      changed ||= normalized !== entry;
+      return normalized;
+    }
+    if (!isBridgeRecord(entry) || typeof entry.text !== "string") {
+      return entry;
+    }
+    const normalized = exposeReadLineNumberTabsInText(entry.text);
+    if (normalized === entry.text) {
+      return entry;
+    }
+    changed = true;
+    return { ...entry, text: normalized };
+  });
+  return changed ? entries : content;
+}
+
+function exposeReadLineNumberTabsInText(text: string): string {
+  return text.replace(/^( *\d+)\t/gm, "$1→");
+}
+
+function isBridgeRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function resolveBridgeUpstreamUrl(
