@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
@@ -9,7 +8,6 @@ import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
-import '../../core/widgets/eco_pressable.dart';
 import '../../core/utils/thread_usage_display.dart';
 import '../../l10n/generated/app_localizations.dart';
 
@@ -223,94 +221,6 @@ List<Widget> _buildSubagentSections(
 String _formatTokenCount(int value) {
   if (value < 1000) return '$value';
   return formatContextK(value);
-}
-
-class ThreadUsageFloatButtons extends StatelessWidget {
-  const ThreadUsageFloatButtons({
-    super.key,
-    required this.billing,
-    required this.threadStatus,
-  });
-
-  final ThreadBillingSnapshot? billing;
-  final String? threadStatus;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final costLabel = formatBillingPillCost(billing);
-    final costColor = (billing?.ecoCostUsd ?? 0) > 0
-        ? eco.success
-        : eco.textSecondary;
-    final costStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: costColor,
-      fontSize: 12,
-      height: 1.1,
-      letterSpacing: -0.1,
-      fontFeatures: const [FontFeature.tabularFigures()],
-      fontWeight: FontWeight.w600,
-    );
-
-    void openBillingSheet() {
-      showThreadBillingSheet(
-        context: context,
-        billing: billing,
-        threadStatus: threadStatus,
-      );
-    }
-
-    final label = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Text(costLabel, style: costStyle),
-    );
-
-    if (PlatformInfo.isIOS && isDark) {
-      return Tooltip(
-        message: context.l10n.billingTitle,
-        child: AdaptiveButton.child(
-          onPressed: openBillingSheet,
-          style: AdaptiveButtonStyle.glass,
-          size: AdaptiveButtonSize.small,
-          minSize: Size(_billingPillWidth(context, costLabel, costStyle), 30),
-          enabled: true,
-          useSmoothRectangleBorder: false,
-          child: label,
-        ),
-      );
-    }
-
-    return Tooltip(
-      message: context.l10n.billingTitle,
-      child: EcoPressable(
-        onTap: openBillingSheet,
-        borderRadius: BorderRadius.circular(999),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: eco.composerPillBg,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              width: 0.5,
-              color: isDark
-                  ? eco.composerPillBorder.withValues(alpha: 0.35)
-                  : const Color(0x123C3C43),
-            ),
-          ),
-          child: label,
-        ),
-      ),
-    );
-  }
-}
-
-double _billingPillWidth(BuildContext context, String label, TextStyle? style) {
-  final painter = TextPainter(
-    text: TextSpan(text: label, style: style),
-    textDirection: Directionality.of(context),
-    textScaler: MediaQuery.textScalerOf(context),
-    maxLines: 1,
-  )..layout();
-  return painter.width + 20.0 + 16.0;
 }
 
 class _BillingHero extends StatelessWidget {

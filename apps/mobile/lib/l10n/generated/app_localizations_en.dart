@@ -345,6 +345,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get approvalNeedsClarification => 'Clarification needed';
 
   @override
+  String get approvalClarificationPrevious => 'Previous question';
+
+  @override
+  String get approvalClarificationNext => 'Next question';
+
+  @override
+  String get approvalClarificationRecommended => 'Recommended';
+
+  @override
+  String get approvalClarificationCompleteSelection => 'Complete selection';
+
+  @override
   String get approvalSeverityCritical => 'Critical';
 
   @override

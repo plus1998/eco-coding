@@ -2062,6 +2062,8 @@ class ComposerRouteSummary extends ConsumerWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.billing,
+    this.showBilling = false,
     this.contextSnapshot,
     this.threadStatus,
     this.workspacePath = '',
@@ -2073,6 +2075,8 @@ class ComposerRouteSummary extends ConsumerWidget {
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final ThreadBillingSnapshot? billing;
+  final bool showBilling;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
   final String workspacePath;
@@ -2110,6 +2114,20 @@ class ComposerRouteSummary extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (showBilling)
+          ComposerToolbarIconButton(
+            onPressed: () => showThreadBillingSheet(
+              context: context,
+              billing: billing,
+              threadStatus: threadStatus,
+            ),
+            tooltip:
+                '${context.l10n.billingTitle} ${formatBillingPillCost(billing)}',
+            icon: ComposerToolbarIcon(
+              icon: EcoIcons.usageCost,
+              color: ecoColors(context).textSecondary,
+            ),
+          ),
         if (contextSnapshot != null)
           ComposerToolbarIconButton(
             onPressed: () => showThreadContextSheet(

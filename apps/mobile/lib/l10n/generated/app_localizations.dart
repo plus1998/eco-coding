@@ -662,6 +662,30 @@ abstract class AppLocalizations {
   /// **'Clarification needed'**
   String get approvalNeedsClarification;
 
+  /// No description provided for @approvalClarificationPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous question'**
+  String get approvalClarificationPrevious;
+
+  /// No description provided for @approvalClarificationNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next question'**
+  String get approvalClarificationNext;
+
+  /// No description provided for @approvalClarificationRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get approvalClarificationRecommended;
+
+  /// No description provided for @approvalClarificationCompleteSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete selection'**
+  String get approvalClarificationCompleteSelection;
+
   /// No description provided for @approvalSeverityCritical.
   ///
   /// In en, this message translates to:

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/widgets/eco_action_sheet.dart';
@@ -276,90 +277,399 @@ class _BashRiskBadge extends StatelessWidget {
   }
 }
 
-Future<void> showClarificationSheet({
-  required BuildContext context,
-  required ClarificationRequest request,
-  required Future<void> Function(List<List<String>> selections) onSubmit,
-}) {
-  final selections = List<List<String>>.generate(
-    request.questions.length,
-    (_) => <String>[],
+class ClarificationDockPanel extends StatefulWidget {
+  const ClarificationDockPanel({
+    super.key,
+    required this.request,
+    required this.busy,
+    required this.onSubmit,
+    required this.onDismiss,
+  });
+
+  final ClarificationRequest request;
+  final bool busy;
+  final Future<void> Function(List<List<String>> selections) onSubmit;
+  final Future<void> Function() onDismiss;
+
+  @override
+  State<ClarificationDockPanel> createState() => _ClarificationDockPanelState();
+}
+
+class _ClarificationDockPanelState extends State<ClarificationDockPanel> {
+  static final _recommendedSuffix = RegExp(
+    r'\s*(?:\(Recommended\)|（Recommended）|（推荐）)$',
+    caseSensitive: false,
   );
 
-  return showEcoModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: ecoColors(context).bgMain,
-    builder: (context) {
-      var submitting = false;
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return _ScrollableSheetFrame(
-            maxHeightFactor: 0.92,
-            footer: FilledButton(
-              onPressed: submitting || !selections.every((s) => s.isNotEmpty)
-                  ? null
-                  : () async {
-                      setState(() => submitting = true);
-                      try {
-                        await onSubmit(selections);
-                        if (context.mounted) Navigator.pop(context);
-                      } finally {
-                        if (context.mounted) {
-                          setState(() => submitting = false);
-                        }
-                      }
-                    },
-              child: submitting
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: ecoColors(context).onAccent,
-                      ),
-                    )
-                  : Text(context.l10n.commonSubmit),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  context.l10n.approvalNeedsClarification,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+  late List<List<String>> _selections;
+  int _questionIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetSelections();
+  }
+
+  @override
+  void didUpdateWidget(covariant ClarificationDockPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.request.toolUseId != widget.request.toolUseId) {
+      _questionIndex = 0;
+      _resetSelections();
+    }
+  }
+
+  void _resetSelections() {
+    _selections = [
+      for (final question in widget.request.questions)
+        _initialSelection(question),
+    ];
+  }
+
+  List<String> _initialSelection(ClarificationQuestion question) {
+    for (final option in question.options) {
+      if (_isRecommendedOption(option)) {
+        return [option.label];
+      }
+    }
+    return [];
+  }
+
+  bool _isRecommendedOption(ClarificationQuestionOption option) {
+    return option.recommended == true ||
+        _recommendedSuffix.hasMatch(option.label);
+  }
+
+  String _formatOptionLabel(String label) {
+    return label.replaceFirst(_recommendedSuffix, '').trim();
+  }
+
+  bool get _questionReady => _selections[_questionIndex].isNotEmpty;
+
+  void _selectOption(ClarificationQuestion question, String value) {
+    if (widget.busy) return;
+    setState(() {
+      final selected = _selections[_questionIndex];
+      if (question.multiSelect == true) {
+        if (selected.contains(value)) {
+          selected.remove(value);
+        } else {
+          selected.add(value);
+        }
+        return;
+      }
+      _selections[_questionIndex] = [value];
+      if (_questionIndex < widget.request.questions.length - 1) {
+        _questionIndex += 1;
+      }
+    });
+  }
+
+  void _previousQuestion() {
+    if (widget.busy || _questionIndex == 0) return;
+    setState(() => _questionIndex -= 1);
+  }
+
+  void _nextQuestion() {
+    if (widget.busy ||
+        !_questionReady ||
+        _questionIndex >= widget.request.questions.length - 1) {
+      return;
+    }
+    setState(() => _questionIndex += 1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.request.questions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final colors = ecoColors(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final question = widget.request.questions[_questionIndex];
+    final total = widget.request.questions.length;
+    final isLast = _questionIndex == total - 1;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.composerContextBg,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: colors.composerPillBorder),
+            boxShadow: [
+              BoxShadow(
+                color: colors.shadowScrim.withValues(
+                  alpha: isDark ? 0.22 : 0.05,
                 ),
-                const SizedBox(height: 16),
-                for (var i = 0; i < request.questions.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 12),
-                  _ClarificationQuestionCard(
-                    question: request.questions[i],
-                    selected: selections[i],
-                    onChanged: (value) {
-                      setState(() {
-                        if (request.questions[i].multiSelect == true) {
-                          if (selections[i].contains(value)) {
-                            selections[i].remove(value);
-                          } else {
-                            selections[i].add(value);
-                          }
-                        } else {
-                          selections[i] = [value];
-                        }
-                      });
-                    },
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        question.question,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                    if (total > 1) ...[
+                      const SizedBox(width: 8),
+                      _ClarificationPageButton(
+                        icon: EcoIcons.chevronLeft,
+                        tooltip: context.l10n.approvalClarificationPrevious,
+                        enabled: !widget.busy && _questionIndex > 0,
+                        onPressed: _previousQuestion,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Text(
+                          '${_questionIndex + 1} / $total',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(color: colors.textMuted),
+                        ),
+                      ),
+                      _ClarificationPageButton(
+                        icon: EcoIcons.chevronRight,
+                        tooltip: context.l10n.approvalClarificationNext,
+                        enabled:
+                            !widget.busy &&
+                            _questionReady &&
+                            _questionIndex < total - 1,
+                        onPressed: _nextQuestion,
+                      ),
+                    ],
+                    const SizedBox(width: 4),
+                    _ClarificationPageButton(
+                      icon: EcoIcons.close,
+                      tooltip: context.l10n.commonClose,
+                      enabled: !widget.busy,
+                      onPressed: () => widget.onDismiss(),
+                    ),
+                  ],
+                ),
+                if (question.header?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    question.header!,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: colors.textMuted),
                   ),
                 ],
+                const SizedBox(height: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.36,
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: question.options.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 4),
+                    itemBuilder: (context, index) {
+                      final option = question.options[index];
+                      final selected = _selections[_questionIndex].contains(
+                        option.label,
+                      );
+                      return _ClarificationOptionRow(
+                        index: index,
+                        option: option,
+                        label: _formatOptionLabel(option.label),
+                        selected: selected,
+                        recommended: _isRecommendedOption(option),
+                        enabled: !widget.busy,
+                        onTap: () => _selectOption(question, option.label),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (!isLast && question.multiSelect == true)
+                      FilledButton(
+                        onPressed: _questionReady && !widget.busy
+                            ? _nextQuestion
+                            : null,
+                        child: Text(
+                          context.l10n.approvalClarificationCompleteSelection,
+                        ),
+                      ),
+                    if (isLast)
+                      FilledButton(
+                        onPressed: _questionReady && !widget.busy
+                            ? () => widget.onSubmit(_selections)
+                            : null,
+                        child: widget.busy
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colors.onAccent,
+                                ),
+                              )
+                            : Text(context.l10n.commonSubmit),
+                      ),
+                  ],
+                ),
               ],
             ),
-          );
-        },
-      );
-    },
-  );
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClarificationPageButton extends StatelessWidget {
+  const _ClarificationPageButton({
+    required this.icon,
+    required this.tooltip,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: enabled ? onPressed : null,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+      padding: EdgeInsets.zero,
+      icon: Icon(icon, size: 16),
+    );
+  }
+}
+
+class _ClarificationOptionRow extends StatelessWidget {
+  const _ClarificationOptionRow({
+    required this.index,
+    required this.option,
+    required this.label,
+    required this.selected,
+    required this.recommended,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final int index;
+  final ClarificationQuestionOption option;
+  final String label;
+  final bool selected;
+  final bool recommended;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ecoColors(context);
+    return Material(
+      color: selected
+          ? colors.textPrimary.withValues(alpha: 0.06)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? colors.accent : colors.borderSubtle,
+                  ),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: selected ? colors.accent : colors.textMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          label,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (recommended)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.textPrimary.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              context.l10n.approvalClarificationRecommended,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(color: colors.textMuted),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (option.description?.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        option.description!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textMuted,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (selected) ...[
+                const SizedBox(width: 8),
+                Icon(EcoIcons.chevronRight, size: 18, color: colors.textMuted),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ScrollableSheetFrame extends StatelessWidget {
@@ -407,58 +717,6 @@ class _ScrollableSheetFrame extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ClarificationQuestionCard extends StatelessWidget {
-  const _ClarificationQuestionCard({
-    required this.question,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final ClarificationQuestion question;
-  final List<String> selected;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return EcoGroupedSurface(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (question.header != null) ...[
-            Text(
-              question.header!,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
-            ),
-            const SizedBox(height: 6),
-          ],
-          Text(
-            question.question,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: question.options.map((option) {
-              final isSelected = selected.contains(option.label);
-              return FilterChip(
-                label: Text(option.label),
-                selected: isSelected,
-                onSelected: (_) => onChanged(option.label),
-              );
-            }).toList(),
-          ),
-        ],
       ),
     );
   }

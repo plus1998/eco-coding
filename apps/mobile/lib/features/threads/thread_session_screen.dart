@@ -31,7 +31,6 @@ import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
 import 'activity_feed.dart';
 import 'activity_feed_scroll_coordinator.dart';
-import 'thread_info_sheets.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_session_layout.dart';
 import 'thread_providers.dart';
@@ -55,9 +54,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ActivityFeedScrollCoordinator(_scrollController);
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
-  String? _shownApprovalKey;
   bool _bashApprovalBusy = false;
   bool _planActionBusy = false;
+  bool _clarificationBusy = false;
   bool _followUpBusy = false;
   bool _sendBusy = false;
   bool _stopBusy = false;
@@ -72,20 +71,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(runtimeConfigProvider.notifier).state = null;
-      _maybeShowApprovalSheet(ref.read(threadSessionProvider(widget.threadId)));
     });
-  }
-
-  void _maybeShowApprovalSheet(ThreadSessionState session) {
-    if (!_needsApprovalSheet(session)) {
-      return;
-    }
-    final key = _approvalKey(session);
-    if (key == null || key == _shownApprovalKey) {
-      return;
-    }
-    _shownApprovalKey = key;
-    _showApprovalSheets(session);
   }
 
   @override
@@ -131,26 +117,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     super.dispose();
   }
 
-  String? _approvalKey(ThreadSessionState session) {
-    final thread = session.thread;
-    if (thread == null) return null;
-    if (session.pendingClarification != null &&
-        session.pendingClarification!.threadId == thread.id) {
-      return 'clarification:${session.pendingClarification!.toolUseId}';
-    }
-    return null;
-  }
-
-  bool _needsApprovalSheet(ThreadSessionState session) {
-    final thread = session.thread;
-    if (thread == null) return false;
-    if (session.pendingClarification != null &&
-        session.pendingClarification!.threadId == thread.id) {
-      return true;
-    }
-    return false;
-  }
-
   bool _isRunning(ThreadSummary? thread) {
     if (thread == null) return false;
     return thread.status == 'running' || thread.status == 'queued';
@@ -166,7 +132,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           thread: state.thread,
           pendingPlan: state.pendingPlan,
           pendingBash: state.pendingBash,
+          pendingClarification: state.pendingClarification,
           followUps: state.followUps,
+          billing: state.billing,
           contextSnapshot: state.contextSnapshot,
           projectionReady: isProjectionFeedReady(state.runProjection),
         ),
@@ -215,37 +183,20 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
     final pendingBash = session.pendingBash;
     final pendingPlan = session.pendingPlan;
+    final pendingClarification = session.pendingClarification;
     final showBashApproval =
         pendingBash != null && pendingBash.threadId == thread?.id;
     final showPlanApproval =
         pendingPlan != null && pendingPlan.threadId == thread?.id;
+    final showClarification =
+        pendingClarification != null &&
+        pendingClarification.threadId == thread?.id;
     final queuedFollowUps = queuedThreadFollowUps(
       session.followUps,
     ).where((item) => item.id != _editingFollowUpId).toList();
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
-      final previousApprovalKey = previous == null
-          ? null
-          : _approvalKey(previous);
-      final nextApprovalKey = _approvalKey(next);
-      if (previousApprovalKey != null && nextApprovalKey == null) {
-        Navigator.of(context).maybePop();
-      }
-      if (!_needsApprovalSheet(next)) {
-        _shownApprovalKey = null;
-      } else {
-        final key = nextApprovalKey;
-        if (key != null && key != _shownApprovalKey) {
-          _shownApprovalKey = key;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _showApprovalSheets(
-              ref.read(threadSessionProvider(widget.threadId)),
-            );
-          });
-        }
-      }
       final previousProjection = previous?.runProjection;
       final nextProjection = next.runProjection;
       final projectionBecameReady =
@@ -325,9 +276,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ),
       body: ThreadSessionConversationLayout(
         floatingComposer: floatingComposer,
-        foreground: showLanding
-            ? null
-            : _DraggableThreadUsageOverlay(threadId: widget.threadId),
         feedBuilder: (context, feedBottomInset, controlsBottomInset) =>
             session.loading
             ? const Center(child: CircularProgressIndicator())
@@ -449,6 +397,20 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                         }
                       },
                     )
+                  : showClarification
+                  ? ClarificationDockPanel(
+                      key: ValueKey(
+                        'clarification-${pendingClarification.toolUseId}',
+                      ),
+                      request: pendingClarification,
+                      busy: _clarificationBusy,
+                      onSubmit: (selections) => _submitClarification(
+                        pendingClarification,
+                        selections,
+                      ),
+                      onDismiss: () =>
+                          _dismissClarification(pendingClarification),
+                    )
                   : SessionComposer(
                       key: const ValueKey('session-composer'),
                       controller: _promptController,
@@ -466,6 +428,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                           : (showLanding
                                 ? composerLandingPlaceholder(context.l10n)
                                 : null),
+                      billing: session.billing,
                       contextSnapshot: session.contextSnapshot,
                       threadStatus: thread?.status,
                       workspacePath: workspacePath,
@@ -498,6 +461,49 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ),
       );
     });
+  }
+
+  Future<void> _submitClarification(
+    ClarificationRequest request,
+    List<List<String>> selections,
+  ) async {
+    if (_clarificationBusy) return;
+    setState(() => _clarificationBusy = true);
+    try {
+      await ref
+          .read(threadSessionProvider(widget.threadId).notifier)
+          .submitClarification(request.toolUseId, selections);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _clarificationBusy = false);
+      }
+    }
+  }
+
+  Future<void> _dismissClarification(ClarificationRequest request) async {
+    if (_clarificationBusy) return;
+    setState(() => _clarificationBusy = true);
+    try {
+      await ref
+          .read(threadSessionProvider(widget.threadId).notifier)
+          .dismissClarification(request.toolUseId);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _clarificationBusy = false);
+      }
+    }
   }
 
   void _startEditingFollowUp(ThreadPendingFollowUp followUp) {
@@ -702,24 +708,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           context,
         ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
-    }
-  }
-
-  void _showApprovalSheets(ThreadSessionState session) {
-    if (!_needsApprovalSheet(session)) return;
-    final thread = session.thread;
-    if (session.pendingClarification != null &&
-        session.pendingClarification!.threadId == thread?.id) {
-      showClarificationSheet(
-        context: context,
-        request: session.pendingClarification!,
-        onSubmit: (selections) => ref
-            .read(threadSessionProvider(widget.threadId).notifier)
-            .submitClarification(
-              session.pendingClarification!.toolUseId,
-              selections,
-            ),
-      );
     }
   }
 }
@@ -1354,89 +1342,6 @@ List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
     return left.id.compareTo(right.id);
   });
   return merged;
-}
-
-class _DraggableThreadUsageOverlay extends ConsumerStatefulWidget {
-  const _DraggableThreadUsageOverlay({required this.threadId});
-
-  final String threadId;
-
-  @override
-  ConsumerState<_DraggableThreadUsageOverlay> createState() =>
-      _DraggableThreadUsageOverlayState();
-}
-
-class _DraggableThreadUsageOverlayState
-    extends ConsumerState<_DraggableThreadUsageOverlay> {
-  static const _edgeInset = 8.0;
-  static const _estimatedWidth = 96.0;
-  static const _height = 36.0;
-
-  Offset? _position;
-
-  Offset _clampPosition(Offset position, Size size) {
-    final safePadding = MediaQuery.paddingOf(context);
-    final topInset = safePadding.top + _edgeInset;
-    final maxX = (size.width - _estimatedWidth - _edgeInset).clamp(
-      _edgeInset,
-      double.infinity,
-    );
-    final maxY = (size.height - safePadding.bottom - _height - _edgeInset)
-        .clamp(topInset, double.infinity);
-    return Offset(
-      position.dx.clamp(_edgeInset, maxX),
-      position.dy.clamp(topInset, maxY),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final billing = ref.watch(
-      threadSessionProvider(widget.threadId).select((state) => state.billing),
-    );
-    final threadStatus = ref.watch(
-      threadSessionProvider(
-        widget.threadId,
-      ).select((state) => state.thread?.status),
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = constraints.biggest;
-        final fallback = Offset(
-          size.width - _estimatedWidth - _edgeInset,
-          sessionToolbarFrostHeight(context) + _edgeInset,
-        );
-        final position = _clampPosition(_position ?? fallback, size);
-        if (_position != null && position != _position) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _position = position);
-          });
-        }
-
-        return Stack(
-          children: [
-            Positioned(
-              left: position.dx,
-              top: position.dy,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanUpdate: (details) {
-                  setState(() {
-                    _position = _clampPosition(position + details.delta, size);
-                  });
-                },
-                child: ThreadUsageFloatButtons(
-                  billing: billing,
-                  threadStatus: threadStatus,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
 class _EditingFollowUpBanner extends StatelessWidget {

@@ -504,15 +504,21 @@ class ThreadPendingPlan {
 }
 
 class ClarificationQuestionOption {
-  const ClarificationQuestionOption({required this.label, this.recommended});
+  const ClarificationQuestionOption({
+    required this.label,
+    this.description,
+    this.recommended,
+  });
 
   factory ClarificationQuestionOption.fromJson(Map<String, dynamic> json) =>
       ClarificationQuestionOption(
         label: json['label'] as String? ?? '',
+        description: json['description'] as String?,
         recommended: json['recommended'] as bool?,
       );
 
   final String label;
+  final String? description;
   final bool? recommended;
 }
 

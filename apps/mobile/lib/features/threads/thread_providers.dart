@@ -885,6 +885,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       clearClarification: clarification == null,
     );
   }
+
+  Future<void> dismissClarification(String toolUseId) async {
+    final rpc = ref.read(desktopRpcProvider);
+    await rpc?.dismissClarification(toolUseId);
+    if (!mounted) return;
+    state = state.copyWith(clearClarification: true);
+  }
 }
 
 ThreadRunProjectionSnapshot? _pickNewerProjection(

@@ -37,6 +37,7 @@ class SessionComposer extends ConsumerStatefulWidget {
     required this.onStop,
     required this.onRuntimeConfigChanged,
     this.inputHint,
+    this.billing,
     this.contextSnapshot,
     this.threadStatus,
     this.workspacePath = '',
@@ -60,6 +61,7 @@ class SessionComposer extends ConsumerStatefulWidget {
   final VoidCallback onStop;
   final ValueChanged<ThreadRuntimeConfigInput> onRuntimeConfigChanged;
   final String? inputHint;
+  final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
   final String workspacePath;
@@ -342,6 +344,8 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           threadId: widget.threadId,
                           canEdit: canEditConfig,
                           onChanged: widget.onRuntimeConfigChanged,
+                          billing: widget.billing,
+                          showBilling: widget.hasActivity,
                           contextSnapshot: widget.contextSnapshot,
                           threadStatus: widget.threadStatus,
                           workspacePath: widget.workspacePath,

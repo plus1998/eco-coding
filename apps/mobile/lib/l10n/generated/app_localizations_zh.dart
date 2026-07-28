@@ -303,6 +303,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get approvalNeedsClarification => '需要澄清';
 
   @override
+  String get approvalClarificationPrevious => '上一题';
+
+  @override
+  String get approvalClarificationNext => '下一题';
+
+  @override
+  String get approvalClarificationRecommended => '推荐';
+
+  @override
+  String get approvalClarificationCompleteSelection => '完成选择';
+
+  @override
   String get approvalSeverityCritical => '严重';
 
   @override
