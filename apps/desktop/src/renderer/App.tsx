@@ -224,6 +224,7 @@ import {
   SubagentTaskDrawer,
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
   TASK_PANEL_FILES_TAB_ID,
+  TASK_PANEL_FILE_VIEWER_TAB_ID,
   TASK_PANEL_HOME_TAB_ID,
   TASK_PANEL_PLAN_TAB_ID,
   TASK_PANEL_REVIEW_TAB_ID,
@@ -3333,9 +3334,9 @@ function App() {
         restricted: !isWorkspacePathContained(currentProjectPath, reference.path),
       });
       setOpenTaskPanelTabIds((current) =>
-        addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID),
+        addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID),
       );
-      setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
+      setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
       setSelectedSubagentAgentId(undefined);
       setTaskPanelFullscreen(false);
       setTaskDrawerOpen(true);
@@ -3349,6 +3350,7 @@ function App() {
       const next = current.filter(
         (tabId) =>
           tabId === TASK_PANEL_FILES_TAB_ID ||
+          tabId === TASK_PANEL_FILE_VIEWER_TAB_ID ||
           tabId === TASK_PANEL_REVIEW_TAB_ID ||
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
           (tabId === TASK_PANEL_PLAN_TAB_ID && Boolean(taskPanelPlan)) ||
@@ -3410,6 +3412,10 @@ function App() {
     (tabId: TaskPanelActiveTab) => {
       setOpenTaskPanelTabIds((current) => {
         const result = removeOpenTaskPanelTab(current, tabId);
+        if (current.includes(tabId) && result.tabs.length === 0) {
+          setTaskDrawerOpen(false);
+          setTaskPanelFullscreen(false);
+        }
         if (taskPanelActiveTab === tabId) {
           const fallback = result.fallback;
           setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
@@ -6115,6 +6121,13 @@ function App() {
               addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID),
             );
             setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onSelectFileViewer={() => {
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID),
+            );
+            setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
           onOpenTerminal={() => {

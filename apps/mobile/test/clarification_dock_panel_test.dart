@@ -133,6 +133,69 @@ void main() {
     await tester.pump();
     expect(find.text('Confirm scope'), findsOneWidget);
   });
+
+  testWidgets('clarification options shrink for short content', (tester) async {
+    await tester.pumpWidget(
+      _LocalizedTestApp(
+        child: ClarificationDockPanel(
+          request: const ClarificationRequest(
+            toolUseId: 'tool-short',
+            threadId: 'thread-1',
+            questions: [
+              ClarificationQuestion(
+                question: 'Choose one',
+                options: [ClarificationQuestionOption(label: 'Only option')],
+              ),
+            ],
+          ),
+          busy: false,
+          onSubmit: (_) async {},
+          onDismiss: () async {},
+        ),
+      ),
+    );
+
+    final optionsHeight = tester
+        .getSize(find.byKey(const Key('clarification-options-scroll')))
+        .height;
+    expect(optionsHeight, lessThan(80));
+  });
+
+  testWidgets('clarification options scroll within the viewport cap', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _LocalizedTestApp(
+        child: ClarificationDockPanel(
+          request: ClarificationRequest(
+            toolUseId: 'tool-long',
+            threadId: 'thread-1',
+            questions: [
+              ClarificationQuestion(
+                question: 'Choose one',
+                options: [
+                  for (var index = 0; index < 12; index++)
+                    ClarificationQuestionOption(label: 'Option $index'),
+                ],
+              ),
+            ],
+          ),
+          busy: false,
+          onSubmit: (_) async {},
+          onDismiss: () async {},
+        ),
+      ),
+    );
+
+    final optionsHeight = tester
+        .getSize(find.byKey(const Key('clarification-options-scroll')))
+        .height;
+    final contentHeight = tester
+        .getSize(find.byKey(const Key('clarification-options-content')))
+        .height;
+    expect(optionsHeight, lessThanOrEqualTo(800 * 0.36));
+    expect(contentHeight, greaterThan(optionsHeight));
+  });
 }
 
 class _LocalizedTestApp extends StatelessWidget {

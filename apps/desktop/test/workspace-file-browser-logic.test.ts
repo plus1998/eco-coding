@@ -19,13 +19,17 @@ test("normalizes tree item indexes for controlled tree state", () => {
 });
 
 test("keeps WorkspaceFileBrowser translation keys in both catalogs", () => {
-  const source = fs.readFileSync(
-    new URL("../src/renderer/WorkspaceFileBrowser.tsx", import.meta.url),
-    "utf8",
-  );
+  const source = [
+    "../src/renderer/WorkspaceFileBrowser.tsx",
+    "../src/renderer/WorkspaceFileViewer.tsx",
+    "../src/renderer/SubagentTaskDrawer.tsx",
+  ].map((relativePath) => fs.readFileSync(new URL(relativePath, import.meta.url), "utf8")).join("\n");
   const keys = [...source.matchAll(/t\("([^"]+)"/g)]
     .map((match) => match[1])
-    .filter((key): key is string => key?.startsWith("fileBrowser.") === true);
+    .filter(
+      (key): key is string =>
+        key?.startsWith("fileBrowser.") === true || key?.startsWith("fileViewer.") === true,
+    );
   const uniqueKeys = [...new Set(keys)];
 
   for (const key of uniqueKeys) {

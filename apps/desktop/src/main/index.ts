@@ -3455,6 +3455,7 @@ function registerIpcHandlers(): void {
         "agent",
       );
       conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
+      commitThreadPlanApprovalToAgentMode(threadId, "codex_plan_approved");
       const result = await startCodexThreadContinuation({
         threadId,
         prompt: "Implement the plan.",

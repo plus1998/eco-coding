@@ -17,4 +17,10 @@ describe("task panel tab state", () => {
       fallback: "review",
     });
   });
+
+  test("leaves no fallback when the final tab closes", () => {
+    expect(removeOpenTaskPanelTab(["file-viewer"], "file-viewer")).toEqual({
+      tabs: [],
+    });
+  });
 });

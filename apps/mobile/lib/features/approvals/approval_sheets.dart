@@ -476,25 +476,38 @@ class _ClarificationDockPanelState extends State<ClarificationDockPanel> {
                   constraints: BoxConstraints(
                     maxHeight: MediaQuery.sizeOf(context).height * 0.36,
                   ),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: question.options.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 4),
-                    itemBuilder: (context, index) {
-                      final option = question.options[index];
-                      final selected = _selections[_questionIndex].contains(
-                        option.label,
-                      );
-                      return _ClarificationOptionRow(
-                        index: index,
-                        option: option,
-                        label: _formatOptionLabel(option.label),
-                        selected: selected,
-                        recommended: _isRecommendedOption(option),
-                        enabled: !widget.busy,
-                        onTap: () => _selectOption(question, option.label),
-                      );
-                    },
+                  child: SingleChildScrollView(
+                    key: const Key('clarification-options-scroll'),
+                    child: Column(
+                      key: const Key('clarification-options-content'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (
+                          var index = 0;
+                          index < question.options.length;
+                          index++
+                        ) ...[
+                          if (index > 0) const SizedBox(height: 4),
+                          Builder(
+                            builder: (context) {
+                              final option = question.options[index];
+                              final selected = _selections[_questionIndex]
+                                  .contains(option.label);
+                              return _ClarificationOptionRow(
+                                index: index,
+                                option: option,
+                                label: _formatOptionLabel(option.label),
+                                selected: selected,
+                                recommended: _isRecommendedOption(option),
+                                enabled: !widget.busy,
+                                onTap: () =>
+                                    _selectOption(question, option.label),
+                              );
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),

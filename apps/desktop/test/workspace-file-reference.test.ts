@@ -5,6 +5,7 @@ import {
   isWorkspacePathContained,
   linkifyWorkspaceFileReferences,
   parseWorkspaceFileReference,
+  parseWorkspaceFileReferenceHref,
   workspaceFileReferenceRemarkPlugin,
 } from "../src/renderer/workspace-file-reference";
 
@@ -27,6 +28,21 @@ describe("workspace file references", () => {
     expect(decodeWorkspaceFileReference(encodeWorkspaceFileReference(reference))).toEqual(reference);
     expect(parseWorkspaceFileReference("https://example.com/a.ts")).toBeUndefined();
     expect(parseWorkspaceFileReference("file:///tmp/example.ts")).toBeUndefined();
+  });
+
+  test("recognizes encoded absolute markdown hrefs without intercepting web links", () => {
+    expect(parseWorkspaceFileReferenceHref("/repo/My%20File.ts:12:3")).toEqual({
+      path: "/repo/My File.ts",
+      line: 12,
+      column: 3,
+    });
+    expect(parseWorkspaceFileReferenceHref(String.raw`C:\repo\App.tsx:8`)).toEqual({
+      path: String.raw`C:\repo\App.tsx`,
+      line: 8,
+    });
+    expect(parseWorkspaceFileReferenceHref("https://example.com/a.ts")).toBeUndefined();
+    expect(parseWorkspaceFileReferenceHref("//example.com/a.ts")).toBeUndefined();
+    expect(parseWorkspaceFileReferenceHref("%E0%A4%A")).toBeUndefined();
   });
 
   test("linkifies text while preserving punctuation", () => {

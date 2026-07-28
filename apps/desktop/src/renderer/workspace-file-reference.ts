@@ -84,6 +84,42 @@ export function decodeWorkspaceFileReference(value: string | undefined): Workspa
   }
 }
 
+export function parseWorkspaceFileReferenceHref(
+  href: string | undefined,
+): WorkspaceFileReference | undefined {
+  if (!href) {
+    return undefined;
+  }
+  if (href.startsWith("eco-file:")) {
+    return decodeWorkspaceFileReference(href.slice("eco-file:".length));
+  }
+  if (href.startsWith("//")) {
+    return undefined;
+  }
+  try {
+    const decoded = decodeURI(href);
+    if (
+      decoded.startsWith("//") ||
+      /[\u0000-\u001f\u007f]/.test(decoded) ||
+      !/^(?:\/|[A-Za-z]:[\\/])/.test(decoded)
+    ) {
+      return undefined;
+    }
+    const suffix = decoded.match(/:(\d+)(?::(\d+))?$/);
+    const path = suffix ? decoded.slice(0, -suffix[0].length) : decoded;
+    if (!path) {
+      return undefined;
+    }
+    return {
+      path,
+      ...(suffix ? { line: Number(suffix[1]) } : {}),
+      ...(suffix?.[2] ? { column: Number(suffix[2]) } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function linkifyWorkspaceFileReferences(text: string): Array<
   { type: "text"; value: string } | { type: "link"; value: string; reference: WorkspaceFileReference }
 > {

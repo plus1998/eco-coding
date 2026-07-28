@@ -1,29 +1,27 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  decodeWorkspaceFileReference,
   dispatchWorkspaceFileReference,
+  parseWorkspaceFileReferenceHref,
   workspaceFileReferenceRemarkPlugin,
 } from "./workspace-file-reference";
 
 const markdownRemarkPlugins = [remarkGfm, workspaceFileReferenceRemarkPlugin];
 const markdownComponents: Components = {
   a: ({ href, children }) => {
-    if (href?.startsWith("eco-file:")) {
-      const reference = decodeWorkspaceFileReference(href.slice("eco-file:".length));
-      if (reference) {
-        return (
-          <a
-            href={href}
-            onClick={(event) => {
-              event.preventDefault();
-              dispatchWorkspaceFileReference(reference);
-            }}
-          >
-            {children}
-          </a>
-        );
-      }
+    const reference = parseWorkspaceFileReferenceHref(href);
+    if (reference) {
+      return (
+        <a
+          href={href}
+          onClick={(event) => {
+            event.preventDefault();
+            dispatchWorkspaceFileReference(reference);
+          }}
+        >
+          {children}
+        </a>
+      );
     }
     return (
       <a href={href} target="_blank" rel="noreferrer noopener">

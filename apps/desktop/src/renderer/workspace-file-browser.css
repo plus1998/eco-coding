@@ -11,6 +11,25 @@
   color: var(--text-primary, currentColor);
 }
 
+.workspace-file-viewer {
+  --wfb-border: var(--border-subtle, color-mix(in srgb, currentColor 14%, transparent));
+  --wfb-muted: var(--text-muted, color-mix(in srgb, currentColor 62%, transparent));
+  display: flex;
+  min-width: 0;
+  min-height: 260px;
+  height: 100%;
+  overflow: auto;
+  position: relative;
+  border: 1px solid var(--wfb-border);
+  background: var(--bg-main, transparent);
+  color: var(--text-primary, currentColor);
+}
+
+.subagent-task-panel-tab-pane--file-viewer {
+  min-width: 0;
+  min-height: 0;
+}
+
 .workspace-file-browser__tree {
   min-width: 0;
   overflow: auto;

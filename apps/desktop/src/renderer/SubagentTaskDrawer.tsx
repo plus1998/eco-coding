@@ -31,12 +31,15 @@ import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
 import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
+import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
 import { i18n } from "./i18n";
+import { basename } from "./workspace-file-browser-logic";
 import type { WorkspaceFileReference } from "./workspace-file-reference";
 import "./subagent-task-drawer-home.css";
 
 export const TASK_PANEL_HOME_TAB_ID = "__home__";
 export const TASK_PANEL_FILES_TAB_ID = "__files__";
+export const TASK_PANEL_FILE_VIEWER_TAB_ID = "__file_viewer__";
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
 export const TASK_PANEL_PLAN_TAB_ID = "__plan__";
@@ -69,6 +72,7 @@ type StableSubagentRequestSpansSnapshot = {
 export type TaskPanelActiveTab =
   | typeof TASK_PANEL_HOME_TAB_ID
   | typeof TASK_PANEL_FILES_TAB_ID
+  | typeof TASK_PANEL_FILE_VIEWER_TAB_ID
   | typeof TASK_PANEL_REVIEW_TAB_ID
   | typeof TASK_PANEL_PLAN_TAB_ID
   | typeof TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID
@@ -593,6 +597,7 @@ export function SubagentTaskDrawer({
   workspacePath,
   fileTarget,
   onSelectFiles,
+  onSelectFileViewer,
   onOpenTerminal,
   onShowHome,
   onToggleFullscreen,
@@ -623,6 +628,7 @@ export function SubagentTaskDrawer({
   workspacePath: string;
   fileTarget?: WorkspaceFileReference & { requestId: number; restricted?: boolean };
   onSelectFiles: () => void;
+  onSelectFileViewer: () => void;
   onOpenTerminal: () => void;
   onShowHome: () => void;
   onToggleFullscreen: () => void;
@@ -633,10 +639,12 @@ export function SubagentTaskDrawer({
   const { t } = useTranslation();
   const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
   const filesSelected = activeTab === TASK_PANEL_FILES_TAB_ID;
+  const fileViewerSelected = activeTab === TASK_PANEL_FILE_VIEWER_TAB_ID;
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
   const filesOpen = openTabIds.includes(TASK_PANEL_FILES_TAB_ID);
+  const fileViewerOpen = openTabIds.includes(TASK_PANEL_FILE_VIEWER_TAB_ID);
   const reviewOpen = openTabIds.includes(TASK_PANEL_REVIEW_TAB_ID);
   const planOpen = openTabIds.includes(TASK_PANEL_PLAN_TAB_ID);
   const terminalTasksOpen = openTabIds.includes(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
@@ -648,7 +656,12 @@ export function SubagentTaskDrawer({
     [cards, openTabIds],
   );
   const liveActiveSubagentCard =
-    !homeSelected && !filesSelected && !reviewSelected && !planSelected && !terminalTasksSelected
+    !homeSelected &&
+    !filesSelected &&
+    !fileViewerSelected &&
+    !reviewSelected &&
+    !planSelected &&
+    !terminalTasksSelected
       ? cards.find((card) => card.key === activeTab)
       : undefined;
   const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
@@ -694,6 +707,40 @@ export function SubagentTaskDrawer({
                 aria-label={t("task.closeTab", { label: t("task.files") })}
                 title={t("task.closeTabTitle")}
                 onClick={() => onCloseTab(TASK_PANEL_FILES_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
+          ) : null}
+          {fileViewerOpen ? (
+            <span
+              className={`subagent-task-panel-tab-shell${fileViewerSelected ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--file-viewer${
+                  fileViewerSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={fileViewerSelected}
+                aria-controls="subagent-task-tab-file-viewer"
+                aria-label={t("fileViewer.tabLabel", {
+                  name: fileTarget ? basename(fileTarget.path) : t("fileViewer.title"),
+                })}
+                title={fileTarget?.path ?? t("fileViewer.title")}
+                onClick={onSelectFileViewer}
+              >
+                <FileText size={15} aria-hidden />
+                <span>{fileTarget ? basename(fileTarget.path) : t("fileViewer.title")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", {
+                  label: fileTarget ? basename(fileTarget.path) : t("fileViewer.title"),
+                })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_FILE_VIEWER_TAB_ID)}
               >
                 <X size={13} aria-hidden />
               </button>
@@ -881,7 +928,16 @@ export function SubagentTaskDrawer({
         ) : null}
         {filesSelected ? (
           <div id="subagent-task-tab-files" className="subagent-task-panel-tab-pane" role="tabpanel">
-            <WorkspaceFileBrowser
+            <WorkspaceFileBrowser workspacePath={workspacePath} />
+          </div>
+        ) : null}
+        {fileViewerSelected ? (
+          <div
+            id="subagent-task-tab-file-viewer"
+            className="subagent-task-panel-tab-pane subagent-task-panel-tab-pane--file-viewer"
+            role="tabpanel"
+          >
+            <WorkspaceFileViewer
               workspacePath={workspacePath}
               {...(fileTarget ? { target: fileTarget } : {})}
             />
