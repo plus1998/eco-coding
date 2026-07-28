@@ -4,6 +4,8 @@ import { IPC_CHANNELS, isKnownIpcChannel, isTerminalStreamEvent } from "../src/s
 test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.appSetLocale).toBe("app:set-locale");
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
+  expect(IPC_CHANNELS.workspaceListEntries).toBe("workspace:list-entries");
+  expect(IPC_CHANNELS.workspaceReadFile).toBe("workspace:read-file");
   expect(IPC_CHANNELS.workspacePrepareGit).toBe("workspace:prepare-git");
   expect(IPC_CHANNELS.workspaceListPackageScripts).toBe("workspace:list-package-scripts");
   expect(IPC_CHANNELS.workspaceSavePackageScriptArgs).toBe("workspace:save-package-script-args");

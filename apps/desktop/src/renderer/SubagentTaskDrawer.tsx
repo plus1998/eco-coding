@@ -4,6 +4,7 @@ import {
   Circle,
   ExternalLink,
   FileText,
+  FolderOpen,
   ListChecks,
   Maximize2,
   Minimize2,
@@ -29,8 +30,13 @@ import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtim
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
 import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
+import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
 import { i18n } from "./i18n";
+import type { WorkspaceFileReference } from "./workspace-file-reference";
+import "./subagent-task-drawer-home.css";
 
+export const TASK_PANEL_HOME_TAB_ID = "__home__";
+export const TASK_PANEL_FILES_TAB_ID = "__files__";
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
 export const TASK_PANEL_PLAN_TAB_ID = "__plan__";
@@ -61,6 +67,8 @@ type StableSubagentRequestSpansSnapshot = {
 };
 
 export type TaskPanelActiveTab =
+  | typeof TASK_PANEL_HOME_TAB_ID
+  | typeof TASK_PANEL_FILES_TAB_ID
   | typeof TASK_PANEL_REVIEW_TAB_ID
   | typeof TASK_PANEL_PLAN_TAB_ID
   | typeof TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID
@@ -582,6 +590,11 @@ export function SubagentTaskDrawer({
   onCloseAgent,
   onSelectBackgroundTasks,
   onSelectReview,
+  workspacePath,
+  fileTarget,
+  onSelectFiles,
+  onOpenTerminal,
+  onShowHome,
   onToggleFullscreen,
   onSelectReviewPath,
   onOpenTerminalTask,
@@ -607,12 +620,19 @@ export function SubagentTaskDrawer({
   onCloseAgent: (agentId: string) => void;
   onSelectBackgroundTasks: () => void;
   onSelectReview: () => void;
+  workspacePath: string;
+  fileTarget?: WorkspaceFileReference & { requestId: number; restricted?: boolean };
+  onSelectFiles: () => void;
+  onOpenTerminal: () => void;
+  onShowHome: () => void;
   onToggleFullscreen: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
 }) {
   const { t } = useTranslation();
+  const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
+  const filesSelected = activeTab === TASK_PANEL_FILES_TAB_ID;
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
@@ -624,7 +644,7 @@ export function SubagentTaskDrawer({
     [cards, openSubagentTabIds],
   );
   const liveActiveSubagentCard =
-    !reviewSelected && !planSelected && !terminalTasksSelected
+    !homeSelected && !filesSelected && !reviewSelected && !planSelected && !terminalTasksSelected
       ? cards.find((card) => card.key === activeTab)
       : undefined;
   const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
@@ -647,17 +667,32 @@ export function SubagentTaskDrawer({
     >
       <header className="subagent-task-panel-topbar">
         <div className="subagent-task-panel-tabs" role="tablist" aria-label={t("task.tabs")}>
-          <button
-            type="button"
-            className={`subagent-task-panel-tab subagent-task-panel-tab--review${reviewSelected ? " is-active" : ""}`}
-            role="tab"
-            aria-selected={reviewSelected}
-            aria-controls="subagent-task-tab-review"
-            onClick={onSelectReview}
-          >
-            <ListChecks size={15} aria-hidden />
-            <span>{t("task.review")}</span>
-          </button>
+          {filesSelected ? (
+            <button
+              type="button"
+              className="subagent-task-panel-tab subagent-task-panel-tab--files is-active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="subagent-task-tab-files"
+              onClick={onSelectFiles}
+            >
+              <FolderOpen size={15} aria-hidden />
+              <span>{t("task.files")}</span>
+            </button>
+          ) : null}
+          {homeSelected ? null : (
+            <button
+              type="button"
+              className={`subagent-task-panel-tab subagent-task-panel-tab--review${reviewSelected ? " is-active" : ""}`}
+              role="tab"
+              aria-selected={reviewSelected}
+              aria-controls="subagent-task-tab-review"
+              onClick={onSelectReview}
+            >
+              <ListChecks size={15} aria-hidden />
+              <span>{t("task.review")}</span>
+            </button>
+          )}
           {plan ? (
             <button
               type="button"
@@ -739,9 +774,9 @@ export function SubagentTaskDrawer({
           <button
             type="button"
             className="subagent-task-panel-tab-add"
-            aria-label={t("task.addTab")}
-            title={t("task.addTab")}
-            disabled
+            aria-label={t("task.home")}
+            title={t("task.home")}
+            onClick={onShowHome}
           >
             <Plus size={17} aria-hidden />
           </button>
@@ -765,6 +800,31 @@ export function SubagentTaskDrawer({
       </header>
 
       <div className="subagent-task-panel-body">
+        {homeSelected ? (
+          <section className="task-panel-home-actions" aria-labelledby="task-panel-home-title">
+            <h2 id="task-panel-home-title">{t("task.home")}</h2>
+            <button type="button" onClick={onOpenTerminal}>
+              <Terminal size={17} aria-hidden />
+              <span>{t("task.terminal")}</span>
+            </button>
+            <button type="button" onClick={onSelectFiles}>
+              <FolderOpen size={17} aria-hidden />
+              <span>{t("task.files")}</span>
+            </button>
+            <button type="button" onClick={onSelectReview}>
+              <ListChecks size={17} aria-hidden />
+              <span>{t("task.review")}</span>
+            </button>
+          </section>
+        ) : null}
+        {filesSelected ? (
+          <div id="subagent-task-tab-files" className="subagent-task-panel-tab-pane" role="tabpanel">
+            <WorkspaceFileBrowser
+              workspacePath={workspacePath}
+              {...(fileTarget ? { target: fileTarget } : {})}
+            />
+          </div>
+        ) : null}
         {reviewSelected ? (
           <div
             id="subagent-task-tab-review"

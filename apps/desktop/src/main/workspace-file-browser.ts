@@ -1,0 +1,272 @@
+import fs from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import path from "node:path";
+import { TextDecoder } from "node:util";
+import type {
+  WorkspaceFileBrowserRequest,
+  WorkspaceFileEntry,
+  WorkspaceFileReadRequest,
+  WorkspaceFileReadResult,
+} from "../shared/ipc";
+
+const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+const TEXT_PROBE_BYTES = 4;
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+const MEDIA_SIGNATURE_BYTES = 64;
+
+const MEDIA_TYPES = new Map<string, { kind: "image" | "audio" | "video"; mimeType: string }>([
+  [".png", { kind: "image", mimeType: "image/png" }],
+  [".jpg", { kind: "image", mimeType: "image/jpeg" }],
+  [".jpeg", { kind: "image", mimeType: "image/jpeg" }],
+  [".gif", { kind: "image", mimeType: "image/gif" }],
+  [".webp", { kind: "image", mimeType: "image/webp" }],
+  [".mp3", { kind: "audio", mimeType: "audio/mpeg" }],
+  [".wav", { kind: "audio", mimeType: "audio/wav" }],
+  [".ogg", { kind: "audio", mimeType: "audio/ogg" }],
+  [".m4a", { kind: "audio", mimeType: "audio/mp4" }],
+  [".mp4", { kind: "video", mimeType: "video/mp4" }],
+  [".webm", { kind: "video", mimeType: "video/webm" }],
+]);
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} is required.`);
+  }
+  return value.trim();
+}
+
+function isContained(workspacePath: string, targetPath: string): boolean {
+  const relative = path.relative(workspacePath, targetPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function sameFile(left: { dev: number; ino: number }, right: { dev: number; ino: number }): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function openReadFlags(): number {
+  const noFollow = (fsConstants as typeof fsConstants & { O_NOFOLLOW?: number }).O_NOFOLLOW;
+  return fsConstants.O_RDONLY | (typeof noFollow === "number" ? noFollow : 0);
+}
+
+async function readHandleBytes(handle: fs.FileHandle, length: number): Promise<Buffer> {
+  const buffer = Buffer.alloc(length);
+  let bytesRead = 0;
+  while (bytesRead < length) {
+    const result = await handle.read(buffer, bytesRead, length - bytesRead, bytesRead);
+    if (result.bytesRead === 0) break;
+    bytesRead += result.bytesRead;
+  }
+  return buffer.subarray(0, bytesRead);
+}
+
+async function resolveWorkspace(workspacePath: string): Promise<string> {
+  const resolved = await fs.realpath(requireString(workspacePath, "Workspace path"));
+  const stat = await fs.stat(resolved);
+  if (!stat.isDirectory()) {
+    throw new Error("Workspace path must be a directory.");
+  }
+  return resolved;
+}
+
+async function resolveContainedTarget(workspacePath: string, targetPath: string): Promise<{
+  workspaceRealPath: string;
+  requestedPath: string;
+  realPath: string;
+}> {
+  const workspaceRealPath = await resolveWorkspace(workspacePath);
+  const requestedPath = path.resolve(requireString(targetPath, "Path"));
+  const realPath = await fs.realpath(requestedPath);
+  if (!isContained(workspaceRealPath, realPath)) {
+    throw new Error("Path must be inside the workspace.");
+  }
+  return { workspaceRealPath, requestedPath, realPath };
+}
+
+export async function listWorkspaceEntries(
+  request: WorkspaceFileBrowserRequest,
+): Promise<WorkspaceFileEntry[]> {
+  const { requestedPath, realPath } = await resolveContainedTarget(request.workspacePath, request.directoryPath);
+  const stat = await fs.stat(realPath);
+  if (!stat.isDirectory()) {
+    throw new Error("Directory path must be a directory.");
+  }
+  const entries = await fs.readdir(realPath, { withFileTypes: true });
+  const result: WorkspaceFileEntry[] = [];
+  for (const entry of entries) {
+    const entryPath = path.join(requestedPath, entry.name);
+    const entryStat = await fs.lstat(entryPath);
+    if (entryStat.isSymbolicLink()) {
+      continue;
+    }
+    if (entryStat.isDirectory()) {
+      result.push({ name: entry.name, path: entryPath, kind: "directory" });
+    } else if (entryStat.isFile()) {
+      result.push({ name: entry.name, path: entryPath, kind: "file", size: entryStat.size });
+    }
+  }
+  const finalWorkspacePath = await resolveWorkspace(request.workspacePath);
+  const finalDirectoryPath = await fs.realpath(requestedPath);
+  if (!isContained(finalWorkspacePath, finalDirectoryPath) || finalDirectoryPath !== realPath) {
+    throw new Error("Directory changed while it was being read.");
+  }
+  return result.sort((left, right) => {
+    if (left.kind !== right.kind) return left.kind === "directory" ? -1 : 1;
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  });
+}
+
+function hasMediaSignature(kind: "image" | "audio" | "video", buffer: Buffer): boolean {
+  const startsWith = (...bytes: number[]): boolean =>
+    bytes.every((byte, index) => buffer[index] === byte);
+  switch (kind) {
+    case "image":
+      return (
+        startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) ||
+        startsWith(0xff, 0xd8, 0xff) ||
+        buffer.subarray(0, 6).toString("ascii") === "GIF87a" ||
+        buffer.subarray(0, 6).toString("ascii") === "GIF89a" ||
+        startsWith(0x52, 0x49, 0x46, 0x46) &&
+          buffer.subarray(8, 12).toString("ascii") === "WEBP"
+      );
+    case "audio":
+      return (
+        buffer.subarray(0, 3).toString("ascii") === "ID3" ||
+        (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1]! & 0xe0) === 0xe0) ||
+        buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+          buffer.subarray(8, 12).toString("ascii") === "WAVE" ||
+        buffer.subarray(0, 4).toString("ascii") === "OggS" ||
+        buffer.subarray(4, 8).toString("ascii") === "ftyp" &&
+          buffer.subarray(8, 12).toString("ascii").toLowerCase().startsWith("m4")
+      );
+    case "video":
+      return (
+        buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+          buffer.subarray(8, 12).toString("ascii") === "WEBM" ||
+        buffer.subarray(0, 4).toString("ascii") === "OggS" ||
+        buffer.subarray(4, 8).toString("ascii") === "ftyp" ||
+        startsWith(0x1a, 0x45, 0xdf, 0xa3) && buffer.includes(Buffer.from("webm"))
+      );
+  }
+}
+
+function unsupportedResult(
+  filePath: string,
+  name: string,
+  size: number,
+  reason: string,
+): WorkspaceFileReadResult {
+  return { path: filePath, name, size, kind: "unsupported", reason };
+}
+
+function findUtf8Boundary(buffer: Buffer, allowIncompleteAtEnd: boolean): number | undefined {
+  let index = 0;
+  while (index < buffer.length) {
+    const first = buffer[index];
+    if (first === undefined) return undefined;
+    if (first === 0) return undefined;
+    if (first <= 0x7f) {
+      index += 1;
+      continue;
+    }
+
+    const sequenceLength =
+      first >= 0xc2 && first <= 0xdf ? 2 : first >= 0xe0 && first <= 0xef ? 3 : first >= 0xf0 && first <= 0xf4 ? 4 : 0;
+    if (sequenceLength === 0) return undefined;
+    if (index + sequenceLength > buffer.length) {
+      return allowIncompleteAtEnd ? index : undefined;
+    }
+    const second = buffer[index + 1];
+    if (second === undefined) return undefined;
+    for (let offset = 1; offset < sequenceLength; offset += 1) {
+      const continuation = buffer[index + offset];
+      if (continuation === undefined || continuation < 0x80 || continuation > 0xbf) return undefined;
+    }
+    if (
+      (sequenceLength === 3 && ((first === 0xe0 && second < 0xa0) ||
+        (first === 0xed && second > 0x9f))) ||
+      (sequenceLength === 4 && ((first === 0xf0 && second < 0x90) ||
+        (first === 0xf4 && second > 0x8f)))
+    ) {
+      return undefined;
+    }
+    index += sequenceLength;
+  }
+  return index;
+}
+
+function readTextSample(sample: Buffer, size: number, bytesRead: number): {
+  content: string;
+  truncated: boolean;
+} | undefined {
+  const boundary = findUtf8Boundary(sample, size > bytesRead);
+  if (boundary === undefined) return undefined;
+
+  const outputBytes = Math.min(boundary, MAX_TEXT_BYTES);
+  const outputBoundary = findUtf8Boundary(sample.subarray(0, outputBytes), true);
+  if (outputBoundary === undefined) return undefined;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  return {
+    content: decoder.decode(sample.subarray(0, outputBoundary)),
+    truncated: size > MAX_TEXT_BYTES || bytesRead > MAX_TEXT_BYTES,
+  };
+}
+
+export async function readWorkspaceFile(
+  request: WorkspaceFileReadRequest,
+): Promise<WorkspaceFileReadResult> {
+  const { requestedPath } = await resolveContainedTarget(request.workspacePath, request.filePath);
+  const name = path.basename(requestedPath);
+  const extension = path.extname(name).toLowerCase();
+  const media = MEDIA_TYPES.get(extension);
+  const handle = await fs.open(requestedPath, openReadFlags());
+  try {
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile()) {
+      throw new Error("File path must be a regular file.");
+    }
+    const refreshedWorkspacePath = await resolveWorkspace(request.workspacePath);
+    const refreshedFilePath = await fs.realpath(requestedPath);
+    if (!isContained(refreshedWorkspacePath, refreshedFilePath)) {
+      throw new Error("Path must be inside the workspace.");
+    }
+    const pathStat = await fs.stat(requestedPath);
+    if (!sameFile(fileStat, pathStat)) {
+      throw new Error("File changed while it was being opened.");
+    }
+    const size = fileStat.size;
+    if (media) {
+      if (size > MAX_MEDIA_BYTES) {
+        return unsupportedResult(requestedPath, name, size, "Media file exceeds the 20 MiB limit.");
+      }
+      const mediaBuffer = await readHandleBytes(handle, size);
+      if (mediaBuffer.length !== size || !hasMediaSignature(media.kind, mediaBuffer.subarray(0, MEDIA_SIGNATURE_BYTES))) {
+        return unsupportedResult(requestedPath, name, size, "Media signature does not match the file extension.");
+      }
+      return {
+        path: requestedPath,
+        name,
+        size,
+        kind: media.kind,
+        mimeType: media.mimeType,
+        base64: mediaBuffer.toString("base64"),
+      };
+    }
+    const textBuffer = await readHandleBytes(handle, Math.min(size, MAX_TEXT_BYTES + TEXT_PROBE_BYTES));
+    const text = readTextSample(textBuffer, size, textBuffer.length);
+    if (!text) {
+      return unsupportedResult(requestedPath, name, size, "File is not valid UTF-8 text.");
+    }
+    return {
+      path: requestedPath,
+      name,
+      size,
+      kind: "text",
+      mimeType: "text/plain",
+      content: text.content,
+      ...(text.truncated ? { truncated: true } : {}),
+    };
+  } finally {
+    await handle.close();
+  }
+}

@@ -14,6 +14,8 @@ export const IPC_CHANNELS = {
   workspaceGetHomePath: "workspace:get-home-path",
   workspaceGetUserHomePath: "workspace:get-user-home-path",
   workspaceListDirectories: "workspace:list-directories",
+  workspaceListEntries: "workspace:list-entries",
+  workspaceReadFile: "workspace:read-file",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
   workspaceSavePackageScriptArgs: "workspace:save-package-script-args",
@@ -300,6 +302,37 @@ export interface WorkspaceDirectoryListing {
   path: string;
   parentPath?: string;
   directories: WorkspaceDirectoryEntry[];
+}
+
+export interface WorkspaceFileBrowserRequest {
+  workspacePath: string;
+  directoryPath: string;
+}
+
+export interface WorkspaceFileEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+  size?: number;
+}
+
+export interface WorkspaceFileReadRequest {
+  workspacePath: string;
+  filePath: string;
+}
+
+export type WorkspaceFileKind = "text" | "image" | "audio" | "video" | "unsupported";
+
+export interface WorkspaceFileReadResult {
+  path: string;
+  name: string;
+  size: number;
+  kind: WorkspaceFileKind;
+  mimeType?: string;
+  content?: string;
+  base64?: string;
+  truncated?: boolean;
+  reason?: string;
 }
 
 export type PackageManagerKind = "bun" | "pnpm" | "yarn" | "npm";

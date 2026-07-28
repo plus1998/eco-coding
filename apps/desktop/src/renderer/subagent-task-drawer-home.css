@@ -1,0 +1,36 @@
+.task-panel-home-actions {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.task-panel-home-actions h2 {
+  color: var(--text-muted, currentColor);
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.task-panel-home-actions button {
+  align-items: center;
+  background: var(--control-background, transparent);
+  border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.28));
+  border-radius: 6px;
+  color: var(--text-primary, inherit);
+  display: flex;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 12px;
+  text-align: left;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.task-panel-home-actions button:hover {
+  background: var(--control-background-hover, rgba(128, 128, 128, 0.12));
+  border-color: var(--border-strong, rgba(128, 128, 128, 0.45));
+}
+
+.task-panel-home-actions button:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 2px;
+}

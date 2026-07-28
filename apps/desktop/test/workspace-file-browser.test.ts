@@ -1,0 +1,148 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { listWorkspaceEntries, readWorkspaceFile } from "../src/main/workspace-file-browser";
+
+let workspacePath = "";
+let outsidePath = "";
+
+beforeEach(async () => {
+  workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workspace-browser-"));
+  outsidePath = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workspace-outside-"));
+});
+
+afterEach(async () => {
+  await fs.rm(workspacePath, { recursive: true, force: true });
+  await fs.rm(outsidePath, { recursive: true, force: true });
+});
+
+test("lists direct entries with directories first and case-insensitive names", async () => {
+  await fs.mkdir(path.join(workspacePath, "z-dir"));
+  await fs.mkdir(path.join(workspacePath, "A-dir"));
+  await fs.writeFile(path.join(workspacePath, "b.txt"), "b");
+  await fs.writeFile(path.join(workspacePath, "A.txt"), "a");
+  const entries = await listWorkspaceEntries({ workspacePath, directoryPath: workspacePath });
+
+  expect(entries.map((entry) => [entry.name, entry.kind])).toEqual([
+    ["A-dir", "directory"],
+    ["z-dir", "directory"],
+    ["A.txt", "file"],
+    ["b.txt", "file"],
+  ]);
+});
+
+test("reads UTF-8 text and truncates it at 2 MiB", async () => {
+  const filePath = path.join(workspacePath, "notes.txt");
+  await fs.writeFile(filePath, "a".repeat(2 * 1024 * 1024 + 10));
+  const result = await readWorkspaceFile({ workspacePath, filePath });
+
+  expect(result.kind).toBe("text");
+  expect(result.content?.length).toBe(2 * 1024 * 1024);
+  expect(result.truncated).toBe(true);
+  expect(result.size).toBe(2 * 1024 * 1024 + 10);
+});
+
+test("reads extensionless, dotfile, and unknown-extension UTF-8 text", async () => {
+  for (const name of ["README", ".env", "notes.custom"]) {
+    const filePath = path.join(workspacePath, name);
+    await fs.writeFile(filePath, "KEY=值\n");
+    const result = await readWorkspaceFile({ workspacePath, filePath });
+    expect(result).toMatchObject({ kind: "text", content: "KEY=值\n" });
+  }
+});
+
+test("limits large text reads and keeps UTF-8 truncation on a character boundary", async () => {
+  const filePath = path.join(workspacePath, "large.custom");
+  const prefix = "a".repeat(2 * 1024 * 1024 - 2);
+  const source = `${prefix}😀tail`;
+  await fs.writeFile(filePath, source);
+  const result = await readWorkspaceFile({ workspacePath, filePath });
+
+  expect(result.kind).toBe("text");
+  expect(result.truncated).toBe(true);
+  expect(result.content).toBe(prefix);
+  expect(result.content).not.toContain("\ufffd");
+});
+
+test("rejects invalid UTF-8 and NUL-containing files", async () => {
+  const invalidPath = path.join(workspacePath, "invalid.data");
+  const nulPath = path.join(workspacePath, "has-nul");
+  await fs.writeFile(invalidPath, Buffer.from([0xc3, 0x28]));
+  await fs.writeFile(nulPath, Buffer.from("valid\0text"));
+
+  const invalid = await readWorkspaceFile({ workspacePath, filePath: invalidPath });
+  const nul = await readWorkspaceFile({ workspacePath, filePath: nulPath });
+  expect(invalid).toMatchObject({ kind: "unsupported" });
+  expect(nul).toMatchObject({ kind: "unsupported" });
+  expect(invalid.reason).toContain("UTF-8");
+  expect(nul.reason).toContain("UTF-8");
+});
+
+test("rejects unknown binary files and supports whitelisted media", async () => {
+  const binaryPath = path.join(workspacePath, "data.bin");
+  const imagePath = path.join(workspacePath, "photo.PNG");
+  await fs.writeFile(binaryPath, Buffer.from([0, 1, 2, 255]));
+  await fs.writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+  const binary = await readWorkspaceFile({ workspacePath, filePath: binaryPath });
+  const image = await readWorkspaceFile({ workspacePath, filePath: imagePath });
+  expect(binary.kind).toBe("unsupported");
+  expect(binary.reason).toContain("UTF-8");
+  expect(image).toMatchObject({
+    kind: "image",
+    mimeType: "image/png",
+    base64: "iVBORw0KGgo=",
+  });
+});
+
+test("rejects media files whose signatures do not match their extensions", async () => {
+  const fakePngPath = path.join(workspacePath, "fake.png");
+  const fakeMp3Path = path.join(workspacePath, "fake.mp3");
+  await fs.writeFile(fakePngPath, "plain text");
+  await fs.writeFile(fakeMp3Path, Buffer.from([0, 1, 2, 3]));
+
+  const fakePng = await readWorkspaceFile({ workspacePath, filePath: fakePngPath });
+  const fakeMp3 = await readWorkspaceFile({ workspacePath, filePath: fakeMp3Path });
+  expect(fakePng).toMatchObject({ kind: "unsupported" });
+  expect(fakeMp3).toMatchObject({ kind: "unsupported" });
+  expect(fakePng.reason).toContain("signature");
+  expect(fakeMp3.reason).toContain("signature");
+});
+
+test("rejects oversized media with an understandable reason", async () => {
+  const filePath = path.join(workspacePath, "large.mp4");
+  await fs.writeFile(filePath, Buffer.alloc(20 * 1024 * 1024 + 1));
+  const result = await readWorkspaceFile({ workspacePath, filePath });
+
+  expect(result.kind).toBe("unsupported");
+  expect(result.reason).toContain("20 MiB");
+});
+
+test("rejects directories, workspace escapes, and symlink escapes", async () => {
+  await expect(
+    readWorkspaceFile({ workspacePath, filePath: workspacePath }),
+  ).rejects.toThrow("regular file");
+
+  const outsideFile = path.join(outsidePath, "secret.txt");
+  await fs.writeFile(outsideFile, "secret");
+  await expect(
+    readWorkspaceFile({ workspacePath, filePath: outsideFile }),
+  ).rejects.toThrow("inside the workspace");
+
+  const symlinkPath = path.join(workspacePath, "secret.txt");
+  await fs.symlink(outsideFile, symlinkPath);
+  await expect(
+    readWorkspaceFile({ workspacePath, filePath: symlinkPath }),
+  ).rejects.toThrow("inside the workspace");
+});
+
+test("does not expose symlink entries", async () => {
+  const outsideDirectory = path.join(outsidePath, "outside-dir");
+  await fs.mkdir(outsideDirectory);
+  await fs.symlink(outsideDirectory, path.join(workspacePath, "linked-dir"));
+  await fs.writeFile(path.join(workspacePath, "visible.txt"), "visible");
+
+  const entries = await listWorkspaceEntries({ workspacePath, directoryPath: workspacePath });
+  expect(entries.map((entry) => entry.name)).toEqual(["visible.txt"]);
+});

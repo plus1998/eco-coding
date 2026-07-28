@@ -372,6 +372,7 @@ import {
 } from "./git-settings-store";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
+import { listWorkspaceEntries, readWorkspaceFile } from "./workspace-file-browser";
 import { checkMcpServerConnection } from "./mcp-checker";
 import { prepareCodexMcpServersForRuntime, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 import { createMcpStore, type McpStore } from "./mcp-store";
@@ -2069,6 +2070,28 @@ function registerIpcHandlers(): void {
       ...(parentPath !== resolvedPath ? { parentPath } : {}),
       directories,
     };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceListEntries, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid workspace list entries request.");
+    }
+    const request = payload as { workspacePath?: unknown; directoryPath?: unknown };
+    if (typeof request.workspacePath !== "string" || typeof request.directoryPath !== "string") {
+      throw new Error("Workspace path and directory path are required.");
+    }
+    return listWorkspaceEntries({ workspacePath: request.workspacePath, directoryPath: request.directoryPath });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceReadFile, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid workspace read file request.");
+    }
+    const request = payload as { workspacePath?: unknown; filePath?: unknown };
+    if (typeof request.workspacePath !== "string" || typeof request.filePath !== "string") {
+      throw new Error("Workspace path and file path are required.");
+    }
+    return readWorkspaceFile({ workspacePath: request.workspacePath, filePath: request.filePath });
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspaceInspect, async (workspacePath: unknown) => {

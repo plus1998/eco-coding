@@ -146,6 +146,10 @@ import {
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceDirectoryListing,
+  type WorkspaceFileBrowserRequest,
+  type WorkspaceFileReadRequest,
+  type WorkspaceFileReadResult,
+  type WorkspaceFileEntry,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
   type WorktreeApplyResult,
@@ -201,6 +205,12 @@ const api = {
   },
   listWorkspaceDirectories(directoryPath: string): Promise<WorkspaceDirectoryListing> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceListDirectories, directoryPath);
+  },
+  listWorkspaceEntries(request: WorkspaceFileBrowserRequest): Promise<WorkspaceFileEntry[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceListEntries, request);
+  },
+  readWorkspaceFile(request: WorkspaceFileReadRequest): Promise<WorkspaceFileReadResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceReadFile, request);
   },
   inspectWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceInspect, workspacePath);

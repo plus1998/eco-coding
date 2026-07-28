@@ -223,11 +223,18 @@ import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   SubagentTaskDrawer,
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
+  TASK_PANEL_FILES_TAB_ID,
+  TASK_PANEL_HOME_TAB_ID,
   TASK_PANEL_PLAN_TAB_ID,
   TASK_PANEL_REVIEW_TAB_ID,
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
+import {
+  WORKSPACE_FILE_REFERENCE_EVENT,
+  isWorkspacePathContained,
+  type WorkspaceFileReference,
+} from "./workspace-file-reference";
 import {
   type ActivityWorkspaceLayoutMode,
   resolveActivityWorkspaceLayoutMode,
@@ -1016,7 +1023,7 @@ function App() {
   }>();
   const [backgroundTerminalTasks, setBackgroundTerminalTasks] = useState<BackgroundTerminalTask[]>([]);
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
-  const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_REVIEW_TAB_ID);
+  const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openSubagentTabIds, setOpenSubagentTabIds] = useState<string[]>([]);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
@@ -1028,6 +1035,10 @@ function App() {
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
   const [reviewSelectedPath, setReviewSelectedPath] = useState<string>();
+  const [fileTarget, setFileTarget] = useState<
+    (WorkspaceFileReference & { requestId: number; restricted?: boolean }) | undefined
+  >();
+  const fileReferenceRequestIdRef = useRef(0);
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
   const packageScriptByTerminalSessionRef = useRef(new Map<string, string>());
@@ -2584,7 +2595,7 @@ function App() {
     if (activeThread) {
       setComposerRoutePopoverOpen(false);
     }
-  }, [activeThread?.id]);
+  }, [activeThread?.id, currentProjectPath]);
 
   const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
   const effectiveDefaultOrchestrationSelection = workflowSettings.defaultOrchestrationSelection;
@@ -3298,11 +3309,33 @@ function App() {
 
   useEffect(() => {
     setSelectedSubagentAgentId(undefined);
-    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+    setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
+    setFileTarget(undefined);
     setOpenSubagentTabIds([]);
     setTaskDrawerOpen(false);
     setTaskPanelFullscreen(false);
   }, [activeThread?.id]);
+
+  useEffect(() => {
+    const handleFileReference = (event: Event) => {
+      const reference = (event as CustomEvent<WorkspaceFileReference>).detail;
+      if (!reference?.path || !currentProjectPath) {
+        return;
+      }
+      fileReferenceRequestIdRef.current += 1;
+      setFileTarget({
+        ...reference,
+        requestId: fileReferenceRequestIdRef.current,
+        restricted: !isWorkspacePathContained(currentProjectPath, reference.path),
+      });
+      setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
+      setSelectedSubagentAgentId(undefined);
+      setTaskPanelFullscreen(false);
+      setTaskDrawerOpen(true);
+    };
+    window.addEventListener(WORKSPACE_FILE_REFERENCE_EVENT, handleFileReference);
+    return () => window.removeEventListener(WORKSPACE_FILE_REFERENCE_EVENT, handleFileReference);
+  }, [currentProjectPath]);
 
   useEffect(() => {
     setOpenSubagentTabIds((current) => {
@@ -3314,12 +3347,14 @@ function App() {
     });
     const planTabActive = taskPanelActiveTab === TASK_PANEL_PLAN_TAB_ID;
     const taskPanelActiveTabValid =
+      taskPanelActiveTab === TASK_PANEL_HOME_TAB_ID ||
+      taskPanelActiveTab === TASK_PANEL_FILES_TAB_ID ||
       taskPanelActiveTab === TASK_PANEL_REVIEW_TAB_ID ||
       taskPanelActiveTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
       (planTabActive && Boolean(taskPanelPlan)) ||
       activeSubagentCards.some((card) => card.key === taskPanelActiveTab);
     if (!taskPanelActiveTabValid) {
-      setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+      setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
       setSelectedSubagentAgentId(undefined);
     }
   }, [activeSubagentCards, taskPanelActiveTab, taskPanelPlan]);
@@ -3333,7 +3368,7 @@ function App() {
       setTaskPanelFullscreen(false);
       return;
     }
-    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+    setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
     setTaskDrawerOpen(true);
@@ -3371,7 +3406,7 @@ function App() {
         const next = current.filter((tabId) => tabId !== agentId);
         if (taskPanelActiveTab === agentId) {
           const fallback = next.at(-1);
-          setTaskPanelActiveTab(fallback ?? TASK_PANEL_REVIEW_TAB_ID);
+          setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
           setSelectedSubagentAgentId(fallback);
         }
         return next;
@@ -6018,6 +6053,21 @@ function App() {
           }}
           onSelectReview={() => {
             setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          workspacePath={currentProjectPath ?? ""}
+          {...(fileTarget && { fileTarget })}
+          onSelectFiles={() => {
+            setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onOpenTerminal={() => {
+            toggleTerminalForCurrentProject();
+            setTaskDrawerOpen(false);
+            setTaskPanelFullscreen(false);
+          }}
+          onShowHome={() => {
+            setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
           onToggleFullscreen={() => setTaskPanelFullscreen((current) => !current)}
