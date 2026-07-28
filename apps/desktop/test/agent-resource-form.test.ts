@@ -249,6 +249,40 @@ test("buildMainAgentConfigFromForm saves capability policies", () => {
   });
 });
 
+test("V4A teaching form defaults false and round-trips when enabled", () => {
+  const blankMain = createBlankMainAgentConfigForm({ providers: [provider] });
+  expect(blankMain.mainV4aTeachingEnabled).toBe(false);
+
+  const mainForm = withRequiredCandidateIds({
+    ...blankMain,
+    id: "user.v4a.main",
+    mainProviderId: provider.id,
+    mainModelId: "model-main",
+    mainV4aTeachingEnabled: true,
+  });
+  const mainBuilt = buildMainAgentConfigFromForm(mainForm);
+  expect(mainBuilt.v4aTeachingEnabled).toBe(true);
+  expect(mainAgentConfigToForm(mainBuilt).mainV4aTeachingEnabled).toBe(true);
+
+  const orchForm = withRequiredCandidateIds(sampleOrchestrationForm());
+  expect(orchForm.agents.every((agent) => agent.v4aTeachingEnabled === false)).toBe(true);
+  const researcher = requireFormAgent(orchForm, "researcher");
+  researcher.v4aTeachingEnabled = true;
+  const orchBuilt = buildSubagentOrchestrationFromForm(orchForm, {
+    templates: [researcherTemplate, exploreTemplate],
+  });
+  expect(orchBuilt.agents.find((agent) => agent.agentKey === "researcher")?.v4aTeachingEnabled).toBe(
+    true,
+  );
+  expect(
+    orchBuilt.agents.find((agent) => agent.agentKey === "explore")?.v4aTeachingEnabled,
+  ).toBeUndefined();
+  expect(
+    subagentOrchestrationToForm(orchBuilt).agents.find((agent) => agent.agentKey === "researcher")
+      ?.v4aTeachingEnabled,
+  ).toBe(true);
+});
+
 test("buildSubagentOrchestrationFromForm rejects reserved and duplicate agent keys", () => {
   const form = sampleOrchestrationForm();
   form.id = "user.bad";

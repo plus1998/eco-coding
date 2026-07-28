@@ -11,6 +11,18 @@ import type {
 export type AgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
 export type AgentConfigSource = "built_in" | "user" | "project" | "derived";
 
+export function isV4aTeachingEnabled(
+  config: { v4aTeachingEnabled?: boolean; v4aCorrectionEnabled?: boolean } | undefined,
+): boolean {
+  return config?.v4aTeachingEnabled === true || config?.v4aCorrectionEnabled === true;
+}
+
+function v4aTeachingField(
+  config: { v4aTeachingEnabled?: boolean; v4aCorrectionEnabled?: boolean },
+): { v4aTeachingEnabled: true } | Record<string, never> {
+  return isV4aTeachingEnabled(config) ? { v4aTeachingEnabled: true } : {};
+}
+
 export interface ModelRef {
   providerId: string;
   modelId: string;
@@ -90,6 +102,10 @@ export interface MainAgentConfig {
   modelRef: ModelRef;
   tools: ToolPolicy;
   skills: string[];
+  /** When true, Codex appends V4A apply_patch teaching to main-agent developer instructions. */
+  v4aTeachingEnabled?: boolean;
+  /** @deprecated Use v4aTeachingEnabled */
+  v4aCorrectionEnabled?: boolean;
 }
 
 /** Model + capability policy for the main agent. No prompt text. */
@@ -101,6 +117,10 @@ export interface MainAgentConfigResource {
   modelRef: ModelRef;
   tools: ToolPolicy;
   skills: string[];
+  /** When true, Codex appends V4A apply_patch teaching to main-agent developer instructions. */
+  v4aTeachingEnabled?: boolean;
+  /** @deprecated Use v4aTeachingEnabled */
+  v4aCorrectionEnabled?: boolean;
   updatedAt: string;
   source: AgentConfigSource;
 }
@@ -189,6 +209,10 @@ export interface AgentInstanceConfig {
   mcpServers: string[];
   skills: string[];
   enabled: boolean;
+  /** When true, Codex appends V4A apply_patch teaching to this subagent's developer instructions. */
+  v4aTeachingEnabled?: boolean;
+  /** @deprecated Use v4aTeachingEnabled */
+  v4aCorrectionEnabled?: boolean;
 }
 
 export type OrchestrationStrategy = { kind: "autonomous"; guidancePrompt?: string };
@@ -806,6 +830,7 @@ export function materializeMainAgentConfig(
   promptSelection: MainAgentPromptSelection,
   prompts: readonly MainAgentPromptResource[] = [],
 ): MainAgentConfig {
+  const v4aTeaching = v4aTeachingField(config);
   if (promptSelection.mode === "builtin") {
     return {
       agentKey: config.agentKey,
@@ -816,6 +841,7 @@ export function materializeMainAgentConfig(
       modelRef: cloneModelRef(config.modelRef),
       tools: cloneToolPolicy(config.tools),
       skills: [...config.skills],
+      ...v4aTeaching,
     };
   }
   const prompt = prompts.find((entry) => entry.id === promptSelection.promptId);
@@ -834,6 +860,7 @@ export function materializeMainAgentConfig(
     modelRef: cloneModelRef(config.modelRef),
     tools: cloneToolPolicy(config.tools),
     skills: [...config.skills],
+    ...v4aTeaching,
   };
 }
 
@@ -926,6 +953,7 @@ function cloneMainAgentConfig(config: MainAgentConfig): MainAgentConfig {
     modelRef: cloneModelRef(config.modelRef),
     tools: cloneToolPolicy(config.tools),
     skills: [...config.skills],
+    ...v4aTeachingField(config),
   };
 }
 
@@ -951,6 +979,7 @@ function cloneAgentInstance(agent: AgentInstanceConfig): AgentInstanceConfig {
     mcpServers: [...agent.mcpServers],
     skills: [...agent.skills],
     enabled: agent.enabled,
+    ...v4aTeachingField(agent),
   };
 }
 

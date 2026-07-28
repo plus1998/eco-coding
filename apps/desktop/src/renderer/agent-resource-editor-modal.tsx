@@ -368,6 +368,18 @@ export function AgentResourceEditorModal({
                 onThinkingEffortChange={(value) => patch({ mainThinkingEffort: value })}
                 onApiCompatChange={(value) => patch({ mainApiCompat: value })}
               />
+              <label className="mcp-field models-v4a-teaching-field">
+                <span className="mcp-field-label-row">
+                  <input
+                    type="checkbox"
+                    checked={form.mainV4aTeachingEnabled}
+                    disabled={busy}
+                    onChange={(event) => patch({ mainV4aTeachingEnabled: event.target.checked })}
+                  />
+                  <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
+                </span>
+                <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
+              </label>
               <ToolCapabilityPanel
                 values={mainCapabilityFromResourceForm(form)}
                 {...(busy !== undefined ? { disabled: busy } : {})}
@@ -746,6 +758,21 @@ function SubagentRosterAgentConfigModal({
             onThinkingEffortChange={(value) => onPatchAgent(agentIndex, { thinkingEffort: value })}
             onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
           />
+
+          <label className="mcp-field models-v4a-teaching-field">
+            <span className="mcp-field-label-row">
+              <input
+                type="checkbox"
+                checked={agent.v4aTeachingEnabled}
+                disabled={busy}
+                onChange={(event) =>
+                  onPatchAgent(agentIndex, { v4aTeachingEnabled: event.target.checked })
+                }
+              />
+              <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
+            </span>
+            <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
+          </label>
 
           <AgentThemeColorField
             label={t("settings.models.node.themeColor")}

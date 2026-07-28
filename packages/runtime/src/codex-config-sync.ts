@@ -229,14 +229,17 @@ export async function syncCodexConfigFromEcoProviders(
   await fs.mkdir(codexHomeDir, { recursive: true });
   let managedHookTrust = "";
 
-  // When orchestration agents exist, install PreToolUse hook so spawn_agent always uses
-  // fork_turns=none (agent model from agents/*.toml) without teaching the main agent.
-  // Also persist hooks.state trusted_hash — untrusted user hooks are skipped by Codex.
+  // Multi-agent: PreToolUse spawn_agent fork_turns=none.
   // Dynamic import keeps node:crypto out of the renderer bundle.
-  if (input.enableMultiAgent === true || (input.agentRoles ?? []).length > 0) {
-    const { syncCodexSpawnAgentHook } = await import("./codex-spawn-agent-hook.js");
-    const hook = await syncCodexSpawnAgentHook(codexHomeDir);
-    managedHookTrust = hook.trustTomlBlock;
+  const enableMultiAgent =
+    input.enableMultiAgent === true || (input.agentRoles ?? []).length > 0;
+  if (enableMultiAgent) {
+    const { syncEcoCodexHooks } = await import("./codex-hooks-sync.js");
+    const hooks = await syncEcoCodexHooks({
+      codexHomeDir,
+      enableSpawnAgent: true,
+    });
+    managedHookTrust = hooks.trustTomlBlock;
   }
   await writeUtf8FileIfChanged(configPath, `${configToml}${managedHookTrust}`);
 

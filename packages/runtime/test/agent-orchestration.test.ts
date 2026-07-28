@@ -161,6 +161,23 @@ test("buildCodexMainAgentOrchestrationAppend includes custom append prompt text"
   expect(append).toContain("You coordinate research work without assuming a coding task.");
 });
 
+test("buildCodexMainAgentOrchestrationAppend appends V4A teaching when enabled", () => {
+  const append = buildCodexMainAgentOrchestrationAppend(
+    {
+      ...orchestration,
+      mainAgent: { ...orchestration.mainAgent, v4aTeachingEnabled: true },
+    },
+    [researchTemplate],
+  );
+  expect(append).toContain("Eco V4A teaching");
+  expect(append).toContain("*** Begin Patch");
+});
+
+test("buildCodexMainAgentOrchestrationAppend omits V4A teaching when disabled", () => {
+  const append = buildCodexMainAgentOrchestrationAppend(orchestration, [researchTemplate]);
+  expect(append).not.toContain("Eco V4A teaching");
+});
+
 test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enforcement", () => {
   expect(resolveMainAgentHandsOnCapability(undefined)).toEqual({
     canEditFiles: true,

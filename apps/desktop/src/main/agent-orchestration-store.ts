@@ -221,6 +221,7 @@ export function normalizeStoredMainAgentConfig(config: MainAgentConfigResource):
     name: config.name.trim(),
     agentKey: config.agentKey.trim(),
     skills: [...(config.skills ?? [])],
+    ...(config.v4aTeachingEnabled === true ? { v4aTeachingEnabled: true } : {}),
     source: config.source === "project" ? "project" : "user",
     updatedAt: config.updatedAt || now,
   };
@@ -262,7 +263,10 @@ export function normalizeStoredSubagentOrchestration(
     ...rest,
     id: orchestration.id.trim(),
     name: orchestration.name.trim(),
-    agents: orchestration.agents.map((agent) => ({ ...agent })),
+    agents: orchestration.agents.map((agent) => ({
+      ...agent,
+      ...(agent.v4aTeachingEnabled === true ? { v4aTeachingEnabled: true } : {}),
+    })),
     source: orchestration.source === "project" ? "project" : "user",
     updatedAt: orchestration.updatedAt || now,
   };

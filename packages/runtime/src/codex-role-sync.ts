@@ -24,6 +24,8 @@ import {
 } from "./codex-tool-policy.js";
 import { exploreAgentDescription, exploreAgentPrompt } from "./prompts/explore.js";
 import { isThreadSubagentRoleEnabledForCodex } from "./subagent-availability.js";
+import { appendV4aTeachingToPrompt } from "./v4a-teaching.js";
+import { isV4aTeachingEnabled } from "./v4a-teaching-flags.js";
 
 /** Reserved Codex role id for the editable Explore roster entry. */
 export const CODEX_EXPLORE_ROLE_ID = "explore";
@@ -193,6 +195,7 @@ export async function syncOrchestrationAgentsToCodexRoles(
         secretsToRedact,
         mcpVisibility,
         input.mcpServers ?? [],
+        isV4aTeachingEnabled(exploreAgent),
       ),
     });
   }
@@ -666,12 +669,16 @@ function buildExploreCodexRole(
   secretsToRedact: readonly string[],
   mcpVisibility: Readonly<Record<string, CodexMcpServerVisibilityOverride>>,
   mcpServers: readonly CodexMcpServerForConfigSync[],
+  v4aTeachingEnabled = false,
 ): BuiltCodexRole {
   const modelId = requireModelId(modelRef.modelId, CODEX_EXPLORE_ROLE_ID);
   const providerId = requireProviderId(modelRef.providerId, CODEX_EXPLORE_ROLE_ID);
   const apiCompat = resolveCodexRoleApiCompat(modelRef.apiCompat, CODEX_EXPLORE_ROLE_ID);
   const description = redactKnownSecrets(exploreAgentDescription, secretsToRedact);
-  const developerInstructions = redactKnownSecrets(exploreAgentPrompt, secretsToRedact);
+  const developerInstructions = redactKnownSecrets(
+    appendV4aTeachingToPrompt(exploreAgentPrompt, v4aTeachingEnabled),
+    secretsToRedact,
+  );
   return {
     sandboxMode: BUILTIN_EXPLORE_TOOL_POLICY.sandboxMode,
     toolPolicy: cloneEcoToolPolicy(BUILTIN_EXPLORE_TOOL_POLICY),
@@ -752,11 +759,11 @@ function buildRoleDescription(agent: EcoAgentInstanceConfig, template: EcoAgentT
 }
 
 function buildDeveloperInstructions(
-  _agent: EcoAgentInstanceConfig,
+  agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
   _roleId: string,
 ): string {
-  return template.prompt.trim();
+  return appendV4aTeachingToPrompt(template.prompt.trim(), isV4aTeachingEnabled(agent));
 }
 
 function resolveEffectiveAgentToolPolicy(

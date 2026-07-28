@@ -298,7 +298,16 @@ export * from "./codex-role-sync.js";
 export * from "./codex-rollback.js";
 export * from "./codex-skills-extra-roots.js";
 export * from "./codex-skills-list.js";
-export * from "./codex-spawn-agent-hook.js";
+export {
+  ECO_SPAWN_AGENT_PRETOOL_SCRIPT,
+  SPAWN_AGENT_HOOK_MATCHER,
+  SPAWN_AGENT_HOOK_STATUS,
+  computeCodexCommandHookHash as computeCodexSpawnAgentHookHash,
+  syncCodexSpawnAgentHook,
+} from "./codex-spawn-agent-hook.js";
+export * from "./codex-hooks-sync.js";
+export * from "./v4a-teaching.js";
+export * from "./v4a-teaching-flags.js";
 export * from "./codex-spawn-role-queue.js";
 export * from "./codex-thread-attribution.js";
 export * from "./codex-thread-resume.js";

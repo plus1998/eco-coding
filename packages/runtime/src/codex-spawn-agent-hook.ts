@@ -1,12 +1,10 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
 // Hook stdin tool_name for MultiAgentV2 is flat_tool_name(namespace+name) with no
 // separator: namespace "collaboration" + "spawn_agent" => "collaborationspawn_agent".
 // V1 / plain spawn maps to HookToolName::spawn_agent() => "spawn_agent".
 // `collaboration__spawn_agent` is the code-mode / UI label, not the hook matcher name.
-const HOOK_MATCHER = "spawn_agent|collaborationspawn_agent|collaboration__spawn_agent";
-const HOOK_STATUS = "Eco: apply orchestration role model";
+export const SPAWN_AGENT_HOOK_MATCHER =
+  "spawn_agent|collaborationspawn_agent|collaboration__spawn_agent";
+export const SPAWN_AGENT_HOOK_STATUS = "Eco: apply orchestration role model";
 
 /**
  * Install a Codex PreToolUse hook that forces `fork_turns="none"` on spawn_agent.
@@ -29,120 +27,42 @@ export async function syncCodexSpawnAgentHook(codexHomeDir: string): Promise<{
   trustHash: string;
   trustTomlBlock: string;
 }> {
-  const hooksDir = path.join(codexHomeDir, "hooks");
-  const scriptPath = path.join(hooksDir, "eco-spawn-agent-pretool.mjs");
-  const hooksPath = path.join(codexHomeDir, "hooks.json");
-  const command = `node ${JSON.stringify(scriptPath)}`;
-
-  await fs.mkdir(hooksDir, { recursive: true });
-  await writeUtf8FileIfChanged(scriptPath, ECO_SPAWN_AGENT_PRETOOL_SCRIPT);
-  // Codex treats alphanumeric/_/| matchers as exact names (not substring regex).
-  // Live MultiAgentV2 hook tool_name is `collaborationspawn_agent` (no `__`).
-  await writeUtf8FileIfChanged(
-    hooksPath,
-    `${JSON.stringify(
-      {
-        hooks: {
-          PreToolUse: [
-            {
-              matcher: HOOK_MATCHER,
-              hooks: [
-                {
-                  type: "command",
-                  command,
-                  statusMessage: HOOK_STATUS,
-                },
-              ],
-            },
-          ],
-        },
-      },
-      null,
-      2,
-    )}\n`,
-  );
-
-  // key_source is hooks.json path.display(); event label pre_tool_use; group 0; handler 0.
-  const trustKey = `${hooksPath}:pre_tool_use:0:0`;
-  const trustHash = await computeCodexCommandHookHash({
-    matcher: HOOK_MATCHER,
-    command,
-    statusMessage: HOOK_STATUS,
+  // Dynamic import breaks the cycle with codex-hooks-sync (which imports this script).
+  const { syncEcoCodexHooks } = await import("./codex-hooks-sync.js");
+  const result = await syncEcoCodexHooks({
+    codexHomeDir,
+    enableSpawnAgent: true,
   });
-  const trustTomlBlock = [
-    "",
-    `# Eco-managed trust for spawn_agent PreToolUse (fork_turns=none injection).`,
-    `[hooks.state.${tomlKey(trustKey)}]`,
-    `trusted_hash = ${JSON.stringify(trustHash)}`,
-    "",
-  ].join("\n");
-
-  return { hooksPath, scriptPath, trustKey, trustHash, trustTomlBlock };
-}
-
-async function writeUtf8FileIfChanged(filePath: string, content: string): Promise<void> {
-  try {
-    if ((await fs.readFile(filePath, "utf8")) === content) {
-      return;
-    }
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
-      throw error;
-    }
+  const spawn = result.spawn;
+  if (!spawn) {
+    throw new Error("syncCodexSpawnAgentHook expected spawn trust metadata.");
   }
-  await fs.writeFile(filePath, content, "utf8");
+  return {
+    hooksPath: result.hooksPath,
+    scriptPath: spawn.scriptPath,
+    trustKey: spawn.trustKey,
+    trustHash: spawn.trustHash,
+    trustTomlBlock: result.trustTomlBlock,
+  };
 }
 
-/** Mirror codex-rs/config fingerprint::version_for_toml + hooks discovery::command_hook_hash. */
+/** @deprecated Prefer computeCodexCommandHookHash from codex-hooks-sync. */
 export async function computeCodexCommandHookHash(input: {
   matcher: string;
   command: string;
   statusMessage: string;
 }): Promise<string> {
-  // NormalizedHookIdentity { event_name, #[serde(flatten)] MatcherGroup }
-  // HookHandlerConfig::Command with timeout defaulted to 600.
-  const identity = {
-    event_name: "pre_tool_use",
+  const { computeCodexCommandHookHash: compute } = await import("./codex-hooks-sync.js");
+  return compute({
+    eventName: "pre_tool_use",
     matcher: input.matcher,
-    hooks: [
-      {
-        type: "command",
-        command: input.command,
-        timeout: 600,
-        async: false,
-        statusMessage: input.statusMessage,
-      },
-    ],
-  };
-  const canonical = canonicalJson(identity);
-  const serialized = Buffer.from(JSON.stringify(canonical));
-  // Dynamic import: this module must not be statically reachable from renderer.
-  const { createHash } = await import("node:crypto");
-  const hex = createHash("sha256").update(serialized).digest("hex");
-  return `sha256:${hex}`;
-}
-
-function canonicalJson(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalJson);
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(record).sort()) {
-      sorted[key] = canonicalJson(record[key]);
-    }
-    return sorted;
-  }
-  return value;
-}
-
-function tomlKey(key: string): string {
-  return JSON.stringify(key);
+    command: input.command,
+    statusMessage: input.statusMessage,
+  });
 }
 
 /** Node script: stdin PreToolUse payload → stdout updatedInput with fork_turns=none. */
-const ECO_SPAWN_AGENT_PRETOOL_SCRIPT = `#!/usr/bin/env node
+export const ECO_SPAWN_AGENT_PRETOOL_SCRIPT = `#!/usr/bin/env node
 // Generated by Eco Coding. Do not edit.
 // Forces fork_turns=none on spawn_agent so the selected custom-agent config applies.
 import fs from "node:fs";

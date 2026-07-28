@@ -9,6 +9,7 @@ import {
   type MainAgentConfigResource,
   type MainAgentPromptResource,
   type SubagentOrchestrationResource,
+  isV4aTeachingEnabled,
 } from "../shared/agent-orchestration";
 import type { ModelRef, ProviderConfigView, ThinkingEffort, UpstreamApiCompat } from "../shared/ipc";
 import { defaultThemeColorForAgentKey, normalizeThemeColorHex } from "../shared/subagent-theme";
@@ -34,6 +35,8 @@ export interface AgentResourceAgentFormState extends AgentResourceAgentCapabilit
   apiCompat: string;
   enabled: boolean;
   candidateModelId: string;
+  /** Optional Codex apply_patch V4A teaching in agent instructions. Default false. */
+  v4aTeachingEnabled: boolean;
 }
 
 export interface AgentResourceFormState {
@@ -49,6 +52,8 @@ export interface AgentResourceFormState {
   mainCandidateModelId: string;
   mainSystemPromptPreset: "core_native" | "custom_append";
   mainPrompt: string;
+  /** Optional Codex apply_patch V4A teaching in main-agent instructions. Default false. */
+  mainV4aTeachingEnabled: boolean;
   mainReadCodebase: boolean;
   mainReadScope: ToolCapabilityFieldValues["readScope"];
   mainWriteCodebase: boolean;
@@ -194,6 +199,7 @@ export function createBlankAgentResourceForm(options: ResourceFormOptions = {}):
     mainSystemPromptPreset: "core_native",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
+    mainV4aTeachingEnabled: false,
     ...mainCapabilityToResourceFormFields(mainCapability),
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: exploreTemplate
@@ -261,6 +267,7 @@ export function mainAgentConfigToForm(config: MainAgentConfigResource): AgentRes
     mainCandidateModelId: config.modelRef.candidateModelId ?? "",
     mainSystemPromptPreset: "core_native",
     mainPrompt: "",
+    mainV4aTeachingEnabled: isV4aTeachingEnabled(config),
     ...mainCapabilityToResourceFormFields(mainCapability),
     guidancePrompt: "",
     agents: [],
@@ -352,6 +359,7 @@ export function createResourceAgentFormFromTemplate(
     apiCompat: "",
     enabled: true,
     candidateModelId: "",
+    v4aTeachingEnabled: false,
     ...agentCapabilityToAgentForm(capability),
   };
 }
@@ -390,6 +398,7 @@ export function buildMainAgentConfigFromForm(
     }),
     tools: capabilityFieldsToToolPolicy(mainCapabilityFromResourceForm(form)),
     skills: options.existing ? [...options.existing.skills] : [],
+    ...(form.mainV4aTeachingEnabled ? { v4aTeachingEnabled: true } : {}),
     updatedAt: options.nowIso ?? new Date().toISOString(),
     source: form.source,
   };
@@ -481,6 +490,7 @@ function agentInstanceToForm(agent: AgentInstanceConfig): AgentResourceAgentForm
     apiCompat: agent.modelRef.apiCompat ?? "",
     enabled: agent.enabled,
     candidateModelId: agent.modelRef.candidateModelId ?? "",
+    v4aTeachingEnabled: isV4aTeachingEnabled(agent),
     ...agentCapabilityToAgentForm(capability),
   };
 }
@@ -545,6 +555,7 @@ function buildAgentsFromForm(
       mcpServers: parseList(agentForm.mcpServers),
       skills: existingAgent ? [...existingAgent.skills] : [],
       enabled: agentForm.enabled,
+      ...(agentForm.v4aTeachingEnabled ? { v4aTeachingEnabled: true } : {}),
     };
   });
 }
