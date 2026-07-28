@@ -2039,7 +2039,7 @@ export const i18nCatalogs = {
       "composer.orchestration": "Orchestration",
       "composer.mcp.empty": "No MCP servers configured",
       "composer.mcp.configureSummary": "Configure MCP servers, {{summary}} enabled",
-      "composer.skills.title": "技能",
+      "composer.skills.title": "Skills",
       "composer.skills.project": "Current project Skills",
       "composer.skills.scope.project": "Project",
       "composer.skills.scope.personal": "Personal",

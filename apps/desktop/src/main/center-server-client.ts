@@ -98,7 +98,7 @@ interface AccountAuthResponse {
 const WS_OPEN = 1;
 const MAX_QUEUED_NON_PROJECTION_EVENTS = 100;
 const KEEPALIVE_INTERVAL_MS = 25_000;
-const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 1_000;
+const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 3_000;
 
 interface PendingMobileProjection {
   notification: EventCenterJsonRpcNotification;

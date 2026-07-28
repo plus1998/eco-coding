@@ -667,7 +667,8 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                   ),
                                 ),
                               )
-                            else
+                            else ...[
+                              const SizedBox(height: 12),
                               ...filteredScripts.map((script) {
                                 final savedArgs =
                                     _scriptArgsByName[script.name] ?? '';
@@ -805,6 +806,7 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                                   ),
                                 );
                               }),
+                            ],
                           ],
                         ),
                       ),
