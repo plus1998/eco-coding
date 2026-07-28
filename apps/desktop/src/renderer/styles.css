@@ -8795,7 +8795,7 @@ button.sidebar-core-heading {
 .run-log-narrative.compact .run-log-narrative-body,
 .run-log-narrative.compact .markdown-content {
   font-size: 14px;
-  color: #d4d4d4;
+  color: var(--markdown-text);
 }
 
 .run-log-narrative .run-log-narrative-body,
@@ -8804,7 +8804,7 @@ button.sidebar-core-heading {
   max-width: 100%;
   min-width: 0;
   margin: 0;
-  color: #e5e5e5;
+  color: var(--markdown-text);
   font-size: 15px;
   line-height: 1.65;
   overflow-wrap: break-word;
@@ -8815,6 +8815,7 @@ button.sidebar-core-heading {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  color: var(--markdown-text);
   overflow-wrap: break-word;
   word-break: normal;
 }
@@ -8842,7 +8843,7 @@ button.sidebar-core-heading {
   gap: 1px;
   margin-left: 2px;
   vertical-align: baseline;
-  color: #a3a3a3;
+  color: var(--markdown-muted);
   font-size: 1.05em;
   font-weight: 600;
   line-height: 1;
@@ -8911,7 +8912,7 @@ button.sidebar-core-heading {
 .markdown-content th,
 .markdown-content td {
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--markdown-border);
   text-align: left;
   vertical-align: top;
   word-break: normal;
@@ -8919,7 +8920,8 @@ button.sidebar-core-heading {
 }
 
 .markdown-content th {
-  color: #f0f0f0;
+  background: var(--markdown-table-heading-bg);
+  color: var(--markdown-heading);
   font-weight: 600;
 }
 
@@ -8949,7 +8951,7 @@ button.sidebar-core-heading {
 .markdown-content h3,
 .markdown-content h4 {
   margin: 1em 0 0.45em;
-  color: #f5f5f5;
+  color: var(--markdown-heading);
   font-weight: 600;
   line-height: 1.35;
 }
@@ -8975,25 +8977,50 @@ button.sidebar-core-heading {
   margin-top: 0.25em;
 }
 
+.markdown-content li::marker {
+  color: var(--markdown-muted);
+}
+
+.markdown-content strong,
+.markdown-content b {
+  color: var(--markdown-heading);
+}
+
 .markdown-content blockquote {
   padding-left: 12px;
-  border-left: 3px solid rgba(255, 255, 255, 0.18);
-  color: #c8c8c8;
+  border-left: 3px solid var(--markdown-quote-border);
+  color: var(--markdown-quote-text);
 }
 
 .markdown-content a {
-  color: #7eb8ff;
+  color: var(--markdown-link);
   text-decoration: underline;
+  text-decoration-color: var(--markdown-link-decoration);
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
+}
+
+.markdown-content hr {
+  height: 1px;
+  margin: 1.2em 0;
+  border: 0;
+  background: var(--markdown-border);
+}
+
+.markdown-content del {
+  color: var(--markdown-muted);
+}
+
+.markdown-content input[type="checkbox"] {
+  accent-color: var(--accent);
 }
 
 .markdown-inline-code,
 .run-log-code {
   padding: 1px 6px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f0f0f0;
+  background: var(--markdown-inline-code-bg);
+  color: var(--markdown-inline-code-text);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.92em;
 }
@@ -9005,8 +9032,10 @@ button.sidebar-core-heading {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 12px 14px;
+  border: 1px solid var(--markdown-code-border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--markdown-code-bg);
+  color: var(--markdown-text);
 }
 
 .markdown-pre code {
@@ -9023,12 +9052,12 @@ button.sidebar-core-heading {
 
 .run-log-narrative.compact p {
   font-size: 14px;
-  color: #d4d4d4;
+  color: var(--markdown-text);
 }
 
 .run-log-narrative p {
   margin: 0;
-  color: #e5e5e5;
+  color: var(--markdown-text);
   font-size: 15px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -9041,7 +9070,7 @@ button.sidebar-core-heading {
   height: 1em;
   margin-left: 2px;
   vertical-align: text-bottom;
-  background: #a3a3a3;
+  background: var(--markdown-muted);
   animation: run-log-blink 1s step-end infinite;
 }
 
