@@ -72,6 +72,27 @@ test("runThreadRequestWithLifecycle does not rerun failed attempts", async () =>
   expect(harness.finishes.map((finish) => finish.status)).toEqual(["failed"]);
 });
 
+test("runThreadRequestWithLifecycle does not automatically continue incomplete attempts", async () => {
+  const harness = createHarness();
+  let calls = 0;
+
+  const result = await runThreadRequestWithLifecycle({
+    threadId: "thr_incomplete",
+    phase: "execution",
+    runOnce: async () => {
+      calls += 1;
+      return { ok: false, reason: "max_tokens", incomplete: true };
+    },
+    lifecycle: harness.lifecycle,
+    settlements: harness.settlementQueue,
+  });
+
+  expect(result).toEqual({ ok: false, reason: "max_tokens", incomplete: true });
+  expect(calls).toBe(1);
+  expect(harness.starts.map((start) => start.retryIndex)).toEqual([0]);
+  expect(harness.finishes.map((finish) => finish.status)).toEqual(["failed"]);
+});
+
 test("runThreadRequestWithLifecycle marks thrown aborted attempts as cancelled", async () => {
   const harness = createHarness();
   const controller = new AbortController();

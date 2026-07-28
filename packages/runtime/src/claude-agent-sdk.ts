@@ -1882,7 +1882,7 @@ export function extractSdkRunIncompleteReason(payload: unknown): string | null {
   }
 
   if (payload.terminal_reason === "stop_hook_prevented") {
-    return "执行被完成条件检查阻止：仍有任务未完成，或尚无足够的实际操作证据。";
+    return "SDK 报告 stop_hook_prevented，本轮未正常完成。";
   }
 
   return null;

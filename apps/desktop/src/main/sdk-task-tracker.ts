@@ -1,4 +1,4 @@
-import type { EcoTaskCompletionState, EcoTaskTrackerHooks } from "@eco/runtime";
+import type { EcoTaskTrackerHooks } from "@eco/runtime";
 import type { SdkTodoUpdatedPayload } from "@eco/runtime/sdk";
 import type { CoderTodoItem, CoderTodoStatus } from "../shared/ipc";
 import {
@@ -37,16 +37,6 @@ function mapSdkTaskStatus(status: string | undefined): CoderTodoStatus | undefin
   }
 }
 
-const SUBSTANTIVE_EXECUTION_TOOL_NAMES = new Set([
-  "Write",
-  "Edit",
-  "MultiEdit",
-  "NotebookEdit",
-  "Bash",
-]);
-
-const MUTATION_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
-
 function readString(input: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const value = input[key];
@@ -81,7 +71,6 @@ export function createSdkTaskTracker(
   emitTodoList: (threadId: string, todos: CoderTodoItem[]) => void,
 ): {
   handleTaskProgress: (payload: SdkTodoUpdatedPayload) => void;
-  getCompletionState: () => EcoTaskCompletionState;
   createHookHandlers: (getStopStatus?: () => "completed" | "blocked" | "cancelled") => EcoTaskTrackerHooks;
 } {
   let todos = store.listTodos();
@@ -90,9 +79,6 @@ export function createSdkTaskTracker(
   const sdkTaskIds = new Map<string, string>();
   const subagentTodoLinks = new Map<string, string>();
   let progressFromSdk = false;
-  const substantiveToolNames = new Set<string>();
-  const successfulMutationToolNames = new Set<string>();
-  const failedMutationToolNames = new Set<string>();
 
   const persist = (nextTodos: CoderTodoItem[]) => {
     const ordered = reorderTodos(nextTodos);
@@ -173,9 +159,7 @@ export function createSdkTaskTracker(
     }
 
     const now = new Date().toISOString();
-    const mappedStatus = mapSdkTaskStatus(typeof input.status === "string" ? input.status : undefined);
-    // TaskCompleted is the authoritative completion point and may be blocked by a quality gate.
-    const status = mappedStatus === "completed" ? undefined : mappedStatus;
+    const status = mapSdkTaskStatus(typeof input.status === "string" ? input.status : undefined);
     const activeForm = readString(input, "activeForm", "active_form") || undefined;
     const description = readString(input, "description", "task_description") || undefined;
 
@@ -288,7 +272,13 @@ export function createSdkTaskTracker(
     progressFromSdk = true;
     const linkedTodoId = subagentTodoLinks.get(input.agentId);
     if (linkedTodoId) {
+      persist(updateCoderTodoStatus(todos, linkedTodoId, "completed"));
       subagentTodoLinks.delete(input.agentId);
+      return;
+    }
+    const running = todos.find((todo) => todo.status === "running");
+    if (running) {
+      persist(updateCoderTodoStatus(todos, running.id, "completed"));
     }
   };
 
@@ -360,26 +350,10 @@ export function createSdkTaskTracker(
     if (!progressFromSdk && todos.length === 0) {
       return;
     }
-    if (status === "completed") {
-      return;
-    }
     persist(completeRunningCoderTodos(todos, status));
   };
 
-  const getCompletionState = (): EcoTaskCompletionState => ({
-    openTasks: todos
-      .filter((todo): todo is CoderTodoItem & { status: "pending" | "running" } =>
-        todo.status === "pending" || todo.status === "running",
-      )
-      .map((todo) => ({ id: todo.id, title: todo.title, status: todo.status })),
-    hasSubstantiveToolUse: substantiveToolNames.size > 0,
-    substantiveToolNames: [...substantiveToolNames],
-    successfulMutationToolNames: [...successfulMutationToolNames],
-    failedMutationToolNames: [...failedMutationToolNames],
-  });
-
   return {
-    getCompletionState,
     handleTaskProgress(payload) {
       if (payload.sdkKind === "task_progress") {
         applyTaskProgress(payload);
@@ -400,7 +374,6 @@ export function createSdkTaskTracker(
       };
 
       return {
-        getCompletionState,
         peekPendingCoderTodoId,
         onPreToolUse(toolName, input) {
           if (toolName === "TodoWrite") {
@@ -413,19 +386,6 @@ export function createSdkTaskTracker(
           }
           if (toolName === "TaskUpdate") {
             applyTaskUpdateTool(input);
-          }
-        },
-        onPostToolUse(toolName) {
-          if (SUBSTANTIVE_EXECUTION_TOOL_NAMES.has(toolName)) {
-            substantiveToolNames.add(toolName);
-          }
-          if (MUTATION_TOOL_NAMES.has(toolName)) {
-            successfulMutationToolNames.add(toolName);
-          }
-        },
-        onPostToolUseFailure(toolName) {
-          if (MUTATION_TOOL_NAMES.has(toolName)) {
-            failedMutationToolNames.add(toolName);
           }
         },
         onTaskCreated: applyTaskCreated,

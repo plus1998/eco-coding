@@ -53,12 +53,6 @@ test("createThreadSdkTaskRuntime wires task tracker hooks through thread store a
   });
   expect(emitted).toHaveLength(1);
   expect(runtime.taskRunHooks.hookContextExtras.getStopTodoStatus?.()).toBe("completed");
-  expect(runtime.taskRunHooks.getCompletionState()).toMatchObject({
-    hasSubstantiveToolUse: false,
-    successfulMutationToolNames: [],
-    failedMutationToolNames: [],
-    openTasks: [{ title: "Spawn coders", status: "pending" }],
-  });
 });
 
 test("thread SDK task runtime handles todo.updated progress events only", () => {

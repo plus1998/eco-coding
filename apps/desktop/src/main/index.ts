@@ -411,7 +411,6 @@ import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliat
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { prepareSdkRunContextAfterCompaction } from "./sdk-run-context-compaction";
-import { validateSdkExecutionCompletion } from "./sdk-execution-completion";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
@@ -4713,7 +4712,7 @@ async function runCodingThreadAutonomous(
                 taskRuntime.handleEvent(event);
               },
             });
-            return validateSdkExecutionCompletion(result, taskRunHooks.getCompletionState());
+            return result;
           } catch (error) {
             if (controller.signal.aborted) {
               return { ok: false, reason: "cancelled by user", aborted: true };
@@ -4910,7 +4909,7 @@ async function runCodingThreadExecution(
                   taskRuntime.handleEvent(event);
                 },
               });
-              return validateSdkExecutionCompletion(result, taskRunHooks.getCompletionState());
+              return result;
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -6599,10 +6598,7 @@ async function runThreadContinuation(
                   taskRuntime?.handleEvent(event);
                 },
               });
-              if (mode !== "execution" || !taskRunHooks) {
-                return result;
-              }
-              return validateSdkExecutionCompletion(result, taskRunHooks.getCompletionState());
+              return result;
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };

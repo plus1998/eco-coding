@@ -4,14 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import type {
   PreCompactHookInput,
-  PostToolUseHookInput,
-  PostToolUseFailureHookInput,
   PreToolUseHookInput,
   StopHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
-  TaskCreatedHookInput,
   TaskCompletedHookInput,
+  TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   buildEcoSdkHooks,
@@ -33,8 +31,6 @@ import {
   createSubagentToolAttributionPreToolHook,
   createTaskCreatedHook,
   createTaskCompletedHook,
-  createTaskEvidencePostToolHook,
-  createTaskEvidencePostToolFailureHook,
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
@@ -537,174 +533,54 @@ test("createTaskToolPreToolHook forwards tool input to tracker", async () => {
   expect(calls).toEqual([{ toolName: "TaskCreate", input: { subject: "Run tests" } }]);
 });
 
-test("task evidence and completion hooks block unsupported completion", async () => {
-  let substantive = false;
+test("task completion and stop hooks observe SDK state without blocking it", async () => {
   const completed: string[] = [];
+  const stopped: string[] = [];
   const tracker = {
     onPreToolUse() {},
-    onPostToolUse() {
-      substantive = true;
-    },
     onTaskCreated() {},
     onTaskCompleted(input: { taskId: string }) {
       completed.push(input.taskId);
     },
     onSubagentStart() {},
     onSubagentStop() {},
-    onStop() {},
-    getCompletionState: () => ({
-      openTasks: [],
-      hasSubstantiveToolUse: substantive,
-      substantiveToolNames: substantive ? ["Edit"] : [],
-      successfulMutationToolNames: substantive ? ["Edit"] : [],
-      failedMutationToolNames: [],
-    }),
-  };
-  const completedHook = createTaskCompletedHook(tracker);
-  const completedInput = {
-    hook_event_name: "TaskCompleted",
-    task_id: "task_1",
-    task_subject: "Implement panel",
-    session_id: "s1",
-    cwd: "/tmp",
-  } satisfies TaskCompletedHookInput;
-
-  expect(
-    await completedHook(completedInput, undefined, { signal: new AbortController().signal }),
-  ).toMatchObject({ decision: "block" });
-  expect(completed).toEqual([]);
-
-  const evidenceHook = createTaskEvidencePostToolHook(tracker);
-  await evidenceHook(
-    {
-      hook_event_name: "PostToolUse",
-      tool_name: "Edit",
-      tool_input: { file_path: "panel.ts" },
-      tool_response: { ok: true },
-      tool_use_id: "tool_edit",
-      session_id: "s1",
-      cwd: "/tmp",
-    } satisfies PostToolUseHookInput,
-    "tool_edit",
-    { signal: new AbortController().signal },
-  );
-
-  expect(
-    await completedHook(completedInput, undefined, { signal: new AbortController().signal }),
-  ).toEqual({});
-  expect(completed).toEqual(["task_1"]);
-});
-
-test("task evidence records failed file mutations through PostToolUseFailure", async () => {
-  const failures: Array<{ toolName: string; error: string }> = [];
-  const hook = createTaskEvidencePostToolFailureHook({
-    onPreToolUse() {},
-    onPostToolUseFailure(toolName, _input, error) {
-      failures.push({ toolName, error });
+    onStop(status: "completed" | "blocked" | "cancelled") {
+      stopped.push(status);
     },
-    onTaskCreated() {},
-    onTaskCompleted() {},
-    onSubagentStart() {},
-    onSubagentStop() {},
-    onStop() {},
-  });
-
-  await hook(
-    {
-      hook_event_name: "PostToolUseFailure",
-      tool_name: "Edit",
-      tool_input: { file_path: "panel.ts" },
-      tool_use_id: "call_edit",
-      error: "String to replace not found in file.",
-      session_id: "s1",
-      cwd: "/tmp",
-    } satisfies PostToolUseFailureHookInput,
-    "call_edit",
-    { signal: new AbortController().signal },
-  );
-
-  expect(failures).toEqual([
-    { toolName: "Edit", error: "String to replace not found in file." },
-  ]);
-});
-
-test("Stop hook blocks open or actionless executions once", async () => {
-  let state = {
-    openTasks: [{ id: "task_1", title: "Implement panel", status: "running" as const }],
-    hasSubstantiveToolUse: false,
-    substantiveToolNames: [] as string[],
-    successfulMutationToolNames: [] as string[],
-    failedMutationToolNames: [] as string[],
   };
-  const stopped: string[] = [];
-  const hook = createStopHook({
-    taskTracker: {
-      onPreToolUse() {},
-      onTaskCreated() {},
-      onTaskCompleted() {},
-      onSubagentStart() {},
-      onSubagentStop() {},
-      onStop(status) {
-        stopped.push(status);
-      },
-      getCompletionState: () => state,
-    },
-  });
-  if (!hook) {
+  const taskCompleted = createTaskCompletedHook(tracker);
+  const stop = createStopHook({ taskTracker: tracker });
+  if (!stop) {
     throw new Error("Expected Stop hook");
   }
-  const stopInput = {
-    hook_event_name: "Stop",
-    stop_hook_active: false,
-    session_id: "s1",
-    cwd: "/tmp",
-  } satisfies StopHookInput;
-
-  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
-    decision: "block",
-  });
-  expect(stopped).toEqual([]);
-
-  state = {
-    openTasks: [],
-    hasSubstantiveToolUse: false,
-    substantiveToolNames: [],
-    successfulMutationToolNames: [],
-    failedMutationToolNames: [],
-  };
-  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
-    decision: "block",
-  });
-
-  state = {
-    openTasks: [],
-    hasSubstantiveToolUse: true,
-    substantiveToolNames: ["Bash"],
-    successfulMutationToolNames: [],
-    failedMutationToolNames: ["Edit"],
-  };
-  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toMatchObject({
-    decision: "block",
-    reason: expect.stringContaining("文件写入全部失败"),
-  });
-
-  state = {
-    openTasks: [],
-    hasSubstantiveToolUse: true,
-    substantiveToolNames: ["Bash"],
-    successfulMutationToolNames: [],
-    failedMutationToolNames: [],
-  };
-  expect(await hook(stopInput, undefined, { signal: new AbortController().signal })).toEqual({});
-  expect(stopped).toEqual(["completed"]);
 
   expect(
-    await hook(
-      { ...stopInput, stop_hook_active: true },
+    await taskCompleted(
+      {
+        hook_event_name: "TaskCompleted",
+        task_id: "task_1",
+        task_subject: "Implement panel",
+        session_id: "s1",
+        cwd: "/tmp",
+      } satisfies TaskCompletedHookInput,
       undefined,
       { signal: new AbortController().signal },
     ),
   ).toEqual({});
+  expect(
+    await stop(
+      {
+        hook_event_name: "Stop",
+        stop_hook_active: false,
+        session_id: "s1",
+        cwd: "/tmp",
+      } satisfies StopHookInput,
+      undefined,
+      { signal: new AbortController().signal },
+    ),
+  ).toEqual({});
+  expect(completed).toEqual(["task_1"]);
+  expect(stopped).toEqual(["completed"]);
 });
 
 test("createSubagentToolAttributionPreToolHook forwards tool use id with role", async () => {
@@ -2606,7 +2482,6 @@ test("buildEcoSdkHooks registers expected hook events", () => {
     resolveChangedFiles: async () => [],
     taskTracker: {
       onPreToolUse() {},
-      onPostToolUse() {},
       onTaskCreated() {},
       onTaskCompleted() {},
       onSubagentStart() {},
@@ -2633,7 +2508,7 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(withResume.PreToolUse?.length).toBeGreaterThanOrEqual(2);
   expect(hooks.TaskCreated).toHaveLength(1);
   expect(hooks.TaskCompleted).toHaveLength(1);
-  expect(hooks.PostToolUse).toHaveLength(1);
+  expect(hooks.PostToolUse).toBeUndefined();
   expect(hooks.SubagentStart).toHaveLength(1);
   expect(hooks.SubagentStop).toHaveLength(1);
   expect(hooks.Stop).toHaveLength(1);

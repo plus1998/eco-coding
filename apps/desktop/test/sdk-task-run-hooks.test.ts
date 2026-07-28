@@ -4,22 +4,8 @@ import { createSdkTaskRunHooks, type SdkTaskStopStatus } from "../src/main/sdk-t
 
 function createBaseHooks(input: { calls: string[] }): {
   createHookHandlers(getStopStatus: () => SdkTaskStopStatus): EcoTaskTrackerHooks;
-  getCompletionState(): {
-    openTasks: [];
-    hasSubstantiveToolUse: boolean;
-    substantiveToolNames: string[];
-    successfulMutationToolNames: string[];
-    failedMutationToolNames: string[];
-  };
 } {
   return {
-    getCompletionState: () => ({
-      openTasks: [],
-      hasSubstantiveToolUse: false,
-      substantiveToolNames: [],
-      successfulMutationToolNames: [],
-      failedMutationToolNames: [],
-    }),
     createHookHandlers: (getStopStatus) => ({
       peekPendingCoderTodoId: () => "todo_pending",
       onPreToolUse: (toolName) => {
@@ -53,7 +39,6 @@ test("createSdkTaskRunHooks builds hook extras with pending todo hints", () => {
 
   taskRunHooks.hookContextExtras.taskTracker?.onPreToolUse("TaskCreate", {});
   expect(calls).toEqual(["tool:TaskCreate"]);
-  expect(taskRunHooks.getCompletionState().hasSubstantiveToolUse).toBe(false);
 });
 
 test("stopIfUnhandled delegates once and uses the latest owner status", () => {

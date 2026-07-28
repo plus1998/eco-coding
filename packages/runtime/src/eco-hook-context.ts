@@ -16,8 +16,6 @@ export interface SdkPlanSubmitRequest {
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
-  onPostToolUse?(toolName: string, input: Record<string, unknown>, response: unknown): void;
-  onPostToolUseFailure?(toolName: string, input: Record<string, unknown>, error: string): void;
   onTaskCreated(input: { taskId: string; subject: string; description?: string }): void;
   onTaskCompleted(input: { taskId: string; subject: string }): void;
   onSubagentStart(input: {

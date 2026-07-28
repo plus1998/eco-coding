@@ -69,6 +69,15 @@ test("hook handlers accept SDK snake_case TaskCreate and TaskUpdate input", () =
   });
 });
 
+test("TaskUpdate completed is reflected without waiting for another SDK hook", () => {
+  const { store, hooks } = createTracker();
+
+  hooks.onTaskCreated({ taskId: "task_1", subject: "Implement panel" });
+  hooks.onPreToolUse("TaskUpdate", { taskId: "task_1", status: "completed" });
+
+  expect(store.getTodos()[0]?.status).toBe("completed");
+});
+
 test("hook handlers still support TodoWrite for compatibility", () => {
   const { store, hooks } = createTracker();
 
@@ -120,7 +129,7 @@ test("subagent task_started fallback marks matching checklist item running", () 
   expect(store.getTodos()[0]?.status).toBe("running");
 });
 
-test("SubagentStop does not imply that the linked todo completed", () => {
+test("SubagentStart and SubagentStop update todo status", () => {
   const { store, hooks } = createTracker([
     {
       id: "thr_1:task:0",
@@ -137,7 +146,7 @@ test("SubagentStop does not imply that the linked todo completed", () => {
   expect(store.getTodos()[0]?.status).toBe("running");
 
   hooks.onSubagentStop({ agentId: "agent_1", agentType: "coder" });
-  expect(store.getTodos()[0]?.status).toBe("running");
+  expect(store.getTodos()[0]?.status).toBe("completed");
 });
 
 test("SubagentStart does not mark the first pending todo without a structured link", () => {
@@ -170,7 +179,7 @@ test("SubagentStart resolves todo through matching SDK task id", () => {
   });
 });
 
-test("completed stop preserves running todos while blocked stop marks them blocked", () => {
+test("onStop completes running todos", () => {
   const { store, hooks } = createTracker([
     {
       id: "thr_1:task:0",
@@ -184,50 +193,7 @@ test("completed stop preserves running todos while blocked stop marks them block
   ]);
 
   hooks.onStop("completed");
-  expect(store.getTodos()[0]?.status).toBe("running");
-
-  hooks.onStop("blocked");
-  expect(store.getTodos()[0]?.status).toBe("blocked");
-});
-
-test("TaskUpdate completion waits for TaskCompleted and records substantive tool evidence", () => {
-  const { store, tracker, hooks } = createTracker();
-
-  hooks.onTaskCreated({ taskId: "task_1", subject: "Implement panel" });
-  hooks.onPreToolUse("TaskUpdate", { taskId: "task_1", status: "in_progress" });
-  hooks.onPreToolUse("TaskUpdate", { taskId: "task_1", status: "completed" });
-
-  expect(store.getTodos()[0]?.status).toBe("running");
-  expect(tracker.getCompletionState()).toMatchObject({
-    hasSubstantiveToolUse: false,
-    openTasks: [{ title: "Implement panel", status: "running" }],
-  });
-
-  hooks.onPostToolUse?.("Edit", { file_path: "panel.ts" }, { ok: true });
-  expect(tracker.getCompletionState()).toMatchObject({
-    hasSubstantiveToolUse: true,
-    substantiveToolNames: ["Edit"],
-    successfulMutationToolNames: ["Edit"],
-    failedMutationToolNames: [],
-  });
-
-  hooks.onTaskCompleted({ taskId: "task_1", subject: "Implement panel" });
   expect(store.getTodos()[0]?.status).toBe("completed");
-  expect(tracker.getCompletionState().openTasks).toEqual([]);
-});
-
-test("failed edits are tracked separately from successful verification commands", () => {
-  const { tracker, hooks } = createTracker();
-
-  hooks.onPostToolUseFailure?.("Edit", { file_path: "panel.ts" }, "String not found");
-  hooks.onPostToolUse?.("Bash", { command: "flutter analyze" }, { ok: true });
-
-  expect(tracker.getCompletionState()).toMatchObject({
-    hasSubstantiveToolUse: true,
-    substantiveToolNames: ["Bash"],
-    successfulMutationToolNames: [],
-    failedMutationToolNames: ["Edit"],
-  });
 });
 
 test("task_notification completes the exact linked SDK task and preserves summary", () => {

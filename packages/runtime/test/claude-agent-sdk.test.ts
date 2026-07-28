@@ -809,7 +809,7 @@ test("extracts structured incomplete SDK terminal results", () => {
       stop_reason: "end_turn",
       terminal_reason: "stop_hook_prevented",
     }),
-  ).toContain("完成条件检查");
+  ).toContain("stop_hook_prevented");
   expect(
     extractSdkRunIncompleteReason({
       type: "result",

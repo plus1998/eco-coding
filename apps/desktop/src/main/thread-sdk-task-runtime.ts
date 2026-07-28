@@ -38,7 +38,6 @@ export function createThreadSdkTaskRuntime(input: {
   );
   const taskRunHooks = createSdkTaskRunHooks({
     createHookHandlers: (getStopStatus) => todoTracker.createHookHandlers(getStopStatus),
-    getCompletionState: todoTracker.getCompletionState,
   });
 
   return {
