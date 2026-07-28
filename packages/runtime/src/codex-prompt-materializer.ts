@@ -40,8 +40,9 @@ export function toCodexAppServerSandboxPolicy(
  */
 export interface CodexCollaborationModeDraft {
   mode: CodexCollaborationModeKind;
-  settings?: {
-    developer_instructions?: string;
+  settings: {
+    /** `null` selects Codex's built-in instructions for the active mode. */
+    developer_instructions: null;
   };
 }
 
@@ -51,14 +52,13 @@ export interface CodexCollaborationMode {
   settings: {
     model: string;
     reasoning_effort?: CodexReasoningEffort;
-    developer_instructions?: string;
+    /** `null` selects Codex's built-in instructions for the active mode. */
+    developer_instructions: null;
   };
 }
 
 export interface CodexTurnMaterializationConfig {
   sessionMode: CodexSessionMode;
-  /** Orchestration instructions appended to the Core-native prompt. */
-  orchestrationAppend?: string;
   /** Orchestration mainAgent.tools (Codex-native). Defaults to product workspace-write policy. */
   orchestrationToolPolicy?: EcoToolPolicy;
 }
@@ -70,7 +70,6 @@ export interface CodexTurnOptions {
   networkAccess?: boolean;
   /** Codex `turn/start.approvalPolicy`. */
   approvalPolicy: CodexApprovalPolicy;
-  developer_instructions: string;
 }
 
 /** Bind ThreadRuntimeConfig / route modelId into collaborationMode.settings.model. */
@@ -92,9 +91,7 @@ export function applyCodexTurnModel(
     settings: {
       model: turnModel,
       ...(normalizedReasoningEffort ? { reasoning_effort: normalizedReasoningEffort } : {}),
-      ...(draft.settings?.developer_instructions
-        ? { developer_instructions: draft.settings.developer_instructions }
-        : {}),
+      developer_instructions: null,
     },
   };
 }
@@ -103,15 +100,11 @@ export function isCodexSessionMode(value: unknown): value is CodexSessionMode {
   return typeof value === "string" && (CODEX_SESSION_MODES as readonly string[]).includes(value);
 }
 
-function resolveCustomDeveloperInstructions(orchestrationAppend?: string): string {
-  return orchestrationAppend?.trim() ?? "";
-}
-
 /**
  * Build Codex `turn/start` options from Eco thread runtime config.
  *
- * Codex ships base instructions; Eco only forwards the orchestration's custom main-agent prompt
- * when `systemPromptPreset === "custom_append"`.
+ * Eco's custom developer instructions belong to thread/start and thread/resume.
+ * Collaboration mode is kept separate so Codex can select its built-in Plan/Default template.
  *
  * | sessionMode | collaborationMode | sandboxPolicy (before orchestration intersect) |
  * |-------------|-------------------|------------------------------------------|
@@ -120,8 +113,6 @@ function resolveCustomDeveloperInstructions(orchestrationAppend?: string): strin
  * | ask         | default           | readOnly                                 |
  */
 export function buildCodexTurnOptions(config: CodexTurnMaterializationConfig): CodexTurnOptions {
-  const developerInstructions = resolveCustomDeveloperInstructions(config.orchestrationAppend);
-  const hasDeveloperInstructions = developerInstructions.length > 0;
   const orchestrationToolPolicy = config.orchestrationToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY;
   const effective = resolveEffectiveTurnSandbox({
     sessionMode: config.sessionMode,
@@ -132,22 +123,19 @@ export function buildCodexTurnOptions(config: CodexTurnMaterializationConfig): C
     sandboxPolicy: effective.sandboxPolicy,
     ...(effective.networkAccess ? { networkAccess: true } : {}),
     approvalPolicy: effective.approvalPolicy,
-    developer_instructions: developerInstructions,
   };
 
   switch (config.sessionMode) {
     case "plan":
       return {
-        collaborationMode: { mode: "plan" },
+        collaborationMode: { mode: "plan", settings: { developer_instructions: null } },
         ...base,
       };
     case "ask":
       return {
         collaborationMode: {
           mode: "default",
-          ...(hasDeveloperInstructions
-            ? { settings: { developer_instructions: developerInstructions } }
-            : {}),
+          settings: { developer_instructions: null },
         },
         ...base,
       };
@@ -156,9 +144,7 @@ export function buildCodexTurnOptions(config: CodexTurnMaterializationConfig): C
       return {
         collaborationMode: {
           mode: "default",
-          ...(hasDeveloperInstructions
-            ? { settings: { developer_instructions: developerInstructions } }
-            : {}),
+          settings: { developer_instructions: null },
         },
         ...base,
       };

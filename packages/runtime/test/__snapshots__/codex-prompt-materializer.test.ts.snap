@@ -6,35 +6,35 @@ exports[`agent sessionMode maps to default + workspaceWrite 1`] = `
   "collaborationMode": {
     "mode": "default",
     "settings": {
-      "developer_instructions": "You coordinate research work without assuming a coding task.",
+      "developer_instructions": null,
     },
   },
-  "developer_instructions": "You coordinate research work without assuming a coding task.",
   "sandboxPolicy": "workspaceWrite",
 }
 `;
 
-exports[`plan sessionMode maps to plan collaboration without developer instructions 1`] = `
+exports[`plan sessionMode maps to the built-in plan collaboration template 1`] = `
 {
   "approvalPolicy": "on-request",
   "collaborationMode": {
     "mode": "plan",
+    "settings": {
+      "developer_instructions": null,
+    },
   },
-  "developer_instructions": "You coordinate research work without assuming a coding task.",
   "sandboxPolicy": "workspaceWrite",
 }
 `;
 
-exports[`ask sessionMode maps to default + readOnly without Eco ask append 1`] = `
+exports[`ask sessionMode maps to built-in default + readOnly 1`] = `
 {
   "approvalPolicy": "on-request",
   "collaborationMode": {
     "mode": "default",
     "settings": {
-      "developer_instructions": "You coordinate research work without assuming a coding task.",
+      "developer_instructions": null,
     },
   },
-  "developer_instructions": "You coordinate research work without assuming a coding task.",
   "sandboxPolicy": "readOnly",
 }
 `;

@@ -128,6 +128,8 @@ test("buildMainAgentSystemPrompt injects orchestration strategy without leaking 
   expect(append).toContain("PHASE APPEND");
   expect(append).toContain("Eco orchestration.");
   expect(append).toContain("Delegate only when evidence quality improves.");
+  expect(append).not.toContain("Orchestration has finite time, token, cost");
+  expect(append).not.toContain("Never treat subagents as free or unlimited");
   expect(append).not.toContain("CHILD SECRET PROMPT");
   expect(append).not.toContain("Agent(eco_researcher)");
 });
@@ -159,6 +161,25 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding orchestrati
 test("buildCodexMainAgentOrchestrationAppend includes custom append prompt text", () => {
   const append = buildCodexMainAgentOrchestrationAppend(orchestration, [researchTemplate]);
   expect(append).toContain("You coordinate research work without assuming a coding task.");
+  expect(append).not.toContain("Orchestration has finite time, token, cost");
+  expect(append).not.toContain("Never treat subagents as free or unlimited");
+});
+
+test("buildCodexMainAgentOrchestrationAppend stays empty without custom guidance or subagents", () => {
+  const append = buildCodexMainAgentOrchestrationAppend(
+    {
+      ...orchestration,
+      mainAgent: {
+        ...orchestration.mainAgent,
+        systemPromptPreset: "core_native",
+        prompt: "",
+      },
+      agents: [],
+    },
+    [researchTemplate],
+  );
+
+  expect(append).toBe("");
 });
 
 test("buildCodexMainAgentOrchestrationAppend appends V4A teaching when enabled", () => {

@@ -1505,7 +1505,7 @@ export function createCodexRuntimeDriver(
     ...(options?.threadConfigAlreadyApplied || controlPlaneConfigApplied
       ? { threadConfigAlreadyApplied: true }
       : {}),
-    ...(orchestrationAppend ? { orchestrationAppend } : {}),
+    ...(orchestrationAppend ? { developerInstructions: orchestrationAppend } : {}),
     ...(orchestrationToolPolicy ? { orchestrationToolPolicy } : {}),
     ...(preparedThreadConfig ? { threadConfig: preparedThreadConfig } : {}),
     onThreadMapped: (ecoThreadId, codexThreadId) => {

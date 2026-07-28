@@ -425,11 +425,6 @@ export function buildMainAgentStrategySummary(orchestration: EcoOrchestrationCon
   ].join("\n");
 }
 
-const ORCHESTRATION_CONVERGENCE_POLICY = [
-  "Orchestration has finite time, token, cost, and subagent budgets enforced by the host.",
-  "Never treat subagents as free or unlimited. Reuse active agents, avoid repeated delegation rounds, and converge once the requested result is verified.",
-].join("\n");
-
 export function buildMainAgentOrchestrationAppend(
   config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
@@ -438,7 +433,6 @@ export function buildMainAgentOrchestrationAppend(
   return [
     options?.summaryLabel?.trim() || "Eco orchestration.",
     buildMainAgentStrategySummary(config),
-    ORCHESTRATION_CONVERGENCE_POLICY,
   ].join("\n\n");
 }
 
@@ -463,7 +457,7 @@ export function buildCodexMainAgentOrchestrationAppend(
         'When calling spawn_agent with agent_type, always set fork_turns to "none" so the selected custom agent configuration is applied.',
       ].join("\n")
     : "";
-  const parts = [customPrompt, subagentProtocol, ORCHESTRATION_CONVERGENCE_POLICY].filter(Boolean);
+  const parts = [customPrompt, subagentProtocol].filter(Boolean);
   return appendV4aTeachingToPrompt(parts.join("\n\n"), isV4aTeachingEnabled(config.mainAgent));
 }
 

@@ -13,6 +13,8 @@ import { CodexEventAdapter } from "../src/codex-event-adapter";
 import { CODEX_TURN_INTERRUPT_METHOD, CodexTurnInterruptFailed } from "../src/codex-turn-interrupt";
 import { CodexTurnRouteRegistry } from "../src/codex-turn-route-registry";
 
+const ECO_DEVELOPER_INSTRUCTIONS = "You coordinate Eco orchestration.";
+
 function writeResponse(stdout: PassThrough, message: unknown): void {
   stdout.write(`${JSON.stringify(message)}\n`);
 }
@@ -100,6 +102,7 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
 
   const driver = new CodexAppServerDriver({
     client,
+    developerInstructions: ` ${ECO_DEVELOPER_INSTRUCTIONS} `,
     threadConfig: {
       mcp_servers: {
         browser: { enabled: false },
@@ -183,6 +186,7 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
   const turnStart = messages.find((message) => message.method === "turn/start");
   expect(threadStart?.params?.modelProvider).toBe("eco_anthropic-main");
   expect(threadStart?.params?.model).toBe("eco_anthropic-main__claude-sonnet-4");
+  expect(threadStart?.params?.developerInstructions).toBe(ECO_DEVELOPER_INSTRUCTIONS);
   expect(threadStart?.params?.config).toEqual({
     mcp_servers: {
       browser: { enabled: false },
@@ -190,6 +194,8 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
   });
   expect(turnStart?.params?.model).toBe("eco_anthropic-main__claude-sonnet-4");
   expect(turnStart?.params?.modelProvider).toBeUndefined();
+  expect(turnStart?.params?.developerInstructions).toBeUndefined();
+  expect(turnStart?.params?.developer_instructions).toBeUndefined();
   expect(turnStart?.params?.effort).toBe("high");
   expect(turnStart?.params?.input).toEqual([
     { type: "text", text: "Read README and summarize" },
@@ -206,6 +212,10 @@ test("CodexAppServerDriver runs thread/start then turn/start and observes item n
     (turnStart?.params?.collaborationMode as { settings?: { reasoning_effort?: string } })?.settings
       ?.reasoning_effort,
   ).toBe("high");
+  expect(
+    (turnStart?.params?.collaborationMode as { settings?: { developer_instructions?: unknown } })?.settings
+      ?.developer_instructions,
+  ).toBeNull();
   // Must use provider-scoped gateway alias, not the eco SDK alias on primary.modelId.
   expect(turnStart?.params?.model).not.toBe("eco-planner-alias");
 
@@ -773,6 +783,82 @@ test("CodexAppServerDriver runAsk / runPlan send turn/start with model", async (
   }
 });
 
+test("approved plan reuses the mapped thread and switches to the built-in Default mode", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const client = new CodexAppServerClient(stdin, stdout);
+  const driver = new CodexAppServerDriver({
+    client,
+    existingCodexThreadId: "thr_codex_plan",
+    developerInstructions: ECO_DEVELOPER_INSTRUCTIONS,
+  });
+
+  const handshake = client.initialize();
+  await Bun.sleep(0);
+  writeResponse(stdout, { id: 1, result: { codexHome: "/tmp/codex" } });
+  await handshake;
+
+  const runPromise = (async () => {
+    for await (const _event of driver.runContinuation!(
+      {
+        threadId: "thr_eco_plan",
+        prompt: "original prompt",
+        workspacePath: "/repo",
+        worktreePath: "/repo",
+        routes: [plannerRoute()],
+        signal: new AbortController().signal,
+      },
+      "execution",
+      {
+        plan: "# Plan\n- implement it",
+        handoffChoice: "same_thread",
+      },
+    )) {
+      // drain
+    }
+  })();
+
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 2,
+    result: { thread: { id: "thr_codex_plan", status: { type: "idle" } } },
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 3,
+    result: { turn: { id: "turn_implement", items: [], status: "inProgress" } },
+  });
+  await Bun.sleep(0);
+  stdout.write(
+    `${JSON.stringify({
+      method: "turn/completed",
+      params: {
+        threadId: "thr_codex_plan",
+        turn: { id: "turn_implement", items: [], status: "completed" },
+      },
+    })}\n`,
+  );
+  await runPromise;
+
+  const messages = readRpcMessages(stdin);
+  expect(messages.some((message) => message.method === "thread/start")).toBe(false);
+  expect(messages.find((message) => message.method === "thread/resume")?.params).toMatchObject({
+    threadId: "thr_codex_plan",
+    developerInstructions: ECO_DEVELOPER_INSTRUCTIONS,
+  });
+  const turnStart = messages.find((message) => message.method === "turn/start");
+  expect(turnStart?.params?.threadId).toBe("thr_codex_plan");
+  expect(turnStart?.params?.input).toEqual([{ type: "text", text: "Implement the plan." }]);
+  expect(turnStart?.params?.sandboxPolicy).toMatchObject({ type: "workspaceWrite" });
+  expect(turnStart?.params?.collaborationMode).toMatchObject({
+    mode: "default",
+    settings: {
+      developer_instructions: null,
+    },
+  });
+  driver.dispose();
+});
+
 test("CodexAppServerDriver rejects routes that omit providerId", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
@@ -1170,6 +1256,7 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
   const driver = new CodexAppServerDriver({
     client,
     existingCodexThreadId: "thr_codex_existing",
+    developerInstructions: ECO_DEVELOPER_INSTRUCTIONS,
     threadConfig: { mcp_servers: { browser: { enabled: false } } },
   });
   const controller = new AbortController();
@@ -1236,6 +1323,7 @@ test("CodexAppServerDriver resumes existing map via thread/resume and never thre
   expect(threadResume?.params?.threadId).toBe("thr_codex_existing");
   expect(threadResume?.params?.modelProvider).toBe("eco_anthropic-main");
   expect(threadResume?.params?.model).toBe("eco_anthropic-main__claude-sonnet-4");
+  expect(threadResume?.params?.developerInstructions).toBe(ECO_DEVELOPER_INSTRUCTIONS);
   expect(threadResume?.params?.config).toEqual({
     mcp_servers: { browser: { enabled: false } },
   });

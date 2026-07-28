@@ -53,6 +53,8 @@ export interface CodexThreadStartParams {
   ephemeral?: boolean;
   /** Official per-thread ConfigToml layer (agents and MCP visibility). */
   config?: Record<string, unknown>;
+  /** Additional thread-level developer instructions, separate from collaboration mode. */
+  developerInstructions?: string;
 }
 
 export interface CodexThreadStartResult {
@@ -93,7 +95,8 @@ export interface CodexTurnStartResult {
 export interface CodexAppServerDriverOptions {
   client: CodexAppServerClient;
   sessionMode?: CodexSessionMode;
-  orchestrationAppend?: string;
+  /** Eco orchestration guidance sent through thread/start and thread/resume. */
+  developerInstructions?: string;
   /** Orchestration mainAgent.tools; intersects sessionMode for sandbox / approvalPolicy. */
   orchestrationToolPolicy?: import("./codex-tool-policy.js").EcoToolPolicy;
   /** Reapplied on both thread/start and thread/resume. */
@@ -150,7 +153,7 @@ async function startCodexThreadSerially<T>(
 export class CodexAppServerDriver implements AgentRuntimeDriver {
   private readonly client: CodexAppServerClient;
   private readonly sessionMode: CodexSessionMode;
-  private readonly orchestrationAppend: string | undefined;
+  private readonly developerInstructions: string | undefined;
   private readonly orchestrationToolPolicy: import("./codex-tool-policy.js").EcoToolPolicy | undefined;
   private readonly threadConfig: Record<string, unknown> | undefined;
   private readonly existingCodexThreadId: string | undefined;
@@ -169,7 +172,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   constructor(options: CodexAppServerDriverOptions) {
     this.client = options.client;
     this.sessionMode = options.sessionMode ?? "agent";
-    this.orchestrationAppend = options.orchestrationAppend;
+    this.developerInstructions = options.developerInstructions?.trim() || undefined;
     this.orchestrationToolPolicy = options.orchestrationToolPolicy;
     this.threadConfig = options.threadConfig;
     this.existingCodexThreadId = options.existingCodexThreadId;
@@ -196,7 +199,6 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   private materializeTurnOptions(sessionMode: CodexSessionMode) {
     return buildCodexTurnOptions({
       sessionMode,
-      ...(this.orchestrationAppend ? { orchestrationAppend: this.orchestrationAppend } : {}),
       ...(this.orchestrationToolPolicy ? { orchestrationToolPolicy: this.orchestrationToolPolicy } : {}),
     });
   }
@@ -230,10 +232,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         ...(planning.planUserEdited ? { planUserEdited: true } : {}),
         ...(planning.userFollowUp?.trim() ? { userFollowUp: planning.userFollowUp.trim() } : {}),
       });
-      const turnOptions = {
-        ...planHandoffToTurnOptions(handoff),
-        developer_instructions: this.materializeTurnOptions("agent").developer_instructions,
-      };
+      const turnOptions = planHandoffToTurnOptions(handoff);
       const existingCodexThreadId = handoff.forkThread ? undefined : this.existingCodexThreadId;
       yield* this.executeTurn(input, {
         prompt: handoff.userMessage,
@@ -249,10 +248,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         planMarkdown: planning.plan,
         ...(planning.userFollowUp?.trim() ? { userFollowUp: planning.userFollowUp.trim() } : {}),
       });
-      const turnOptions = {
-        ...planHandoffToTurnOptions(handoff),
-        developer_instructions: this.materializeTurnOptions("plan").developer_instructions,
-      };
+      const turnOptions = planHandoffToTurnOptions(handoff);
       yield* this.executeTurn(input, {
         prompt: handoff.userMessage,
         turnOptions,
@@ -327,6 +323,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         cwd,
         model: codexGatewayModel,
         modelProvider,
+        ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
         ...(this.threadConfig ? { config: this.threadConfig } : {}),
         ...(this.threadConfig && isCodexThreadConfigApplied(this.client, codexThreadId, this.threadConfig)
           ? { configAlreadyApplied: true }
@@ -355,6 +352,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
             cwd,
             model: codexGatewayModel,
             modelProvider,
+            ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
             ...(this.threadConfig ? { config: this.threadConfig } : {}),
           } satisfies CodexThreadStartParams,
           { timeoutMs: turnStartTimeoutMs },

@@ -8,6 +8,8 @@ export interface CodexThreadResumeInput {
   cwd?: string;
   model?: string;
   modelProvider?: string;
+  /** Additional thread-level developer instructions, separate from collaboration mode. */
+  developerInstructions?: string;
   /** Official thread/resume config layer; reapplies thread/actor MCP policy. */
   config?: Record<string, unknown>;
   /** Same app-server client already created this thread with the exact config. */
@@ -19,6 +21,7 @@ export interface CodexThreadResumeParams {
   cwd?: string;
   model?: string;
   modelProvider?: string;
+  developerInstructions?: string;
   config?: Record<string, unknown>;
 }
 
@@ -79,6 +82,7 @@ export function buildCodexThreadResumeParams(input: CodexThreadResumeInput): Cod
   const cwd = input.cwd?.trim();
   const model = input.model?.trim();
   const modelProvider = input.modelProvider?.trim();
+  const developerInstructions = input.developerInstructions?.trim();
   if (cwd) {
     params.cwd = cwd;
   }
@@ -87,6 +91,9 @@ export function buildCodexThreadResumeParams(input: CodexThreadResumeInput): Cod
   }
   if (modelProvider) {
     params.modelProvider = modelProvider;
+  }
+  if (developerInstructions) {
+    params.developerInstructions = developerInstructions;
   }
   if (input.config) {
     params.config = input.config;

@@ -8,52 +8,31 @@ import {
   buildPlanHandoffSameThread,
 } from "../src/codex-plan-handoff.js";
 
-const CUSTOM_ORCHESTRATION_APPEND = "You coordinate research work without assuming a coding task.";
-
 test("agent sessionMode maps to default + workspaceWrite", () => {
-  const options = buildCodexTurnOptions({
-    sessionMode: "agent",
-    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
-  });
+  const options = buildCodexTurnOptions({ sessionMode: "agent" });
 
   expect(options).toMatchSnapshot();
   expect(options.collaborationMode.mode).toBe("default");
   expect(options.sandboxPolicy).toBe("workspaceWrite");
   expect(options.approvalPolicy).toBe("on-request");
-  expect(options.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
-  expect(options.collaborationMode.settings?.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
+  expect(options.collaborationMode.settings.developer_instructions).toBeNull();
 });
 
-test("agent sessionMode omits developer instructions when orchestration has no custom prompt", () => {
-  const options = buildCodexTurnOptions({ sessionMode: "agent" });
-
-  expect(options.developer_instructions).toBe("");
-  expect(options.collaborationMode.settings?.developer_instructions).toBeUndefined();
-});
-
-test("plan sessionMode maps to plan collaboration without developer instructions", () => {
-  const options = buildCodexTurnOptions({
-    sessionMode: "plan",
-    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
-  });
+test("plan sessionMode maps to the built-in plan collaboration template", () => {
+  const options = buildCodexTurnOptions({ sessionMode: "plan" });
 
   expect(options).toMatchSnapshot();
   expect(options.collaborationMode.mode).toBe("plan");
-  expect(options.collaborationMode.settings?.developer_instructions).toBeUndefined();
-  expect(options.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
+  expect(options.collaborationMode.settings.developer_instructions).toBeNull();
 });
 
-test("ask sessionMode maps to default + readOnly without Eco ask append", () => {
-  const options = buildCodexTurnOptions({
-    sessionMode: "ask",
-    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
-  });
+test("ask sessionMode maps to built-in default + readOnly", () => {
+  const options = buildCodexTurnOptions({ sessionMode: "ask" });
 
   expect(options).toMatchSnapshot();
   expect(options.collaborationMode.mode).toBe("default");
   expect(options.sandboxPolicy).toBe("readOnly");
-  expect(options.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
-  expect(options.developer_instructions).not.toContain("Ask mode:");
+  expect(options.collaborationMode.settings.developer_instructions).toBeNull();
 });
 
 test("plan handoff same thread switches to default execution", () => {
@@ -100,14 +79,7 @@ test("applyCodexTurnModel requires model on collaborationMode.settings", () => {
   const draft = buildCodexTurnOptions({ sessionMode: "agent" }).collaborationMode;
   const wired = applyCodexTurnModel(draft, "claude-sonnet-4");
   expect(wired.settings.model).toBe("claude-sonnet-4");
-  expect(wired.settings.developer_instructions).toBeUndefined();
-
-  const customDraft = buildCodexTurnOptions({
-    sessionMode: "agent",
-    orchestrationAppend: CUSTOM_ORCHESTRATION_APPEND,
-  }).collaborationMode;
-  const customWired = applyCodexTurnModel(customDraft, "claude-sonnet-4");
-  expect(customWired.settings.developer_instructions).toBe(CUSTOM_ORCHESTRATION_APPEND);
+  expect(wired.settings.developer_instructions).toBeNull();
 
   const planWired = applyCodexTurnModel(
     buildCodexTurnOptions({ sessionMode: "plan" }).collaborationMode,
@@ -115,7 +87,7 @@ test("applyCodexTurnModel requires model on collaborationMode.settings", () => {
   );
   expect(planWired.mode).toBe("plan");
   expect(planWired.settings.model).toBe("gpt-test");
-  expect(planWired.settings.developer_instructions).toBeUndefined();
+  expect(planWired.settings.developer_instructions).toBeNull();
 
   const noReasoningWired = applyCodexTurnModel(draft, "gpt-5.4", "none");
   expect(noReasoningWired.settings.reasoning_effort).toBe("none");

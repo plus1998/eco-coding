@@ -25,6 +25,7 @@ test("buildCodexThreadResumeParams trims and locks request shape", () => {
       cwd: " /repo ",
       model: " claude-sonnet-4 ",
       modelProvider: " eco_main ",
+      developerInstructions: " Keep Eco orchestration guidance. ",
       config: { mcp_servers: { browser: { enabled: false } } },
     }),
   ).toEqual({
@@ -32,6 +33,7 @@ test("buildCodexThreadResumeParams trims and locks request shape", () => {
     cwd: "/repo",
     model: "claude-sonnet-4",
     modelProvider: "eco_main",
+    developerInstructions: "Keep Eco orchestration guidance.",
     config: { mcp_servers: { browser: { enabled: false } } },
   });
 });
