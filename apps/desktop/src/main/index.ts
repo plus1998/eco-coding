@@ -521,7 +521,7 @@ import {
 } from "./thread-runtime-routes";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
-import { pendingThreadTitle, shouldReplaceAutoThreadTitle, summarizeThreadTitle } from "./thread-title";
+import { resolvePendingThreadTitle, shouldReplaceAutoThreadTitle, summarizeThreadTitle } from "./thread-title";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import {
@@ -3231,7 +3231,7 @@ function registerIpcHandlers(): void {
     const now = new Date().toISOString();
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
-      title: pendingThreadTitle,
+      title: resolvePendingThreadTitle(currentAppLocale()),
       prompt,
       workspacePath: workspace.path,
       status,

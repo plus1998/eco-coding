@@ -6,6 +6,7 @@ import {
   extractTitleText,
   previewThreadTitleFromStream,
   parseThreadTitleJson,
+  resolvePendingThreadTitle,
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
   shouldReplaceAutoThreadTitle,
@@ -153,8 +154,16 @@ test("rejects empty, copied, refusal, or garbage thread titles", () => {
 });
 
 test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
+  expect(shouldReplaceAutoThreadTitle("新任务")).toBe(true);
+  expect(shouldReplaceAutoThreadTitle("New Task")).toBe(true);
   expect(shouldReplaceAutoThreadTitle("新编码任务")).toBe(true);
   expect(shouldReplaceAutoThreadTitle("已命名会话")).toBe(false);
+});
+
+test("resolvePendingThreadTitle uses locale language", () => {
+  expect(resolvePendingThreadTitle("zh-CN")).toBe("新任务");
+  expect(resolvePendingThreadTitle("en-US")).toBe("New Task");
+  expect(resolvePendingThreadTitle("ja-JP")).toBe("New Task");
 });
 
 test("buildThreadTitleUserMessage includes prompt and JSON instruction", () => {

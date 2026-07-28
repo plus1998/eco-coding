@@ -10,7 +10,27 @@ const ANTHROPIC_STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
 const TITLE_TIMEOUT_MS = 90_000;
 export const TITLE_PROMPT_MAX_CHARS = 8_000;
 export const TITLE_OUTPUT_MAX_CHARS = 42;
-export const pendingThreadTitle = "新编码任务";
+export const PENDING_THREAD_TITLE_ZH = "新任务";
+export const PENDING_THREAD_TITLE_EN = "New Task";
+/** Historical placeholder still treated as an auto-generated title. */
+export const LEGACY_PENDING_THREAD_TITLES = ["新编码任务"] as const;
+export const pendingThreadTitles = new Set<string>([
+  PENDING_THREAD_TITLE_ZH,
+  PENDING_THREAD_TITLE_EN,
+  ...LEGACY_PENDING_THREAD_TITLES,
+]);
+/** @deprecated Prefer resolvePendingThreadTitle(locale). */
+export const pendingThreadTitle = PENDING_THREAD_TITLE_ZH;
+
+export function resolvePendingThreadTitle(locale: string): string {
+  return locale.trim().toLowerCase().startsWith("zh")
+    ? PENDING_THREAD_TITLE_ZH
+    : PENDING_THREAD_TITLE_EN;
+}
+
+export function isPendingThreadTitle(title: string): boolean {
+  return pendingThreadTitles.has(title);
+}
 
 /** Prefer explore for title LLM (cheap); fall back to planner then coder. */
 const TITLE_ROUTE_ROLES: readonly AgentRole[] = ["explore", "planner", "coder"];
@@ -199,13 +219,17 @@ export function sanitizeThreadTitle(title: string | undefined, prompt: string): 
     return undefined;
   }
 
+  if (isPendingThreadTitle(cleaned)) {
+    return undefined;
+  }
+
   return cleaned.length > TITLE_OUTPUT_MAX_CHARS
     ? `${cleaned.slice(0, TITLE_OUTPUT_MAX_CHARS - 3)}...`
     : cleaned;
 }
 
 export function shouldReplaceAutoThreadTitle(currentTitle: string): boolean {
-  return currentTitle === pendingThreadTitle;
+  return isPendingThreadTitle(currentTitle);
 }
 
 /** Best-effort title preview while JSON is still streaming. */

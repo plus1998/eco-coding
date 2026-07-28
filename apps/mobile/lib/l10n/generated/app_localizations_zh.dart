@@ -442,7 +442,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupScanPcCode => '扫描 PC 端配对码';
 
   @override
-  String get setupScanPcCodeHint => '在 Desktop「连接」页生成二维码';
+  String get setupScanPcCodeHint => '在 Desktop「互联」页生成二维码';
 
   @override
   String get setupManualConfiguration => '手动配置';
@@ -469,7 +469,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingScanTitle => '扫描配对码';
 
   @override
-  String get pairingScanHint => '将 Desktop「连接」页的二维码放入框内';
+  String get pairingScanHint => '将 Desktop「互联」页的二维码放入框内';
 
   @override
   String get pairingTorchOn => '打开灯光';

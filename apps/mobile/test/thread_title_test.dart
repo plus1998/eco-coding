@@ -11,5 +11,13 @@ void main() {
       displayThreadTitle(title: '新编码任务', prompt: '修复登录 bug', fallback: '会话'),
       '修复登录 bug',
     );
+    expect(
+      displayThreadTitle(title: '新任务', prompt: '修复登录 bug', fallback: '会话'),
+      '修复登录 bug',
+    );
+    expect(
+      displayThreadTitle(title: 'New Task', prompt: 'fix login bug', fallback: 'Session'),
+      'fix login bug',
+    );
   });
 }
