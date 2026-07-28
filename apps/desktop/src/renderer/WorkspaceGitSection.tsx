@@ -45,7 +45,7 @@ export interface WorkspaceGitSectionProps {
   onOpenGitSettings?: () => void;
   onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
-  onOpenChangesReview?: () => void;
+  onOpenChangesReview?: () => void | Promise<void>;
   onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onChangesDiffLoadingChange?: (loading: boolean) => void;
   onChangesDiffError?: (error?: string) => void;
@@ -351,8 +351,7 @@ export function WorkspaceGitSection({
     await onRefreshGitStatus?.(true);
     if (onOpenChangesReview) {
       setChangesDrawerOpen(false);
-      onOpenChangesReview();
-      await reloadChangesDiff(selectedChangePath);
+      await onOpenChangesReview();
       return;
     }
     setChangesDrawerOpen(true);

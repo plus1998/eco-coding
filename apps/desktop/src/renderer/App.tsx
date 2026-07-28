@@ -229,6 +229,8 @@ import {
   TASK_PANEL_REVIEW_TAB_ID,
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
+import { loadTaskPanelReviewDiff } from "./task-panel-review-loader";
+import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import {
   WORKSPACE_FILE_REFERENCE_EVENT,
@@ -1024,7 +1026,7 @@ function App() {
   const [backgroundTerminalTasks, setBackgroundTerminalTasks] = useState<BackgroundTerminalTask[]>([]);
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
-  const [openSubagentTabIds, setOpenSubagentTabIds] = useState<string[]>([]);
+  const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
@@ -1035,6 +1037,7 @@ function App() {
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
   const [reviewSelectedPath, setReviewSelectedPath] = useState<string>();
+  const reviewDiffRequestRef = useRef(0);
   const [fileTarget, setFileTarget] = useState<
     (WorkspaceFileReference & { requestId: number; restricted?: boolean }) | undefined
   >();
@@ -1883,6 +1886,7 @@ function App() {
     setWorkspacePanelManualOverride(undefined);
   }, [activityWorkspaceLayoutMode, currentProjectPath, activeThread?.id]);
   useEffect(() => {
+    reviewDiffRequestRef.current += 1;
     setReviewDiff(undefined);
     setReviewDiffLoading(false);
     setReviewDiffError(undefined);
@@ -3311,7 +3315,7 @@ function App() {
     setSelectedSubagentAgentId(undefined);
     setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
     setFileTarget(undefined);
-    setOpenSubagentTabIds([]);
+    setOpenTaskPanelTabIds([]);
     setTaskDrawerOpen(false);
     setTaskPanelFullscreen(false);
   }, [activeThread?.id]);
@@ -3328,6 +3332,9 @@ function App() {
         requestId: fileReferenceRequestIdRef.current,
         restricted: !isWorkspacePathContained(currentProjectPath, reference.path),
       });
+      setOpenTaskPanelTabIds((current) =>
+        addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID),
+      );
       setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
       setSelectedSubagentAgentId(undefined);
       setTaskPanelFullscreen(false);
@@ -3338,25 +3345,29 @@ function App() {
   }, [currentProjectPath]);
 
   useEffect(() => {
-    setOpenSubagentTabIds((current) => {
-      const next = current.filter((tabId) => activeSubagentCards.some((card) => card.key === tabId));
+    setOpenTaskPanelTabIds((current) => {
+      const next = current.filter(
+        (tabId) =>
+          tabId === TASK_PANEL_FILES_TAB_ID ||
+          tabId === TASK_PANEL_REVIEW_TAB_ID ||
+          tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
+          (tabId === TASK_PANEL_PLAN_TAB_ID && Boolean(taskPanelPlan)) ||
+          activeSubagentCards.some((card) => card.key === tabId),
+      );
       if (next.length === current.length && next.every((tabId, index) => tabId === current[index])) {
         return current;
       }
+      if (taskPanelActiveTab !== TASK_PANEL_HOME_TAB_ID && !next.includes(taskPanelActiveTab)) {
+        const fallback = next.at(-1);
+        setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
+        setSelectedSubagentAgentId(
+          fallback && activeSubagentCards.some((card) => card.key === fallback)
+            ? fallback
+            : undefined,
+        );
+      }
       return next;
     });
-    const planTabActive = taskPanelActiveTab === TASK_PANEL_PLAN_TAB_ID;
-    const taskPanelActiveTabValid =
-      taskPanelActiveTab === TASK_PANEL_HOME_TAB_ID ||
-      taskPanelActiveTab === TASK_PANEL_FILES_TAB_ID ||
-      taskPanelActiveTab === TASK_PANEL_REVIEW_TAB_ID ||
-      taskPanelActiveTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
-      (planTabActive && Boolean(taskPanelPlan)) ||
-      activeSubagentCards.some((card) => card.key === taskPanelActiveTab);
-    if (!taskPanelActiveTabValid) {
-      setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
-      setSelectedSubagentAgentId(undefined);
-    }
   }, [activeSubagentCards, taskPanelActiveTab, taskPanelPlan]);
 
   const toggleTaskPanelForCurrentProject = useCallback(() => {
@@ -3374,18 +3385,13 @@ function App() {
     setTaskDrawerOpen(true);
   }, [currentProjectPath, taskDrawerOpen]);
 
-  const openReviewTaskDrawer = useCallback(() => {
-    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
-    setOpenSubagentTabIds([]);
-    setSelectedSubagentAgentId(undefined);
-    setTaskPanelFullscreen(false);
-    setTaskDrawerOpen(true);
-  }, []);
-
   const openPlanTaskDrawer = useCallback(() => {
     if (!taskPanelPlan) {
       return;
     }
+    setOpenTaskPanelTabIds((current) =>
+      addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID),
+    );
     setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
@@ -3393,26 +3399,30 @@ function App() {
   }, [taskPanelPlan]);
 
   const openSubagentTaskDrawer = useCallback((agentId: string) => {
-      setOpenSubagentTabIds((current) => (current.includes(agentId) ? current : [...current, agentId]));
-      setTaskPanelActiveTab(agentId);
-      setSelectedSubagentAgentId(agentId);
-      setTaskPanelFullscreen(false);
-      setTaskDrawerOpen(true);
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, agentId));
+    setTaskPanelActiveTab(agentId);
+    setSelectedSubagentAgentId(agentId);
+    setTaskPanelFullscreen(false);
+    setTaskDrawerOpen(true);
   }, []);
 
-  const closeSubagentTaskTab = useCallback(
-    (agentId: string) => {
-      setOpenSubagentTabIds((current) => {
-        const next = current.filter((tabId) => tabId !== agentId);
-        if (taskPanelActiveTab === agentId) {
-          const fallback = next.at(-1);
+  const closeTaskPanelTab = useCallback(
+    (tabId: TaskPanelActiveTab) => {
+      setOpenTaskPanelTabIds((current) => {
+        const result = removeOpenTaskPanelTab(current, tabId);
+        if (taskPanelActiveTab === tabId) {
+          const fallback = result.fallback;
           setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
-          setSelectedSubagentAgentId(fallback);
+          setSelectedSubagentAgentId(
+            fallback && activeSubagentCards.some((card) => card.key === fallback)
+              ? fallback
+              : undefined,
+          );
         }
-        return next;
+        return result.tabs;
       });
     },
-    [taskPanelActiveTab],
+    [activeSubagentCards, taskPanelActiveTab],
   );
 
   const handleTaskPanelResizeMouseDown = useCallback(
@@ -4914,6 +4924,39 @@ function App() {
     }
   }, []);
 
+  const refreshReviewDiff = useCallback(async () => {
+    const eco = window.eco;
+    if (!currentProjectPath || !eco) {
+      return;
+    }
+    const requestId = reviewDiffRequestRef.current + 1;
+    reviewDiffRequestRef.current = requestId;
+    await loadTaskPanelReviewDiff({
+      workspacePath: currentProjectPath,
+      getWorkspaceDiff: (workspacePath) => eco.getWorkspaceDiff(workspacePath),
+      isCurrent: () => reviewDiffRequestRef.current === requestId,
+      onLoadingChange: handleChangesDiffLoadingChange,
+      onLoaded: handleChangesDiffLoaded,
+      onError: handleChangesDiffError,
+    });
+  }, [
+    currentProjectPath,
+    handleChangesDiffError,
+    handleChangesDiffLoaded,
+    handleChangesDiffLoadingChange,
+  ]);
+
+  const openReviewTaskDrawer = useCallback(async () => {
+    setOpenTaskPanelTabIds((current) =>
+      addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID),
+    );
+    setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
+    setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
+    setTaskDrawerOpen(true);
+    await refreshReviewDiff();
+  }, [refreshReviewDiff]);
+
   async function handleGitPullSuccess() {
     await handleGitCommitSuccess();
   }
@@ -6028,7 +6071,7 @@ function App() {
           cards={activeSubagentCards}
           {...(taskPanelPlan && { plan: taskPanelPlan })}
           activeTab={taskPanelActiveTab}
-          openSubagentTabIds={openSubagentTabIds}
+          openTabIds={openTaskPanelTabIds}
           {...(runProjection && { projection: runProjection })}
           {...(activeThread && { threadStatus: activeThread.status })}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
@@ -6043,21 +6086,34 @@ function App() {
             setSelectedSubagentAgentId(agentId);
           }}
           onSelectPlan={() => {
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID),
+            );
             setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
-          onCloseAgent={closeSubagentTaskTab}
+          onCloseTab={closeTaskPanelTab}
           onSelectBackgroundTasks={() => {
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID),
+            );
             setTaskPanelActiveTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
           onSelectReview={() => {
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID),
+            );
             setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
             setSelectedSubagentAgentId(undefined);
+            void refreshReviewDiff();
           }}
           workspacePath={currentProjectPath ?? ""}
           {...(fileTarget && { fileTarget })}
           onSelectFiles={() => {
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID),
+            );
             setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}

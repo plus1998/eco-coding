@@ -576,7 +576,7 @@ export function SubagentTaskDrawer({
   projection,
   plan,
   activeTab,
-  openSubagentTabIds,
+  openTabIds,
   threadStatus,
   agentDisplayNames,
   agentThemes,
@@ -587,7 +587,7 @@ export function SubagentTaskDrawer({
   reviewSelectedPath,
   onSelectAgent,
   onSelectPlan,
-  onCloseAgent,
+  onCloseTab,
   onSelectBackgroundTasks,
   onSelectReview,
   workspacePath,
@@ -606,7 +606,7 @@ export function SubagentTaskDrawer({
   projection?: ThreadRunProjectionSnapshot;
   plan?: ThreadPendingPlan;
   activeTab: TaskPanelActiveTab;
-  openSubagentTabIds: readonly string[];
+  openTabIds: readonly TaskPanelActiveTab[];
   threadStatus?: ThreadStatus;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -617,7 +617,7 @@ export function SubagentTaskDrawer({
   reviewSelectedPath?: string;
   onSelectAgent: (agentId: string) => void;
   onSelectPlan: () => void;
-  onCloseAgent: (agentId: string) => void;
+  onCloseTab: (tabId: TaskPanelActiveTab) => void;
   onSelectBackgroundTasks: () => void;
   onSelectReview: () => void;
   workspacePath: string;
@@ -636,12 +636,16 @@ export function SubagentTaskDrawer({
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
+  const filesOpen = openTabIds.includes(TASK_PANEL_FILES_TAB_ID);
+  const reviewOpen = openTabIds.includes(TASK_PANEL_REVIEW_TAB_ID);
+  const planOpen = openTabIds.includes(TASK_PANEL_PLAN_TAB_ID);
+  const terminalTasksOpen = openTabIds.includes(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
   const openSubagentCards = useMemo(
     () =>
-      openSubagentTabIds
+      openTabIds
         .map((tabId) => cards.find((card) => card.key === tabId))
         .filter((card): card is ThreadRunProjectionSubagentCard => card !== undefined),
-    [cards, openSubagentTabIds],
+    [cards, openTabIds],
   );
   const liveActiveSubagentCard =
     !homeSelected && !filesSelected && !reviewSelected && !planSelected && !terminalTasksSelected
@@ -667,44 +671,87 @@ export function SubagentTaskDrawer({
     >
       <header className="subagent-task-panel-topbar">
         <div className="subagent-task-panel-tabs" role="tablist" aria-label={t("task.tabs")}>
-          {filesSelected ? (
-            <button
-              type="button"
-              className="subagent-task-panel-tab subagent-task-panel-tab--files is-active"
-              role="tab"
-              aria-selected="true"
-              aria-controls="subagent-task-tab-files"
-              onClick={onSelectFiles}
+          {filesOpen ? (
+            <span
+              className={`subagent-task-panel-tab-shell${filesSelected ? " is-active" : ""}`}
             >
-              <FolderOpen size={15} aria-hidden />
-              <span>{t("task.files")}</span>
-            </button>
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--files${
+                  filesSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={filesSelected}
+                aria-controls="subagent-task-tab-files"
+                onClick={onSelectFiles}
+              >
+                <FolderOpen size={15} aria-hidden />
+                <span>{t("task.files")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("task.files") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_FILES_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
           ) : null}
-          {homeSelected ? null : (
-            <button
-              type="button"
-              className={`subagent-task-panel-tab subagent-task-panel-tab--review${reviewSelected ? " is-active" : ""}`}
-              role="tab"
-              aria-selected={reviewSelected}
-              aria-controls="subagent-task-tab-review"
-              onClick={onSelectReview}
+          {reviewOpen ? (
+            <span
+              className={`subagent-task-panel-tab-shell${reviewSelected ? " is-active" : ""}`}
             >
-              <ListChecks size={15} aria-hidden />
-              <span>{t("task.review")}</span>
-            </button>
-          )}
-          {plan ? (
-            <button
-              type="button"
-              className={`subagent-task-panel-tab subagent-task-panel-tab--plan${planSelected ? " is-active" : ""}`}
-              role="tab"
-              aria-selected={planSelected}
-              aria-controls="subagent-task-tab-plan"
-              onClick={onSelectPlan}
-            >
-              <FileText size={15} aria-hidden />
-              <span>{t("task.plan")}</span>
-            </button>
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--review${
+                  reviewSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={reviewSelected}
+                aria-controls="subagent-task-tab-review"
+                onClick={onSelectReview}
+              >
+                <ListChecks size={15} aria-hidden />
+                <span>{t("task.review")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("task.review") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_REVIEW_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
+          ) : null}
+          {plan && planOpen ? (
+            <span className={`subagent-task-panel-tab-shell${planSelected ? " is-active" : ""}`}>
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--plan${
+                  planSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={planSelected}
+                aria-controls="subagent-task-tab-plan"
+                onClick={onSelectPlan}
+              >
+                <FileText size={15} aria-hidden />
+                <span>{t("task.plan")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("task.plan") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_PLAN_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
           ) : null}
           {openSubagentCards.map((card) => {
             const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
@@ -750,7 +797,7 @@ export function SubagentTaskDrawer({
                   title={t("task.closeTabTitle")}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onCloseAgent(card.key);
+                    onCloseTab(card.key);
                   }}
                 >
                   <X size={13} aria-hidden />
@@ -758,18 +805,33 @@ export function SubagentTaskDrawer({
               </span>
             );
           })}
-          {terminalTasksSelected ? (
-            <button
-              type="button"
-              className="subagent-task-panel-tab subagent-task-panel-tab--terminal is-active"
-              role="tab"
-              aria-selected="true"
-              aria-controls="subagent-task-tab-background-terminal"
-              onClick={onSelectBackgroundTasks}
+          {terminalTasksOpen ? (
+            <span
+              className={`subagent-task-panel-tab-shell${terminalTasksSelected ? " is-active" : ""}`}
             >
-              <Terminal size={15} aria-hidden />
-              <span>{t("task.terminal")}</span>
-            </button>
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--terminal${
+                  terminalTasksSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={terminalTasksSelected}
+                aria-controls="subagent-task-tab-background-terminal"
+                onClick={onSelectBackgroundTasks}
+              >
+                <Terminal size={15} aria-hidden />
+                <span>{t("task.terminal")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("task.terminal") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
           ) : null}
           <button
             type="button"
