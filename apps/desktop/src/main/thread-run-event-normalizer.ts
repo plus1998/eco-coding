@@ -13,6 +13,7 @@ import {
   isThreadFollowUpActivityMessage,
   isThreadFollowUpLiveEvent,
 } from "../shared/thread-follow-up-events";
+import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection";
 
 const subagentRoleSet = new Set<string>(SUBAGENT_ROLES);
 
@@ -279,7 +280,7 @@ function resolveThreadRunEventStreamState(
 }
 
 function buildLiveEventMetadata(input: BuildThreadRunEventFromLiveInput): Record<string, unknown> {
-  const tool = input.tool ? normalizeThreadRunToolMetadata(input.tool) : undefined;
+  const tool = projectThreadRunToolMetadata(input.tool);
   const bashApproval = input.bashApproval
     ? normalizeThreadRunBashApprovalMetadata(input.bashApproval)
     : undefined;
@@ -307,26 +308,4 @@ function normalizeThreadRunBashApprovalMetadata(
     ...(bashApproval.detail?.trim() && { detail: bashApproval.detail.trim() }),
     ...(bashApproval.description?.trim() && { description: bashApproval.description.trim() }),
   };
-}
-
-function normalizeThreadRunToolMetadata(tool: ThreadRunToolMetadata): ThreadRunToolMetadata | undefined {
-  const name = tool.name.trim();
-  if (!name) {
-    return undefined;
-  }
-  return {
-    name,
-    ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
-    ...(tool.output?.trim() && { output: tool.output.trim() }),
-    ...(tool.toolUseId?.trim() && { toolUseId: tool.toolUseId.trim() }),
-    ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
-    ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),
-    ...(tool.fileChange && { fileChange: tool.fileChange }),
-    ...(tool.readTarget && { readTarget: tool.readTarget }),
-    ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
-  };
-}
-
-function isThreadRunToolStatus(value: unknown): value is NonNullable<ThreadRunToolMetadata["status"]> {
-  return value === "started" || value === "completed" || value === "failed";
 }

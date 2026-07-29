@@ -24,7 +24,6 @@ export type ThreadRunEventType =
   | "context.cache_config_drift"
   | "context.cache_invalidated"
   | "billing.cache_hit_dropped"
-  | "context.tool_output_truncated"
   | "message.delta"
   | "message.final"
   | "thinking.delta"
@@ -41,7 +40,8 @@ import type { ThreadRunGrepToolTarget, ThreadRunReadToolTarget } from "./tool-ta
 export interface ThreadRunToolMetadata {
   name: string;
   detail?: string;
-  output?: string;
+  outputPreview?: string;
+  outputPreviewTruncated?: boolean;
   toolUseId?: string;
   durationMs?: number;
   exitCode?: number;
@@ -51,9 +51,6 @@ export interface ThreadRunToolMetadata {
   fileChange?: ThreadRunFileChangeMetadata;
   readTarget?: ThreadRunReadToolTarget;
   grepTarget?: ThreadRunGrepToolTarget;
-  outputTruncated?: boolean;
-  outputOriginalChars?: number;
-  outputKeptChars?: number;
 }
 
 export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";

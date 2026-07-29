@@ -307,7 +307,6 @@
   "activityContextCompressionFailed": "Context compression failed",
   "activityContextCompressionPaused": "Automatic context compression paused",
   "activityPromptCacheDrop": "Prompt cache hit rate dropped significantly",
-  "activityToolOutputTruncated": "Tool output was truncated",
   "activityPreparingRetry": "Preparing to retry",
   "activityRunDiagnostics": "Run diagnostics",
   "activityAllowOutsideWorkspace": "Allow {tool} outside the workspace?",

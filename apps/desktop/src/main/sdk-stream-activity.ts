@@ -1,4 +1,9 @@
-import { type AgentEvent, mergeStreamText, resolveSkillDisplayName } from "@eco/runtime";
+import {
+  type AgentEvent,
+  createToolOutputPreview,
+  mergeStreamText,
+  resolveSkillDisplayName,
+} from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
 import {
   enrichFileChangeFromToolOutput,
@@ -6,7 +11,6 @@ import {
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
-import { limitToolOutputForContext } from "../shared/tool-output-limit.js";
 import {
   formatThreadRunGrepTargetLabel,
   formatThreadRunReadTargetLabel,
@@ -420,7 +424,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readString(record.stdout) ??
     readString(record.result) ??
     readString(record.content);
-  const limitedOutput = output ? limitToolOutputForContext(output) : undefined;
+  const outputPreview = name === "Bash" && output ? createToolOutputPreview(output) : undefined;
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
@@ -431,17 +435,13 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     : undefined;
   const fileChange = enrichFileChangeFromToolOutput(
     fileChangeFromInput,
-    limitedOutput?.text ?? output ?? record.result ?? record.content,
+    output ?? record.result ?? record.content,
   );
   return {
     name,
     ...(command && { detail: command }),
-    ...(limitedOutput?.text && { output: limitedOutput.text }),
-    ...(limitedOutput?.truncated && {
-      outputTruncated: true,
-      outputOriginalChars: limitedOutput.originalChars,
-      outputKeptChars: limitedOutput.keptChars,
-    }),
+    ...(outputPreview?.text && { outputPreview: outputPreview.text }),
+    ...(outputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
     ...(fileChange && { fileChange }),
@@ -465,13 +465,15 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   const name = record.tool_name;
   const message = typeof record.message === "string" ? record.message : undefined;
   const isExecutionFailure = record.type === "tool_result_error";
+  const outputPreview = name === "Bash" && message ? createToolOutputPreview(message) : undefined;
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
   return {
     name,
     ...(message && { detail: message }),
-    ...(message && isExecutionFailure && { output: message }),
+    ...(isExecutionFailure && outputPreview?.text && { outputPreview: outputPreview.text }),
+    ...(isExecutionFailure && outputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
     ...(fileChange && { fileChange }),
     status: "failed",

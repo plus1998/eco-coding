@@ -284,15 +284,18 @@ String normalizeBashCommandKey(String command) {
 }
 
 ThreadRunToolMetadata? threadRunToolMetadataFromJson(
-  Map<String, dynamic>? json,
-) {
+  Map<String, dynamic>? json, {
+  bool includeOutputPreview = true,
+}) {
   if (json == null) return null;
   final name = (json['name'] as String?)?.trim() ?? '';
   if (name.isEmpty) return null;
   final detail = (json['detail'] as String?)?.trim();
   final toolUseId = (json['toolUseId'] as String?)?.trim();
   final description = (json['description'] as String?)?.trim();
-  final output = (json['output'] as String?)?.trim();
+  final outputPreview = name == 'Bash' && includeOutputPreview
+      ? (json['outputPreview'] as String?)?.trim()
+      : null;
   final durationMs = json['durationMs'];
   final status = (json['status'] as String?)?.trim();
   return ThreadRunToolMetadata(
@@ -300,7 +303,10 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
     detail: detail?.isNotEmpty == true ? detail : null,
     toolUseId: toolUseId?.isNotEmpty == true ? toolUseId : null,
     description: description?.isNotEmpty == true ? description : null,
-    output: output?.isNotEmpty == true ? output : null,
+    outputPreview: outputPreview?.isNotEmpty == true ? outputPreview : null,
+    outputPreviewTruncated:
+        outputPreview?.isNotEmpty == true &&
+        json['outputPreviewTruncated'] == true,
     durationMs: durationMs is int ? durationMs : null,
     status: status?.isNotEmpty == true ? status : null,
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
@@ -383,7 +389,7 @@ BashRunCardDisplay? resolveBashRunCardDisplayFromTool(
   return resolveBashRunCardDisplay(
     toolName: tool.name,
     command: tool.detail,
-    output: tool.output,
+    output: tool.outputPreview,
     durationMs: tool.durationMs,
     description: tool.description,
   );
@@ -395,7 +401,8 @@ class ThreadRunToolMetadata {
     this.detail,
     this.toolUseId,
     this.description,
-    this.output,
+    this.outputPreview,
+    this.outputPreviewTruncated = false,
     this.durationMs,
     this.status,
     this.fileChange,
@@ -405,7 +412,8 @@ class ThreadRunToolMetadata {
   final String? detail;
   final String? toolUseId;
   final String? description;
-  final String? output;
+  final String? outputPreview;
+  final bool outputPreviewTruncated;
   final int? durationMs;
   final String? status;
   final ThreadRunFileChangeMetadata? fileChange;

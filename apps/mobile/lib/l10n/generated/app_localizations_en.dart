@@ -926,9 +926,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Prompt cache hit rate dropped significantly';
 
   @override
-  String get activityToolOutputTruncated => 'Tool output was truncated';
-
-  @override
   String get activityPreparingRetry => 'Preparing to retry';
 
   @override

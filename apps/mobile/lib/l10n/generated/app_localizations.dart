@@ -1670,12 +1670,6 @@ abstract class AppLocalizations {
   /// **'Prompt cache hit rate dropped significantly'**
   String get activityPromptCacheDrop;
 
-  /// No description provided for @activityToolOutputTruncated.
-  ///
-  /// In en, this message translates to:
-  /// **'Tool output was truncated'**
-  String get activityToolOutputTruncated;
-
   /// No description provided for @activityPreparingRetry.
   ///
   /// In en, this message translates to:

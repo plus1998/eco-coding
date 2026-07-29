@@ -1468,7 +1468,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
             toolName: 'Bash',
             command: command,
             description: description ?? tool?.description,
-            output: tool?.output,
+            output: tool?.outputPreview,
             durationMs: tool?.durationMs,
           )
         : null,
@@ -1605,9 +1605,6 @@ String? _resolveProjectionPhaseLabel(
   }
   if (item.eventType == 'billing.cache_hit_dropped') {
     return text.isEmpty ? l10n.activityPromptCacheDrop : text;
-  }
-  if (item.eventType == 'context.tool_output_truncated') {
-    return text.isEmpty ? l10n.activityToolOutputTruncated : text;
   }
   if (item.eventType == 'request.retry_scheduled') {
     return text.isEmpty ? l10n.activityPreparingRetry : text;
@@ -1845,7 +1842,7 @@ int _projectionToolDisplayRichness(ThreadRunProjectionTimelineItem item) {
   var score = 0;
   if (tool?.detail?.trim().isNotEmpty == true) score += 1;
   if (tool?.description?.trim().isNotEmpty == true) score += 2;
-  if (tool?.output?.trim().isNotEmpty == true) score += 4;
+  if (tool?.outputPreview?.trim().isNotEmpty == true) score += 4;
   if (tool?.durationMs != null) score += 8;
   if (tool?.fileChange != null) score += 32;
   if (item.eventType == 'tool.completed') score += 16;

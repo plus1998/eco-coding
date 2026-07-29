@@ -1815,10 +1815,126 @@ test("dispatch maps commandExecution lifecycle to tool.started and tool.complete
     description: "列出文件 · /repo",
     toolUseId: "item_bash_001",
     status: "completed",
-    output: "clean\n",
     exitCode: 0,
     durationMs: 12,
   });
+});
+
+test("command output deltas stay bounded in memory and only completed shell commands persist a preview", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_bash_preview",
+      item: {
+        type: "commandExecution",
+        id: "item_bash_preview",
+        command: "bun test",
+        status: "inProgress",
+        commandActions: [],
+      },
+    });
+    adapter.dispatch("item/commandExecution/outputDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_bash_preview",
+      itemId: "item_bash_preview",
+      delta: `head\n${"x".repeat(20_000)}`,
+    });
+    adapter.dispatch("item/commandExecution/outputDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_bash_preview",
+      itemId: "item_bash_preview",
+      delta: "\ntail",
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_bash_preview",
+      item: {
+        type: "commandExecution",
+        id: "item_bash_preview",
+        command: "bun test",
+        status: "completed",
+        commandActions: [],
+        exitCode: 0,
+      },
+    });
+  });
+
+  expect(events.map((event) => event.eventType)).toEqual(["tool.started", "tool.completed"]);
+  const preview = events[1]?.metadata?.tool as Record<string, unknown>;
+  expect(preview.outputPreviewTruncated).toBe(true);
+  expect(String(preview.outputPreview)).toStartWith("head\n");
+  expect(String(preview.outputPreview)).toEndWith("\ntail");
+  expect(String(preview.outputPreview).length).toBeLessThanOrEqual(8_000);
+});
+
+test("read and search command actions discard aggregated output and keep structured targets", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    for (const item of [
+      {
+        id: "item_read_projection",
+        command: "sed -n '10,20p' src/main.ts",
+        commandActions: [{ type: "read", path: "src/main.ts" }],
+      },
+      {
+        id: "item_search_projection",
+        command: "rg needle src",
+        commandActions: [{ type: "search", query: "needle", path: "src" }],
+      },
+    ]) {
+      adapter.dispatch("item/completed", {
+        threadId: CODEX_THREAD,
+        turnId: "turn_read_only_projection",
+        item: {
+          type: "commandExecution",
+          status: "completed",
+          aggregatedOutput: "source contents that must not persist",
+          exitCode: 0,
+          durationMs: 9,
+          ...item,
+        },
+      });
+    }
+  });
+
+  expect(events).toHaveLength(2);
+  const read = events[0]?.metadata?.tool as Record<string, unknown>;
+  const search = events[1]?.metadata?.tool as Record<string, unknown>;
+  expect(read).not.toHaveProperty("outputPreview");
+  expect(read.readTarget).toEqual({ filePath: "src/main.ts" });
+  expect(search).not.toHaveProperty("outputPreview");
+  expect(search.grepTarget).toEqual({ pattern: "needle", path: "src" });
+});
+
+test("failed shell commands keep exit metadata and a bounded output preview", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_bash_failed",
+      item: {
+        type: "commandExecution",
+        id: "item_bash_failed",
+        command: "bun test",
+        status: "failed",
+        commandActions: [],
+        aggregatedOutput: `failure head\n${"x".repeat(20_000)}\nfailure tail`,
+        exitCode: 1,
+        durationMs: 42,
+      },
+    });
+  });
+
+  expect(events).toHaveLength(1);
+  expect(events[0]?.eventType).toBe("tool.failed");
+  const tool = events[0]?.metadata?.tool as Record<string, unknown>;
+  expect(tool.exitCode).toBe(1);
+  expect(tool.durationMs).toBe(42);
+  expect(tool.outputPreviewTruncated).toBe(true);
+  expect(String(tool.outputPreview)).toStartWith("failure head\n");
+  expect(String(tool.outputPreview)).toEndWith("\nfailure tail");
+  expect(String(tool.outputPreview).length).toBeLessThanOrEqual(8_000);
 });
 
 test("dispatch maps plan item completed to thread.status plan.ready", () => {

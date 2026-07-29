@@ -9,6 +9,7 @@ import {
   maxFeedProjectionTimelineSequence,
   trimProjectionForFeed,
 } from "../src/main/thread-run-projection-feed";
+import { projectThreadRunToolMetadataForFeed } from "../src/shared/thread-run-tool-projection";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
 
 function requireValue<T>(value: T | undefined, label: string): T {
@@ -273,10 +274,8 @@ test("trimProjectionForFeed strips tool detail metadata from main feed", () => {
             description: "Run tests",
             status: "completed",
             durationMs: 1200,
-            output: "x".repeat(20_000),
-            outputTruncated: true,
-            outputOriginalChars: 20_000,
-            outputKeptChars: 4_000,
+            outputPreview: "x".repeat(8_000),
+            outputPreviewTruncated: true,
             fileChange: {
               path: "apps/mobile/lib/main.dart",
               additions: 1,
@@ -297,6 +296,18 @@ test("trimProjectionForFeed strips tool detail metadata from main feed", () => {
     status: "completed",
     durationMs: 1200,
   });
+});
+
+test("live feed tool projection never exposes bash output preview", () => {
+  expect(
+    projectThreadRunToolMetadataForFeed({
+      name: "Bash",
+      detail: "bun test",
+      outputPreview: "secret output",
+      outputPreviewTruncated: true,
+      status: "completed",
+    }),
+  ).toEqual({ name: "Bash", detail: "bun test", status: "completed" });
 });
 
 test("trimProjectionForFeed leaves short projection unchanged", () => {

@@ -2,7 +2,13 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { type CoreKind, isCoreKind, isFreshSubagentRequest, mergeStreamText } from "@eco/runtime";
+import {
+  type CoreKind,
+  createToolOutputPreview,
+  isCoreKind,
+  isFreshSubagentRequest,
+  mergeStreamText,
+} from "@eco/runtime";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import type { CompactConversationMessage } from "../shared/eco-compact-handoff";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
@@ -30,6 +36,7 @@ import type {
   ThreadSummary,
   TokenCostBreakdown,
 } from "../shared/ipc";
+import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
 import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import { parseThreadRunGrepToolTarget, parseThreadRunReadToolTarget } from "../shared/tool-target.js";
 import { sdkActivityLineId, sdkMessageUuidFromActivityLineId } from "./sdk-session-activity.js";
@@ -1155,6 +1162,62 @@ export class ConversationStore {
     }
     if (!pendingPlanNames.has("deferred_exit_plan_tool_use_id")) {
       this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN deferred_exit_plan_tool_use_id TEXT`);
+    }
+    this.migrateToolOutputProjection();
+  }
+
+  private migrateToolOutputProjection(): void {
+    const migrationId = "thread-run-tool-output-projection-v1";
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_store_migrations (
+        id TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      )
+    `);
+    if (this.db.prepare(`SELECT 1 FROM conversation_store_migrations WHERE id = ?`).get(migrationId)) {
+      return;
+    }
+
+    const update = this.db.prepare(`UPDATE thread_run_events SET metadata_json = ? WHERE id = ?`);
+    const invalidEventIds: string[] = [];
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const rows = this.db
+        .prepare(`SELECT id, metadata_json FROM thread_run_events WHERE metadata_json IS NOT NULL`)
+        .all() as Array<{ id: string; metadata_json: string }>;
+      this.db
+        .prepare(`DELETE FROM thread_run_events WHERE event_type = 'context.tool_output_truncated'`)
+        .run();
+      for (const row of rows) {
+        let metadata: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(row.metadata_json) as unknown;
+          if (!isJsonRecord(parsed)) {
+            invalidEventIds.push(row.id);
+            continue;
+          }
+          metadata = parsed;
+        } catch {
+          invalidEventIds.push(row.id);
+          continue;
+        }
+        const migrated = migratePersistedToolMetadata(metadata);
+        if (migrated !== metadata) {
+          update.run(Object.keys(migrated).length > 0 ? JSON.stringify(migrated) : null, row.id);
+        }
+      }
+      this.db
+        .prepare(`INSERT INTO conversation_store_migrations (id, applied_at) VALUES (?, ?)`)
+        .run(migrationId, new Date().toISOString());
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    if (invalidEventIds.length > 0) {
+      process.stderr.write(
+        `[eco] tool output projection migration skipped invalid metadata count=${invalidEventIds.length} eventIds=${invalidEventIds.join(",")}\n`,
+      );
     }
   }
 
@@ -2922,6 +2985,7 @@ export class ConversationStore {
   }
 
   appendThreadRunEvent(event: ThreadRunEventInput): ThreadRunEvent {
+    event = sanitizeThreadRunEventForPersistence(event);
     const existing = this.getThreadRunEvent(event.threadId, event.id);
     if (existing) {
       const upgraded = mergeRicherThreadRunEvent(existing, event);
@@ -4292,6 +4356,66 @@ function rowToThreadRunEvent(row: ThreadRunEventRow): ThreadRunEvent {
   };
 }
 
+function sanitizeThreadRunEventForPersistence(event: ThreadRunEventInput): ThreadRunEventInput {
+  if (!event.metadata || !("tool" in event.metadata)) {
+    return event;
+  }
+  const metadata = sanitizeThreadRunEventMetadata(event.metadata);
+  const sanitized: ThreadRunEventInput = { ...event };
+  if (metadata) {
+    sanitized.metadata = metadata;
+  } else {
+    delete sanitized.metadata;
+  }
+  return sanitized;
+}
+
+function sanitizeThreadRunEventMetadata(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const next = { ...metadata };
+  const tool = projectThreadRunToolMetadata(readThreadRunToolMetadata(metadata));
+  if (tool) {
+    next.tool = tool;
+  } else {
+    delete next.tool;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function migratePersistedToolMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const rawTool = metadata.tool;
+  if (!isJsonRecord(rawTool)) {
+    return metadata;
+  }
+  const name = typeof rawTool.name === "string" ? rawTool.name.trim() : "";
+  const legacyOutput =
+    typeof rawTool.output === "string" && rawTool.output.trim() ? rawTool.output : undefined;
+  const existingPreview =
+    typeof rawTool.outputPreview === "string" && rawTool.outputPreview.trim()
+      ? rawTool.outputPreview
+      : undefined;
+  const preview =
+    name === "Bash" && (existingPreview || legacyOutput)
+      ? createToolOutputPreview(existingPreview ?? legacyOutput ?? "")
+      : undefined;
+  const migratedRawTool: Record<string, unknown> = {
+    ...rawTool,
+    ...(preview?.text ? { outputPreview: preview.text } : {}),
+    ...((preview?.truncated ||
+      rawTool.outputTruncated === true ||
+      rawTool.outputPreviewTruncated === true) && { outputPreviewTruncated: true }),
+  };
+  const tool = projectThreadRunToolMetadata(readThreadRunToolMetadata({ tool: migratedRawTool }));
+  const next = { ...metadata };
+  if (tool) {
+    next.tool = tool;
+  } else {
+    delete next.tool;
+  }
+  return JSON.stringify(next) === JSON.stringify(metadata) ? metadata : next;
+}
+
 function mergeRicherThreadRunEvent(
   existing: ThreadRunEvent,
   incoming: ThreadRunEventInput,
@@ -4408,8 +4532,12 @@ function isRicherThreadRunToolMetadata(
       incoming.detail ||
         incoming.toolUseId ||
         incoming.durationMs !== undefined ||
+        incoming.exitCode !== undefined ||
         incoming.status ||
         incoming.description ||
+        incoming.outputPreview ||
+        incoming.outputPreviewTruncated ||
+        incoming.fileChange ||
         incoming.readTarget ||
         incoming.grepTarget,
     );
@@ -4419,14 +4547,21 @@ function isRicherThreadRunToolMetadata(
   }
   return Boolean(
     (incoming.detail && incoming.detail !== existing.detail) ||
-      (incoming.output && incoming.output !== existing.output) ||
+      (incoming.outputPreview && incoming.outputPreview !== existing.outputPreview) ||
+      (incoming.outputPreviewTruncated && !existing.outputPreviewTruncated) ||
       (incoming.toolUseId && incoming.toolUseId !== existing.toolUseId) ||
       (incoming.durationMs !== undefined && incoming.durationMs !== existing.durationMs) ||
+      (incoming.exitCode !== undefined && incoming.exitCode !== existing.exitCode) ||
       (incoming.status && incoming.status !== existing.status) ||
       (incoming.description && incoming.description !== existing.description) ||
-      (incoming.readTarget && !existing.readTarget) ||
-      (incoming.grepTarget && !existing.grepTarget),
+      (incoming.fileChange && !isSameJsonValue(incoming.fileChange, existing.fileChange)) ||
+      (incoming.readTarget && !isSameJsonValue(incoming.readTarget, existing.readTarget)) ||
+      (incoming.grepTarget && !isSameJsonValue(incoming.grepTarget, existing.grepTarget)),
   );
+}
+
+function isSameJsonValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function readThreadRunToolMetadata(
@@ -4446,10 +4581,13 @@ function readThreadRunToolMetadata(
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
-    ...(typeof raw.output === "string" && raw.output.trim() && { output: raw.output.trim() }),
+    ...(typeof raw.outputPreview === "string" &&
+      raw.outputPreview.trim() && { outputPreview: raw.outputPreview.trim() }),
+    ...(raw.outputPreviewTruncated === true && { outputPreviewTruncated: true }),
     ...(typeof raw.toolUseId === "string" && raw.toolUseId.trim() && { toolUseId: raw.toolUseId.trim() }),
     ...(typeof raw.durationMs === "number" &&
       Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
+    ...(typeof raw.exitCode === "number" && Number.isFinite(raw.exitCode) && { exitCode: raw.exitCode }),
     ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),
     ...(typeof raw.description === "string" &&
       raw.description.trim() && { description: raw.description.trim() }),

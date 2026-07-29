@@ -1983,7 +1983,7 @@ function buildProjectionToolActionBlock(
   const bashRun = resolveBashRunCardDisplay({
     toolName: input.toolName,
     ...(command && { command }),
-    ...(metadataTool?.output && { output: metadataTool.output }),
+    ...(metadataTool?.outputPreview && { output: metadataTool.outputPreview }),
     ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
     ...(description && { description }),
   });
@@ -2132,14 +2132,15 @@ export function projectionItemToDetailBlock(
     const tool = resolveProjectionToolName(item);
     const metadataTool = readProjectionToolMetadata(item);
     const command = tool === "Bash" ? metadataTool?.detail?.trim() : undefined;
-    const output = metadataTool?.output?.trim();
+    const output = metadataTool?.outputPreview?.trim();
     const recoveredResult = resolvePatchAppliedNegativeSearchResult({
       ...(command && { command }),
       ...(output && { output }),
       ...(metadataTool?.exitCode !== undefined && { exitCode: metadataTool.exitCode }),
     });
     const commandMessage = command ? i18n.t("projection.bashCommand", { command }) : undefined;
-    const error = recoveredResult ? "" : output || (text !== commandMessage ? text : "");
+    const failureMessage = stripProjectionToolFailurePrefix(text, tool);
+    const error = recoveredResult ? "" : output || (text !== commandMessage ? failureMessage : "");
     return {
       kind: "tool-failed",
       tool,
@@ -2178,6 +2179,11 @@ export function projectionItemToDetailBlock(
     return { kind: "phase", label: phaseLabel };
   }
   return undefined;
+}
+
+function stripProjectionToolFailurePrefix(message: string, toolName: string): string {
+  const prefix = `Tool failed: ${toolName}:`;
+  return message.startsWith(prefix) ? message.slice(prefix.length).trim() : message;
 }
 
 function resolvePatchAppliedNegativeSearchResult(input: {
@@ -2387,7 +2393,9 @@ function readProjectionToolMetadata(
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
-    ...(typeof record.output === "string" && record.output.trim() && { output: record.output.trim() }),
+    ...(typeof record.outputPreview === "string" &&
+      record.outputPreview.trim() && { outputPreview: record.outputPreview.trim() }),
+    ...(record.outputPreviewTruncated === true && { outputPreviewTruncated: true }),
     ...(typeof record.toolUseId === "string" &&
       record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
     ...(typeof record.durationMs === "number" &&
@@ -2433,9 +2441,6 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
   }
   if (item.eventType === "billing.cache_hit_dropped") {
     return text || i18n.t("projection.cacheHitDropped");
-  }
-  if (item.eventType === "context.tool_output_truncated") {
-    return text || i18n.t("projection.toolOutputTruncated");
   }
   if (item.eventType === "agent.started") {
     return i18n.t("projection.agentStarted", {

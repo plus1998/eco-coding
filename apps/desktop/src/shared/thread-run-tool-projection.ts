@@ -1,0 +1,48 @@
+import { createToolOutputPreview } from "@eco/runtime";
+import type { ThreadRunToolMetadata } from "./thread-run-events";
+
+export function projectThreadRunToolMetadata(
+  tool: ThreadRunToolMetadata | undefined,
+): ThreadRunToolMetadata | undefined {
+  if (!tool) {
+    return undefined;
+  }
+  const name = tool.name.trim();
+  if (!name) {
+    return undefined;
+  }
+  const outputPreview =
+    name === "Bash" && tool.outputPreview?.trim() ? createToolOutputPreview(tool.outputPreview) : undefined;
+  return {
+    name,
+    ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
+    ...(outputPreview?.text && { outputPreview: outputPreview.text }),
+    ...(outputPreview?.text &&
+      (tool.outputPreviewTruncated || outputPreview.truncated) && {
+        outputPreviewTruncated: true,
+      }),
+    ...(tool.toolUseId?.trim() && { toolUseId: tool.toolUseId.trim() }),
+    ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
+    ...(tool.exitCode !== undefined && Number.isFinite(tool.exitCode) && { exitCode: tool.exitCode }),
+    ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),
+    ...(tool.description?.trim() && { description: tool.description.trim() }),
+    ...(tool.fileChange && { fileChange: tool.fileChange }),
+    ...(tool.readTarget && { readTarget: tool.readTarget }),
+    ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
+  };
+}
+
+export function projectThreadRunToolMetadataForFeed(
+  tool: ThreadRunToolMetadata | undefined,
+): ThreadRunToolMetadata | undefined {
+  const projected = projectThreadRunToolMetadata(tool);
+  if (!projected) {
+    return undefined;
+  }
+  const { outputPreview: _outputPreview, outputPreviewTruncated: _truncated, ...feedTool } = projected;
+  return feedTool;
+}
+
+function isThreadRunToolStatus(value: unknown): value is NonNullable<ThreadRunToolMetadata["status"]> {
+  return value === "started" || value === "completed" || value === "failed";
+}

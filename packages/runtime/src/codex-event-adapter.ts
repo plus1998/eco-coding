@@ -24,6 +24,12 @@ import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spa
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
 import { CODEX_GENERAL_SPAWN_ROLE } from "./subagent-availability.js";
+import {
+  appendToolOutputPreviewCapture,
+  createToolOutputPreview,
+  materializeToolOutputPreviewCapture,
+  type ToolOutputPreviewCapture,
+} from "./tool-output-preview.js";
 
 /** Subset of `ThreadRunEventType` emitted by this adapter. */
 export type CodexThreadRunEventType =
@@ -145,8 +151,7 @@ type EmitInput = {
 type AdapterContext = CodexEventAdapterOptions & {
   observedAt: string;
   eventCounter: number;
-  commandOutputByItemId: Map<string, string>;
-  commandByItemId: Map<string, string>;
+  commandOutputPreviewByItemId: Map<string, ToolOutputPreviewCapture>;
   reasoningTextByItemId: Map<string, string>;
   agentMessageTextByItemId: Map<string, string>;
   pendingEventsByCodexThreadId: Map<string, EmitInput[]>;
@@ -173,10 +178,8 @@ const POC_HANDLERS: Record<string, NotificationHandler> = {
 
 export class CodexEventAdapter {
   private eventCounter = 0;
-  /** Accumulate live bash stdout/stderr for bash cards. */
-  private readonly commandOutputByItemId = new Map<string, string>();
-  /** Remember bash command text for output-delta updates. */
-  private readonly commandByItemId = new Map<string, string>();
+  /** Keep only a bounded in-memory preview; output deltas are not projection events. */
+  private readonly commandOutputPreviewByItemId = new Map<string, ToolOutputPreviewCapture>();
   /** Accumulate reasoning/thinking text for thinking cards. */
   private readonly reasoningTextByItemId = new Map<string, string>();
   /**
@@ -199,8 +202,7 @@ export class CodexEventAdapter {
       ...this.options,
       observedAt: this.options.now?.() ?? new Date().toISOString(),
       eventCounter: this.eventCounter,
-      commandOutputByItemId: this.commandOutputByItemId,
-      commandByItemId: this.commandByItemId,
+      commandOutputPreviewByItemId: this.commandOutputPreviewByItemId,
       reasoningTextByItemId: this.reasoningTextByItemId,
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
@@ -579,42 +581,15 @@ function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>
 }
 
 function handleCommandExecutionOutputDelta(ctx: AdapterContext, params: Record<string, unknown>): void {
-  const codexThreadId = readCodexThreadId(params);
   const itemId = readCodexItemId(params);
   const delta = readDeltaText(params);
-  if (!codexThreadId || !itemId || !delta) {
+  if (!itemId || !delta) {
     return;
   }
-  const turnId = readCodexTurnId(params);
-  const previous = ctx.commandOutputByItemId.get(itemId) ?? "";
-  const next = `${previous}${delta}`;
-  ctx.commandOutputByItemId.set(itemId, next);
-  const command = ctx.commandByItemId.get(itemId);
-
-  emit(ctx, {
-    eventType: "tool.started",
-    codexThreadId,
-    turnId,
+  ctx.commandOutputPreviewByItemId.set(
     itemId,
-    role: "tool",
-    message: command ? formatCodexBashToolMessage(command) : "Tool: Bash",
-    streamState: "streaming",
-    stableEventId: `tre:codex:tool:${itemId}:started`,
-    metadata: {
-      codexMethod: "item/commandExecution/outputDelta",
-      liveType: "tool.started",
-      logicalEntityId: itemId,
-      itemId,
-      itemType: "commandExecution",
-      tool: {
-        name: "Bash",
-        toolUseId: itemId,
-        status: "started",
-        output: next,
-        ...(command ? { detail: command } : {}),
-      },
-    },
-  });
+    appendToolOutputPreviewCapture(ctx.commandOutputPreviewByItemId.get(itemId), delta),
+  );
 }
 
 function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown>): void {
@@ -685,7 +660,7 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
       return;
     }
     emitCommandExecutionToolEvent(ctx, params, item, eventType);
-    ctx.commandOutputByItemId.delete(itemId);
+    ctx.commandOutputPreviewByItemId.delete(itemId);
     return;
   }
 
@@ -839,12 +814,13 @@ function emitCommandExecutionToolEvent(
   const turnId = readCodexTurnId(params);
   const toolStatus =
     eventType === "tool.started" ? "started" : eventType === "tool.completed" ? "completed" : "failed";
-  ctx.commandByItemId.set(itemId, fields.command);
-  const streamedOutput = ctx.commandOutputByItemId.get(itemId);
-  const output = fields.aggregatedOutput || streamedOutput;
-  if (eventType !== "tool.started") {
-    ctx.commandByItemId.delete(itemId);
-  }
+  const commandProjection = resolveCodexCommandProjection(item.commandActions);
+  const outputPreview =
+    eventType !== "tool.started" && !commandProjection.readOnly
+      ? fields.aggregatedOutput
+        ? createToolOutputPreview(fields.aggregatedOutput)
+        : materializeToolOutputPreviewCapture(ctx.commandOutputPreviewByItemId.get(itemId))
+      : undefined;
 
   emit(ctx, {
     eventType,
@@ -867,7 +843,10 @@ function emitCommandExecutionToolEvent(
         ...(fields.description ? { description: fields.description } : {}),
         toolUseId: itemId,
         status: toolStatus,
-        ...(output ? { output } : {}),
+        ...(outputPreview?.text ? { outputPreview: outputPreview.text } : {}),
+        ...(outputPreview?.truncated ? { outputPreviewTruncated: true } : {}),
+        ...(commandProjection.readTarget ? { readTarget: commandProjection.readTarget } : {}),
+        ...(commandProjection.grepTarget ? { grepTarget: commandProjection.grepTarget } : {}),
         ...(fields.durationMs !== undefined ? { durationMs: fields.durationMs } : {}),
         ...(fields.exitCode !== undefined ? { exitCode: fields.exitCode } : {}),
       },
@@ -1018,6 +997,49 @@ function formatCodexCommandActions(value: unknown): string | undefined {
     return undefined;
   }
   return labels.length === 1 ? labels[0] : `${labels[0]} 等 ${labels.length} 项`;
+}
+
+function resolveCodexCommandProjection(value: unknown): {
+  readOnly: boolean;
+  readTarget?: { filePath: string };
+  grepTarget?: { pattern: string; path?: string };
+} {
+  if (!Array.isArray(value) || value.length === 0) {
+    return { readOnly: false };
+  }
+  let readOnly = true;
+  let readTarget: { filePath: string } | undefined;
+  let grepTarget: { pattern: string; path?: string } | undefined;
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      readOnly = false;
+      continue;
+    }
+    const type = readString(entry, "type");
+    if (type === "read") {
+      const filePath = readString(entry, "path") ?? readString(entry, "name");
+      if (filePath && !readTarget) {
+        readTarget = { filePath };
+      }
+      continue;
+    }
+    if (type === "search") {
+      const pattern = readString(entry, "query");
+      const path = readString(entry, "path");
+      if (pattern && !grepTarget) {
+        grepTarget = { pattern, ...(path ? { path } : {}) };
+      }
+      continue;
+    }
+    if (type !== "listFiles") {
+      readOnly = false;
+    }
+  }
+  return {
+    readOnly,
+    ...(readTarget ? { readTarget } : {}),
+    ...(grepTarget ? { grepTarget } : {}),
+  };
 }
 
 function readCommandExecutionStatus(item: Record<string, unknown>): CodexCommandExecutionStatus | undefined {

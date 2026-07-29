@@ -778,7 +778,10 @@ class ThreadLiveEvent {
             )
           : null,
       projection: projectionRaw is Map<String, dynamic>
-          ? ThreadRunProjectionSnapshot.fromJson(projectionRaw)
+          ? ThreadRunProjectionSnapshot.fromJson(
+              projectionRaw,
+              includeToolOutputPreview: false,
+            )
           : null,
       subagentSessions: sessionsRaw is List
           ? sessionsRaw
@@ -801,7 +804,10 @@ class ThreadLiveEvent {
           : null,
       title: json['title'] as String?,
       tool: json['tool'] is Map<String, dynamic>
-          ? threadRunToolMetadataFromJson(json['tool'] as Map<String, dynamic>)
+          ? threadRunToolMetadataFromJson(
+              json['tool'] as Map<String, dynamic>,
+              includeOutputPreview: false,
+            )
           : null,
     );
   }

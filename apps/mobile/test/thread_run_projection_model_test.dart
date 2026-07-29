@@ -171,7 +171,7 @@ void main() {
               'detail': 'bun test',
               'toolUseId': 'toolu_1',
               'status': 'completed',
-              'output': 'full output',
+              'outputPreview': 'bounded output',
               'fileChange': {
                 'path': 'lib/main.dart',
                 'additions': 1,
@@ -211,8 +211,80 @@ void main() {
     final tool =
         merged.timeline.single.metadata?['tool'] as Map<String, dynamic>;
 
-    expect(tool['output'], 'full output');
+    expect(tool['outputPreview'], 'bounded output');
     expect(tool['fileChange'], isA<Map<String, dynamic>>());
+  });
+
+  test('feed projection parsing drops tool output fields', () {
+    final projection = ThreadRunProjectionSnapshot.fromJson({
+      'thread': {
+        'threadId': 'thr_1',
+        'status': 'running',
+        'generatedAt': '2026-01-01T00:00:00.000Z',
+      },
+      'sourceEventCount': 1,
+      'agents': const [],
+      'timeline': [
+        {
+          'id': 'tool_1',
+          'sequence': 1,
+          'eventType': 'tool.completed',
+          'scope': 'main',
+          'text': 'Tool: Bash · bun test',
+          'at': '2026-01-01T00:00:00.000Z',
+          'metadata': {
+            'tool': {
+              'name': 'Bash',
+              'detail': 'bun test',
+              'output': 'legacy raw output',
+              'outputPreview': 'bounded output',
+              'outputPreviewTruncated': true,
+            },
+          },
+        },
+      ],
+    }, includeToolOutputPreview: false);
+
+    final tool =
+        projection.timeline.single.metadata?['tool'] as Map<String, dynamic>;
+    expect(tool['detail'], 'bun test');
+    expect(tool.containsKey('output'), isFalse);
+    expect(tool.containsKey('outputPreview'), isFalse);
+    expect(tool.containsKey('outputPreviewTruncated'), isFalse);
+  });
+
+  test('tool detail parsing preserves bounded Bash preview', () {
+    final detail = ThreadRunProjectionDetailResult.fromJson({
+      'threadId': 'thr_1',
+      'kind': 'tool',
+      'key': 'toolu_1',
+      'generatedAt': '2026-01-01T00:00:00.000Z',
+      'sourceEventCount': 1,
+      'hasMore': false,
+      'timeline': [
+        {
+          'id': 'tool_1',
+          'sequence': 1,
+          'eventType': 'tool.completed',
+          'scope': 'main',
+          'text': 'Tool: Bash · bun test',
+          'at': '2026-01-01T00:00:00.000Z',
+          'metadata': {
+            'tool': {
+              'name': 'Bash',
+              'detail': 'bun test',
+              'outputPreview': '36 pass',
+              'outputPreviewTruncated': true,
+            },
+          },
+        },
+      ],
+    });
+
+    final tool =
+        detail.timeline.single.metadata?['tool'] as Map<String, dynamic>;
+    expect(tool['outputPreview'], '36 pass');
+    expect(tool['outputPreviewTruncated'], isTrue);
   });
 
   test('projection merges preserve attempt ownership', () {

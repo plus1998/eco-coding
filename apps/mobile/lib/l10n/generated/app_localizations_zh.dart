@@ -860,9 +860,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityPromptCacheDrop => 'Prompt cache 命中率大幅下降';
 
   @override
-  String get activityToolOutputTruncated => 'Tool 输出已截断';
-
-  @override
   String get activityPreparingRetry => '准备重试';
 
   @override

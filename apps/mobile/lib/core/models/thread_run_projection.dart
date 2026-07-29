@@ -50,23 +50,26 @@ class ThreadRunProjectionTimelineItem {
     this.metadata,
   });
 
-  factory ThreadRunProjectionTimelineItem.fromJson(Map<String, dynamic> json) =>
-      ThreadRunProjectionTimelineItem(
-        id: json['id'] as String? ?? '',
-        sequence: (json['sequence'] as num?)?.toInt() ?? 0,
-        eventType: json['eventType'] as String? ?? '',
-        scope: json['scope'] as String? ?? '',
-        text: json['text'] as String? ?? '',
-        at: json['at'] as String? ?? '',
-        role: json['role'] as String?,
-        agentId: json['agentId'] as String?,
-        runAttemptId: json['runAttemptId'] as String?,
-        requestId: json['requestId'] as String?,
-        streamKey: json['streamKey'] as String?,
-        metadata: json['metadata'] is Map<String, dynamic>
-            ? json['metadata'] as Map<String, dynamic>
-            : null,
-      );
+  factory ThreadRunProjectionTimelineItem.fromJson(
+    Map<String, dynamic> json, {
+    bool includeToolOutputPreview = true,
+  }) => ThreadRunProjectionTimelineItem(
+    id: json['id'] as String? ?? '',
+    sequence: (json['sequence'] as num?)?.toInt() ?? 0,
+    eventType: json['eventType'] as String? ?? '',
+    scope: json['scope'] as String? ?? '',
+    text: json['text'] as String? ?? '',
+    at: json['at'] as String? ?? '',
+    role: json['role'] as String?,
+    agentId: json['agentId'] as String?,
+    runAttemptId: json['runAttemptId'] as String?,
+    requestId: json['requestId'] as String?,
+    streamKey: json['streamKey'] as String?,
+    metadata: _threadRunProjectionMetadataFromJson(
+      json['metadata'],
+      includeToolOutputPreview: includeToolOutputPreview,
+    ),
+  );
 
   final String id;
   final int sequence;
@@ -99,7 +102,10 @@ class ThreadRunProjectionAgent {
     this.runAttemptId,
   });
 
-  factory ThreadRunProjectionAgent.fromJson(Map<String, dynamic> json) {
+  factory ThreadRunProjectionAgent.fromJson(
+    Map<String, dynamic> json, {
+    bool includeToolOutputPreview = true,
+  }) {
     final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
     return ThreadRunProjectionAgent(
       agentId: json['agentId'] as String? ?? '',
@@ -118,6 +124,7 @@ class ThreadRunProjectionAgent {
           .map(
             (entry) => ThreadRunProjectionTimelineItem.fromJson(
               entry as Map<String, dynamic>,
+              includeToolOutputPreview: includeToolOutputPreview,
             ),
           )
           .toList(),
@@ -215,7 +222,10 @@ class ThreadRunProjectionSnapshot {
     this.historyRevision = 0,
   });
 
-  factory ThreadRunProjectionSnapshot.fromJson(Map<String, dynamic> json) {
+  factory ThreadRunProjectionSnapshot.fromJson(
+    Map<String, dynamic> json, {
+    bool includeToolOutputPreview = true,
+  }) {
     final thread = json['thread'] as Map<String, dynamic>? ?? const {};
     final agentsRaw = json['agents'] as List<dynamic>? ?? const [];
     final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
@@ -231,6 +241,7 @@ class ThreadRunProjectionSnapshot {
           .map(
             (entry) => ThreadRunProjectionAgent.fromJson(
               entry as Map<String, dynamic>,
+              includeToolOutputPreview: includeToolOutputPreview,
             ),
           )
           .toList(),
@@ -238,6 +249,7 @@ class ThreadRunProjectionSnapshot {
           .map(
             (entry) => ThreadRunProjectionTimelineItem.fromJson(
               entry as Map<String, dynamic>,
+              includeToolOutputPreview: includeToolOutputPreview,
             ),
           )
           .toList(),
@@ -269,6 +281,24 @@ class ThreadRunProjectionSnapshot {
   final List<ThreadRunProjectionAttempt> attempts;
 
   bool get hasData => sourceEventCount > 0;
+}
+
+Map<String, dynamic>? _threadRunProjectionMetadataFromJson(
+  dynamic value, {
+  required bool includeToolOutputPreview,
+}) {
+  if (value is! Map<String, dynamic>) return null;
+  if (includeToolOutputPreview) return value;
+  final rawTool = value['tool'];
+  if (rawTool is! Map<String, dynamic>) return value;
+  final tool = <String, dynamic>{...rawTool}
+    ..remove('output')
+    ..remove('outputPreview')
+    ..remove('outputTruncated')
+    ..remove('outputPreviewTruncated')
+    ..remove('outputOriginalChars')
+    ..remove('outputKeptChars');
+  return <String, dynamic>{...value, 'tool': tool};
 }
 
 ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(

@@ -169,6 +169,202 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite projects tool metadata and migrates legacy output exactly once", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-tool-output-projection-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const threadId = "thr_tool_output_projection";
+  const store = await createConversationStore(databasePath);
+  store.saveThread({
+    id: threadId,
+    title: "Tool output projection",
+    prompt: "verify migration",
+    workspacePath: "/tmp/tool-output-projection",
+    status: "idle",
+    message: "ready",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  const projectedRead = store.appendThreadRunEvent({
+    id: "projected_read",
+    threadId,
+    eventType: "tool.completed",
+    scope: "main",
+    streamState: "finalized",
+    message: "Tool: Read",
+    observedAt: "2026-01-01T00:00:01.000Z",
+    metadata: {
+      tool: {
+        name: "Read",
+        toolUseId: "read_1",
+        output: "secret contents",
+        outputPreview: "secret preview",
+        outputPreviewTruncated: true,
+      },
+    },
+  });
+  assert.deepEqual(projectedRead.metadata?.tool, { name: "Read", toolUseId: "read_1" });
+
+  const projectedBash = store.appendThreadRunEvent({
+    id: "projected_bash",
+    threadId,
+    eventType: "tool.completed",
+    scope: "main",
+    streamState: "finalized",
+    message: "Tool: Bash",
+    observedAt: "2026-01-01T00:00:02.000Z",
+    metadata: {
+      tool: {
+        name: "Bash",
+        detail: "bun test",
+        output: "raw field must not persist",
+        outputPreview: `head\n${"x".repeat(20_000)}\ntail`,
+        exitCode: 0,
+      },
+    },
+  });
+  const projectedBashTool = projectedBash.metadata?.tool as Record<string, unknown>;
+  assert.equal("output" in projectedBashTool, false);
+  assert.equal(projectedBashTool.outputPreviewTruncated, true);
+  assert.ok(String(projectedBashTool.outputPreview).startsWith("head\n"));
+  assert.ok(String(projectedBashTool.outputPreview).endsWith("\ntail"));
+  assert.ok(String(projectedBashTool.outputPreview).length <= 8_000);
+
+  (store as unknown as { db: DatabaseSync }).db.close();
+  const legacyDb = new DatabaseSync(databasePath);
+  const insertLegacy = legacyDb.prepare(`
+    INSERT INTO thread_run_events (
+      id, thread_id, sequence, event_type, scope, stream_state, message, metadata_json, observed_at
+    ) VALUES (?, ?, ?, ?, 'main', 'finalized', ?, ?, ?)
+  `);
+  insertLegacy.run(
+    "legacy_bash",
+    threadId,
+    3,
+    "tool.completed",
+    "Tool: Bash",
+    JSON.stringify({
+      tool: {
+        name: "Bash",
+        output: `${"a".repeat(10_000)}\n\n…（输出已截断，完整内容未写入上下文；详见运行日志提示）`,
+        outputTruncated: true,
+        outputOriginalChars: 10_000,
+        outputKeptChars: 8_000,
+      },
+    }),
+    "2026-01-01T00:00:03.000Z",
+  );
+  insertLegacy.run(
+    "legacy_search",
+    threadId,
+    4,
+    "tool.completed",
+    "Tool: Grep",
+    JSON.stringify({
+      tool: {
+        name: "Grep",
+        detail: "needle",
+        output: "matching source text",
+        outputPreview: "matching source preview",
+      },
+    }),
+    "2026-01-01T00:00:04.000Z",
+  );
+  insertLegacy.run(
+    "legacy_notice",
+    threadId,
+    5,
+    "context.tool_output_truncated",
+    "Read output truncated",
+    JSON.stringify({ liveType: "context.tool_output_truncated" }),
+    "2026-01-01T00:00:05.000Z",
+  );
+  insertLegacy.run(
+    "legacy_invalid",
+    threadId,
+    6,
+    "tool.completed",
+    "Tool: Read",
+    "{bad json",
+    "2026-01-01T00:00:06.000Z",
+  );
+  legacyDb
+    .prepare("DELETE FROM conversation_store_migrations WHERE id = ?")
+    .run("thread-run-tool-output-projection-v1");
+  legacyDb.close();
+
+  const originalStderrWrite = process.stderr.write;
+  let migrationWarning = "";
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    migrationWarning += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  let migrated: Awaited<ReturnType<typeof createConversationStore>>;
+  try {
+    migrated = await createConversationStore(databasePath);
+  } finally {
+    process.stderr.write = originalStderrWrite;
+  }
+  assert.match(migrationWarning, /count=1/);
+  assert.match(migrationWarning, /eventIds=legacy_invalid/);
+
+  const migratedEvents = migrated.listThreadRunEvents(threadId);
+  assert.equal(
+    migratedEvents.some((event) => event.id === "legacy_notice"),
+    false,
+  );
+  const legacyBash = migratedEvents.find((event) => event.id === "legacy_bash");
+  const legacyBashTool = legacyBash?.metadata?.tool as Record<string, unknown>;
+  assert.equal("output" in legacyBashTool, false);
+  assert.equal("outputOriginalChars" in legacyBashTool, false);
+  assert.equal(legacyBashTool.outputPreviewTruncated, true);
+  assert.ok(!String(legacyBashTool.outputPreview).includes("完整内容未写入上下文"));
+  assert.ok(String(legacyBashTool.outputPreview).length <= 8_000);
+  assert.deepEqual(migratedEvents.find((event) => event.id === "legacy_search")?.metadata?.tool, {
+    name: "Grep",
+    detail: "needle",
+  });
+
+  (migrated as unknown as { db: DatabaseSync }).db.close();
+  const inspection = new DatabaseSync(databasePath);
+  assert.equal(
+    (
+      inspection
+        .prepare("SELECT COUNT(*) AS count FROM thread_run_events WHERE event_type = ?")
+        .get("context.tool_output_truncated") as { count: number }
+    ).count,
+    0,
+  );
+  assert.equal(
+    (
+      inspection
+        .prepare("SELECT COUNT(*) AS count FROM conversation_store_migrations WHERE id = ?")
+        .get("thread-run-tool-output-projection-v1") as { count: number }
+    ).count,
+    1,
+  );
+  const storedMetadata = inspection
+    .prepare("SELECT id, metadata_json FROM thread_run_events WHERE metadata_json IS NOT NULL")
+    .all() as Array<{ id: string; metadata_json: string }>;
+  for (const row of storedMetadata) {
+    if (row.id === "legacy_invalid") continue;
+    const metadata = JSON.parse(row.metadata_json) as { tool?: Record<string, unknown> };
+    assert.equal(metadata.tool && "output" in metadata.tool, false, row.id);
+    if (metadata.tool?.name !== "Bash") {
+      assert.equal(metadata.tool && "outputPreview" in metadata.tool, false, row.id);
+      assert.equal(metadata.tool && "outputPreviewTruncated" in metadata.tool, false, row.id);
+    }
+  }
+  inspection.close();
+
+  const reopened = await createConversationStore(databasePath);
+  assert.equal(
+    reopened.listThreadRunEvents(threadId).some((event) => event.id === "legacy_notice"),
+    false,
+  );
+  (reopened as unknown as { db: DatabaseSync }).db.close();
+});
+
 test("Node SQLite incrementally maintains bounded projection reads in WAL mode", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-projection-cache-");
   const databasePath = path.join(directory, "eco-coding.sqlite");

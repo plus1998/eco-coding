@@ -469,6 +469,7 @@ export {
   type ThinkingQueryPatch,
 } from "./thinking-options";
 export * from "./tool-confirmation.js";
+export * from "./tool-output-preview.js";
 export * from "./tool-permission-policy.js";
 export {
   accumulateThreadCost,

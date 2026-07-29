@@ -262,7 +262,6 @@
   "activityContextCompressionFailed": "上下文压缩失败",
   "activityContextCompressionPaused": "自动上下文压缩已暂停",
   "activityPromptCacheDrop": "Prompt cache 命中率大幅下降",
-  "activityToolOutputTruncated": "Tool 输出已截断",
   "activityPreparingRetry": "准备重试",
   "activityRunDiagnostics": "运行诊断",
   "activityAllowOutsideWorkspace": "允许在工作区外执行 {tool}？",

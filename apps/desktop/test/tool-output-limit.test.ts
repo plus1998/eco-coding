@@ -1,32 +1,35 @@
 import { expect, test } from "bun:test";
 import {
-  DEFAULT_MAX_TOOL_OUTPUT_CHARS,
-  formatToolOutputTruncationMessage,
-  limitToolOutputForContext,
-} from "../src/shared/tool-output-limit";
+  appendToolOutputPreviewCapture,
+  createToolOutputPreview,
+  materializeToolOutputPreviewCapture,
+  MAX_BASH_OUTPUT_PREVIEW_CHARS,
+  type ToolOutputPreviewCapture,
+} from "@eco/runtime";
 
-test("limitToolOutputForContext keeps short output unchanged", () => {
-  const result = limitToolOutputForContext("hello");
+test("createToolOutputPreview keeps short output unchanged", () => {
+  const result = createToolOutputPreview("hello");
   expect(result.truncated).toBe(false);
   expect(result.text).toBe("hello");
 });
 
-test("limitToolOutputForContext truncates oversized output", () => {
-  const huge = "x".repeat(DEFAULT_MAX_TOOL_OUTPUT_CHARS + 500);
-  const result = limitToolOutputForContext(huge, 200);
+test("createToolOutputPreview keeps bounded head and tail", () => {
+  const huge = `${"a".repeat(MAX_BASH_OUTPUT_PREVIEW_CHARS)}TAIL`;
+  const result = createToolOutputPreview(huge);
   expect(result.truncated).toBe(true);
-  expect(result.originalChars).toBe(huge.length);
-  expect(result.text).toContain("输出已截断");
-  expect(result.text.length).toBeLessThanOrEqual(200);
+  expect(result.text).toStartWith("aaaa");
+  expect(result.text).toEndWith("TAIL");
+  expect(result.text.length).toBeLessThanOrEqual(MAX_BASH_OUTPUT_PREVIEW_CHARS);
 });
 
-test("formatToolOutputTruncationMessage includes char counts", () => {
-  const message = formatToolOutputTruncationMessage({
-    toolName: "Bash",
-    originalChars: 48_000,
-    keptChars: 8_000,
-  });
-  expect(message).toContain("Bash");
-  expect(message).toContain("48,000");
-  expect(message).toContain("8,000");
+test("stream capture never retains unbounded command output", () => {
+  let capture: ToolOutputPreviewCapture | undefined;
+  capture = appendToolOutputPreviewCapture(capture, "head\n");
+  capture = appendToolOutputPreviewCapture(capture, "x".repeat(50_000));
+  capture = appendToolOutputPreviewCapture(capture, "\ntail");
+  const preview = materializeToolOutputPreviewCapture(capture);
+  expect(preview?.truncated).toBe(true);
+  expect(preview?.text).toStartWith("head\n");
+  expect(preview?.text).toEndWith("\ntail");
+  expect(preview?.text.length).toBeLessThanOrEqual(MAX_BASH_OUTPUT_PREVIEW_CHARS);
 });

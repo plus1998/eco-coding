@@ -126,7 +126,10 @@ class DesktopRpc {
       [arg],
     );
     if (result is! Map<String, dynamic>) return null;
-    return ThreadRunProjectionSnapshot.fromJson(result);
+    return ThreadRunProjectionSnapshot.fromJson(
+      result,
+      includeToolOutputPreview: mode != 'feed',
+    );
   }
 
   Future<ThreadRunProjectionDetailResult?> getRunProjectionDetail({

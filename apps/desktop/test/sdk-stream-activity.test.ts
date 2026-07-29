@@ -269,7 +269,7 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
-test("emits completed tool results with the original structured metadata", () => {
+test("emits completed Read results without file contents", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];
 
@@ -299,11 +299,70 @@ test("emits completed tool results with the original structured metadata", () =>
       name: "Read",
       detail: "panel.ts:L10-29",
       toolUseId: "call_read",
-      output: "10\tconst value = true;",
       status: "completed",
       readTarget: { filePath: "/repo/panel.ts", offset: 10, limit: 20 },
     },
   });
+});
+
+test("emits completed Bash results as a bounded display preview", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; tool?: Record<string, unknown> }> = [];
+
+  bridge.handleEvent(
+    "thr_bash",
+    {
+      type: "tool.completed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "Bash",
+        tool_use_id: "call_bash",
+        input: { command: "bun test" },
+        output: `head\n${"x".repeat(20_000)}\ntail`,
+      },
+    },
+    (_threadId, type, _message, _role, _stream, _agentId, extras) => {
+      emitted.push({ type, ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  const tool = emitted[0]?.tool;
+  expect(tool?.outputPreviewTruncated).toBe(true);
+  expect(String(tool?.outputPreview)).toStartWith("head\n");
+  expect(String(tool?.outputPreview)).toEndWith("\ntail");
+  expect(String(tool?.outputPreview).length).toBeLessThanOrEqual(8_000);
+  expect(tool).not.toHaveProperty("output");
+});
+
+test("emits failed Bash results as a bounded display preview", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];
+
+  bridge.handleEvent(
+    "thr_bash_failed",
+    {
+      type: "tool.failed",
+      role: "planner",
+      payload: {
+        type: "tool_result_error",
+        tool_name: "Bash",
+        tool_use_id: "call_bash_failed",
+        message: `failure head\n${"x".repeat(20_000)}\nfailure tail`,
+      },
+    },
+    (_threadId, type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({ type, message, ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted).toHaveLength(1);
+  const tool = emitted[0]?.tool;
+  expect(tool?.outputPreviewTruncated).toBe(true);
+  expect(String(tool?.outputPreview)).toStartWith("failure head\n");
+  expect(String(tool?.outputPreview)).toEndWith("\nfailure tail");
+  expect(String(tool?.outputPreview).length).toBeLessThanOrEqual(8_000);
+  expect(tool).not.toHaveProperty("output");
 });
 
 test("emits failed Edit results with the original file change metadata", () => {
@@ -339,7 +398,6 @@ test("emits failed Edit results with the original file change metadata", () => {
     tool: {
       name: "Edit",
       toolUseId: "call_edit",
-      output: "String to replace not found in file.",
       status: "failed",
       fileChange: { path: "panel.ts" },
     },

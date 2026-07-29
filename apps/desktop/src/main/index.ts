@@ -243,6 +243,10 @@ import {
 } from "../shared/thread-failure-message";
 import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
 import {
+  projectThreadRunToolMetadata,
+  projectThreadRunToolMetadataForFeed,
+} from "../shared/thread-run-tool-projection";
+import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
@@ -530,7 +534,6 @@ import {
   buildThreadUsageSnapshotResult,
   type ThreadUsageSnapshotRuntimeServices,
 } from "./thread-usage-snapshot-runtime";
-import { emitToolOutputTruncated as emitToolOutputTruncatedEvent } from "./tool-output-run-events";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
@@ -6948,30 +6951,6 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
             }
           : undefined,
       );
-      if (
-        type === "tool.completed" &&
-        extras?.tool?.outputTruncated &&
-        extras.tool.outputOriginalChars !== undefined &&
-        extras.tool.outputKeptChars !== undefined
-      ) {
-        emitToolOutputTruncatedEvent(
-          {
-            getThread: (id) => conversationStore.getThread(id),
-            appendThreadRunEvent: (event) => conversationStore.appendThreadRunEvent(event),
-            scheduleProjectionUpdated: (id) => scheduleThreadRunProjectionUpdated(id),
-            emitThreadEvent: (id, type, message) => emitThreadEvent(id, type, message, "system"),
-            resolveCurrentRunAttemptId: (id) => resolveCurrentRunAttemptId(id),
-            writeStderr: (message) => process.stderr.write(message),
-          },
-          id,
-          {
-            toolName: extras.tool.name,
-            originalChars: extras.tool.outputOriginalChars,
-            keptChars: extras.tool.outputKeptChars,
-            ...(extras.tool.toolUseId && { toolUseId: extras.tool.toolUseId }),
-          },
-        );
-      }
     },
     undefined,
     {
@@ -7853,6 +7832,7 @@ function emitThreadEvent(
   stream = false,
   extras?: EmitThreadEventExtras,
 ): ThreadActivityLine | undefined {
+  extras = projectEmitThreadEventExtras(extras);
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
   const isUsageEvent = type === "thread.usage_updated";
@@ -7986,7 +7966,10 @@ function emitThreadEvent(
     payload.runtimeConfig = extras.runtimeConfig;
   }
   if (extras?.tool) {
-    payload.tool = extras.tool;
+    const tool = projectThreadRunToolMetadataForFeed(extras.tool);
+    if (tool) {
+      payload.tool = tool;
+    }
   }
 
   if (type === "workspace.changes" || type === "thread.completed" || type === "thread.idle") {
@@ -7995,6 +7978,15 @@ function emitThreadEvent(
 
   desktopEventCenter.publishThreadLiveEvent(payload);
   return persistedActivityLine;
+}
+
+function projectEmitThreadEventExtras(extras: EmitThreadEventExtras | undefined): EmitThreadEventExtras | undefined {
+  if (!extras?.tool) {
+    return extras;
+  }
+  const { tool: _tool, ...rest } = extras;
+  const tool = projectThreadRunToolMetadata(extras.tool);
+  return tool ? { ...rest, tool } : rest;
 }
 
 function emitContextCompactionStatus(

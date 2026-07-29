@@ -962,7 +962,7 @@ void main() {
                   'toolUseId': 'toolu_bash_1',
                   'description': 'Run unit tests',
                   'status': 'completed',
-                  'output': '36 pass',
+                  'outputPreview': '36 pass',
                 },
               },
             ),
