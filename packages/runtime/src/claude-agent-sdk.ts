@@ -151,7 +151,7 @@ const defaultAllowedTools = [
   "Bash",
   ...networkAllowedTools,
 ] as const;
-const planningDisallowedSdkTools = [...SDK_FILESYSTEM_WRITE_TOOL_NAMES, "Bash"] as const;
+const readOnlyDisallowedSdkTools = [...SDK_FILESYSTEM_WRITE_TOOL_NAMES, "Bash"] as const;
 const planningContinuationAllowedTools = [
   "Agent",
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
@@ -168,7 +168,7 @@ const askAllowedTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
 ] as const;
-const askDisallowedSdkTools = [...planningDisallowedSdkTools, ...protectedPlanModeToolNames] as const;
+const askDisallowedSdkTools = [...readOnlyDisallowedSdkTools, ...protectedPlanModeToolNames] as const;
 /** Agent / execution: Plan tools belong to sessionMode plan only (align with Ask). */
 const agentDisallowedSdkTools = [...protectedPlanModeToolNames] as const;
 const readOnlyAgentDefinitionDisallowedTools = [
@@ -666,7 +666,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       availability,
     });
     const finalizedPlan = sessionResult.finalizedPlan;
-    if (finalizedPlan) {
+    // PermissionRequest approval publishes the plan while this query is blocked. Once approved,
+    // the same query continues into execution; emitting plan.ready at query end would reopen it.
+    if (finalizedPlan && !this.options.hookContext?.awaitPlanApproval) {
       yield createPlanReadyEvent(input.threadId, {
         userPrompt: input.prompt,
         analysis: finalizedPlan.analysis,
@@ -753,8 +755,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       : input.agentRegistry
         ? resolveMainAgentAllowedTools(input.agentRegistry.orchestration, phase.allowedTools)
         : phase.allowedTools;
-    const applyPhaseToolCap =
-      phase.planningPhase === true || phase.permissionMode === "plan" || phase.permissionMode === "dontAsk";
+    // Native Plan Mode owns its temporary read-only boundary. An Eco phase cap would keep
+    // Write/Edit/Bash unavailable after ExitPlanMode changes this session to acceptEdits.
+    const applyPhaseToolCap = phase.permissionMode === "dontAsk";
     const effectiveDynamicDefinitions =
       dynamicDefinitions && applyPhaseToolCap
         ? capAgentDefinitionsForReadOnlyPhase(dynamicDefinitions, phase.allowedTools)
@@ -843,7 +846,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     );
     const sdkDisallowedTools = mergeSdkDisallowedTools(
       toolPermissions?.main.disallowed,
-      phase.planningPhase ? planningDisallowedSdkTools : [],
       phase.askPhase ? askDisallowedSdkTools : [],
       !phase.planningPhase
         ? approvedExitPlanToolUseId
@@ -2114,7 +2116,7 @@ export function mapSdkMessageToEvents(
 
   if (message.type === "user") {
     return [
-      ...mapUserToolResultFailureEvents(message, threadId, sessionId, role, uuid, streamCtx),
+      ...mapUserToolResultEvents(message, threadId, sessionId, role, uuid, streamCtx),
       ...mapUserAgentOutputToEvents(message, threadId, role, uuid),
     ];
   }
@@ -2242,7 +2244,7 @@ export function mapSdkMessageToEvents(
   return [];
 }
 
-function mapUserToolResultFailureEvents(
+function mapUserToolResultEvents(
   message: Record<string, unknown>,
   threadId: string,
   sessionId: string,
@@ -2256,29 +2258,48 @@ function mapUserToolResultFailureEvents(
   const messageParentToolUseId =
     typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
   const role = resolveSdkMessageStreamRole(message, streamCtx, fallbackRole);
+  const agentOutput = isRecord(message.tool_use_result)
+    ? message.tool_use_result
+    : isRecord(message.toolUseResult)
+      ? message.toolUseResult
+      : undefined;
+  const hasCompletedAgentOutput =
+    agentOutput?.status === "completed" && typeof agentOutput.agentId === "string" && agentOutput.agentId.trim();
   const events: AgentEvent[] = [];
   for (const [index, block] of message.message.content.entries()) {
-    if (!isRecord(block) || block.type !== "tool_result" || block.is_error !== true) {
+    if (!isRecord(block) || block.type !== "tool_result") {
       continue;
     }
     const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id.trim() : "";
     const descriptor = toolUseId ? streamCtx?.toolUseById.get(toolUseId) : undefined;
-    const error = extractToolResultErrorText(block.content) || "Tool execution failed.";
+    const output = extractToolResultText(block.content);
+    const failed = block.is_error === true;
+    if (!failed && hasCompletedAgentOutput) {
+      continue;
+    }
     events.push(
       createAttributedAgentEvent(
         {
-          id: `${uuid}:tool-failed:${index}`,
+          id: `${uuid}:tool-${failed ? "failed" : "completed"}:${index}`,
           threadId,
           sessionId,
           role,
-          type: "tool.failed",
-          payload: {
-            type: "tool_result_error",
-            tool_name: descriptor?.name ?? "Tool",
-            ...(toolUseId && { tool_use_id: toolUseId }),
-            ...(descriptor?.input && { input: descriptor.input }),
-            message: error,
-          },
+          type: failed ? "tool.failed" : "tool.completed",
+          payload: failed
+            ? {
+                type: "tool_result_error",
+                tool_name: descriptor?.name ?? "Tool",
+                ...(toolUseId && { tool_use_id: toolUseId }),
+                ...(descriptor?.input && { input: descriptor.input }),
+                message: output || "Tool execution failed.",
+              }
+            : {
+                type: "tool_result",
+                tool_name: descriptor?.name ?? "Tool",
+                ...(toolUseId && { tool_use_id: toolUseId }),
+                ...(descriptor?.input && { input: descriptor.input }),
+                ...(output && { output }),
+              },
           messageParentToolUseId,
         },
         streamCtx,
@@ -2288,7 +2309,7 @@ function mapUserToolResultFailureEvents(
   return events;
 }
 
-function extractToolResultErrorText(content: unknown): string {
+function extractToolResultText(content: unknown): string {
   if (typeof content === "string") {
     return content.trim();
   }
@@ -2810,7 +2831,11 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
     ) {
       return "tool";
     }
-    if (event.payload.type === "tool_progress" || event.payload.type === "tool_use_summary") {
+    if (
+      event.payload.type === "tool_progress" ||
+      event.payload.type === "tool_result" ||
+      event.payload.type === "tool_use_summary"
+    ) {
       return "tool";
     }
     if (event.payload.type === "tool_use") {
@@ -2987,6 +3012,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
         ? ` (${payload.elapsed_time_seconds.toFixed(1)}s)`
         : "";
     return `Tool: ${payload.tool_name}${seconds}`;
+  }
+
+  if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
+    const detail = formatToolInputSummary(payload.tool_name, payload.input);
+    return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }
 
   if (payload.type === "tool_use_summary" && typeof payload.summary === "string") {

@@ -274,7 +274,7 @@ import {
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
-import { shouldClearPendingBashApproval } from "./approval-ui-state";
+import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
 import {
   cacheWorkspaceGitStatus,
   shouldRefreshWorkspaceGitStatus,
@@ -1490,11 +1490,13 @@ function App() {
       if (shouldClearPendingBashApproval(event.type)) {
         clearPendingBashApprovalForThread(event.threadId);
       }
-      if (event.type === "plan_approval.denied") {
+      if (shouldClearPendingPlanApproval(event.type)) {
         clearPendingPlanForThread(event.threadId);
       }
-      if (event.type === "plan_approval.approved" && event.planApproval) {
-        rememberPlanApprovalForThread(event.threadId, event.planApproval);
+      if (event.type === "plan_approval.approved") {
+        if (event.planApproval) {
+          rememberPlanApprovalForThread(event.threadId, event.planApproval);
+        }
       }
 
       if (event.type === "thread.usage_updated" && event.usage) {
@@ -4685,6 +4687,7 @@ function App() {
       if (planToRemember) {
         rememberApprovedPlanForThread(activeThread.id, planToRemember);
       }
+      clearPendingPlanForThread(activeThread.id);
       const updatedThread = result.thread;
       if (updatedThread) {
         setThreads((current) =>

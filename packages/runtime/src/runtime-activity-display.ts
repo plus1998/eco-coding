@@ -279,7 +279,11 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
     if (event.payload.type === "tool_permission_denied") {
       return "tool";
     }
-    if (event.payload.type === "tool_progress" || event.payload.type === "tool_use_summary") {
+    if (
+      event.payload.type === "tool_progress" ||
+      event.payload.type === "tool_result" ||
+      event.payload.type === "tool_use_summary"
+    ) {
       return "tool";
     }
     if (event.payload.type === "tool_use") {
@@ -451,6 +455,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
         ? ` (${payload.elapsed_time_seconds.toFixed(1)}s)`
         : "";
     return `Tool: ${payload.tool_name}${seconds}`;
+  }
+
+  if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
+    const detail = formatToolInputSummary(payload.tool_name, payload.input);
+    return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }
 
   if (payload.type === "tool_use_summary" && typeof payload.summary === "string") {

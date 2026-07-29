@@ -245,7 +245,16 @@ test("createExitPlanModeAwaitApprovalHook allows after integrator approval", asy
   expect(captured[0]?.plan).toContain("Ship from permission request");
   expect(result.hookSpecificOutput).toMatchObject({
     hookEventName: "PermissionRequest",
-    decision: { behavior: "allow" },
+    decision: {
+      behavior: "allow",
+      updatedPermissions: [
+        {
+          type: "setMode",
+          mode: "acceptEdits",
+          destination: "session",
+        },
+      ],
+    },
   });
 });
 

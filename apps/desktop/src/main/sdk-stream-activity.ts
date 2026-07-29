@@ -403,12 +403,18 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const record = payload as Record<string, unknown>;
-  if (record.type !== "tool_use_summary") {
+  if (record.type !== "tool_use_summary" && record.type !== "tool_result") {
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
+  const targets = resolveThreadRunToolTargets(name, record.input);
   const command =
-    readString(record.command) ?? readString(record.full_command) ?? readString(record.bash_command);
+    readString(record.command) ??
+    readString(record.full_command) ??
+    readString(record.bash_command) ??
+    (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ??
+    (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ??
+    resolveSdkToolDisplayDetail(name, record.input);
   const output =
     readString(record.output) ??
     readString(record.stdout) ??
@@ -439,6 +445,8 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
     ...(fileChange && { fileChange }),
+    ...(targets.readTarget && { readTarget: targets.readTarget }),
+    ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     status: "completed",
   };
 }

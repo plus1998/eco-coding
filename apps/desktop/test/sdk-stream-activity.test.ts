@@ -269,6 +269,43 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
+test("emits completed tool results with the original structured metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];
+
+  bridge.handleEvent(
+    "thr_read",
+    {
+      type: "tool.completed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "Read",
+        tool_use_id: "call_read",
+        input: { file_path: "/repo/panel.ts", offset: 10, limit: 20 },
+        output: "10\tconst value = true;",
+      },
+    },
+    (_threadId, type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({ type, message, ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted).toHaveLength(1);
+  expect(emitted[0]).toMatchObject({
+    type: "tool.completed",
+    message: "Tool: Read · panel.ts:L10-29",
+    tool: {
+      name: "Read",
+      detail: "panel.ts:L10-29",
+      toolUseId: "call_read",
+      output: "10\tconst value = true;",
+      status: "completed",
+      readTarget: { filePath: "/repo/panel.ts", offset: 10, limit: 20 },
+    },
+  });
+});
+
 test("emits failed Edit results with the original file change metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];

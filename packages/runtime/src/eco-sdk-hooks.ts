@@ -416,6 +416,13 @@ export function createExitPlanModeAwaitApprovalHook(
               toolInput,
               requestInput as unknown as PreToolUseHookInput,
             ),
+            updatedPermissions: [
+              {
+                type: "setMode",
+                mode: "acceptEdits",
+                destination: "session",
+              },
+            ],
           },
         },
       };

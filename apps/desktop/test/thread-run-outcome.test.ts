@@ -5,6 +5,7 @@ import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
+  resolvePlanSessionRunOutcome,
   resolvePlanningRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "../src/main/thread-run-outcome";
@@ -46,6 +47,15 @@ test("resolvePlanningRunOutcome returns awaiting plan or idle", () => {
     kind: "idle",
     message: "计划阶段已结束。",
   });
+});
+
+test("resolvePlanSessionRunOutcome treats an approved in-session plan as execution", () => {
+  expect(
+    resolvePlanSessionRunOutcome({ ok: true }, { hasPendingPlan: false, enteredExecution: true }),
+  ).toEqual({ kind: "completed" });
+  expect(
+    resolvePlanSessionRunOutcome({ ok: true }, { hasPendingPlan: true, enteredExecution: false }),
+  ).toEqual({ kind: "awaiting_plan", message: "等待你确认计划。" });
 });
 
 test("resolveExecutionRunOutcome returns completed on success", () => {

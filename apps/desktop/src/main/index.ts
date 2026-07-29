@@ -495,7 +495,7 @@ import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
-  resolvePlanningRunOutcome,
+  resolvePlanSessionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
 import { buildThreadRunProjection } from "./thread-run-projection";
@@ -786,13 +786,6 @@ type SubagentDelegationLinker = (input: {
   todoId?: string;
 }) => void;
 const subagentDelegationLinkersByThread = new Map<string, SubagentDelegationLinker>();
-
-/** After bridge plan approval: end the planning SDK pass, then start execution. */
-const endPlanningPassAfterPlanReady = new Set<string>();
-const deferredPlanExecutionByThread = new Map<
-  string,
-  { runtimeConfig: RuntimeConfig; routesOverride?: readonly RuntimeRoleRouteConfig[] }
->();
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -3490,34 +3483,44 @@ function registerIpcHandlers(): void {
       roleRoutesForThreadConfig(getModelSettingsSnapshot(), pendingRuntimeConfig);
     }
 
-    const approval = resolveThreadPlanApprovalRuntime(threadId, {
-      getThread: (id) => conversationStore.getThread(id),
-      hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
-      getPendingPlan: (id) => conversationStore.getPendingPlan(id),
-      getPendingPlanApproval: (id) => getPendingPlanApprovalForThread(id),
-      resolveRoleRoutes: (id) =>
-        pendingRuntimeConfig
-          ? roleRoutesForThreadConfig(getModelSettingsSnapshot(), pendingRuntimeConfig)
-          : resolveRoleRoutesForThread(id),
-      resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
-    });
-
     if (pendingRuntimeConfig) {
       conversationStore.saveThreadRuntimeConfig(threadId, pendingRuntimeConfig);
     }
 
     if (pendingBridge) {
       commitThreadPlanApprovalToAgentMode(threadId, "bridge_plan_approved");
+      const approvedThread = conversationStore.getThread(threadId);
+      if (
+        !approvedThread ||
+        resolveSessionMode(ensureThreadRuntimeConfig(approvedThread).runtimeConfig) !== "agent"
+      ) {
+        throw new Error("Plan approval could not switch the thread to Agent mode.");
+      }
       if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
         throw new Error("No pending plan approval is active for this thread.");
       }
-      endPlanningPassAfterPlanReady.add(threadId);
-      deferredPlanExecutionByThread.set(threadId, {
-        runtimeConfig: approval.runtimeConfig,
-        ...(approval.roleRoutes ? { routesOverride: approval.roleRoutes } : {}),
+      if (pendingBridge.planFilePath) {
+        conversationStore.setThreadClaudePlanFilePath(threadId, pendingBridge.planFilePath);
+      }
+      conversationStore.clearPendingPlan(threadId);
+      emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，当前会话开始执行。", "system");
+      updateThread(threadId, {
+        status: "running",
+        message: "正在按计划执行…",
       });
-      return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
+      return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approvedThread) };
     }
+
+    const approval = resolveThreadPlanApprovalRuntime(threadId, {
+      getThread: (id) => conversationStore.getThread(id),
+      hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
+      getPendingPlan: (id) => conversationStore.getPendingPlan(id),
+      resolveRoleRoutes: (id) =>
+        pendingRuntimeConfig
+          ? roleRoutesForThreadConfig(getModelSettingsSnapshot(), pendingRuntimeConfig)
+          : resolveRoleRoutesForThread(id),
+      resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
+    });
 
     updateThread(threadId, {
       status: "running",
@@ -4587,6 +4590,15 @@ async function runPlanThread(
 
   let worktreePlan = createSessionPlan(workspace.path, thread.id);
   let planningPlanCaptured = false;
+  const taskRuntime = createThreadSdkTaskRuntime({
+    threadId: thread.id,
+    store: {
+      listTodos: (id) => conversationStore.listCoderTodos(id),
+      replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
+    },
+    emitTodoList,
+  });
+  const taskRunHooks = taskRuntime.taskRunHooks;
 
   try {
     const { worktreePlan: resolvedPlan, cwd: resolvedCwd } = await resolveThreadWorktree(
@@ -4627,7 +4639,12 @@ async function runPlanThread(
             signal: controller.signal,
           });
           try {
-            const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
+            const driver = createSdkDriver(
+              thread.id,
+              attemptProxy,
+              taskRunHooks.hookContextExtras,
+              "planning",
+            );
             if (!driver.runPlan) {
               throw new Error("Runtime driver does not support plan mode.");
             }
@@ -4664,10 +4681,8 @@ async function runPlanThread(
                     payload: event.payload,
                     awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
                   });
-                  if (endPlanningPassAfterPlanReady.delete(thread.id)) {
-                    controller.abort();
-                  }
                 }
+                taskRuntime.handleEvent(event);
               },
             });
             if (!result.ok) {
@@ -4684,44 +4699,48 @@ async function runPlanThread(
       });
     });
 
+    const currentThread = conversationStore.getThread(thread.id);
+    const enteredExecution =
+      currentThread !== undefined &&
+      resolveSessionMode(ensureThreadRuntimeConfig(currentThread).runtimeConfig) === "agent";
     const hasPendingPlan = planningPlanCaptured || Boolean(conversationStore.getPendingPlan(thread.id));
-    const decision = resolvePlanningRunOutcome(outcome, { hasPendingPlan });
-    await applyMainThreadRunDecisionEffects({
+    const decision = resolvePlanSessionRunOutcome(outcome, { hasPendingPlan, enteredExecution });
+    const handled = await applyMainThreadRunDecisionEffects({
       threadId: thread.id,
       decision,
       onCancelled: async (reason) => {
+        taskRunHooks.stopIfUnhandled("cancelled");
         cancelClarificationsForThread(thread.id, reason);
         await handleRunCancelled(thread.id, worktreePlan);
       },
       onFailed: (reason) => {
+        taskRunHooks.stopIfUnhandled("blocked");
+        markThreadInterrupted(thread.id, reason);
+      },
+      onIncomplete: (reason) => {
+        taskRunHooks.stopIfUnhandled("blocked");
         markThreadInterrupted(thread.id, reason);
       },
     });
+    if (handled) {
+      taskRunHooks.stopIfUnhandled("completed");
+      return;
+    }
+    taskRunHooks.stopIfUnhandled("completed");
+    conversationStore.clearPendingPlan(thread.id);
+    await completeCodingThreadRun(thread.id, worktreePlan);
   } catch (error) {
+    taskRunHooks.stopIfUnhandled("blocked");
     cancelClarificationsForThread(thread.id, errorMessage(error));
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePathResolved = resolveThreadWorktreePath(thread.id);
-    const deferredExecution = deferredPlanExecutionByThread.get(thread.id);
-    if (deferredExecution) {
-      deferredPlanExecutionByThread.delete(thread.id);
-      endPlanningPassAfterPlanReady.delete(thread.id);
-    }
     await finalizeMainThreadRunCleanup({
       threadId: thread.id,
       worktreePath: worktreePathResolved,
       cancelClarificationsReason: "run finished",
-      ...(deferredExecution ? {} : { idleFallbackMessage: "计划阶段已结束。" }),
+      idleFallbackMessage: "计划阶段已结束。",
     });
-    if (deferredExecution) {
-      updateThread(thread.id, {
-        status: "running",
-        message: "正在按计划执行…",
-      });
-      void runCodingThreadExecution(thread.id, deferredExecution.runtimeConfig, {
-        ...(deferredExecution.routesOverride ? { routesOverride: deferredExecution.routesOverride } : {}),
-      });
-    }
   }
 }
 
@@ -9111,7 +9130,9 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       cwd,
       workspacePath: thread.workspacePath,
       confirmationMode: runtimeConfig?.bashReviewMode ?? "always",
-      phaseAllowsExecution: runPhase !== "planning" && runPhase !== "ask",
+      phaseAllowsExecution:
+        runPhase !== "ask" &&
+        (runPhase !== "planning" || resolveSessionMode(runtimeConfig) === "agent"),
       sessionBashRememberPrefixes: activeRunRuntimeState.bashRememberPrefixes(threadId),
       ...(agentRegistry ? { agentRegistry } : {}),
       ...(request.agentId ? { agentId: request.agentId } : {}),

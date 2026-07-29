@@ -55,6 +55,15 @@ export function resolvePlanningRunOutcome(
   return { kind: "idle", message: "计划阶段已结束。" };
 }
 
+export function resolvePlanSessionRunOutcome(
+  result: RequestAttemptResult,
+  input: { hasPendingPlan: boolean; enteredExecution: boolean },
+): ThreadRunOutcomeDecision {
+  return input.enteredExecution
+    ? resolveExecutionRunOutcome(result)
+    : resolvePlanningRunOutcome(result, { hasPendingPlan: input.hasPendingPlan });
+}
+
 export function resolveExecutionRunOutcome(result: RequestAttemptResult): ThreadRunOutcomeDecision {
   const interrupted = resolveInterruptedRunOutcome(result);
   if (interrupted) {

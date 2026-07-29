@@ -1,4 +1,4 @@
-import type { PlanApprovalRequest, RuntimeRoleRouteConfig, ThreadSummary } from "../shared/ipc";
+import type { RuntimeRoleRouteConfig, ThreadSummary } from "../shared/ipc";
 import type { ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
 import type { RuntimeConfig, RuntimeConfigResolution } from "./thread-runtime-routes";
 
@@ -8,7 +8,6 @@ export interface ThreadPlanApprovalRuntimeServices {
   getThread(threadId: string): ThreadSummary | undefined;
   hasActiveRun(threadId: string): boolean;
   getPendingPlan(threadId: string): ThreadPendingPlanWithRoutes | undefined;
-  getPendingPlanApproval?(threadId: string): PlanApprovalRequest | undefined;
   resolveRoleRoutes(threadId: string): readonly RuntimeRoleRouteConfig[];
   resolveRuntimeConfig(routes: readonly RuntimeRoleRouteConfig[]): RuntimeConfigResolution;
 }
@@ -30,12 +29,10 @@ export function resolveThreadPlanApprovalRuntime(
     throw new Error("Thread was not found.");
   }
 
-  const pendingBridge = services.getPendingPlanApproval?.(threadId);
-  const awaitingStoredPlan = thread.status === "awaiting_plan";
-  if (!pendingBridge && !awaitingStoredPlan) {
+  if (thread.status !== "awaiting_plan") {
     throw new Error("This thread is not waiting for plan approval.");
   }
-  if (!pendingBridge && services.hasActiveRun(threadId)) {
+  if (services.hasActiveRun(threadId)) {
     throw new Error("Thread is already running.");
   }
 

@@ -536,10 +536,11 @@ test("autonomous orchestrator append keeps minimal product constraints", () => {
 
 test("autonomous planning append is read-only and submits via ExitPlanMode", () => {
   const append = buildAutonomousPlanningAppend();
-  expect(append).toContain("Session mode: plan (read-only)");
+  expect(append).toContain("Session starts in Claude Plan Mode");
+  expect(append).toContain("After the user approves ExitPlanMode");
   expect(append).toContain("Use AskUserQuestion");
   expect(append).toContain("ExitPlanMode");
-  expect(append).toContain("Do not implement");
+  expect(append).toContain("While Plan Mode is active, do not implement");
   expect(append).toContain("Do not use the SDK Workflow tool");
 });
 
@@ -2330,13 +2331,16 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
   });
 });
 
-async function invokeExitPlanPermissionHook(options: Record<string, unknown>, plan: string): Promise<void> {
+async function invokeExitPlanPermissionHook(
+  options: Record<string, unknown>,
+  plan: string,
+): Promise<unknown> {
   const hooks = options.hooks as
     | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
     | undefined;
   const exitPlanHook = hooks?.PermissionRequest?.find((matcher) => matcher.matcher === "ExitPlanMode")
     ?.hooks[0];
-  await exitPlanHook?.(
+  return exitPlanHook?.(
     {
       hook_event_name: "PermissionRequest",
       tool_name: "ExitPlanMode",
@@ -2371,6 +2375,21 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
             };
             await invokeExitPlanPermissionHook(options, "## Summary\n\nShip the official plan.");
             yield {
+              type: "assistant",
+              session_id: "sess-plan",
+              uuid: "assistant-write-after-approval",
+              message: {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "tool_write_after_approval",
+                    name: "Write",
+                    input: { file_path: "/tmp/workspace/result.md", content: "done" },
+                  },
+                ],
+              },
+            };
+            yield {
               type: "result",
               subtype: "success",
               session_id: "sess-plan",
@@ -2400,9 +2419,9 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
   expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
   expect(capturedOptions[0]?.permissionMode).toBe("plan");
-  expect(capturedOptions[0]?.disallowedTools).toEqual(
-    expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]),
-  );
+  for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]) {
+    expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain(tool);
+  }
   expect(capturedOptions[0]?.planModeInstructions).toBeUndefined();
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
@@ -2417,7 +2436,8 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(planAgents).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
   expect(planAgents).not.toHaveProperty(ecoSubagentKeyForRole("tester"));
   const systemPrompt = capturedOptions[0]?.systemPrompt as { append?: string } | undefined;
-  expect(systemPrompt?.append).toContain("Session mode: plan (read-only)");
+  expect(systemPrompt?.append).toContain("Session starts in Claude Plan Mode");
+  expect(systemPrompt?.append).toContain("After the user approves ExitPlanMode");
   expect(systemPrompt?.append).toContain("Use AskUserQuestion");
   expect(systemPrompt?.append).not.toContain("File edits apply directly");
   expect(systemPrompt?.append).not.toContain("use git and tests to verify changes");
@@ -2425,10 +2445,9 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(settings?.permissions?.deny).not.toContain("Agent(Plan)");
   expect(settings?.permissions?.deny).toContain("Agent(Explore)");
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
-  const ready = events.find((event) => event.type === "plan.ready");
-  expect(ready?.payload).toMatchObject({
-    plan: "## Summary\n\nShip the official plan.",
-  });
+  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
+  expect(events.some((event) => event.type === "tool.started")).toBe(true);
+  expect(capturedOptions).toHaveLength(1);
 });
 
 test("ClaudeAgentSdkDriver runPlan starts a fresh planning session", async () => {
@@ -2478,10 +2497,7 @@ test("ClaudeAgentSdkDriver runPlan starts a fresh planning session", async () =>
 
   expect(capturedOptions[0]?.permissionMode).toBe("plan");
   expect(capturedOptions[0]?.allowedTools).toContain("AskUserQuestion");
-  const ready = events.find((event) => event.type === "plan.ready");
-  expect(ready?.payload).toMatchObject({
-    plan: "## Summary\n\nShip the first plan.",
-  });
+  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 
 test("ClaudeAgentSdkDriver planning captures plan from deferred_tool_use result payload", async () => {
@@ -2587,9 +2603,7 @@ test("ClaudeAgentSdkDriver planning completes after PermissionRequest approval",
     events.push({ type: event.type, payload: event.payload });
   }
 
-  const ready = events.find((event) => event.type === "plan.ready");
-  expect(ready?.payload).toMatchObject({ plan: "## Summary\n\nShip the captured plan." });
-  expect(ready?.payload).not.toHaveProperty("deferredExitPlanToolUseId");
+  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 
 test("ClaudeAgentSdkDriver execution continuation includes approved plan without SDK resume", async () => {
@@ -2892,6 +2906,62 @@ test("maps completed AgentOutput as an exact terminal event without billing dupl
     },
   });
   expect(events.some((event) => event.type === "usage.recorded")).toBe(false);
+});
+
+test("maps successful SDK tool results onto the original tool use", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_read",
+      session_id: "session_planner",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "call_read",
+            name: "Read",
+            input: { file_path: "panel.ts", offset: 10, limit: 20 },
+          },
+        ],
+      },
+    },
+    "thr_read",
+    ctx,
+  );
+
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "result_read",
+      session_id: "session_planner",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_read",
+            content: "10\tconst value = true;",
+          },
+        ],
+      },
+    },
+    "thr_read",
+    ctx,
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "tool.completed",
+    payload: {
+      type: "tool_result",
+      tool_name: "Read",
+      tool_use_id: "call_read",
+      input: { file_path: "panel.ts", offset: 10, limit: 20 },
+      output: "10\tconst value = true;",
+    },
+  });
+  expect(formatAgentEventLine(events[0]!)).toBe("Tool: Read · panel.ts:L10-29");
 });
 
 test("maps failed SDK tool results onto the original tool use", () => {
