@@ -28,6 +28,11 @@ import UIKit
       channel.setMethodCallHandler { [weak self] call, result in
         self?.systemSpeechRecognizer.handle(call: call, result: result)
       }
+      let levelChannel = FlutterEventChannel(
+        name: "eco_mobile/system_speech_recognizer_levels",
+        binaryMessenger: controller.binaryMessenger
+      )
+      levelChannel.setStreamHandler(systemSpeechRecognizer)
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -202,7 +207,7 @@ private extension UIColor {
   }
 }
 
-private final class SystemSpeechRecognizer: NSObject {
+private final class SystemSpeechRecognizer: NSObject, FlutterStreamHandler {
   private var audioEngine: AVAudioEngine?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
@@ -211,6 +216,20 @@ private final class SystemSpeechRecognizer: NSObject {
   private var inputTapInstalled = false
   private var silenceTimer: Timer?
   private var hardTimeoutTimer: Timer?
+  private var levelSink: FlutterEventSink?
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    levelSink = events
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    levelSink = nil
+    return nil
+  }
 
   func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
@@ -290,8 +309,10 @@ private final class SystemSpeechRecognizer: NSObject {
 
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
-    inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
+    inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) {
+      [weak self, weak request] buffer, _ in
       request?.append(buffer)
+      self?.publishAudioLevel(buffer)
     }
     inputTapInstalled = true
 
@@ -325,6 +346,24 @@ private final class SystemSpeechRecognizer: NSObject {
     silenceTimer?.invalidate()
     silenceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
       self?.finishRecognition()
+    }
+  }
+
+  private func publishAudioLevel(_ buffer: AVAudioPCMBuffer) {
+    guard let samples = buffer.floatChannelData?[0] else { return }
+    let frameCount = Int(buffer.frameLength)
+    guard frameCount > 0 else { return }
+
+    var sum: Float = 0
+    for index in 0..<frameCount {
+      let sample = samples[index]
+      sum += sample * sample
+    }
+    let rms = sqrt(sum / Float(frameCount))
+    let decibels = 20 * log10(max(rms, 0.000_001))
+    let normalized = Double(min(max((decibels + 55) / 50, 0), 1))
+    DispatchQueue.main.async { [weak self] in
+      self?.levelSink?(normalized)
     }
   }
 

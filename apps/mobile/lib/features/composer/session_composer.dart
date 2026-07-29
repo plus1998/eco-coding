@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
@@ -16,7 +17,7 @@ import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
 import 'composer_toolbar_icon.dart';
 import '../threads/thread_providers.dart';
-import 'voice_dictation_overlay.dart';
+import 'voice_recording_composer.dart';
 
 class SessionComposer extends ConsumerStatefulWidget {
   const SessionComposer({
@@ -75,7 +76,11 @@ class SessionComposer extends ConsumerStatefulWidget {
 class _SessionComposerState extends ConsumerState<SessionComposer> {
   final _focusNode = FocusNode();
   bool _speechBusy = false;
-  OverlayEntry? _speechOverlayEntry;
+  bool _speechFinishing = false;
+  bool _discardSpeechResult = false;
+  bool _sendAfterSpeech = false;
+  double _speechAudioLevel = 0;
+  StreamSubscription<double>? _speechLevelSubscription;
 
   @override
   void initState() {
@@ -98,24 +103,10 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   @override
   void dispose() {
-    _removeSpeechOverlay();
+    _speechLevelSubscription?.cancel();
     widget.controller.removeListener(_handleControllerChanged);
     _focusNode.dispose();
     super.dispose();
-  }
-
-  void _showSpeechOverlay() {
-    if (!mounted || _speechOverlayEntry != null) return;
-    final overlay = Overlay.of(context);
-    _speechOverlayEntry = OverlayEntry(
-      builder: (context) => VoiceDictationOverlay(onStop: _handleSpeechInput),
-    );
-    overlay.insert(_speechOverlayEntry!);
-  }
-
-  void _removeSpeechOverlay() {
-    _speechOverlayEntry?.remove();
-    _speechOverlayEntry = null;
   }
 
   bool get _hasContent =>
@@ -149,28 +140,30 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   Future<void> _handleSpeechInput() async {
     final recognizer = ref.read(systemSpeechRecognizerProvider);
-    if (_speechBusy) {
-      try {
-        await recognizer.stop();
-      } catch (error) {
-        if (mounted) {
-          _showSnack(localizedAppError(error, context.l10n));
-        }
-      }
-      return;
-    }
+    if (_speechBusy) return;
 
-    setState(() => _speechBusy = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _speechBusy) {
-        _showSpeechOverlay();
-      }
+    _focusNode.unfocus();
+    _discardSpeechResult = false;
+    _sendAfterSpeech = false;
+    _speechLevelSubscription?.cancel();
+    _speechLevelSubscription = recognizer.audioLevels.listen((level) {
+      if (!mounted || !_speechBusy) return;
+      setState(() => _speechAudioLevel = level);
+    }, onError: (_) {});
+    setState(() {
+      _speechBusy = true;
+      _speechFinishing = false;
+      _speechAudioLevel = 0;
     });
+
+    var recognized = false;
+    var shouldSend = false;
     try {
       final text = await recognizer.recognize(
         locale: systemSpeechRecognitionLocaleTag(),
       );
       if (!mounted) return;
+      if (_discardSpeechResult) return;
       if (text.isEmpty) {
         _showSnack(context.l10n.composerNoSpeech);
         return;
@@ -184,15 +177,49 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         text: merged.text,
         selection: TextSelection.collapsed(offset: merged.selectionOffset),
       );
-      _focusNode.requestFocus();
+      recognized = true;
+      shouldSend = _sendAfterSpeech;
     } catch (error) {
-      if (mounted) {
+      if (mounted && !_discardSpeechResult) {
         _showSnack(localizedAppError(error, context.l10n));
       }
     } finally {
+      await _speechLevelSubscription?.cancel();
+      _speechLevelSubscription = null;
       if (mounted) {
-        _removeSpeechOverlay();
-        setState(() => _speechBusy = false);
+        setState(() {
+          _speechBusy = false;
+          _speechFinishing = false;
+          _speechAudioLevel = 0;
+        });
+      }
+    }
+
+    if (!mounted || !recognized) return;
+    if (shouldSend) {
+      _handleSend();
+    } else {
+      _focusNode.requestFocus();
+    }
+  }
+
+  Future<void> _finishSpeechInput({
+    required bool discard,
+    required bool send,
+  }) async {
+    if (!_speechBusy || _speechFinishing) return;
+    setState(() {
+      _speechFinishing = true;
+      _discardSpeechResult = discard;
+      _sendAfterSpeech = send;
+    });
+    try {
+      await ref.read(systemSpeechRecognizerProvider).stop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _speechFinishing = false);
+      if (!discard) {
+        _showSnack(localizedAppError(error, context.l10n));
       }
     }
   }
@@ -213,6 +240,16 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
             .valueOrNull ==
         true;
     final showSpeechInput = speechAvailable || _speechBusy;
+
+    if (_speechBusy) {
+      return VoiceRecordingComposer(
+        audioLevel: _speechAudioLevel,
+        finishing: _speechFinishing,
+        onCancel: () => _finishSpeechInput(discard: true, send: false),
+        onStop: () => _finishSpeechInput(discard: false, send: false),
+        onSend: () => _finishSpeechInput(discard: false, send: true),
+      );
+    }
 
     return SafeArea(
       top: false,

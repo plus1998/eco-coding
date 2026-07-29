@@ -27,6 +27,16 @@ class SystemSpeechRecognizer {
   static const MethodChannel _channel = MethodChannel(
     'eco_mobile/system_speech_recognizer',
   );
+  static const EventChannel _levelChannel = EventChannel(
+    'eco_mobile/system_speech_recognizer_levels',
+  );
+
+  Stream<double> get audioLevels {
+    return _levelChannel.receiveBroadcastStream().map((value) {
+      final level = value is num ? value.toDouble() : 0.0;
+      return level.clamp(0.0, 1.0);
+    });
+  }
 
   Future<bool> isAvailable({String? locale}) async {
     final result = await _channel.invokeMethod<bool>(

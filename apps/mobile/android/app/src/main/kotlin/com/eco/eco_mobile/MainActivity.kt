@@ -15,6 +15,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.EventChannel
 
 class MainActivity : FlutterActivity() {
     private val speechHandler = Handler(Looper.getMainLooper())
@@ -24,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private var speechRequestMode: SpeechRequestMode? = null
     private var speechTimeoutRunnable: Runnable? = null
     private var stopTimeoutRunnable: Runnable? = null
+    private var speechLevelSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -38,6 +40,18 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SPEECH_LEVEL_CHANNEL,
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                speechLevelSink = events
+            }
+
+            override fun onCancel(arguments: Any?) {
+                speechLevelSink = null
+            }
+        })
     }
 
     override fun onRequestPermissionsResult(
@@ -136,7 +150,10 @@ class MainActivity : FlutterActivity() {
         recognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = Unit
             override fun onBeginningOfSpeech() = Unit
-            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onRmsChanged(rmsdB: Float) {
+                val normalized = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+                speechLevelSink?.success(normalized.toDouble())
+            }
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() = Unit
             override fun onPartialResults(partialResults: Bundle?) = Unit
@@ -294,6 +311,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val SPEECH_CHANNEL = "eco_mobile/system_speech_recognizer"
+        private const val SPEECH_LEVEL_CHANNEL = "eco_mobile/system_speech_recognizer_levels"
         private const val SPEECH_PERMISSION_REQUEST = 9017
         private const val SPEECH_ACTIVITY_REQUEST = 9018
         private const val SPEECH_STOP_TIMEOUT_MS = 2000L
