@@ -160,27 +160,48 @@ class _VoiceLevelWave extends StatefulWidget {
 
 class _VoiceLevelWaveState extends State<_VoiceLevelWave>
     with SingleTickerProviderStateMixin {
+  static const _sampleInterval = Duration(milliseconds: 70);
+  static const _maxHistoryLength = 96;
+
   late final AnimationController _controller;
+  final List<double> _history = List<double>.filled(48, 0);
+  double _targetLevel = 0;
   double _displayLevel = 0;
+  double _previousPhase = 0;
 
   @override
   void initState() {
     super.initState();
-    _displayLevel = widget.audioLevel;
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat();
+    _targetLevel = widget.audioLevel;
+    _displayLevel = _targetLevel;
+    _controller = AnimationController(vsync: this, duration: _sampleInterval)
+      ..addListener(_handleAnimationTick)
+      ..repeat();
   }
 
   @override
   void didUpdateWidget(covariant _VoiceLevelWave oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _displayLevel += (widget.audioLevel - _displayLevel) * 0.72;
+    _targetLevel = widget.audioLevel.clamp(0.0, 1.0);
+    _displayLevel += (_targetLevel - _displayLevel) * 0.45;
+  }
+
+  void _handleAnimationTick() {
+    final phase = _controller.value;
+    if (phase < _previousPhase) {
+      _displayLevel += (_targetLevel - _displayLevel) * 0.68;
+      _history.add(_displayLevel);
+      if (_history.length > _maxHistoryLength) {
+        _history.removeRange(0, _history.length - _maxHistoryLength);
+      }
+      _targetLevel *= 0.94;
+    }
+    _previousPhase = phase;
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_handleAnimationTick);
     _controller.dispose();
     super.dispose();
   }
@@ -192,12 +213,11 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
-          final idlePulse =
-              0.025 * (0.5 + 0.5 * math.sin(_controller.value * math.pi * 2));
           return CustomPaint(
             painter: _VoiceLevelPainter(
-              phase: _controller.value,
-              level: math.max(_displayLevel, idlePulse),
+              scrollProgress: _controller.value,
+              history: _history,
+              currentLevel: _displayLevel,
               quietColor: colors.textMuted.withValues(alpha: 0.34),
               activeColor: colors.textSecondary,
             ),
@@ -211,14 +231,16 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
 
 class _VoiceLevelPainter extends CustomPainter {
   const _VoiceLevelPainter({
-    required this.phase,
-    required this.level,
+    required this.scrollProgress,
+    required this.history,
+    required this.currentLevel,
     required this.quietColor,
     required this.activeColor,
   });
 
-  final double phase;
-  final double level;
+  final double scrollProgress;
+  final List<double> history;
+  final double currentLevel;
   final Color quietColor;
   final Color activeColor;
 
@@ -227,33 +249,35 @@ class _VoiceLevelPainter extends CustomPainter {
     if (size.width <= 0 || size.height <= 0) return;
 
     const spacing = 5.5;
-    final count = math.max(1, (size.width / spacing).floor());
-    final activeStart = math.max(0, count - math.min(12, count));
+    final count = math.max(1, (size.width / spacing).ceil());
+    final slotWidth = size.width / count;
     final centerY = size.height / 2;
+    final visibleHistory = history.length > count
+        ? history.sublist(history.length - count)
+        : <double>[
+            ...List<double>.filled(count - history.length, 0),
+            ...history,
+          ];
 
-    for (var index = 0; index < count; index++) {
-      final x = (index + 0.5) * (size.width / count);
-      final inActiveRange = index >= activeStart;
-      final activePosition = inActiveRange
-          ? (index - activeStart) / math.max(1, count - activeStart - 1)
-          : 0.0;
-      final envelope = math.sin(activePosition * math.pi);
-      final motion =
-          0.55 +
-          0.45 *
-              math.sin(
-                phase * math.pi * 2 + index * 1.17 + activePosition * 2.3,
-              );
-      final strength = (level * 1.25).clamp(0.0, 1.0);
-      final height = inActiveRange
-          ? 4 + (size.height - 10) * envelope * strength * motion
-          : 3.2;
-      final color = inActiveRange
-          ? Color.lerp(quietColor, activeColor, 0.3 + envelope * 0.7)!
-          : quietColor;
+    for (var index = 0; index <= count; index++) {
+      final level = index == count ? currentLevel : visibleHistory[index];
+      final x = index == count
+          ? size.width - slotWidth / 2
+          : (index + 0.5 - scrollProgress) * slotWidth;
+      if (x < -slotWidth || x > size.width + slotWidth) continue;
+
+      final normalizedLevel = level.clamp(0.0, 1.0);
+      final height =
+          3.2 + (size.height - 9) * math.pow(normalizedLevel, 0.72).toDouble();
+      final recency = (index / count).clamp(0.0, 1.0);
+      final color = Color.lerp(
+        quietColor,
+        activeColor,
+        (normalizedLevel * 0.75 + recency * 0.25).clamp(0.0, 1.0),
+      )!;
       final paint = Paint()
         ..color = color
-        ..strokeWidth = inActiveRange ? 3.6 : 3.2
+        ..strokeWidth = normalizedLevel > 0.04 ? 3.6 : 3.2
         ..strokeCap = StrokeCap.round;
 
       canvas.drawLine(
@@ -266,8 +290,9 @@ class _VoiceLevelPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _VoiceLevelPainter oldDelegate) {
-    return oldDelegate.phase != phase ||
-        oldDelegate.level != level ||
+    return oldDelegate.scrollProgress != scrollProgress ||
+        oldDelegate.currentLevel != currentLevel ||
+        oldDelegate.history != history ||
         oldDelegate.quietColor != quietColor ||
         oldDelegate.activeColor != activeColor;
   }
