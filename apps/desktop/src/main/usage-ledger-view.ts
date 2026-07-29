@@ -1,5 +1,6 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { UsageAttributionStatus, UsageLedgerEvent } from "./usage-ledger";
+import { readUsageLedgerComputedBilling } from "./usage-ledger-cost-metadata";
 import {
   readBillingRole,
   readRouteRole,
@@ -25,12 +26,16 @@ export interface ThreadUsageLedgerEventView {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  ecoCostUsd?: number;
+  reportedCostUsd?: number;
+  pricingResolved?: boolean;
   observedAt: string;
 }
 
 export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): ThreadUsageLedgerEventView {
   const aliasModelId = readMetadataString(event, USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY);
   const providerId = readMetadataString(event, USAGE_LEDGER_PROVIDER_ID_METADATA_KEY);
+  const computedBilling = readUsageLedgerComputedBilling(event.metadata);
   return {
     id: event.id,
     source: event.source,
@@ -49,6 +54,11 @@ export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): Thread
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
+    ...(computedBilling && {
+      ecoCostUsd: computedBilling.ecoCostUsd,
+      pricingResolved: computedBilling.pricingResolved,
+    }),
+    ...(event.reportedCostUsd !== undefined && { reportedCostUsd: event.reportedCostUsd }),
     observedAt: event.observedAt,
   };
 }

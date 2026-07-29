@@ -1,7 +1,13 @@
-import { ChevronDown } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, CircleHelp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { formatCostUsd, formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime/usage";
+import {
+  formatCostUsd,
+  formatRoleModelLabel,
+  formatUsageBadge,
+  shortenModelId,
+} from "@eco/runtime/usage";
 import { buildAgentViewRows, buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
 import {
   ledgerEventRouteRoleDiffers,
@@ -58,6 +64,48 @@ function attributionStatusLabel(
     return i18n.t("usage.unattributed");
   }
   return "";
+}
+
+export function formatLedgerEventTime(observedAt: string): string {
+  const date = new Date(observedAt);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(i18n.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
+export function formatLedgerEventProviderModel(
+  event: Pick<ThreadUsageLedgerEventView, "modelId" | "aliasModelId" | "providerId">,
+): { providerLabel?: string; modelLabel: string; title: string } | undefined {
+  const providerId = event.providerId?.trim();
+  const modelId = event.modelId?.trim();
+  const fallbackAlias = event.aliasModelId?.trim();
+  const resolvedModelId = modelId || fallbackAlias;
+  if (!resolvedModelId) {
+    return undefined;
+  }
+  const inferredProvider = !providerId && modelId?.includes("/")
+    ? modelId.split("/")[0]?.trim()
+    : undefined;
+  const rawProviderLabel = providerId || inferredProvider;
+  const providerPrefix = rawProviderLabel ? `${rawProviderLabel}/` : undefined;
+  const providerModelId =
+    modelId && providerPrefix && modelId.startsWith(providerPrefix)
+      ? modelId.slice(providerPrefix.length)
+      : resolvedModelId;
+  const providerLabel =
+    rawProviderLabel && !/^codex-[a-z0-9]+$/i.test(rawProviderLabel)
+      ? rawProviderLabel
+      : undefined;
+  return {
+    ...(providerLabel && { providerLabel }),
+    modelLabel: shortenModelId(providerModelId),
+    title: providerLabel ? `${providerLabel} / ${providerModelId}` : providerModelId,
+  };
 }
 
 export function BillingCostCell({
@@ -130,6 +178,61 @@ export function ExpandableBillingSection({
   );
 }
 
+function BillingSummaryRow({
+  title,
+  titleTooltip,
+  meta,
+  status,
+  statusKind,
+  tokenBadge,
+  ecoCostUsd,
+  reportedCostUsd,
+}: {
+  title: string;
+  titleTooltip?: string;
+  meta?: string;
+  status?: string;
+  statusKind?: "pending" | "unattributed";
+  tokenBadge: string;
+  ecoCostUsd: number;
+  reportedCostUsd?: number;
+}) {
+  return (
+    <li className="usage-breakdown-summary-row">
+      <span className="usage-breakdown-summary-copy">
+        <span className="usage-breakdown-summary-heading">
+          <span className="usage-breakdown-summary-title" title={titleTooltip ?? title}>
+            {title}
+          </span>
+          {status ? (
+            <span
+              className={[
+                "usage-breakdown-summary-status",
+                statusKind ? `usage-breakdown-summary-status-${statusKind}` : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {status}
+            </span>
+          ) : null}
+        </span>
+        {meta ? <span className="usage-breakdown-summary-meta">{meta}</span> : null}
+      </span>
+      <span className="usage-breakdown-summary-usage">
+        <BillingCostCell
+          ecoCostUsd={ecoCostUsd}
+          {...(reportedCostUsd === undefined ? {} : { reportedCostUsd })}
+          className="usage-breakdown-summary-cost"
+        />
+        <span className="usage-breakdown-summary-tokens" title={i18n.t("billing.tokenTitle")}>
+          {tokenBadge}
+        </span>
+      </span>
+    </li>
+  );
+}
+
 function BreakdownRows({
   view,
   breakdown,
@@ -147,78 +250,79 @@ function BreakdownRows({
     const agentRows = buildAgentViewRows(breakdown.byAgent, subagents);
 
     return (
-      <ul className={`usage-breakdown-list${compact ? " usage-breakdown-list-compact" : ""}`}>
-        {agentRows.map((row) => (
-          <li
-            key={`${row.role}:${row.kind}`}
-            className="usage-breakdown-row"
-            title={
-              row.modelId
-                ? i18n.t("usage.ecoCost", {
-                    label: formatRuntimeRoleModelLabel(
-                      row.role,
-                      row.modelId,
-                      agentDisplayNames,
-                    ),
-                  })
-                : i18n.t("usage.ecoCost", { label: row.label })
-            }
-          >
-            <span className="usage-breakdown-label">
-              {`${resolveRuntimeAgentName(row.role, agentDisplayNames) ?? row.label}${
-                row.kind === "unattributed"
-                  ? ` · ${i18n.t("usage.unattributed")}`
-                  : row.kind === "pending"
-                    ? ` · ${i18n.t("usage.pending")}`
-                    : ""
-              }`}
-            </span>
-            <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
-              {row.tokenBadge}
-            </span>
-            <BillingCostCell ecoCostUsd={row.ecoCostUsd} />
-          </li>
-        ))}
+      <ul
+        className={[
+          "usage-breakdown-list",
+          "usage-breakdown-summary-list",
+          compact ? "usage-breakdown-list-compact" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {agentRows.map((row) => {
+          const status =
+            row.kind === "unattributed"
+              ? i18n.t("usage.unattributed")
+              : row.kind === "pending"
+                ? i18n.t("usage.pending")
+                : undefined;
+          const title = resolveRuntimeAgentName(row.role, agentDisplayNames) ?? row.label;
+          return (
+            <BillingSummaryRow
+              key={`${row.role}:${row.kind}`}
+              title={title}
+              titleTooltip={
+                row.modelId
+                  ? formatRuntimeRoleModelLabel(row.role, row.modelId, agentDisplayNames)
+                  : title
+              }
+              {...(row.modelId && { meta: shortenModelId(row.modelId) })}
+              {...(status && { status, statusKind: row.kind })}
+              tokenBadge={row.tokenBadge}
+              ecoCostUsd={row.ecoCostUsd}
+            />
+          );
+        })}
         {subagents.map((row) => (
-          <li
+          <BillingSummaryRow
             key={row.agentId}
-            className="usage-breakdown-row"
             title={formatUsageBreakdownAgentLabel(row.role, row.agentId, agentDisplayNames)}
-          >
-            <span className="usage-breakdown-label">
-              {formatUsageBreakdownAgentLabel(row.role, row.agentId, agentDisplayNames)}
-            </span>
-            <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
-              {formatUsageBadge({
-                inputTokens: row.inputTokens,
-                outputTokens: row.outputTokens,
-                cacheReadTokens: row.cacheReadTokens,
-                cacheCreationTokens: row.cacheCreationTokens,
-              })}
-            </span>
-            <BillingCostCell ecoCostUsd={row.ecoCostUsd} />
-          </li>
+            {...(row.modelId && { meta: shortenModelId(row.modelId) })}
+            tokenBadge={formatUsageBadge({
+              inputTokens: row.inputTokens,
+              outputTokens: row.outputTokens,
+              cacheReadTokens: row.cacheReadTokens,
+              cacheCreationTokens: row.cacheCreationTokens,
+            })}
+            ecoCostUsd={row.ecoCostUsd}
+          />
         ))}
       </ul>
     );
   }
 
   return (
-    <ul className={`usage-breakdown-list${compact ? " usage-breakdown-list-compact" : ""}`}>
+    <ul
+      className={[
+        "usage-breakdown-list",
+        "usage-breakdown-summary-list",
+        compact ? "usage-breakdown-list-compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {breakdown.byModel.map((row) => (
-        <li
+        <BillingSummaryRow
           key={row.modelId}
-          className="usage-breakdown-row"
-          title={`${row.label} · ${row.roles
+          title={row.label}
+          titleTooltip={row.modelId}
+          meta={row.roles
             .map((role) => resolveRuntimeAgentName(role, agentDisplayNames) ?? formatRoleModelLabel(role))
-            .join("、")}`}
-        >
-          <span className="usage-breakdown-label">{row.label}</span>
-          <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
-            {row.tokenBadge}
-          </span>
-          <BillingCostCell ecoCostUsd={row.ecoCostUsd} reportedCostUsd={row.reportedCostUsd} />
-        </li>
+            .join(" · ")}
+          tokenBadge={row.tokenBadge}
+          ecoCostUsd={row.ecoCostUsd}
+          {...(row.reportedCostUsd === undefined ? {} : { reportedCostUsd: row.reportedCostUsd })}
+        />
       ))}
     </ul>
   );
@@ -240,14 +344,29 @@ function LedgerEventRow({
   const routeRoleLabel =
     resolveRuntimeAgentName(event.routeRole, agentDisplayNames) ??
     formatRoleModelLabel(event.routeRole);
-  const modelLabel = event.aliasModelId ?? event.modelId;
-  const modelShort = modelLabel ? shortenModelId(modelLabel) : undefined;
+  const providerModel = formatLedgerEventProviderModel(event);
+  const formattedAgentLabel = formatLedgerEventAgentLabel(event);
+  const agentLabel = formattedAgentLabel
+    ? `agent ${formattedAgentLabel}`
+    : i18n.t("usage.noAgent");
+  const tokenBadge = formatUsageBadge({
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    cacheReadTokens: event.cacheReadTokens,
+    cacheCreationTokens: event.cacheCreationTokens,
+  });
+  const observedTime = formatLedgerEventTime(event.observedAt);
+  const computedCostAvailable =
+    event.ecoCostUsd !== undefined && event.pricingResolved !== false;
+  const primaryCostUsd = computedCostAvailable ? event.ecoCostUsd : event.reportedCostUsd;
+  const reportedCostUsd =
+    computedCostAvailable && event.reportedCostUsd !== undefined
+      ? event.reportedCostUsd
+      : undefined;
   const detailParts = [
     roleLabel,
-    modelShort ? i18n.t("usage.model", { model: modelShort }) : undefined,
-    event.agentId
-      ? `agent ${formatLedgerEventAgentLabel(event)}`
-      : i18n.t("usage.noAgent"),
+    providerModel?.title,
+    agentLabel,
     ledgerEventRouteRoleDiffers(event)
       ? i18n.t("usage.route", { role: routeRoleLabel })
       : undefined,
@@ -266,41 +385,89 @@ function LedgerEventRow({
         .join(" ")}
       title={detailParts.join(" · ")}
     >
-      <span className="usage-breakdown-label">
-        <span className="usage-breakdown-event-role">{roleLabel}</span>
-        {modelShort ? (
-          <span className="usage-breakdown-event-model" title={modelLabel}>
-            {i18n.t("usage.model", { model: modelShort })}
+      <span className="usage-breakdown-event-main">
+        <span className="usage-breakdown-event-copy">
+          <span className="usage-breakdown-event-heading">
+            <span
+              className="usage-breakdown-event-model"
+              title={providerModel?.title ?? i18n.t("usage.unknownModel")}
+            >
+              {providerModel?.modelLabel ?? i18n.t("usage.unknownModel")}
+            </span>
+            {attributionLabel ? (
+              <span
+                className={`usage-breakdown-event-status usage-breakdown-event-status-${event.attributionStatus}`}
+                title={event.attributionReason}
+              >
+                {attributionLabel}
+              </span>
+            ) : null}
           </span>
-        ) : null}
-        {event.agentId ? (
-          <span className="usage-breakdown-event-agent">agent {formatLedgerEventAgentLabel(event)}</span>
-        ) : (
-          <span className="usage-breakdown-event-no-agent">{i18n.t("usage.noAgent")}</span>
-        )}
-        {ledgerEventRouteRoleDiffers(event) ? (
-          <span
-            className="usage-breakdown-event-route"
-            title={i18n.t("usage.proxyRoute", { role: routeRoleLabel })}
-          >
-            {i18n.t("usage.route", { role: routeRoleLabel })}
+          <span className="usage-breakdown-event-meta">
+            {providerModel?.providerLabel ? (
+              <span className="usage-breakdown-event-provider">
+                {providerModel.providerLabel}
+              </span>
+            ) : null}
+            <span className="usage-breakdown-event-role">{roleLabel}</span>
+            <span
+              className={
+                formattedAgentLabel
+                  ? "usage-breakdown-event-agent"
+                  : "usage-breakdown-event-no-agent"
+              }
+            >
+              {agentLabel}
+            </span>
+            {ledgerEventRouteRoleDiffers(event) ? (
+              <span
+                className="usage-breakdown-event-route"
+                title={i18n.t("usage.proxyRoute", { role: routeRoleLabel })}
+              >
+                {i18n.t("usage.route", { role: routeRoleLabel })}
+              </span>
+            ) : null}
+            {showSource ? <span className="usage-breakdown-event-source">{event.source}</span> : null}
           </span>
-        ) : null}
-        {attributionLabel ? (
-          <span className={`usage-breakdown-event-status usage-breakdown-event-status-${event.attributionStatus}`}>
-            {attributionLabel}
-          </span>
-        ) : null}
+        </span>
       </span>
-      <span className="usage-breakdown-tokens" title={i18n.t("billing.tokenTitle")}>
-        {formatUsageBadge({
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          cacheReadTokens: event.cacheReadTokens,
-          cacheCreationTokens: event.cacheCreationTokens,
-        })}
+      <span className="usage-breakdown-event-usage">
+        <span
+          className={[
+            "usage-breakdown-event-cost",
+            primaryCostUsd === undefined ? "usage-breakdown-event-cost-unavailable" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          title={
+            primaryCostUsd === undefined
+              ? i18n.t("usage.costUnavailable")
+              : reportedCostUsd !== undefined
+                ? i18n.t("usage.costTitle")
+                : i18n.t("usage.eventCostTitle")
+          }
+        >
+          {primaryCostUsd === undefined ? "—" : formatCostUsd(primaryCostUsd)}
+          {reportedCostUsd !== undefined && reportedCostUsd > 0 ? (
+            <span className="usage-breakdown-event-cost-reported">
+              {" / "}
+              {formatCostUsd(reportedCostUsd)}
+            </span>
+          ) : null}
+        </span>
+        <span className="usage-breakdown-event-token-detail" title={i18n.t("billing.tokenTitle")}>
+          {tokenBadge}
+        </span>
       </span>
-      {showSource ? <span className="usage-breakdown-event-source">{event.source}</span> : null}
+      {observedTime ? (
+        <time
+          className="usage-breakdown-event-time"
+          dateTime={event.observedAt}
+          title={event.observedAt}
+        >
+          {observedTime}
+        </time>
+      ) : null}
     </li>
   );
 }
@@ -338,6 +505,81 @@ function LedgerEventList({
   return <div className="usage-breakdown-events-scroll">{list}</div>;
 }
 
+export interface LedgerEventSummary {
+  text: string;
+  tokensMatch: boolean;
+}
+
+interface EventsSummaryPopoverPosition {
+  top: number;
+  left: number;
+  width: number;
+}
+
+const EVENTS_SUMMARY_POPOVER_MAX_WIDTH = 280;
+const EVENTS_SUMMARY_POPOVER_GAP = 6;
+const EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN = 8;
+
+export function resolveEventsSummaryPopoverPosition(
+  anchor: Pick<DOMRect, "top" | "bottom" | "right">,
+  viewportWidth: number,
+): EventsSummaryPopoverPosition {
+  const width = Math.min(
+    EVENTS_SUMMARY_POPOVER_MAX_WIDTH,
+    Math.max(0, viewportWidth - EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN * 2),
+  );
+  const maxLeft = Math.max(EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN, viewportWidth - width - EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN);
+  const left = Math.max(
+    EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN,
+    Math.min(anchor.right - width, maxLeft),
+  );
+
+  return {
+    top: anchor.bottom + EVENTS_SUMMARY_POPOVER_GAP,
+    left,
+    width,
+  };
+}
+
+export function buildLedgerEventSummary(
+  events: readonly ThreadUsageLedgerEventView[],
+  billing?: ThreadBillingSnapshot,
+): LedgerEventSummary | undefined {
+  if (events.length === 0) {
+    return undefined;
+  }
+  const primarySource = resolveBillingPrimarySource(billing);
+  const { primaryEvents } = partitionLedgerEventsForDisplay(events, primarySource);
+  const sortedPrimary = sortLedgerEventsNewestFirst(primaryEvents);
+  if (sortedPrimary.length === 0) {
+    return undefined;
+  }
+  const primaryTotals = sumLedgerEventTokens(sortedPrimary);
+  const snapshotTokens = billing ? snapshotTokenTotal(billing) : primaryTotals.total;
+  const tokensMatch = primaryTotals.total === snapshotTokens;
+  const pendingCount = sortedPrimary.filter((event) => event.attributionStatus === "pending").length;
+  const unattributedCount = sortedPrimary.filter(
+    (event) => event.attributionStatus === "unattributed",
+  ).length;
+  const parts = [
+    i18n.t("usage.primaryCount", { count: sortedPrimary.length }),
+    formatUsageBadge(primaryTotals),
+    tokensMatch
+      ? i18n.t("usage.matchesTotal")
+      : i18n.t("usage.totalMismatch", {
+          primary: primaryTotals.total,
+          snapshot: snapshotTokens,
+        }),
+  ];
+  if (pendingCount > 0) {
+    parts.push(i18n.t("usage.pendingCount", { count: pendingCount }));
+  }
+  if (unattributedCount > 0) {
+    parts.push(i18n.t("usage.unattributedCount", { count: unattributedCount }));
+  }
+  return { text: parts.join(" · "), tokensMatch };
+}
+
 function LedgerEventRows({
   events,
   billing,
@@ -357,13 +599,6 @@ function LedgerEventRows({
   const { primaryEvents, shadowEvents } = partitionLedgerEventsForDisplay(events, primarySource);
   const sortedPrimary = sortLedgerEventsNewestFirst(primaryEvents);
   const sortedShadow = sortLedgerEventsNewestFirst(shadowEvents);
-  const primaryTotals = sumLedgerEventTokens(sortedPrimary);
-  const snapshotTokens = billing ? snapshotTokenTotal(billing) : primaryTotals.total;
-  const tokensMatch = primaryTotals.total === snapshotTokens;
-  const pendingCount = sortedPrimary.filter((event) => event.attributionStatus === "pending").length;
-  const unattributedCount = sortedPrimary.filter(
-    (event) => event.attributionStatus === "unattributed",
-  ).length;
 
   if (sortedPrimary.length === 0) {
     return (
@@ -388,24 +623,6 @@ function LedgerEventRows({
     );
   }
 
-  const primaryBadge = formatUsageBadge(primaryTotals);
-  const footerParts = [
-    i18n.t("usage.primaryCount", { count: sortedPrimary.length }),
-    primaryBadge,
-    tokensMatch
-      ? i18n.t("usage.matchesTotal")
-      : i18n.t("usage.totalMismatch", {
-          primary: primaryTotals.total,
-          snapshot: snapshotTokens,
-        }),
-  ];
-  if (pendingCount > 0) {
-    footerParts.push(i18n.t("usage.pendingCount", { count: pendingCount }));
-  }
-  if (unattributedCount > 0) {
-    footerParts.push(i18n.t("usage.unattributedCount", { count: unattributedCount }));
-  }
-
   return (
     <>
       <LedgerEventList
@@ -414,15 +631,6 @@ function LedgerEventRows({
         scrollable
         {...(agentDisplayNames && { agentDisplayNames })}
       />
-      <p
-        className={[
-          "usage-breakdown-events-footer",
-          tokensMatch ? "usage-breakdown-events-footer-ok" : "usage-breakdown-events-footer-warn",
-        ].join(" ")}
-        title={i18n.t("usage.primaryHint")}
-      >
-        {footerParts.join(" · ")}
-      </p>
       {sortedShadow.length > 0 ? (
         <ExpandableBillingSection
           title={i18n.t("usage.validationSource")}
@@ -445,16 +653,105 @@ function LedgerEventRows({
   );
 }
 
+function EventsSummaryInfo({ summary }: { summary: LedgerEventSummary }) {
+  const controlRef = useRef<HTMLSpanElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [position, setPosition] = useState<EventsSummaryPopoverPosition>({
+    top: 0,
+    left: 0,
+    width: EVENTS_SUMMARY_POPOVER_MAX_WIDTH,
+  });
+  const visible = hovered || pinned;
+
+  const updatePosition = useCallback(() => {
+    const control = controlRef.current;
+    if (!control) {
+      return;
+    }
+    setPosition(resolveEventsSummaryPopoverPosition(control.getBoundingClientRect(), window.innerWidth));
+  }, []);
+
+  const showOnHover = useCallback(() => {
+    updatePosition();
+    setHovered(true);
+  }, [updatePosition]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [updatePosition, visible]);
+
+  const popover = visible
+    ? createPortal(
+        <span
+          className={[
+            "usage-breakdown-events-summary-popover",
+            summary.tokensMatch ? "" : "is-warning",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          role="tooltip"
+          style={{
+            top: position.top,
+            left: position.left,
+            width: position.width,
+          }}
+        >
+          {summary.text}
+        </span>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <>
+      <span
+        ref={controlRef}
+        className="usage-breakdown-events-summary-control"
+        onMouseEnter={showOnHover}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={showOnHover}
+        onBlur={() => setHovered(false)}
+      >
+        <button
+          type="button"
+          className="usage-breakdown-events-summary-button"
+          aria-label={i18n.t("usage.eventsSummary")}
+          aria-expanded={visible}
+          onClick={() => {
+            updatePosition();
+            setPinned((current) => !current);
+          }}
+        >
+          <CircleHelp size={12} aria-hidden />
+        </button>
+      </span>
+      {popover}
+    </>
+  );
+}
+
 function ViewToggle({
   view,
   onChange,
   compact,
   showEvents,
+  eventsSummary,
 }: {
   view: BreakdownView;
   onChange: (view: BreakdownView) => void;
   compact: boolean;
   showEvents: boolean;
+  eventsSummary?: LedgerEventSummary;
 }) {
   return (
     <div
@@ -480,15 +777,25 @@ function ViewToggle({
         {i18n.t("usage.byAgent")}
       </button>
       {showEvents ? (
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "events"}
-          className={view === "events" ? "active" : undefined}
-          onClick={() => onChange("events")}
+        <span
+          className={[
+            "usage-breakdown-events-tab-shell",
+            view === "events" ? "is-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
-          {i18n.t("usage.events")}
-        </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "events"}
+            className="usage-breakdown-events-tab"
+            onClick={() => onChange("events")}
+          >
+            {i18n.t("usage.events")}
+          </button>
+          {eventsSummary ? <EventsSummaryInfo summary={eventsSummary} /> : null}
+        </span>
       ) : null}
     </div>
   );
@@ -507,6 +814,10 @@ export function UsageBreakdownPanel({
   const [ledgerEvents, setLedgerEvents] = useState<ThreadUsageLedgerEventView[]>([]);
   const compact = variant === "compact";
   const showEvents = Boolean(threadId && window.eco?.listUsageLedgerEvents);
+  const eventsSummary = useMemo(
+    () => buildLedgerEventSummary(ledgerEvents, billing),
+    [billing, ledgerEvents],
+  );
 
   useEffect(() => {
     if (!threadId || !window.eco?.listUsageLedgerEvents) {
@@ -569,7 +880,13 @@ export function UsageBreakdownPanel({
         </button>
         {expanded ? (
           <div className="usage-breakdown-compact-body">
-            <ViewToggle view={view} onChange={setView} compact showEvents={showEvents} />
+            <ViewToggle
+              view={view}
+              onChange={setView}
+              compact
+              showEvents={showEvents}
+              {...(eventsSummary && { eventsSummary })}
+            />
             {breakdownBody}
           </div>
         ) : null}
@@ -586,7 +903,13 @@ export function UsageBreakdownPanel({
       summary={summary}
       defaultExpanded
     >
-      <ViewToggle view={view} onChange={setView} compact={false} showEvents={showEvents} />
+      <ViewToggle
+        view={view}
+        onChange={setView}
+        compact={false}
+        showEvents={showEvents}
+        {...(eventsSummary && { eventsSummary })}
+      />
       {breakdownBody}
     </ExpandableBillingSection>
   );

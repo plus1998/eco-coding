@@ -1,4 +1,4 @@
-import { AlertTriangle, DollarSign, HardDrive, ListTodo, X } from "lucide-react";
+import { AlertTriangle, ListTodo, X } from "lucide-react";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import {
   type CSSProperties,
@@ -13,8 +13,11 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
-import { formatSavingsLine } from "@eco/runtime/billing";
-import { formatCostUsd, formatTokenCount, formatUsageBadge } from "@eco/runtime/usage";
+import {
+  formatCostUsd,
+  formatUsageBadge,
+  shortenModelId,
+} from "@eco/runtime/usage";
 import type {
   BillingUsageSource,
   CoderTodoItem,
@@ -55,6 +58,35 @@ export interface ThreadUsageSummary {
   contextTokens?: number;
 }
 
+export function shouldShowBillingSavings(savedUsd: number): boolean {
+  return savedUsd !== 0;
+}
+
+export function formatBillingCacheHitRate(billing: ThreadBillingSnapshot): string {
+  const cacheRead = Math.max(0, billing.totalTokens.cacheRead);
+  const promptTokens =
+    Math.max(0, billing.totalTokens.input) +
+    cacheRead +
+    Math.max(0, billing.totalTokens.cacheCreation);
+  const ratio = promptTokens > 0 ? cacheRead / promptTokens : 0;
+  return `${Math.round(ratio * 100)}%`;
+}
+
+export function resolveBillingMainModelLabel(
+  billing: ThreadBillingSnapshot | undefined,
+  agentModelLabels: readonly ComposerAgentModelLabel[] | undefined,
+  fallback: string,
+): string {
+  const selectedMainModel = agentModelLabels
+    ?.find((label) => label.main)
+    ?.modelId?.trim();
+  if (selectedMainModel) {
+    return shortenModelId(selectedMainModel);
+  }
+  const billedMainModel = billing?.plannerModelLabel?.split(" · ")[0]?.trim();
+  return billedMainModel || fallback;
+}
+
 interface ThreadInfoPanelProps {
   threadId?: string;
   workspace?: WorkspaceInfo;
@@ -87,31 +119,6 @@ interface ThreadInfoPanelProps {
   promptCacheInvalidated?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
-}
-
-function formatCacheCostSuffix(billing: ThreadBillingSnapshot): {
-  label: string;
-  title: string;
-} | null {
-  const breakdown = billing.ecoCostBreakdown;
-  const cacheRead = billing.totalTokens.cacheRead;
-  const cacheCreation = billing.totalTokens.cacheCreation;
-  if (!breakdown || (cacheRead <= 0 && cacheCreation <= 0)) {
-    return null;
-  }
-  const cacheUsd = breakdown.cacheReadUsd + breakdown.cacheCreationUsd;
-  const cachePct = billing.ecoCostUsd > 0 ? (cacheUsd / billing.ecoCostUsd) * 100 : 0;
-  const detail: string[] = [];
-  if (cacheRead > 0) {
-    detail.push(i18n.t("billing.cacheRead", { count: formatTokenCount(cacheRead) }));
-  }
-  if (cacheCreation > 0) {
-    detail.push(i18n.t("billing.cacheWrite", { count: formatTokenCount(cacheCreation) }));
-  }
-  return {
-    label: `${formatCostUsd(cacheUsd)}（${cachePct.toFixed(0)}%）`,
-    title: i18n.t("billing.cacheCost", { detail: detail.join(" · ") }),
-  };
 }
 
 function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBillingSnapshot {
@@ -404,7 +411,6 @@ function BillingFloatingCard({
   threadStatus,
   tokenBadge,
   plannerLabel,
-  cacheCostSuffix,
   showBilling,
   agentDisplayNames,
   onDismiss,
@@ -414,16 +420,17 @@ function BillingFloatingCard({
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
-  cacheCostSuffix: ReturnType<typeof formatCacheCostSuffix>;
   showBilling: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   onDismiss: () => void;
 }) {
+  const showComparison = Boolean(billing && shouldShowBillingSavings(billing.savedUsd));
+
   return (
     <div className="thread-info-float-card thread-info-billing-card">
       <div className="thread-info-float-card-header">
         <h4 className="thread-info-float-card-title">
-          {i18n.t("billing.comparison")}
+          {i18n.t(showComparison ? "billing.comparison" : "billing.title")}
         </h4>
         <button
           type="button"
@@ -435,52 +442,68 @@ function BillingFloatingCard({
         </button>
       </div>
 
-      {showBilling && tokenBadge ? (
-        <p
-          className="thread-info-billing-tokens"
-          title={i18n.t("billing.tokenDetail")}
-        >
-          {tokenBadge}
-          {cacheCostSuffix ? (
-            <>
-              {" · "}
-              <HardDrive size={12} className="thread-info-cache-icon" aria-hidden />
-              <span title={cacheCostSuffix.title}>{cacheCostSuffix.label}</span>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-
       {showBilling && billing ? (
-        <ul className="thread-info-billing-list">
-          <li>
-            <span className="thread-info-billing-row-label">
-              <span>{i18n.t("billing.unorchestrated")}</span>
-              <ThreadInfoHelpButton label={i18n.t("billing.unorchestratedHelp")}>
-                {i18n.t("billing.unorchestratedDescription", { model: plannerLabel })}
-              </ThreadInfoHelpButton>
-            </span>
-            <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
-          </li>
-          <li className="thread-info-billing-eco">
-            <span className="thread-info-billing-row-label">
-              <span>{i18n.t("billing.eco")}</span>
-              <ThreadInfoHelpButton label={i18n.t("billing.ecoHelp")}>
-                {i18n.t("billing.ecoDescription")}
-              </ThreadInfoHelpButton>
-            </span>
-            <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
-          </li>
-          <li
-            className={billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"}
-            title="① − ②"
+        <div
+          className={[
+            "thread-info-billing-focus",
+            showComparison ? "is-orchestrated" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <div
+            className="thread-info-billing-focus-tokens"
+            title={i18n.t("billing.tokenDetail")}
           >
-            <span>
-              <DollarSign size={13} aria-hidden />
-              {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
+            {tokenBadge}
+          </div>
+          <div className="thread-info-billing-focus-metrics">
+            <span className="thread-info-billing-focus-metric">
+              <span>{i18n.t("billing.cacheHitRate")}</span>
+              <strong>{formatBillingCacheHitRate(billing)}</strong>
             </span>
-          </li>
-        </ul>
+            <span className="thread-info-billing-focus-metric thread-info-billing-focus-cost">
+              <span className="thread-info-billing-focus-label">
+                <span>{i18n.t("billing.cost")}</span>
+                {showComparison ? (
+                  <ThreadInfoHelpButton label={i18n.t("billing.ecoHelp")}>
+                    {i18n.t("billing.ecoDescription")}
+                  </ThreadInfoHelpButton>
+                ) : null}
+              </span>
+              <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
+            </span>
+          </div>
+          {showComparison ? (
+            <div className="thread-info-billing-comparison">
+              <div
+                className={[
+                  "thread-info-billing-outcome",
+                  billing.savedUsd > 0 ? "is-saving" : "is-over",
+                ].join(" ")}
+              >
+                <span>
+                  {i18n.t(
+                    billing.savedUsd > 0 ? "billing.saved" : "billing.overpaid",
+                  )}
+                </span>
+                <strong>{formatCostUsd(Math.abs(billing.savedUsd))}</strong>
+                <span className="thread-info-billing-outcome-percent">
+                  {Math.abs(billing.savedPct).toFixed(1)}%
+                </span>
+              </div>
+              <div className="thread-info-billing-baseline">
+                <span className="thread-info-billing-focus-label">
+                  <span>{i18n.t("billing.unorchestratedEstimate")}</span>
+                  <ThreadInfoHelpButton label={i18n.t("billing.unorchestratedHelp")}>
+                    {i18n.t("billing.unorchestratedDescription", { model: plannerLabel })}
+                  </ThreadInfoHelpButton>
+                </span>
+                <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
       )}
@@ -711,7 +734,6 @@ export function ThreadInfoFloatStack({
   threadStatus,
   tokenBadge,
   plannerLabel,
-  cacheCostSuffix,
   showBilling,
   context,
   contextPlaceholder,
@@ -728,7 +750,6 @@ export function ThreadInfoFloatStack({
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
-  cacheCostSuffix: ReturnType<typeof formatCacheCostSuffix>;
   showBilling: boolean;
   context?: ThreadContextSnapshot;
   contextPlaceholder: string;
@@ -789,7 +810,6 @@ export function ThreadInfoFloatStack({
                 {...(threadStatus !== undefined && { threadStatus })}
                 tokenBadge={tokenBadge}
                 plannerLabel={plannerLabel}
-                cacheCostSuffix={cacheCostSuffix}
                 showBilling={showBilling}
                 {...(agentDisplayNames && { agentDisplayNames })}
                 onDismiss={closePanel}
@@ -892,8 +912,7 @@ export function ThreadInfoPanel({
         cacheCreationTokens: billing.totalTokens.cacheCreation,
       })
     : null;
-  const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? t("billing.mainModel");
-  const cacheCostSuffix = billing ? formatCacheCostSuffix(billing) : null;
+  const plannerLabel = resolveBillingMainModelLabel(billing, agentModelLabels, t("billing.mainModel"));
   const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
@@ -966,7 +985,6 @@ export function ThreadInfoPanel({
           {...(threadStatus !== undefined && { threadStatus })}
           tokenBadge={tokenBadge}
           plannerLabel={plannerLabel}
-          cacheCostSuffix={cacheCostSuffix}
           showBilling={showBilling}
           {...(usageSummary?.context !== undefined && { context: usageSummary.context })}
           contextPlaceholder={contextCardPlaceholder(threadStatus)}

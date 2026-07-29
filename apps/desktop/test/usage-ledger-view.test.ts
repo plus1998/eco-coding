@@ -13,6 +13,14 @@ test("buildThreadUsageLedgerEventView exposes routeRole billingRole and attribut
     attribution: { status: "pending", reason: PROXY_PENDING_ATTRIBUTION_REASON },
     modelId: "haiku",
     requestKey: "proxy:coder:req_1",
+    computedBilling: {
+      ecoCostUsd: 0.012,
+      plannerTokenCostUsd: 0.033,
+      pricingResolved: true,
+      ecoBreakdown: null,
+      plannerBreakdown: null,
+    },
+    reportedCostUsd: 0.014,
     metadata: {
       routeRole: "coder",
       billingRole: "coder",
@@ -37,6 +45,9 @@ test("buildThreadUsageLedgerEventView exposes routeRole billingRole and attribut
     outputTokens: 100,
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
+    ecoCostUsd: 0.012,
+    reportedCostUsd: 0.014,
+    pricingResolved: true,
     observedAt: event.observedAt,
   });
 });

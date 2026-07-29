@@ -6521,6 +6521,7 @@ function App() {
                     promptCacheInvalidated={promptCacheInvalidated}
                     agentDisplayNames={activeRuntimeAgentDisplayNames}
                     agentThemes={activeRuntimeAgentThemes}
+                    agentModelLabels={agentModelLabels}
                   />
                 ) : null}
                 {composerModelControl}
