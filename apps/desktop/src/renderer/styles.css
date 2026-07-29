@@ -7540,7 +7540,7 @@ button.sidebar-core-heading {
   color: var(--run-log-user-prompt-fg);
   font-family: inherit;
   font-size: 15px;
-  line-height: 1.55;
+  line-height: 1.62;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -8998,6 +8998,10 @@ button.sidebar-core-heading {
   text-decoration-color: var(--markdown-link-decoration);
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
+}
+
+.run-log .markdown-content a {
+  text-decoration: none;
 }
 
 .markdown-content hr {
@@ -18882,7 +18886,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content p,
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ul,
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ol {
-  margin: 0.5em 0;
+  margin: 0.72em 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content li + li {
+  margin-top: 0.35em;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
@@ -18891,7 +18899,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: var(--codex-log-text);
   font-size: var(--codex-feed-font-size);
   font-weight: 400;
-  line-height: 1.55;
+  line-height: 1.68;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .run-log-narrative-body,
@@ -18899,7 +18907,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact p {
   color: var(--codex-log-text);
   font-size: var(--codex-feed-font-size);
-  line-height: 1.6;
+  line-height: 1.68;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative--sticky-final {
@@ -18955,7 +18963,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-reconnect-detail,
 .codex-main:not(.codex-main-landing) .run-log-mission-prompt {
   border: 1px solid var(--border-subtle);
-  background: var(--codex-log-chip);
+  background: var(--codex-log-code-bg);
   color: var(--codex-log-text);
 }
 
@@ -22660,12 +22668,13 @@ body.is-resizing-task-panel {
   --subagent-row-accent: var(--subagent-accent, var(--accent));
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   flex: 0 0 auto;
   min-width: 0;
   max-width: 180px;
   height: 28px;
+  box-sizing: border-box;
   padding: 0 10px;
   border: 0;
   border-radius: 8px;
@@ -22674,7 +22683,9 @@ body.is-resizing-task-panel {
   font-size: 13px;
   font-weight: 650;
   line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
+  overflow: hidden;
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
@@ -22685,14 +22696,24 @@ body.is-resizing-task-panel {
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
+  width: fit-content;
   min-width: 0;
   max-width: 206px;
+  white-space: nowrap;
 }
 
 .subagent-task-panel-tab-shell .subagent-task-panel-tab {
   width: 100%;
   max-width: 100%;
   padding-right: 30px;
+}
+
+.subagent-task-panel-tab > span:not(.subagent-task-panel-tab-meta) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subagent-task-panel-tab.is-active {
@@ -22760,6 +22781,7 @@ body.is-resizing-task-panel {
   position: absolute;
   top: 2px;
   right: 3px;
+  z-index: 1;
   width: 22px;
   height: 22px;
 }

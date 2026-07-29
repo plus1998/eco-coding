@@ -58,6 +58,9 @@ describe("workspace file references", () => {
     expect(linkifyWorkspaceFileReferences("https://example.com/a.ts file:///tmp/a.ts")).toEqual([
       { type: "text", value: "https://example.com/a.ts file:///tmp/a.ts" },
     ]);
+    expect(linkifyWorkspaceFileReferences("输入/输出/缓存明细和事件时间继续作为次级信息展示。")).toEqual([
+      { type: "text", value: "输入/输出/缓存明细和事件时间继续作为次级信息展示。" },
+    ]);
   });
 
   test("checks lexical workspace containment across separators", () => {

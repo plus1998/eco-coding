@@ -70,6 +70,7 @@
   --codex-log-line: #3a3a3a;
   --codex-log-line-subtle: rgba(255, 255, 255, 0.06);
   --codex-log-chip: #303030;
+  --codex-log-code-bg: #303030;
   --codex-log-chip-text: #f1f1f1;
   --codex-log-heading: #9a9a9a;
   --codex-feed-gap-block: 14px;
@@ -256,6 +257,7 @@
   --codex-log-line: #e5e5ea;
   --codex-log-line-subtle: rgba(0, 0, 0, 0.06);
   --codex-log-chip: #f0f0f2;
+  --codex-log-code-bg: #f8f8fa;
   --codex-log-chip-text: #1d1d1f;
   --codex-log-heading: #6e6e73;
   --codex-feed-gap-block: 14px;

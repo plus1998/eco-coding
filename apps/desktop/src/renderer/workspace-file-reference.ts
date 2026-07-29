@@ -24,7 +24,7 @@ export function isWorkspacePathContained(workspacePath: string, targetPath: stri
 export const WORKSPACE_FILE_REFERENCE_EVENT = "eco:workspace-file-reference";
 
 const PATH_PATTERN =
-  /(?<![A-Za-z0-9])(?<!https:)(?<!http:)(?<!file:)(?<!https:\/)(?<!http:\/)(?<!file:\/)(?<!https:\/\/)(?<!http:\/\/)(?<!file:\/\/)(?:\/[^\s"'`()\[\]<>:]+(?:[^\s"'`()\[\]<>:]*)?|[A-Za-z]:[\\/][^\s"'`()\[\]<>:]+(?:[^\s"'`()\[\]<>:]*)?)(?::([1-9]\d*)(?::([1-9]\d*))?)?/g;
+  /(?<![\p{L}\p{N}_])(?<!https:)(?<!http:)(?<!file:)(?<!https:\/)(?<!http:\/)(?<!file:\/)(?<!https:\/\/)(?<!http:\/\/)(?<!file:\/\/)(?:\/[^\s"'`()\[\]<>:]+(?:[^\s"'`()\[\]<>:]*)?|[A-Za-z]:[\\/][^\s"'`()\[\]<>:]+(?:[^\s"'`()\[\]<>:]*)?)(?::([1-9]\d*)(?::([1-9]\d*))?)?/gu;
 
 function trimTrailingPunctuation(value: string): string {
   return value.replace(/[.,;!?)}\]]+$/, "");
