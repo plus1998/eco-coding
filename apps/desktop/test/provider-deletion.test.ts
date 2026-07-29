@@ -4,7 +4,7 @@ import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
 
 const PROVIDER_ID = "provider-a";
 
-test("collects each editable configuration that references a provider", () => {
+test("collects current editable configurations but ignores legacy route profiles", () => {
   const settings = {
     providers: [],
     routeProfiles: [
@@ -39,7 +39,6 @@ test("collects each editable configuration that references a provider", () => {
   } as unknown as ModelSettingsSnapshot;
 
   expect(collectProviderDeleteReferences(PROVIDER_ID, settings, [])).toEqual([
-    { kind: "route_profile", id: "profile-a", name: "Profile A" },
     { kind: "main_agent_config", id: "main-a", name: "Main A" },
     {
       kind: "subagent_orchestration",

@@ -179,40 +179,42 @@ test.skipIf(!sqliteAvailable)("deletes the only unreferenced provider and its ca
   expect(store.listCandidateModels(provider.id)).toEqual([]);
 });
 
-test.skipIf(!sqliteAvailable)("rejects deleting a provider referenced by a route profile", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-route-"));
-  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+test.skipIf(!sqliteAvailable)(
+  "deleting a provider removes legacy route profiles that reference it",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-route-"));
+    const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
 
-  const provider = store.saveProvider({
-    name: "Referenced",
-    baseUrl: "https://api.example.com",
-    apiKey: "k",
-    defaultModel: "m1",
-    enabled: true,
-  });
-  const candidate = store.saveCandidateModel({
-    providerId: provider.id,
-    modelId: "m1",
-  });
-  store.saveRouteProfile({
-    name: "Uses provider",
-    routes: [
-      { role: "planner", providerId: provider.id, modelId: "m1" },
-      { role: "explore", providerId: provider.id, modelId: "m1" },
-      { role: "architect", providerId: provider.id, modelId: "m1" },
-      { role: "coder", providerId: provider.id, modelId: "m1" },
-      { role: "reviewer", providerId: provider.id, modelId: "m1" },
-      { role: "tester", providerId: provider.id, modelId: "m1" },
-    ],
-  });
+    const provider = store.saveProvider({
+      name: "Referenced",
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      defaultModel: "m1",
+      enabled: true,
+    });
+    store.saveCandidateModel({
+      providerId: provider.id,
+      modelId: "m1",
+    });
+    store.saveRouteProfile({
+      name: "Uses provider",
+      routes: [
+        { role: "planner", providerId: provider.id, modelId: "m1" },
+        { role: "explore", providerId: provider.id, modelId: "m1" },
+        { role: "architect", providerId: provider.id, modelId: "m1" },
+        { role: "coder", providerId: provider.id, modelId: "m1" },
+        { role: "reviewer", providerId: provider.id, modelId: "m1" },
+        { role: "tester", providerId: provider.id, modelId: "m1" },
+      ],
+    });
 
-  expect(() => store.deleteProvider(provider.id)).toThrow("referenced by route profile");
-  expect(store.listProviders().map((entry) => entry.id)).toEqual([provider.id]);
-  expect(store.listCandidateModels(provider.id).map((entry) => entry.id)).toEqual([candidate.id]);
-  expect(store.listRouteProfiles()[0]?.routes.every((route) => route.providerId === provider.id)).toBe(
-    true,
-  );
-});
+    store.deleteProvider(provider.id);
+
+    expect(store.listProviders()).toEqual([]);
+    expect(store.listCandidateModels(provider.id)).toEqual([]);
+    expect(store.listRouteProfiles()).toEqual([]);
+  },
+);
 
 test.skipIf(!sqliteAvailable)("deleting an unreferenced provider does not rewrite routes", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-delete-unreferenced-"));

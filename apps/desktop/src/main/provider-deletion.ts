@@ -1,8 +1,4 @@
-import type {
-  ModelSettingsSnapshot,
-  ProviderDeleteReference,
-  ThreadSummary,
-} from "../shared/ipc";
+import type { ModelSettingsSnapshot, ProviderDeleteReference, ThreadSummary } from "../shared/ipc";
 
 const ACTIVE_THREAD_STATUSES = new Set<ThreadSummary["status"]>(["queued", "running"]);
 
@@ -13,16 +9,6 @@ export function collectProviderDeleteReferences(
 ): ProviderDeleteReference[] {
   const targetId = providerId.trim();
   const references: ProviderDeleteReference[] = [];
-
-  for (const profile of settings.routeProfiles) {
-    if (profile.routes.some((route) => route.providerId === targetId)) {
-      references.push({
-        kind: "route_profile",
-        id: profile.id,
-        name: profile.name,
-      });
-    }
-  }
 
   for (const config of settings.mainAgentConfigs) {
     if (config.modelRef.providerId === targetId) {

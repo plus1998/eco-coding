@@ -222,15 +222,17 @@ export class ProviderStore {
       throw new Error(`找不到 Provider：${id}`);
     }
 
-    const referencedRoute = this.db
-      .prepare("SELECT profile_id FROM role_routes WHERE provider_id = ? LIMIT 1")
-      .get(id) as { profile_id: string } | undefined;
-    if (referencedRoute) {
-      throw new Error(`Provider ${id} is referenced by route profile ${referencedRoute.profile_id}.`);
-    }
-
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      // Route profiles are legacy configuration. A profile becomes invalid when any of its
+      // providers is removed, so remove the whole profile instead of leaving partial routes.
+      const referencedProfiles = this.db
+        .prepare("SELECT DISTINCT profile_id FROM role_routes WHERE provider_id = ?")
+        .all(id) as unknown as Array<{ profile_id: string }>;
+      for (const profile of referencedProfiles) {
+        this.db.prepare("DELETE FROM role_routes WHERE profile_id = ?").run(profile.profile_id);
+        this.db.prepare("DELETE FROM route_profiles WHERE id = ?").run(profile.profile_id);
+      }
       this.db.prepare("DELETE FROM provider_candidate_models WHERE provider_id = ?").run(id);
       this.db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
       this.db.exec("COMMIT");

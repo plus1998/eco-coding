@@ -607,7 +607,11 @@ export function GitCommitDialog({
                             onClick={() => handleSelectCandidateModel(option.candidateModelId)}
                           >
                             <CommitModelProviderDot color={option.providerColor} label={option.providerName} />
-                            <span className="git-commit-model-menu-label">{option.modelLabel}</span>
+                            <span className="git-commit-model-menu-label">
+                              <span className="git-commit-model-menu-provider">{option.providerName}</span>
+                              <span aria-hidden> · </span>
+                              <span className="git-commit-model-menu-model">{option.modelLabel}</span>
+                            </span>
                             <CommitModelPricingCompact hint={option.hint} />
                             {isActive ? <Check size={14} aria-hidden /> : null}
                           </button>

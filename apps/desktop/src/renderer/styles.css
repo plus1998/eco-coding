@@ -20557,6 +20557,14 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   white-space: nowrap;
 }
 
+.git-commit-model-menu-provider {
+  color: var(--popover-muted);
+}
+
+.git-commit-model-menu-model {
+  font-weight: 600;
+}
+
 .git-commit-model-menu button.is-active,
 .git-commit-model-menu button:hover {
   background: var(--popover-hover);
