@@ -160,7 +160,7 @@ class _VoiceLevelWave extends StatefulWidget {
 
 class _VoiceLevelWaveState extends State<_VoiceLevelWave>
     with SingleTickerProviderStateMixin {
-  static const _sampleInterval = Duration(milliseconds: 60);
+  static const _sampleInterval = Duration(milliseconds: 75);
   static const _maxHistoryLength = 96;
 
   late final AnimationController _controller;
@@ -168,7 +168,6 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
   double _targetLevel = 0;
   double _displayLevel = 0;
   double _previousPhase = 0;
-  int _sampleIndex = 0;
 
   @override
   void initState() {
@@ -191,17 +190,11 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
     final phase = _controller.value;
     if (phase < _previousPhase) {
       _updateDisplayLevel();
-      final variation =
-          0.68 + 0.32 * math.sin(_sampleIndex * 1.37 + _displayLevel * 4.2);
-      final sample = _displayLevel < 0.012
-          ? 0.01 + 0.006 * (0.5 + 0.5 * math.sin(_sampleIndex * 0.91))
-          : (_displayLevel * variation).clamp(0.025, 1.0);
-      _history.add(sample);
+      _history.add(_displayLevel);
       if (_history.length > _maxHistoryLength) {
         _history.removeRange(0, _history.length - _maxHistoryLength);
       }
-      _targetLevel *= 0.88;
-      _sampleIndex++;
+      _targetLevel *= 0.97;
     }
     _previousPhase = phase;
   }
@@ -209,11 +202,11 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
   double _amplifyLevel(double level) {
     final normalized = level.clamp(0.0, 1.0);
     if (normalized < 0.002) return 0;
-    return (math.pow(normalized, 0.5) * 1.18).clamp(0.0, 1.0);
+    return (math.pow(normalized, 0.62) * 1.32).clamp(0.0, 1.0);
   }
 
   void _updateDisplayLevel() {
-    final response = _targetLevel > _displayLevel ? 0.76 : 0.3;
+    final response = _targetLevel > _displayLevel ? 0.58 : 0.2;
     _displayLevel += (_targetLevel - _displayLevel) * response;
   }
 
@@ -279,55 +272,58 @@ class _VoiceLevelPainter extends CustomPainter {
             ...history,
           ];
 
-    for (var index = 0; index <= count; index++) {
-      final historyLevel = index == count
-          ? currentLevel
-          : visibleHistory[index];
-      final distanceFromRight = count - index;
+    for (var index = 0; index < count; index++) {
+      final historyLevel = visibleHistory[index];
+      final distanceFromRight = count - 1 - index;
       final isLive = distanceFromRight < math.min(_liveBarCount, count);
       final x = (index + 0.5 - scrollProgress) * slotWidth;
       if (x < -slotWidth || x > size.width + slotWidth) continue;
 
-      final livePosition =
-          (_liveBarCount - 1 - distanceFromRight).clamp(0, _liveBarCount - 1) /
-          (_liveBarCount - 1);
-      final liveMotion =
-          0.56 +
-          0.44 *
-              math.sin(
-                scrollProgress * math.pi * 2 + livePosition * math.pi * 2.4,
-              );
-      final liveEnvelope = 0.72 + 0.28 * math.sin(livePosition * math.pi);
-      final liveLevel = math.max(
-        historyLevel,
-        currentLevel * liveMotion * liveEnvelope,
-      );
-      final normalizedLevel = (isLive ? liveLevel : historyLevel).clamp(
-        0.0,
-        1.0,
-      );
-      final height =
-          3.2 + (size.height - 9) * math.pow(normalizedLevel, 0.72).toDouble();
-      final recency = (index / count).clamp(0.0, 1.0);
-      final color = Color.lerp(
-        quietColor,
-        activeColor,
-        (normalizedLevel * 0.65 + recency * 0.18 + (isLive ? 0.17 : 0)).clamp(
+      _paintBar(
+        canvas: canvas,
+        x: x,
+        centerY: centerY,
+        availableHeight: size.height,
+        level: historyLevel,
+        colorMix: (historyLevel * 0.72 + (isLive ? 0.22 : 0.06)).clamp(
           0.0,
           1.0,
         ),
-      )!;
-      final paint = Paint()
-        ..color = color
-        ..strokeWidth = normalizedLevel > 0.04 ? 3.6 : 3.2
-        ..strokeCap = StrokeCap.round;
-
-      canvas.drawLine(
-        Offset(x, centerY - height / 2),
-        Offset(x, centerY + height / 2),
-        paint,
       );
     }
+
+    _paintBar(
+      canvas: canvas,
+      x: size.width - slotWidth / 2,
+      centerY: centerY,
+      availableHeight: size.height,
+      level: currentLevel,
+      colorMix: (currentLevel * 0.72 + 0.24).clamp(0.0, 1.0),
+    );
+  }
+
+  void _paintBar({
+    required Canvas canvas,
+    required double x,
+    required double centerY,
+    required double availableHeight,
+    required double level,
+    required double colorMix,
+  }) {
+    final normalizedLevel = level.clamp(0.0, 1.0);
+    final height =
+        3.2 +
+        (availableHeight - 9) * math.pow(normalizedLevel, 0.78).toDouble();
+    final paint = Paint()
+      ..color = Color.lerp(quietColor, activeColor, colorMix)!
+      ..strokeWidth = normalizedLevel > 0.04 ? 3.6 : 3.2
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(
+      Offset(x, centerY - height / 2),
+      Offset(x, centerY + height / 2),
+      paint,
+    );
   }
 
   @override
