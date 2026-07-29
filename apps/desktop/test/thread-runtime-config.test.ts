@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  buildPresetResourcesFromDefinition,
-  createBuiltInPresetCatalog,
+  buildResourcesFromRouteProfile,
   resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
@@ -24,17 +23,22 @@ import {
   withAgentSessionMode,
 } from "../src/shared/thread-runtime-config";
 
-const codingPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
-if (!codingPreset) {
-  throw new Error("Missing built-in coding preset.");
-}
-
-const presetBundle = buildPresetResourcesFromDefinition(codingPreset, {
+const presetBundle = buildResourcesFromRouteProfile({
+  id: "coding-default",
+  name: "Default coding",
+  routes: [
+    { role: "planner", providerId: "p1", modelId: "m1" },
+    { role: "explore", providerId: "p1", modelId: "m1" },
+    { role: "architect", providerId: "p1", modelId: "m1" },
+    { role: "coder", providerId: "p1", modelId: "m1" },
+    { role: "reviewer", providerId: "p1", modelId: "m1" },
+    { role: "tester", providerId: "p1", modelId: "m1" },
+  ],
+  createdAt: "2026-07-27T00:00:00.000Z",
+  updatedAt: "2026-07-27T00:00:00.000Z",
+}, {
   mainAgentConfigId: "user.coding.main",
-  mainAgentConfigName: "Coding Main",
   subagentOrchestrationId: "user.coding.subagents",
-  subagentOrchestrationName: "Coding Subagents",
-  modelRef: { providerId: "p1", modelId: "m1" },
 });
 
 const settings: ModelSettingsSnapshot = {
@@ -189,7 +193,7 @@ test("serialize and parse round-trip new runtime config", () => {
   });
   const parsed = parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config));
   expect(parsed?.orchestrationSelection).toEqual(presetBundle.selection);
-  expect(parsed?.resolvedOrchestrationSnapshot?.mainAgentConfigName).toBe("Coding Main");
+  expect(parsed?.resolvedOrchestrationSnapshot?.mainAgentConfigName).toBe("Default coding Main Config");
 });
 
 test("isBashReviewModeOnlyRuntimeConfigUpdate ignores bashReviewMode-only changes", () => {
@@ -222,7 +226,7 @@ test("resolveThreadOrchestrationSnapshot prefers stored snapshot", () => {
       defaultOrchestrationSelection: presetBundle.selection,
     },
   });
-  expect(resolveThreadOrchestrationSnapshot(settings, config)?.mainAgentConfigName).toBe("Coding Main");
+  expect(resolveThreadOrchestrationSnapshot(settings, config)?.mainAgentConfigName).toBe("Default coding Main Config");
 });
 
 test("resolveMainAgentSystemPromptPreset honors override", () => {

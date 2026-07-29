@@ -34,7 +34,6 @@ const researcherTemplate: AgentTemplate = {
   id: "builtin.research.researcher",
   name: "Researcher",
   description: "Research agent",
-  domain: "research",
   prompt: "Research.",
   whenToUse: "Use for research.",
   defaultTools: {
@@ -78,7 +77,6 @@ function sampleOrchestrationForm(): AgentResourceFormState {
     {
       id: "user.research.subagents",
       name: "Research Subagents",
-      domain: "research",
       agents: [
         {
           agentKey: "researcher",

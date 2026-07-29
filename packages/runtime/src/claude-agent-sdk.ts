@@ -50,7 +50,7 @@ import {
 } from "./sdk-stream-events.js";
 import { resolveSkillDisplayName } from "./skill-display";
 import { mergeStreamText } from "./stream-text";
-import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import { SubagentRuntimeLimitController } from "./subagent-runtime-limit.js";
 import { mergeSdkDisallowedTools } from "./tool-permission-policy.js";
 import {
@@ -198,11 +198,6 @@ const agentSessionRulesAppend = [
   "Use AskUserQuestion when a missing user decision materially changes the implementation.",
   "Do not call EnterPlanMode or ExitPlanMode. For complex work, keep an internal task breakdown and execute it directly.",
 ].join("\n");
-const universalEcoBasePromptAppend = [
-  "You are running inside Eco, a configurable agent command center.",
-  "Follow the active Eco orchestration and delegate only to the listed Eco subagents.",
-  "Use tools only when they are allowed for the active role and materially help the user's task.",
-].join("\n");
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
 const askSessionPhaseAppend = [
@@ -212,10 +207,6 @@ const askSessionPhaseAppend = [
   "If the user wants code changes, tell them to switch to Agent or Plan mode.",
 ].join("\n");
 const defaultSettingSources = ["project"] as const;
-
-function usesUniversalOrchestration(input: AgentRuntimeRunInput): boolean {
-  return Boolean(input.agentRegistry && input.agentRegistry.orchestration.mainAgent.domain !== "coding");
-}
 
 function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   prompt: string;
@@ -238,28 +229,6 @@ function buildAskSessionPhase(input: AgentRuntimeRunInput): {
   };
 }
 
-/** Universal orchestrations use custom rosters, so the hands-on boundary points at the roster instead of eco_* keys. */
-const universalDelegateOptions = {
-  delegateTarget: "an implementation-capable agent from the active orchestration roster (via Agent(...))",
-} as const;
-
-function buildUniversalPhaseAppend(phase: "plan" | "execute" | "autonomous"): string {
-  if (phase === "plan") {
-    return [
-      "Session mode: plan (read-only).",
-      "Do not implement, edit files, run Bash, run tests, run builds, or delegate implementation in this phase.",
-      "Use AskUserQuestion when a missing user decision materially changes the plan.",
-      "When the spec is decision-complete, submit a complete Markdown plan with ExitPlanMode.",
-      "The ExitPlanMode tool input must include the complete plan in the `plan` field. Do not call ExitPlanMode with `{}` or only `allowedPrompts`.",
-      "Do not use the SDK Workflow tool.",
-    ].join("\n");
-  }
-  const sessionLine = phase === "execute" ? "Session mode: agent (execution)." : "Session mode: agent.";
-  return [sessionLine, agentSessionRulesAppend, "Do not use the SDK Workflow tool."]
-    .filter(Boolean)
-    .join("\n");
-}
-
 function shouldAppendMainAgentHandsOnBoundary(capability: MainAgentHandsOnCapability): boolean {
   return !capability.canEditFiles || !capability.canRunBash;
 }
@@ -268,7 +237,6 @@ function appendMainAgentHandsOnBoundaryIfNeeded(
   baseAppend: string,
   capability: MainAgentHandsOnCapability,
   availability: SubagentAvailability,
-  universalOrchestration: boolean,
 ): string {
   if (!shouldAppendMainAgentHandsOnBoundary(capability)) {
     return baseAppend;
@@ -278,7 +246,7 @@ function appendMainAgentHandsOnBoundaryIfNeeded(
     buildMainAgentHandsOnBoundaryAppend(
       capability,
       availability,
-      universalOrchestration ? universalDelegateOptions : {},
+      {},
     ),
   ]
     .filter(Boolean)
@@ -348,69 +316,6 @@ function capAgentDefinitionsForReadOnlyPhase(
       ];
     }),
   );
-}
-
-function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
-  return [
-    "User follow-up (same Eco planning session):",
-    userPrompt.trim(),
-    "",
-    "Update the analysis and plan as needed.",
-    "If the follow-up reveals new ambiguity, explore first then ask targeted questions before updating the plan.",
-    "When the spec is decision-complete, present a complete replacement Markdown plan and call `ExitPlanMode` rather than producing a delta.",
-    "The `ExitPlanMode` tool input must include the same complete replacement Markdown plan in the `plan` field. Do not call `ExitPlanMode` with `{}` or only `allowedPrompts`.",
-  ].join("\n");
-}
-
-function buildUniversalExecutionPromptWithFollowUp(
-  planning: {
-    userPrompt: string;
-    analysis: string;
-    plan: string;
-    planUserEdited?: boolean;
-    approvedPlanFile?: string;
-    resumableSubagents?: readonly { role: string; agentId: string }[];
-  },
-  followUp: string,
-  options: { isResume: boolean; includePlanOnResume?: boolean },
-): string {
-  const includePlanText = !options.isResume || options.includePlanOnResume === true;
-  const lines = includePlanText
-    ? [
-        "Continue from the approved plan.",
-        "",
-        "Original user request:",
-        planning.userPrompt.trim() || "(not captured)",
-        "",
-        "Approved analysis:",
-        planning.analysis.trim() || "(no analysis captured)",
-        "",
-        "Approved plan:",
-        planning.plan.trim() || "(no plan captured)",
-      ]
-    : ["Continue with the approved plan already submitted in this Eco session."];
-
-  if (planning.planUserEdited) {
-    lines.push(
-      "",
-      "<system-reminder>",
-      "The user edited this plan in Eco before approval. Treat the approved plan as authoritative over earlier drafts.",
-      "</system-reminder>",
-    );
-  }
-
-  if (planning.approvedPlanFile?.trim()) {
-    lines.push("", `On-disk copy (workspace root): ${planning.approvedPlanFile.trim()}`);
-  }
-
-  const trimmed = followUp.trim();
-  if (trimmed && trimmed !== planning.userPrompt.trim()) {
-    lines.push("", "Latest user message:", trimmed);
-  }
-
-  lines.push("", "Use the active Eco orchestration and its listed subagents as needed.");
-  lines.push(formatResumableSubagentsAppend(planning.resumableSubagents ?? []));
-  return lines.join("\n");
 }
 
 export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
@@ -702,7 +607,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     mode: "planning" | "execution" | "ask",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
-    const universalOrchestration = usesUniversalOrchestration(input);
     if (mode === "ask") {
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
       yield* this.runSingleSession(input, buildAskSessionPhase(input));
@@ -711,33 +615,18 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.orchestration);
-    const planFile = planning?.planFilePath?.trim()
-      ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
-      : undefined;
     const isSdkResume = Boolean(input.resume?.resumeSessionId);
     const continuationPrompt =
       mode === "execution" && planning
-        ? universalOrchestration
-          ? buildUniversalExecutionPromptWithFollowUp(
-              {
-                ...planning,
-                ...(planFile ? { approvedPlanFile: planFile } : {}),
-                ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
-              },
-              input.prompt,
-              { isResume: isSdkResume, includePlanOnResume: planning.planUserEdited === true },
-            )
-          : buildAutonomousPlanContinuationPrompt({
-              userPrompt: planning.userPrompt,
-              analysis: planning.analysis,
-              plan: planning.plan,
-              ...(planning.planUserEdited ? { planUserEdited: true } : {}),
-              followUp: input.prompt,
-              isResume: isSdkResume,
-            })
-        : mode === "planning" && universalOrchestration
-          ? buildUniversalPlanningContinuationPrompt(input.prompt)
-          : input.prompt;
+        ? buildAutonomousPlanContinuationPrompt({
+            userPrompt: planning.userPrompt,
+            analysis: planning.analysis,
+            plan: planning.plan,
+            ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+            followUp: input.prompt,
+            isResume: isSdkResume,
+          })
+        : input.prompt;
     yield createPhaseBoundaryEvent(
       input.threadId,
       mode === "execution" ? "execute" : "plan",
@@ -755,12 +644,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : {}),
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalOrchestration
-          ? buildUniversalPhaseAppend("execute")
-          : [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
+        [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
         handsOn,
         availability,
-        universalOrchestration,
       ),
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
@@ -769,14 +655,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 
   private async *runPlanningPass(input: AgentRuntimeRunInput, prompt: string): AsyncIterable<AgentEvent> {
-    const universalOrchestration = usesUniversalOrchestration(input);
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const sessionResult = yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "plan",
       planningPhase: true,
       allowedTools: [...planningContinuationAllowedTools],
-      phaseAppend: universalOrchestration ? buildUniversalPhaseAppend("plan") : buildAutonomousPlanningAppend(),
+      phaseAppend: buildAutonomousPlanningAppend(),
       agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -795,7 +680,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    const universalOrchestration = usesUniversalOrchestration(input);
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.orchestration);
     yield* this.runSingleSession(input, {
@@ -803,12 +687,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: appendMainAgentHandsOnBoundaryIfNeeded(
-        universalOrchestration
-          ? buildUniversalPhaseAppend("autonomous")
-          : [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
+        [buildAutonomousOrchestratorAppend(), "Session mode: agent.", agentSessionRulesAppend].join("\n"),
         handsOn,
         availability,
-        universalOrchestration,
       ),
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
@@ -838,7 +719,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const systemAppend = [
-      usesUniversalOrchestration(input) ? universalEcoBasePromptAppend : resolveCodingBasePromptAppend(phase),
+      resolveCodingBasePromptAppend(phase),
       phase.phaseAppend,
     ]
       .filter(Boolean)
@@ -862,7 +743,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? filterDynamicDefinitionsForPhase(
             availableDynamicDefinitions ?? {},
             phase.agents,
-            input.agentRegistry.orchestration.mainAgent.domain,
             phase.dynamicAgentKeys,
           )
         : undefined;
@@ -1550,14 +1430,13 @@ export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
 function filterDynamicDefinitionsForPhase(
   definitions: Record<string, unknown>,
   phaseDefinitions: Record<string, unknown> | undefined,
-  mainAgentDomain: string,
   explicitAgentKeys?: readonly string[],
 ): Record<string, unknown> {
   if (explicitAgentKeys) {
     const explicit = new Set(explicitAgentKeys);
     return Object.fromEntries(Object.entries(definitions).filter(([key]) => explicit.has(key)));
   }
-  if (mainAgentDomain !== "coding" || !phaseDefinitions) {
+  if (!phaseDefinitions) {
     return definitions;
   }
   const allowedKeys = new Set(Object.keys(phaseDefinitions));

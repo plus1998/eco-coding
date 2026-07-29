@@ -11,7 +11,6 @@ function template(): AgentTemplate {
     id: "user.researcher",
     name: "Researcher",
     description: "Research agent",
-    domain: "research",
     prompt: "Research.",
     whenToUse: "Use for research.",
     defaultTools: { allowed: ["WebSearch"], disallowed: [] },

@@ -5,7 +5,7 @@ import {
   resolveSubagentRowThemeStyle,
 } from "../src/renderer/runtime-agent-theme";
 import {
-  buildPresetResourcesFromRouteProfile,
+  buildResourcesFromRouteProfile,
   createBuiltInAgentTemplates,
   resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
@@ -27,7 +27,7 @@ const routeProfile: RouteProfileView = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-const bundle = buildPresetResourcesFromRouteProfile(routeProfile, {
+const bundle = buildResourcesFromRouteProfile(routeProfile, {
   mainAgentConfigId: "main.coding",
   subagentOrchestrationId: "subagents.coding",
 });

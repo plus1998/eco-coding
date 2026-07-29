@@ -27,7 +27,6 @@ ModelSettingsSnapshot _settings() {
         id: 'main-1',
         name: 'Orchestration',
         agentKey: 'main',
-        domain: 'coding',
         modelRef: const OrchestrationModelRef(
           providerId: 'provider-1',
           modelId: 'gpt-5.6-sol',
@@ -39,7 +38,6 @@ ModelSettingsSnapshot _settings() {
       SubagentOrchestrationResource(
         id: 'orch-1',
         name: 'Subagents',
-        domain: 'coding',
         agents: [],
         strategy: OrchestrationStrategy(kind: 'autonomous'),
       ),

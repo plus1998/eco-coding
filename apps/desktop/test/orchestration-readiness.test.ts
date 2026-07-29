@@ -35,7 +35,6 @@ function orchestrationSnapshot(agentEnabled: boolean): ResolvedOrchestrationSnap
     mainAgent: {
       agentKey: "main",
       name: "Main",
-      domain: "custom",
       systemPromptPreset: "custom_append",
       prompt: "Lead.",
       modelRef: { providerId: "p1", modelId: "main-model" },

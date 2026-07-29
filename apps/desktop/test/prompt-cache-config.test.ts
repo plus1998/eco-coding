@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
 import {
-  buildPresetResourcesFromDefinition,
-  createBuiltInPresetCatalog,
+  buildResourcesFromRouteProfile,
   resolveOrchestrationSnapshot,
-  type PresetResourceBundle,
+  type OrchestrationResourceBundle,
 } from "../src/shared/agent-orchestration";
 import type { McpServerConfigView, ModelSettingsSnapshot } from "../src/shared/ipc";
 import {
@@ -16,18 +15,23 @@ import {
 } from "../src/shared/prompt-cache-config";
 import type { ThreadRuntimeConfig } from "../src/shared/thread-runtime-config";
 
-const codingPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
-if (!codingPreset) {
-  throw new Error("Missing built-in coding preset.");
-}
-
-function bundle(id: string): PresetResourceBundle {
-  return buildPresetResourcesFromDefinition(codingPreset!, {
+function bundle(id: string): OrchestrationResourceBundle {
+  return buildResourcesFromRouteProfile({
+    id: "coding-default",
+    name: "Default coding",
+    routes: [
+      { role: "planner", providerId: "p1", modelId: "m1" },
+      { role: "explore", providerId: "p1", modelId: "m1" },
+      { role: "architect", providerId: "p1", modelId: "m1" },
+      { role: "coder", providerId: "p1", modelId: "m1" },
+      { role: "reviewer", providerId: "p1", modelId: "m1" },
+      { role: "tester", providerId: "p1", modelId: "m1" },
+    ],
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+  }, {
     mainAgentConfigId: `${id}.main`,
-    mainAgentConfigName: `${id} Main`,
     subagentOrchestrationId: `${id}.subagents`,
-    subagentOrchestrationName: `${id} Subagents`,
-    modelRef: { providerId: "p1", modelId: "m1" },
     updatedAt: "2026-07-27T00:00:00.000Z",
   });
 }
@@ -73,7 +77,7 @@ const mcpServers = [
 ] as McpServerConfigView[];
 
 function config(
-  resourceBundle: PresetResourceBundle = bundleA,
+  resourceBundle: OrchestrationResourceBundle = bundleA,
   overrides: Partial<ThreadRuntimeConfig> = {},
 ): ThreadRuntimeConfig {
   const snapshot = resolveOrchestrationSnapshot(resourceBundle.selection, {
@@ -170,7 +174,7 @@ test("orchestration label and model stack use snapshot display names", () => {
   runtimeConfig.resolvedOrchestrationSnapshot = snapshot;
   expect(resolvePromptCacheOrchestrationLabel(settings, runtimeConfig)).toEqual({
     modelStack: "GPT+DeepSeek",
-    orchestrationName: "a Main / 内置提示词 / a Subagents",
+    orchestrationName: "Default coding Main Config / 内置提示词 / Default coding Subagents",
   });
   expect(formatSnapshotModelStack(snapshot, settings.providers)).toBe("GPT+DeepSeek");
 });

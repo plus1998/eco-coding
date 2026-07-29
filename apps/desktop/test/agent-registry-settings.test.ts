@@ -14,7 +14,6 @@ function customTemplate(id: string): AgentTemplate {
     id,
     name: "Custom Researcher",
     description: "Custom research agent",
-    domain: "research",
     prompt: "Research the topic.",
     whenToUse: "Use for research.",
     defaultTools: { allowed: ["WebSearch"], disallowed: [] },
@@ -32,7 +31,6 @@ function customMainAgentConfig(id: string): MainAgentConfigResource {
     id,
     name: "Main Config",
     agentKey: "main",
-    domain: "research",
     modelRef: { providerId: "p1", modelId: "m1" },
     tools: { allowed: ["Agent"], disallowed: [] },
     skills: [],
@@ -56,7 +54,6 @@ function customSubagentOrchestration(id: string): SubagentOrchestrationResource 
   return {
     id,
     name: "Subagents",
-    domain: "research",
     agents: [],
     strategy: { kind: "autonomous" },
     updatedAt: "2026-01-01T00:00:00.000Z",

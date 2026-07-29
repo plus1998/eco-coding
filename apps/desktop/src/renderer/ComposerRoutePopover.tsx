@@ -215,7 +215,7 @@ export function ComposerRouteCardBody({
           onClick={onOpenFullSettings}
         >
           <Settings2 size={15} strokeWidth={1.75} aria-hidden />
-          <span>{t("settings.models.builder")}</span>
+                <span>{t("settings.orchestrationComponents")}</span>
         </button>
       </div>
     </div>

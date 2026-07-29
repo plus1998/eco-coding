@@ -23,8 +23,7 @@ import {
   mainCapabilityFromResourceForm,
   mainCapabilityPatchToResourceForm,
 } from "./agent-resource-form";
-import { formatAgentDomainLabel } from "./orchestration-summary";
-import { AGENT_DOMAIN_OPTIONS, buildAgentTemplateCapabilityOptions } from "./agent-template-form";
+import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
@@ -274,29 +273,7 @@ export function AgentResourceEditorModal({
                   onChange={(event) => patchName(event.target.value)}
                 />
               </label>
-              {scope !== "prompt" ? (
-                <label className="mcp-field">
-                  <span className="mcp-field-label">{t("settings.models.editor.domain")}</span>
-                  <select
-                    className="mcp-field-input"
-                    value={form.preset}
-                    disabled={busy}
-                    onChange={(event) =>
-                      patch({ preset: event.target.value as AgentResourceFormState["preset"] })
-                    }
-                  >
-                    {AGENT_DOMAIN_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
               <div className="models-agent-resource-meta-badges">
-                {scope === "prompt" ? null : (
-                  <span className="models-agent-domain-badge">{formatAgentDomainLabel(form.preset)}</span>
-                )}
                 <span className="models-agent-source-badge">
                   {form.source === "project"
                     ? t("settings.models.editor.project")
@@ -718,11 +695,9 @@ function SubagentRosterAgentConfigModal({
           <div className="models-agent-resource-template-summary">
             <div className="models-agent-resource-title-row">
               <span className="models-route-role">{template?.name ?? agent.displayName ?? agent.agentKey}</span>
-              {template ? (
-                <span className="models-agent-domain-badge">{formatAgentDomainLabel(template.domain)}</span>
-              ) : (
+              {!template ? (
                 <span className="models-agent-source-badge">{t("settings.models.editor.templateMissing")}</span>
-              )}
+              ) : null}
               <span className="models-route-role-id">{agent.agentKey}</span>
             </div>
             <p className="models-subagent-card-desc">
@@ -800,4 +775,3 @@ function SubagentRosterAgentConfigModal({
     </div>
   );
 }
-

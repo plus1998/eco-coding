@@ -1020,50 +1020,6 @@
   color: var(--text-muted);
 }
 
-.settings-page .models-preset-name {
-  color: var(--text-primary);
-}
-
-.settings-page .models-preset-description,
-.settings-page .models-preset-model-suggestion,
-.settings-page .models-preset-focus p {
-  color: var(--text-muted);
-}
-
-.settings-page .models-preset-metrics span {
-  border-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
-  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
-  color: var(--text-muted);
-}
-
-.settings-page .models-preset-metrics strong {
-  color: var(--text-primary);
-}
-
-.settings-page .models-preset-focus {
-  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
-  background: var(--accent-soft);
-}
-
-.settings-page .models-preset-focus span {
-  color: var(--accent-text);
-}
-
-.settings-page .models-preset-template {
-  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
-  color: var(--text-secondary);
-}
-
-.settings-page .models-preset-template.is-extra {
-  color: var(--text-muted);
-}
-
-.settings-page .models-preset-template.is-missing {
-  border-color: var(--status-deny-border);
-  background: var(--status-deny-bg);
-  color: var(--status-deny-text);
-}
-
 .settings-page .models-route-profile-section-title {
   color: var(--text-primary);
 }

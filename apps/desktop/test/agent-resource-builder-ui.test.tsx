@@ -44,7 +44,7 @@ test("Orchestration editor renders roster list with default Explore", () => {
   const markup = renderOrchestrationEditor(true);
   expect(markup).toContain('aria-label="子代理 roster"');
   expect(markup).toContain("Explore");
-  expect(markup).toContain('aria-label="配置 Explore"');
+  expect(markup).toContain('aria-label="编辑 Explore"');
   expect(markup).toContain('aria-label="移除 Explore"');
   expect(markup).not.toContain('aria-label="智能体库"');
 });

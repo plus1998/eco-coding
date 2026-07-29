@@ -13,7 +13,6 @@ const jsChecks = [
   { label: "Agent Profile visual canvas", value: "Agent Profile 画布" },
   { label: "Provider tab", value: "Provider" },
   { label: "Proxy bridge tab", value: "代理桥" },
-  { label: "Presets tab", value: "场景预设" },
   { label: "Workflow run monitor", value: "子代理编排" },
 ];
 

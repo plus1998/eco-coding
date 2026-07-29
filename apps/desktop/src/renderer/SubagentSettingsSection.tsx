@@ -1,9 +1,8 @@
 import { Copy, Download, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AgentDomain, AgentTemplate, McpServerConfigView } from "../shared/ipc";
+import type { AgentTemplate, McpServerConfigView } from "../shared/ipc";
 import {
-  AGENT_DOMAIN_OPTIONS,
   type AgentTemplateFormState,
   agentTemplateToForm,
   buildAgentTemplateCapabilityOptions,
@@ -11,13 +10,10 @@ import {
   buildAgentTemplatePermissionChips,
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
-  formatAgentDomain,
   formatAgentSource,
 } from "./agent-template-form";
 import { i18n } from "./i18n";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
-
-const DOMAIN_ORDER: AgentDomain[] = ["coding", "research", "writing", "product", "data", "ops", "custom"];
 
 interface SubagentSettingsSectionProps {
   templates: AgentTemplate[];
@@ -44,10 +40,6 @@ export function SubagentSettingsSection({
   const sortedTemplates = useMemo(
     () =>
       [...templates].sort((left, right) => {
-        const domainDelta = DOMAIN_ORDER.indexOf(left.domain) - DOMAIN_ORDER.indexOf(right.domain);
-        if (domainDelta !== 0) {
-          return domainDelta;
-        }
         const sourceDelta = sourceRank(left) - sourceRank(right);
         if (sourceDelta !== 0) {
           return sourceDelta;
@@ -236,7 +228,6 @@ export function SubagentSettingsSection({
                     <div className="models-agent-template-title-row">
                       <span className="models-route-role">{template.name}</span>
                       <span className="models-route-role-id">{template.id}</span>
-                      <span className="models-agent-domain-badge">{formatAgentDomain(template.domain)}</span>
                       <span className="models-agent-source-badge">{formatAgentSource(template)}</span>
                     </div>
                     <p className="models-subagent-card-desc">{template.description}</p>
@@ -430,21 +421,6 @@ function AgentTemplateEditorModal({
                     disabled={busy}
                     onChange={(event) => patchForm({ name: event.target.value })}
                   />
-                </label>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">{t("subagentSettings.domain")}</span>
-                  <select
-                    className="mcp-field-input"
-                    value={form.domain}
-                    disabled={busy}
-                    onChange={(event) => patchForm({ domain: event.target.value as AgentDomain })}
-                  >
-                    {AGENT_DOMAIN_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
                 </label>
               </div>
 

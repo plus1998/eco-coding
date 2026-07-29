@@ -3,7 +3,6 @@ import {
   createBuiltInAgentTemplates,
   resolveAgentTemplateCatalog,
   type AgentConfigSource,
-  type AgentDomain,
   type AgentInstanceConfig,
   type AgentTemplate,
   type MainAgentConfigResource,
@@ -42,7 +41,6 @@ export interface AgentResourceAgentFormState extends AgentResourceAgentCapabilit
 export interface AgentResourceFormState {
   id: string;
   name: string;
-  preset: AgentDomain;
   source: Extract<AgentConfigSource, "user" | "project">;
   mainName: string;
   mainProviderId: string;
@@ -188,7 +186,6 @@ export function createBlankAgentResourceForm(options: ResourceFormOptions = {}):
       i18n.t("orchestrationResource.customResourceName"),
       options.existingNames ?? [],
     ),
-    preset: "custom",
     source: "user",
     mainName: i18n.t("settings.models.mainAgent"),
     mainProviderId: provider?.id ?? "",
@@ -240,7 +237,6 @@ export function createBlankSubagentOrchestrationForm(options: ResourceFormOption
     ...form,
     id: createUniqueResourceId("user.custom.orchestration", options.existingIds ?? []),
     name: createUniqueResourceName("子代理编排", options.existingNames ?? []),
-    preset: "coding",
     mainProviderId: "",
     mainModelId: "",
     mainCandidateModelId: "",
@@ -257,7 +253,6 @@ export function mainAgentConfigToForm(config: MainAgentConfigResource): AgentRes
   return {
     id: config.id,
     name: config.name,
-    preset: config.domain,
     source: config.source === "project" ? "project" : "user",
     mainName: config.name,
     mainProviderId: config.modelRef.providerId,
@@ -295,7 +290,6 @@ export function subagentOrchestrationToForm(
     ...blank,
     id: orchestration.id,
     name: orchestration.name,
-    preset: orchestration.domain,
     source: orchestration.source === "project" ? "project" : "user",
     guidancePrompt: orchestration.strategy.guidancePrompt ?? "",
     agents: orchestration.agents.map((agent) => agentInstanceToForm(agent)),
@@ -390,7 +384,6 @@ export function buildMainAgentConfigFromForm(
     id,
     name,
     agentKey: "main",
-    domain: form.preset,
     modelRef: buildModelRef(form.mainProviderId, form.mainModelId, {
       thinkingEffort: form.mainThinkingEffort,
       apiCompat: form.mainApiCompat,
@@ -459,7 +452,6 @@ export function buildSubagentOrchestrationFromForm(
   return {
     id,
     name,
-    domain: form.preset,
     agents,
     strategy: buildStrategyFromForm(form),
     updatedAt: options.nowIso ?? new Date().toISOString(),

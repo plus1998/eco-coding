@@ -1,5 +1,4 @@
 import type {
-  AgentDomain,
   AgentTemplate,
   McpServerConfigView,
   ToolPolicy,
@@ -26,21 +25,10 @@ export {
 } from "./tool-capability-groups";
 export { parseList, formatList } from "./agent-template-form-utils";
 
-export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> = [
-  { value: "coding", label: "Coding" },
-  { value: "research", label: "Research" },
-  { value: "writing", label: "Writing" },
-  { value: "product", label: "Product" },
-  { value: "data", label: "Data" },
-  { value: "ops", label: "Ops" },
-  { value: "custom", label: "Custom" },
-];
-
 export interface AgentTemplateFormState extends ToolCapabilityFieldValues {
   id: string;
   name: string;
   description: string;
-  domain: AgentDomain;
   prompt: string;
   whenToUse: string;
   outputContract: string;
@@ -77,7 +65,6 @@ export function createBlankAgentTemplateForm(
     ),
     name: "",
     description: "",
-    domain: "custom",
     prompt: "",
     whenToUse: "",
     outputContract: "",
@@ -94,7 +81,6 @@ export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormS
     id: template.id,
     name: template.name,
     description: template.description,
-    domain: template.domain,
     prompt: template.prompt,
     whenToUse: template.whenToUse,
     outputContract: template.outputContract ?? "",
@@ -107,7 +93,7 @@ export function createCopiedAgentTemplateForm(
   existingTemplates: readonly AgentTemplate[],
 ): AgentTemplateFormState {
   const form = agentTemplateToForm(template);
-  const baseId = `user.${template.domain}.${slugifyTemplateId(template.name) || "agent"}`;
+  const baseId = `user.custom.${slugifyTemplateId(template.name) || "agent"}`;
   return {
     ...form,
     id: createUniqueTemplateId(
@@ -139,7 +125,6 @@ export function buildAgentTemplateFromForm(
     id,
     name,
     description,
-    domain: form.domain,
     prompt,
     whenToUse,
     ...(form.outputContract.trim() ? { outputContract: form.outputContract.trim() } : {}),
@@ -162,10 +147,6 @@ export function createUniqueTemplateId(baseId: string, existingIds: readonly str
     suffix += 1;
   }
   return candidate;
-}
-
-export function formatAgentDomain(domain: AgentDomain): string {
-  return AGENT_DOMAIN_OPTIONS.find((option) => option.value === domain)?.label ?? domain;
 }
 
 export function formatAgentSource(template: AgentTemplate): string {

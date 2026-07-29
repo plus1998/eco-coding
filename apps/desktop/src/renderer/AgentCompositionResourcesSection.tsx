@@ -264,7 +264,7 @@ export function AgentCompositionResourcesSection({
                 <div className="mcp-server-summary">
                   <span className="mcp-server-name">{config.name}</span>
                   <span className="mcp-server-meta">
-                    {config.domain} · {config.modelRef.providerId}:{config.modelRef.modelId}
+                    {config.modelRef.providerId}:{config.modelRef.modelId}
                   </span>
                 </div>
                 <div className="mcp-server-actions">
@@ -385,7 +385,7 @@ export function AgentCompositionResourcesSection({
                 <div className="mcp-server-summary">
                   <span className="mcp-server-name">{orchestration.name}</span>
                   <span className="mcp-server-meta">
-                    {orchestration.domain} · {t("settings.models.resources.agentCount", { count: orchestration.agents.length })}
+                    {t("settings.models.resources.agentCount", { count: orchestration.agents.length })}
                   </span>
                 </div>
                 <div className="mcp-server-actions">

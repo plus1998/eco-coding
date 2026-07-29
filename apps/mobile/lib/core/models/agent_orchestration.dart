@@ -224,7 +224,6 @@ class MainAgentConfigResource {
     required this.id,
     required this.name,
     required this.agentKey,
-    required this.domain,
     required this.modelRef,
     required this.tools,
     this.skills = const [],
@@ -237,7 +236,6 @@ class MainAgentConfigResource {
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         agentKey: json['agentKey'] as String? ?? 'main',
-        domain: json['domain'] as String? ?? 'coding',
         modelRef: OrchestrationModelRef.fromJson(
           json['modelRef'] as Map<String, dynamic>? ?? const {},
         ),
@@ -252,7 +250,6 @@ class MainAgentConfigResource {
   final String id;
   final String name;
   final String agentKey;
-  final String domain;
   final OrchestrationModelRef modelRef;
   final ToolPolicy tools;
   final List<String> skills;
@@ -348,7 +345,6 @@ class MainAgentConfig {
   const MainAgentConfig({
     required this.agentKey,
     required this.name,
-    required this.domain,
     required this.systemPromptPreset,
     required this.prompt,
     required this.modelRef,
@@ -360,7 +356,6 @@ class MainAgentConfig {
       MainAgentConfig(
         agentKey: json['agentKey'] as String? ?? 'main',
         name: json['name'] as String? ?? '',
-        domain: json['domain'] as String? ?? 'coding',
         systemPromptPreset:
             json['systemPromptPreset'] as String? ?? 'core_native',
         prompt: json['prompt'] as String? ?? '',
@@ -375,7 +370,6 @@ class MainAgentConfig {
 
   final String agentKey;
   final String name;
-  final String domain;
   final String systemPromptPreset;
   final String prompt;
   final OrchestrationModelRef modelRef;
@@ -387,7 +381,6 @@ class SubagentOrchestrationResource {
   const SubagentOrchestrationResource({
     required this.id,
     required this.name,
-    required this.domain,
     required this.agents,
     required this.strategy,
     this.updatedAt = '',
@@ -398,7 +391,6 @@ class SubagentOrchestrationResource {
       SubagentOrchestrationResource(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
-        domain: json['domain'] as String? ?? 'coding',
         agents: (json['agents'] as List<dynamic>? ?? const [])
             .map(
               (entry) =>
@@ -414,7 +406,6 @@ class SubagentOrchestrationResource {
 
   final String id;
   final String name;
-  final String domain;
   final List<AgentInstanceConfig> agents;
   final OrchestrationStrategy strategy;
   final String updatedAt;
@@ -466,7 +457,6 @@ class ResolvedOrchestrationSnapshot {
     'mainAgent': {
       'agentKey': mainAgent.agentKey,
       'name': mainAgent.name,
-      'domain': mainAgent.domain,
       'systemPromptPreset': mainAgent.systemPromptPreset,
       'prompt': mainAgent.prompt,
       'modelRef': mainAgent.modelRef.toJson(),
@@ -602,7 +592,6 @@ MainAgentConfig materializeMainAgentConfig(
     return MainAgentConfig(
       agentKey: config.agentKey,
       name: config.name,
-      domain: config.domain,
       systemPromptPreset: 'core_native',
       prompt: '',
       modelRef: config.modelRef,
@@ -627,7 +616,6 @@ MainAgentConfig materializeMainAgentConfig(
   return MainAgentConfig(
     agentKey: config.agentKey,
     name: config.name,
-    domain: config.domain,
     systemPromptPreset: 'custom_append',
     prompt: prompt.prompt,
     modelRef: config.modelRef,

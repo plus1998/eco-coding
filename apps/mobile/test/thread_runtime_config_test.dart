@@ -9,7 +9,6 @@ MainAgentConfigResource _mainConfig({String id = 'main-1'}) {
     id: id,
     name: 'Coding Main',
     agentKey: 'main',
-    domain: 'coding',
     modelRef: const OrchestrationModelRef(
       providerId: 'provider-1',
       modelId: 'gpt-5.6-sol',
@@ -26,7 +25,6 @@ SubagentOrchestrationResource _subagentOrchestration() {
   return SubagentOrchestrationResource(
     id: 'orch-1',
     name: 'Coding Subagents',
-    domain: 'coding',
     agents: const [
       AgentInstanceConfig(
         agentKey: 'coder',
@@ -108,7 +106,6 @@ void main() {
             SubagentOrchestrationResource(
               id: 'orch-1',
               name: 'Coding Subagents',
-              domain: 'coding',
               agents: const [
                 AgentInstanceConfig(
                   agentKey: 'coder',
@@ -276,7 +273,6 @@ void main() {
           'id': 'main-1',
           'name': 'Coding',
           'agentKey': 'main',
-          'domain': 'coding',
           'modelRef': {
             'providerId': 'provider-1',
             'modelId': 'gpt-5.6-sol',

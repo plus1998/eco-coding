@@ -95,7 +95,6 @@ void main() {
       mainAgent: MainAgentConfig(
         agentKey: 'main',
         name: 'Main',
-        domain: 'coding',
         systemPromptPreset: 'core_native',
         prompt: '',
         modelRef: OrchestrationModelRef(providerId: 'p1', modelId: 'm1'),

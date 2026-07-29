@@ -17,7 +17,6 @@ const builtInTemplate: AgentTemplate = {
   id: "builtin.research.researcher",
   name: "Researcher",
   description: "Research agent",
-  domain: "research",
   prompt: "Research.",
   whenToUse: "Use for research.",
   defaultTools: { allowed: ["Read", "WebSearch"], disallowed: ["Bash"] },
@@ -36,7 +35,6 @@ function templateForm(
     id: "user.research.custom",
     name: "Custom Research",
     description: "Custom research agent",
-    domain: "research" as const,
     prompt: "Research deeply.",
     whenToUse: "Use for research.",
     outputContract: "Return sources.",
@@ -57,13 +55,13 @@ test("copied built-in template becomes a user template form with unique id", () 
     builtInTemplate,
     {
       ...builtInTemplate,
-      id: "user.research.researcher",
+      id: "user.custom.researcher",
       builtIn: false,
       source: "user",
     },
   ]);
 
-  expect(form.id).toBe("user.research.researcher_2");
+  expect(form.id).toBe("user.custom.researcher_2");
   expect(form.name).toBe("Researcher Copy");
 });
 
@@ -192,7 +190,7 @@ test("buildAgentTemplatePermissionChips summarizes capability policy", () => {
     { label: "写 禁用", tone: "deny" },
     { label: "Bash", tone: "allow" },
     { label: "联网", tone: "allow" },
-    { label: "MCP 1 个服务/1 个工具", tone: "allow" },
+    { label: "连接器 1 个服务/1 个工具", tone: "allow" },
     { label: "可更新进度", tone: "allow" },
     { label: "委派关闭", tone: "deny" },
     { label: "Skill", tone: "allow" },

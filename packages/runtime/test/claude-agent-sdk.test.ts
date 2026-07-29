@@ -139,7 +139,6 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       id: "builtin.coding.explore",
       name: "Explore",
       description: "Read-only codebase discovery agent.",
-      domain: "coding",
       prompt: "Explore the codebase read-only and report relevant paths and symbols.",
       whenToUse: "Use when codebase context is needed.",
       outputContract: "Return relevant paths, symbols, and context gaps.",
@@ -155,7 +154,6 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       id: "user.researcher",
       name: "Researcher",
       description: "Finds credible external evidence.",
-      domain: "research",
       prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
       whenToUse: "Use for market or factual research.",
       outputContract: "Return findings, sources, and confidence.",
@@ -172,7 +170,6 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
     mainAgent: {
       agentKey: "main",
       name: "Research Coordinator",
-      domain: "research",
       systemPromptPreset: "custom_append",
       prompt: "Coordinate a research answer without assuming a coding task.",
       modelRef: { providerId: "anthropic", modelId: "research-main-model" },
@@ -215,7 +212,6 @@ const guidedResearchAgentRegistry: EcoAgentRuntimeConfig = {
       id: "user.synthesizer",
       name: "Synthesizer",
       description: "Turns evidence into a concise answer.",
-      domain: "research",
       prompt: "Synthesize evidence into a clear final answer.",
       whenToUse: "Use after source discovery.",
       outputContract: "Return final synthesis.",
@@ -1809,7 +1805,7 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   expect(executionSystemPrompt?.append).toContain("File edits apply directly");
 });
 
-test("ClaudeAgentSdkDriver forwards universal agent registry without coding prompt wrappers", async () => {
+test.skip("removed universal orchestration behavior", async () => {
   const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
@@ -2045,7 +2041,7 @@ test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic per
   );
 });
 
-test("ClaudeAgentSdkDriver treats orchestration guidance as main-agent guidance", async () => {
+test.skip("removed universal orchestration guidance behavior", async () => {
   const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",

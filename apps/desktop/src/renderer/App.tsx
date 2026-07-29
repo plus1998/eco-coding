@@ -10,6 +10,7 @@ import {
   Activity,
   AlertCircle,
   ArrowUp,
+  BookOpen,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
@@ -32,6 +33,7 @@ import {
   Square,
   Trash2,
   type LucideIcon,
+  Workflow,
   X,
 } from "lucide-react";
 import {
@@ -388,7 +390,8 @@ type SettingsSectionId =
   | "mcp"
   | "centerServer"
   | "defaultAgent"
-  | "models"
+  | "agentLibrary"
+  | "orchestrationComponents"
   | "skills"
   | "git";
 
@@ -865,7 +868,12 @@ function App() {
         label: t("settings.group.coding"),
         sections: [
           { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
-          { id: "models", label: t("settings.agentBuilder"), icon: SlidersHorizontal },
+          { id: "agentLibrary", label: t("settings.agentLibrary"), icon: BookOpen },
+          {
+            id: "orchestrationComponents",
+            label: t("settings.orchestrationComponents"),
+            icon: Workflow,
+          },
           { id: "skills", label: t("settings.skills.store"), icon: Sparkles },
           { id: "git", label: "Git", icon: GitBranch },
         ],
@@ -4869,7 +4877,7 @@ function App() {
 
   function openModelsSettings(tab: ModelsSettingsTab = "subagents") {
     setModelsSettingsTab(tab);
-    setSettingsSection("models");
+    setSettingsSection(tab === "compositionParts" ? "orchestrationComponents" : "agentLibrary");
     setSettingsOpen(true);
   }
 
@@ -7162,7 +7170,7 @@ function App() {
                   <p className="settings-empty-hint">{t("settings.loadingProviders")}</p>
                 ))}
 
-              {settingsSection === "models" &&
+              {(settingsSection === "agentLibrary" || settingsSection === "orchestrationComponents") &&
                 (proxyBridgeSettings ? (
                   <ModelsSettingsPanel
                     settings={settings}
@@ -7170,8 +7178,18 @@ function App() {
                     mcpServers={mcpSettings.servers}
                     skillsSnapshot={skillsSnapshot}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                    initialTab={modelsSettingsTab}
+                    initialTab={
+                      settingsSection === "orchestrationComponents"
+                        ? "compositionParts"
+                        : "subagents"
+                    }
                     mode="agentBuilder"
+                    hideCategoryTabs
+                    heading={
+                      settingsSection === "orchestrationComponents"
+                        ? t("settings.orchestrationComponents")
+                        : t("settings.agentLibrary")
+                    }
                     busy={isSavingSettings}
                     {...(effectiveDefaultOrchestrationSelection && {
                       defaultOrchestrationSelection: effectiveDefaultOrchestrationSelection,

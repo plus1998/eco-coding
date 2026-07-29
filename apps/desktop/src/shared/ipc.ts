@@ -686,7 +686,6 @@ import type { ProviderTokenCountMode } from "./provider-token-count";
 import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
 
 export type {
-  AgentDomain,
   AgentInstanceConfig,
   AgentTemplate,
   EcoOrchestrationConfig,

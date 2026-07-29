@@ -54,7 +54,6 @@ test("Node SQLite stores independent orchestration resources and guards default 
     id: "main_1",
     name: "Main",
     agentKey: "main",
-    domain: "coding",
     modelRef: { providerId: "provider_1", modelId: "model_1" },
     tools: { allowed: [], disallowed: [] },
     skills: [],
@@ -72,7 +71,6 @@ test("Node SQLite stores independent orchestration resources and guards default 
   store.saveSubagentOrchestration({
     id: "subagents_1",
     name: "Subagents",
-    domain: "coding",
     strategy: "Delegate focused work.",
     agents: [],
     source: "user",

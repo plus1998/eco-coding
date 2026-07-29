@@ -651,7 +651,6 @@ const researchTemplate: EcoAgentTemplateConfig = {
   id: "template.research",
   name: "Researcher",
   description: "Finds evidence.",
-  domain: "research",
   prompt: "Research carefully and cite sources.",
   whenToUse: "Need external context.",
   outputContract: "Return bullets with sources.",
@@ -673,7 +672,6 @@ const codingTemplate: EcoAgentTemplateConfig = {
   id: "template.coder",
   name: "Coder",
   description: "Implements code changes.",
-  domain: "coding",
   prompt: "Implement scoped code changes.",
   whenToUse: "Need implementation.",
   outputContract: "Return changed files and tests.",
@@ -685,7 +683,6 @@ function buildOrchestration(overrides: Partial<EcoOrchestrationConfig> = {}): Ec
     mainAgent: {
       agentKey: "main",
       name: "Main",
-      domain: "coding",
       systemPromptPreset: "custom_append",
       prompt: "Coordinate work.",
       modelRef: { providerId: "main", modelId: "main-model" },

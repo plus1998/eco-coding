@@ -23,19 +23,10 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  type BuiltInPresetDefinition,
-  buildPresetResourcesFromDefinition,
-  createBuiltInPresetCatalog,
-  createUserPresetResourceId,
-  createUserPresetResourceName,
-} from "../shared/agent-orchestration";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type {
-  AgentTemplate,
   CandidateModelView,
   McpServerConfigView,
-  ModelRef,
   ModelSettingsSnapshot,
   ModelsDevModelOption,
   OrchestrationSelection,
@@ -50,13 +41,11 @@ import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/
 import { hasCompleteOrchestrationSelection } from "../shared/thread-runtime-config";
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
-import { formatAgentDomainLabel } from "./orchestration-summary";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
-import { buildPresetTemplateImportPlan } from "./preset-import";
 import {
   applyProviderPreset,
   FREE_TOKEN_PROVIDER_PRESETS,
@@ -71,7 +60,6 @@ export type ModelsSettingsTab =
   | "subagents"
   | "providers"
   | "proxyBridge"
-  | "presets"
   | "compositionParts";
 
 interface ModelsSettingsPanelProps {
@@ -83,6 +71,8 @@ interface ModelsSettingsPanelProps {
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
+  hideCategoryTabs?: boolean | undefined;
+  heading?: string | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
   defaultOrchestrationSelection?: OrchestrationSelection | undefined;
   onDefaultOrchestrationSelectionChange?:
@@ -106,6 +96,8 @@ export function ModelsSettingsPanel({
   busy,
   initialTab = "subagents",
   mode = "agentBuilder",
+  hideCategoryTabs = false,
+  heading,
   onSettingsChange,
   defaultOrchestrationSelection,
   onDefaultOrchestrationSelectionChange,
@@ -113,11 +105,6 @@ export function ModelsSettingsPanel({
   onSavingChange,
 }: ModelsSettingsPanelProps) {
   const { t } = useTranslation();
-  const modelsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
-    { id: "subagents", label: t("settings.models.library") },
-    { id: "compositionParts", label: t("settings.models.resources.compositionParts") },
-    { id: "presets", label: t("settings.models.presets") },
-  ];
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
     { id: "providers", label: t("settings.models.providers") },
     { id: "proxyBridge", label: t("settings.models.proxyBridge") },
@@ -142,13 +129,8 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
-  const [presetProfileMessage, setPresetProfileMessage] = useState<{
-    kind: AppMessageKind;
-    message: string;
-  }>();
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
-  const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab(resolvedInitialTab);
@@ -164,100 +146,6 @@ export function ModelsSettingsPanel({
     const snapshot = await window.eco.getModelSettings();
     onSettingsChange(snapshot);
   }, [onSettingsChange]);
-
-  const copyPresetToProfile = useCallback(
-    async (preset: BuiltInPresetDefinition) => {
-      if (
-        !window.eco?.saveAgentTemplate ||
-        !window.eco?.saveMainAgentConfig ||
-        !window.eco?.saveSubagentOrchestration
-      ) {
-        setPresetProfileMessage({
-          kind: "error",
-          message: t("settings.models.presetImportUnavailable"),
-        });
-        return;
-      }
-      const provider = selectPresetDefaultProvider(settings.providers);
-      if (!provider) {
-        setPresetProfileMessage({
-          kind: "error",
-          message: t("settings.models.providerRequired"),
-        });
-        return;
-      }
-      setPresetProfileBusyId(preset.id);
-      setPresetProfileMessage(undefined);
-      onSavingChange?.(true);
-      try {
-        const importPlan = buildPresetTemplateImportPlan(preset, settings.agentTemplates);
-        const savedTemplates: AgentTemplate[] = [];
-        for (const template of importPlan.templatesToSave) {
-          savedTemplates.push(await window.eco.saveAgentTemplate(template));
-        }
-        const mainAgentConfigId = createUserPresetResourceId(
-          preset.id,
-          settings.mainAgentConfigs.map((config) => config.id),
-        );
-        const subagentOrchestrationId = mainAgentConfigId.replace(/\.main_config$/, ".subagents");
-        const bundle = buildPresetResourcesFromDefinition(importPlan.presetDefinition, {
-          mainAgentConfigId,
-          mainAgentConfigName: createUserPresetResourceName(
-            `${preset.name} Main Config`,
-            settings.mainAgentConfigs.map((config) => config.name),
-          ),
-          subagentOrchestrationId,
-          subagentOrchestrationName: createUserPresetResourceName(
-            `${preset.name} Subagents`,
-            settings.subagentOrchestrations.map((orchestration) => orchestration.name),
-          ),
-          modelRef: modelRefFromProvider(provider),
-          templates:
-            savedTemplates.length > 0
-              ? [
-                  ...settings.agentTemplates.filter(
-                    (template) => !savedTemplates.some((saved) => saved.id === template.id),
-                  ),
-                  ...savedTemplates,
-                ]
-              : importPlan.templatesForPreset,
-        });
-        await window.eco.saveMainAgentConfig(bundle.mainAgentConfig);
-        if (bundle.mainAgentPrompt) {
-          await window.eco.saveMainAgentPrompt(bundle.mainAgentPrompt);
-        }
-        await window.eco.saveSubagentOrchestration(bundle.subagentOrchestration);
-        await refreshSettings();
-        if (hasCompleteOrchestrationSelection(bundle.selection)) {
-          await onDefaultOrchestrationSelectionChange?.(bundle.selection);
-        }
-        setActiveTab("compositionParts");
-        const importedTemplateCount = savedTemplates.length;
-        const templateMessage =
-          importedTemplateCount > 0
-            ? t("settings.models.templatesImported", { count: importedTemplateCount })
-            : t("settings.models.templatesReused");
-        setPresetProfileMessage({
-          kind: "success",
-          message: t("settings.models.presetCreated", {
-            templateMessage,
-            resource: bundle.mainAgentConfig.name,
-            provider: provider.name,
-            model: provider.defaultModel,
-          }),
-        });
-      } catch (caught) {
-        setPresetProfileMessage({
-          kind: "error",
-          message: caught instanceof Error ? caught.message : String(caught),
-        });
-      } finally {
-        setPresetProfileBusyId(null);
-        onSavingChange?.(false);
-      }
-    },
-    [onDefaultOrchestrationSelectionChange, onSavingChange, refreshSettings, settings],
-  );
 
   useEffect(() => {
     if (!window.eco?.listModelsDevModels) {
@@ -519,8 +407,6 @@ export function ModelsSettingsPanel({
   }
 
   const providerOptions = useMemo(() => settings.providers, [settings.providers]);
-  const presetCatalog = useMemo(() => createBuiltInPresetCatalog(), []);
-
   return (
     <>
       {providerTestMessage && (
@@ -530,46 +416,36 @@ export function ModelsSettingsPanel({
           onDismiss={() => setProviderTestMessage(undefined)}
         />
       )}
-      {presetProfileMessage && (
-        <AppMessage
-          kind={presetProfileMessage.kind}
-          message={presetProfileMessage.message}
-          onDismiss={() => setPresetProfileMessage(undefined)}
-        />
-      )}
-
       {mode === "providerSettings" ? (
         <header className="mcp-page-header">
           <h1>{t("settings.models.providers")}</h1>
         </header>
       ) : (
         <header className="settings-page-header">
-          <h1>{t("settings.models.builder")}</h1>
+          <h1>{heading ?? t("settings.agentLibrary")}</h1>
         </header>
       )}
 
-      <div
-        className="models-settings-tabs"
-        role="tablist"
-        aria-label={
-          mode === "providerSettings"
-            ? t("settings.models.providerCategories")
-            : t("settings.models.categories")
-        }
-      >
-        {(mode === "providerSettings" ? providerSettingsTabItems : modelsTabItems).map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {!hideCategoryTabs && (
+        <div
+          className="models-settings-tabs"
+          role="tablist"
+            aria-label={t("settings.models.providerCategories")}
+        >
+          {providerSettingsTabItems.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {panelError && <p className="settings-form-error mcp-list-error">{panelError}</p>}
 
@@ -655,18 +531,6 @@ export function ModelsSettingsPanel({
             onSavingChange={onSavingChange}
           />
         </>
-      )}
-
-      {activeTab === "presets" && (
-        <section className="mcp-list-section models-presets-section">
-          <PresetOverview
-            presets={presetCatalog}
-            templates={settings.agentTemplates}
-            busy={busy || Boolean(presetProfileBusyId)}
-            copyingPresetId={presetProfileBusyId}
-            onCopyPreset={copyPresetToProfile}
-          />
-        </section>
       )}
 
       {providerModalOpen && (
@@ -1050,106 +914,6 @@ function ProviderEditorModal({
   );
 }
 
-function PresetOverview({
-  presets,
-  templates,
-  busy,
-  copyingPresetId,
-  onCopyPreset,
-}: {
-  presets: readonly BuiltInPresetDefinition[];
-  templates: readonly AgentTemplate[];
-  busy?: boolean;
-  copyingPresetId?: string | null;
-  onCopyPreset: (preset: BuiltInPresetDefinition) => void;
-}) {
-  const { t } = useTranslation();
-  const templateById = new Map(templates.map((template) => [template.id, template]));
-  return (
-    <div className="models-preset-grid">
-      {presets.map((preset) => {
-        const domainTemplates = templates.filter((template) => template.domain === preset.id);
-        const missingDefaultAgents = preset.defaultAgents.filter(
-          (agent) => !templateById.has(agent.templateId),
-        );
-        const runnable = missingDefaultAgents.length === 0;
-        const primaryExample = preset.examples[0];
-        return (
-          <article
-            key={preset.id}
-            className={runnable ? "models-preset-panel is-ready" : "models-preset-panel"}
-          >
-            <div className="models-preset-card-top">
-              <div className="models-preset-title-block">
-                <span className="models-preset-name">{formatAgentDomainLabel(preset.id)}</span>
-                <span className="models-preset-description">{preset.description}</span>
-              </div>
-              <span className={runnable ? "models-provider-badge on" : "models-provider-badge"}>
-                {runnable ? t("settings.models.preset.runnable") : t("settings.models.preset.templatesReady")}
-              </span>
-            </div>
-
-            <div className="models-preset-metrics">
-              <span>
-                <strong>{preset.defaultAgents.length}</strong>
-                {t("settings.models.preset.subagents")}
-              </span>
-              <span>
-                <strong>{domainTemplates.length}</strong>
-                {t("settings.models.preset.templates")}
-              </span>
-            </div>
-
-            <div className="models-preset-agent-strip">
-              {preset.defaultAgents.map((agent) => {
-                const template = templateById.get(agent.templateId);
-                return (
-                  <span
-                    key={agent.agentKey}
-                    className={template ? "models-preset-template" : "models-preset-template is-missing"}
-                  >
-                    {template?.name ?? agent.displayName}
-                  </span>
-                );
-              })}
-              {missingDefaultAgents.length > 0 ? (
-                <span className="models-preset-template is-missing">
-                  {t("settings.models.preset.missing", {
-                    count: missingDefaultAgents.length,
-                  })}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="models-preset-focus">
-              <span>{t("settings.models.preset.defaultConfig")}</span>
-              <p>{primaryExample?.title ?? preset.modelSuggestion.main}</p>
-            </div>
-
-            <div className="models-preset-footer">
-              <span className="models-preset-model-suggestion">{preset.modelSuggestion.main}</span>
-              <button
-                type="button"
-                className="models-section-button"
-                disabled={busy}
-                onClick={() => onCopyPreset(preset)}
-                title={t("settings.models.preset.createFrom", {
-                  name: formatAgentDomainLabel(preset.id),
-                })}
-              >
-                <Plus size={14} />
-                {copyingPresetId === preset.id
-                  ? t("settings.models.preset.creating")
-                  : t("settings.models.preset.createResources")}
-              </button>
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
 function formatModelPreview(modelId: string): string {
   const normalized = modelId.includes("/") ? (modelId.split("/").pop() ?? modelId) : modelId;
   if (normalized.length <= 22) {
@@ -1189,25 +953,6 @@ function localizeProviderRequestError(
     default:
       return error.error || t("settings.models.testFailed");
   }
-}
-
-function selectPresetDefaultProvider(
-  providers: readonly ProviderConfigView[],
-): ProviderConfigView | undefined {
-  return (
-    providers.find((provider) => provider.enabled && provider.defaultModel.trim()) ??
-    providers.find((provider) => provider.enabled) ??
-    providers.find((provider) => provider.defaultModel.trim()) ??
-    providers[0]
-  );
-}
-
-function modelRefFromProvider(provider: ProviderConfigView): ModelRef {
-  return {
-    providerId: provider.id,
-    modelId: provider.defaultModel,
-    apiCompat: provider.apiCompat,
-  };
 }
 
 function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {

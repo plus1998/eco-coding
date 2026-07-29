@@ -1542,7 +1542,6 @@ function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<
     template.source === "built_in" ||
     (typeof template.id === "string" && template.id.trim().startsWith("builtin."));
   if (protectedId) {
-    const domain = typeof template.domain === "string" ? template.domain : "custom";
     const name =
       typeof template.name === "string" && template.name.trim() ? template.name.trim() : "Imported Agent";
     const id = createUniqueImportedTemplateId(
@@ -1557,7 +1556,6 @@ function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<
       builtIn: false,
       source: "user",
       updatedAt: now,
-      domain,
     };
   }
   const id = typeof template.id === "string" ? template.id.trim() : "";

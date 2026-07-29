@@ -17,7 +17,6 @@ const snapshot: ResolvedOrchestrationSnapshot = {
   mainAgent: {
     agentKey: "main",
     name: "Research Captain",
-    domain: "research",
     systemPromptPreset: "custom_append",
     prompt: "Lead research.",
     modelRef: { providerId: "p1", modelId: "main-model" },

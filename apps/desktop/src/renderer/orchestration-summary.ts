@@ -1,6 +1,5 @@
 import type { ModelRef } from "../shared/agent-orchestration";
 import type {
-  AgentDomain,
   AgentInstanceConfig,
   AgentTemplate,
   ModelSettingsSnapshot,
@@ -39,7 +38,6 @@ export interface OrchestrationAgentSummary {
 export interface OrchestrationSummary {
   selection: OrchestrationSelection;
   name: string;
-  presetLabel: string;
   main: OrchestrationMainSummary;
   agents: OrchestrationAgentSummary[];
   enabledAgents: OrchestrationAgentSummary[];
@@ -90,7 +88,6 @@ export function buildOrchestrationSummary(
   return {
     selection: snapshot.selection,
     name: formatOrchestrationDisplayName(snapshot),
-    presetLabel: formatAgentDomainLabel(snapshot.mainAgent.domain),
     main,
     agents,
     enabledAgents,
@@ -108,25 +105,6 @@ export function formatOrchestrationDisplayName(snapshot: ResolvedOrchestrationSn
     parts.push(snapshot.subagentOrchestrationDisplayName.trim());
   }
   return parts.join(" · ") || i18n.t("composer.route.selectOrchestration");
-}
-
-export function formatAgentDomainLabel(domain: AgentDomain): string {
-  switch (domain) {
-    case "coding":
-      return i18n.t("orchestrationResource.domain.coding");
-    case "research":
-      return i18n.t("orchestrationResource.domain.research");
-    case "writing":
-      return i18n.t("orchestrationResource.domain.writing");
-    case "product":
-      return i18n.t("orchestrationResource.domain.product");
-    case "data":
-      return i18n.t("orchestrationResource.domain.data");
-    case "ops":
-      return i18n.t("orchestrationResource.domain.ops");
-    case "custom":
-      return i18n.t("orchestrationResource.domain.custom");
-  }
 }
 
 function buildAgentSummary(

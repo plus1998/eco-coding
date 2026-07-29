@@ -33,7 +33,6 @@ const researchTemplate: EcoAgentTemplateConfig = {
   id: "user.research.deep",
   name: "Deep Researcher",
   description: "Collects credible sources and competing views.",
-  domain: "research",
   prompt: "CHILD SECRET PROMPT: research broadly and cite carefully.",
   whenToUse: "Need sourced findings or external context",
   outputContract: "Return findings, sources, confidence, and open questions.",
@@ -50,7 +49,6 @@ const orchestration: EcoOrchestrationConfig = {
   mainAgent: {
     agentKey: "main",
     name: "Research Coordinator",
-    domain: "research",
     systemPromptPreset: "custom_append",
     prompt: "You coordinate research work without assuming a coding task.",
     modelRef: modelRef("main-model"),
@@ -139,7 +137,6 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding orchestrati
     ...orchestration,
     mainAgent: {
       ...orchestration.mainAgent,
-      domain: "coding",
       systemPromptPreset: "core_native",
     },
   };

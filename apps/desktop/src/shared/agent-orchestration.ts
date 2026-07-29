@@ -8,7 +8,6 @@ import type {
   ThinkingEffort,
 } from "./ipc";
 
-export type AgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
 export type AgentConfigSource = "built_in" | "user" | "project" | "derived";
 
 export function isV4aTeachingEnabled(
@@ -78,7 +77,6 @@ export interface AgentTemplate {
   id: string;
   name: string;
   description: string;
-  domain: AgentDomain;
   prompt: string;
   whenToUse: string;
   outputContract?: string;
@@ -96,7 +94,6 @@ export interface AgentTemplate {
 export interface MainAgentConfig {
   agentKey: string;
   name: string;
-  domain: AgentDomain;
   systemPromptPreset: "core_native" | "custom_append";
   prompt: string;
   modelRef: ModelRef;
@@ -113,7 +110,6 @@ export interface MainAgentConfigResource {
   id: string;
   name: string;
   agentKey: string;
-  domain: AgentDomain;
   modelRef: ModelRef;
   tools: ToolPolicy;
   skills: string[];
@@ -153,11 +149,10 @@ export interface OrchestrationSelection {
   subagents: SubagentSelection;
 }
 
-/** Subagent roster + strategy + domain resource. */
+/** Subagent roster + strategy resource. */
 export interface SubagentOrchestrationResource {
   id: string;
   name: string;
-  domain: AgentDomain;
   agents: AgentInstanceConfig[];
   strategy: OrchestrationStrategy;
   updatedAt: string;
@@ -192,7 +187,7 @@ export interface OrchestrationResourceLookup {
   subagentOrchestrations: readonly SubagentOrchestrationResource[];
 }
 
-export interface PresetResourceBundle {
+export interface OrchestrationResourceBundle {
   mainAgentConfig: MainAgentConfigResource;
   mainAgentPrompt?: MainAgentPromptResource;
   subagentOrchestration: SubagentOrchestrationResource;
@@ -286,47 +281,12 @@ const MAIN_CODING_TOOLS: ToolPolicy = {
   network: { webSearch: true, webFetch: true },
 };
 
-export interface BuiltInPresetAgent {
-  agentKey: string;
-  templateId: string;
-  displayName: string;
-}
-
-export interface BuiltInPresetModelSuggestion {
-  main: string;
-  agents: Record<string, string>;
-}
-
-export interface BuiltInPresetStrategyRecommendation {
-  autonomous: Extract<OrchestrationStrategy, { kind: "autonomous" }>;
-}
-
-export interface BuiltInPresetExampleTask {
-  id: string;
-  title: string;
-  prompt: string;
-  expectedOutcome: string;
-}
-
-export interface BuiltInPresetDefinition {
-  id: AgentDomain;
-  name: string;
-  description: string;
-  mainAgentPrompt: string;
-  mainAgentTools: ToolPolicy;
-  defaultAgents: BuiltInPresetAgent[];
-  modelSuggestion: BuiltInPresetModelSuggestion;
-  strategies: BuiltInPresetStrategyRecommendation;
-  examples: BuiltInPresetExampleTask[];
-}
-
 export function createBuiltInAgentTemplates(): AgentTemplate[] {
   return [
     {
       id: CODING_AGENT_TEMPLATE_IDS.explore,
       name: "Explore",
       description: "Read-only codebase discovery agent for locating files, symbols, and relevant context.",
-      domain: "coding",
       prompt:
         "Explore the codebase read-only. Locate relevant files and symbols, trace relationships, and return concise findings with paths. Do not edit files or run commands.",
       whenToUse: "Use when the main agent needs codebase context before answering, planning, or editing.",
@@ -343,7 +303,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       id: CODING_AGENT_TEMPLATE_IDS.architect,
       name: "Architect",
       description: "Structure and task breakdown agent for coding work.",
-      domain: "coding",
       prompt: "Refine architecture, identify module boundaries, and break work into implementable tasks.",
       whenToUse: "Use for cross-module changes or when task boundaries are unclear.",
       outputContract: "Return architecture notes and a concrete task breakdown.",
@@ -359,7 +318,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       id: CODING_AGENT_TEMPLATE_IDS.coder,
       name: "Coder",
       description: "Focused implementation agent with surgical diffs and narrow verification.",
-      domain: "coding",
       prompt:
         "Implement the assigned subtask only, obey AGENTS.md for touched files, verify narrowly, and report changed files.",
       whenToUse: "Use after the task scope is clear and code edits are required.",
@@ -377,7 +335,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       id: CODING_AGENT_TEMPLATE_IDS.reviewer,
       name: "Reviewer",
       description: "Review agent for this session's changed files.",
-      domain: "coding",
       prompt:
         "Review only this session's changes, classify actionable findings by severity with confidence and line ranges, and do not implement fixes.",
       whenToUse: "Use after implementation when correctness, safety, or regression risk is meaningful.",
@@ -395,7 +352,6 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       id: CODING_AGENT_TEMPLATE_IDS.tester,
       name: "Tester",
       description: "Verification agent for coding changes.",
-      domain: "coding",
       prompt:
         "Run the narrowest useful verification for the completed work, map each plan gate to evidence, and report failures clearly.",
       whenToUse: "Use after implementation and review when automated verification is useful.",
@@ -427,159 +383,7 @@ export function resolveAgentTemplateCatalog(
   return [...byId.values()];
 }
 
-export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
-  return [
-    {
-      id: "coding",
-      name: "Coding",
-      description: "Software development, code modification, review, and verification.",
-      mainAgentPrompt:
-        "Coordinate software engineering work. Clarify scope, inspect the repository, delegate specialized work when useful, keep edits focused, and finish with verification evidence.",
-      mainAgentTools: cloneToolPolicy(MAIN_CODING_TOOLS),
-      defaultAgents: [
-        presetAgent(CODING_AGENT_KEYS.explore, CODING_AGENT_TEMPLATE_IDS.explore, "Explore"),
-        presetAgent(CODING_AGENT_KEYS.architect, CODING_AGENT_TEMPLATE_IDS.architect, "Architect"),
-        presetAgent(CODING_AGENT_KEYS.coder, CODING_AGENT_TEMPLATE_IDS.coder, "Coder"),
-        presetAgent(CODING_AGENT_KEYS.reviewer, CODING_AGENT_TEMPLATE_IDS.reviewer, "Reviewer"),
-        presetAgent(CODING_AGENT_KEYS.tester, CODING_AGENT_TEMPLATE_IDS.tester, "Tester"),
-      ],
-      modelSuggestion: {
-        main: "Use the strongest reasoning model available for planning and integration.",
-        agents: {
-          explore: "Use a fast long-context model.",
-          architect: "Use a strong reasoning model.",
-          coder: "Use a strong coding model.",
-          reviewer: "Use a strong reasoning model with code review skill.",
-          tester: "Use a fast model that can run and interpret verification.",
-        },
-      },
-      strategies: presetStrategies({
-        autonomousGuidance:
-          "Choose coding subagents only when their specialization materially improves correctness or speed.",
-      }),
-      examples: [
-        exampleTask(
-          "coding-bugfix",
-          "Fix a failing checkout total calculation and add the narrowest useful regression test.",
-          "A scoped code change, regression test, and verification result.",
-        ),
-        exampleTask(
-          "coding-review",
-          "Review the current branch for correctness, security, and missing tests.",
-          "Severity-ranked findings with file references and a PASS or BLOCKERS verdict.",
-        ),
-        exampleTask(
-          "coding-refactor",
-          "Refactor the billing projector to expose a smaller public API without changing behavior.",
-          "Implementation notes, changed files, and focused verification output.",
-        ),
-      ],
-    },
-  ];
-}
-
-export function createUserPresetResourceId(presetId: AgentDomain, existingIds: readonly string[]): string {
-  return uniquePresetProfileValue(
-    `user.${presetId}.main_config`,
-    existingIds,
-    (base, index) => `${base}.${index}`,
-  );
-}
-
-export function createUserPresetResourceName(presetName: string, existingNames: readonly string[]): string {
-  return uniquePresetProfileValue(
-    `${presetName} Main Config`,
-    existingNames,
-    (base, index) => `${base} ${index}`,
-  );
-}
-
-export function buildPresetResourcesFromDefinition(
-  preset: BuiltInPresetDefinition,
-  options: {
-    mainAgentConfigId: string;
-    mainAgentConfigName: string;
-    subagentOrchestrationId: string;
-    subagentOrchestrationName: string;
-    mainAgentPromptId?: string;
-    mainAgentPromptName?: string;
-    modelRef: ModelRef;
-    templates?: readonly AgentTemplate[];
-    source?: Extract<AgentConfigSource, "user" | "project">;
-    updatedAt?: string;
-  },
-): PresetResourceBundle {
-  const modelRef = cloneModelRef(options.modelRef);
-  if (!modelRef.providerId || !modelRef.modelId) {
-    throw new Error("复制场景预设需要可用的默认模型。");
-  }
-  const templateById = new Map(
-    (options.templates ?? createBuiltInAgentTemplates()).map((template) => [template.id, template]),
-  );
-  const now = options.updatedAt ?? new Date().toISOString();
-  const source = options.source ?? "user";
-  const usesCustomPrompt = preset.id !== "coding";
-  const mainAgentConfig: MainAgentConfigResource = {
-    id: options.mainAgentConfigId.trim(),
-    name: options.mainAgentConfigName.trim(),
-    agentKey: "main",
-    domain: preset.id,
-    modelRef,
-    tools: cloneToolPolicy(preset.mainAgentTools),
-    skills: [],
-    updatedAt: now,
-    source,
-  };
-  const mainAgentPrompt: MainAgentPromptResource | undefined = usesCustomPrompt
-    ? {
-        id: (options.mainAgentPromptId ?? `${options.mainAgentConfigId}.prompt`).trim(),
-        name: (options.mainAgentPromptName ?? `${preset.name} Prompt`).trim(),
-        mode: "custom_append",
-        prompt: preset.mainAgentPrompt.trim(),
-        updatedAt: now,
-        source,
-      }
-    : undefined;
-  const subagentOrchestration: SubagentOrchestrationResource = {
-    id: options.subagentOrchestrationId.trim(),
-    name: options.subagentOrchestrationName.trim(),
-    domain: preset.id,
-    agents: preset.defaultAgents.map((agent) => {
-      const template = templateById.get(agent.templateId);
-      if (!template) {
-        throw new Error(`场景预设 ${preset.name} 缺少子代理模板：${agent.templateId}`);
-      }
-      return {
-        agentKey: agent.agentKey,
-        templateId: agent.templateId,
-        displayName: agent.displayName,
-        modelRef: cloneModelRef(modelRef),
-        tools: cloneToolPolicy(template.defaultTools),
-        mcpServers: [...template.mcpServers],
-        skills: [...template.skills],
-        enabled: true,
-      };
-    }),
-    strategy: cloneOrchestrationStrategy(preset.strategies.autonomous),
-    updatedAt: now,
-    source,
-  };
-  const selection: OrchestrationSelection = {
-    mainAgentConfigId: mainAgentConfig.id,
-    mainPrompt: mainAgentPrompt
-      ? { mode: "custom_append", promptId: mainAgentPrompt.id }
-      : { mode: "builtin" },
-    subagents: { mode: "orchestration", orchestrationId: subagentOrchestration.id },
-  };
-  return {
-    mainAgentConfig,
-    ...(mainAgentPrompt ? { mainAgentPrompt } : {}),
-    subagentOrchestration,
-    selection,
-  };
-}
-
-export function buildPresetResourcesFromRouteProfile(
+export function buildResourcesFromRouteProfile(
   routeProfile: RouteProfileView,
   options: {
     mainAgentConfigId: string;
@@ -587,7 +391,7 @@ export function buildPresetResourcesFromRouteProfile(
     subagentEnabled?: Partial<SubagentEnabledSettings>;
     updatedAt?: string;
   },
-): PresetResourceBundle {
+): OrchestrationResourceBundle {
   const routeByRole = new Map(routeProfile.routes.map((route) => [route.role, route]));
   const plannerRoute = requireRoute(routeByRole, "planner", routeProfile.id);
   const exploreRoute = requireRoute(routeByRole, "explore", routeProfile.id);
@@ -596,7 +400,6 @@ export function buildPresetResourcesFromRouteProfile(
     id: options.mainAgentConfigId.trim(),
     name: `${routeProfile.name} Main Config`,
     agentKey: CODING_AGENT_KEYS.main,
-    domain: "coding",
     modelRef: routeToModelRef(plannerRoute),
     tools: cloneToolPolicy(MAIN_CODING_TOOLS),
     skills: [],
@@ -606,7 +409,6 @@ export function buildPresetResourcesFromRouteProfile(
   const subagentOrchestration: SubagentOrchestrationResource = {
     id: options.subagentOrchestrationId.trim(),
     name: `${routeProfile.name} Subagents`,
-    domain: "coding",
     agents: [
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.explore,
@@ -711,44 +513,6 @@ function requireRoute(
   return route;
 }
 
-function presetAgent(agentKey: string, templateId: string, displayName: string): BuiltInPresetAgent {
-  return { agentKey, templateId, displayName };
-}
-
-function presetStrategies(input: { autonomousGuidance: string }): BuiltInPresetStrategyRecommendation {
-  return {
-    autonomous: { kind: "autonomous", guidancePrompt: input.autonomousGuidance },
-  };
-}
-
-function exampleTask(id: string, prompt: string, expectedOutcome: string): BuiltInPresetExampleTask {
-  return {
-    id,
-    title: prompt,
-    prompt,
-    expectedOutcome,
-  };
-}
-
-function uniquePresetProfileValue(
-  base: string,
-  existingValues: readonly string[],
-  buildCandidate: (base: string, index: number) => string,
-): string {
-  const existing = new Set(existingValues.map((value) => value.trim()).filter(Boolean));
-  if (!existing.has(base)) {
-    return base;
-  }
-  for (let index = 2; index < 1000; index += 1) {
-    const candidate = buildCandidate(base, index);
-    if (!existing.has(candidate)) {
-      return candidate;
-    }
-  }
-  throw new Error(`无法为 ${base} 生成唯一名称。`);
-}
-
-
 export function isOrchestrationSelection(value: unknown): value is OrchestrationSelection {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -835,7 +599,6 @@ export function materializeMainAgentConfig(
     return {
       agentKey: config.agentKey,
       name: config.name,
-      domain: config.domain,
       systemPromptPreset: "core_native",
       prompt: "",
       modelRef: cloneModelRef(config.modelRef),
@@ -854,7 +617,6 @@ export function materializeMainAgentConfig(
   return {
     agentKey: config.agentKey,
     name: config.name,
-    domain: config.domain,
     systemPromptPreset: "custom_append",
     prompt: prompt.prompt,
     modelRef: cloneModelRef(config.modelRef),
@@ -947,7 +709,6 @@ function cloneMainAgentConfig(config: MainAgentConfig): MainAgentConfig {
   return {
     agentKey: config.agentKey,
     name: config.name,
-    domain: config.domain,
     systemPromptPreset: config.systemPromptPreset,
     prompt: config.prompt,
     modelRef: cloneModelRef(config.modelRef),

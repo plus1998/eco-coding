@@ -1,10 +1,8 @@
 import { expect, test } from "bun:test";
 import {
-  buildPresetResourcesFromDefinition,
-  buildPresetResourcesFromRouteProfile,
+  buildResourcesFromRouteProfile,
   CODING_AGENT_TEMPLATE_IDS,
   createBuiltInAgentTemplates,
-  createBuiltInPresetCatalog,
   orchestrationConfigFromSnapshot,
   resolveOrchestrationSnapshot,
 } from "../src/shared/agent-orchestration";
@@ -47,52 +45,8 @@ test("built-in agent templates define the default coding library", () => {
   ).toBe("none");
 });
 
-test("built-in preset catalog defines only the coding preset", () => {
-  const templatesById = new Set(createBuiltInAgentTemplates().map((template) => template.id));
-  const presets = createBuiltInPresetCatalog();
-  expect(presets.map((preset) => preset.id)).toEqual(["coding"]);
-  for (const preset of presets) {
-    expect(preset.mainAgentPrompt.trim().length).toBeGreaterThan(40);
-    expect(preset.mainAgentTools.bash?.enabled).toBe(true);
-    expect(preset.defaultAgents.length).toBe(5);
-    expect(preset.defaultAgents.every((agent) => templatesById.has(agent.templateId))).toBe(true);
-  }
-});
-
-test("scene preset creates independent resources and a live selection", () => {
-  const preset = createBuiltInPresetCatalog()[0]!;
-  const bundle = buildPresetResourcesFromDefinition(preset, {
-    mainAgentConfigId: "user.coding.main",
-    mainAgentConfigName: "Coding Main",
-    mainAgentPromptId: "user.coding.prompt",
-    mainAgentPromptName: "Coding Prompt",
-    subagentOrchestrationId: "user.coding.subagents",
-    subagentOrchestrationName: "Coding Subagents",
-    modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
-    updatedAt: "2026-06-07T08:00:00.000Z",
-  });
-  expect(bundle.mainAgentConfig).toMatchObject({
-    id: "user.coding.main",
-    name: "Coding Main",
-    modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
-  });
-  expect(bundle.mainAgentPrompt).toBeUndefined();
-  expect(bundle.subagentOrchestration.agents.map((agent) => agent.agentKey)).toEqual([
-    "explore",
-    "architect",
-    "coder",
-    "reviewer",
-    "tester",
-  ]);
-  expect(bundle.selection).toEqual({
-    mainAgentConfigId: "user.coding.main",
-    mainPrompt: { mode: "builtin" },
-    subagents: { mode: "orchestration", orchestrationId: "user.coding.subagents" },
-  });
-});
-
 test("route profile conversion creates resources without retaining route profile identity", () => {
-  const bundle = buildPresetResourcesFromRouteProfile(codingRouteProfile(), {
+  const bundle = buildResourcesFromRouteProfile(codingRouteProfile(), {
     mainAgentConfigId: "user.route.main",
     subagentOrchestrationId: "user.route.subagents",
   });
@@ -108,7 +62,7 @@ test("route profile conversion creates resources without retaining route profile
 });
 
 test("route profile conversion honors subagent availability", () => {
-  const bundle = buildPresetResourcesFromRouteProfile(codingRouteProfile(), {
+  const bundle = buildResourcesFromRouteProfile(codingRouteProfile(), {
     mainAgentConfigId: "user.route.main",
     subagentOrchestrationId: "user.route.subagents",
     subagentEnabled: {
@@ -127,13 +81,9 @@ test("route profile conversion honors subagent availability", () => {
 });
 
 test("strict snapshot resolution rejects missing resource references", () => {
-  const preset = createBuiltInPresetCatalog()[0]!;
-  const bundle = buildPresetResourcesFromDefinition(preset, {
+  const bundle = buildResourcesFromRouteProfile(codingRouteProfile(), {
     mainAgentConfigId: "user.coding.main",
-    mainAgentConfigName: "Coding Main",
     subagentOrchestrationId: "user.coding.subagents",
-    subagentOrchestrationName: "Coding Subagents",
-    modelRef: { providerId: "p1", modelId: "m1" },
   });
   expect(() =>
     resolveOrchestrationSnapshot(bundle.selection, {
@@ -145,7 +95,7 @@ test("strict snapshot resolution rejects missing resource references", () => {
 });
 
 test("resolved snapshots are isolated from selections, resources, and runtime materialization", () => {
-  const bundle = buildPresetResourcesFromRouteProfile(codingRouteProfile(), {
+  const bundle = buildResourcesFromRouteProfile(codingRouteProfile(), {
     mainAgentConfigId: " user.route.main ",
     subagentOrchestrationId: " user.route.subagents ",
   });

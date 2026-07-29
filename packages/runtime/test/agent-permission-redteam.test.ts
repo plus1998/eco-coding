@@ -18,7 +18,6 @@ const registry: EcoAgentRuntimeConfig = {
       id: "template.researcher",
       name: "Researcher",
       description: "Collects external evidence.",
-      domain: "research",
       prompt: "Research with citations.",
       whenToUse: "Use for evidence gathering.",
       defaultTools: noTools,
@@ -33,7 +32,6 @@ const registry: EcoAgentRuntimeConfig = {
       id: "template.synthesizer",
       name: "Synthesizer",
       description: "Writes final synthesis.",
-      domain: "research",
       prompt: "Synthesize prior outputs.",
       whenToUse: "Use for final answers.",
       defaultTools: noTools,
@@ -52,7 +50,6 @@ const registry: EcoAgentRuntimeConfig = {
     mainAgent: {
       agentKey: "main",
       name: "Research Lead",
-      domain: "research",
       systemPromptPreset: "custom_append",
       prompt: "Coordinate safely.",
       modelRef: { providerId: "p1", modelId: "m1" },

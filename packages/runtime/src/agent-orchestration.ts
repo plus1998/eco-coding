@@ -23,7 +23,6 @@ export {
   SDK_TASK_PROGRESS_TOOL_NAMES,
 } from "./sdk-tool-names.js";
 
-export type EcoAgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
 export type EcoAgentConfigSource = "built_in" | "user" | "project" | "derived";
 
 export interface EcoModelRef {
@@ -77,7 +76,6 @@ export interface EcoAgentTemplateConfig {
   id: string;
   name: string;
   description: string;
-  domain: EcoAgentDomain;
   prompt: string;
   whenToUse: string;
   outputContract?: string;
@@ -94,7 +92,6 @@ export interface EcoAgentTemplateConfig {
 export interface EcoMainAgentConfig {
   agentKey: string;
   name: string;
-  domain: EcoAgentDomain;
   systemPromptPreset: "core_native" | "custom_append";
   prompt: string;
   modelRef: EcoModelRef;

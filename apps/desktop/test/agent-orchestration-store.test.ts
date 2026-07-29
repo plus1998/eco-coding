@@ -25,7 +25,6 @@ function customTemplate(): AgentTemplate {
     id: "user.researcher",
     name: "Researcher",
     description: "Research agent",
-    domain: "research",
     prompt: "Research the topic and cite sources.",
     whenToUse: "Use for broad research.",
     defaultTools: {
@@ -55,7 +54,6 @@ test("normalizeStoredMainAgentConfig requires name and agentKey", () => {
       id: "user.main",
       name: "",
       agentKey: "main",
-      domain: "coding",
       modelRef: { providerId: "p1", modelId: "m1" },
       tools: { allowed: [], disallowed: [] },
       skills: [],
@@ -72,7 +70,6 @@ test.skipIf(!sqliteAvailable)("deleteMainAgentConfig blocks default orchestratio
     id: "user.main",
     name: "Main",
     agentKey: "main",
-    domain: "coding",
     modelRef: { providerId: "p1", modelId: "m1" },
     tools: { allowed: [], disallowed: [] },
     skills: [],

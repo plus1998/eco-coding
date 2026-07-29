@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import type { AgentTemplate, ProviderConfigView } from "../shared/ipc";
 import { defaultThemeColorForAgentKey } from "../shared/subagent-theme";
 import type { AgentResourceAgentFormState } from "./agent-resource-form";
-import { formatAgentDomainLabel } from "./orchestration-summary";
 
 interface SubagentOrchestrationRosterEditorProps {
   agents: AgentResourceAgentFormState[];
@@ -77,7 +76,7 @@ export function SubagentOrchestrationRosterEditor({
             </option>
             {addableTemplates.map((template) => (
               <option key={template.id} value={template.id}>
-                {template.name} · {formatAgentDomainLabel(template.domain)}
+                {template.name}
               </option>
             ))}
           </select>
@@ -138,9 +137,6 @@ export function SubagentOrchestrationRosterEditor({
                     </span>
                     <span className="orchestration-roster-row-meta">{modelLabel}</span>
                     <span className="orchestration-roster-row-foot">
-                      <span className="orchestration-roster-domain">
-                        {template ? formatAgentDomainLabel(template.domain) : t("settings.models.editor.rosterTemplateMissing")}
-                      </span>
                       <span className="orchestration-roster-key">{agent.agentKey}</span>
                     </span>
                   </span>
