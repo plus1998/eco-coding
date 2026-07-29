@@ -48,26 +48,28 @@ Future<void> showThreadBillingSheet({
               )
             else ...[
               _BillingHero(billing: billing),
-              EcoGroupedSection(
-                label: context.l10n.billingComparison,
-                topSpacing: 20,
-                child: Column(
-                  children: [
-                    _InsetMetricTile(
-                      label: context.l10n.billingUnorchestrated,
-                      subtitle: mainModelLabel.isNotEmpty
-                          ? context.l10n.billingPlannerEstimate(mainModelLabel)
-                          : context.l10n.billingMainModelEstimate,
-                      value: formatCostUsd(billing.plannerTokenCostUsd),
-                    ),
-                    const EcoGroupedDivider(indent: 16),
-                    _InsetMetricTile(
-                      label: context.l10n.billingEco,
-                      subtitle: context.l10n.billingEcoSubtitle,
-                      value: formatCostUsd(billing.ecoCostUsd),
-                      emphasized: true,
-                    ),
-                    if (billing.savedUsd > 0) ...[
+              if (billing.savedUsd > 0)
+                EcoGroupedSection(
+                  label: context.l10n.billingComparison,
+                  topSpacing: 20,
+                  child: Column(
+                    children: [
+                      _InsetMetricTile(
+                        label: context.l10n.billingUnorchestrated,
+                        subtitle: mainModelLabel.isNotEmpty
+                            ? context.l10n.billingPlannerEstimate(
+                                mainModelLabel,
+                              )
+                            : context.l10n.billingMainModelEstimate,
+                        value: formatCostUsd(billing.plannerTokenCostUsd),
+                      ),
+                      const EcoGroupedDivider(indent: 16),
+                      _InsetMetricTile(
+                        label: context.l10n.billingEco,
+                        subtitle: context.l10n.billingEcoSubtitle,
+                        value: formatCostUsd(billing.ecoCostUsd),
+                        emphasized: true,
+                      ),
                       const EcoGroupedDivider(indent: 16),
                       _InsetMetricTile(
                         label: context.l10n.billingSavings,
@@ -79,9 +81,8 @@ Future<void> showThreadBillingSheet({
                         valueColor: ecoColors(context).success,
                       ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
               EcoGroupedSection(
                 label: context.l10n.billingTokenUsage,
                 topSpacing: 20,
@@ -267,7 +268,7 @@ class _BillingHero extends StatelessWidget {
                     billing.savedPct,
                     context.l10n,
                   )
-                : context.l10n.billingVsUnorchestrated,
+                : context.l10n.billingEcoSubtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: savedPositive ? eco.success : eco.textMuted,
               fontWeight: savedPositive ? FontWeight.w500 : FontWeight.w400,

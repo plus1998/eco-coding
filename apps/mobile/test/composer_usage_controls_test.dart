@@ -55,12 +55,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Billing'), findsOneWidget);
-    expect(find.text(r'$0.100'), findsWidgets);
-    expect(find.text('Estimated at claude-sonnet-4 rates'), findsOneWidget);
+    expect(find.text(r'$0.100'), findsOneWidget);
+    expect(find.text('COST COMPARISON'), findsNothing);
+    expect(find.text('Estimated at claude-sonnet-4 rates'), findsNothing);
     expect(find.text('gpt-5.5'), findsNothing);
     expect(find.text('Savings'), findsNothing);
     expect(find.text('Cache hit rate'), findsOneWidget);
     expect(find.text('60%'), findsOneWidget);
+  });
+
+  testWidgets('composer shows cost comparison only when savings are positive', (
+    tester,
+  ) async {
+    const savedBilling = ThreadBillingSnapshot(
+      plannerTokenCostUsd: 0.2,
+      ecoCostUsd: 0.1,
+      savedUsd: 0.1,
+      savedPct: 50,
+      pricingResolved: true,
+      plannerModelLabel: 'gpt-5.5 · OpenAI',
+    );
+    await tester.pumpWidget(
+      _TestApp(
+        child: ComposerRouteSummary(
+          runtimeConfig: runtimeConfig,
+          threadId: 'thread-1',
+          canEdit: true,
+          onChanged: (_) {},
+          billing: savedBilling,
+          showBilling: true,
+          threadStatus: 'idle',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(EcoIcons.usageCost));
+    await tester.pumpAndSettle();
+
+    expect(find.text('COST COMPARISON'), findsOneWidget);
+    expect(find.text('Estimated at claude-sonnet-4 rates'), findsOneWidget);
+    expect(find.text('Savings'), findsOneWidget);
   });
 
   testWidgets('composer hides billing before the session has activity', (
