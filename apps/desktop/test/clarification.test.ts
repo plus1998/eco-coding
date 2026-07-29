@@ -67,6 +67,8 @@ test("ClarificationPanel renders the AskUserQuestion surface as a Composer dock"
   expect(markup).toContain("（推荐）");
   expect(markup).not.toContain("(Recommended)");
   expect(markup).toContain("is-highlighted");
+  expect(markup).not.toContain("is-selected");
+  expect(markup).toContain("保留审计记录");
 });
 
 test("ClarificationPanel advances intermediate single-choice questions without a next button", () => {

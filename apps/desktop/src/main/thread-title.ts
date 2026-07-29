@@ -134,9 +134,7 @@ export function parseThreadTitleJson(text: string | undefined): string | undefin
     return undefined;
   }
 
-  const candidates = [trimmed, extractJsonObjectCandidate(trimmed)].filter(
-    (candidate): candidate is string => Boolean(candidate),
-  );
+  const candidates = [...new Set([trimmed, ...extractJsonObjectCandidates(trimmed)])];
 
   for (const candidate of candidates) {
     try {
@@ -357,19 +355,55 @@ export function extractTitleText(body: unknown): string | undefined {
   return chunks.join("\n").trim() || undefined;
 }
 
-function extractJsonObjectCandidate(text: string): string | undefined {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]?.trim()) {
-    return fenced[1].trim();
+function extractJsonObjectCandidates(text: string): string[] {
+  const candidates: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (start < 0) {
+      if (char === "{") {
+        start = index;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+    if (char !== "}") {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      candidates.push(text.slice(start, index + 1));
+      start = -1;
+    }
   }
 
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    return text.slice(start, end + 1);
-  }
-
-  return undefined;
+  return candidates;
 }
 
 function normalizeTitle(value: string): string {

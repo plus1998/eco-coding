@@ -5016,7 +5016,7 @@ button.sidebar-core-heading {
 }
 
 .clarification-dock-shell .clarification-option-row {
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-height: 48px;
   margin: 0;
@@ -5046,13 +5046,12 @@ button.sidebar-core-heading {
 }
 
 .clarification-dock-shell .clarification-option-body {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .clarification-dock-shell .clarification-option-label {
-  flex-shrink: 0;
   color: var(--codex-log-text);
   font-size: 14px;
   font-weight: 600;
@@ -5073,12 +5072,9 @@ button.sidebar-core-heading {
 
 .clarification-dock-shell .clarification-option-desc {
   min-width: 0;
-  overflow: hidden;
   color: var(--codex-log-muted);
   font-size: 13px;
   line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .clarification-dock-shell .clarification-info {
@@ -5163,12 +5159,6 @@ button.sidebar-core-heading {
   .clarification-dock-shell .clarification-option-body {
     flex-direction: column;
     gap: 2px;
-  }
-
-  .clarification-dock-shell .clarification-option-desc {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
   }
 
   .clarification-dock-shell .clarification-custom {

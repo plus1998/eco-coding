@@ -77,22 +77,7 @@ export function ClarificationPanel({
 
   useEffect(() => {
     setHighlightIndex(recommendedIndex >= 0 ? recommendedIndex : 0);
-    if (!question) {
-      return;
-    }
-    setSelections((current) => {
-      if ((current[questionIndex]?.length ?? 0) > 0) {
-        return current;
-      }
-      const recommended = displayOptions.find(isRecommendedOption);
-      if (!recommended) {
-        return current;
-      }
-      const next = current.map((row) => [...row]);
-      next[questionIndex] = [recommended.label];
-      return next;
-    });
-  }, [questionIndex, question, recommendedIndex, displayOptions]);
+  }, [questionIndex, recommendedIndex]);
 
   useEffect(() => {
     if (!showCustomInput || busy) {

@@ -322,17 +322,8 @@ class _ClarificationDockPanelState extends State<ClarificationDockPanel> {
   void _resetSelections() {
     _selections = [
       for (final question in widget.request.questions)
-        _initialSelection(question),
+        <String>[],
     ];
-  }
-
-  List<String> _initialSelection(ClarificationQuestion question) {
-    for (final option in question.options) {
-      if (_isRecommendedOption(option)) {
-        return [option.label];
-      }
-    }
-    return [];
   }
 
   bool _isRecommendedOption(ClarificationQuestionOption option) {

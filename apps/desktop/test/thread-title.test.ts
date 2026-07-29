@@ -81,6 +81,14 @@ test("parseThreadTitleJson extracts JSON from fenced markdown", () => {
   expect(parseThreadTitleJson('```json\n{"title":"任务 TODO 面板"}\n```')).toBe("任务 TODO 面板");
 });
 
+test("parseThreadTitleJson accepts adjacent JSON objects from duplicated upstream output", () => {
+  expect(parseThreadTitleJson('{"title":"连接远程主机"}{"title":"连接远程主机"}')).toBe("连接远程主机");
+});
+
+test("parseThreadTitleJson preserves braces inside a title while scanning adjacent objects", () => {
+  expect(parseThreadTitleJson('{"title":"配置 {host} 连接"}{"title":"备用标题"}')).toBe("配置 {host} 连接");
+});
+
 test("parseThreadTitleJson returns undefined for missing title field", () => {
   expect(parseThreadTitleJson('{"name":"missing"}')).toBeUndefined();
 });
