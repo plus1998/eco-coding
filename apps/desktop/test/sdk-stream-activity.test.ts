@@ -118,6 +118,62 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("preserves useful TaskCreate and TaskUpdate input in tool metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    message: string,
+    _role: string,
+    _stream: boolean,
+    _agentId?: string,
+    extras?: { tool?: { name: string; detail?: string } },
+  ) => emitted.push({ message, ...(extras?.tool && { tool: extras.tool }) });
+
+  bridge.handleEvent(
+    "thr_tasks",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "TaskCreate",
+        tool_use_id: "task_create",
+        input_complete: true,
+        input: { subject: "补充流事件测试" },
+      },
+    },
+    emit,
+  );
+  bridge.handleEvent(
+    "thr_tasks",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "TaskUpdate",
+        tool_use_id: "task_update",
+        input_complete: true,
+        input: { taskId: "3", status: "in_progress" },
+      },
+    },
+    emit,
+  );
+
+  expect(emitted).toEqual([
+    {
+      message: "Tool: TaskCreate · 补充流事件测试",
+      tool: { name: "TaskCreate", detail: "补充流事件测试", toolUseId: "task_create" },
+    },
+    {
+      message: "Tool: TaskUpdate · #3 · 进行中",
+      tool: { name: "TaskUpdate", detail: "#3 · 进行中", toolUseId: "task_update" },
+    },
+  ]);
+});
+
 test("preserves Read line range in structured tool metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

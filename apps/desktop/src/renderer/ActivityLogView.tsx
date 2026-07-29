@@ -549,10 +549,11 @@ function ProjectionActivityLogView({
             />
           ),
         )}
-        {showInitialWaiting
-          ? wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
-          : null}
-        {conversationActive && !waitingThinkingVisible ? <RunLogConversationTail /> : null}
+        {waitingThinkingVisible ? (
+          wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
+        ) : conversationActive ? (
+          <RunLogConversationTail />
+        ) : null}
       </div>
     </ActivityFeedLayoutContext.Provider>
   );
@@ -798,6 +799,7 @@ function ProjectionMainFeedEntry({
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
+        deferWaitingIndicator
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
         {...(onRestorePrompt && { onRestorePrompt })}
@@ -875,18 +877,8 @@ export function ProjectionToolGroupEntry({
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
   const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
   const onlyBlock = blocks.length === 1 ? blocks[0] : undefined;
-  const singleBashBlock =
-    onlyBlock?.kind === "action" && onlyBlock.bashRun
-      ? onlyBlock
-      : onlyBlock?.kind === "tool-failed" &&
-          onlyBlock.tool.trim().toLowerCase() === "bash" &&
-          !onlyBlock.recoveredResult &&
-          (onlyBlock.command || onlyBlock.error)
-        ? onlyBlock
-        : undefined;
-  const hasFailedTool = blocks.some(
-    (block) => block.kind === "tool-failed" && !block.recoveredResult,
-  );
+  const singleBashBlock = onlyBlock?.kind === "action" && onlyBlock.bashRun ? onlyBlock : undefined;
+  const hasFailedTool = blocks.some((block) => block.kind === "tool-failed" && !block.recoveredResult);
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -916,12 +908,8 @@ export function ProjectionToolGroupEntry({
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
-        {hasFailedTool ? (
-          <span
-            className="run-log-tool-status-dot"
-            title={i18n.t("activity.incomplete")}
-            aria-hidden
-          />
+        {hasFailedTool && !expanded ? (
+          <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
         ) : null}
         <ChevronRight
           size={15}
@@ -933,16 +921,12 @@ export function ProjectionToolGroupEntry({
         <div className="run-log-tool-group-details">
           {singleBashBlock ? (
             <RunLogBashTerminal
-              {...(singleBashBlock.kind === "action" && singleBashBlock.bashRun?.command && {
+              {...(singleBashBlock.bashRun?.command && {
                 command: singleBashBlock.bashRun.command,
               })}
-              {...(singleBashBlock.kind === "action" && singleBashBlock.bashRun?.output && {
+              {...(singleBashBlock.bashRun?.output && {
                 output: singleBashBlock.bashRun.output,
               })}
-              {...(singleBashBlock.kind === "tool-failed" &&
-                singleBashBlock.command && { command: singleBashBlock.command })}
-              {...(singleBashBlock.kind === "tool-failed" &&
-                singleBashBlock.error && { output: singleBashBlock.error })}
             />
           ) : (
             entry.entries.map((child) => (
@@ -2238,6 +2222,7 @@ function ProjectionTimelineEntry({
   requestSpansById,
   onRestorePrompt,
   compact = false,
+  deferWaitingIndicator = false,
   forceActionDetailsExpanded = false,
   showMessageMeta = false,
   stickyMessageMeta = false,
@@ -2246,10 +2231,14 @@ function ProjectionTimelineEntry({
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
+  deferWaitingIndicator?: boolean;
   forceActionDetailsExpanded?: boolean;
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
 }) {
+  if (deferWaitingIndicator && isWaitingThinkingItem(item, requestSpansById)) {
+    return null;
+  }
   if (isProjectionUserPromptItem(item)) {
     if (compact) {
       return null;
@@ -3166,6 +3155,28 @@ function ToolFailedBlock({
 }) {
   const isBash = tool.trim().toLowerCase() === "bash";
 
+  if (!recoveredResult) {
+    const label = summarizeFailedTool(tool, command);
+    return (
+      <RunLogAction
+        icon={iconForToolName(tool)}
+        label={label}
+        lifecycle="failed"
+        {...(isBash && {
+          bashRun: {
+            title: label,
+            ...(command && { command }),
+            ...(error && { output: error }),
+          },
+        })}
+        {...(!isBash && error && { error })}
+        {...(subagent && { subagent })}
+        {...(modelByRole && { modelByRole })}
+        {...(omitRoleLabel !== undefined && { omitRoleLabel })}
+      />
+    );
+  }
+
   return (
     <div className="run-log-tool-failed" role="status">
       {subagent && !omitRoleLabel ? (
@@ -3189,11 +3200,8 @@ function ToolFailedBlock({
           />
         ) : null}
       </span>
-      {isBash && (command || (!recoveredResult && error)) ? (
-        <RunLogBashTerminal
-          {...(command && { command })}
-          {...(!recoveredResult && error && { output: error })}
-        />
+      {isBash && command ? (
+        <RunLogBashTerminal command={command} />
       ) : command ? (
         <div className="run-log-tool-failed-command-wrap">
           <pre className="run-log-tool-failed-command">{command}</pre>
@@ -3267,6 +3275,7 @@ function RunLogAction({
   fileChange,
   readTarget,
   grepTarget,
+  error,
   subagent,
   modelByRole,
   omitRoleLabel,
@@ -3279,6 +3288,7 @@ function RunLogAction({
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
   grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
+  error?: string;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
@@ -3302,7 +3312,7 @@ function RunLogAction({
       ? formatRoleModelLabel(subagentRole, modelByRole?.[subagentRole])
       : undefined;
   const displayLabel = bashRun?.title ?? fileChange?.fileName ?? label;
-  const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange);
+  const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange || error);
   const detailsExpanded = forceDetailsExpanded || expanded;
   const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
 
@@ -3354,6 +3364,13 @@ function RunLogAction({
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
+      {lifecycle === "failed" ? (
+        <span
+          className="run-log-tool-status-dot"
+          title={i18n.t("activity.incomplete")}
+          aria-hidden
+        />
+      ) : null}
       {fileChange && !detailsExpanded && (fileChange.additions > 0 || fileChange.deletions > 0) ? (
         <span className="run-log-file-change-card-stats run-log-action-file-stats">
           {fileChange.additions > 0 ? <span className="stat-add">+{fileChange.additions}</span> : null}
@@ -3465,7 +3482,7 @@ function RunLogAction({
     >
       {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
       <div className="run-log-action-main">
-        {isTerminal && canToggleDetails ? (
+        {canToggleDetails ? (
           <button
             type="button"
             className={triggerClassName}
@@ -3478,7 +3495,15 @@ function RunLogAction({
         ) : (
           <div className={triggerClassName}>{row}</div>
         )}
-        {isTerminal && canExpand && detailsExpanded ? (
+        {error && detailsExpanded ? (
+          <div className="run-log-tool-result-panel">
+            <div className="run-log-tool-result-header">
+              <Terminal size={14} aria-hidden />
+              <span>{i18n.t("activity.commandOutput")}</span>
+            </div>
+            <pre className="run-log-tool-failed-error">{error}</pre>
+          </div>
+        ) : isTerminal && canExpand && detailsExpanded ? (
           <div className="run-log-action-detail-shell open">
             <div className="run-log-action-detail-inner">
               <pre className="run-log-action-detail">{label}</pre>

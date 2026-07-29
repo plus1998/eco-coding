@@ -313,6 +313,44 @@ test("ActivityLogView hides the conversation tail while a request is waiting for
   expect(html).not.toContain("run-log-conversation-tail");
 });
 
+test("ActivityLogView keeps the active thinking indicator at the bottom after tool rows", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [requestSpan({ requestId: "req-waiting", status: "waiting_first_token" })],
+        timeline: [
+          item({
+            id: "request-started",
+            sequence: 1,
+            eventType: "request.started",
+            requestId: "req-waiting",
+            text: "",
+          }),
+          item({
+            id: "read-completed",
+            sequence: 2,
+            eventType: "tool.completed",
+            text: "Tool: Read · config.ts",
+            metadata: {
+              tool: {
+                name: "Read",
+                detail: "config.ts",
+                toolUseId: "toolu_read_config",
+                status: "completed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html.indexOf("config.ts")).toBeLessThan(html.indexOf("正在思考"));
+  expect(html.match(/正在思考/g)?.length).toBe(1);
+  expect(html).not.toContain("run-log-conversation-tail");
+});
+
 test("ActivityLogView replaces answered clarification waiting with its question and answer", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -1097,7 +1135,7 @@ test("ProjectionToolGroupEntry merges a single Bash summary with its expanded de
               detail: "bun test",
               toolUseId: "toolu_single_bash_expanded",
               status: "completed",
-              output: "2 pass",
+              outputPreview: "2 pass",
             },
           },
         }),
@@ -1129,16 +1167,31 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
     status: "failed",
     timeline: [
       item({
-        id: "bash-failed",
-        eventType: "tool.failed",
+        id: "bash-started",
+        sequence: 1,
+        eventType: "tool.started",
         text: "Tool: Bash · bun test",
         metadata: {
           tool: {
             name: "Bash",
             detail: "bun test",
             toolUseId: "toolu_bash_failed",
+            status: "started",
+          },
+        },
+      }),
+      item({
+        id: "bash-failed",
+        sequence: 2,
+        eventType: "tool.failed",
+        text: "Tool failed: Bash: Exit code 1",
+        metadata: {
+          tool: {
+            name: "Bash",
+            detail: "Exit code 1\n1 test failed",
+            toolUseId: "toolu_bash_failed",
             status: "failed",
-            output: "1 test failed",
+            outputPreview: "Exit code 1\n1 test failed",
           },
         },
       }),
@@ -1171,11 +1224,13 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
     }),
   );
 
-  expect(expandedHtml.match(/已运行 bun test/g)?.length).toBe(1);
-  expect(expandedHtml).not.toContain("run-log-tool-group-child-trigger");
-  expect(expandedHtml).toContain("run-log-bash-command");
-  expect(expandedHtml).toContain("run-log-bash-output");
-  expect(expandedHtml).toContain("1 test failed");
+  expect(expandedHtml).toContain("已运行 bun test");
+  expect(expandedHtml).toContain("run-log-action--bash-card");
+  expect(expandedHtml).toContain('aria-expanded="false"');
+  expect(expandedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
+  expect(expandedHtml).not.toContain("run-log-bash-command");
+  expect(expandedHtml).not.toContain("run-log-bash-output");
+  expect(expandedHtml).not.toContain("1 test failed");
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {
@@ -1199,12 +1254,18 @@ test("SubagentTaskDrawer shows live running status text in subagent tabs", () =>
         },
       ],
       activeTab: subagent.agentId,
-      openSubagentTabIds: [subagent.agentId],
+      openTabIds: [subagent.agentId],
       backgroundTasks: [],
       onSelectAgent: () => undefined,
-      onCloseAgent: () => undefined,
+      onSelectPlan: () => undefined,
+      onCloseTab: () => undefined,
       onSelectBackgroundTasks: () => undefined,
       onSelectReview: () => undefined,
+      workspacePath: "/tmp/workspace",
+      onSelectFiles: () => undefined,
+      onSelectFileViewer: () => undefined,
+      onOpenTerminal: () => undefined,
+      onShowHome: () => undefined,
       onToggleFullscreen: () => undefined,
       onSelectReviewPath: () => undefined,
       onOpenTerminalTask: () => undefined,
@@ -1588,12 +1649,18 @@ test("SubagentTaskDrawer renders grouped subagent tool calls in its standalone p
         agents: [subagent],
       }),
       activeTab: subagent.agentId,
-      openSubagentTabIds: [subagent.agentId],
+      openTabIds: [subagent.agentId],
       backgroundTasks: [],
       onSelectAgent: () => undefined,
-      onCloseAgent: () => undefined,
+      onSelectPlan: () => undefined,
+      onCloseTab: () => undefined,
       onSelectBackgroundTasks: () => undefined,
       onSelectReview: () => undefined,
+      workspacePath: "/tmp/workspace",
+      onSelectFiles: () => undefined,
+      onSelectFileViewer: () => undefined,
+      onOpenTerminal: () => undefined,
+      onShowHome: () => undefined,
       onToggleFullscreen: () => undefined,
       onSelectReviewPath: () => undefined,
       onOpenTerminalTask: () => undefined,

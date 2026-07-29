@@ -818,7 +818,7 @@ export function buildProjectionDisplayTimelineItems(
     if (lifecycleKey) {
       const current = latestLifecycleDisplayByKey.get(lifecycleKey);
       if (!current || compareProjectionLifecycleDisplayItems(item, current) > 0) {
-        latestLifecycleDisplayByKey.set(lifecycleKey, item);
+        latestLifecycleDisplayByKey.set(lifecycleKey, mergeToolDisplayTimelineItem(current, item));
       }
     }
 
@@ -865,8 +865,12 @@ export function buildProjectionDisplayTimelineItems(
       }
     }
     const lifecycleKey = projectionToolLifecycleKey(item);
-    if (lifecycleKey && latestLifecycleDisplayByKey.get(lifecycleKey)?.id !== item.id) {
-      continue;
+    if (lifecycleKey) {
+      const latestLifecycle = latestLifecycleDisplayByKey.get(lifecycleKey);
+      if (!latestLifecycle || latestLifecycle.id !== item.id) {
+        continue;
+      }
+      displayItem = latestLifecycle;
     }
     const streamKey = projectionStreamDisplayKey(item, requestSpansById, timeline);
     if (streamKey) {
@@ -1219,7 +1223,11 @@ function mergeFilesystemToolTimelineMetadata(
   if (!richerTool) {
     return richer;
   }
-  const detail = richerTool.detail ?? placeholderTool?.detail;
+  const preserveStartedBashDetail =
+    richer.eventType === "tool.failed" && richerTool.name.trim().toLowerCase() === "bash";
+  const detail = preserveStartedBashDetail
+    ? (placeholderTool?.detail ?? richerTool.detail)
+    : (richerTool.detail ?? placeholderTool?.detail);
   const readTarget = richerTool.readTarget ?? placeholderTool?.readTarget;
   const grepTarget = richerTool.grepTarget ?? placeholderTool?.grepTarget;
   const mergedTool: ThreadRunToolMetadata = {

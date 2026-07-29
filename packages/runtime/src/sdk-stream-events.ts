@@ -658,7 +658,7 @@ function streamBlockMetadata(
   if (index === undefined) {
     return {};
   }
-  const key = `${kind}:${index}`;
+  const key = ctx.currentMessageId ? `${ctx.currentMessageId}:${kind}:${index}` : `${kind}:${index}`;
   ctx.emittedStreamBlockKeys.add(key);
   return { stream_block_key: key };
 }

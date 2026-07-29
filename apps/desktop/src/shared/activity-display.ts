@@ -299,6 +299,12 @@ export function formatToolDisplayLabel(toolName: string, detail?: string): strin
   if (toolName === "Agent") {
     return normalizedDetail ?? "启动子代理";
   }
+  if (
+    normalizedDetail &&
+    (toolName === "TaskCreate" || toolName === "TaskUpdate" || toolName === "TodoWrite")
+  ) {
+    return `${TOOL_VERB_LABELS[toolName]} · ${normalizedDetail}`;
+  }
   if (normalizedDetail) {
     return normalizedDetail;
   }

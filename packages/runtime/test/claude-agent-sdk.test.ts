@@ -1101,6 +1101,65 @@ test("skips assistant text replay even when stream and final block indexes diffe
   expect(assistantEvents.filter((event) => event.type === "message.delta")).toEqual([]);
 });
 
+test("keeps forwarded subagent text after main-session stream output", () => {
+  const ctx = createSdkStreamContext({
+    resolveSubagentAgentId: ({ parentToolUseId }) =>
+      parentToolUseId === "call_explore" ? "agent_explore" : undefined,
+  });
+  mapSdkMessageToEvents(
+    {
+      type: "stream_event",
+      uuid: "main_start",
+      session_id: "session_1",
+      event: { type: "message_start", message: { id: "main_message" } },
+    },
+    "thr_1",
+    ctx,
+  );
+  mapSdkMessageToEvents(
+    {
+      type: "stream_event",
+      uuid: "main_text",
+      session_id: "session_1",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "主代理输出" },
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  const subagentEvents = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "subagent_final",
+      session_id: "session_1",
+      parent_tool_use_id: "call_explore",
+      subagent_type: "eco_explore",
+      message: {
+        id: "subagent_message",
+        content: [{ type: "text", text: "完整探索结论" }],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+
+  expect(subagentEvents).toHaveLength(1);
+  expect(subagentEvents[0]).toMatchObject({
+    type: "message.delta",
+    role: "explore",
+    agentId: "agent_explore",
+    payload: {
+      text: "完整探索结论",
+      parent_tool_use_id: "call_explore",
+      messageId: "subagent_message",
+    },
+  });
+});
+
 test("ignores SDK messages without displayable text", () => {
   expect(
     mapSdkMessageToEvents(
@@ -1765,6 +1824,7 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   }
 
   const autonomousAgents = capturedOptions[0]?.agents as Record<string, { model?: string }> | undefined;
+  expect(capturedOptions[0]?.forwardSubagentText).toBe(true);
   expect(Object.keys(autonomousAgents ?? {}).sort()).toEqual([
     ecoSubagentKeyForRole("architect"),
     ecoSubagentKeyForRole("coder"),

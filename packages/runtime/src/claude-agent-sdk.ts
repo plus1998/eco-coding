@@ -880,6 +880,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : {}),
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       includePartialMessages: true,
+      forwardSubagentText: true,
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
@@ -986,6 +987,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       settingSources: session.settingSources,
       flags: {
         includePartialMessages: queryOptions.includePartialMessages === true,
+        forwardSubagentText: queryOptions.forwardSubagentText === true,
         enableFileCheckpointing: queryOptions.enableFileCheckpointing === true,
         excludeDynamicSections: this.options.excludeDynamicSections === true,
       },
@@ -2448,10 +2450,9 @@ function mapAssistantMessageToEvents(
       continue;
     }
     if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-      const streamBlockKey = assistantStreamBlockKey("text", index);
+      const streamBlockKey = assistantStreamBlockKey(messageId ?? uuid, "text", index);
       if (
-        streamCtx?.emittedStreamBlockKeys.has(streamBlockKey) ||
-        hasEmittedStreamBlockKind(streamCtx, "text")
+        hasEmittedStreamBlockForMessageKind(streamCtx, messageId, "text", messageParentToolUseId === null)
       ) {
         continue;
       }
@@ -2484,10 +2485,9 @@ function mapAssistantMessageToEvents(
       continue;
     }
     if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
-      const streamBlockKey = assistantStreamBlockKey("thinking", index);
+      const streamBlockKey = assistantStreamBlockKey(messageId ?? uuid, "thinking", index);
       if (
-        streamCtx?.emittedStreamBlockKeys.has(streamBlockKey) ||
-        hasEmittedStreamBlockKind(streamCtx, "thinking")
+        hasEmittedStreamBlockForMessageKind(streamCtx, messageId, "thinking", messageParentToolUseId === null)
       ) {
         continue;
       }
@@ -2566,15 +2566,28 @@ function mapAssistantMessageToEvents(
   return events;
 }
 
-function assistantStreamBlockKey(kind: "text" | "thinking", index: number): string {
-  return `${kind}:${index}`;
+function assistantStreamBlockKey(messageId: string, kind: "text" | "thinking", index: number): string {
+  return `${messageId}:${kind}:${index}`;
 }
 
-function hasEmittedStreamBlockKind(
+function hasEmittedStreamBlockForMessageKind(
   streamCtx: SdkStreamContext | undefined,
+  messageId: string | undefined,
   kind: "text" | "thinking",
+  allowLegacyMainFallback: boolean,
 ): boolean {
   if (!streamCtx) {
+    return false;
+  }
+  if (messageId) {
+    const prefix = `${messageId}:${kind}:`;
+    for (const key of streamCtx.emittedStreamBlockKeys) {
+      if (key.startsWith(prefix)) {
+        return true;
+      }
+    }
+  }
+  if (!allowLegacyMainFallback) {
     return false;
   }
   for (const key of streamCtx.emittedStreamBlockKeys) {
@@ -3211,6 +3224,11 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
     return null;
   }
 
+  const taskSummary = formatTaskToolInputSummary(toolName, input);
+  if (taskSummary) {
+    return taskSummary;
+  }
+
   if (toolName === "AskUserQuestion") {
     if (!Array.isArray(input.questions)) {
       return "澄清问题";
@@ -3290,6 +3308,49 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
   }
 
   return null;
+}
+
+function formatTaskToolInputSummary(toolName: string, input: Record<string, unknown>): string | null {
+  if (toolName === "TaskCreate") {
+    return readFirstTrimmedString(input, "subject", "activeForm", "active_form", "description") ?? null;
+  }
+  if (toolName === "TaskUpdate") {
+    const subject = readFirstTrimmedString(input, "subject", "activeForm", "active_form");
+    if (subject) {
+      return subject;
+    }
+    const taskId = readFirstTrimmedString(input, "taskId", "task_id");
+    const status = formatTaskStatus(readFirstTrimmedString(input, "status"));
+    return [taskId ? `#${taskId}` : undefined, status].filter(Boolean).join(" · ") || null;
+  }
+  if (toolName === "TodoWrite" && Array.isArray(input.todos)) {
+    return `${input.todos.length} 项`;
+  }
+  return null;
+}
+
+function readFirstTrimmedString(input: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function formatTaskStatus(status: string | undefined): string | undefined {
+  if (!status) {
+    return undefined;
+  }
+  return (
+    {
+      pending: "待处理",
+      in_progress: "进行中",
+      completed: "已完成",
+      deleted: "已删除",
+    }[status] ?? status
+  );
 }
 
 function pathBasename(filePath: string): string {

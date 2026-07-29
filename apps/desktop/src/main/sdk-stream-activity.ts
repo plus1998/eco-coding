@@ -618,6 +618,10 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
     return undefined;
   }
   const record = input as Record<string, unknown>;
+  const taskDetail = resolveSdkTaskToolDisplayDetail(toolName, record);
+  if (taskDetail) {
+    return taskDetail;
+  }
   if (toolName === "AskUserQuestion") {
     const questions = Array.isArray(record.questions) ? record.questions : undefined;
     const first = questions?.[0];
@@ -657,6 +661,52 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
     readString(record.pattern) ??
     readString(record.query) ??
     readString(record.url)
+  );
+}
+
+function resolveSdkTaskToolDisplayDetail(
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  if (toolName === "TaskCreate") {
+    return readFirstSdkString(input, "subject", "activeForm", "active_form", "description");
+  }
+  if (toolName === "TaskUpdate") {
+    const subject = readFirstSdkString(input, "subject", "activeForm", "active_form");
+    if (subject) {
+      return subject;
+    }
+    const taskId = readFirstSdkString(input, "taskId", "task_id");
+    const status = formatSdkTaskStatus(readFirstSdkString(input, "status"));
+    return [taskId ? `#${taskId}` : undefined, status].filter(Boolean).join(" · ") || undefined;
+  }
+  if (toolName === "TodoWrite" && Array.isArray(input.todos)) {
+    return `${input.todos.length} 项`;
+  }
+  return undefined;
+}
+
+function readFirstSdkString(input: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = readString(input[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function formatSdkTaskStatus(status: string | undefined): string | undefined {
+  if (!status) {
+    return undefined;
+  }
+  return (
+    {
+      pending: "待处理",
+      in_progress: "进行中",
+      completed: "已完成",
+      deleted: "已删除",
+    }[status] ?? status
   );
 }
 
