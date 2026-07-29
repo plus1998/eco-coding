@@ -164,10 +164,9 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
   static const _maxHistoryLength = 96;
 
   late final AnimationController _controller;
-  final List<double> _history = List<double>.filled(48, 0);
+  final List<double> _history = List<double>.filled(48, 0, growable: true);
   double _targetLevel = 0;
   double _displayLevel = 0;
-  double _previousPhase = 0;
 
   @override
   void initState() {
@@ -175,28 +174,28 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
     _targetLevel = _amplifyLevel(widget.audioLevel);
     _displayLevel = _targetLevel;
     _controller = AnimationController(vsync: this, duration: _sampleInterval)
-      ..addListener(_handleAnimationTick)
-      ..repeat();
+      ..addStatusListener(_handleAnimationStatus)
+      ..forward();
   }
 
   @override
   void didUpdateWidget(covariant _VoiceLevelWave oldWidget) {
     super.didUpdateWidget(oldWidget);
     _targetLevel = _amplifyLevel(widget.audioLevel);
-    _updateDisplayLevel();
   }
 
-  void _handleAnimationTick() {
-    final phase = _controller.value;
-    if (phase < _previousPhase) {
-      _updateDisplayLevel();
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !mounted) return;
+
+    _updateDisplayLevel();
+    setState(() {
       _history.add(_displayLevel);
       if (_history.length > _maxHistoryLength) {
         _history.removeRange(0, _history.length - _maxHistoryLength);
       }
-      _targetLevel *= 0.97;
-    }
-    _previousPhase = phase;
+    });
+    _targetLevel *= 0.97;
+    _controller.forward(from: 0);
   }
 
   double _amplifyLevel(double level) {
@@ -212,7 +211,7 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
 
   @override
   void dispose() {
-    _controller.removeListener(_handleAnimationTick);
+    _controller.removeStatusListener(_handleAnimationStatus);
     _controller.dispose();
     super.dispose();
   }
@@ -221,6 +220,7 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
   Widget build(BuildContext context) {
     final colors = ecoColors(context);
     return RepaintBoundary(
+      key: const ValueKey('voice-level-wave'),
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
@@ -242,6 +242,7 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
 
 class _VoiceLevelPainter extends CustomPainter {
   static const _liveBarCount = 7;
+  static const _liveProfile = <double>[0.42, 0.68, 0.88, 1.0, 0.82, 0.64, 0.48];
 
   const _VoiceLevelPainter({
     required this.scrollProgress,
@@ -272,34 +273,31 @@ class _VoiceLevelPainter extends CustomPainter {
             ...history,
           ];
 
-    for (var index = 0; index < count; index++) {
-      final historyLevel = visibleHistory[index];
-      final distanceFromRight = count - 1 - index;
+    for (var index = 0; index <= count; index++) {
+      final historyLevel = index == count
+          ? currentLevel
+          : visibleHistory[index];
+      final distanceFromRight = count - index;
       final isLive = distanceFromRight < math.min(_liveBarCount, count);
       final x = (index + 0.5 - scrollProgress) * slotWidth;
       if (x < -slotWidth || x > size.width + slotWidth) continue;
+      final liveIndex = (_liveBarCount - 1 - distanceFromRight).clamp(
+        0,
+        _liveBarCount - 1,
+      );
+      final level = isLive
+          ? math.max(historyLevel, currentLevel * _liveProfile[liveIndex])
+          : historyLevel;
 
       _paintBar(
         canvas: canvas,
         x: x,
         centerY: centerY,
         availableHeight: size.height,
-        level: historyLevel,
-        colorMix: (historyLevel * 0.72 + (isLive ? 0.22 : 0.06)).clamp(
-          0.0,
-          1.0,
-        ),
+        level: level,
+        colorMix: (level * 0.72 + (isLive ? 0.22 : 0.06)).clamp(0.0, 1.0),
       );
     }
-
-    _paintBar(
-      canvas: canvas,
-      x: size.width - slotWidth / 2,
-      centerY: centerY,
-      availableHeight: size.height,
-      level: currentLevel,
-      colorMix: (currentLevel * 0.72 + 0.24).clamp(0.0, 1.0),
-    );
   }
 
   void _paintBar({

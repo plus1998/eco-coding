@@ -56,4 +56,55 @@ void main() {
     expect(stopCount, 1);
     expect(sendCount, 1);
   });
+
+  testWidgets('commits repeated live samples without dropping history', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _VoiceComposerTestApp(
+        child: VoiceRecordingComposer(
+          audioLevel: 0.72,
+          finishing: false,
+          onCancel: () {},
+          onStop: () {},
+          onSend: () {},
+        ),
+      ),
+    );
+    for (var index = 0; index < 30; index++) {
+      await tester.pump(const Duration(milliseconds: 75));
+    }
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('voice-level-wave')), findsOneWidget);
+  });
+}
+
+class _VoiceComposerTestApp extends StatelessWidget {
+  const _VoiceComposerTestApp({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
+      theme: buildEcoLightTheme(),
+      home: Scaffold(
+        body: Align(alignment: Alignment.bottomCenter, child: child),
+      ),
+    );
+  }
 }
