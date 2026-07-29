@@ -188,12 +188,10 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
     if (status != AnimationStatus.completed || !mounted) return;
 
     _updateDisplayLevel();
-    setState(() {
-      _history.add(_displayLevel);
-      if (_history.length > _maxHistoryLength) {
-        _history.removeRange(0, _history.length - _maxHistoryLength);
-      }
-    });
+    _history.add(_displayLevel);
+    if (_history.length > _maxHistoryLength) {
+      _history.removeRange(0, _history.length - _maxHistoryLength);
+    }
     _targetLevel *= 0.97;
     _controller.forward(from: 0);
   }
@@ -242,7 +240,6 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
 
 class _VoiceLevelPainter extends CustomPainter {
   static const _liveBarCount = 7;
-  static const _liveProfile = <double>[0.42, 0.68, 0.88, 1.0, 0.82, 0.64, 0.48];
 
   const _VoiceLevelPainter({
     required this.scrollProgress,
@@ -281,21 +278,17 @@ class _VoiceLevelPainter extends CustomPainter {
       final isLive = distanceFromRight < math.min(_liveBarCount, count);
       final x = (index + 0.5 - scrollProgress) * slotWidth;
       if (x < -slotWidth || x > size.width + slotWidth) continue;
-      final liveIndex = (_liveBarCount - 1 - distanceFromRight).clamp(
-        0,
-        _liveBarCount - 1,
-      );
-      final level = isLive
-          ? math.max(historyLevel, currentLevel * _liveProfile[liveIndex])
-          : historyLevel;
 
       _paintBar(
         canvas: canvas,
         x: x,
         centerY: centerY,
         availableHeight: size.height,
-        level: level,
-        colorMix: (level * 0.72 + (isLive ? 0.22 : 0.06)).clamp(0.0, 1.0),
+        level: historyLevel,
+        colorMix: (historyLevel * 0.72 + (isLive ? 0.22 : 0.06)).clamp(
+          0.0,
+          1.0,
+        ),
       );
     }
   }
