@@ -14,6 +14,12 @@ test("cumulative stream updates advance the incremental synchronization sequence
       eventType: "thinking.delta",
     }),
   ).toBe(true);
+  expect(
+    shouldAdvanceThreadRunEventSequence({
+      id: "tre:codex:message.delta:codex-thread:turn:item",
+      eventType: "message.delta",
+    }),
+  ).toBe(true);
 });
 
 test("immutable and metadata-only events keep their timeline ordering sequence", () => {

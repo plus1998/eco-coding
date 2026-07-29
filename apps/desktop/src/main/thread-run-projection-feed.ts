@@ -33,7 +33,12 @@ function trimTimeline(
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
   const metadata = trimTimelineMetadata(item.metadata);
-  const { text, truncated } = truncateText(item.text, FEED_PROJECTION_MAX_TEXT_CHARS);
+  // Narrative output is user-visible content, not a preview. It must stay complete in the
+  // live projection so a finalized message can continue from its accumulated delta text.
+  const preserveFullText = item.eventType === "message.delta" || item.eventType === "message.final";
+  const { text, truncated } = preserveFullText
+    ? { text: item.text, truncated: false }
+    : truncateText(item.text, FEED_PROJECTION_MAX_TEXT_CHARS);
   const metadataChanged = metadata !== item.metadata;
   if (!truncated && !metadataChanged) {
     return item;

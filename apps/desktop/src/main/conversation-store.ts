@@ -4459,7 +4459,6 @@ function shouldUpgradeThreadRunEvent(existing: ThreadRunEvent, incoming: ThreadR
 
   if (
     (existing.eventType === "message.delta" || existing.eventType === "thinking.delta") &&
-    existing.id.startsWith("tre:stream:") &&
     existing.streamKey &&
     existing.streamKey === incoming.streamKey &&
     incoming.observedAt >= existing.observedAt &&

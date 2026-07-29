@@ -9,8 +9,8 @@ import {
   maxFeedProjectionTimelineSequence,
   trimProjectionForFeed,
 } from "../src/main/thread-run-projection-feed";
-import { projectThreadRunToolMetadataForFeed } from "../src/shared/thread-run-tool-projection";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
+import { projectThreadRunToolMetadataForFeed } from "../src/shared/thread-run-tool-projection";
 
 function requireValue<T>(value: T | undefined, label: string): T {
   if (value === undefined) {
@@ -64,18 +64,18 @@ function createProjection(text: string, { longDelegation = true } = {}): ThreadR
   };
 }
 
-test("trimProjectionForFeed truncates long timeline text and keeps metadata flag", () => {
+test("trimProjectionForFeed preserves complete narrative output", () => {
   const longText = "a".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
   const trimmed = trimProjectionForFeed(createProjection(longText));
 
-  expect(trimmed.timeline[0]?.text).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);
-  expect(trimmed.timeline[0]?.metadata?.textTruncated).toBe(true);
-  expect(trimmed.agents[0]?.timeline[0]?.text).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);
-  expect(trimmed.agents[0]?.timeline[0]?.metadata?.textTruncated).toBe(true);
+  expect(trimmed.timeline[0]?.text).toBe(longText);
+  expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
+  expect(trimmed.agents[0]?.timeline[0]?.text).toBe(longText);
+  expect(trimmed.agents[0]?.timeline[0]?.metadata?.textTruncated).toBeUndefined();
   expect(trimmed.agents[0]?.delegationPrompt).toHaveLength(2_000);
 });
 
-test("trimProjectionForFeed truncates streaming deltas", () => {
+test("trimProjectionForFeed preserves complete narrative streaming deltas", () => {
   const longText = "b".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
   const projection: ThreadRunProjectionSnapshot = {
     thread: {
@@ -88,9 +88,9 @@ test("trimProjectionForFeed truncates streaming deltas", () => {
     requestSpans: [],
     timeline: [
       {
-        id: "think_delta",
+        id: "message_delta",
         sequence: 1,
-        eventType: "thinking.delta",
+        eventType: "message.delta",
         scope: "main",
         text: longText,
         at: "2026-01-01T00:00:00.000Z",
@@ -99,6 +99,25 @@ test("trimProjectionForFeed truncates streaming deltas", () => {
     diagnostics: [],
     sourceEventCount: 1,
   };
+
+  const trimmed = trimProjectionForFeed(projection);
+  expect(trimmed.timeline[0]?.text).toBe(longText);
+  expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
+});
+
+test("trimProjectionForFeed still bounds long thinking text", () => {
+  const longText = "c".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
+  const projection = createProjection("short", { longDelegation: false });
+  projection.timeline = [
+    {
+      id: "thinking_delta",
+      sequence: 1,
+      eventType: "thinking.delta",
+      scope: "main",
+      text: longText,
+      at: "2026-01-01T00:00:00.000Z",
+    },
+  ];
 
   const trimmed = trimProjectionForFeed(projection);
   expect(trimmed.timeline[0]?.text).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);

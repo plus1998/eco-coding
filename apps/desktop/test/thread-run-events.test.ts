@@ -174,6 +174,31 @@ test.skipIf(!sqliteAvailable)("conversation store upserts cumulative stream text
 });
 
 test.skipIf(!sqliteAvailable)(
+  "conversation store upserts Codex cumulative stream text in place",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-codex-stream-"));
+    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    store.saveThread(makeThread());
+    const id = "tre:codex:message.delta:codex-thread:turn:item";
+
+    const first = store.appendThreadRunEvent(makeEvent({ id, streamKey: "msg_codex", message: "对，" }));
+    const updated = store.appendThreadRunEvent(
+      makeEvent({
+        id,
+        streamKey: "msg_codex",
+        message: "对，这是完整的累计流文本。",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+    );
+
+    const events = store.listThreadRunEvents("thr_run_events");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.message).toBe("对，这是完整的累计流文本。");
+    expect(updated.sequence).toBeGreaterThan(first.sequence);
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
   "projection reads collapse legacy stream history and apply a source bound",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-projection-"));

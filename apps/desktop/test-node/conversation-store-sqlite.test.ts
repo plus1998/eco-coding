@@ -169,6 +169,49 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite updates Codex cumulative stream events in place", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-codex-stream-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_node_codex_stream";
+  store.saveThread({
+    id: threadId,
+    title: "Codex stream",
+    prompt: "verify cumulative output",
+    workspacePath: "/tmp/eco-node-codex-stream",
+    status: "running",
+    message: "running",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  const id = "tre:codex:message.delta:codex-thread:turn:item";
+  const baseEvent = {
+    id,
+    threadId,
+    eventType: "message.delta" as const,
+    scope: "main" as const,
+    role: "assistant",
+    requestId: "codex-turn",
+    streamKey: "msg_codex",
+    streamState: "streaming" as const,
+  };
+  const first = store.appendThreadRunEvent({
+    ...baseEvent,
+    message: "对，",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+  const updated = store.appendThreadRunEvent({
+    ...baseEvent,
+    message: "对，这是完整的累计流文本。",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+
+  const events = store.listThreadRunEvents(threadId);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.message, "对，这是完整的累计流文本。");
+  assert.ok(updated.sequence > first.sequence);
+});
+
 test("Node SQLite projects tool metadata and migrates legacy output exactly once", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-tool-output-projection-");
   const databasePath = path.join(directory, "eco-coding.sqlite");
