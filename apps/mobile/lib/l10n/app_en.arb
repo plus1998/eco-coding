@@ -403,6 +403,7 @@
   "billingTokenUsage": "Token usage",
   "billingInput": "Input",
   "billingOutput": "Output",
+  "billingCacheHitRate": "Cache hit rate",
   "billingCacheRead": "Cache read",
   "billingCacheWrite": "Cache write",
   "billingByModel": "By model",

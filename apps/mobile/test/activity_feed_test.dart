@@ -729,10 +729,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('思考'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('activity-thinking-icon')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsNothing);
     expect(find.text('这段思考只能在展开后显示'), findsOneWidget);
   });
 

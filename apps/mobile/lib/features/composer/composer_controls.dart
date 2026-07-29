@@ -2105,6 +2105,9 @@ class ComposerRouteSummary extends ConsumerWidget {
     final modelLabel = modelId == null || modelId.trim().isEmpty
         ? null
         : shortenModelId(modelId);
+    final currentMainModelId =
+        runtimeConfig.mainAgentModelOverride?.modelId ??
+        snapshot?.mainAgent.modelRef.modelId;
     final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
     final tooltip = [
       ?modelLabel,
@@ -2120,6 +2123,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               context: context,
               billing: billing,
               threadStatus: threadStatus,
+              currentMainModelId: currentMainModelId,
             ),
             tooltip:
                 '${context.l10n.billingTitle} ${formatBillingPillCost(billing)}',

@@ -1381,41 +1381,24 @@ class _ThinkingTileContent extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(
-              EcoIcons.sparkles,
-              key: const ValueKey('activity-thinking-icon'),
-              size: 16,
-              color: streaming ? eco.accent : eco.textMuted,
-            ),
-          ),
-          if (hasBody) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: streaming
-                  ? Text(
-                      text,
-                      style: activityFeedBodyStyle(
-                        context,
-                        color: eco.textMuted.withValues(alpha: 0.9),
-                        height: 1.45,
-                      ),
-                    )
-                  : EcoMarkdown(
-                      text: text,
-                      compact: true,
-                      muted: true,
-                      selectable: false,
-                      fontSizeScale: activityFeedBodyFontScale,
+      child: hasBody
+          ? streaming
+                ? Text(
+                    text,
+                    style: activityFeedBodyStyle(
+                      context,
+                      color: eco.textMuted.withValues(alpha: 0.9),
+                      height: 1.45,
                     ),
-            ),
-          ],
-        ],
-      ),
+                  )
+                : EcoMarkdown(
+                    text: text,
+                    compact: true,
+                    muted: true,
+                    selectable: false,
+                    fontSizeScale: activityFeedBodyFontScale,
+                  )
+          : const SizedBox.shrink(),
     );
   }
 }

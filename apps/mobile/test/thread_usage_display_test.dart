@@ -18,6 +18,40 @@ void main() {
     expect(formatCostUsd(1.23), '\$1.23');
   });
 
+  test('formatBillingCacheHitRate uses all prompt tokens', () {
+    const billing = ThreadBillingSnapshot(
+      plannerTokenCostUsd: 0.2,
+      ecoCostUsd: 0.1,
+      savedUsd: 0.1,
+      savedPct: 50,
+      pricingResolved: true,
+      inputTokens: 100,
+      cacheReadTokens: 300,
+      cacheCreationTokens: 100,
+    );
+
+    expect(formatBillingCacheHitRate(billing), '60%');
+  });
+
+  test('resolveBillingMainModelLabel prefers the current session model', () {
+    const billing = ThreadBillingSnapshot(
+      plannerTokenCostUsd: 0.2,
+      ecoCostUsd: 0.1,
+      savedUsd: 0.1,
+      savedPct: 50,
+      pricingResolved: true,
+      plannerModelLabel: 'gpt-5.5 · OpenAI',
+    );
+
+    expect(
+      resolveBillingMainModelLabel(
+        billing,
+        currentMainModelId: 'anthropic/claude-sonnet-4',
+      ),
+      'claude-sonnet-4',
+    );
+  });
+
   test('resolvePlannerOccupancyPct prefers planner role', () {
     final context = ThreadContextSnapshot.fromJson({
       'occupied': 1000,

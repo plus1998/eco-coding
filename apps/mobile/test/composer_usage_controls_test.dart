@@ -14,13 +14,21 @@ void main() {
     subagentEnabled: {},
     sessionMode: 'agent',
     bashReviewMode: 'always',
+    mainAgentModelOverride: MainAgentModelOverride(
+      providerId: 'anthropic',
+      modelId: 'anthropic/claude-sonnet-4',
+    ),
   );
   const billing = ThreadBillingSnapshot(
     plannerTokenCostUsd: 0.2,
     ecoCostUsd: 0.1,
-    savedUsd: 0.1,
-    savedPct: 50,
+    savedUsd: 0,
+    savedPct: 0,
     pricingResolved: true,
+    plannerModelLabel: 'gpt-5.5 · OpenAI',
+    inputTokens: 100,
+    cacheReadTokens: 300,
+    cacheCreationTokens: 100,
   );
 
   testWidgets('composer shows billing beside usage controls and opens sheet', (
@@ -48,6 +56,11 @@ void main() {
 
     expect(find.text('Billing'), findsOneWidget);
     expect(find.text(r'$0.100'), findsWidgets);
+    expect(find.text('Estimated at claude-sonnet-4 rates'), findsOneWidget);
+    expect(find.text('gpt-5.5'), findsNothing);
+    expect(find.text('Savings'), findsNothing);
+    expect(find.text('Cache hit rate'), findsOneWidget);
+    expect(find.text('60%'), findsOneWidget);
   });
 
   testWidgets('composer hides billing before the session has activity', (

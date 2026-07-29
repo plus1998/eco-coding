@@ -358,6 +358,7 @@
   "billingTokenUsage": "Token 用量",
   "billingInput": "输入",
   "billingOutput": "输出",
+  "billingCacheHitRate": "缓存命中率",
   "billingCacheRead": "缓存读取",
   "billingCacheWrite": "缓存写入",
   "billingByModel": "按模型",

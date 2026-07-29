@@ -2246,6 +2246,12 @@ abstract class AppLocalizations {
   /// **'Output'**
   String get billingOutput;
 
+  /// No description provided for @billingCacheHitRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache hit rate'**
+  String get billingCacheHitRate;
+
   /// No description provided for @billingCacheRead.
   ///
   /// In en, this message translates to:

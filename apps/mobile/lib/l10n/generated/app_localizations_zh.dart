@@ -1166,6 +1166,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get billingOutput => '输出';
 
   @override
+  String get billingCacheHitRate => '缓存命中率';
+
+  @override
   String get billingCacheRead => '缓存读取';
 
   @override

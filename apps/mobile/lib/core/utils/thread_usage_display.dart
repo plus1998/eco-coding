@@ -23,6 +23,29 @@ String formatBillingPillCost(ThreadBillingSnapshot? billing) {
   return formatCostUsd(billing?.ecoCostUsd ?? 0);
 }
 
+String formatBillingCacheHitRate(ThreadBillingSnapshot billing) {
+  final cacheRead = billing.cacheReadTokens < 0 ? 0 : billing.cacheReadTokens;
+  final input = billing.inputTokens < 0 ? 0 : billing.inputTokens;
+  final cacheCreation = billing.cacheCreationTokens < 0
+      ? 0
+      : billing.cacheCreationTokens;
+  final promptTokens = input + cacheRead + cacheCreation;
+  final ratio = promptTokens > 0 ? cacheRead / promptTokens : 0;
+  return '${(ratio * 100).round()}%';
+}
+
+String resolveBillingMainModelLabel(
+  ThreadBillingSnapshot billing, {
+  String? currentMainModelId,
+}) {
+  final currentModel = currentMainModelId?.trim();
+  if (currentModel != null && currentModel.isNotEmpty) {
+    return shortenModelId(currentModel);
+  }
+  final billedModel = billing.plannerModelLabel?.split(' · ').first.trim();
+  return billedModel == null || billedModel.isEmpty ? '' : billedModel;
+}
+
 String formatSavingsLine(
   double savedUsd,
   double savedPct,

@@ -1239,6 +1239,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get billingOutput => 'Output';
 
   @override
+  String get billingCacheHitRate => 'Cache hit rate';
+
+  @override
   String get billingCacheRead => 'Cache read';
 
   @override
