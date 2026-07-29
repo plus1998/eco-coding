@@ -182,6 +182,14 @@ const api = {
   ): Promise<ThreadApprovalNotificationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadApprovalNotification, request);
   },
+  consumePendingThreadOpen(): Promise<string | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appConsumePendingThreadOpen);
+  },
+  onThreadOpenRequested(callback: () => void): () => void {
+    const listener = () => callback();
+    ipcRenderer.on(IPC_CHANNELS.appThreadOpenRequested, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.appThreadOpenRequested, listener);
+  },
   getCoreAvailability(): Promise<CoreAvailabilitySnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.coreAvailabilityGet);
   },

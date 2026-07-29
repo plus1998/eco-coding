@@ -1095,16 +1095,17 @@ function App() {
       setError("Electron preload API is unavailable. Run the desktop app with bun run dev:electron.");
       return undefined;
     }
+    const eco = window.eco;
 
-    void Promise.all([
-      window.eco.getCurrentWorkspace(),
-      window.eco.getHomeProjectPath(),
-      window.eco.listThreads(),
-      window.eco.getModelSettings(),
-      window.eco.getMcpSettings(),
-      window.eco.getWorkflowSettings(),
-      window.eco.getCenterServerSettings(),
-      window.eco.getProxyBridgeSettings(),
+    const initializationPromise = Promise.all([
+      eco.getCurrentWorkspace(),
+      eco.getHomeProjectPath(),
+      eco.listThreads(),
+      eco.getModelSettings(),
+      eco.getMcpSettings(),
+      eco.getWorkflowSettings(),
+      eco.getCenterServerSettings(),
+      eco.getProxyBridgeSettings(),
     ]).then(
       ([
         currentWorkspace,
@@ -1184,6 +1185,66 @@ function App() {
         });
       }, 300);
     };
+
+    const openPendingNotificationThread = async () => {
+      const threadId = await eco.consumePendingThreadOpen();
+      if (!threadId) {
+        return;
+      }
+      const thread = await eco.getThread(threadId);
+      if (!thread) {
+        return;
+      }
+      setThreads((current) => {
+        const existingIndex = current.findIndex((item) => item.id === thread.id);
+        if (existingIndex < 0) {
+          return [thread, ...current];
+        }
+        const next = [...current];
+        next[existingIndex] = thread;
+        return next;
+      });
+      setUnreadThreadIds((current) => {
+        if (!current.has(thread.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(thread.id);
+        window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
+        return next;
+      });
+      selectedThreadIdRef.current = thread.id;
+      setSelectedThreadId(thread.id);
+      setSelectedProjectPath(thread.workspacePath);
+      setSettingsOpen(false);
+      setComposerRewindTarget(undefined);
+      setCollapsedProjectPaths((current) => {
+        if (!current.has(thread.workspacePath)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(thread.workspacePath);
+        window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
+        return next;
+      });
+      setExpandedProjectThreadPaths((current) => {
+        if (current.has(thread.workspacePath)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(thread.workspacePath);
+        return next;
+      });
+      setSidebarRevealTarget((current) => ({
+        kind: "thread",
+        id: thread.id,
+        requestId: (current?.requestId ?? 0) + 1,
+      }));
+    };
+    const unsubscribeThreadOpen = window.eco.onThreadOpenRequested(() => {
+      void initializationPromise.then(openPendingNotificationThread);
+    });
+    void initializationPromise.then(openPendingNotificationThread);
 
     const unsubscribe = window.eco.onThreadEvent((event) => {
       if (!isThreadLiveEvent(event) || event.threadId === "settings") {
@@ -1494,6 +1555,7 @@ function App() {
         window.clearTimeout(runProjectionFullRefreshTimer);
       }
       unsubscribe();
+      unsubscribeThreadOpen();
     };
   }, []);
 

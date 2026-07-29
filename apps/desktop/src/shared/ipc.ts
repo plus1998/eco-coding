@@ -7,6 +7,8 @@ export const IPC_CHANNELS = {
   appSetLocale: "app:set-locale",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
   appShowThreadApprovalNotification: "app:show-thread-approval-notification",
+  appConsumePendingThreadOpen: "app:consume-pending-thread-open",
+  appThreadOpenRequested: "app:thread-open-requested",
   coreAvailabilityGet: "core:availability-get",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",

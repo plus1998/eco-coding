@@ -648,6 +648,7 @@ let gitSettingsStore: GitSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let centerServerClient: CenterServerDesktopClient;
+let pendingThreadOpenId: string | undefined;
 
 function emitCenterServerStatus(): void {
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -888,7 +889,7 @@ function getThreadSubagentConcurrencyGate(threadId: string): SubagentConcurrency
   return gate;
 }
 
-async function createMainWindow(): Promise<void> {
+async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -924,6 +925,7 @@ async function createMainWindow(): Promise<void> {
   } else {
     await window.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
+  return window;
 }
 
 function isExternalHttpUrl(url: string): boolean {
@@ -1909,22 +1911,32 @@ function localizeExpectedIpcError(error: unknown): unknown {
   return key ? new Error(mainText(key)) : error;
 }
 
-function showDesktopNotification(content: { title: string; body: string }): void {
+async function openThreadFromDesktopNotification(threadId: string): Promise<void> {
+  pendingThreadOpenId = threadId;
+  let window = BrowserWindow.getAllWindows()[0];
+  if (!window) {
+    window = await createMainWindow();
+  }
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.show();
+  window.focus();
+  window.webContents.send(IPC_CHANNELS.appThreadOpenRequested);
+}
+
+function showDesktopNotification(content: { title: string; body: string }, threadId: string): void {
   const notification = new Notification({
     title: content.title,
     body: content.body,
     ...(appIcon ? { icon: appIcon } : {}),
   });
   notification.on("click", () => {
-    const window = BrowserWindow.getAllWindows()[0];
-    if (!window) {
-      return;
-    }
-    if (window.isMinimized()) {
-      window.restore();
-    }
-    window.show();
-    window.focus();
+    void openThreadFromDesktopNotification(threadId).catch((error) => {
+      process.stderr.write(
+        `[eco] failed to open thread from notification (${threadId}): ${errorMessage(error)}\n`,
+      );
+    });
   });
   notification.show();
 }
@@ -1954,6 +1966,12 @@ function registerIpcHandlers(): void {
     return { localePreference: appLocalePreference };
   });
 
+  registerDesktopCommand(IPC_CHANNELS.appConsumePendingThreadOpen, async () => {
+    const threadId = pendingThreadOpenId;
+    pendingThreadOpenId = undefined;
+    return threadId;
+  });
+
   registerDesktopCommand(IPC_CHANNELS.appShowThreadCompletionNotification, async (payload: unknown) => {
     if (!Notification.isSupported()) {
       return { shown: false, reason: "unsupported" } as const;
@@ -1976,7 +1994,7 @@ function registerIpcHandlers(): void {
       return { shown: false, reason: "notification_content_unavailable" } as const;
     }
 
-    showDesktopNotification(content);
+    showDesktopNotification(content, thread.id);
     return { shown: true } as const;
   });
 
@@ -2010,7 +2028,7 @@ function registerIpcHandlers(): void {
       return { shown: false, reason: "notification_content_unavailable" } as const;
     }
 
-    showDesktopNotification(content);
+    showDesktopNotification(content, thread.id);
     return { shown: true } as const;
   });
 
