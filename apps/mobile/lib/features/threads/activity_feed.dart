@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
@@ -33,6 +34,8 @@ const _scrollToBottomButtonSize = 36.0;
 const _scrollToBottomButtonAlignedBottomGap = 6.0;
 
 typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
+typedef ActivityFeedToolDetailLoader =
+    Future<List<ActivityFeedEntry>> Function(ActivityFeedEntry entry);
 
 TextStyle? activityFeedBodyStyle(
   BuildContext context, {
@@ -150,6 +153,7 @@ List<ActivityFeedEntry> buildActivityFeed({
   ThreadRunProjectionSnapshot? runProjection,
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
   AppLocalizations? l10n,
+  bool groupTurns = true,
 }) {
   if (!isProjectionFeedReady(runProjection)) {
     return const [];
@@ -165,7 +169,9 @@ List<ActivityFeedEntry> buildActivityFeed({
     ),
     l10n: strings,
   );
-  return groupProjectionActivityFeedTurns(groupedActions, runProjection);
+  return groupTurns
+      ? groupProjectionActivityFeedTurns(groupedActions, runProjection)
+      : groupedActions;
 }
 
 List<ActivityFeedEntry> groupActivityFeedActionEntries(
@@ -585,7 +591,7 @@ class ActivityFeedList extends StatefulWidget {
     this.scrollCoordinator,
     this.themeSource,
     this.onOpenAgentDetail,
-    this.onOpenToolDetail,
+    this.loadToolDetail,
     this.expandUserPrompts = false,
     this.shrinkWrap = false,
     this.showScrollJumpButton = true,
@@ -598,7 +604,7 @@ class ActivityFeedList extends StatefulWidget {
   final ActivityFeedScrollCoordinator? scrollCoordinator;
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
-  final ActivityFeedEntryCallback? onOpenToolDetail;
+  final ActivityFeedToolDetailLoader? loadToolDetail;
   final bool expandUserPrompts;
   final bool shrinkWrap;
   final bool showScrollJumpButton;
@@ -691,7 +697,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                   entry: entry,
                   themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
-                  onOpenToolDetail: widget.onOpenToolDetail,
+                  loadToolDetail: widget.loadToolDetail,
                   expandUserPrompts: widget.expandUserPrompts,
                 );
               },
@@ -779,14 +785,14 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     required this.entry,
     this.themeSource,
     this.onOpenAgentDetail,
-    this.onOpenToolDetail,
+    this.loadToolDetail,
     this.expandUserPrompts = false,
   });
 
   final ActivityFeedEntry entry;
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
-  final ActivityFeedEntryCallback? onOpenToolDetail;
+  final ActivityFeedToolDetailLoader? loadToolDetail;
   final bool expandUserPrompts;
 
   @override
@@ -797,7 +803,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           entry: entry,
           themeSource: themeSource,
           onOpenAgentDetail: onOpenAgentDetail,
-          onOpenToolDetail: onOpenToolDetail,
+          loadToolDetail: loadToolDetail,
         );
       case ActivityFeedKind.user:
         return _UserPromptTile(
@@ -823,15 +829,12 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           bashRun: entry.bashRun,
           fileChange: entry.fileChange,
           toolUseId: entry.toolUseId,
-          onOpenToolDetail: onOpenToolDetail != null
-              ? () => onOpenToolDetail!(entry)
+          loadToolDetail: loadToolDetail != null
+              ? () => loadToolDetail!(entry)
               : null,
         );
       case ActivityFeedKind.actionGroup:
-        return _ActionGroupTile(
-          entry: entry,
-          onOpenToolDetail: onOpenToolDetail,
-        );
+        return _ActionGroupTile(entry: entry, loadToolDetail: loadToolDetail);
       case ActivityFeedKind.phase:
         if (entry.reconnecting) {
           return _ReconnectPhaseTile(summary: entry.text, detail: entry.detail);
@@ -863,13 +866,13 @@ class _TurnFeedTile extends StatefulWidget {
     required this.entry,
     this.themeSource,
     this.onOpenAgentDetail,
-    this.onOpenToolDetail,
+    this.loadToolDetail,
   });
 
   final ActivityFeedEntry entry;
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
-  final ActivityFeedEntryCallback? onOpenToolDetail;
+  final ActivityFeedToolDetailLoader? loadToolDetail;
 
   @override
   State<_TurnFeedTile> createState() => _TurnFeedTileState();
@@ -1005,7 +1008,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               entry: child,
                               themeSource: widget.themeSource,
                               onOpenAgentDetail: widget.onOpenAgentDetail,
-                              onOpenToolDetail: widget.onOpenToolDetail,
+                              loadToolDetail: widget.loadToolDetail,
                             ),
                         ],
                       ),
@@ -1022,7 +1025,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   entry: widget.entry.finalOutput!,
                   themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
-                  onOpenToolDetail: widget.onOpenToolDetail,
+                  loadToolDetail: widget.loadToolDetail,
                 ),
               ),
             ),
@@ -1353,49 +1356,16 @@ class _ThinkingTile extends StatelessWidget {
   }
 }
 
-class _ThinkingTileContent extends StatefulWidget {
+class _ThinkingTileContent extends StatelessWidget {
   const _ThinkingTileContent({required this.text, required this.streaming});
 
   final String text;
   final bool streaming;
 
   @override
-  State<_ThinkingTileContent> createState() => _ThinkingTileContentState();
-}
-
-class _ThinkingTileContentState extends State<_ThinkingTileContent> {
-  var _collapsed = false;
-  var _collapseSuppressed = false;
-
-  bool get _hasBody => widget.text.trim().isNotEmpty;
-
-  bool get _expanded =>
-      (widget.streaming && _hasBody) || (!_collapsed && _hasBody);
-
-  bool get _shouldAutoCollapse =>
-      !widget.streaming && _hasBody && !_collapseSuppressed;
-
-  @override
-  void initState() {
-    super.initState();
-    _collapsed = _shouldAutoCollapse;
-  }
-
-  @override
-  void didUpdateWidget(covariant _ThinkingTileContent oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.streaming && _hasBody) {
-      _collapsed = false;
-      return;
-    }
-    if (_shouldAutoCollapse && !_collapsed) {
-      _collapsed = true;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (widget.streaming && !_hasBody) {
+    final hasBody = text.trim().isNotEmpty;
+    if (streaming && !hasBody) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
         child: ShimmerText(
@@ -1408,33 +1378,27 @@ class _ThinkingTileContentState extends State<_ThinkingTileContent> {
     }
 
     final eco = ecoColors(context);
-    final canToggle = _hasBody && !widget.streaming;
 
-    return ActivityFeedBlock(
-      onTap: canToggle
-          ? () {
-              setState(() {
-                _collapsed = !_collapsed;
-                _collapseSuppressed = true;
-              });
-            }
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ActivityFeedBlockHeader(
-            icon: EcoIcons.sparkles,
-            title: context.l10n.activityThinkingLabel,
-            iconColor: widget.streaming ? eco.accent : eco.textMuted,
-            expanded: canToggle ? _expanded : null,
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              EcoIcons.sparkles,
+              key: const ValueKey('activity-thinking-icon'),
+              size: 16,
+              color: streaming ? eco.accent : eco.textMuted,
+            ),
           ),
-          if (_hasBody && _expanded) ...[
-            const ActivityFeedBlockDivider(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: widget.streaming
+          if (hasBody) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: streaming
                   ? Text(
-                      widget.text,
+                      text,
                       style: activityFeedBodyStyle(
                         context,
                         color: eco.textMuted.withValues(alpha: 0.9),
@@ -1442,7 +1406,7 @@ class _ThinkingTileContentState extends State<_ThinkingTileContent> {
                       ),
                     )
                   : EcoMarkdown(
-                      text: widget.text,
+                      text: text,
                       compact: true,
                       muted: true,
                       selectable: false,
@@ -1475,10 +1439,10 @@ class _UsageBadgeLine extends StatelessWidget {
 }
 
 class _ActionGroupTile extends StatefulWidget {
-  const _ActionGroupTile({required this.entry, this.onOpenToolDetail});
+  const _ActionGroupTile({required this.entry, this.loadToolDetail});
 
   final ActivityFeedEntry entry;
-  final ActivityFeedEntryCallback? onOpenToolDetail;
+  final ActivityFeedToolDetailLoader? loadToolDetail;
 
   @override
   State<_ActionGroupTile> createState() => _ActionGroupTileState();
@@ -1536,11 +1500,8 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                                 bashRun: child.bashRun,
                                 fileChange: child.fileChange,
                                 toolUseId: child.toolUseId,
-                                forceDetailsExpanded:
-                                    widget.onOpenToolDetail == null,
-                                onOpenToolDetail:
-                                    widget.onOpenToolDetail != null
-                                    ? () => widget.onOpenToolDetail!(child)
+                                loadToolDetail: widget.loadToolDetail != null
+                                    ? () => widget.loadToolDetail!(child)
                                     : null,
                               ),
                           ],
@@ -1563,8 +1524,7 @@ class _ActionTile extends StatefulWidget {
     this.bashRun,
     this.fileChange,
     this.toolUseId,
-    this.forceDetailsExpanded = false,
-    this.onOpenToolDetail,
+    this.loadToolDetail,
   });
 
   final String label;
@@ -1573,8 +1533,7 @@ class _ActionTile extends StatefulWidget {
   final BashRunCardDisplay? bashRun;
   final FileChangeCardDisplay? fileChange;
   final String? toolUseId;
-  final bool forceDetailsExpanded;
-  final VoidCallback? onOpenToolDetail;
+  final Future<List<ActivityFeedEntry>> Function()? loadToolDetail;
 
   @override
   State<_ActionTile> createState() => _ActionTileState();
@@ -1582,22 +1541,26 @@ class _ActionTile extends StatefulWidget {
 
 class _ActionTileState extends State<_ActionTile> {
   var _expanded = false;
+  Future<List<ActivityFeedEntry>>? _detailFuture;
+
+  void _toggleDetails() {
+    setState(() {
+      _expanded = !_expanded;
+      if (_expanded && widget.fileChange == null && _detailFuture == null) {
+        _detailFuture = widget.loadToolDetail?.call();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final fileChange = widget.fileChange;
     final bashRun = widget.bashRun;
-    final detailsExpanded = widget.forceDetailsExpanded || _expanded;
-    final canOpenRemoteDetail =
-        bashRun == null &&
-        widget.toolUseId?.trim().isNotEmpty == true &&
-        widget.onOpenToolDetail != null &&
-        !widget.forceDetailsExpanded;
-    final summaryTap = canOpenRemoteDetail
-        ? widget.onOpenToolDetail
-        : widget.forceDetailsExpanded
-        ? null
-        : () => setState(() => _expanded = !_expanded);
+    final canExpand =
+        fileChange != null ||
+        bashRun != null ||
+        (widget.toolUseId?.trim().isNotEmpty == true &&
+            widget.loadToolDetail != null);
 
     if (fileChange != null) {
       return Padding(
@@ -1609,12 +1572,12 @@ class _ActionTileState extends State<_ActionTile> {
               label: fileChange.fileName,
               icon: widget.icon,
               lifecycle: widget.lifecycle,
-              expanded: detailsExpanded,
+              expanded: _expanded,
               additions: fileChange.additions,
               deletions: fileChange.deletions,
-              onTap: summaryTap,
+              onTap: _toggleDetails,
             ),
-            if (detailsExpanded)
+            if (_expanded)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: _FileChangeCard(
@@ -1641,7 +1604,7 @@ class _ActionTileState extends State<_ActionTile> {
               icon: ActivityActionIcon.terminal,
               lifecycle: widget.lifecycle,
               expanded: _expanded,
-              onTap: () => setState(() => _expanded = !_expanded),
+              onTap: _toggleDetails,
             ),
             if (_expanded)
               Padding(
@@ -1656,52 +1619,88 @@ class _ActionTileState extends State<_ActionTile> {
         ),
       );
     }
-    final content = Row(
-      children: [
-        Icon(
-          _materialIcon(widget.icon),
-          size: 15,
-          color: ecoColors(context).textMuted,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            widget.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: activityFeedBodyStyle(
-              context,
-              color: ecoColors(context).textMuted,
-              height: 1.35,
-            ),
-          ),
-        ),
-      ],
-    );
-    if (!canOpenRemoteDetail) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
-        child: content,
-      );
-    }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 2),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: widget.onOpenToolDetail,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: content,
+      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ActionSummaryLine(
+            label: widget.label,
+            icon: widget.icon,
+            lifecycle: widget.lifecycle,
+            expanded: canExpand ? _expanded : false,
+            onTap: canExpand ? _toggleDetails : null,
           ),
-        ),
+          if (_expanded && _detailFuture != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _InlineToolDetail(future: _detailFuture!),
+            ),
+        ],
       ),
     );
   }
+}
 
-  IconData _materialIcon(ActivityActionIcon icon) =>
-      EcoIcons.activityAction(icon);
+class _InlineToolDetail extends StatelessWidget {
+  const _InlineToolDetail({required this.future});
+
+  final Future<List<ActivityFeedEntry>> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ActivityFeedEntry>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          return Text(
+            localizedAppError(snapshot.error!, context.l10n),
+            style: activityFeedBodyStyle(
+              context,
+              color: ecoColors(context).statusDenyText,
+              height: 1.4,
+            ),
+          );
+        }
+        final entries = snapshot.data ?? const [];
+        if (entries.isEmpty) {
+          return Text(
+            context.l10n.threadNoToolDetails,
+            style: activityFeedBodyStyle(
+              context,
+              color: ecoColors(context).textMuted,
+              height: 1.4,
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final entry in entries)
+                _ActivityFeedEntryTile(
+                  key: ValueKey('inline-tool-detail:${entry.id}'),
+                  entry: entry,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 String _bashActionSummaryLabel(

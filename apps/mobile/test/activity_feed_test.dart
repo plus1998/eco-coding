@@ -9,6 +9,7 @@ import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
+import 'package:eco_mobile/core/utils/file_change.dart';
 import 'package:eco_mobile/core/utils/stream_text.dart';
 import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
@@ -482,6 +483,47 @@ void main() {
     );
   });
 
+  test('tool detail feed skips turn wrappers for task updates', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      groupTurns: false,
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:03.000Z',
+        sourceEventCount: 1,
+        agents: const [],
+        attempts: const [
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-1',
+            phase: 'initial',
+            retryIndex: 0,
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:03.000Z',
+          ),
+        ],
+        timeline: [
+          _toolTimelineItem(
+            id: 'task-update',
+            sequence: 1,
+            at: '2026-01-01T00:00:02.000Z',
+            eventType: 'tool.completed',
+            toolUseId: 'toolu_task_update',
+            toolName: 'TaskUpdate',
+            detail: '更新移动端展示',
+            requestId: 'request-1',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.any((entry) => entry.kind == ActivityFeedKind.turn), isFalse);
+    expect(feed.single.kind, ActivityFeedKind.actionGroup);
+    expect(feed.single.actionChildren.single.toolName, 'TaskUpdate');
+  });
+
   test('completed attempt separates process from final output', () {
     final feed = buildActivityFeed(
       threadPrompt: '修复 Feed',
@@ -661,7 +703,7 @@ void main() {
     },
   );
 
-  testWidgets('completed thinking hides content until expanded', (
+  testWidgets('completed thinking displays content without collapsing', (
     tester,
   ) async {
     final controller = ScrollController();
@@ -686,11 +728,11 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('思考'), findsOneWidget);
-    expect(find.text('这段思考只能在展开后显示'), findsNothing);
-
-    await tester.tap(find.text('思考'));
-    await tester.pumpAndSettle();
+    expect(find.text('思考'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('activity-thinking-icon')),
+      findsOneWidget,
+    );
     expect(find.text('这段思考只能在展开后显示'), findsOneWidget);
   });
 
@@ -1052,7 +1094,6 @@ void main() {
     (tester) async {
       final scrollController = ScrollController();
       addTearDown(scrollController.dispose);
-      var detailOpenCount = 0;
 
       await tester.pumpWidget(
         _localizedMaterialApp(
@@ -1076,9 +1117,7 @@ void main() {
                 ),
               ],
               scrollController: scrollController,
-              onOpenToolDetail: (_) {
-                detailOpenCount += 1;
-              },
+              loadToolDetail: (_) async => const [],
             ),
           ),
         ),
@@ -1094,9 +1133,120 @@ void main() {
 
       expect(find.text('36 pass'), findsOneWidget);
       expect(find.text('npm test'), findsOneWidget);
-      expect(detailOpenCount, 0);
     },
   );
+
+  testWidgets('ActivityFeedList expands file changes inline', (tester) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    var detailLoadCount = 0;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'edit-1',
+                kind: ActivityFeedKind.action,
+                text: 'Edit lib/feed.dart',
+                actionIcon: ActivityActionIcon.edit,
+                lifecycle: ToolActionLifecycle.completed,
+                toolUseId: 'toolu_edit_1',
+                fileChange: FileChangeCardDisplay(
+                  fileName: 'feed.dart',
+                  path: 'lib/feed.dart',
+                  additions: 1,
+                  deletions: 1,
+                  previewLines: [
+                    FileChangePreviewLine(
+                      kind: FileChangePreviewLineKind.remove,
+                      text: 'old value',
+                    ),
+                    FileChangePreviewLine(
+                      kind: FileChangePreviewLineKind.add,
+                      text: 'new value',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            scrollController: scrollController,
+            loadToolDetail: (_) async {
+              detailLoadCount += 1;
+              return const [];
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('feed.dart'), findsOneWidget);
+    expect(find.text('old value'), findsNothing);
+    expect(find.text('new value'), findsNothing);
+
+    await tester.tap(find.text('feed.dart'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('old value'), findsOneWidget);
+    expect(find.text('new value'), findsOneWidget);
+    expect(detailLoadCount, 0);
+  });
+
+  testWidgets('ActivityFeedList loads generic tool details inline', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    var detailLoadCount = 0;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'read-1',
+                kind: ActivityFeedKind.action,
+                text: 'Read lib/feed.dart',
+                actionIcon: ActivityActionIcon.file,
+                lifecycle: ToolActionLifecycle.completed,
+                toolUseId: 'toolu_read_1',
+              ),
+            ],
+            scrollController: scrollController,
+            loadToolDetail: (_) async {
+              detailLoadCount += 1;
+              return const [
+                ActivityFeedEntry(
+                  id: 'read-detail',
+                  kind: ActivityFeedKind.assistant,
+                  text: 'inline tool detail',
+                ),
+              ];
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('inline tool detail'), findsNothing);
+    await tester.tap(find.text('Read lib/feed.dart'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('inline tool detail'), findsOneWidget);
+    expect(detailLoadCount, 1);
+
+    await tester.tap(find.text('Read lib/feed.dart'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Read lib/feed.dart'));
+    await tester.pumpAndSettle();
+    expect(detailLoadCount, 1);
+  });
 
   testWidgets('ActivityFeedList flattens a single Bash tool group', (
     tester,

@@ -777,7 +777,9 @@ class _ActivityFeedView extends ConsumerWidget {
     );
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final runtimeConfig = ref.watch(
-      threadSessionProvider(threadId).select((state) => state.thread?.runtimeConfig),
+      threadSessionProvider(
+        threadId,
+      ).select((state) => state.thread?.runtimeConfig),
     );
     final snapshot = runtimeConfig == null
         ? null
@@ -841,8 +843,8 @@ class _ActivityFeedView extends ConsumerWidget {
       ),
       onOpenAgentDetail: (entry) =>
           unawaited(_openAgentProjectionDetail(context, ref, threadId, entry)),
-      onOpenToolDetail: (entry) =>
-          unawaited(_openToolProjectionDetail(context, ref, threadId, entry)),
+      loadToolDetail: (entry) =>
+          _loadToolProjectionDetail(context, ref, threadId, entry),
     );
   }
 }
@@ -878,7 +880,7 @@ Future<void> _openAgentProjectionDetail(
   );
 }
 
-Future<void> _openToolProjectionDetail(
+Future<List<ActivityFeedEntry>> _loadToolProjectionDetail(
   BuildContext context,
   WidgetRef ref,
   String threadId,
@@ -886,22 +888,22 @@ Future<void> _openToolProjectionDetail(
 ) async {
   final toolUseId = entry.toolUseId?.trim();
   if (toolUseId == null || toolUseId.isEmpty) {
-    return;
+    return const [];
   }
-  final loadFuture = ref
+  final baseProjection = ref
+      .read(threadSessionProvider(threadId))
+      .runProjection;
+  final cachedTimeline = _projectionToolDetailItems(baseProjection, toolUseId);
+  final detail = await ref
       .read(threadSessionProvider(threadId).notifier)
       .loadProjectionDetail(kind: 'tool', key: toolUseId);
-  if (!context.mounted) return;
-  await _showProjectionDetailSheet(
-    context: context,
-    ref: ref,
+  if (!context.mounted) return const [];
+  return _buildProjectionDetailEntries(
     threadId: threadId,
-    loadFuture: loadFuture,
-    title: entry.text,
-    subtitle: toolUseId,
-    emptyText: context.l10n.threadNoToolDetails,
-    timelineBuilder: (projection) =>
-        _projectionToolDetailItems(projection, toolUseId),
+    base: ref.read(threadSessionProvider(threadId)).runProjection,
+    cachedTimeline: cachedTimeline,
+    detail: detail,
+    l10n: context.l10n,
   );
 }
 
@@ -981,7 +983,7 @@ ThreadRunProjectionSnapshot _projectionDetailSnapshot({
     agents: const [],
     timeline: timeline.map(_projectionDetailTimelineItem).toList(),
     requestSpans: base?.requestSpans ?? const [],
-    attempts: base?.attempts ?? const [],
+    attempts: const [],
   );
 }
 
@@ -1318,6 +1320,7 @@ List<ActivityFeedEntry> _buildProjectionDetailEntries({
     threadId: threadId,
     runProjection: detailProjection,
     l10n: l10n,
+    groupTurns: false,
   );
 }
 
