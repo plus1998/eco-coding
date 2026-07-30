@@ -253,7 +253,10 @@ import {
   shouldBlockThreadFollowUpDrain,
   shouldDrainThreadFollowUps,
 } from "../shared/thread-follow-up-drain";
-import { orchestrationConfigFromSnapshot } from "../shared/agent-orchestration";
+import {
+  isOrchestrationSelection,
+  orchestrationConfigFromSnapshot,
+} from "../shared/agent-orchestration";
 import {
   buildWorktreeMergeSummary,
   formatWorktreeMergeThreadMessage,
@@ -396,6 +399,10 @@ import {
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
 import { createProjectMcpSettingsStore, type ProjectMcpSettingsStore } from "./project-mcp-settings-store";
+import {
+  createProjectOrchestrationSettingsStore,
+  type ProjectOrchestrationSettingsStore,
+} from "./project-orchestration-settings-store";
 import {
   createProjectSkillsSettingsStore,
   type ProjectSkillsSettingsStore,
@@ -652,6 +659,7 @@ let conversationStore: ConversationStore;
 let codexThreadMap: CodexThreadMap;
 let workflowSettingsStore: WorkflowSettingsStore;
 let projectMcpSettingsStore: ProjectMcpSettingsStore;
+let projectOrchestrationSettingsStore: ProjectOrchestrationSettingsStore;
 let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
@@ -982,6 +990,7 @@ app.whenReady().then(async () => {
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
+  projectOrchestrationSettingsStore = await createProjectOrchestrationSettingsStore(dbPath);
   projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
   packageScriptArgsStore = createPackageScriptArgsStore(
@@ -1631,6 +1640,14 @@ function parseThreadRuntimeConfigInput(value: unknown): ThreadRuntimeConfig {
  */
 function getDefaultOrchestrationSelection(): OrchestrationSelection | undefined {
   return workflowSettingsStore.get().defaultOrchestrationSelection;
+}
+
+function getRememberedOrchestrationSelections(): OrchestrationSelection[] {
+  const globalDefault = getDefaultOrchestrationSelection();
+  return [
+    ...(globalDefault ? [globalDefault] : []),
+    ...projectOrchestrationSettingsStore.listSelections(),
+  ];
 }
 
 function materializeThreadRuntimeConfig(
@@ -2755,7 +2772,7 @@ function registerIpcHandlers(): void {
     if (typeof configId !== "string" || !configId.trim()) {
       throw new Error("主 Agent 配置 id 不能为空。");
     }
-    agentOrchestrationStore.deleteMainAgentConfig(configId, getDefaultOrchestrationSelection());
+    agentOrchestrationStore.deleteMainAgentConfig(configId, getRememberedOrchestrationSelections());
     emitSettingsUpdated();
     return { ok: true as const };
   });
@@ -2777,7 +2794,7 @@ function registerIpcHandlers(): void {
     if (typeof promptId !== "string" || !promptId.trim()) {
       throw new Error("主 Agent 提示词 id 不能为空。");
     }
-    agentOrchestrationStore.deleteMainAgentPrompt(promptId, getDefaultOrchestrationSelection());
+    agentOrchestrationStore.deleteMainAgentPrompt(promptId, getRememberedOrchestrationSelections());
     emitSettingsUpdated();
     return { ok: true as const };
   });
@@ -2801,7 +2818,7 @@ function registerIpcHandlers(): void {
     }
     agentOrchestrationStore.deleteSubagentOrchestration(
       orchestrationId,
-      getDefaultOrchestrationSelection(),
+      getRememberedOrchestrationSelections(),
     );
     emitSettingsUpdated();
     return { ok: true as const };
@@ -2959,6 +2976,27 @@ function registerIpcHandlers(): void {
           (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
         ),
       ),
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.projectOrchestrationSettingsGet, async (payload: unknown) => {
+    if (typeof payload !== "string" || !payload.trim()) {
+      throw new Error("Invalid project orchestration settings workspace path.");
+    }
+    return projectOrchestrationSettingsStore.get(payload);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.projectOrchestrationSettingsSave, async (payload: unknown) => {
+    if (
+      !isRecord(payload) ||
+      typeof payload.workspacePath !== "string" ||
+      !isOrchestrationSelection(payload.orchestrationSelection)
+    ) {
+      throw new Error("Invalid project orchestration settings.");
+    }
+    return projectOrchestrationSettingsStore.save({
+      workspacePath: payload.workspacePath,
+      orchestrationSelection: payload.orchestrationSelection,
     });
   });
 

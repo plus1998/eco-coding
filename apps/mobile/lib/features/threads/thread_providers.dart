@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/mcp_models.dart';
+import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/app_error.dart';
 import '../../core/models/skill_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -129,6 +130,16 @@ final projectSkillsSettingsProvider =
       } catch (_) {
         return null;
       }
+    });
+
+final projectOrchestrationSettingsProvider =
+    FutureProvider.family<ProjectOrchestrationSettingsSnapshot?, String>((
+      ref,
+      workspacePath,
+    ) async {
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null || workspacePath.trim().isEmpty) return null;
+      return rpc.getProjectOrchestrationSettings(workspacePath);
     });
 
 ThreadRuntimeConfig defaultRuntimeConfig({

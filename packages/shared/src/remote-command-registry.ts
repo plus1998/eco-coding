@@ -114,6 +114,20 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("project-skills-settings:save", "Save project Skills settings", "write_safe", RPC_INVOKE, [
     objectArg(["workspacePath", "enabledByPath"]),
   ]),
+  command(
+    "project-orchestration-settings:get",
+    "Get project orchestration settings",
+    "read",
+    RPC_INVOKE,
+    [stringArg()],
+  ),
+  command(
+    "project-orchestration-settings:save",
+    "Save project orchestration settings",
+    "write_safe",
+    RPC_INVOKE,
+    [objectArg(["workspacePath", "orchestrationSelection"])],
+  ),
   command("workflow-settings:get", "Get workflow settings", "read", RPC_INVOKE, []),
   command("workflow-settings:save", "Save workflow settings", "write_safe", RPC_INVOKE, [
     objectArg(["sessionMode"]),

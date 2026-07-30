@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
+import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/providers/app_providers.dart';
@@ -34,7 +35,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   final _picker = ImagePicker();
   var _starting = false;
   var _coreKind = 'claude';
-  String? _runtimeConfigDesktopId;
+  String? _runtimeConfigScope;
 
   @override
   void initState() {
@@ -45,20 +46,27 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
 
   Future<void> _initRuntimeConfig() async {
     final currentDesktopId = ref.read(selectedDesktopIdProvider);
+    final workspacePath = await ref.read(selectedProjectPathProvider.future);
+    final scope = '$currentDesktopId:${workspacePath ?? ''}';
     final existing = ref.read(runtimeConfigProvider);
-    // Re-initialize only when there's no config or the desktop has changed.
-    if (existing != null && _runtimeConfigDesktopId == currentDesktopId) return;
+    if (existing != null && _runtimeConfigScope == scope) return;
 
-    _runtimeConfigDesktopId = currentDesktopId;
+    _runtimeConfigScope = scope;
     final modelSettings = await ref.read(modelSettingsProvider.future);
     final workflow = await ref.read(workflowSettingsProvider.future);
     final mcpSettings = await ref.read(mcpSettingsProvider.future);
-    if (!mounted) return;
+    final projectOrchestration = workspacePath == null || workspacePath.isEmpty
+        ? null
+        : await ref.read(
+            projectOrchestrationSettingsProvider(workspacePath).future,
+          );
+    if (!mounted || _runtimeConfigScope != scope) return;
     _coreKind = workflow?.defaultCoreKind ?? 'claude';
     ref.read(runtimeConfigProvider.notifier).state = buildDefaultRuntimeConfig(
       modelSettings: modelSettings,
       workflow: workflow,
       mcpServers: mcpSettings?.servers,
+      orchestrationSelection: projectOrchestration?.orchestrationSelection,
     );
   }
 
@@ -75,21 +83,41 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     ref.listen(selectedDesktopIdProvider, (previous, next) {
       if (previous != null && previous != next) {
         ref.read(runtimeConfigProvider.notifier).state = null;
+        _runtimeConfigScope = null;
+        _initRuntimeConfig();
       }
     });
 
     final workspacePath =
         ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
+    ref.listen(selectedProjectPathProvider, (previous, next) {
+      if (previous?.valueOrNull != next.valueOrNull) {
+        ref.read(runtimeConfigProvider.notifier).state = null;
+        _runtimeConfigScope = null;
+        _initRuntimeConfig();
+      }
+    });
     final modelSettings = ref.watch(modelSettingsProvider);
     final workflow = ref.watch(workflowSettingsProvider);
     final mcpSettings = ref.watch(mcpSettingsProvider);
+    final projectOrchestration = workspacePath.isEmpty
+        ? const AsyncValue<ProjectOrchestrationSettingsSnapshot?>.data(null)
+        : ref.watch(projectOrchestrationSettingsProvider(workspacePath));
     final runtimeConfig =
         ref.watch(runtimeConfigProvider) ??
-        buildDefaultRuntimeConfig(
-          modelSettings: modelSettings.valueOrNull,
-          workflow: workflow.valueOrNull,
-          mcpServers: mcpSettings.valueOrNull?.servers,
-        );
+        (projectOrchestration.hasValue
+            ? buildDefaultRuntimeConfig(
+                modelSettings: modelSettings.valueOrNull,
+                workflow: workflow.valueOrNull,
+                mcpServers: mcpSettings.valueOrNull?.servers,
+                orchestrationSelection:
+                    projectOrchestration.valueOrNull?.orchestrationSelection,
+              )
+            : ThreadRuntimeConfig(
+                subagentEnabled: defaultSubagentAvailability(),
+                sessionMode: workflow.valueOrNull?.sessionMode ?? 'agent',
+                bashReviewMode: 'always',
+              ));
     final gitStatusAsync = workspacePath.isNotEmpty
         ? ref.watch(gitStatusProvider(workspacePath))
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);

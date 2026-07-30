@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Settings2,
   Star,
   Trash2,
@@ -123,6 +124,43 @@ export function ModelsSettingsPanel({
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
+  const [defaultOrchestrationDraft, setDefaultOrchestrationDraft] =
+    useState<OrchestrationSelection>(
+      () =>
+        defaultOrchestrationSelection ?? {
+          mainAgentConfigId: "",
+          mainPrompt: { mode: "builtin" },
+          subagents: { mode: "none" },
+        },
+    );
+
+  useEffect(() => {
+    setDefaultOrchestrationDraft(
+      defaultOrchestrationSelection ?? {
+        mainAgentConfigId: "",
+        mainPrompt: { mode: "builtin" },
+        subagents: { mode: "none" },
+      },
+    );
+  }, [defaultOrchestrationSelection]);
+
+  const updateDefaultOrchestrationDraft = useCallback(
+    (patch: Partial<OrchestrationSelection>) => {
+      const next: OrchestrationSelection = {
+        mainAgentConfigId:
+          patch.mainAgentConfigId ?? defaultOrchestrationDraft.mainAgentConfigId,
+        mainPrompt: patch.mainPrompt ?? defaultOrchestrationDraft.mainPrompt,
+        subagents: patch.subagents ?? defaultOrchestrationDraft.subagents,
+      };
+      setDefaultOrchestrationDraft(next);
+      if (hasCompleteOrchestrationSelection(next)) {
+        void Promise.resolve(onDefaultOrchestrationSelectionChange?.(next)).catch((error) => {
+          setPanelError(error instanceof Error ? error.message : String(error));
+        });
+      }
+    },
+    [defaultOrchestrationDraft, onDefaultOrchestrationSelectionChange],
+  );
   const [modalError, setModalError] = useState<string>();
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
   const [providerTestMessage, setProviderTestMessage] = useState<{
@@ -516,13 +554,119 @@ export function ModelsSettingsPanel({
 
       {activeTab === "compositionParts" && (
         <>
-          {defaultOrchestrationSelection && hasCompleteOrchestrationSelection(defaultOrchestrationSelection) ? (
-            <p className="settings-section-subtitle">
-              {t("settings.models.resources.currentOrchestration", { id: defaultOrchestrationSelection.mainAgentConfigId })}
-            </p>
-          ) : (
-            <p className="settings-section-subtitle">{t("settings.models.resources.noOrchestration")}</p>
-          )}
+          <section className="settings-global-orchestration">
+            <div className="settings-global-orchestration-header">
+              <div>
+                <h3>{t("settings.models.resources.globalOrchestration")}</h3>
+                <p>{t("settings.models.resources.globalOrchestrationHint")}</p>
+              </div>
+              <button
+                type="button"
+                className="mcp-icon-button"
+                title={t("settings.models.resources.clearGlobalOrchestration")}
+                aria-label={t("settings.models.resources.clearGlobalOrchestration")}
+                disabled={busy || !defaultOrchestrationSelection}
+                onClick={() => {
+                  setDefaultOrchestrationDraft({
+                    mainAgentConfigId: "",
+                    mainPrompt: { mode: "builtin" },
+                    subagents: { mode: "none" },
+                  });
+                  void Promise.resolve(onDefaultOrchestrationSelectionChange?.(undefined)).catch(
+                    (error) => {
+                      setPanelError(error instanceof Error ? error.message : String(error));
+                    },
+                  );
+                }}
+              >
+                <RotateCcw size={17} aria-hidden />
+              </button>
+            </div>
+            <div className="settings-global-orchestration-grid">
+              <label className="mcp-field">
+                <span className="mcp-field-label">{t("composer.route.mainAgent")}</span>
+                <select
+                  className="mcp-field-input"
+                  value={
+                    settings.mainAgentConfigs.some(
+                      (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
+                    )
+                      ? defaultOrchestrationDraft.mainAgentConfigId
+                      : ""
+                  }
+                  disabled={busy || settings.mainAgentConfigs.length === 0}
+                  onChange={(event) =>
+                    updateDefaultOrchestrationDraft({ mainAgentConfigId: event.target.value })
+                  }
+                >
+                  <option value="">{t("composer.route.notConfigured")}</option>
+                  {settings.mainAgentConfigs.map((config) => (
+                    <option key={config.id} value={config.id}>
+                      {config.name} ({config.modelRef.modelId})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">{t("composer.route.prompt")}</span>
+                <select
+                  className="mcp-field-input"
+                  value={
+                    defaultOrchestrationDraft.mainPrompt.mode === "builtin"
+                      ? "__builtin__"
+                      : defaultOrchestrationDraft.mainPrompt.promptId
+                  }
+                  disabled={busy}
+                  onChange={(event) =>
+                    updateDefaultOrchestrationDraft({
+                      mainPrompt:
+                        event.target.value === "__builtin__"
+                          ? { mode: "builtin" }
+                          : { mode: "custom_append", promptId: event.target.value },
+                    })
+                  }
+                >
+                  <option value="__builtin__">{t("composer.route.defaultBuiltinPrompt")}</option>
+                  {settings.mainAgentPrompts
+                    .filter((prompt) => prompt.mode === "custom_append")
+                    .map((prompt) => (
+                      <option key={prompt.id} value={prompt.id}>
+                        {prompt.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">
+                  {t("composer.route.subagentOrchestration")}
+                </span>
+                <select
+                  className="mcp-field-input"
+                  value={
+                    defaultOrchestrationDraft.subagents.mode === "none"
+                      ? "__none__"
+                      : defaultOrchestrationDraft.subagents.orchestrationId
+                  }
+                  disabled={busy}
+                  onChange={(event) =>
+                    updateDefaultOrchestrationDraft({
+                      subagents:
+                        event.target.value === "__none__"
+                          ? { mode: "none" }
+                          : { mode: "orchestration", orchestrationId: event.target.value },
+                    })
+                  }
+                >
+                  <option value="__none__">{t("composer.route.noSubagents")}</option>
+                  {settings.subagentOrchestrations.map((orchestration) => (
+                    <option key={orchestration.id} value={orchestration.id}>
+                      {orchestration.name} ({orchestration.agents.length})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
           <AgentCompositionResourcesSection
             settings={settings}
             mcpServers={mcpServers}

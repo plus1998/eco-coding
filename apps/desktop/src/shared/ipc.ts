@@ -117,6 +117,8 @@ export const IPC_CHANNELS = {
   projectSkillsSettingsSave: "project-skills-settings:save",
   projectMcpSettingsGet: "project-mcp-settings:get",
   projectMcpSettingsSave: "project-mcp-settings:save",
+  projectOrchestrationSettingsGet: "project-orchestration-settings:get",
+  projectOrchestrationSettingsSave: "project-orchestration-settings:save",
   workflowSettingsGet: "workflow-settings:get",
   workflowSettingsSave: "workflow-settings:save",
   proxyBridgeSettingsGet: "proxy-bridge-settings:get",
@@ -708,6 +710,7 @@ export type {
 export type { ProviderTokenCountMode, UpstreamApiCompat };
 export type { ProjectMcpSettingsSnapshot } from "./composer-mcp";
 export type { ProjectSkillsSettingsSnapshot } from "./composer-skills-settings";
+export type { ProjectOrchestrationSettingsSnapshot } from "./project-orchestration-settings";
 
 export interface ProviderConfigInput {
   id?: string;

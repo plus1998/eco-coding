@@ -238,6 +238,10 @@ export const i18nCatalogs = {
       "settings.models.resources.agentCount": "{{count}} 个子代理",
       "settings.models.resources.currentOrchestration": "当前默认编排：{{id}}",
       "settings.models.resources.noOrchestration": "尚未设置默认编排组合。",
+      "settings.models.resources.globalOrchestration": "全局默认编排",
+      "settings.models.resources.globalOrchestrationHint":
+        "仅用于尚未保存项目编排配置的新会话。Composer 中的选择不会修改这里。",
+      "settings.models.resources.clearGlobalOrchestration": "清除全局默认编排",
       "settings.models.resources.confirmDeleteMainConfig": "确定要删除主代理配置「{{name}}」吗？",
       "settings.models.resources.confirmDeletePrompt": "确定删除提示词「{{name}}」吗？",
       "settings.models.resources.confirmDeleteOrchestration": "确定删除子代理编排「{{name}}」吗？",
@@ -1474,6 +1478,10 @@ export const i18nCatalogs = {
       "settings.models.resources.agentCount": "{{count}} subagents",
       "settings.models.resources.currentOrchestration": "Current default orchestration: {{id}}",
       "settings.models.resources.noOrchestration": "No default orchestration combination has been set.",
+      "settings.models.resources.globalOrchestration": "Global default orchestration",
+      "settings.models.resources.globalOrchestrationHint":
+        "Used only for new sessions in projects without a saved orchestration. Composer selections do not modify this setting.",
+      "settings.models.resources.clearGlobalOrchestration": "Clear global default orchestration",
       "settings.models.resources.confirmDeleteMainConfig": "Are you sure you want to delete main agent config \"{{name}}\"?",
       "settings.models.resources.confirmDeletePrompt": "Are you sure you want to delete prompt \"{{name}}\"?",
       "settings.models.resources.confirmDeleteOrchestration": "Are you sure you want to delete subagent orchestration \"{{name}}\"?",

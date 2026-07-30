@@ -85,6 +85,35 @@ test.skipIf(!sqliteAvailable)("deleteMainAgentConfig blocks default orchestratio
   ).toThrow(/默认编排组合引用|default orchestration selection references/i);
 });
 
+test.skipIf(!sqliteAvailable)("deleteMainAgentConfig blocks project orchestration references", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-orchestration-store-project-guard-"));
+  const store = await createAgentOrchestrationStore(path.join(dir, "orchestration.db"));
+  store.saveMainAgentConfig({
+    id: "user.main",
+    name: "Main",
+    agentKey: "main",
+    modelRef: { providerId: "p1", modelId: "m1" },
+    tools: { allowed: [], disallowed: [] },
+    skills: [],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    source: "user",
+  });
+  expect(() =>
+    store.deleteMainAgentConfig("user.main", [
+      {
+        mainAgentConfigId: "other.main",
+        mainPrompt: { mode: "builtin" },
+        subagents: { mode: "none" },
+      },
+      {
+        mainAgentConfigId: "user.main",
+        mainPrompt: { mode: "builtin" },
+        subagents: { mode: "none" },
+      },
+    ]),
+  ).toThrow(/默认编排组合引用|default orchestration selection references/i);
+});
+
 test.skipIf(!sqliteAvailable)("agent template CRUD remains available", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-orchestration-store-template-"));
   const store = await createAgentOrchestrationStore(path.join(dir, "orchestration.db"));

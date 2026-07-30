@@ -95,6 +95,7 @@ import {
   type PackageScriptsListResult,
   type ProxyBridgeSettingsSnapshot,
   type ProjectMcpSettingsSnapshot,
+  type ProjectOrchestrationSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
   resolveMainAgentModelOverrideForProvider,
@@ -929,6 +930,8 @@ function App() {
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [projectMcpSettings, setProjectMcpSettings] =
     useState<ProjectMcpSettingsSnapshot>();
+  const [projectOrchestrationSettings, setProjectOrchestrationSettings] =
+    useState<ProjectOrchestrationSettingsSnapshot>();
   const [projectSkillsSettings, setProjectSkillsSettings] =
     useState<ProjectSkillsSettingsSnapshot>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
@@ -2643,15 +2646,25 @@ function App() {
   useEffect(() => {
     if (!window.eco || !currentProjectPath) {
       setProjectMcpSettings(undefined);
+      setProjectOrchestrationSettings(undefined);
       setProjectSkillsSettings(undefined);
       return;
     }
     let cancelled = false;
     setProjectMcpSettings(undefined);
+    setProjectOrchestrationSettings(undefined);
     void window.eco
       .getProjectMcpSettings(currentProjectPath)
       .then((snapshot) => {
         if (!cancelled) setProjectMcpSettings(snapshot);
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
+    void window.eco
+      .getProjectOrchestrationSettings(currentProjectPath)
+      .then((snapshot) => {
+        if (!cancelled) setProjectOrchestrationSettings(snapshot);
       })
       .catch((caught) => {
         if (!cancelled) setError(errorMessage(caught));
@@ -2677,6 +2690,10 @@ function App() {
 
   const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
   const effectiveDefaultOrchestrationSelection = workflowSettings.defaultOrchestrationSelection;
+  const projectOrchestrationSelection =
+    projectOrchestrationSettings?.workspacePath === currentProjectPath
+      ? projectOrchestrationSettings?.orchestrationSelection
+      : undefined;
   const composerAvailableSkills = useMemo(() => {
     const projectSkills = skillsSnapshot?.projectSkills ?? [];
     const userSkills = skillsSnapshot?.userSkills ?? [];
@@ -2754,6 +2771,12 @@ function App() {
       }
       try {
         const defaults = options?.workflowDefaults ?? workflowSettings;
+        if (
+          currentProjectPath &&
+          projectOrchestrationSettings?.workspacePath !== currentProjectPath
+        ) {
+          return undefined;
+        }
         const projectMcpServersEnabled =
           projectMcpSettings?.workspacePath === currentProjectPath
             ? projectMcpSettings?.enabledByServer
@@ -2763,7 +2786,9 @@ function App() {
             ? projectMcpServersEnabled
             : defaults.mcpServersEnabled;
         const orchestrationSelection =
-          options?.orchestrationSelection ?? defaults.defaultOrchestrationSelection;
+          options?.orchestrationSelection ??
+          projectOrchestrationSelection ??
+          defaults.defaultOrchestrationSelection;
         if (!hasCompleteOrchestrationSelection(orchestrationSelection)) {
           return undefined;
         }
@@ -2798,6 +2823,8 @@ function App() {
       mcpSettings.servers,
       currentProjectPath,
       projectMcpSettings,
+      projectOrchestrationSelection,
+      projectOrchestrationSettings?.workspacePath,
     ],
   );
 
@@ -2913,14 +2940,20 @@ function App() {
     if (!base?.auxiliaryModel) {
       return null;
     }
-    const selection =
-      (base?.orchestrationSelection &&
+    const sessionSelection =
+      base?.orchestrationSelection &&
       hasCompleteOrchestrationSelection(base.orchestrationSelection)
         ? base.orchestrationSelection
-        : undefined) ??
-      (hasCompleteOrchestrationSelection(workflowSettings.defaultOrchestrationSelection)
-        ? workflowSettings.defaultOrchestrationSelection
-        : undefined);
+        : undefined;
+    const selection = activeThread
+      ? sessionSelection
+      : sessionSelection ??
+        (hasCompleteOrchestrationSelection(projectOrchestrationSelection)
+          ? projectOrchestrationSelection
+          : undefined) ??
+        (hasCompleteOrchestrationSelection(workflowSettings.defaultOrchestrationSelection)
+          ? workflowSettings.defaultOrchestrationSelection
+          : undefined);
     if (!hasCompleteOrchestrationSelection(selection)) {
       return null;
     }
@@ -2960,9 +2993,11 @@ function App() {
   }, [
     composerRuntimeConfig,
     effectiveComposerRuntimeConfig,
+    activeThread,
     mcpSettings.servers,
     settings,
     workflowSettings,
+    projectOrchestrationSelection,
   ]);
   const templateMainModel = useMemo<ComposerModelOption | undefined>(() => {
     if (!selectedOrchestrationSnapshot) {
@@ -5173,6 +5208,7 @@ function App() {
     }
     const current: OrchestrationSelection =
       composerRuntimeConfig?.orchestrationSelection ??
+      projectOrchestrationSelection ??
       workflowSettings.defaultOrchestrationSelection ??
       emptyOrchestrationSelection();
     const nextSelection: OrchestrationSelection = {
@@ -5243,8 +5279,8 @@ function App() {
         : {}),
     };
     await persistComposerRuntimeConfig(next);
-    if (hasCompleteOrchestrationSelection(nextSelection)) {
-      void saveDefaultOrchestrationSelection(nextSelection);
+    if (!activeThread && hasCompleteOrchestrationSelection(nextSelection)) {
+      await saveProjectOrchestrationSelection(nextSelection);
     }
   }
 
@@ -5411,7 +5447,7 @@ function App() {
       }
       const saved = await window.eco.saveWorkflowSettings(nextWorkflowSettings);
       setWorkflowSettings(saved);
-      if (!activeThread) {
+      if (!activeThread && !projectOrchestrationSelection) {
         setComposerRuntimeConfig(
           selection
             ? (buildComposerDefaultConfig({
@@ -5421,6 +5457,31 @@ function App() {
             : null,
         );
       }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function saveProjectOrchestrationSelection(
+    selection: OrchestrationSelection,
+  ): Promise<void> {
+    if (
+      !window.eco?.saveProjectOrchestrationSettings ||
+      !currentProjectPath ||
+      !hasCompleteOrchestrationSelection(selection)
+    ) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveProjectOrchestrationSettings({
+        workspacePath: currentProjectPath,
+        orchestrationSelection: selection,
+      });
+      setProjectOrchestrationSettings(saved);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -5617,7 +5678,7 @@ function App() {
     });
     selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
-    resetComposerDefaultConfig();
+    setComposerRuntimeConfig(null);
     setTodosByThread({});
     setFollowUpsByThread({});
   }
@@ -5784,7 +5845,7 @@ function App() {
     selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     setComposerRewindTarget(undefined);
-    resetComposerDefaultConfig();
+    setComposerRuntimeConfig(null);
   }
 
   function requestSidebarReveal(kind: "project" | "thread", id: string) {

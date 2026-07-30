@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
 import '../../core/models/mcp_models.dart';
+import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/skill_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -217,6 +220,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    required this.workspacePath,
     this.mcpServers = const [],
     this.rememberedMcp,
   });
@@ -226,6 +230,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String workspacePath;
   final List<McpServerConfigView> mcpServers;
   final Map<String, bool>? rememberedMcp;
 
@@ -269,20 +274,33 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
       MainAgentPromptSelection? mainPrompt,
       SubagentSelection? subagents,
     }) {
+      final nextConfig = applyOrchestrationSelectionPatch(
+        settings: settings,
+        runtimeConfig: runtimeConfig,
+        servers: mcpServers,
+        remembered: rememberedMcp,
+        mainAgentConfigId: mainAgentConfigId,
+        mainPrompt: mainPrompt,
+        subagents: subagents,
+      );
       persistRuntimeConfig(
         ref,
         threadId: threadId,
-        config: applyOrchestrationSelectionPatch(
-          settings: settings,
-          runtimeConfig: runtimeConfig,
-          servers: mcpServers,
-          remembered: rememberedMcp,
-          mainAgentConfigId: mainAgentConfigId,
-          mainPrompt: mainPrompt,
-          subagents: subagents,
-        ),
+        config: nextConfig,
         onChanged: onChanged,
       );
+      final selection = nextConfig.orchestrationSelection;
+      if (threadId.isEmpty &&
+          workspacePath.trim().isNotEmpty &&
+          hasCompleteOrchestrationSelection(selection)) {
+        unawaited(
+          persistProjectOrchestrationSelection(
+            ref,
+            workspacePath: workspacePath,
+            selection: selection!,
+          ),
+        );
+      }
     }
 
     final selectedMainAgent = mainAgentConfigs
@@ -704,8 +722,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     super.didUpdateWidget(oldWidget);
     // Parent may push a new coreKind after the sheet is already open (rare,
     // but keep local selection in sync if it does).
-    if (oldWidget.coreKind != widget.coreKind &&
-        widget.coreKind != _coreKind) {
+    if (oldWidget.coreKind != widget.coreKind && widget.coreKind != _coreKind) {
       _coreKind = widget.coreKind;
     }
   }
@@ -947,7 +964,8 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                               enabled: canEdit && onCoreKindChanged != null,
                               onTap: !canEdit || onCoreKindChanged == null
                                   ? null
-                                  : () => _selectCoreKind(_coreOptions[i].value),
+                                  : () =>
+                                        _selectCoreKind(_coreOptions[i].value),
                             ),
                           ],
                         ],
@@ -966,6 +984,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                         threadId: threadId,
                         canEdit: canEdit,
                         onChanged: onChanged,
+                        workspacePath: workspacePath,
                         mcpServers: mcpServers,
                         rememberedMcp: workflow?.mcpServersEnabled,
                       ),
@@ -1799,6 +1818,7 @@ class ComposerCompositionControl extends ConsumerWidget {
                 threadId: threadId,
                 canEdit: true,
                 onChanged: onChanged,
+                workspacePath: '',
                 mcpServers: mcpServers?.servers ?? const [],
                 rememberedMcp: workflow?.mcpServersEnabled,
               ),
@@ -1807,6 +1827,26 @@ class ComposerCompositionControl extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+Future<void> persistProjectOrchestrationSelection(
+  WidgetRef ref, {
+  required String workspacePath,
+  required OrchestrationSelection selection,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null || workspacePath.trim().isEmpty) return;
+  try {
+    await rpc.saveProjectOrchestrationSettings(
+      ProjectOrchestrationSettingsSnapshot(
+        workspacePath: workspacePath,
+        orchestrationSelection: selection,
+      ),
+    );
+    ref.invalidate(projectOrchestrationSettingsProvider(workspacePath));
+  } catch (_) {
+    // The local new-thread selection remains usable when persistence fails.
   }
 }
 

@@ -47,6 +47,9 @@ test("registers explicit remote command definitions", () => {
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toContain(
     "workflow-settings:save",
   );
+  expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toContain(
+    "project-orchestration-settings:save",
+  );
   expect(isRemoteCommandChannel("mcp-settings:get")).toBe(true);
   expect(isRemoteCommandChannel("candidate-model:list")).toBe(true);
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(
@@ -88,6 +91,18 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:run-projection-get", ["feed:thr_1"])).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("project-orchestration-settings:save", [
+      {
+        workspacePath: "/repo",
+        orchestrationSelection: {
+          mainAgentConfigId: "main",
+          mainPrompt: { mode: "builtin" },
+          subagents: { mode: "none" },
+        },
+      },
+    ]),
+  ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1", "feed"])).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("thread:run-projection-get", [{ threadId: "thr_1", mode: "feed" }]),

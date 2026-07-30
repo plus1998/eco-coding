@@ -1,5 +1,6 @@
 import '../models/git_models.dart';
 import '../models/mcp_models.dart';
+import '../models/project_orchestration_settings.dart';
 import '../models/skill_models.dart';
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
@@ -467,6 +468,28 @@ class DesktopRpc {
       [settings.toJson()],
     );
     return WorkflowSettingsSnapshot.fromJson(result);
+  }
+
+  Future<ProjectOrchestrationSettingsSnapshot> getProjectOrchestrationSettings(
+    String workspacePath,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'project-orchestration-settings:get',
+      [workspacePath],
+    );
+    return ProjectOrchestrationSettingsSnapshot.fromJson(result);
+  }
+
+  Future<ProjectOrchestrationSettingsSnapshot> saveProjectOrchestrationSettings(
+    ProjectOrchestrationSettingsSnapshot settings,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'project-orchestration-settings:save',
+      [settings.toJson()],
+    );
+    return ProjectOrchestrationSettingsSnapshot.fromJson(result);
   }
 
   Future<McpSettingsSnapshot> getMcpSettings() async {

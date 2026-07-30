@@ -100,9 +100,12 @@ export class AgentOrchestrationStore {
     return normalized;
   }
 
-  deleteMainAgentConfig(id: string, defaultSelection?: OrchestrationSelection): void {
+  deleteMainAgentConfig(
+    id: string,
+    defaultSelection?: OrchestrationSelection | readonly OrchestrationSelection[],
+  ): void {
     const trimmed = id.trim();
-    if (defaultSelection && referencesMainAgentConfig(defaultSelection, trimmed)) {
+    if (referencedBySelection(defaultSelection, (selection) => referencesMainAgentConfig(selection, trimmed))) {
       throw new Error(`主 Agent 配置「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
     }
     this.db.prepare(`DELETE FROM main_agent_configs WHERE id = ?`).run(trimmed);
@@ -123,9 +126,12 @@ export class AgentOrchestrationStore {
     return normalized;
   }
 
-  deleteMainAgentPrompt(id: string, defaultSelection?: OrchestrationSelection): void {
+  deleteMainAgentPrompt(
+    id: string,
+    defaultSelection?: OrchestrationSelection | readonly OrchestrationSelection[],
+  ): void {
     const trimmed = id.trim();
-    if (defaultSelection && referencesMainAgentPrompt(defaultSelection, trimmed)) {
+    if (referencedBySelection(defaultSelection, (selection) => referencesMainAgentPrompt(selection, trimmed))) {
       throw new Error(`主 Agent 提示词「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
     }
     this.db.prepare(`DELETE FROM main_agent_prompts WHERE id = ?`).run(trimmed);
@@ -146,9 +152,16 @@ export class AgentOrchestrationStore {
     return normalized;
   }
 
-  deleteSubagentOrchestration(id: string, defaultSelection?: OrchestrationSelection): void {
+  deleteSubagentOrchestration(
+    id: string,
+    defaultSelection?: OrchestrationSelection | readonly OrchestrationSelection[],
+  ): void {
     const trimmed = id.trim();
-    if (defaultSelection && referencesSubagentOrchestration(defaultSelection, trimmed)) {
+    if (
+      referencedBySelection(defaultSelection, (selection) =>
+        referencesSubagentOrchestration(selection, trimmed),
+      )
+    ) {
       throw new Error(`子代理编排「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
     }
     this.db.prepare(`DELETE FROM subagent_orchestrations WHERE id = ?`).run(trimmed);
@@ -171,6 +184,16 @@ export class AgentOrchestrationStore {
       .prepare(UPSERT_SQL.replace("__TABLE__", table))
       .run(id, JSON.stringify(value), updatedAt);
   }
+}
+
+function referencedBySelection(
+  selection: OrchestrationSelection | readonly OrchestrationSelection[] | undefined,
+  predicate: (selection: OrchestrationSelection) => boolean,
+): boolean {
+  if (!selection) {
+    return false;
+  }
+  return (Array.isArray(selection) ? selection : [selection]).some(predicate);
 }
 
 export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemplate {

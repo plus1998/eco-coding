@@ -1,4 +1,6 @@
 import 'package:eco_mobile/core/network/desktop_rpc.dart';
+import 'package:eco_mobile/core/models/agent_orchestration.dart';
+import 'package:eco_mobile/core/models/project_orchestration_settings.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -177,6 +179,40 @@ void main() {
       },
     ]);
   });
+
+  test('getProjectOrchestrationSettings sends workspace path', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final settings = await rpc.getProjectOrchestrationSettings('/repo');
+
+    expect(client.channel, 'project-orchestration-settings:get');
+    expect(client.args, ['/repo']);
+    expect(settings.workspacePath, '/repo');
+    expect(settings.orchestrationSelection?.mainAgentConfigId, 'main_1');
+  });
+
+  test('saveProjectOrchestrationSettings sends complete selection', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+    const selection = OrchestrationSelection(
+      mainAgentConfigId: 'main_1',
+      mainPrompt: BuiltinMainAgentPromptSelection(),
+      subagents: NoneSubagentSelection(),
+    );
+
+    await rpc.saveProjectOrchestrationSettings(
+      const ProjectOrchestrationSettingsSnapshot(
+        workspacePath: '/repo',
+        orchestrationSelection: selection,
+      ),
+    );
+
+    expect(client.channel, 'project-orchestration-settings:save');
+    expect(client.args, [
+      {'workspacePath': '/repo', 'orchestrationSelection': selection.toJson()},
+    ]);
+  });
 }
 
 class _RecordingEcoCenterClient extends EcoCenterClient {
@@ -238,6 +274,17 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'commitSha': 'abc123',
             'message': 'feat: compose orchestration',
             'generated': false,
+          }
+          as T;
+    }
+    if (channel.startsWith('project-orchestration-settings:')) {
+      return {
+            'workspacePath': '/repo',
+            'orchestrationSelection': {
+              'mainAgentConfigId': 'main_1',
+              'mainPrompt': {'mode': 'builtin'},
+              'subagents': {'mode': 'none'},
+            },
           }
           as T;
     }

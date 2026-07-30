@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -21,6 +22,8 @@ import type {
   ThreadRunProjectionTimelineItem,
 } from "../src/shared/ipc";
 import { renderLocalized } from "./i18n-test";
+
+const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
 
 let previousLanguage = "zh-CN";
 
@@ -211,6 +214,24 @@ test("StreamingMarkdownContent leaves held structured edit loading to the conver
   );
 
   expect(html).toBe("");
+});
+
+test("desktop feed keeps narrative edge spacing stable when streaming settles to markdown", () => {
+  const streamingHtml = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, { text: "正文输出", streaming: true }),
+  );
+  const settledHtml = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, { text: "正文输出", streaming: false }),
+  );
+
+  expect(streamingHtml).toContain("markdown-content--streaming-plain");
+  expect(settledHtml).toContain("<p>正文输出</p>");
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+> :first-child\s*\{\s*margin-top:\s*0;/s,
+  );
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+> :last-child\s*\{\s*margin-bottom:\s*0;/s,
+  );
 });
 
 test("ActivityLogView waits for thread stop before exposing final output copy", () => {
@@ -561,6 +582,56 @@ test("ActivityLogView separates a completed attempt process from its final outpu
   expect(html).toContain('class="run-log-turn-final" aria-label="最终输出"');
   expect(html.indexOf("先检查事件投影。")).toBeLessThan(html.indexOf("run-log-turn-final"));
   expect(html.indexOf("run-log-turn-final")).toBeLessThan(html.indexOf("Feed 已完成整理。"));
+});
+
+test("ActivityLogView keeps block spacing between a completed turn and the next user prompt", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        attempts: [
+          {
+            attemptId: "attempt-before-follow-up",
+            phase: "initial",
+            retryIndex: 0,
+            status: "completed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            endedAt: "2026-01-01T00:00:06.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "completed-tool",
+            sequence: 1,
+            eventType: "tool.completed",
+            role: "tool",
+            runAttemptId: "attempt-before-follow-up",
+            text: "Tool: Read · README.md",
+            at: "2026-01-01T00:00:05.000Z",
+            metadata: {
+              tool: { name: "Read", detail: "README.md", status: "completed" },
+            },
+          }),
+          item({
+            id: "follow-up-user-prompt",
+            sequence: 2,
+            eventType: "thread.status",
+            role: "user",
+            text: "继续",
+            at: "2026-01-01T00:00:07.000Z",
+            metadata: { liveType: "thread.user_prompt" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toMatch(
+    /<section class="run-log-turn is-completed is-collapsed"[\s\S]*<\/section><div class="run-log-feed-entry"><article class="run-log-user-prompt"/,
+  );
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-turn \+ \.run-log-feed-entry\s*\{\s*margin-top:\s*var\(--codex-feed-gap-block\);/s,
+  );
 });
 
 test("ActivityLogView keeps a running attempt process expanded without final output", () => {

@@ -8,6 +8,7 @@ import '../../core/locale/app_locale_preference.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/providers/app_locale_provider.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_theme_provider.dart';
@@ -18,6 +19,7 @@ import '../../core/widgets/adaptive_nav_bar.dart';
 import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/shell_toolbar_actions.dart';
 import '../threads/thread_providers.dart';
+import '../composer/composer_controls.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -28,7 +30,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   SessionMode _sessionMode = 'agent';
+  ThreadRuntimeConfigInput? _globalOrchestrationConfig;
+  OrchestrationSelection? _pendingGlobalOrchestration;
   bool _loading = true;
+  bool _savingGlobalOrchestration = false;
 
   @override
   void initState() {
@@ -38,11 +43,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _load() async {
     final workflow = await ref.read(workflowSettingsProvider.future);
+    final modelSettings = await ref.read(modelSettingsProvider.future);
+    final mcpSettings = await ref.read(mcpSettingsProvider.future);
     if (mounted) {
       setState(() {
         _sessionMode = workflow?.sessionMode ?? 'agent';
+        _globalOrchestrationConfig = buildDefaultRuntimeConfig(
+          modelSettings: modelSettings,
+          workflow: workflow,
+          mcpServers: mcpSettings?.servers,
+          orchestrationSelection: workflow?.defaultOrchestrationSelection,
+        );
         _loading = false;
       });
+    }
+  }
+
+  void _updateGlobalOrchestration(ThreadRuntimeConfigInput config) {
+    setState(() => _globalOrchestrationConfig = config);
+    final selection = config.orchestrationSelection;
+    if (!hasCompleteOrchestrationSelection(selection)) return;
+    _pendingGlobalOrchestration = selection;
+    _flushGlobalOrchestration();
+  }
+
+  Future<void> _flushGlobalOrchestration() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null || _savingGlobalOrchestration) return;
+    setState(() => _savingGlobalOrchestration = true);
+    try {
+      while (_pendingGlobalOrchestration != null) {
+        final selection = _pendingGlobalOrchestration!;
+        _pendingGlobalOrchestration = null;
+        final workflow = await ref.read(workflowSettingsProvider.future);
+        await rpc.saveWorkflowSettings(
+          WorkflowSettingsSnapshot(
+            sessionMode: workflow?.sessionMode ?? _sessionMode,
+            defaultCoreKind: workflow?.defaultCoreKind,
+            defaultOrchestrationSelection: selection,
+            mcpServersEnabled: workflow?.mcpServersEnabled,
+          ),
+        );
+      }
+      ref.invalidate(workflowSettingsProvider);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingGlobalOrchestration = false);
     }
   }
 
@@ -56,7 +107,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         WorkflowSettingsSnapshot(
           sessionMode: nextMode,
           defaultCoreKind: workflow?.defaultCoreKind,
-          defaultOrchestrationSelection: workflow?.defaultOrchestrationSelection,
+          defaultOrchestrationSelection:
+              workflow?.defaultOrchestrationSelection,
           mcpServersEnabled: workflow?.mcpServersEnabled,
         ),
       );
@@ -75,6 +127,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final credentials = ref.watch(credentialsProvider);
     final l10n = context.l10n;
     final modeOptions = sessionModeUiOptions(l10n);
+    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final mcpServers =
+        ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -150,6 +205,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ],
                       ),
                     ),
+                    if (_globalOrchestrationConfig != null &&
+                        modelSettings != null &&
+                        modelSettings.mainAgentConfigs.isNotEmpty)
+                      EcoGroupedSection(
+                        label: l10n.composerOrchestration,
+                        caption: l10n.composerSelectOrchestrationSelection,
+                        topSpacing: 28,
+                        child: OrchestrationCompositionSelectors(
+                          settings: modelSettings,
+                          runtimeConfig: _globalOrchestrationConfig!,
+                          threadId: '',
+                          canEdit: !_savingGlobalOrchestration,
+                          onChanged: _updateGlobalOrchestration,
+                          workspacePath: '',
+                          mcpServers: mcpServers,
+                          rememberedMcp: null,
+                        ),
+                      ),
                     if (signedIn)
                       EcoGroupedSection(
                         label: l10n.settingsAccount,
