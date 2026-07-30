@@ -1357,6 +1357,41 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
   expect(expandedHtml).not.toContain("1 test failed");
 });
 
+test("failed Bash action uses the completed command style plus a status dot", () => {
+  const renderCommand = (status: "completed" | "failed") =>
+    renderToStaticMarkup(
+      createElement(ActivityLogView, {
+        projection: projection({
+          timeline: [
+            item({
+              id: `bash-${status}`,
+              eventType: "tool.completed",
+              text: "Tool: Bash · bun test",
+              metadata: {
+                tool: {
+                  name: "Bash",
+                  detail: "bun test",
+                  toolUseId: `toolu_bash_${status}`,
+                  status,
+                  outputPreview: "2 pass",
+                },
+              },
+            }),
+          ],
+        }),
+      }),
+    );
+
+  const completedHtml = renderCommand("completed");
+  const failedHtml = renderCommand("failed");
+  const triggerClass = (html: string) => html.match(/class="([^"]*run-log-tool-group-trigger[^"]*)"/)?.[1];
+
+  expect(triggerClass(failedHtml)).toBe(triggerClass(completedHtml));
+  expect(completedHtml).not.toContain("run-log-tool-status-dot");
+  expect(failedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
+  expect(failedHtml).not.toContain("is-failed");
+});
+
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {
   const subagent = agent({
     agentId: "agent_coder_1",

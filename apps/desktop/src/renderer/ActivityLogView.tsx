@@ -881,7 +881,11 @@ export function ProjectionToolGroupEntry({
   const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
   const onlyBlock = blocks.length === 1 ? blocks[0] : undefined;
   const singleBashBlock = onlyBlock?.kind === "action" && onlyBlock.bashRun ? onlyBlock : undefined;
-  const hasFailedTool = blocks.some((block) => block.kind === "tool-failed" && !block.recoveredResult);
+  const hasFailedAction = blocks.some(
+    (block) =>
+      (block.kind === "tool-failed" && !block.recoveredResult) ||
+      (block.kind === "action" && block.lifecycle === "failed"),
+  );
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -891,7 +895,6 @@ export function ProjectionToolGroupEntry({
           "run-log-tool-group-trigger",
           lifecycle === "running" ? "is-running" : "",
           lifecycle === "approval-pending" ? "is-pending" : "",
-          lifecycle === "failed" ? "is-failed" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -911,7 +914,7 @@ export function ProjectionToolGroupEntry({
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
-        {hasFailedTool && !expanded ? (
+        {hasFailedAction && (!expanded || Boolean(singleBashBlock)) ? (
           <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
         ) : null}
         <ChevronRight
@@ -1102,7 +1105,6 @@ function ProjectionToolGroupBashChild({
           "run-log-tool-group-trigger",
           "run-log-tool-group-child-trigger",
           block.lifecycle === "running" ? "is-running" : "",
-          block.lifecycle === "failed" ? "is-failed" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -1115,6 +1117,13 @@ function ProjectionToolGroupBashChild({
         <span className="run-log-tool-group-summary">
           {block.lifecycle === "running" ? <ShimmerText>{summary}</ShimmerText> : summary}
         </span>
+        {block.lifecycle === "failed" ? (
+          <span
+            className="run-log-tool-status-dot"
+            title={i18n.t("activity.incomplete")}
+            aria-hidden
+          />
+        ) : null}
         {hasDetails ? (
           <ChevronRight
             size={15}
@@ -3538,7 +3547,6 @@ function RunLogReadTargetLine({
       className={[
         "run-log-read-target",
         lifecycle === "running" ? "is-running" : "",
-        lifecycle === "failed" ? "is-failed" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -3550,6 +3558,13 @@ function RunLogReadTargetLine({
           {" "}
           <span className="run-log-read-target-range">{readTarget.lineRange}</span>
         </>
+      ) : null}
+      {lifecycle === "failed" ? (
+        <span
+          className="run-log-tool-status-dot"
+          title={i18n.t("activity.incomplete")}
+          aria-hidden
+        />
       ) : null}
     </p>
   );
@@ -3567,13 +3582,19 @@ function RunLogGrepTargetLine({
       className={[
         "run-log-grep-target",
         lifecycle === "running" ? "is-running" : "",
-        lifecycle === "failed" ? "is-failed" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <span className="run-log-grep-target-verb">Grepped</span>{" "}
       <span className="run-log-grep-target-detail">{formatGrepTargetInlineDetail(grepTarget)}</span>
+      {lifecycle === "failed" ? (
+        <span
+          className="run-log-tool-status-dot"
+          title={i18n.t("activity.incomplete")}
+          aria-hidden
+        />
+      ) : null}
     </p>
   );
 }
@@ -3595,7 +3616,6 @@ function RunLogFileChangeCard({
       className={[
         "run-log-file-change-card",
         lifecycle === "running" ? "is-running" : "",
-        lifecycle === "failed" ? "is-failed" : "",
         expanded ? "is-expanded" : "",
       ]
         .filter(Boolean)

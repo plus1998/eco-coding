@@ -9328,10 +9328,6 @@ button.sidebar-core-heading {
   opacity: 0.72;
 }
 
-.run-log-tool-group-trigger.is-failed .run-log-action-icon {
-  color: #f87171;
-}
-
 .run-log-tool-group-summary {
   flex: 0 1 auto;
   min-width: 0;
@@ -9714,11 +9710,6 @@ button.sidebar-core-heading {
   color: var(--codex-log-text, #c8c8c8);
 }
 
-.run-log-read-target.is-failed .run-log-read-target-verb,
-.run-log-grep-target.is-failed .run-log-grep-target-verb {
-  color: #f87171;
-}
-
 .run-log-action--file-change-card {
   display: flex;
   align-items: flex-start;
@@ -9840,10 +9831,6 @@ button.sidebar-core-heading {
 
 .run-log-file-change-card.is-running {
   border-color: rgba(45, 212, 191, 0.35);
-}
-
-.run-log-file-change-card.is-failed {
-  border-color: rgba(248, 113, 113, 0.45);
 }
 
 .run-log-subagent-badge {
