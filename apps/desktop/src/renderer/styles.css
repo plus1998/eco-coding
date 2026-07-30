@@ -5,7 +5,7 @@
   --code-font-size: 12px;
   /* macOS traffic-light inset — use only on left sidebars (.codex-sidebar, .settings-nav) */
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
-  --macos-window-controls-safe-inline-start: 116px;
+  --macos-window-controls-safe-inline-start: 148px;
   --content-top-inset: 16px;
   --workspace-toolbar-clearance: 36px;
   --sidebar-width: 300px;
@@ -194,11 +194,20 @@ button:not(:disabled) {
   color: var(--codex-log-text);
 }
 
-.macos-sidebar-toggle {
+.macos-window-toolbar {
   position: fixed;
   top: 6px;
   left: 76px;
   z-index: 10000;
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.macos-window-toolbar,
+.macos-window-toolbar * {
+  pointer-events: auto;
   -webkit-app-region: no-drag;
 }
 

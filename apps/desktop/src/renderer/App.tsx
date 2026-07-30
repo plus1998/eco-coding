@@ -7004,17 +7004,34 @@ function App() {
   return (
     <main className={shellClassName}>
       {window.eco?.platform === "darwin" ? (
-        <button
-          type="button"
-          className="macos-sidebar-toggle codex-main-toolbar-button"
-          onClick={() => setSidebarOpen((current) => !current)}
-          title={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
-          aria-label={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
-          aria-expanded={sidebarOpen}
-          aria-controls="primary-sidebar"
-        >
-          <PanelLeft size={15} aria-hidden />
-        </button>
+        <div className="macos-window-toolbar">
+          <button
+            type="button"
+            className="codex-main-toolbar-button"
+            onClick={() => setSidebarOpen((current) => !current)}
+            title={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
+            aria-label={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
+            aria-expanded={sidebarOpen}
+            aria-controls="primary-sidebar"
+          >
+            <PanelLeft size={15} aria-hidden />
+          </button>
+          {!sidebarOpen ? (
+            <button
+              type="button"
+              className={
+                sidebarSearchOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+              }
+              onClick={() => setSidebarSearchOpen((current) => !current)}
+              title={t("nav.search")}
+              aria-label={t("nav.search")}
+              aria-expanded={sidebarSearchOpen}
+              aria-haspopup="dialog"
+            >
+              <Search size={15} aria-hidden />
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {fixedSidebarToolbar}
       {appMessageState ? (
