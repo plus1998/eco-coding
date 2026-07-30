@@ -19959,11 +19959,11 @@ html:not([data-platform="darwin"])
   }
 
   .workspace-panel--floating-cards {
-    right: calc(var(--toolbar-edge-inset) + var(--workspace-toolbar-fixed-reserve));
+    right: var(--toolbar-edge-inset);
     left: auto;
     width: min(
       var(--workspace-cards-panel-width, 300px),
-      calc(100% - var(--toolbar-edge-inset) - var(--workspace-toolbar-fixed-reserve) - 10px)
+      calc(100% - var(--toolbar-edge-inset) - 10px)
     );
     max-height: calc(100% - var(--workspace-toolbar-clearance, 36px) - 22px);
   }
@@ -22451,11 +22451,11 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 .workspace-panel--floating-cards {
   position: absolute;
   top: calc(var(--workspace-toolbar-clearance, 36px) + 10px);
-  right: calc(var(--toolbar-edge-inset) + var(--workspace-toolbar-fixed-reserve));
+  right: var(--toolbar-edge-inset);
   z-index: 72;
   width: min(
     var(--workspace-cards-panel-width, 300px),
-    calc(100% - var(--toolbar-edge-inset) - var(--workspace-toolbar-fixed-reserve) - 10px)
+    calc(100% - var(--toolbar-edge-inset) - 10px)
   );
   height: auto;
   max-height: calc(
