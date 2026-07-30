@@ -383,7 +383,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
               createdAt={props.thread.createdAt}
             />,
           )}
-          {wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })}
+          <RunLogActiveTail waiting />
         </div>
       );
     }
@@ -549,11 +549,7 @@ function ProjectionActivityLogView({
             />
           ),
         )}
-        {waitingThinkingVisible ? (
-          wrapRunLogFeedEntry(<WaitingThinkingBlock active />, { tight: true })
-        ) : conversationActive ? (
-          <RunLogConversationTail />
-        ) : null}
+        {conversationActive ? <RunLogActiveTail waiting={waitingThinkingVisible} /> : null}
       </div>
     </ActivityFeedLayoutContext.Provider>
   );
@@ -624,12 +620,14 @@ function RunLogTurnSection({
 }) {
   const onLayoutChange = useActivityFeedLayoutChange();
   const [expanded, setExpanded] = useState(running);
+  const [animateExpansion, setAnimateExpansion] = useState(false);
   const previousRunningRef = useRef(running);
   const measuredDurationMs = useTurnDurationMs(startedAt, endedAt, running);
   const durationMs = Math.max(measuredDurationMs, projectedDurationMs);
   const contentId = `turn-process-${turnKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setAnimateExpansion(false);
     if (running) {
       setExpanded(true);
     } else if (previousRunningRef.current) {
@@ -649,6 +647,7 @@ function RunLogTurnSection({
         className,
         running ? "is-running" : "is-completed",
         expanded ? "is-expanded" : "is-collapsed",
+        animateExpansion ? "is-user-transitioning" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -658,7 +657,10 @@ function RunLogTurnSection({
       <button
         type="button"
         className="run-log-turn-toggle"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          setAnimateExpansion(true);
+          setExpanded((value) => !value);
+        }}
         aria-expanded={expanded}
         aria-controls={contentId}
       >
@@ -2850,6 +2852,14 @@ function RunLogConversationTail() {
       aria-label={i18n.t("activity.conversationActive")}
     >
       <StreamingTypingIndicator />
+    </div>
+  );
+}
+
+function RunLogActiveTail({ waiting }: { waiting: boolean }) {
+  return (
+    <div className="run-log-feed-entry run-log-feed-entry--tight run-log-active-tail">
+      {waiting ? <WaitingThinkingBlock active /> : <RunLogConversationTail />}
     </div>
   );
 }

@@ -18558,7 +18558,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-turn-chevron {
   flex: 0 0 auto;
-  transition: transform 180ms ease;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-turn.is-expanded .run-log-turn-chevron {
@@ -18577,6 +18576,13 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn.is-user-transitioning .run-log-turn-chevron {
+  transition: transform 180ms ease;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-turn.is-user-transitioning .run-log-turn-process {
   transition:
     grid-template-rows 180ms ease,
     opacity 140ms ease;
@@ -18657,6 +18663,10 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .run-log
   > .run-log-feed-entry:not(.run-log-feed-entry--tight)
   + .run-log-feed-entry--tight {
+  margin-top: var(--codex-feed-gap-step);
+}
+
+.codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail {
   margin-top: var(--codex-feed-gap-step);
 }
 
@@ -18972,6 +18982,22 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-thinking.empty {
   border-radius: 0;
   background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-active-tail {
+  min-height: 24px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-active-tail > .run-log-thinking.empty,
+.codex-main:not(.codex-main-landing) .run-log-active-tail > .run-log-conversation-tail {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-active-tail .run-log-thinking-header {
+  min-height: 24px;
 }
 
 .codex-main:not(.codex-main-landing)

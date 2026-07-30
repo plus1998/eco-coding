@@ -231,6 +231,7 @@ test("ActivityLogView waits for thread stop before exposing final output copy", 
 
   expect(html).not.toContain('aria-label="复制消息"');
   expect(html).toContain('class="run-log-conversation-tail"');
+  expect(html).toContain("run-log-active-tail");
 });
 
 test("ActivityLogView shows the original thinking loader before the first response event", () => {
@@ -252,6 +253,7 @@ test("ActivityLogView shows the original thinking loader before the first respon
   );
 
   expect(html).toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain("run-log-active-tail");
   expect(html).toContain('class="run-log-thinking-header"');
   expect(html).toContain("正在思考");
   expect(html).not.toContain("run-log-thinking-icon");
@@ -276,6 +278,7 @@ test("ActivityLogView shows thinking immediately while the first projection even
 
   expect(html).toContain("检查当前实现");
   expect(html).toContain('class="run-log-thinking streaming empty"');
+  expect(html).toContain("run-log-active-tail");
   expect(html).toContain("正在思考");
   expect(html).not.toContain("run-log-thinking-icon");
   expect(html).not.toContain('aria-label="会话进行中"');
