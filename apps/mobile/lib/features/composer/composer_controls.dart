@@ -8,6 +8,7 @@ import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
+import '../../core/models/git_models.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/skill_models.dart';
@@ -193,7 +194,28 @@ Future<void> persistComposerMcpWorkflowDefaults(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
+      defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
       mcpServersEnabled: mcpServersEnabled,
+    ),
+  );
+  ref.invalidate(workflowSettingsProvider);
+}
+
+Future<void> persistAuxiliaryModelWorkflowDefault(
+  WidgetRef ref, {
+  required AuxiliaryModelSelection? selection,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+  final workflow = await ref.read(workflowSettingsProvider.future);
+  if (workflow == null) return;
+  await rpc.saveWorkflowSettings(
+    WorkflowSettingsSnapshot(
+      sessionMode: workflow.sessionMode,
+      defaultCoreKind: workflow.defaultCoreKind,
+      defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
+      defaultAuxiliaryModel: selection,
+      mcpServersEnabled: workflow.mcpServersEnabled,
     ),
   );
   ref.invalidate(workflowSettingsProvider);
@@ -674,6 +696,7 @@ ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
 enum _ComposerRouteCategory {
   agent,
   model,
+  auxiliaryModel,
   thinking,
   mcp,
   skills,
@@ -822,6 +845,14 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                 context.l10n,
               ),
         icon: EcoIcons.sparkles,
+      ),
+      (
+        value: _ComposerRouteCategory.auxiliaryModel,
+        label: context.l10n.composerAuxiliaryModel,
+        summary: runtimeConfig.auxiliaryModel == null
+            ? context.l10n.commonNotConfigured
+            : shortenModelId(runtimeConfig.auxiliaryModel!.modelId),
+        icon: EcoIcons.contextMemory,
       ),
       (
         value: _ComposerRouteCategory.mcp,
@@ -1006,6 +1037,21 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                       provider: modelProvider!,
                       templateModel: templateModel,
                     ),
+                  if (_selectedCategory ==
+                          _ComposerRouteCategory.auxiliaryModel &&
+                      runtimeConfig.orchestrationSelection?.mainAgentConfigId
+                              .trim()
+                              .isNotEmpty ==
+                          true)
+                    _ComposerAuxiliaryModelSection(
+                      runtimeConfig: runtimeConfig,
+                      threadId: threadId,
+                      canEdit: canEdit,
+                      onChanged: onChanged,
+                      mainAgentConfigId: runtimeConfig
+                          .orchestrationSelection!
+                          .mainAgentConfigId,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.subagents)
                     EcoGroupedSection(
                       label: context.l10n.composerSubagents,
@@ -1155,6 +1201,16 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                       (templateModel == null || modelProvider?.enabled != true))
                     _ComposerRouteEmptyState(
                       message: context.l10n.composerNoReasoningOptions,
+                    ),
+                  if (_selectedCategory ==
+                          _ComposerRouteCategory.auxiliaryModel &&
+                      runtimeConfig.orchestrationSelection?.mainAgentConfigId
+                              .trim()
+                              .isNotEmpty !=
+                          true)
+                    _ComposerRouteEmptyState(
+                      message:
+                          context.l10n.composerAuxiliaryModelNeedsMainAgent,
                     ),
                   if (_selectedCategory ==
                           _ComposerRouteCategory.orchestration &&
@@ -1385,6 +1441,106 @@ String _firstEnabledSubagentLabel(
     }
   }
   return l10n.composerNotEnabled;
+}
+
+class _ComposerAuxiliaryModelSection extends ConsumerWidget {
+  const _ComposerAuxiliaryModelSection({
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+    required this.mainAgentConfigId,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String mainAgentConfigId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(auxiliaryModelOptionsProvider(mainAgentConfigId));
+
+    void select(CommitModelOptionView? option) {
+      final selection = option == null
+          ? null
+          : AuxiliaryModelSelection(
+              providerId: option.providerId,
+              modelId: option.modelId,
+              candidateModelId: option.candidateModelId,
+            );
+      var next = option == null
+          ? runtimeConfig.copyWith(clearAuxiliaryModel: true)
+          : runtimeConfig.copyWith(auxiliaryModel: selection);
+      next = downgradeAuxiliaryDependentFeatures(next);
+      persistRuntimeConfig(
+        ref,
+        threadId: threadId,
+        config: next,
+        onChanged: onChanged,
+      );
+      persistAuxiliaryModelWorkflowDefault(
+        ref,
+        selection: selection,
+      ).catchError((_) {});
+      Navigator.pop(context);
+    }
+
+    return EcoGroupedSection(
+      label: context.l10n.composerAuxiliaryModel,
+      caption: context.l10n.composerAuxiliaryModelHint,
+      topSpacing: 20,
+      child: Column(
+        children: [
+          EcoSheetOptionTile(
+            title: context.l10n.commonNotConfigured,
+            subtitle: context.l10n.composerAuxiliaryModelManualFallback,
+            selected: runtimeConfig.auxiliaryModel == null,
+            enabled: canEdit,
+            onTap: !canEdit ? null : () => select(null),
+          ),
+          options.when(
+            data: (items) => Column(
+              children: [
+                for (final option in items) ...[
+                  const EcoGroupedDivider(indent: 16),
+                  EcoSheetOptionTile(
+                    title: '${option.providerName} · ${option.modelLabel}',
+                    subtitle: option.modelId,
+                    selected:
+                        runtimeConfig.auxiliaryModel?.candidateModelId ==
+                        option.candidateModelId,
+                    enabled: canEdit,
+                    onTap: !canEdit ? null : () => select(option),
+                  ),
+                ],
+              ],
+            ),
+            loading: () => const Column(
+              children: [
+                EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                ),
+              ],
+            ),
+            error: (_, _) => Column(
+              children: [
+                const EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Text(context.l10n.composerModelLoadFailed),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ComposerTemporaryModelSection extends ConsumerWidget {
@@ -2279,13 +2435,23 @@ Future<void> showComposerBashReviewSheet(
                         bashReviewUiOptions(context.l10n)[i].value ==
                         runtimeConfig.bashReviewMode,
                     onTap: () {
+                      final option = bashReviewUiOptions(context.l10n)[i];
+                      if (option.value == 'auto' &&
+                          runtimeConfig.auxiliaryModel == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              context.l10n.auxiliaryModelRequiredForAutoReview,
+                            ),
+                          ),
+                        );
+                        return;
+                      }
                       persistRuntimeConfig(
                         ref,
                         threadId: threadId,
                         config: runtimeConfig.copyWith(
-                          bashReviewMode: bashReviewUiOptions(
-                            context.l10n,
-                          )[i].value,
+                          bashReviewMode: option.value,
                         ),
                         onChanged: onChanged,
                       );

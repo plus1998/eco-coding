@@ -182,6 +182,7 @@ ThreadRuntimeConfig buildRuntimeConfigForSelection({
           ),
     skillsEnabled: runtimeConfig.skillsEnabled,
     mainAgentModelOverride: null,
+    auxiliaryModel: runtimeConfig.auxiliaryModel,
     sessionMode: runtimeConfig.sessionMode,
     bashReviewMode: runtimeConfig.bashReviewMode,
   );
@@ -233,6 +234,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     return ThreadRuntimeConfig(
       orchestrationSelection: selection,
       subagentEnabled: defaultSubagentAvailability(),
+      auxiliaryModel: workflow?.defaultAuxiliaryModel,
       sessionMode: resolveSessionMode(sessionMode: workflow?.sessionMode),
       bashReviewMode: 'always',
     );
@@ -266,10 +268,24 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     orchestrationSelection: materialized.orchestrationSelection,
     resolvedOrchestrationSnapshot: snapshot,
     subagentEnabled: deriveSubagentEnabledFromSnapshot(snapshot),
+    auxiliaryModel: workflow?.defaultAuxiliaryModel,
     mcpServersEnabled: mcpServersEnabled,
     sessionMode: normalizeSessionMode(workflow?.sessionMode),
-    bashReviewMode: bashReviewMode,
+    bashReviewMode:
+        workflow?.defaultAuxiliaryModel == null && bashReviewMode == 'auto'
+        ? 'always'
+        : bashReviewMode,
   );
+}
+
+ThreadRuntimeConfig downgradeAuxiliaryDependentFeatures(
+  ThreadRuntimeConfig runtimeConfig,
+) {
+  if (runtimeConfig.auxiliaryModel != null ||
+      runtimeConfig.bashReviewMode != 'auto') {
+    return runtimeConfig;
+  }
+  return runtimeConfig.copyWith(bashReviewMode: 'always');
 }
 
 bool isSubagentConfiguredInSnapshot(

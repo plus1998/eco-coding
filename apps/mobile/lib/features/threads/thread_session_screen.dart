@@ -644,11 +644,25 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       } else {
         setState(() => _sendBusy = true);
         try {
+          final sendRuntimeConfig = downgradeAuxiliaryDependentFeatures(
+            runtimeConfig,
+          );
+          if (sendRuntimeConfig.bashReviewMode !=
+              runtimeConfig.bashReviewMode) {
+            ref.read(runtimeConfigProvider.notifier).state = sendRuntimeConfig;
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(context.l10n.auxiliaryModelAutoReviewFallback),
+                ),
+              );
+            }
+          }
           await rpc.continueThread(
             threadId: widget.threadId,
             prompt: prompt,
             attachments: _attachments.isEmpty ? null : List.of(_attachments),
-            runtimeConfig: runtimeConfig,
+            runtimeConfig: sendRuntimeConfig,
           );
           ref.invalidate(threadListProvider);
           FocusManager.instance.primaryFocus?.unfocus();

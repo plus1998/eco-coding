@@ -110,12 +110,26 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                       selected:
                           runtimeConfig.bashReviewMode ==
                           bashReviewOptions[i].value,
-                      onTap: () => _update(
-                        ref,
-                        runtimeConfig.copyWith(
-                          bashReviewMode: bashReviewOptions[i].value,
-                        ),
-                      ),
+                      onTap: () {
+                        final option = bashReviewOptions[i];
+                        if (option.value == 'auto' &&
+                            runtimeConfig.auxiliaryModel == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                context
+                                    .l10n
+                                    .auxiliaryModelRequiredForAutoReview,
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        _update(
+                          ref,
+                          runtimeConfig.copyWith(bashReviewMode: option.value),
+                        );
+                      },
                     ),
                   ],
                 ],
@@ -135,6 +149,7 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                     threadId: threadId,
                     canEdit: true,
                     onChanged: onChanged,
+                    workspacePath: '',
                     mcpServers: mcpServers,
                     rememberedMcp: workflow?.mcpServersEnabled,
                   ),

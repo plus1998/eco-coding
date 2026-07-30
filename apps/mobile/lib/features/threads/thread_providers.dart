@@ -82,6 +82,19 @@ final candidateModelsProvider =
       return rpc.listCandidateModels(providerId);
     });
 
+final auxiliaryModelOptionsProvider =
+    FutureProvider.family<List<CommitModelOptionView>, String>((
+      ref,
+      mainAgentConfigId,
+    ) async {
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null || mainAgentConfigId.trim().isEmpty) return const [];
+      final result = await rpc.listCommitModelOptions(
+        mainAgentConfigId: mainAgentConfigId,
+      );
+      return result.options;
+    });
+
 final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   ref,
 ) async {

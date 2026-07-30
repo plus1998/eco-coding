@@ -1434,6 +1434,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerModel => 'Model';
 
   @override
+  String get composerAuxiliaryModel => 'Auxiliary model';
+
+  @override
+  String get composerAuxiliaryModelHint =>
+      'Used for thread titles and automatic reviews';
+
+  @override
+  String get composerAuxiliaryModelManualFallback =>
+      'Sending remains available; titles are not generated and reviews use manual mode';
+
+  @override
+  String get composerAuxiliaryModelNeedsMainAgent =>
+      'Configure the main Agent before selecting an auxiliary model';
+
+  @override
+  String get auxiliaryModelRequiredForAutoReview =>
+      'Configure an auxiliary model before enabling automatic reviews';
+
+  @override
+  String get auxiliaryModelAutoReviewFallback =>
+      'No auxiliary model is configured. Switched to manual review and continued sending';
+
+  @override
   String get composerReasoning => 'Reasoning';
 
   @override

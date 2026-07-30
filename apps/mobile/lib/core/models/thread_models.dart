@@ -81,6 +81,32 @@ class MainAgentModelOverride {
   final String? candidateModelId;
 }
 
+class AuxiliaryModelSelection {
+  const AuxiliaryModelSelection({
+    required this.providerId,
+    required this.modelId,
+    required this.candidateModelId,
+  });
+
+  factory AuxiliaryModelSelection.fromJson(Map<String, dynamic> json) {
+    return AuxiliaryModelSelection(
+      providerId: _requiredAuxiliaryModelString(json, 'providerId'),
+      modelId: _requiredAuxiliaryModelString(json, 'modelId'),
+      candidateModelId: _requiredAuxiliaryModelString(json, 'candidateModelId'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'providerId': providerId,
+    'modelId': modelId,
+    'candidateModelId': candidateModelId,
+  };
+
+  final String providerId;
+  final String modelId;
+  final String candidateModelId;
+}
+
 class ThreadRuntimeConfig {
   const ThreadRuntimeConfig({
     this.orchestrationSelection,
@@ -89,6 +115,7 @@ class ThreadRuntimeConfig {
     this.mcpServersEnabled,
     this.skillsEnabled,
     this.mainAgentModelOverride,
+    this.auxiliaryModel,
     required this.sessionMode,
     required this.bashReviewMode,
   });
@@ -135,6 +162,12 @@ class ThreadRuntimeConfig {
         ),
       );
     }
+    AuxiliaryModelSelection? auxiliaryModel;
+    if (json.containsKey('auxiliaryModel')) {
+      auxiliaryModel = AuxiliaryModelSelection.fromJson(
+        _requiredJsonObject(json['auxiliaryModel'], 'auxiliaryModel'),
+      );
+    }
     OrchestrationSelection? orchestrationSelection;
     if (json.containsKey('orchestrationSelection')) {
       orchestrationSelection = OrchestrationSelection.fromJson(
@@ -161,6 +194,7 @@ class ThreadRuntimeConfig {
       mcpServersEnabled: parsedMcp,
       skillsEnabled: parsedSkills,
       mainAgentModelOverride: mainAgentModelOverride,
+      auxiliaryModel: auxiliaryModel,
       sessionMode: sessionMode,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
     );
@@ -170,13 +204,13 @@ class ThreadRuntimeConfig {
     if (orchestrationSelection != null)
       'orchestrationSelection': orchestrationSelection!.toJson(),
     if (resolvedOrchestrationSnapshot != null)
-      'resolvedOrchestrationSnapshot':
-          resolvedOrchestrationSnapshot!.toJson(),
+      'resolvedOrchestrationSnapshot': resolvedOrchestrationSnapshot!.toJson(),
     'subagentEnabled': subagentEnabled,
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
     if (skillsEnabled != null) 'skillsEnabled': skillsEnabled,
     if (mainAgentModelOverride != null)
       'mainAgentModelOverride': mainAgentModelOverride!.toJson(),
+    if (auxiliaryModel != null) 'auxiliaryModel': auxiliaryModel!.toJson(),
     'sessionMode': sessionMode,
     'bashReviewMode': bashReviewMode,
   };
@@ -190,6 +224,8 @@ class ThreadRuntimeConfig {
     Map<String, bool>? skillsEnabled,
     MainAgentModelOverride? mainAgentModelOverride,
     bool clearMainAgentModelOverride = false,
+    AuxiliaryModelSelection? auxiliaryModel,
+    bool clearAuxiliaryModel = false,
     SessionMode? sessionMode,
     String? bashReviewMode,
   }) {
@@ -206,6 +242,9 @@ class ThreadRuntimeConfig {
       mainAgentModelOverride: clearMainAgentModelOverride
           ? null
           : (mainAgentModelOverride ?? this.mainAgentModelOverride),
+      auxiliaryModel: clearAuxiliaryModel
+          ? null
+          : (auxiliaryModel ?? this.auxiliaryModel),
       sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
@@ -217,6 +256,7 @@ class ThreadRuntimeConfig {
   final Map<String, bool>? mcpServersEnabled;
   final Map<String, bool>? skillsEnabled;
   final MainAgentModelOverride? mainAgentModelOverride;
+  final AuxiliaryModelSelection? auxiliaryModel;
   final SessionMode sessionMode;
   final String bashReviewMode;
 }
@@ -225,6 +265,14 @@ String _requiredMainAgentOverrideString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is! String || value.trim().isEmpty) {
     throw FormatException('Invalid mainAgentModelOverride.$key');
+  }
+  return value.trim();
+}
+
+String _requiredAuxiliaryModelString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! String || value.trim().isEmpty) {
+    throw FormatException('Invalid auxiliaryModel.$key');
   }
   return value.trim();
 }
@@ -261,6 +309,7 @@ class WorkflowSettingsSnapshot {
     required this.sessionMode,
     this.defaultCoreKind,
     this.defaultOrchestrationSelection,
+    this.defaultAuxiliaryModel,
     this.mcpServersEnabled,
   });
 
@@ -279,10 +328,20 @@ class WorkflowSettingsSnapshot {
         json['defaultOrchestrationSelection'] as Map<String, dynamic>,
       );
     }
+    AuxiliaryModelSelection? defaultAuxiliaryModel;
+    if (json.containsKey('defaultAuxiliaryModel')) {
+      defaultAuxiliaryModel = AuxiliaryModelSelection.fromJson(
+        _requiredJsonObject(
+          json['defaultAuxiliaryModel'],
+          'defaultAuxiliaryModel',
+        ),
+      );
+    }
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
       defaultCoreKind: json['defaultCoreKind'] as String?,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
+      defaultAuxiliaryModel: defaultAuxiliaryModel,
       mcpServersEnabled: parsedMcp,
     );
   }
@@ -292,14 +351,16 @@ class WorkflowSettingsSnapshot {
     'planModelEnabled': sessionMode == 'plan',
     if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
     if (defaultOrchestrationSelection != null)
-      'defaultOrchestrationSelection':
-          defaultOrchestrationSelection!.toJson(),
+      'defaultOrchestrationSelection': defaultOrchestrationSelection!.toJson(),
+    if (defaultAuxiliaryModel != null)
+      'defaultAuxiliaryModel': defaultAuxiliaryModel!.toJson(),
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
   };
 
   final SessionMode sessionMode;
   final String? defaultCoreKind;
   final OrchestrationSelection? defaultOrchestrationSelection;
+  final AuxiliaryModelSelection? defaultAuxiliaryModel;
   final Map<String, bool>? mcpServersEnabled;
 }
 
@@ -920,16 +981,14 @@ class ModelSettingsSnapshot {
     return ModelSettingsSnapshot(
       mainAgentConfigs: (json['mainAgentConfigs'] as List<dynamic>? ?? [])
           .map(
-            (entry) => MainAgentConfigResource.fromJson(
-              entry as Map<String, dynamic>,
-            ),
+            (entry) =>
+                MainAgentConfigResource.fromJson(entry as Map<String, dynamic>),
           )
           .toList(growable: false),
       mainAgentPrompts: (json['mainAgentPrompts'] as List<dynamic>? ?? [])
           .map(
-            (entry) => MainAgentPromptResource.fromJson(
-              entry as Map<String, dynamic>,
-            ),
+            (entry) =>
+                MainAgentPromptResource.fromJson(entry as Map<String, dynamic>),
           )
           .toList(growable: false),
       subagentOrchestrations:

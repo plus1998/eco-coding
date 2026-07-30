@@ -3358,7 +3358,6 @@ function registerIpcHandlers(): void {
       settings,
       parseThreadRuntimeConfigInput(payload.runtimeConfig),
     );
-    resolveAuxiliaryModelRoute(threadRuntime.auxiliaryModel, providerStore);
     if (coreKind === "codex") {
       assertCodexRuntimeConfigSupported(threadRuntime);
     }
@@ -3932,6 +3931,9 @@ function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeCon
 
   const prompt = thread.prompt;
   emitThreadTitleDelta(threadId, resolveFailedThreadTitle(prompt, currentAppLocale()));
+  if (!thread.runtimeConfig?.auxiliaryModel) {
+    return;
+  }
   let titleRoute;
   try {
     titleRoute = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
@@ -4336,7 +4338,6 @@ async function startCodexThreadContinuation(
   if (!threadConfig) {
     throw new Error("Thread runtime configuration is missing.");
   }
-  resolveAuxiliaryModelRoute(threadConfig.auxiliaryModel, providerStore);
   assertCodexRuntimeConfigSupported(threadConfig);
   const roleRoutes = roleRoutesForThreadConfig(settings, threadConfig);
   const runtime = resolveRuntimeConfigForThreadConfig(settings, threadConfig, roleRoutes);
@@ -5284,7 +5285,6 @@ async function startClaudeThreadContinuation(
   if (!activeRuntimeConfig) {
     throw new Error("Thread runtime configuration is missing.");
   }
-  resolveAuxiliaryModelRoute(activeRuntimeConfig.auxiliaryModel, providerStore);
   const roleRoutes = roleRoutesForThreadConfig(settings, activeRuntimeConfig);
   noteSdkSessionRouteChange(input.threadId, roleRoutes);
 

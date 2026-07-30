@@ -2582,6 +2582,42 @@ abstract class AppLocalizations {
   /// **'Model'**
   String get composerModel;
 
+  /// No description provided for @composerAuxiliaryModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Auxiliary model'**
+  String get composerAuxiliaryModel;
+
+  /// No description provided for @composerAuxiliaryModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Used for thread titles and automatic reviews'**
+  String get composerAuxiliaryModelHint;
+
+  /// No description provided for @composerAuxiliaryModelManualFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending remains available; titles are not generated and reviews use manual mode'**
+  String get composerAuxiliaryModelManualFallback;
+
+  /// No description provided for @composerAuxiliaryModelNeedsMainAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure the main Agent before selecting an auxiliary model'**
+  String get composerAuxiliaryModelNeedsMainAgent;
+
+  /// No description provided for @auxiliaryModelRequiredForAutoReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure an auxiliary model before enabling automatic reviews'**
+  String get auxiliaryModelRequiredForAutoReview;
+
+  /// No description provided for @auxiliaryModelAutoReviewFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'No auxiliary model is configured. Switched to manual review and continued sending'**
+  String get auxiliaryModelAutoReviewFallback;
+
   /// No description provided for @composerReasoning.
   ///
   /// In en, this message translates to:

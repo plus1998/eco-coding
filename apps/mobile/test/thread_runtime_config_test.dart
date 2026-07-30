@@ -223,6 +223,47 @@ void main() {
     });
   });
 
+  test('auxiliary model JSON round-trips through runtime and workflow', () {
+    const auxiliaryModel = AuxiliaryModelSelection(
+      providerId: 'provider-2',
+      modelId: 'fast-model',
+      candidateModelId: 'candidate-fast',
+    );
+    final runtime = _runtimeConfig().copyWith(auxiliaryModel: auxiliaryModel);
+
+    final restoredRuntime = ThreadRuntimeConfig.fromJson(runtime.toJson());
+    final workflow = WorkflowSettingsSnapshot.fromJson(
+      const WorkflowSettingsSnapshot(
+        sessionMode: 'agent',
+        defaultAuxiliaryModel: auxiliaryModel,
+      ).toJson(),
+    );
+
+    expect(restoredRuntime.auxiliaryModel?.providerId, 'provider-2');
+    expect(restoredRuntime.auxiliaryModel?.modelId, 'fast-model');
+    expect(restoredRuntime.auxiliaryModel?.candidateModelId, 'candidate-fast');
+    expect(workflow.defaultAuxiliaryModel?.candidateModelId, 'candidate-fast');
+  });
+
+  test('missing auxiliary model downgrades automatic review to manual', () {
+    final automatic = _runtimeConfig().copyWith(bashReviewMode: 'auto');
+    final downgraded = downgradeAuxiliaryDependentFeatures(automatic);
+
+    expect(downgraded.bashReviewMode, 'always');
+    expect(
+      downgradeAuxiliaryDependentFeatures(
+        automatic.copyWith(
+          auxiliaryModel: const AuxiliaryModelSelection(
+            providerId: 'provider-2',
+            modelId: 'fast-model',
+            candidateModelId: 'candidate-fast',
+          ),
+        ),
+      ).bashReviewMode,
+      'auto',
+    );
+  });
+
   test('legacy runtime config fields are rejected', () {
     expect(
       () => ThreadRuntimeConfig.fromJson({

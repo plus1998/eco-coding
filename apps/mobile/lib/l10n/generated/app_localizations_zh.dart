@@ -1354,6 +1354,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerModel => '模型';
 
   @override
+  String get composerAuxiliaryModel => '辅助模型';
+
+  @override
+  String get composerAuxiliaryModelHint => '用于生成会话标题和自动审查';
+
+  @override
+  String get composerAuxiliaryModelManualFallback => '仍可发送；标题不会自动生成，审查将使用手动模式';
+
+  @override
+  String get composerAuxiliaryModelNeedsMainAgent => '请先配置主 Agent，再选择辅助模型';
+
+  @override
+  String get auxiliaryModelRequiredForAutoReview => '尚未配置辅助模型，无法启用自动审查';
+
+  @override
+  String get auxiliaryModelAutoReviewFallback => '尚未配置辅助模型，已切换为手动审查并继续发送';
+
+  @override
   String get composerReasoning => '推理';
 
   @override

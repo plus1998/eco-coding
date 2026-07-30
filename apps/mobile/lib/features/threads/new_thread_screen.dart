@@ -251,6 +251,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
           sessionMode: workflow.sessionMode,
           defaultCoreKind: coreKind,
           defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
+          defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
           mcpServersEnabled: workflow.mcpServersEnabled,
         ),
       );
@@ -296,12 +297,25 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
 
     setState(() => _starting = true);
     try {
+      final sendRuntimeConfig = downgradeAuxiliaryDependentFeatures(
+        runtimeConfig,
+      );
+      if (sendRuntimeConfig.bashReviewMode != runtimeConfig.bashReviewMode) {
+        ref.read(runtimeConfigProvider.notifier).state = sendRuntimeConfig;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(context.l10n.auxiliaryModelAutoReviewFallback),
+            ),
+          );
+        }
+      }
       final thread = await rpc.startThread(
         workspacePath: workspacePath,
         prompt: prompt,
         coreKind: _coreKind,
         attachments: _attachments.isEmpty ? null : List.of(_attachments),
-        runtimeConfig: runtimeConfig,
+        runtimeConfig: sendRuntimeConfig,
       );
       ref.invalidate(threadListProvider);
       ref.invalidate(projectWorkspaceContextProvider);

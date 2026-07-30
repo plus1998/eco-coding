@@ -81,6 +81,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             sessionMode: workflow?.sessionMode ?? _sessionMode,
             defaultCoreKind: workflow?.defaultCoreKind,
             defaultOrchestrationSelection: selection,
+            defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
             mcpServersEnabled: workflow?.mcpServersEnabled,
           ),
         );
@@ -109,6 +110,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           defaultCoreKind: workflow?.defaultCoreKind,
           defaultOrchestrationSelection:
               workflow?.defaultOrchestrationSelection,
+          defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
           mcpServersEnabled: workflow?.mcpServersEnabled,
         ),
       );
