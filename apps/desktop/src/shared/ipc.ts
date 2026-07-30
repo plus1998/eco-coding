@@ -3,6 +3,7 @@ import type { ThreadRunToolMetadata } from "./thread-run-events";
 import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 
 export const IPC_CHANNELS = {
+  appMenuCommand: "app:menu-command",
   appSetThemeSource: "app:set-theme-source",
   appSetLocale: "app:set-locale",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
@@ -163,6 +164,15 @@ export const IPC_CHANNELS = {
   gitSettingsGet: "git-settings:get",
   gitSettingsSave: "git-settings:save",
 } as const;
+
+export type AppMenuCommand =
+  | "new-chat"
+  | "open-folder"
+  | "toggle-sidebar"
+  | "toggle-bottom-panel"
+  | "toggle-work-panel"
+  | "toggle-review-panel"
+  | "toggle-file-tree";
 
 export type {
   CenterServerAccountAuthResult,

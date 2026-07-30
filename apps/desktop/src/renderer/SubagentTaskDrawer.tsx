@@ -598,6 +598,7 @@ export function SubagentTaskDrawer({
   fileTarget,
   onSelectFiles,
   onSelectFileViewer,
+  onViewedFileChange,
   onOpenTerminal,
   onShowHome,
   onToggleFullscreen,
@@ -629,6 +630,7 @@ export function SubagentTaskDrawer({
   fileTarget?: WorkspaceFileReference & { requestId: number; restricted?: boolean };
   onSelectFiles: () => void;
   onSelectFileViewer: () => void;
+  onViewedFileChange: (target: WorkspaceFileReference & { requestId: number }) => void;
   onOpenTerminal: () => void;
   onShowHome: () => void;
   onToggleFullscreen: () => void;
@@ -940,6 +942,7 @@ export function SubagentTaskDrawer({
             <WorkspaceFileViewer
               workspacePath={workspacePath}
               {...(fileTarget ? { target: fileTarget } : {})}
+              onViewedFileChange={onViewedFileChange}
             />
           </div>
         ) : null}

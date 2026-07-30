@@ -52,6 +52,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   type NativeImage,
   Notification,
   nativeImage,
@@ -60,6 +61,7 @@ import {
   shell,
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
+import { buildApplicationMenuTemplate } from "./native-menu";
 import {
   readElectronResourcesPath,
   resolvePackagedClaudeExecutableCandidate,
@@ -982,6 +984,15 @@ app.whenReady().then(async () => {
   if (appIcon && process.platform === "darwin") {
     app.dock?.setIcon(appIcon);
   }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      buildApplicationMenuTemplate(app.name, process.platform, (command, browserWindow) => {
+        if (browserWindow instanceof BrowserWindow) {
+          browserWindow.webContents.send(IPC_CHANNELS.appMenuCommand, command);
+        }
+      }),
+    ),
+  );
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { IPC_CHANNELS, isKnownIpcChannel, isTerminalStreamEvent } from "../src/shared/ipc";
 
 test("declares the core desktop IPC channels", () => {
+  expect(IPC_CHANNELS.appMenuCommand).toBe("app:menu-command");
   expect(IPC_CHANNELS.appSetLocale).toBe("app:set-locale");
   expect(IPC_CHANNELS.appConsumePendingThreadOpen).toBe("app:consume-pending-thread-open");
   expect(IPC_CHANNELS.appThreadOpenRequested).toBe("app:thread-open-requested");
@@ -108,6 +109,7 @@ test("declares the core desktop IPC channels", () => {
 });
 
 test("guards unknown channels", () => {
+  expect(isKnownIpcChannel("app:menu-command")).toBe(true);
   expect(isKnownIpcChannel("workspace:open")).toBe(true);
   expect(isKnownIpcChannel("model-settings:get")).toBe(true);
   expect(isKnownIpcChannel("thread:start")).toBe(true);

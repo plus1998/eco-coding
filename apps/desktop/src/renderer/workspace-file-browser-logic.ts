@@ -15,6 +15,12 @@ export interface WorkspaceTreeItem {
   entry?: WorkspaceEntry;
 }
 
+export interface WorkspacePathSegment {
+  name: string;
+  path: string;
+  kind: WorkspaceEntryKind;
+}
+
 export function itemIndex(item: { index: string | number }): string {
   return String(item.index);
 }
@@ -22,6 +28,46 @@ export function itemIndex(item: { index: string | number }): string {
 export function basename(filePath: string): string {
   const trimmed = filePath.replace(/[\\/]+$/, "");
   return trimmed.split(/[\\/]/).pop() || trimmed;
+}
+
+export function parentDirectory(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const separator = normalized.lastIndexOf("/");
+  if (separator <= 0) return normalized.slice(0, Math.max(separator, 1)) || normalized;
+  return normalized.slice(0, separator);
+}
+
+export function workspacePathSegments(workspacePath: string, filePath: string): WorkspacePathSegment[] {
+  const normalize = (value: string) => {
+    const normalized = value.replace(/\\/g, "/").replace(/\/+$/, "");
+    return normalized || (value.startsWith("/") ? "/" : normalized);
+  };
+  const root = normalize(workspacePath);
+  const target = normalize(filePath);
+  if (!root || !target) return [];
+  const windowsPath = /^[A-Za-z]:\//.test(root);
+  const comparableRoot = windowsPath ? root.toLowerCase() : root;
+  const comparableTarget = windowsPath ? target.toLowerCase() : target;
+  if (comparableTarget === comparableRoot) {
+    return [{ name: basename(root) || root, path: root, kind: "directory" }];
+  }
+  const rootPrefix = root === "/" ? root : `${root}/`;
+  const comparablePrefix = windowsPath ? rootPrefix.toLowerCase() : rootPrefix;
+  if (!comparableTarget.startsWith(comparablePrefix)) return [];
+
+  const relativeSegments = target.slice(rootPrefix.length).split("/").filter(Boolean);
+  let currentPath = root;
+  return [
+    { name: basename(root) || root, path: root, kind: "directory" as const },
+    ...relativeSegments.map((name, index) => {
+      currentPath = currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
+      return {
+        name,
+        path: currentPath,
+        kind: index === relativeSegments.length - 1 ? ("file" as const) : ("directory" as const),
+      };
+    }),
+  ];
 }
 
 export function fileExtension(filePath: string): string {
@@ -101,7 +147,10 @@ export function mergeWorkspaceEntries(
   const next = { ...items };
   const children = entries
     .slice()
-    .sort((a, b) => Number(b.kind === "directory") - Number(a.kind === "directory") || a.name.localeCompare(b.name))
+    .sort(
+      (a, b) =>
+        Number(b.kind === "directory") - Number(a.kind === "directory") || a.name.localeCompare(b.name),
+    )
     .map((entry) => entry.path);
   next[directoryPath] = {
     ...(next[directoryPath] ?? {

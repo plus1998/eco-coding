@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocalePreference } from "../shared/locale";
 import {
   type AgentTemplate,
+  type AppMenuCommand,
   type AgentTemplateExportRequest,
   type AgentTemplateExportResult,
   type AgentTemplateImportResult,
@@ -190,6 +191,11 @@ const api = {
     const listener = () => callback();
     ipcRenderer.on(IPC_CHANNELS.appThreadOpenRequested, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.appThreadOpenRequested, listener);
+  },
+  onAppMenuCommand(callback: (command: AppMenuCommand) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, command: AppMenuCommand) => callback(command);
+    ipcRenderer.on(IPC_CHANNELS.appMenuCommand, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.appMenuCommand, listener);
   },
   getCoreAvailability(): Promise<CoreAvailabilitySnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.coreAvailabilityGet);

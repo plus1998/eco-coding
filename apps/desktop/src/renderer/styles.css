@@ -96,6 +96,11 @@ button:not(:disabled) {
   background: transparent;
 }
 
+.shell.shell-sidebar-hidden,
+.shell.shell-sidebar-hidden.shell-thread-info-pinned {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .shell.shell-thread-info-pinned {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) min(300px, 30vw);
 }
@@ -251,6 +256,10 @@ button:not(:disabled) {
     background 0.2s ease,
     backdrop-filter 0.2s ease,
     -webkit-backdrop-filter 0.2s ease;
+}
+
+.codex-sidebar.is-hidden {
+  display: none;
 }
 
 html[data-platform="darwin"] .codex-sidebar {
@@ -1361,9 +1370,6 @@ button.sidebar-core-heading {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  transition:
-    grid-template-columns 0.32s cubic-bezier(0.4, 0, 0.2, 1),
-    gap 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .codex-main-pane.is-task-panel-open {
@@ -1380,6 +1386,7 @@ button.sidebar-core-heading {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  contain: layout style;
 }
 
 .activity-workspace-shell > .codex-main-scroll {
@@ -1432,9 +1439,6 @@ button.sidebar-core-heading {
   align-items: stretch;
   column-gap: 0;
   overflow: hidden;
-  transition:
-    grid-template-columns 0.32s cubic-bezier(0.4, 0, 0.2, 1),
-    column-gap 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .codex-main-scroll.has-workspace-panel.is-workspace-panel-open {
@@ -1480,7 +1484,6 @@ button.sidebar-core-heading {
 
 .codex-main-topbar .codex-main-toolbar--workspace {
   margin-right: var(--workspace-toolbar-fixed-reserve);
-  transition: margin-right 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .codex-main-pane.is-task-panel-open .codex-main-toolbar--workspace {
@@ -1771,7 +1774,6 @@ button.sidebar-core-heading {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  transition: flex 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .codex-feed-stack {
@@ -2877,11 +2879,7 @@ button.sidebar-core-heading {
 }
 
 .codex-main:not(.codex-main-landing) .activity-feed-scroll-jump {
-  bottom: calc(
-    var(--activity-feed-composer-mask-height) +
-    var(--composer-input-overlays-height, 0px) +
-    16px
-  );
+  bottom: calc(var(--activity-feed-composer-mask-height) + var(--composer-input-overlays-height, 0px) + 16px);
 }
 
 .activity-scroll-anchor {
@@ -4643,7 +4641,9 @@ button.sidebar-core-heading {
 
 .workspace-plan-card-icon {
   color: var(--text-muted);
-  transition: color 0.16s ease, transform 0.16s cubic-bezier(0.32, 0.72, 0, 1);
+  transition:
+    color 0.16s ease,
+    transform 0.16s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .workspace-plan-card-trigger:hover:not(:disabled) .workspace-plan-card-icon {
@@ -4711,7 +4711,6 @@ button.sidebar-core-heading {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 
 .clarification-top {
   display: flex;
@@ -14093,7 +14092,9 @@ select.composer-route-prompt-segments {
   background-position:
     calc(100% - 16px) calc(50% + 1px),
     calc(100% - 11px) calc(50% + 1px);
-  background-size: 5px 5px, 5px 5px;
+  background-size:
+    5px 5px,
+    5px 5px;
   background-repeat: no-repeat;
 }
 
@@ -14748,7 +14749,9 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   padding: 0;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 0.14s ease, color 0.14s ease;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease;
 }
 
 .font-size-stepper-button:hover:not(:disabled) {
@@ -17804,7 +17807,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   align-self: center;
 }
 
-
 .candidate-models-list {
   display: flex;
   flex-direction: column;
@@ -18867,17 +18869,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   margin: 0.72em 0;
 }
 
-.codex-main:not(.codex-main-landing)
-  .run-log-feed-entry
-  .markdown-content
-  > :first-child {
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :first-child {
   margin-top: 0;
 }
 
-.codex-main:not(.codex-main-landing)
-  .run-log-feed-entry
-  .markdown-content
-  > :last-child {
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :last-child {
   margin-bottom: 0;
 }
 
@@ -22311,7 +22307,10 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   width: min(var(--workspace-cards-panel-width, 300px), calc(100% - 32px));
   height: auto;
   max-height: calc(
-    100% - var(--workspace-toolbar-clearance, 36px) - var(--workspace-terminal-height, 0px) - 24px
+    100% -
+    var(--workspace-toolbar-clearance, 36px) -
+    var(--workspace-terminal-height, 0px) -
+    24px
   );
   overflow: visible;
   border: 0;
@@ -22469,7 +22468,9 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   display: block;
   color: var(--text-muted);
   opacity: 0.72;
-  transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.16s ease;
+  transition:
+    transform 0.34s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.16s ease;
 }
 
 .workspace-panel-section-header:hover .workspace-panel-section-chevron {

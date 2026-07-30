@@ -15,14 +15,301 @@
   --wfb-border: var(--border-subtle, color-mix(in srgb, currentColor 14%, transparent));
   --wfb-muted: var(--text-muted, color-mix(in srgb, currentColor 62%, transparent));
   display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 260px;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
   position: relative;
-  border: 1px solid var(--wfb-border);
-  background: var(--bg-main, transparent);
+  border-top: 1px solid var(--wfb-border);
+  background: var(--terminal-bg, var(--bg-main, transparent));
   color: var(--text-primary, currentColor);
+}
+
+.workspace-file-viewer__breadcrumbs {
+  display: flex;
+  flex: 0 0 43px;
+  min-width: 0;
+  align-items: center;
+  gap: 1px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 15px;
+  border-bottom: 1px solid var(--wfb-border);
+  background: var(--terminal-bg, var(--bg-main));
+  scrollbar-width: none;
+}
+
+.workspace-file-viewer__breadcrumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace-file-viewer__breadcrumb-part {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+}
+
+.workspace-file-viewer__breadcrumb-separator {
+  width: 15px;
+  height: 15px;
+  margin: 0 2px;
+  color: var(--wfb-muted);
+  stroke-width: 1.7;
+}
+
+.workspace-file-viewer__breadcrumb-part button {
+  max-width: 190px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 6px;
+  background: transparent;
+  color: var(--wfb-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-viewer__breadcrumb-part button:hover,
+.workspace-file-viewer__breadcrumb-part button[aria-expanded="true"] {
+  background: var(--nav-hover);
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-viewer__breadcrumb-part button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: -1px;
+}
+
+.workspace-file-viewer__breadcrumb-part button.is-file {
+  color: var(--text-primary, currentColor);
+  font-weight: 620;
+}
+
+.workspace-file-viewer__preview {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-main, transparent);
+}
+
+.workspace-file-viewer__navigator {
+  position: absolute;
+  top: 51px;
+  left: 10px;
+  z-index: 20;
+  display: flex;
+  width: min(430px, calc(100% - 20px));
+  max-height: min(520px, calc(100% - 66px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--popover-border, var(--wfb-border));
+  border-radius: 8px;
+  background: var(--popover-bg, var(--bg-menu));
+  box-shadow: var(--shadow-menu);
+  color: var(--popover-text, var(--text-primary));
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.workspace-file-viewer__navigator-head {
+  display: flex;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 7px 0 12px;
+  border-bottom: 1px solid var(--popover-divider, var(--wfb-border));
+}
+
+.workspace-file-viewer__navigator-head > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-viewer__navigator-head svg {
+  width: 15px;
+  height: 15px;
+  color: var(--popover-muted, var(--wfb-muted));
+}
+
+.workspace-file-viewer__navigator-head button {
+  display: inline-grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--popover-muted, var(--wfb-muted));
+  cursor: pointer;
+}
+
+.workspace-file-viewer__navigator-head button:hover {
+  background: var(--popover-hover, var(--nav-hover));
+  color: var(--popover-text, var(--text-primary));
+}
+
+.workspace-file-viewer__navigator-head button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-file-viewer__navigator-body {
+  min-height: 88px;
+  overflow: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
+}
+
+.workspace-file-viewer__tree-group {
+  display: grid;
+}
+
+.workspace-file-viewer__tree-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 31px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  padding-top: 0;
+  padding-right: 9px;
+  padding-bottom: 0;
+  background: transparent;
+  color: var(--popover-text, var(--text-primary));
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.workspace-file-viewer__tree-item:hover {
+  background: var(--popover-hover, var(--nav-hover));
+}
+
+.workspace-file-viewer__tree-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 64%, transparent);
+  outline-offset: -2px;
+}
+
+.workspace-file-viewer__tree-item.is-current {
+  background: var(--popover-item-active, var(--nav-active));
+}
+
+.workspace-file-viewer__tree-chevron {
+  display: inline-grid;
+  width: 14px;
+  height: 18px;
+  flex: 0 0 14px;
+  place-items: center;
+  color: var(--popover-muted, var(--wfb-muted));
+}
+
+.workspace-file-viewer__tree-chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+}
+
+.workspace-file-viewer__tree-icon {
+  display: inline-grid;
+  width: 17px;
+  height: 18px;
+  flex: 0 0 17px;
+  place-items: center;
+  color: var(--popover-muted, var(--wfb-muted));
+}
+
+.workspace-file-viewer__tree-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+}
+
+.workspace-file-viewer__tree-item.is-file .workspace-file-viewer__tree-icon {
+  color: color-mix(in srgb, var(--accent) 78%, var(--text-primary));
+}
+
+.workspace-file-viewer__tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-viewer__tree-loading {
+  width: 12px;
+  height: 12px;
+  margin-left: auto;
+  border: 1.5px solid color-mix(in srgb, var(--popover-muted) 35%, transparent);
+  border-top-color: var(--popover-muted, var(--wfb-muted));
+  border-radius: 50%;
+  animation: workspace-file-viewer-spin 0.75s linear infinite;
+}
+
+.workspace-file-viewer__navigator-message,
+.workspace-file-viewer__navigator-error {
+  display: grid;
+  min-height: 82px;
+  place-items: center;
+  padding: 14px;
+  color: var(--popover-muted, var(--wfb-muted));
+  font-size: 12px;
+  text-align: center;
+}
+
+.workspace-file-viewer__navigator-error {
+  gap: 8px;
+}
+
+.workspace-file-viewer__navigator-error button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: var(--popover-hover, var(--nav-hover));
+  color: var(--popover-text, var(--text-primary));
+  cursor: pointer;
+  font: inherit;
+}
+
+.workspace-file-viewer__navigator-error button svg {
+  width: 13px;
+  height: 13px;
+}
+
+@keyframes workspace-file-viewer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-file-viewer__tree-loading {
+    animation: none;
+  }
 }
 
 .subagent-task-panel-tab-pane--file-viewer {
@@ -236,7 +523,7 @@
   flex: 1;
   height: 100%;
   min-height: 240px;
-  font-size: 12px;
+  font-size: var(--code-font-size, 13px);
 }
 
 .workspace-file-browser__editor .cm-editor {
@@ -261,5 +548,18 @@
   .workspace-file-browser__tree {
     border-right: 0;
     border-bottom: 1px solid var(--wfb-border);
+  }
+
+  .workspace-file-viewer__breadcrumbs {
+    padding: 0 9px;
+  }
+
+  .workspace-file-viewer__breadcrumb-part button {
+    max-width: 130px;
+  }
+
+  .workspace-file-viewer__navigator {
+    left: 6px;
+    width: calc(100% - 12px);
   }
 }

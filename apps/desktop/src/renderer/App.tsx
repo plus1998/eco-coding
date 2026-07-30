@@ -41,6 +41,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -49,6 +50,7 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import type { AppLocalePreference } from "../shared/locale";
 import {
@@ -69,6 +71,7 @@ import {
 } from "../shared/prompt-cache-config";
 import {
   buildThreadRuntimeConfigFromDefaults,
+  type AppMenuCommand,
   type BackgroundTerminalTask,
   type BashApprovalRequest,
   type CandidateModelView,
@@ -802,6 +805,8 @@ function ActivityUserMessageNavigator({
 function App() {
   const { t } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
     kind: "project" | "thread";
@@ -828,6 +833,13 @@ function App() {
   useEffect(() => {
     void applyLocalePreference(localePreference);
   }, [localePreference]);
+
+  useEffect(() => {
+    if (!window.eco) {
+      return undefined;
+    }
+    return window.eco.onAppMenuCommand((command) => menuCommandHandlerRef.current(command));
+  }, []);
 
   useEffect(() => {
     if (localePreference !== "system") {
@@ -1041,11 +1053,18 @@ function App() {
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+  const [taskPanelLayoutPresent, setTaskPanelLayoutPresent] = useState(false);
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
     useState<ActivityWorkspaceLayoutMode>("feed-only");
+  const prefersReducedMotion = useReducedMotion();
+  const taskPanelAnimationControls = useAnimationControls();
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
+  const pendingTaskPanelTabCloseRef = useRef<TaskPanelActiveTab | undefined>(undefined);
+  const taskPanelCloseRequestRef = useRef(0);
+  const taskPanelClosingRef = useRef(false);
+  const openWorkPanelAfterTaskCloseRef = useRef(false);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
@@ -3426,13 +3445,127 @@ function App() {
   }, [activeProjectionViewModel, activeThread?.id, activeThread?.prompt]);
 
   useEffect(() => {
+    taskPanelAnimationControls.stop();
+    taskPanelCloseRequestRef.current += 1;
+    taskPanelClosingRef.current = false;
+    openWorkPanelAfterTaskCloseRef.current = false;
+    pendingTaskPanelTabCloseRef.current = undefined;
     setSelectedSubagentAgentId(undefined);
     setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
     setFileTarget(undefined);
     setOpenTaskPanelTabIds([]);
     setTaskDrawerOpen(false);
+    setTaskPanelLayoutPresent(false);
     setTaskPanelFullscreen(false);
-  }, [activeThread?.id]);
+  }, [activeThread?.id, taskPanelAnimationControls]);
+
+  const revealTaskPanel = useCallback(() => {
+    openWorkPanelAfterTaskCloseRef.current = false;
+    const openRequest = taskPanelCloseRequestRef.current + 1;
+    taskPanelCloseRequestRef.current = openRequest;
+    const reversingExit = taskPanelClosingRef.current;
+    taskPanelClosingRef.current = false;
+    pendingTaskPanelTabCloseRef.current = undefined;
+    taskPanelAnimationControls.stop();
+    if (!taskPanelLayoutPresent) {
+      taskPanelAnimationControls.set(
+        prefersReducedMotion
+          ? { opacity: 0 }
+          : { opacity: 0, x: taskPanelWidth + 18 },
+      );
+    }
+    setTaskPanelLayoutPresent(true);
+    setTaskDrawerOpen(true);
+    requestAnimationFrame(() => {
+      if (taskPanelCloseRequestRef.current !== openRequest) {
+        return;
+      }
+      void taskPanelAnimationControls.start(
+        { opacity: 1, x: 0 },
+        prefersReducedMotion
+          ? { duration: 0.12, ease: "easeOut" }
+          : {
+              x: {
+                type: "spring",
+                bounce: 0,
+                duration: reversingExit ? 0.28 : 0.34,
+              },
+              opacity: { duration: 0.18, ease: "easeOut" },
+            },
+      );
+    });
+  }, [
+    prefersReducedMotion,
+    taskPanelAnimationControls,
+    taskPanelLayoutPresent,
+    taskPanelWidth,
+  ]);
+
+  const dismissTaskPanel = useCallback(() => {
+    if (!taskPanelLayoutPresent || taskPanelClosingRef.current) {
+      return;
+    }
+    taskPanelClosingRef.current = true;
+    const closeRequest = taskPanelCloseRequestRef.current + 1;
+    taskPanelCloseRequestRef.current = closeRequest;
+    void taskPanelAnimationControls
+      .start(
+        prefersReducedMotion
+          ? { opacity: 0 }
+          : { opacity: 0, x: taskPanelWidth + 18 },
+        prefersReducedMotion
+          ? { duration: 0.12, ease: "easeOut" }
+          : {
+              x: { type: "spring", bounce: 0, duration: 0.34 },
+              opacity: { duration: 0.2, ease: "easeOut" },
+            },
+      )
+      .then(() => {
+        if (taskPanelCloseRequestRef.current !== closeRequest) {
+          return;
+        }
+        taskPanelClosingRef.current = false;
+        const pendingTabId = pendingTaskPanelTabCloseRef.current;
+        pendingTaskPanelTabCloseRef.current = undefined;
+        const availableWidth = mainPaneRef.current?.getBoundingClientRect().width;
+        const nextLayoutMode = availableWidth
+          ? resolveActivityWorkspaceLayoutMode(availableWidth, activityWorkspaceLayoutMode)
+          : undefined;
+        startTransition(() => {
+          setTaskDrawerOpen(false);
+          setTaskPanelLayoutPresent(false);
+          setTaskPanelFullscreen(false);
+          if (pendingTabId) {
+            setOpenTaskPanelTabIds(
+              (current) => removeOpenTaskPanelTab(current, pendingTabId).tabs,
+            );
+            setTaskPanelActiveTab((current) =>
+              current === pendingTabId ? TASK_PANEL_HOME_TAB_ID : current,
+            );
+            setSelectedSubagentAgentId(undefined);
+          }
+          if (nextLayoutMode) {
+            setActivityWorkspaceLayoutMode(nextLayoutMode);
+            if (shouldAutoOpenWorkspacePanel(nextLayoutMode)) {
+              setWorkspacePanelManualOverride({
+                layoutMode: nextLayoutMode,
+                projectPath: currentProjectPath,
+                threadId: activeThread?.id,
+                open: true,
+              });
+            }
+          }
+        });
+      });
+  }, [
+    activityWorkspaceLayoutMode,
+    activeThread?.id,
+    currentProjectPath,
+    prefersReducedMotion,
+    taskPanelAnimationControls,
+    taskPanelLayoutPresent,
+    taskPanelWidth,
+  ]);
 
   useEffect(() => {
     const handleFileReference = (event: Event) => {
@@ -3452,11 +3585,11 @@ function App() {
       setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
       setSelectedSubagentAgentId(undefined);
       setTaskPanelFullscreen(false);
-      setTaskDrawerOpen(true);
+      revealTaskPanel();
     };
     window.addEventListener(WORKSPACE_FILE_REFERENCE_EVENT, handleFileReference);
     return () => window.removeEventListener(WORKSPACE_FILE_REFERENCE_EVENT, handleFileReference);
-  }, [currentProjectPath]);
+  }, [currentProjectPath, revealTaskPanel]);
 
   useEffect(() => {
     setOpenTaskPanelTabIds((current) => {
@@ -3490,15 +3623,112 @@ function App() {
       return;
     }
     if (taskDrawerOpen) {
-      setTaskDrawerOpen(false);
-      setTaskPanelFullscreen(false);
+      if (taskPanelClosingRef.current) {
+        revealTaskPanel();
+      } else {
+        dismissTaskPanel();
+      }
       return;
     }
     setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
-    setTaskDrawerOpen(true);
-  }, [currentProjectPath, taskDrawerOpen]);
+    revealTaskPanel();
+  }, [currentProjectPath, dismissTaskPanel, revealTaskPanel, taskDrawerOpen]);
+
+  const toggleWorkPanelForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    if (taskPanelLayoutPresent) {
+      openWorkPanelAfterTaskCloseRef.current = true;
+      dismissTaskPanel();
+      return;
+    }
+    toggleWorkspacePanelForCurrentProject();
+  }, [
+    currentProjectPath,
+    dismissTaskPanel,
+    taskPanelLayoutPresent,
+    toggleWorkspacePanelForCurrentProject,
+  ]);
+
+  useEffect(() => {
+    if (
+      taskPanelLayoutPresent ||
+      !openWorkPanelAfterTaskCloseRef.current ||
+      !currentProjectPath
+    ) {
+      return;
+    }
+    openWorkPanelAfterTaskCloseRef.current = false;
+    setWorkspacePanelManualOverride({
+      layoutMode: activityWorkspaceLayoutMode,
+      projectPath: currentProjectPath,
+      threadId: activeThread?.id,
+      open: true,
+    });
+  }, [
+    activeThread?.id,
+    activityWorkspaceLayoutMode,
+    currentProjectPath,
+    taskPanelLayoutPresent,
+  ]);
+
+  const toggleFileTreeForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    if (
+      taskDrawerOpen &&
+      taskPanelActiveTab === TASK_PANEL_FILES_TAB_ID &&
+      !taskPanelClosingRef.current
+    ) {
+      dismissTaskPanel();
+      return;
+    }
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID));
+    setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
+    setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
+    revealTaskPanel();
+  }, [
+    currentProjectPath,
+    dismissTaskPanel,
+    revealTaskPanel,
+    taskDrawerOpen,
+    taskPanelActiveTab,
+  ]);
+
+  menuCommandHandlerRef.current = (command) => {
+    switch (command) {
+      case "new-chat":
+        startNewChat();
+        return;
+      case "open-folder":
+        void openWorkspace();
+        return;
+      case "toggle-sidebar":
+        setSidebarOpen((current) => !current);
+        return;
+      case "toggle-bottom-panel":
+        toggleTerminalForCurrentProject();
+        return;
+      case "toggle-work-panel":
+        toggleWorkPanelForCurrentProject();
+        return;
+      case "toggle-review-panel":
+        toggleTaskPanelForCurrentProject();
+        return;
+      case "toggle-file-tree":
+        toggleFileTreeForCurrentProject();
+        return;
+      default: {
+        const exhaustiveCommand: never = command;
+        throw new Error(`Unhandled app menu command: ${exhaustiveCommand}`);
+      }
+    }
+  };
 
   const openPlanTaskDrawer = useCallback(() => {
     if (!taskPanelPlan) {
@@ -3510,38 +3740,40 @@ function App() {
     setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
-    setTaskDrawerOpen(true);
-  }, [taskPanelPlan]);
+    revealTaskPanel();
+  }, [revealTaskPanel, taskPanelPlan]);
 
   const openSubagentTaskDrawer = useCallback((agentId: string) => {
     setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, agentId));
     setTaskPanelActiveTab(agentId);
     setSelectedSubagentAgentId(agentId);
     setTaskPanelFullscreen(false);
-    setTaskDrawerOpen(true);
-  }, []);
+    revealTaskPanel();
+  }, [revealTaskPanel]);
 
   const closeTaskPanelTab = useCallback(
     (tabId: TaskPanelActiveTab) => {
-      setOpenTaskPanelTabIds((current) => {
-        const result = removeOpenTaskPanelTab(current, tabId);
-        if (current.includes(tabId) && result.tabs.length === 0) {
-          setTaskDrawerOpen(false);
-          setTaskPanelFullscreen(false);
-        }
-        if (taskPanelActiveTab === tabId) {
-          const fallback = result.fallback;
-          setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
-          setSelectedSubagentAgentId(
-            fallback && activeSubagentCards.some((card) => card.key === fallback)
-              ? fallback
-              : undefined,
-          );
-        }
-        return result.tabs;
-      });
+      const result = removeOpenTaskPanelTab(openTaskPanelTabIds, tabId);
+      if (!openTaskPanelTabIds.includes(tabId)) {
+        return;
+      }
+      if (result.tabs.length === 0) {
+        pendingTaskPanelTabCloseRef.current = tabId;
+        dismissTaskPanel();
+        return;
+      }
+      setOpenTaskPanelTabIds(result.tabs);
+      if (taskPanelActiveTab === tabId) {
+        const fallback = result.fallback;
+        setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
+        setSelectedSubagentAgentId(
+          fallback && activeSubagentCards.some((card) => card.key === fallback)
+            ? fallback
+            : undefined,
+        );
+      }
     },
-    [activeSubagentCards, taskPanelActiveTab],
+    [activeSubagentCards, dismissTaskPanel, openTaskPanelTabIds, taskPanelActiveTab],
   );
 
   const handleTaskPanelResizeMouseDown = useCallback(
@@ -3886,7 +4118,7 @@ function App() {
       }
       frame = requestAnimationFrame(() => {
         frame = 0;
-        const width = activityWorkspace.getBoundingClientRect().width;
+        const width = activityWorkspace.clientWidth;
         setActivityWorkspaceLayoutMode((current) => resolveActivityWorkspaceLayoutMode(width, current));
       });
     };
@@ -6143,7 +6375,9 @@ function App() {
   const showLanding = !activeThread;
   const showWorkspacePanel = Boolean(currentProjectPath);
   const workspaceCardsLayoutMode = workspacePanelLayoutForMode(activityWorkspaceLayoutMode);
-  const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && workspacePanelResolvedOpen);
+  const workspaceCardsPanelOpen = Boolean(
+    showWorkspacePanel && workspacePanelResolvedOpen && !taskPanelLayoutPresent,
+  );
   useEffect(() => {
     if (showWorkspacePanel) {
       void refreshGitStatus();
@@ -6153,7 +6387,7 @@ function App() {
     workspaceCardsPanelOpen && !showLanding && workspaceCardsLayoutMode === "docked",
   );
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
-  const taskPanelLayoutOpen = taskPanelOpen;
+  const taskPanelLayoutOpen = Boolean(showWorkspacePanel && taskPanelLayoutPresent);
   const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
   const activityUserMessageNavHidden = !shouldShowActivityMessageNav(
     activityWorkspaceLayoutMode,
@@ -6214,13 +6448,16 @@ function App() {
   ) : null;
   const taskPanelNode =
     showWorkspacePanel && taskPanelLayoutOpen ? (
-      <aside
+      <motion.aside
         id="task-panel-container"
         className={["workspace-panel", "is-task-panel-mode", taskPanelFullscreenOpen ? "is-fullscreen" : ""]
           .filter(Boolean)
           .join(" ")}
         aria-label={taskPanelFullscreenOpen ? t("app.taskPanelFullscreen") : t("app.taskPanel")}
         aria-hidden={!taskPanelOpen}
+        initial={false}
+        animate={taskPanelAnimationControls}
+        style={{ willChange: "transform, opacity" }}
       >
         <hr
           className="task-panel-resize-handle"
@@ -6232,7 +6469,7 @@ function App() {
           onKeyDown={handleTaskPanelResizeKeyDown}
         />
         <SubagentTaskDrawer
-          open={taskPanelOpen}
+          open={taskPanelLayoutOpen}
           fullscreen={taskPanelFullscreenOpen}
           cards={activeSubagentCards}
           {...(taskPanelPlan && { plan: taskPanelPlan })}
@@ -6290,10 +6527,16 @@ function App() {
             setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
+          onViewedFileChange={(target) => {
+            fileReferenceRequestIdRef.current = Math.max(
+              fileReferenceRequestIdRef.current,
+              target.requestId,
+            );
+            setFileTarget(target);
+          }}
           onOpenTerminal={() => {
             toggleTerminalForCurrentProject();
-            setTaskDrawerOpen(false);
-            setTaskPanelFullscreen(false);
+            dismissTaskPanel();
           }}
           onShowHome={() => {
             setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
@@ -6304,7 +6547,7 @@ function App() {
           onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
           onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
         />
-      </aside>
+      </motion.aside>
     ) : null;
   const syncTopbarMode = useCallback(() => {
     const scrollBody = scrollBodyRef.current;
@@ -6382,7 +6625,13 @@ function App() {
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, [showLanding, currentProjectPath]);
-  const shellClassName = ["shell", settingsOpen ? "shell-settings-open" : ""].filter(Boolean).join(" ");
+  const shellClassName = [
+    "shell",
+    settingsOpen ? "shell-settings-open" : "",
+    sidebarOpen ? "" : "shell-sidebar-hidden",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const composerPlaceholder = showClarification
     ? t("thread.composer.answerQuestion")
     : showBashApproval
@@ -6761,7 +7010,10 @@ function App() {
           onDismiss={dismissAppMessage}
         />
       ) : null}
-      <aside className="codex-sidebar">
+      <aside
+        className={sidebarOpen ? "codex-sidebar" : "codex-sidebar is-hidden"}
+        aria-hidden={!sidebarOpen}
+      >
         <SidebarCoreSelector
           coreKind={activeThread ? activeThread.coreKind : newThreadCoreKind}
           locked={Boolean(activeThread)}
@@ -6841,7 +7093,7 @@ function App() {
             .join(" ")}
           style={rightPanelStyle}
         >
-          <div
+          <motion.div
             ref={activityWorkspaceRef}
             className={[
               "activity-workspace-shell",
@@ -6850,6 +7102,9 @@ function App() {
             ]
               .filter(Boolean)
               .join(" ")}
+            layout={prefersReducedMotion ? false : "size"}
+            transition={{ layout: { type: "spring", bounce: 0, duration: 0.36 } }}
+            style={{ transformOrigin: "left center" }}
           >
           <div
             className={[
@@ -7083,8 +7338,8 @@ function App() {
               />
             </aside>
           ) : null}
-        </div>
-          {taskPanelNode}
+          </motion.div>
+          {taskPanelOpen ? taskPanelNode : null}
         </div>
       </section>
 

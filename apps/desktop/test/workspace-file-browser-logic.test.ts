@@ -10,6 +10,8 @@ import {
   itemIndex,
   languageForFile,
   mergeWorkspaceEntries,
+  parentDirectory,
+  workspacePathSegments,
 } from "../src/renderer/workspace-file-browser-logic";
 import { i18nCatalogs } from "../src/shared/i18n-catalogs";
 
@@ -23,7 +25,9 @@ test("keeps WorkspaceFileBrowser translation keys in both catalogs", () => {
     "../src/renderer/WorkspaceFileBrowser.tsx",
     "../src/renderer/WorkspaceFileViewer.tsx",
     "../src/renderer/SubagentTaskDrawer.tsx",
-  ].map((relativePath) => fs.readFileSync(new URL(relativePath, import.meta.url), "utf8")).join("\n");
+  ]
+    .map((relativePath) => fs.readFileSync(new URL(relativePath, import.meta.url), "utf8"))
+    .join("\n");
   const keys = [...source.matchAll(/t\("([^"]+)"/g)]
     .map((match) => match[1])
     .filter(
@@ -33,8 +37,12 @@ test("keeps WorkspaceFileBrowser translation keys in both catalogs", () => {
   const uniqueKeys = [...new Set(keys)];
 
   for (const key of uniqueKeys) {
-    expect(i18nCatalogs["zh-CN"].translation[key as keyof typeof i18nCatalogs["zh-CN"]["translation"]]).toBeDefined();
-    expect(i18nCatalogs["en-US"].translation[key as keyof typeof i18nCatalogs["en-US"]["translation"]]).toBeDefined();
+    expect(
+      i18nCatalogs["zh-CN"].translation[key as keyof (typeof i18nCatalogs)["zh-CN"]["translation"]],
+    ).toBeDefined();
+    expect(
+      i18nCatalogs["en-US"].translation[key as keyof (typeof i18nCatalogs)["en-US"]["translation"]],
+    ).toBeDefined();
   }
 });
 
@@ -71,4 +79,25 @@ test("builds and merges a sorted lazy tree", () => {
 test("returns ancestor directories in loading order", () => {
   expect(ancestorDirectories("/repo", "/repo/src/lib/file.ts")).toEqual(["/repo/src", "/repo/src/lib"]);
   expect(basename("/repo/")).toBe("repo");
+});
+
+test("builds clickable workspace breadcrumb hierarchy", () => {
+  expect(workspacePathSegments("/repo", "/repo/apps/desktop/App.tsx")).toEqual([
+    { name: "repo", path: "/repo", kind: "directory" },
+    { name: "apps", path: "/repo/apps", kind: "directory" },
+    { name: "desktop", path: "/repo/apps/desktop", kind: "directory" },
+    { name: "App.tsx", path: "/repo/apps/desktop/App.tsx", kind: "file" },
+  ]);
+  expect(workspacePathSegments("C:\\Repo", "c:\\repo\\src\\App.tsx").at(-1)).toEqual({
+    name: "App.tsx",
+    path: "C:/Repo/src/App.tsx",
+    kind: "file",
+  });
+  expect(workspacePathSegments("/", "/src/App.tsx")).toEqual([
+    { name: "/", path: "/", kind: "directory" },
+    { name: "src", path: "/src", kind: "directory" },
+    { name: "App.tsx", path: "/src/App.tsx", kind: "file" },
+  ]);
+  expect(workspacePathSegments("/repo", "/outside/file.ts")).toEqual([]);
+  expect(parentDirectory("/repo/src/App.tsx")).toBe("/repo/src");
 });
