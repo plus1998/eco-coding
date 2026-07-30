@@ -27,6 +27,9 @@
 /* Windows/Linux use a native title bar — no in-content traffic-light spacer */
 html:not([data-platform="darwin"]) {
   --window-chrome-top: 0px;
+  /* window-sidebar-toolbar: left 8 + pad 4 + 32px button(s) + breathing room */
+  --window-sidebar-toolbar-inset: 56px;
+  --window-sidebar-toolbar-inset-expanded: 88px;
 }
 
 * {
@@ -18609,7 +18612,10 @@ html:not([data-platform="darwin"])
   .shell.shell-sidebar-hidden
   .codex-main
   .codex-main-topbar {
-  padding-left: max(var(--content-inline-start), 56px);
+  padding-left: max(
+    var(--content-inline-start),
+    var(--window-sidebar-toolbar-inset-expanded)
+  );
 }
 
 .codex-main:not(.codex-main-landing)
@@ -20001,7 +20007,7 @@ html:not([data-platform="darwin"])
     .shell.shell-sidebar-hidden
     .codex-main
     .codex-main-topbar {
-    padding-left: max(22px, 56px);
+    padding-left: max(22px, var(--window-sidebar-toolbar-inset-expanded));
   }
 
   .codex-main-topbar .activity-header {
@@ -20055,6 +20061,18 @@ html:not([data-platform="darwin"])
     border-bottom: 0;
     background: var(--bg-sidebar);
     box-shadow: 12px 0 32px rgba(0, 0, 0, 0.22);
+  }
+
+  /* Overlay sidebar: toolbar sits on main content — always clear the title */
+  html:not([data-platform="darwin"]) .shell .codex-main .codex-main-topbar {
+    padding-left: max(22px, var(--window-sidebar-toolbar-inset));
+  }
+
+  html:not([data-platform="darwin"])
+    .shell.shell-sidebar-hidden
+    .codex-main
+    .codex-main-topbar {
+    padding-left: max(22px, var(--window-sidebar-toolbar-inset-expanded));
   }
 
   .sidebar-section-grow {
