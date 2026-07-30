@@ -2972,9 +2972,6 @@ function App() {
   );
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
-    if (!base?.auxiliaryModel) {
-      return null;
-    }
     const sessionSelection =
       base?.orchestrationSelection &&
       hasCompleteOrchestrationSelection(base.orchestrationSelection)
@@ -3146,7 +3143,6 @@ function App() {
         composerMainAgentModelOverride,
       )
     : false;
-  const auxiliaryModelReady = Boolean(composerRuntimeConfig?.auxiliaryModel);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
     activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
@@ -3270,7 +3266,6 @@ function App() {
     currentProjectPath &&
       composerHasContent &&
       routesReady &&
-      auxiliaryModelReady &&
       !isStarting &&
       !planActionBusy &&
       !clarificationBusy &&

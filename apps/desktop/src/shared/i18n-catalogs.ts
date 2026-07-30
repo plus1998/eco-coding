@@ -819,7 +819,7 @@ export const i18nCatalogs = {
       "app.imagePrompt": "请查看并分析我附上的图片。",
       "app.preload.followUpUpdate": "当前桌面预加载 API 不包含编辑后续消息入口，请重启应用后再试。",
       "app.preload.followUpEnqueue": "当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。",
-      "app.configureOrchestration": "请先在 Composer 顶部选择完整编排（主代理、辅助模型、提示词、子代理），并确认所选资源仍存在。",
+      "app.configureOrchestration": "请先在 Composer 顶部选择完整编排（主代理、提示词、子代理），并确认所选资源仍存在。",
       "app.sentSyncFailed": "消息已发送，但界面状态同步失败：{{detail}}",
       "app.preload.followUpCancel": "当前桌面预加载 API 不包含取消后续消息入口，请重启应用后再试。",
       "app.preload.followUpEscalate": "当前桌面预加载 API 不包含立即处理后续消息入口，请重启应用后再试。",
@@ -2079,7 +2079,7 @@ export const i18nCatalogs = {
         "This desktop preload API does not support editing follow-up messages. Restart the app and try again.",
       "app.preload.followUpEnqueue":
         "This desktop preload API does not support follow-up messages during a run. Restart the app and try again.",
-      "app.configureOrchestration": "Select a complete orchestration in Composer (main agent, auxiliary model, prompt, subagents) and ensure the chosen resources still exist.",
+      "app.configureOrchestration": "Select a complete orchestration in Composer (main agent, prompt, subagents) and ensure the chosen resources still exist.",
       "app.sentSyncFailed": "The message was sent, but the UI state failed to synchronize: {{detail}}",
       "app.preload.followUpCancel":
         "This desktop preload API does not support canceling follow-up messages. Restart the app and try again.",
