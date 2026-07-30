@@ -17,7 +17,7 @@ import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
 const routes: AnthropicProxyRoute[] = [
   {
-    role: "explore",
+    role: "auxiliary",
     provider: {
       id: "p0",
       name: "Provider",
@@ -66,9 +66,9 @@ const routes: AnthropicProxyRoute[] = [
   },
 ];
 
-test("resolveThreadTitleRoute prefers explore over planner and coder", () => {
-  expect(resolveThreadTitleRoute(routes)?.role).toBe("explore");
-  expect(resolveThreadTitleRoute(routes.filter((r) => r.role !== "explore"))?.role).toBe("planner");
+test("resolveThreadTitleRoute only accepts the auxiliary route", () => {
+  expect(resolveThreadTitleRoute(routes)?.role).toBe("auxiliary");
+  expect(resolveThreadTitleRoute(routes.filter((r) => r.role !== "auxiliary"))).toBeUndefined();
 });
 
 test("parseThreadTitleJson reads title field from JSON", () => {
@@ -93,7 +93,7 @@ test("parseThreadTitleJson returns undefined for missing title field", () => {
   expect(parseThreadTitleJson('{"name":"missing"}')).toBeUndefined();
 });
 
-test("summarizes thread title through the explore route with structured output", async () => {
+test("summarizes thread title through the auxiliary route with structured output", async () => {
   const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> =
     [];
   const title = await summarizeThreadTitle(routes, "实现 TODO 列表", async (url, init) => {
@@ -277,7 +277,7 @@ test("summarizeThreadTitle streams title preview through onTitleDelta", async ()
 test("summarizeThreadTitle routes openai chat through bridge with disable-thinking kwargs", async () => {
   const qwenRoutes: AnthropicProxyRoute[] = [
     {
-      role: "explore",
+      role: "auxiliary",
       apiCompat: "openai_chat_completions",
       provider: {
         id: "p0",

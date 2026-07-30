@@ -2655,7 +2655,7 @@ test("ClaudeAgentSdkDriver execution continuation includes approved plan without
   expect(capturedQueries[0]?.prompt).toContain("## Summary\n\nShip it.");
 });
 
-test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissionMode", async () => {
+test("ClaudeAgentSdkDriver execution resume applies official default mode", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
   let setPermissionModeMode: string | undefined;
   const driver = new ClaudeAgentSdkDriver({
@@ -2708,8 +2708,8 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
     // drain
   }
 
-  expect(setPermissionModeMode).toBe("acceptEdits");
-  expect(capturedOptions[0]?.permissionMode).toBe("acceptEdits");
+  expect(setPermissionModeMode).toBe("default");
+  expect(capturedOptions[0]?.permissionMode).toBe("default");
   expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain("Bash");
   expect(capturedOptions[0]?.disallowedTools ?? []).toContain("ExitPlanMode");
   expect(capturedOptions[0]?.agents).toBeUndefined();
@@ -2718,6 +2718,41 @@ test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissio
     hooks?.PermissionRequest?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? [],
   ).toHaveLength(0);
   expect(hooks?.PreToolUse?.some((matcher) => matcher.matcher?.includes("ExitPlanMode")) ?? false).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver full access uses bypassPermissions with the dangerous opt-in", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    executionPermissionMode: "bypassPermissions",
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield { type: "system", subtype: "init", session_id: "sess-full", uuid: "init-full" };
+            yield { type: "result", subtype: "success", session_id: "sess-full", uuid: "result-full" };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.run({
+    threadId: "thr_full_access",
+    prompt: "Implement the change",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // drain
+  }
+
+  expect(capturedOptions[0]?.permissionMode).toBe("bypassPermissions");
+  expect(capturedOptions[0]?.allowDangerouslySkipPermissions).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", async () => {

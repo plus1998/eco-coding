@@ -99,7 +99,9 @@ type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) =>
   close?: () => void;
   interrupt?: () => Promise<SdkInterruptReceipt | undefined>;
   stopTask?: (taskId: string) => Promise<void>;
-  setPermissionMode?: (mode: "dontAsk" | "default" | "acceptEdits" | "plan") => Promise<void> | void;
+  setPermissionMode?: (
+    mode: "dontAsk" | "default" | "acceptEdits" | "plan" | "bypassPermissions",
+  ) => Promise<void> | void;
   getContextUsage?: () => Promise<Record<string, unknown>>;
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
@@ -362,6 +364,8 @@ export interface ClaudeAgentSdkDriverOptions {
   hookContext?: EcoHookContext;
   /** SDK-native tool permission callback. Desktop uses this for blocking Bash confirmation. */
   toolPermissionHandler?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
+  /** Official Claude Agent SDK permission mode used for execution passes. */
+  executionPermissionMode?: "default" | "bypassPermissions";
   /** Optional probe logging for `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
 }
@@ -579,7 +583,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
     const sessionResult = yield* this.runSingleSession(input, {
       prompt: continuationPrompt,
-      permissionMode: "acceptEdits",
+      permissionMode: this.options.executionPermissionMode ?? "default",
       ...(planning?.deferredExitPlanToolUseId
         ? { approvedExitPlanToolUseId: planning.deferredExitPlanToolUseId }
         : {}),
@@ -618,7 +622,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     yield* this.runSingleSession(input, {
       prompt: input.prompt,
-      permissionMode: "acceptEdits",
+      permissionMode: this.options.executionPermissionMode ?? "default",
       allowedTools: [...autonomousAllowedTools],
       availability,
     });
@@ -628,7 +632,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     phase: {
       prompt: string;
-      permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
+      permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan" | "bypassPermissions";
       planningPhase?: boolean;
       askPhase?: boolean;
       /** Execution resume after Eco plan approval: complete only this deferred ExitPlanMode call. */
@@ -791,6 +795,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
+      ...(phase.permissionMode === "bypassPermissions"
+        ? { allowDangerouslySkipPermissions: true }
+        : {}),
       allowedTools,
       ...(sdkDisallowedTools.length > 0 ? { disallowedTools: sdkDisallowedTools } : {}),
       ...(this.options.toolPermissionHandler

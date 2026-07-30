@@ -343,6 +343,31 @@ describe('anthropicToResponses', () => {
     expect(JSON.stringify(resp)).not.toContain('"cache_control"');
   });
 
+  test('maps Anthropic structured output to Responses text.format', () => {
+    const schema = {
+      type: 'object',
+      properties: { decision: { type: 'string', enum: ['allow', 'deny'] } },
+      required: ['decision'],
+      additionalProperties: false,
+    };
+    const resp = anthropicToResponses({
+      model: 'gpt-5.6',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'Review this action.' }],
+      output_format: { type: 'json_schema', schema },
+    });
+
+    expect(resp.text).toEqual({
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'eco_structured_output',
+        schema,
+        strict: true,
+      },
+    });
+  });
+
   test('maps compact context_management to Responses format and leaves clear_tool_uses to gateway polyfill', () => {
     const resp = anthropicToResponses({
       model: 'gpt-5.2',

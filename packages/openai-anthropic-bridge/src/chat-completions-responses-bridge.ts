@@ -86,6 +86,21 @@ export function responsesToChatCompletionsRequest(
   if (req.service_tier !== undefined) {
     out.service_tier = req.service_tier;
   }
+  if (req.text?.format !== undefined) {
+    const format = req.text.format;
+    out.response_format =
+      format.type === 'json_schema'
+        ? {
+            type: 'json_schema',
+            json_schema: {
+              ...(format.name !== undefined ? { name: format.name } : {}),
+              ...(format.description !== undefined ? { description: format.description } : {}),
+              ...(format.schema !== undefined ? { schema: format.schema } : {}),
+              ...(format.strict !== undefined ? { strict: format.strict } : {}),
+            },
+          }
+        : format;
+  }
 
   if (req.reasoning != null) {
     out.reasoning_effort = req.reasoning.effort;

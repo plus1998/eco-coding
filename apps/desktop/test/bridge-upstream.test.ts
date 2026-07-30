@@ -168,6 +168,52 @@ test("buildBridgeUpstreamMessagesPayload sends Responses input as a list", () =>
   ]);
 });
 
+test("buildBridgeUpstreamMessagesPayload maps structured output for Responses and Chat", () => {
+  const schema = {
+    type: "object",
+    properties: { decision: { type: "string" } },
+    required: ["decision"],
+    additionalProperties: false,
+  };
+  const request = {
+    model: "review-model",
+    max_tokens: 256,
+    messages: [{ role: "user", content: "Review this action." }],
+    output_format: { type: "json_schema", schema },
+  } satisfies AnthropicRequest;
+
+  const responses = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "review-model",
+    true,
+  );
+  expect(responses.text).toEqual({
+    verbosity: "medium",
+    format: {
+      type: "json_schema",
+      name: "eco_structured_output",
+      schema,
+      strict: true,
+    },
+  });
+
+  const chat = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "review-model",
+    true,
+  );
+  expect(chat.response_format).toEqual({
+    type: "json_schema",
+    json_schema: {
+      name: "eco_structured_output",
+      schema,
+      strict: true,
+    },
+  });
+});
+
 test("OpenAI bridge preserves SDK Read tool output byte-for-byte", () => {
   const request: AnthropicRequest = {
     model: "local-model",

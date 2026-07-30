@@ -9,7 +9,7 @@ import {
 
 test("maps Eco execution-confirmation modes to Codex approval policies", () => {
   expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "always").approvalPolicy).toBe(
-    "untrusted",
+    "on-request",
   );
   expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "auto").approvalPolicy).toBe(
     "on-request",
@@ -17,15 +17,24 @@ test("maps Eco execution-confirmation modes to Codex approval policies", () => {
   expect(
     applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all").approvalPolicy,
   ).toBe("never");
+  expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "always").sandboxMode).toBe(
+    "workspace-write",
+  );
+  expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "auto").sandboxMode).toBe(
+    "workspace-write",
+  );
+  expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all").sandboxMode).toBe(
+    "danger-full-access",
+  );
   expect(DEFAULT_CODEX_TOOL_POLICY.approvalPolicy).toBe("on-request");
 });
 
-test("execution confirmation cannot widen an explicit Codex strict override", () => {
+test("full access uses the official danger-full-access + never pair", () => {
   expect(
     applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all", {
       minimumApprovalPolicy: "untrusted",
     }).approvalPolicy,
-  ).toBe("untrusted");
+  ).toBe("never");
 });
 
 test("default policy is workspace-write + on-request", () => {

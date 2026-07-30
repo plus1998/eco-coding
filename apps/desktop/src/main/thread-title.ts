@@ -1,4 +1,3 @@
-import type { AgentRole } from "../shared/ipc";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import {
   postAuxiliaryBridgeRequest,
@@ -31,9 +30,6 @@ export function resolvePendingThreadTitle(locale: string): string {
 export function isPendingThreadTitle(title: string): boolean {
   return pendingThreadTitles.has(title);
 }
-
-/** Prefer explore for title LLM (cheap); fall back to planner then coder. */
-const TITLE_ROUTE_ROLES: readonly AgentRole[] = ["explore", "planner", "coder"];
 
 const THREAD_TITLE_JSON_SCHEMA = {
   type: "object",
@@ -119,13 +115,7 @@ export function buildThreadTitleRequestBody(
 export function resolveThreadTitleRoute(
   routes: readonly AnthropicProxyRoute[],
 ): AnthropicProxyRoute | undefined {
-  for (const role of TITLE_ROUTE_ROLES) {
-    const route = routes.find((entry) => entry.role === role);
-    if (route) {
-      return route;
-    }
-  }
-  return undefined;
+  return routes.find((entry) => entry.role === "auxiliary");
 }
 
 export function parseThreadTitleJson(text: string | undefined): string | undefined {
@@ -192,7 +182,7 @@ export async function summarizeThreadTitle(
   }
 }
 
-/** @deprecated Use summarizeThreadTitle — titles now use the explore route when configured. */
+/** @deprecated Use summarizeThreadTitle. */
 export const summarizeThreadTitleWithCoder = summarizeThreadTitle;
 
 export function sanitizeThreadTitle(title: string | undefined, prompt: string): string | undefined {

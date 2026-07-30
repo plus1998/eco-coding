@@ -528,6 +528,12 @@ import {
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
 import { resolvePendingThreadTitle, shouldReplaceAutoThreadTitle, summarizeThreadTitle } from "./thread-title";
+import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
+import {
+  reviewEcoApproval,
+  type EcoApprovalEnvelope,
+  type EcoApprovalReviewResult,
+} from "./eco-approval-reviewer";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import {
@@ -1239,6 +1245,14 @@ app.whenReady().then(async () => {
     },
     getWorktreePath: (threadId) => activeRunRuntimeState.worktreePlan(threadId)?.worktreePath,
     getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
+    getApprovalMode: (threadId) => {
+      const thread = conversationStore.getThread(threadId);
+      return thread
+        ? ensureThreadRuntimeConfig(thread).runtimeConfig?.bashReviewMode ?? "always"
+        : "always";
+    },
+    reviewApproval: (threadId, request, tool) =>
+      reviewThreadToolApproval(threadId, request, tool),
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
     emitThreadLive: (event) => {
@@ -3267,6 +3281,7 @@ function registerIpcHandlers(): void {
       settings,
       parseThreadRuntimeConfigInput(payload.runtimeConfig),
     );
+    resolveAuxiliaryModelRoute(threadRuntime.auxiliaryModel, providerStore);
     if (coreKind === "codex") {
       assertCodexRuntimeConfigSupported(threadRuntime);
     }
@@ -3826,15 +3841,23 @@ function emitThreadTitleFailure(threadId: string): void {
   emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false);
 }
 
-function scheduleThreadTitleSummary(threadId: string, runtimeConfig: RuntimeConfig): void {
+function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeConfig): void {
   const thread = conversationStore.getThread(threadId);
   if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
 
   const prompt = thread.prompt;
+  let titleRoute;
+  try {
+    titleRoute = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
+  } catch (error) {
+    process.stderr.write(`[eco] title auxiliary model unavailable: ${errorMessage(error)}\n`);
+    emitThreadTitleFailure(threadId);
+    return;
+  }
   let lastEmittedPreview = "";
-  void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch, (preview) => {
+  void summarizeThreadTitle([titleRoute], prompt, fetch, (preview) => {
     if (preview === lastEmittedPreview) {
       return;
     }
@@ -4234,6 +4257,7 @@ async function startCodexThreadContinuation(
   if (!threadConfig) {
     throw new Error("Thread runtime configuration is missing.");
   }
+  resolveAuxiliaryModelRoute(threadConfig.auxiliaryModel, providerStore);
   assertCodexRuntimeConfigSupported(threadConfig);
   const roleRoutes = roleRoutesForThreadConfig(settings, threadConfig);
   const runtime = resolveRuntimeConfigForThreadConfig(settings, threadConfig, roleRoutes);
@@ -5181,6 +5205,7 @@ async function startClaudeThreadContinuation(
   if (!activeRuntimeConfig) {
     throw new Error("Thread runtime configuration is missing.");
   }
+  resolveAuxiliaryModelRoute(activeRuntimeConfig.auxiliaryModel, providerStore);
   const roleRoutes = roleRoutesForThreadConfig(settings, activeRuntimeConfig);
   noteSdkSessionRouteChange(input.threadId, roleRoutes);
 
@@ -6094,6 +6119,7 @@ function createSdkDriver(
     throw new Error("Thread was not found.");
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
+  const bashReviewMode = threadConfig?.bashReviewMode ?? "always";
   const packagedClaudeExecutable = app.isPackaged
     ? resolvePackagedClaudeExecutableCandidate({ resourcesPath: readElectronResourcesPath() })
     : undefined;
@@ -6118,7 +6144,13 @@ function createSdkDriver(
       },
       workspacePath: storedThread.workspacePath,
     },
-    toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),
+    executionPermissionMode:
+      bashReviewMode === "allow_all" ? "bypassPermissions" : "default",
+    toolPermissionHandler: createThreadToolPermissionHandler(
+      threadId,
+      runPhase,
+      bashReviewMode === "allow_all",
+    ),
     onContextProbe: (phase, detail) => {
       onContextProbe?.(phase, detail);
       logContextSnapshot(phase, { threadId, ...detail });
@@ -8984,7 +9016,11 @@ function resolveThreadBashApprovalAgentId(
 function createThreadToolPermissionHandler(
   threadId: string,
   runPhase: SubagentRunPhase = "execution",
+  skipExecutionApprovals = false,
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  if (skipExecutionApprovals) {
+    return createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed));
+  }
   const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
   return composeCanUseToolHandlers(
     createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
@@ -9039,7 +9075,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         };
       }
 
-      const approvalRequest: BashApprovalRequest = {
+      let approvalRequest: BashApprovalRequest = {
         toolUseId: request.toolUseId,
         threadId,
         command: `${request.toolName} ${filesystemPath}`,
@@ -9053,6 +9089,50 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         ...(request.agentType ? { agentType: request.agentType } : {}),
         description: filesystemApproval.userMessage,
       };
+
+      if (confirmationMode === "auto") {
+        const review = await reviewThreadToolApproval(threadId, approvalRequest, {
+          toolName: request.toolName,
+          toolInput: request.input,
+        });
+        if (review.action === "allow") {
+          const reviewedRequest = {
+            ...approvalRequest,
+            reason: review.rationale,
+            description: review.rationale,
+          };
+          emitThreadEvent(
+            threadId,
+            "bash_approval.approved",
+            `辅助模型已允许 ${request.toolName}：${filesystemPath}`,
+            "tool",
+            false,
+            bashApprovalEventExtras(reviewedRequest, "bash_approval.approved"),
+          );
+          return { behavior: "allow", updatedInput: request.input };
+        }
+        if (review.action === "deny") {
+          const reviewedRequest = {
+            ...approvalRequest,
+            reason: review.rationale,
+            description: review.rationale,
+          };
+          emitThreadEvent(
+            threadId,
+            "bash_approval.denied",
+            `已拒绝 ${request.toolName}：${review.rationale}`,
+            "tool",
+            false,
+            bashApprovalEventExtras(reviewedRequest, "bash_approval.denied"),
+          );
+          return { behavior: "deny", message: review.rationale, interrupt: false };
+        }
+        approvalRequest = {
+          ...approvalRequest,
+          reason: review.rationale,
+          description: review.rationale,
+        };
+      }
 
       emitThreadEvent(
         threadId,
@@ -9117,11 +9197,12 @@ function createThreadBashAndFilesystemToolPermissionHandler(
     const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
     const runtimeConfig = ensureThreadRuntimeConfig(thread).runtimeConfig;
     const agentRegistry = resolveAgentRuntimeConfigForThread(thread);
+    const bashReviewMode = runtimeConfig?.bashReviewMode ?? "always";
     const confirmation = evaluateThreadToolConfirmation({
       command,
       cwd,
       workspacePath: thread.workspacePath,
-      confirmationMode: runtimeConfig?.bashReviewMode ?? "always",
+      confirmationMode: bashReviewMode,
       phaseAllowsExecution:
         runPhase !== "ask" &&
         (runPhase !== "planning" || resolveSessionMode(runtimeConfig) === "agent"),
@@ -9190,7 +9271,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         interrupt: false,
       };
     }
-    const approvalRequest: BashApprovalRequest = {
+    let approvalRequest: BashApprovalRequest = {
       toolUseId: request.toolUseId,
       threadId,
       command,
@@ -9202,6 +9283,50 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       ...(request.agentType ? { agentType: request.agentType } : {}),
       ...(description ? { description } : { description: confirmation.userMessage }),
     };
+
+    if (bashReviewMode === "auto") {
+      const review = await reviewThreadToolApproval(threadId, approvalRequest, {
+        toolName: "Bash",
+        toolInput: request.input,
+      });
+      if (review.action === "allow") {
+        const reviewedRequest = {
+          ...approvalRequest,
+          reason: review.rationale,
+          description: review.rationale,
+        };
+        emitThreadEvent(
+          threadId,
+          "bash_approval.approved",
+          `辅助模型已允许 Bash：${command}`,
+          "tool",
+          false,
+          bashApprovalEventExtras(reviewedRequest, "bash_approval.approved"),
+        );
+        return { behavior: "allow", updatedInput: request.input };
+      }
+      if (review.action === "deny") {
+        const reviewedRequest = {
+          ...approvalRequest,
+          reason: review.rationale,
+          description: review.rationale,
+        };
+        emitThreadEvent(
+          threadId,
+          "bash_approval.denied",
+          `已拒绝 Bash：${review.rationale}`,
+          "tool",
+          false,
+          bashApprovalEventExtras(reviewedRequest, "bash_approval.denied"),
+        );
+        return { behavior: "deny", message: review.rationale, interrupt: false };
+      }
+      approvalRequest = {
+        ...approvalRequest,
+        reason: review.rationale,
+        description: review.rationale,
+      };
+    }
 
     emitThreadEvent(threadId, "bash_approval.requested", `等待确认 Bash：${command}`, "tool", false, {
       ...bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
@@ -9224,6 +9349,59 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       interrupt: false,
     };
   };
+}
+
+async function reviewThreadToolApproval(
+  threadId: string,
+  request: BashApprovalRequest,
+  tool: Pick<EcoApprovalEnvelope, "toolName" | "toolInput">,
+): Promise<EcoApprovalReviewResult> {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return {
+      action: "human_required",
+      rationale: "线程不存在，自动审批已失败关闭并转人工审批。",
+      policyMatches: ["thread_missing"],
+    };
+  }
+  let route;
+  try {
+    route = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
+  } catch (error) {
+    return {
+      action: "human_required",
+      rationale: `辅助模型不可用，自动审批已失败关闭并转人工审批：${errorMessage(error)}`,
+      policyMatches: ["auxiliary_model_unavailable"],
+    };
+  }
+  return reviewEcoApproval({
+    route,
+    envelope: {
+      userRequest: buildApprovalUserRequest(threadId, thread.prompt),
+      toolName: tool.toolName,
+      toolInput: tool.toolInput,
+      cwd: request.cwd,
+      workspacePath: thread.workspacePath,
+      reason: request.reason,
+      riskScore: request.riskScore,
+      riskLevel: request.riskLevel,
+    },
+  });
+}
+
+function buildApprovalUserRequest(threadId: string, initialPrompt: string): string {
+  const recentUserMessages = conversationStore
+    .listActivityLines(threadId)
+    .filter((line) => line.role === "user" && line.message.trim())
+    .map((line) => line.message.trim())
+    .slice(-10);
+  const messages = [initialPrompt.trim(), ...recentUserMessages].filter(
+    (message, index, all) => Boolean(message) && all.indexOf(message) === index,
+  );
+  return messages
+    .map((message, index) => `[user_message_${index + 1}]\n${message.slice(0, 4_000)}`)
+    .join("\n\n")
+    .slice(-16_000);
 }
 
 function resolveFilesystemApprovalRequest(input: {

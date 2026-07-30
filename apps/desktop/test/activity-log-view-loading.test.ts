@@ -316,6 +316,56 @@ test("ActivityLogView hides the conversation tail while a request is waiting for
   expect(html).not.toContain("run-log-conversation-tail");
 });
 
+test("ActivityLogView keeps first-turn thinking spacing stable before request startup", () => {
+  const runningAttempt = {
+    attemptId: "attempt-first-message",
+    phase: "initial" as const,
+    status: "running" as const,
+    startedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const userPrompt = item({
+    id: "first-user-prompt",
+    sequence: 1,
+    eventType: "thread.status",
+    role: "user",
+    text: "检查首次发送间距",
+    at: "2026-01-01T00:00:00.100Z",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  const render = (timeline: ThreadRunProjectionTimelineItem[], requestSpans: ThreadRunProjectionRequestSpan[]) =>
+    renderToStaticMarkup(
+      createElement(ActivityLogView, {
+        projection: projection({
+          status: "running",
+          attempts: [runningAttempt],
+          timeline,
+          requestSpans,
+        }),
+      }),
+    );
+
+  const beforeRequest = render([userPrompt], []);
+  const afterRequest = render(
+    [
+      userPrompt,
+      item({
+        id: "first-request-started",
+        sequence: 2,
+        eventType: "request.started",
+        requestId: "req-first-message",
+        runAttemptId: runningAttempt.attemptId,
+        text: "",
+      }),
+    ],
+    [requestSpan({ requestId: "req-first-message", status: "waiting_first_token" })],
+  );
+
+  expect(beforeRequest).toContain('class="run-log-turn-process-inner"');
+  expect(afterRequest).toContain('class="run-log-turn-process-inner"');
+  expect(beforeRequest).not.toContain("run-log-turn-process-inner is-empty");
+  expect(afterRequest).not.toContain("run-log-turn-process-inner is-empty");
+});
+
 test("ActivityLogView keeps the active thinking indicator at the bottom after tool rows", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {

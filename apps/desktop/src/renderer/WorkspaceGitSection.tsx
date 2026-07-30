@@ -35,6 +35,7 @@ export interface WorkspaceGitSectionProps {
   gitBusy?: boolean;
   commitDisabled?: boolean;
   mainAgentConfigId?: string;
+  auxiliaryCandidateModelId?: string;
   agentModelLabels?: ComposerAgentModelLabel[];
   routes?: readonly RuntimeRoleRouteConfig[];
   routePricingHints?: RoutePricingHint[];
@@ -67,6 +68,7 @@ export function WorkspaceGitSection({
   gitBusy,
   commitDisabled,
   mainAgentConfigId,
+  auxiliaryCandidateModelId,
   agentModelLabels = [],
   routes = [],
   routePricingHints = [],
@@ -662,6 +664,7 @@ export function WorkspaceGitSection({
           open={commitDialogOpen && commitDialogWorkspacePath === workspacePath}
           workspacePath={commitDialogWorkspacePath}
           mainAgentConfigId={mainAgentConfigId!}
+          {...(auxiliaryCandidateModelId ? { auxiliaryCandidateModelId } : {})}
           {...(gitStatus && commitDialogWorkspacePath === workspacePath ? { gitStatus } : {})}
           {...(gitBusy !== undefined && { busy: gitBusy })}
           {...(commitDisabled !== undefined && { disabled: commitDisabled })}

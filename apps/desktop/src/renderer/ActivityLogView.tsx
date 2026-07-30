@@ -578,7 +578,8 @@ function ProjectionTurnFeedSection({
       running={section.running}
       startedAt={section.attempt.startedAt}
       {...(section.attempt.endedAt && { endedAt: section.attempt.endedAt })}
-      processEmpty={section.processEntries.length === 0}
+      // A running turn reserves its process spacing before the first request event arrives.
+      processEmpty={!section.running && section.processEntries.length === 0}
       process={
         <>
           {section.processEntries.map((entry) => (

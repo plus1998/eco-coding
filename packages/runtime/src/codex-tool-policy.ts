@@ -284,23 +284,27 @@ export function cloneEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
   };
 }
 
-/**
- * Codex has no literal "approve every command" policy. `untrusted` is its
- * strictest interactive mode: only commands Codex classifies as trusted may
- * bypass the approval bridge.
- */
+/** Map Eco's three user-facing modes to Codex's documented sandbox/approval pairs. */
 export function applyCodexExecutionConfirmation(
   policy: EcoToolPolicy,
   mode: CodexExecutionConfirmationMode,
-  options: { minimumApprovalPolicy?: "untrusted" } = {},
+  _options: { minimumApprovalPolicy?: "untrusted" } = {},
 ): EcoToolPolicy {
-  const approvalPolicy: CodexApprovalPolicy =
-    options.minimumApprovalPolicy === "untrusted" || mode === "always"
-      ? "untrusted"
-      : mode === "auto"
-        ? "on-request"
-        : "never";
-  return { ...cloneEcoToolPolicy(policy), approvalPolicy };
+  const cloned = cloneEcoToolPolicy(policy);
+  if (mode === "allow_all") {
+    const { networkAccess: _networkAccess, ...fullAccessPolicy } = cloned;
+    return {
+      ...fullAccessPolicy,
+      sandboxMode: "danger-full-access",
+      approvalPolicy: "never",
+    };
+  }
+  return {
+    ...cloned,
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    networkAccess: false,
+  };
 }
 
 export function resolveAssignedMcpServers(policy: EcoToolPolicy, extra: readonly string[] = []): string[] {

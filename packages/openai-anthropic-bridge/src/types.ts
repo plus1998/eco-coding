@@ -18,10 +18,19 @@ export interface AnthropicRequest {
   context_management?: unknown | undefined;
   cache_control?: AnthropicCacheControl | undefined;
   output_config?: AnthropicOutputConfig | undefined;
+  output_format?: AnthropicOutputFormat | undefined;
 }
 
 export interface AnthropicOutputConfig {
   effort?: string | undefined;
+}
+
+export interface AnthropicOutputFormat {
+  type: string;
+  schema?: unknown | undefined;
+  name?: string | undefined;
+  description?: string | undefined;
+  strict?: boolean | undefined;
 }
 
 export interface AnthropicThinking {
@@ -156,6 +165,15 @@ export interface ResponsesReasoning {
 
 export interface ResponsesText {
   verbosity?: string | undefined;
+  format?: ResponsesTextFormat | undefined;
+}
+
+export interface ResponsesTextFormat {
+  type: string;
+  name?: string | undefined;
+  description?: string | undefined;
+  schema?: unknown | undefined;
+  strict?: boolean | undefined;
 }
 
 export interface ResponsesInputItem {

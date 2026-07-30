@@ -11,6 +11,8 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type {
+  AuxiliaryModelSelection,
+  CommitModelOptionView,
   MainAgentPromptSelection,
   ModelSettingsSnapshot,
   SubagentSelection,
@@ -29,6 +31,7 @@ interface CompositionControlHandlers {
   onSelectMainAgentConfig: (id: string) => void | Promise<void>;
   onSelectMainPrompt: (selection: MainAgentPromptSelection) => void | Promise<void>;
   onSelectSubagents: (selection: SubagentSelection) => void | Promise<void>;
+  onSelectAuxiliaryModel: (selection: AuxiliaryModelSelection) => void | Promise<void>;
 }
 
 function mainPromptSelectionValue(selection: MainAgentPromptSelection | undefined): string {
@@ -92,6 +95,7 @@ export function ComposerRoutePopover({
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
+  onSelectAuxiliaryModel,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const { t } = useTranslation();
@@ -178,6 +182,7 @@ export function ComposerRoutePopover({
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
+        onSelectAuxiliaryModel={onSelectAuxiliaryModel}
       />
     </div>,
     document.body,
@@ -191,6 +196,7 @@ export function ComposerRouteCardBody({
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
+  onSelectAuxiliaryModel,
   onOpenFullSettings,
 }: ComposerRouteCardBodyProps) {
   const { t } = useTranslation();
@@ -204,6 +210,7 @@ export function ComposerRouteCardBody({
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
+        onSelectAuxiliaryModel={onSelectAuxiliaryModel}
       />
       <div className="composer-route-card-footer">
         <button
@@ -229,6 +236,7 @@ function ComposerRouteCompositionControls({
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
+  onSelectAuxiliaryModel,
 }: {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
@@ -240,11 +248,46 @@ function ComposerRouteCompositionControls({
     (prompt) => prompt.mode === "custom_append",
   );
   const subagentOrchestrations = settings.subagentOrchestrations ?? [];
+  const [auxiliaryModelOptions, setAuxiliaryModelOptions] = useState<CommitModelOptionView[]>([]);
+  const [auxiliaryModelsLoading, setAuxiliaryModelsLoading] = useState(false);
+  const [auxiliaryModelsError, setAuxiliaryModelsError] = useState<string>();
   const selection = runtimeConfig?.orchestrationSelection;
   const selectedMainAgentConfigId = selection?.mainAgentConfigId ?? "";
   const mainAgentConfigId = mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId)
     ? selectedMainAgentConfigId
     : "";
+  useEffect(() => {
+    if (!mainAgentConfigId || !window.eco) {
+      setAuxiliaryModelOptions([]);
+      setAuxiliaryModelsLoading(false);
+      setAuxiliaryModelsError(undefined);
+      return;
+    }
+    let cancelled = false;
+    setAuxiliaryModelsLoading(true);
+    setAuxiliaryModelsError(undefined);
+    void window.eco
+      .listGitCommitModelOptions({ mainAgentConfigId })
+      .then((result) => {
+        if (!cancelled) {
+          setAuxiliaryModelOptions(result.options);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAuxiliaryModelOptions([]);
+          setAuxiliaryModelsError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuxiliaryModelsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mainAgentConfigId]);
   const selectedMainPromptValue = mainPromptSelectionValue(selection?.mainPrompt);
   const mainPromptValue =
     selectedMainPromptValue === BUILTIN_PROMPT_VALUE ||
@@ -274,6 +317,44 @@ function ComposerRouteCompositionControls({
           {mainAgentConfigs.map((config) => (
             <option key={config.id} value={config.id}>
               {config.name} ({config.modelRef.modelId})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="composer-route-prompt-control">
+        <span className="composer-route-prompt-label">{t("composer.route.auxiliaryModel")}</span>
+        <select
+          className="composer-route-prompt-segments"
+          value={runtimeConfig?.auxiliaryModel?.candidateModelId ?? ""}
+          disabled={disabled || auxiliaryModelsLoading || auxiliaryModelOptions.length === 0}
+          title={auxiliaryModelsError ?? t("composer.route.auxiliaryModelHint")}
+          onChange={(event) => {
+            const option = auxiliaryModelOptions.find(
+              (candidate) => candidate.candidateModelId === event.target.value,
+            );
+            if (option) {
+              void onSelectAuxiliaryModel({
+                providerId: option.providerId,
+                modelId: option.modelId,
+                candidateModelId: option.candidateModelId,
+              });
+            }
+          }}
+        >
+          {!runtimeConfig?.auxiliaryModel ? (
+            <option value="">
+              {auxiliaryModelsLoading
+                ? t("composer.model.loading")
+                : auxiliaryModelsError
+                  ? t("composer.model.loadFailed")
+                  : auxiliaryModelOptions.length === 0
+                    ? t("composer.model.noCandidates")
+                    : t("composer.route.notConfigured")}
+            </option>
+          ) : null}
+          {auxiliaryModelOptions.map((option) => (
+            <option key={option.candidateModelId} value={option.candidateModelId}>
+              {option.providerName} · {option.modelLabel}
             </option>
           ))}
         </select>

@@ -1,6 +1,14 @@
 import { shortenModelId } from "@eco/runtime/usage";
 import { ChevronDown, Users } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
@@ -8,12 +16,7 @@ import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
-function rowClassName(options: {
-  subagent: boolean;
-  enabled: boolean;
-  clickable: boolean;
-  planner: boolean;
-}): string {
+function rowClassName(options: { subagent: boolean; enabled: boolean; planner: boolean }): string {
   const parts = ["composer-agent-row"];
   if (options.planner) {
     parts.push("is-main", "is-active");
@@ -21,9 +24,6 @@ function rowClassName(options: {
   }
   if (options.subagent) {
     parts.push(options.enabled ? "is-active" : "is-disabled");
-    if (options.clickable) {
-      parts.push("is-clickable");
-    }
   }
   return parts.join(" ");
 }
@@ -42,12 +42,12 @@ function AgentRowContent({
   displayName,
   modelShort,
   status,
-  action,
+  switchControl,
 }: {
   displayName: string;
   modelShort: string;
-  status: string;
-  action?: string | undefined;
+  status?: string | undefined;
+  switchControl?: ReactNode;
 }) {
   return (
     <>
@@ -55,9 +55,9 @@ function AgentRowContent({
         <span className="composer-agent-row-role">{displayName}</span>
         <span className="composer-agent-row-model">{modelShort}</span>
       </span>
-      <span className={action ? "composer-agent-row-meta is-actionable" : "composer-agent-row-meta"}>
-        <span className="composer-agent-row-status">{status}</span>
-        {action ? <span className="composer-agent-row-action">{action}</span> : null}
+      <span className="composer-agent-row-meta">
+        {status ? <span className="composer-agent-row-status">{status}</span> : null}
+        {switchControl}
       </span>
     </>
   );
@@ -132,53 +132,36 @@ function AgentModelRows({
         const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
         const clickable = Boolean(canEditSubagents && subagentRole && subagentSettings && onToggleSubagent);
         const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : t("common.notConfigured");
-        const className = rowClassName({ subagent, enabled, clickable, planner: main });
-        const status = main
-          ? t("settings.models.mainAgent")
-          : enabled
-            ? t("composer.enabled")
-            : t("composer.disabled");
-        const action = clickable
-          ? enabled
-            ? t("composer.clickDisable")
-            : t("composer.clickEnable")
-          : undefined;
-        const content = (
-          <AgentRowContent
-            displayName={displayName}
-            modelShort={modelShort}
-            status={status}
-            action={action}
-          />
-        );
-        const tip = main
-          ? title
-          : clickable
-            ? enabled
-              ? t("composer.clickDisableNamed", { name: title })
-              : t("composer.clickEnableNamed", { name: title })
-            : title;
-
-        if (clickable && subagentRole) {
-          return (
-            <button
-              key={role}
-              type="button"
-              className={className}
-              title={tip}
-              disabled={subagentSaving}
-              aria-pressed={enabled}
-              onClick={() => onToggleSubagent?.(subagentRole, !enabled)}
-            >
-              {content}
-            </button>
-          );
-        }
+        const className = rowClassName({ subagent, enabled, planner: main });
+        const switchControl = subagentRole ? (
+          <label
+            className="composer-switch"
+            title={t(enabled ? "composer.enabledNamed" : "composer.disabledNamed", {
+              name: displayName,
+            })}
+          >
+            <input
+              type="checkbox"
+              checked={enabled}
+              disabled={subagentSaving || !clickable}
+              aria-label={t(enabled ? "composer.enabledAria" : "composer.disabledAria", {
+                name: displayName,
+              })}
+              onChange={() => onToggleSubagent?.(subagentRole, !enabled)}
+            />
+            <span className="composer-switch-track" aria-hidden />
+          </label>
+        ) : undefined;
 
         return (
-          <span key={role} className={className} title={tip}>
-            {content}
-          </span>
+          <div key={role} className={className} title={title}>
+            <AgentRowContent
+              displayName={displayName}
+              modelShort={modelShort}
+              status={main ? t("settings.models.mainAgent") : undefined}
+              switchControl={switchControl}
+            />
+          </div>
         );
       })}
     </>

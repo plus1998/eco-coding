@@ -15,9 +15,6 @@ import type {
   CommitModelOptionView,
   GitWorkingTreeStatus,
 } from "../shared/ipc";
-import {
-  resolveCommitMessageCandidateModel,
-} from "../shared/resolve-commit-message-route";
 import { CommitModelPricingCompact, CommitModelProviderDot } from "./CommitModelPricingCompact";
 import {
   beginWorkspaceGitAction,
@@ -33,6 +30,7 @@ interface GitCommitDialogProps {
   open: boolean;
   workspacePath: string;
   mainAgentConfigId: string;
+  auxiliaryCandidateModelId?: string;
   gitStatus?: GitWorkingTreeStatus;
   busy?: boolean;
   disabled?: boolean;
@@ -48,6 +46,7 @@ export function GitCommitDialog({
   open,
   workspacePath,
   mainAgentConfigId,
+  auxiliaryCandidateModelId,
   gitStatus,
   busy,
   disabled,
@@ -115,25 +114,11 @@ export function GitCommitDialog({
       .listGitCommitModelOptions({ mainAgentConfigId })
       .then((result) => {
         setModelOptions(result.options);
-        const hints = result.options
-          .map((option) => option.hint)
-          .filter((hint): hint is NonNullable<typeof hint> => Boolean(hint));
-        const candidates = result.options.map((option) => ({
-          candidateModelId: option.candidateModelId,
-          providerId: option.providerId,
-          providerName: option.providerName,
-          modelId: option.modelId,
-        }));
-        const resolved = resolveCommitMessageCandidateModel(
-          candidates,
-          hints,
-          result.savedCandidateModelId,
-        );
         const matched = findCommitModelOptionForCandidateId(
           result.options,
-          resolved?.candidateModelId,
+          auxiliaryCandidateModelId,
         );
-        setSelectedCandidateModelId(matched?.candidateModelId ?? resolved?.candidateModelId);
+        setSelectedCandidateModelId(matched?.candidateModelId);
       })
       .catch((caught) => {
         setError(caught instanceof Error ? caught.message : String(caught));
@@ -143,13 +128,18 @@ export function GitCommitDialog({
       .finally(() => {
         setModelOptionsLoading(false);
       });
-  }, [open, mainAgentConfigId]);
+  }, [open, mainAgentConfigId, auxiliaryCandidateModelId]);
 
   const handleSelectCandidateModel = useCallback(
-    (candidateModelId: string) => {
-      setSelectedCandidateModelId(candidateModelId);
-      setModelMenuOpen(false);
-      void onSaveModelPreference(candidateModelId);
+    async (candidateModelId: string) => {
+      setError(undefined);
+      try {
+        await onSaveModelPreference(candidateModelId);
+        setSelectedCandidateModelId(candidateModelId);
+        setModelMenuOpen(false);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      }
     },
     [onSaveModelPreference],
   );
@@ -200,6 +190,10 @@ export function GitCommitDialog({
     if (!window.eco || generatingMessage || submitting || busy || disabled || workspaceAction) {
       return;
     }
+    if (!selectedCandidateModelId) {
+      setError(`${t("composer.route.auxiliaryModelHint")}。请先选择辅助模型。`);
+      return;
+    }
     const operationId = beginWorkspaceGitAction(workspacePath, "generating");
     if (operationId === null) {
       return;
@@ -213,7 +207,7 @@ export function GitCommitDialog({
           workspacePath,
           mainAgentConfigId,
           includeUnstaged,
-          ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
+          candidateModelId: selectedCandidateModelId,
         },
         {
           onDelta: (text) => {
@@ -241,6 +235,7 @@ export function GitCommitDialog({
     mainAgentConfigId,
     includeUnstaged,
     selectedCandidateModelId,
+    t,
   ]);
 
   const runAction = useCallback(
@@ -275,12 +270,15 @@ export function GitCommitDialog({
             let commitMessage = trimmed;
 
             if (!trimmed) {
+              if (!selectedCandidateModelId) {
+                throw new Error(`${t("composer.route.auxiliaryModelHint")}。请先选择辅助模型。`);
+              }
               const generated = await window.eco.generateGitCommitMessage(
                 {
                   workspacePath: operationWorkspacePath,
                   mainAgentConfigId,
                   includeUnstaged,
-                  ...(selectedCandidateModelId && { candidateModelId: selectedCandidateModelId }),
+                  candidateModelId: selectedCandidateModelId,
                 },
                 {
                   onDelta: (text) => {
@@ -604,7 +602,7 @@ export function GitCommitDialog({
                             aria-selected={isActive}
                             className={isActive ? "is-active" : undefined}
                             title={option.hint?.pricingLabel ?? `${option.providerName} · ${option.modelId}`}
-                            onClick={() => handleSelectCandidateModel(option.candidateModelId)}
+                            onClick={() => void handleSelectCandidateModel(option.candidateModelId)}
                           >
                             <CommitModelProviderDot color={option.providerColor} label={option.providerName} />
                             <span className="git-commit-model-menu-label">

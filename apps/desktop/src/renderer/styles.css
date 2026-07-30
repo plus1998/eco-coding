@@ -12742,6 +12742,11 @@ button.sidebar-core-heading {
   background: var(--composer-switch-on, #3b82f6);
 }
 
+.composer-switch input:focus-visible + .composer-switch-track {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: 2px;
+}
+
 .composer-switch input:checked + .composer-switch-track::after {
   transform: translateX(16px);
 }
@@ -13370,52 +13375,8 @@ button.sidebar-core-heading {
   color: var(--popover-muted);
 }
 
-.composer-agent-row.is-disabled:not(.is-clickable) {
-  opacity: 0.42;
-}
-
-.composer-agent-row.is-clickable {
-  border-color: transparent;
-  cursor: pointer;
-}
-
-.composer-agent-row.is-clickable:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--popover-hover);
-  color: var(--popover-text);
-}
-
-.composer-agent-row.is-clickable:active:not(:disabled) {
-  transform: scale(0.985);
-  background: var(--popover-item-active, var(--popover-hover));
-}
-
-.composer-agent-row.is-clickable:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
-  outline-offset: -2px;
-  border-color: transparent;
-  background: var(--popover-hover);
-}
-
-.composer-agent-row.is-clickable.is-active {
-  background: var(--popover-item-active, var(--popover-hover));
-}
-
-.composer-agent-row.is-clickable.is-active:hover:not(:disabled) {
-  color: var(--popover-text);
-}
-
-.composer-agent-row.is-clickable.is-disabled {
+.composer-agent-row.is-disabled {
   color: var(--popover-muted);
-}
-
-.composer-agent-row.is-clickable.is-disabled:hover:not(:disabled) {
-  color: var(--popover-text);
-}
-
-.composer-agent-row.is-clickable:disabled {
-  opacity: 0.55;
-  cursor: wait;
 }
 
 .composer-agent-row-main {
@@ -13453,34 +13414,6 @@ button.sidebar-core-heading {
   color: var(--popover-muted);
   font-size: 11px;
   letter-spacing: 0.01em;
-}
-
-.composer-agent-row-meta.is-actionable .composer-agent-row-status {
-  color: var(--popover-muted);
-}
-
-.composer-agent-row-action {
-  padding: 3px 7px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--popover-text) 8%, transparent);
-  color: var(--popover-muted);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  transition:
-    background-color 0.14s ease,
-    color 0.14s ease;
-}
-
-.composer-agent-row.is-disabled .composer-agent-row-action {
-  color: var(--popover-text);
-}
-
-.composer-agent-row.is-clickable:hover:not(:disabled) .composer-agent-row-action,
-.composer-agent-row.is-clickable:focus-visible .composer-agent-row-action {
-  background: color-mix(in srgb, var(--popover-text) 12%, transparent);
-  color: var(--popover-text);
 }
 
 .composer-orchestration-wrap {
@@ -21284,7 +21217,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .workspace-plan-card-trigger:active:not(:disabled),
   .floating-workspace-card.is-collapsed:active,
   .floating-workspace-card-collapse:active,
-  .floating-workspace-card-body .composer-agent-row.is-clickable:active:not(:disabled),
   .thread-info-workspace-git-row:active:not(:has(:disabled)),
   .package-scripts-icon-btn:active:not(:disabled),
   .package-scripts-action-btn:active:not(:disabled),
@@ -21297,7 +21229,6 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   .composer-model-submenu-item:active:not(:disabled),
   .composer-route-builder-button:active:not(:disabled),
   .composer-route-prompt-segments label:active:not(:has(input:disabled)),
-  .composer-agent-row.is-clickable:active:not(:disabled),
   .thread-info-float-dismiss:active,
   .context-card-dismiss:active,
   .context-card-compact:active:not(:disabled),
@@ -23411,13 +23342,7 @@ body.is-resizing-task-panel {
 .floating-workspace-card-body .composer-agent-row {
   border-color: transparent;
   border-radius: 10px;
-  transition:
-    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
-    transform 0.1s ease-out;
-}
-
-.floating-workspace-card-body .composer-agent-row.is-clickable:active:not(:disabled) {
-  transform: scale(0.985);
+  transition: background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* Final global scrollbar override: scrolling remains enabled, chrome stays hidden. */

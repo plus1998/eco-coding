@@ -53,6 +53,12 @@ export interface CodexApprovalBridgeDeps {
   savePendingPlan: (plan: ThreadPendingPlanWithRoutes) => void;
   emitThreadLive: (event: ThreadLiveEvent) => void;
   updateThreadStatus: (ecoThreadId: string, patch: { status: string; message: string }) => void;
+  getApprovalMode?: (ecoThreadId: string) => "always" | "auto" | "allow_all";
+  reviewApproval?: (
+    ecoThreadId: string,
+    request: BashApprovalRequest,
+    tool: { toolName: string; toolInput: Record<string, unknown> },
+  ) => Promise<{ action: "allow" | "human_required" | "deny"; rationale: string }>;
 }
 
 export interface CodexApprovalBridge {
@@ -137,7 +143,7 @@ async function handleCommandExecutionRequestApproval(
     params.proposedExecpolicyAmendment ?? params.proposed_execpolicy_amendment,
   );
   const proposedNetworkPolicyAmendments = readNetworkPolicyAmendments(params);
-  const approvalRequest: BashApprovalRequest = {
+  let approvalRequest: BashApprovalRequest = {
     toolUseId: approvalId,
     threadId: ecoThreadId,
     command,
@@ -151,6 +157,26 @@ async function handleCommandExecutionRequestApproval(
     ...(proposedExecpolicyAmendment.length > 0 ? { proposedExecpolicyAmendment } : {}),
     ...(proposedNetworkPolicyAmendments.length > 0 ? { proposedNetworkPolicyAmendments } : {}),
   };
+
+  const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
+    toolName: "Bash",
+    toolInput: params,
+  });
+  if (automatic?.action === "allow") {
+    emitAutomaticApproval(
+      deps,
+      { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale },
+      command,
+    );
+    return { decision: "accept" };
+  }
+  if (automatic?.action === "deny") {
+    emitAutomaticDenial(deps, approvalRequest, automatic.rationale);
+    return { decision: "decline" };
+  }
+  if (automatic?.action === "human_required") {
+    approvalRequest = { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale };
+  }
 
   emitBashApprovalRequested(deps, approvalRequest, command);
   const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
@@ -178,7 +204,7 @@ async function handleFileChangeRequestApproval(
   const filesystemPath = grantRoot ?? thread.workspacePath;
   const command = grantRoot ? `write under ${grantRoot}` : "apply file changes";
   const plannerAgentId = deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`;
-  const approvalRequest: BashApprovalRequest = {
+  let approvalRequest: BashApprovalRequest = {
     toolUseId: itemId,
     threadId: ecoThreadId,
     command,
@@ -192,6 +218,26 @@ async function handleFileChangeRequestApproval(
     filesystemPath,
     description: reason,
   };
+
+  const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
+    toolName: "FileChange",
+    toolInput: params,
+  });
+  if (automatic?.action === "allow") {
+    emitAutomaticApproval(
+      deps,
+      { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale },
+      command,
+    );
+    return { decision: "accept" };
+  }
+  if (automatic?.action === "deny") {
+    emitAutomaticDenial(deps, approvalRequest, automatic.rationale);
+    return { decision: "decline" };
+  }
+  if (automatic?.action === "human_required") {
+    approvalRequest = { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale };
+  }
 
   emitBashApprovalRequested(deps, approvalRequest, command);
   const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
@@ -227,7 +273,7 @@ async function handlePermissionsRequestApproval(
     readString(params, "reason") ??
     "Codex requires additional filesystem or network permissions for this turn.";
   const networkRequested = permissionRequestIncludesNetwork(requestedPermissions);
-  const approvalRequest: BashApprovalRequest = {
+  let approvalRequest: BashApprovalRequest = {
     toolUseId: itemId,
     threadId: ecoThreadId,
     command: "grant additional permissions",
@@ -241,6 +287,26 @@ async function handlePermissionsRequestApproval(
     filesystemTool: "PermissionGrant",
     filesystemPath: formatRequestedPermissions(requestedPermissions),
   };
+
+  const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
+    toolName: "PermissionGrant",
+    toolInput: params,
+  });
+  if (automatic?.action === "allow") {
+    emitAutomaticApproval(
+      deps,
+      { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale },
+      "additional Codex permissions",
+    );
+    return { permissions: requestedPermissions, scope: "turn" };
+  }
+  if (automatic?.action === "deny") {
+    emitAutomaticDenial(deps, approvalRequest, automatic.rationale);
+    return denied;
+  }
+  if (automatic?.action === "human_required") {
+    approvalRequest = { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale };
+  }
 
   emitBashApprovalRequested(deps, approvalRequest, "additional Codex permissions");
   const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
@@ -1634,6 +1700,46 @@ function emitBashApprovalRequested(
   deps.updateThreadStatus(request.threadId, {
     status: "running",
     message: "等待工具权限确认…",
+  });
+}
+
+async function reviewCodexApprovalIfEnabled(
+  deps: CodexApprovalBridgeDeps,
+  threadId: string,
+  request: BashApprovalRequest,
+  tool: { toolName: string; toolInput: Record<string, unknown> },
+): Promise<{ action: "allow" | "human_required" | "deny"; rationale: string } | undefined> {
+  if (deps.getApprovalMode?.(threadId) !== "auto" || !deps.reviewApproval) {
+    return undefined;
+  }
+  return deps.reviewApproval(threadId, request, tool);
+}
+
+function emitAutomaticApproval(
+  deps: CodexApprovalBridgeDeps,
+  request: BashApprovalRequest,
+  commandLabel: string,
+): void {
+  deps.emitThreadLive({
+    threadId: request.threadId,
+    type: "bash_approval.approved",
+    message: `辅助模型已允许：${commandLabel}`,
+    role: "tool",
+    bashApproval: request,
+  });
+}
+
+function emitAutomaticDenial(
+  deps: CodexApprovalBridgeDeps,
+  request: BashApprovalRequest,
+  rationale: string,
+): void {
+  deps.emitThreadLive({
+    threadId: request.threadId,
+    type: "bash_approval.denied",
+    message: `已拒绝：${rationale}`,
+    role: "tool",
+    bashApproval: { ...request, reason: rationale, description: rationale },
   });
 }
 

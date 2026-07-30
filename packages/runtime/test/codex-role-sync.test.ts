@@ -97,6 +97,24 @@ test("syncOrchestrationAgentsToCodexRoles writes role toml for explore and enabl
   await expect(fs.stat(path.join(result.agentsDir, "architect.toml"))).rejects.toThrow();
 });
 
+test("full access propagates to every generated Codex role", async () => {
+  const ecoDataDir = await makeTempEcoDataDir();
+  const result = await syncOrchestrationAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    orchestration: buildOrchestration(),
+    templates: [researchTemplate, codingTemplate],
+    executionConfirmationMode: "allow_all",
+  });
+
+  for (const role of result.roles) {
+    expect(role.toolPolicy.sandboxMode).toBe("danger-full-access");
+    expect(role.toolPolicy.approvalPolicy).toBe("never");
+    const toml = await fs.readFile(role.rolePath, "utf8");
+    expect(toml).toContain('sandbox_mode = "danger-full-access"');
+    expect(toml).toContain('approval_policy = "never"');
+  }
+});
+
 test("syncOrchestrationAgentsToCodexRoles appends V4A teaching to role developer instructions when enabled", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const codexHomeDir = resolveCodexHomeDir(ecoDataDir);

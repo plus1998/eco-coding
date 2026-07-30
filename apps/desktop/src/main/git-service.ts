@@ -1,5 +1,4 @@
 import { runtimeRouteToProxyRoute, type AnthropicProxyRoute } from "./anthropic-proxy";
-import { mergeAgentRegistrySettings } from "./agent-registry-settings";
 import {
   lookupCommitModelPricingHints,
   type RuntimeRoute,
@@ -26,13 +25,7 @@ import type { ProviderStore } from "./provider-store";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import type { AgentOrchestrationStore } from "./agent-orchestration-store";
 import {
-  runtimeRoleRoutesFromOrchestrationSnapshot,
-  resolveThreadOrchestrationSnapshot,
-} from "../shared/thread-runtime-config";
-import {
   listCommitMessageCandidateModels,
-  resolveCommitMessageCandidateModel,
-  resolveLegacyCommitMessageCandidateModel,
   type CommitMessageModelPreference,
 } from "../shared/resolve-commit-message-route";
 import { buildCommitModelOptions } from "../shared/commit-model-options";
@@ -84,50 +77,15 @@ async function resolveSavedCommitCandidateModel(input: {
     ...(candidate.modelsDevMapping ? { modelsDevMapping: candidate.modelsDevMapping } : {}),
     ...(candidate.manualSpec ? { manualSpec: candidate.manualSpec } : {}),
   })));
-  const savedCandidateModelId =
-    input.candidateModelIdPreference ??
-    input.gitSettingsStore.getCommitMessageCandidateModelIdForMainAgentConfig(input.mainAgentConfigId);
-  let selected = resolveCommitMessageCandidateModel(candidates, hints, savedCandidateModelId);
-  if (!selected && savedCandidateModelId === "auto") {
-    const settings = mergeAgentRegistrySettings(
-      input.providerStore.getSettings(),
-      input.agentOrchestrationStore,
-    );
-    const mainAgentConfig = settings.mainAgentConfigs.find(
-      (entry) => entry.id === input.mainAgentConfigId,
-    );
-    if (mainAgentConfig) {
-      const legacyRole = input.gitSettingsStore.getCommitMessageRoleForMainAgentConfig(input.mainAgentConfigId);
-      const roleRoutes = [
-        {
-          role: COMMIT_MESSAGE_ROLE,
-          providerId: mainAgentConfig.modelRef.providerId,
-          modelId: mainAgentConfig.modelRef.modelId,
-          ...(mainAgentConfig.modelRef.apiCompat
-            ? { apiCompat: mainAgentConfig.modelRef.apiCompat }
-            : {}),
-          ...(mainAgentConfig.modelRef.thinkingEffort
-            ? { thinkingEffort: mainAgentConfig.modelRef.thinkingEffort }
-            : {}),
-          ...(mainAgentConfig.modelRef.modelsDevMapping
-            ? { modelsDevMapping: mainAgentConfig.modelRef.modelsDevMapping }
-            : {}),
-          ...(mainAgentConfig.modelRef.manualSpec
-            ? { manualSpec: mainAgentConfig.modelRef.manualSpec }
-            : {}),
-          ...(mainAgentConfig.modelRef.candidateModelId
-            ? { candidateModelId: mainAgentConfig.modelRef.candidateModelId }
-            : {}),
-        },
-      ];
-      selected = resolveLegacyCommitMessageCandidateModel(candidates, roleRoutes, legacyRole);
-    }
+  const savedCandidateModelId = input.candidateModelIdPreference;
+  if (!savedCandidateModelId || savedCandidateModelId === "auto") {
+    throw new Error("未指定辅助模型，无法生成提交信息。请在 Composer 的编排设置中选择辅助模型。");
   }
+  const selected = candidates.find(
+    (candidate) => candidate.candidateModelId === savedCandidateModelId,
+  );
   if (!selected) {
-    selected = resolveCommitMessageCandidateModel(candidates, hints, "auto");
-  }
-  if (!selected) {
-    throw new Error("没有可用的候选模型，无法生成提交信息。");
+    throw new Error(`辅助模型已不在候选模型列表中：${savedCandidateModelId}`);
   }
   return { selected, hints, candidates };
 }
@@ -205,6 +163,7 @@ export async function handleGitGenerateCommitMessage(
     onCommitMessageDelta?: (text: string) => void;
   },
 ): Promise<GitGenerateCommitMessageResult> {
+  requireAuxiliaryCandidateModelId(request.candidateModelId);
   const run = deps.run ?? defaultGitRunner;
   await stageChanges(request.workspacePath, { includeUnstaged: request.includeUnstaged }, run);
   const context = await collectCommitDiffContext(request.workspacePath, request.includeUnstaged, run);
@@ -212,7 +171,7 @@ export async function handleGitGenerateCommitMessage(
     throw new Error("没有可提交的变更。");
   }
   const candidateModelIdPreference =
-    request.candidateModelId ?? request.role ?? undefined;
+    request.candidateModelId;
   const { route, candidateModelId } = await resolveCommitProxyRoute({
     mainAgentConfigId: request.mainAgentConfigId,
     ...(candidateModelIdPreference !== undefined && {
@@ -262,6 +221,9 @@ export async function handleGitCommit(
     run?: GitRunner;
   },
 ): Promise<GitCommitResult> {
+  if (!request.message?.trim()) {
+    requireAuxiliaryCandidateModelId(request.candidateModelId);
+  }
   const run = deps.run ?? defaultGitRunner;
   await stageChanges(request.workspacePath, { includeUnstaged: request.includeUnstaged }, run);
 
@@ -287,6 +249,12 @@ export async function handleGitCommit(
     ...(modelId && { modelId }),
     role: COMMIT_MESSAGE_ROLE,
   };
+}
+
+function requireAuxiliaryCandidateModelId(value: string | "auto" | undefined): asserts value is string {
+  if (!value || value === "auto") {
+    throw new Error("未指定辅助模型，无法生成提交信息。请在 Composer 的编排设置中选择辅助模型。");
+  }
 }
 
 export async function handleGitPush(

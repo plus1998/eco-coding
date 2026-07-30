@@ -869,6 +869,9 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
             ? { threadEnabledMcpServers: input.threadEnabledMcpServerNames }
             : {}),
           ...(input.subagentAvailability ? { subagentAvailability: input.subagentAvailability } : {}),
+          ...(input.executionConfirmationMode
+            ? { executionConfirmationMode: input.executionConfirmationMode }
+            : {}),
         })
       : undefined;
 

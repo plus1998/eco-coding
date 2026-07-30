@@ -94,10 +94,16 @@ test("buildThreadRuntimeConfigFromDefaults materializes orchestration snapshot",
     workflowDefaults: {
       sessionMode: "agent",
       defaultOrchestrationSelection: presetBundle.selection,
+      defaultAuxiliaryModel: {
+        providerId: "p1",
+        modelId: "m1",
+        candidateModelId: "candidate-1",
+      },
     },
   });
   expect(config.orchestrationSelection).toEqual(presetBundle.selection);
   expect(config.resolvedOrchestrationSnapshot?.mainAgent.modelRef.modelId).toBe("m1");
+  expect(config.auxiliaryModel?.candidateModelId).toBe("candidate-1");
   expect(isAutonomousThreadRuntime(config)).toBe(true);
 });
 

@@ -14,8 +14,13 @@ import {
   type CodexMcpServerForConfigSync,
   type EcoProviderForCodexConfig,
 } from "./codex-config-sync.js";
-import type { CodexSandboxMode, EcoToolPolicy } from "./codex-tool-policy.js";
+import type {
+  CodexExecutionConfirmationMode,
+  CodexSandboxMode,
+  EcoToolPolicy,
+} from "./codex-tool-policy.js";
 import {
+  applyCodexExecutionConfirmation,
   cloneEcoToolPolicy,
   ecoToolPolicyToRoleTomlFields,
   normalizeEcoToolPolicy,
@@ -49,6 +54,7 @@ export interface SyncOrchestrationAgentsToCodexRolesInput {
   threadEnabledMcpServers?: readonly string[];
   /** Known secrets that must be removed if a user-authored prompt accidentally contains them. */
   secretsToRedact?: readonly string[];
+  executionConfirmationMode?: CodexExecutionConfirmationMode;
 }
 
 export interface CodexMcpServerVisibilityOverride {
@@ -162,9 +168,12 @@ export async function syncOrchestrationAgentsToCodexRoles(
   }
   const secretsToRedact = input.secretsToRedact ?? [];
   const mcpScope = normalizeMcpScope(input.mcpServers ?? [], input.threadEnabledMcpServers);
-  const mainToolPolicy = normalizeEcoToolPolicy(input.orchestration.mainAgent.tools, {
+  const configuredMainToolPolicy = normalizeEcoToolPolicy(input.orchestration.mainAgent.tools, {
     allowSpawnDefault: true,
   });
+  const mainToolPolicy = input.executionConfirmationMode
+    ? applyCodexExecutionConfirmation(configuredMainToolPolicy, input.executionConfirmationMode)
+    : configuredMainToolPolicy;
   const mainMcpVisibility = buildActorMcpVisibility({
     actor: "main",
     mcpScope,
@@ -181,6 +190,9 @@ export async function syncOrchestrationAgentsToCodexRoles(
   const drafts: CodexRoleDraft[] = [];
 
   if (includeExplore) {
+    const exploreToolPolicy = input.executionConfirmationMode
+      ? applyCodexExecutionConfirmation(BUILTIN_EXPLORE_TOOL_POLICY, input.executionConfirmationMode)
+      : BUILTIN_EXPLORE_TOOL_POLICY;
     const mcpVisibility = buildActorMcpVisibility({
       actor: CODEX_EXPLORE_ROLE_ID,
       mcpScope,
@@ -196,6 +208,7 @@ export async function syncOrchestrationAgentsToCodexRoles(
         mcpVisibility,
         input.mcpServers ?? [],
         isV4aTeachingEnabled(exploreAgent),
+        exploreToolPolicy,
       ),
     });
   }
@@ -210,7 +223,10 @@ export async function syncOrchestrationAgentsToCodexRoles(
     if (!template) {
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
-    const toolPolicy = resolveEffectiveAgentToolPolicy(agent, template);
+    const configuredToolPolicy = resolveEffectiveAgentToolPolicy(agent, template);
+    const toolPolicy = input.executionConfirmationMode
+      ? applyCodexExecutionConfirmation(configuredToolPolicy, input.executionConfirmationMode)
+      : configuredToolPolicy;
     const mcpVisibility = buildActorMcpVisibility({
       actor: roleId,
       mcpScope,
@@ -229,7 +245,15 @@ export async function syncOrchestrationAgentsToCodexRoles(
       agentKey: agent.agentKey,
       roleId,
       mcpVisibility,
-      ...buildCodexRole(agent, template, roleId, secretsToRedact, mcpVisibility, input.mcpServers ?? []),
+      ...buildCodexRole(
+        agent,
+        template,
+        roleId,
+        secretsToRedact,
+        mcpVisibility,
+        input.mcpServers ?? [],
+        toolPolicy,
+      ),
     });
   }
 
@@ -632,6 +656,7 @@ function buildCodexRole(
   secretsToRedact: readonly string[],
   mcpVisibility: Readonly<Record<string, CodexMcpServerVisibilityOverride>>,
   mcpServers: readonly CodexMcpServerForConfigSync[],
+  toolPolicy: EcoToolPolicy,
 ): BuiltCodexRole {
   const description = redactKnownSecrets(buildRoleDescription(agent, template), secretsToRedact);
   const developerInstructions = redactKnownSecrets(
@@ -641,7 +666,6 @@ function buildCodexRole(
   const modelId = requireModelId(agent.modelRef.modelId, agent.agentKey);
   const providerId = requireProviderId(agent.modelRef.providerId, agent.agentKey);
   const apiCompat = resolveCodexRoleApiCompat(agent.modelRef.apiCompat, agent.agentKey);
-  const toolPolicy = resolveEffectiveAgentToolPolicy(agent, template);
   return {
     sandboxMode: toolPolicy.sandboxMode,
     toolPolicy: cloneEcoToolPolicy(toolPolicy),
@@ -670,6 +694,7 @@ function buildExploreCodexRole(
   mcpVisibility: Readonly<Record<string, CodexMcpServerVisibilityOverride>>,
   mcpServers: readonly CodexMcpServerForConfigSync[],
   v4aTeachingEnabled = false,
+  toolPolicy: EcoToolPolicy = BUILTIN_EXPLORE_TOOL_POLICY,
 ): BuiltCodexRole {
   const modelId = requireModelId(modelRef.modelId, CODEX_EXPLORE_ROLE_ID);
   const providerId = requireProviderId(modelRef.providerId, CODEX_EXPLORE_ROLE_ID);
@@ -680,8 +705,8 @@ function buildExploreCodexRole(
     secretsToRedact,
   );
   return {
-    sandboxMode: BUILTIN_EXPLORE_TOOL_POLICY.sandboxMode,
-    toolPolicy: cloneEcoToolPolicy(BUILTIN_EXPLORE_TOOL_POLICY),
+    sandboxMode: toolPolicy.sandboxMode,
+    toolPolicy: cloneEcoToolPolicy(toolPolicy),
     description,
     modelId,
     providerId,
@@ -694,7 +719,7 @@ function buildExploreCodexRole(
       providerId: redactKnownSecrets(providerId, secretsToRedact),
       ...(apiCompat && { apiCompat }),
       ...withCodexReasoningEffort(modelRef.thinkingEffort),
-      toolPolicy: BUILTIN_EXPLORE_TOOL_POLICY,
+      toolPolicy,
       mcpVisibility,
       mcpServers,
     }),

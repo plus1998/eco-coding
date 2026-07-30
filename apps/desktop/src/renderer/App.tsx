@@ -87,6 +87,7 @@ import {
   type McpServerConfigInput,
   type McpSettingsSnapshot,
   type MainAgentModelOverride,
+  type AuxiliaryModelSelection,
   type MainAgentPromptSelection,
   type ModelSettingsSnapshot,
   type GitSettingsSnapshot,
@@ -2909,6 +2910,9 @@ function App() {
   );
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
+    if (!base?.auxiliaryModel) {
+      return null;
+    }
     const selection =
       (base?.orchestrationSelection &&
       hasCompleteOrchestrationSelection(base.orchestrationSelection)
@@ -3072,6 +3076,7 @@ function App() {
         composerMainAgentModelOverride,
       )
     : false;
+  const auxiliaryModelReady = Boolean(composerRuntimeConfig?.auxiliaryModel);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
     activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
@@ -3195,6 +3200,7 @@ function App() {
     currentProjectPath &&
       composerHasContent &&
       routesReady &&
+      auxiliaryModelReady &&
       !isStarting &&
       !planActionBusy &&
       !clarificationBusy &&
@@ -4903,19 +4909,23 @@ function App() {
   }
 
   async function saveCommitMessageModelPreference(candidateModelId: string) {
-    if (!window.eco || !composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId) {
+    const mainAgentConfigId = composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId;
+    if (!window.eco || !mainAgentConfigId) {
       return;
     }
-    const mainAgentConfigId = composerRuntimeConfig.orchestrationSelection.mainAgentConfigId;
-    const next = {
-      ...gitSettings,
-      commitMessageCandidateModelIdByMainAgentConfigId: {
-        ...gitSettings.commitMessageCandidateModelIdByMainAgentConfigId,
-        [mainAgentConfigId]: candidateModelId,
-      },
-    };
-    const saved = await window.eco.saveGitSettings(next);
-    setGitSettings(saved);
+    if (!canEditComposerConfig) {
+      throw new Error("当前会话运行中，不能切换辅助模型。请等待本轮完成后再试。");
+    }
+    const result = await window.eco.listGitCommitModelOptions({ mainAgentConfigId });
+    const option = result.options.find((candidate) => candidate.candidateModelId === candidateModelId);
+    if (!option) {
+      throw new Error("所选辅助模型已不在候选模型列表中。");
+    }
+    await selectComposerAuxiliaryModel({
+      providerId: option.providerId,
+      modelId: option.modelId,
+      candidateModelId: option.candidateModelId,
+    });
   }
 
   async function handleGitCheckoutBranch(branch: string) {
@@ -5251,6 +5261,22 @@ function App() {
 
   async function selectComposerSubagents(selection: SubagentSelection) {
     await applyComposerOrchestrationSelection({ subagents: selection });
+  }
+
+  async function selectComposerAuxiliaryModel(selection: AuxiliaryModelSelection) {
+    if (!composerRuntimeConfig || !canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    await persistComposerRuntimeConfig({ ...composerRuntimeConfig, auxiliaryModel: selection });
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        defaultAuxiliaryModel: selection,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function selectComposerMainAgentModel(override: MainAgentModelOverride | undefined) {
@@ -6361,6 +6387,7 @@ function App() {
         onSelectMainAgentConfig={selectComposerMainAgentConfig}
         onSelectMainPrompt={selectComposerMainPrompt}
         onSelectSubagents={selectComposerSubagents}
+        onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
         onOpenFullSettings={() => openModelsSettings("compositionParts")}
       />
     </div>
@@ -6968,6 +6995,9 @@ function App() {
                 onOpenGitSettings={openGitSettings}
                 {...(composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId && {
                   mainAgentConfigId: composerRuntimeConfig.orchestrationSelection.mainAgentConfigId,
+                })}
+                {...(composerRuntimeConfig?.auxiliaryModel?.candidateModelId && {
+                  auxiliaryCandidateModelId: composerRuntimeConfig.auxiliaryModel.candidateModelId,
                 })}
                 gitSettings={gitSettings}
                 onSaveCommitModelPreference={saveCommitMessageModelPreference}

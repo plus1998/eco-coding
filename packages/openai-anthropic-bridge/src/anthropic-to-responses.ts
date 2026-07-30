@@ -9,6 +9,7 @@ import type {
   ResponsesInputItem,
   ResponsesReasoning,
   ResponsesRequest,
+  ResponsesTextFormat,
   ResponsesTool,
 } from './types.js';
 
@@ -287,7 +288,10 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
 
   out.store = false;
   out.parallel_tool_calls = true;
-  out.text = { verbosity: 'medium' };
+  const outputFormat = anthropicOutputFormatToResponses(req.output_format);
+  out.text = outputFormat === undefined
+    ? { verbosity: 'medium' }
+    : { verbosity: 'medium', format: outputFormat };
 
   if (instructions !== '' && input.length > 0 && input[0]?.role !== 'system') {
     out.instructions = instructions;
@@ -323,6 +327,25 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
   }
 
   return out;
+}
+
+export function anthropicOutputFormatToResponses(raw: unknown): ResponsesTextFormat | undefined {
+  if (!isUnknownRecord(raw) || raw.type !== 'json_schema' || raw.schema === undefined) {
+    return undefined;
+  }
+
+  return {
+    type: 'json_schema',
+    name:
+      typeof raw.name === 'string' && raw.name.trim() !== ''
+        ? raw.name.trim()
+        : 'eco_structured_output',
+    ...(typeof raw.description === 'string' && raw.description.trim() !== ''
+      ? { description: raw.description.trim() }
+      : {}),
+    schema: raw.schema,
+    strict: raw.strict !== false,
+  };
 }
 
 export function convertAnthropicToolChoiceToResponses(raw: unknown): unknown {

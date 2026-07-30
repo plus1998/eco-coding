@@ -493,6 +493,7 @@ export interface WorkflowSettingsSnapshot {
   sessionMode: import("./session-mode").SessionMode;
   defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
   defaultOrchestrationSelection?: import("./agent-orchestration").OrchestrationSelection;
+  defaultAuxiliaryModel?: import("./auxiliary-model").AuxiliaryModelSelection;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -853,6 +854,7 @@ export {
   listEnabledGlobalMcpServerKeys,
 } from "./composer-mcp";
 export type {
+  AuxiliaryModelSelection,
   MainAgentModelOverride,
   MainAgentSystemPromptPreset,
   McpServersEnabledSettings,

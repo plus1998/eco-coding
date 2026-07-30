@@ -51,10 +51,10 @@ for (let index = 0; index < subagentSwitchCount; index += 1) {
   }));
   if (state.disabled) throw new Error(`Codex subagent switch ${index} is disabled.`);
 }
-const clickableSubagentRows = await page
-  .locator('.composer-agents-popover[aria-label="子代理详情"] .composer-agent-row.is-clickable')
+const switchSubagentRows = await page
+  .locator('.composer-agents-popover[aria-label="子代理详情"] .composer-agent-row .composer-switch')
   .count();
-if (clickableSubagentRows === 0) throw new Error("Codex subagent popover has no editable rows.");
+if (switchSubagentRows === 0) throw new Error("Codex subagent popover has no switch rows.");
 
 const skillsBarCount = await page.locator(".composer-skills-bar").count();
 const composerInput = page.locator('.composer-primary [contenteditable="true"]');
@@ -69,7 +69,7 @@ console.log(
       mcpSwitchCount,
       subagentLabel,
       subagentSwitchCount,
-      clickableSubagentRows,
+      switchSubagentRows,
       skillsBarCount,
     },
     null,
