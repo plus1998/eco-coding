@@ -933,8 +933,8 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     width: 1320,
     height: 860,
-    minWidth: 1080,
-    minHeight: 720,
+    minWidth: 480,
+    minHeight: 600,
     titleBarStyle: "hiddenInset",
     transparent: true,
     backgroundColor: "#00000000",

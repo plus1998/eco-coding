@@ -196,19 +196,40 @@ button:not(:disabled) {
 
 .macos-window-toolbar {
   position: fixed;
-  top: 6px;
-  left: 76px;
-  z-index: 10000;
+  top: 0;
+  left: 72px;
+  z-index: 2147483647;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 0;
+  height: 40px;
+  padding: 4px;
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  isolation: isolate;
+  -webkit-app-region: no-drag !important;
 }
 
 .macos-window-toolbar,
 .macos-window-toolbar * {
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
+}
+
+.macos-window-toolbar .codex-main-toolbar-button {
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+}
+
+.macos-window-toolbar .codex-main-toolbar-button:active {
+  transform: scale(0.94);
+}
+
+.responsive-sidebar-backdrop {
+  display: none;
 }
 
 .codex-fixed-sidebar-toolbar {
@@ -12681,11 +12702,6 @@ button.sidebar-core-heading {
   height: 14px;
 }
 
-.codex-composer.is-compact .composer-context-trigger.is-compact .composer-trigger-chevron {
-  width: 12px;
-  height: 12px;
-}
-
 .codex-composer.is-compact .composer-footer-config-row {
   flex: 1 1 auto;
   min-width: 0;
@@ -13092,11 +13108,6 @@ button.sidebar-core-heading {
 
 .composer-context-trigger-label.is-placeholder {
   color: var(--composer-context-placeholder);
-}
-
-.composer-trigger-chevron {
-  flex-shrink: 0;
-  opacity: 0.45;
 }
 
 .composer-meta-pill {
@@ -19844,6 +19855,25 @@ html[data-platform="darwin"]
 }
 
 @media (max-width: 720px) {
+  .codex-main-pane.is-task-panel-open {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .codex-main-pane.is-task-panel-open > .workspace-panel.is-task-panel-mode {
+    position: absolute;
+    z-index: 90;
+    inset: calc(var(--workspace-toolbar-clearance, 36px) + 8px) 8px 8px;
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: var(--shadow-modal);
+  }
+
   .codex-main-scroll.has-workspace-panel.is-workspace-panel-open,
   .codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-feed-stack) {
     grid-template-columns: minmax(0, 1fr);
@@ -19882,9 +19912,12 @@ html[data-platform="darwin"]
   }
 
   .workspace-panel--floating-cards {
-    right: 10px;
-    left: 10px;
-    width: auto;
+    right: calc(var(--toolbar-edge-inset) + var(--workspace-toolbar-fixed-reserve));
+    left: auto;
+    width: min(
+      var(--workspace-cards-panel-width, 300px),
+      calc(100% - var(--toolbar-edge-inset) - var(--workspace-toolbar-fixed-reserve) - 10px)
+    );
     max-height: calc(100% - var(--workspace-toolbar-clearance, 36px) - 22px);
   }
 
@@ -19914,6 +19947,17 @@ html[data-platform="darwin"]
   .codex-main:not(.codex-main-landing) .codex-main-topbar {
     padding-left: 22px;
     padding-right: var(--toolbar-edge-inset);
+  }
+
+  html[data-platform="darwin"]
+    .shell.shell-sidebar-hidden
+    .codex-main:not(.codex-main-landing)
+    .codex-main-topbar {
+    padding-left: var(--macos-window-controls-safe-inline-start);
+  }
+
+  .codex-main-topbar .activity-header {
+    max-width: min(240px, 42vw);
   }
 
   .codex-main:not(.codex-main-landing) .activity-header-divider {
@@ -19953,15 +19997,39 @@ html[data-platform="darwin"]
   }
 
   .codex-sidebar {
-    width: auto;
-    min-height: auto;
-    border-right: 0;
-    border-bottom: 1px solid #2f2f2f;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 9000;
+    width: min(var(--sidebar-width), calc(100vw - 48px));
+    height: 100vh;
+    min-height: 0;
+    border-right: 1px solid var(--border-sidebar);
+    border-bottom: 0;
+    background: var(--bg-sidebar);
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.22);
   }
 
   .sidebar-section-grow {
-    max-height: 160px;
-    overflow: auto;
+    max-height: none;
+  }
+
+  html[data-platform="darwin"] .codex-sidebar {
+    background: color-mix(in srgb, var(--bg-sidebar) 94%, transparent);
+    backdrop-filter: saturate(150%) blur(24px);
+    -webkit-backdrop-filter: saturate(150%) blur(24px);
+  }
+
+  .responsive-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 8990;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.18);
+    cursor: default;
+    -webkit-app-region: no-drag;
   }
 
   .settings-page {
@@ -22317,9 +22385,12 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 .workspace-panel--floating-cards {
   position: absolute;
   top: calc(var(--workspace-toolbar-clearance, 36px) + 10px);
-  right: var(--toolbar-edge-inset);
+  right: calc(var(--toolbar-edge-inset) + var(--workspace-toolbar-fixed-reserve));
   z-index: 72;
-  width: min(var(--workspace-cards-panel-width, 300px), calc(100% - 32px));
+  width: min(
+    var(--workspace-cards-panel-width, 300px),
+    calc(100% - var(--toolbar-edge-inset) - var(--workspace-toolbar-fixed-reserve) - 10px)
+  );
   height: auto;
   max-height: calc(
     100% -
@@ -22359,9 +22430,9 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   overflow: hidden;
   border: 1px solid var(--floating-card-border, rgba(0, 0, 0, 0.06));
   border-radius: 14px;
-  background: var(--floating-card-bg, var(--bg-elevated));
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-main) 4%);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   box-shadow:
     0 0 0 0.5px var(--floating-card-edge, rgba(255, 255, 255, 0.08)),
     0 10px 32px var(--floating-card-shadow, rgba(0, 0, 0, 0.1)),
@@ -23686,17 +23757,6 @@ body,
   color: var(--accent);
 }
 
-.composer-model-trigger-chevron {
-  flex-shrink: 0;
-  margin-left: 2px;
-  opacity: 0.48;
-  transition: transform 0.15s ease;
-}
-
-.composer-model-trigger-chevron.is-open {
-  transform: rotate(180deg);
-}
-
 .composer-model-root-menu,
 .composer-model-submenu {
   padding: 6px;
@@ -23932,5 +23992,69 @@ body,
   .composer-model-trigger {
     max-width: 48vw;
     padding-inline: 7px;
+  }
+}
+
+@media (max-width: 600px) {
+  .codex-composer.is-compact .composer-primary {
+    padding: 9px 10px 7px;
+  }
+
+  .codex-composer.is-compact .composer-footer {
+    gap: 3px;
+    margin-top: 6px;
+  }
+
+  .codex-composer.is-compact .composer-footer-main,
+  .codex-composer.is-compact .composer-footer-compact-row {
+    gap: 2px;
+  }
+
+  .codex-composer.is-compact .composer-footer-compact-row,
+  .codex-composer.is-compact .composer-footer-config-row {
+    flex-wrap: nowrap;
+  }
+
+  .codex-composer.is-compact .composer-footer-config-row {
+    gap: 0;
+  }
+
+  .codex-composer.is-compact .composer-context-trigger.is-compact {
+    max-width: min(108px, 23vw);
+    gap: 3px;
+    padding: 4px 6px;
+  }
+
+  .codex-composer.is-compact .composer-toolbar-trigger {
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    max-width: 28px;
+    gap: 0;
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  .codex-composer.is-compact .composer-toolbar-trigger-label {
+    display: none;
+  }
+
+  .codex-composer.is-compact .composer-footer-usage {
+    margin-right: 0;
+  }
+
+  .codex-composer.is-compact .composer-usage-pills {
+    gap: 2px;
+  }
+
+  .codex-composer.is-compact .composer-model-trigger {
+    height: 28px;
+    max-width: min(132px, 30vw);
+    padding-inline: 6px;
+  }
+
+  .codex-composer.is-compact .send-button {
+    width: 30px;
+    height: 30px;
   }
 }

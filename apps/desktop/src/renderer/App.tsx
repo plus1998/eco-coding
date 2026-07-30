@@ -381,6 +381,7 @@ const pinnedThreadsStorageKey = "eco.sidebar.pinned-threads";
 const unreadThreadsStorageKey = "eco.sidebar.unread-threads";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
+const compactSidebarMediaQuery = "(max-width: 900px)";
 const sidebarThreadsCollapsed = 5;
 
 interface RecentProject {
@@ -806,7 +807,9 @@ function ActivityUserMessageNavigator({
 function App() {
   const { t } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => !window.matchMedia(compactSidebarMediaQuery).matches,
+  );
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
@@ -822,6 +825,18 @@ function App() {
   const [typographyPreferences, setTypographyPreferences] = useState<TypographyPreferences>(() =>
     readStoredTypographyPreferences(),
   );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(compactSidebarMediaQuery);
+    const collapseSidebar = () => {
+      if (mediaQuery.matches) {
+        setSidebarOpen(false);
+      }
+    };
+    collapseSidebar();
+    mediaQuery.addEventListener("change", collapseSidebar);
+    return () => mediaQuery.removeEventListener("change", collapseSidebar);
+  }, []);
 
   useEffect(() => {
     persistAppTheme(appTheme);
@@ -7039,6 +7054,14 @@ function App() {
           kind={appMessageState.kind}
           message={appMessageState.message}
           onDismiss={dismissAppMessage}
+        />
+      ) : null}
+      {sidebarOpen ? (
+        <button
+          type="button"
+          className="responsive-sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-label={t("app.sidebarCollapse")}
         />
       ) : null}
       <aside

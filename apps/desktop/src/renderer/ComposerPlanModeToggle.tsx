@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Infinity, List, MessageCircle } from "lucide-react";
+import { Check, Infinity, List, MessageCircle } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -123,13 +123,13 @@ export function ComposerPlanModeToggle({
       type="button"
       className={className}
       disabled={saving}
+      title={current.title}
       aria-label={current.title}
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
       <SessionModeIcon mode={sessionMode} className="composer-toolbar-trigger-icon" />
       <span className="composer-toolbar-trigger-label">{current.title}</span>
-      <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
     <span className={className} title="当前对话进行中，工作模式不可修改">

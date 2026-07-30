@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Hand, Shield, ShieldAlert, Terminal } from "lucide-react";
+import { Check, Hand, Shield, ShieldAlert, Terminal } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -125,6 +125,7 @@ export function ComposerBashReviewToggle({
       type="button"
       className={className}
       disabled={saving}
+      title={t(current.title)}
       aria-pressed={bashReviewMode !== "allow_all"}
       aria-label={t(current.title)}
       aria-expanded={open}
@@ -134,7 +135,6 @@ export function ComposerBashReviewToggle({
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>
       <span className="composer-toolbar-trigger-label">{t(current.title)}</span>
-      <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
     <span className={className} title={t("bash.review.readonlyTitle")}>

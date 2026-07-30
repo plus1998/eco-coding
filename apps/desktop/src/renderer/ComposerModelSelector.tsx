@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -980,12 +980,6 @@ export function ComposerModelSelector({
           thinkingEffort={currentEffort}
           size="medium"
           effortAccent={Boolean(value)}
-        />
-        <ChevronDown
-          size={14}
-          strokeWidth={2}
-          className={open ? "composer-model-trigger-chevron is-open" : "composer-model-trigger-chevron"}
-          aria-hidden
         />
       </button>
       {popover}
