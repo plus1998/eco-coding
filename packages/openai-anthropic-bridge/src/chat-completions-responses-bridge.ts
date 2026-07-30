@@ -414,15 +414,8 @@ function responsesFunctionCallOutputToChatContent(raw: string | undefined): unkn
   return rawString(raw);
 }
 
-/** Match sub2api json.RawMessage: quote scalars, keep embedded JSON text as-is. */
+/** Preserve parsed JSON value types when re-encoding fields as raw JSON. */
 function encodeRawItemFieldValue(v: unknown): string {
-  if (typeof v === 'string') {
-    const trimmed = bytesTrimSpace(v);
-    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      return trimmed;
-    }
-    return jsonMarshal(v);
-  }
   return jsonMarshal(v);
 }
 

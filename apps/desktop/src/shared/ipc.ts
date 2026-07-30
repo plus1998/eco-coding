@@ -1276,6 +1276,8 @@ export interface BashApprovalRequest {
   agentId: string;
   agentType?: string;
   description?: string;
+  /** Auxiliary-model explanation, kept separate from the original approval request. */
+  reviewRationale?: string;
   kind?: BashApprovalKind;
   /** When set, this approval is for a filesystem tool outside the workspace. */
   filesystemTool?: string;

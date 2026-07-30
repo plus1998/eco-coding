@@ -3931,6 +3931,7 @@ function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeCon
   }
 
   const prompt = thread.prompt;
+  emitThreadTitleDelta(threadId, resolveFailedThreadTitle(prompt, currentAppLocale()));
   let titleRoute;
   try {
     titleRoute = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
@@ -3939,14 +3940,9 @@ function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeCon
     emitThreadTitleFailure(threadId);
     return;
   }
-  let lastEmittedPreview = "";
-  void summarizeThreadTitle([titleRoute], prompt, fetch, (preview) => {
-    if (preview === lastEmittedPreview) {
-      return;
-    }
-    lastEmittedPreview = preview;
-    emitThreadTitleDelta(threadId, preview);
-  })
+  // Never expose unvalidated model output as a title. The original request remains visible
+  // until the complete generated title has passed JSON parsing and sanitization.
+  void summarizeThreadTitle([titleRoute], prompt, fetch)
     .then((title) => {
       if (title) {
         applyThreadTitleSummary(threadId, title);
@@ -9181,8 +9177,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         if (review.action === "allow") {
           const reviewedRequest = {
             ...approvalRequest,
-            reason: review.rationale,
-            description: review.rationale,
+            reviewRationale: review.rationale,
           };
           emitThreadEvent(
             threadId,
@@ -9197,8 +9192,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         if (review.action === "deny") {
           const reviewedRequest = {
             ...approvalRequest,
-            reason: review.rationale,
-            description: review.rationale,
+            reviewRationale: review.rationale,
           };
           emitThreadEvent(
             threadId,
@@ -9212,8 +9206,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
         }
         approvalRequest = {
           ...approvalRequest,
-          reason: review.rationale,
-          description: review.rationale,
+          reviewRationale: review.rationale,
         };
       }
 
@@ -9375,8 +9368,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       if (review.action === "allow") {
         const reviewedRequest = {
           ...approvalRequest,
-          reason: review.rationale,
-          description: review.rationale,
+          reviewRationale: review.rationale,
         };
         emitThreadEvent(
           threadId,
@@ -9391,8 +9383,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       if (review.action === "deny") {
         const reviewedRequest = {
           ...approvalRequest,
-          reason: review.rationale,
-          description: review.rationale,
+          reviewRationale: review.rationale,
         };
         emitThreadEvent(
           threadId,
@@ -9406,8 +9397,7 @@ function createThreadBashAndFilesystemToolPermissionHandler(
       }
       approvalRequest = {
         ...approvalRequest,
-        reason: review.rationale,
-        description: review.rationale,
+        reviewRationale: review.rationale,
       };
     }
 

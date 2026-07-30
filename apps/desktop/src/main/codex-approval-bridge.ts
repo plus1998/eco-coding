@@ -165,7 +165,7 @@ async function handleCommandExecutionRequestApproval(
   if (automatic?.action === "allow") {
     emitAutomaticApproval(
       deps,
-      { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale },
+      { ...approvalRequest, reviewRationale: automatic.rationale },
       command,
     );
     return { decision: "accept" };
@@ -175,7 +175,7 @@ async function handleCommandExecutionRequestApproval(
     return { decision: "decline" };
   }
   if (automatic?.action === "human_required") {
-    approvalRequest = { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale };
+    approvalRequest = { ...approvalRequest, reviewRationale: automatic.rationale };
   }
 
   emitBashApprovalRequested(deps, approvalRequest, command);
@@ -226,7 +226,7 @@ async function handleFileChangeRequestApproval(
   if (automatic?.action === "allow") {
     emitAutomaticApproval(
       deps,
-      { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale },
+      { ...approvalRequest, reviewRationale: automatic.rationale },
       command,
     );
     return { decision: "accept" };
@@ -236,7 +236,7 @@ async function handleFileChangeRequestApproval(
     return { decision: "decline" };
   }
   if (automatic?.action === "human_required") {
-    approvalRequest = { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale };
+    approvalRequest = { ...approvalRequest, reviewRationale: automatic.rationale };
   }
 
   emitBashApprovalRequested(deps, approvalRequest, command);
@@ -295,7 +295,7 @@ async function handlePermissionsRequestApproval(
   if (automatic?.action === "allow") {
     emitAutomaticApproval(
       deps,
-      { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale },
+      { ...approvalRequest, reviewRationale: automatic.rationale },
       "additional Codex permissions",
     );
     return { permissions: requestedPermissions, scope: "turn" };
@@ -305,7 +305,7 @@ async function handlePermissionsRequestApproval(
     return denied;
   }
   if (automatic?.action === "human_required") {
-    approvalRequest = { ...approvalRequest, reason: automatic.rationale, description: automatic.rationale };
+    approvalRequest = { ...approvalRequest, reviewRationale: automatic.rationale };
   }
 
   emitBashApprovalRequested(deps, approvalRequest, "additional Codex permissions");
@@ -1739,7 +1739,7 @@ function emitAutomaticDenial(
     type: "bash_approval.denied",
     message: `已拒绝：${rationale}`,
     role: "tool",
-    bashApproval: { ...request, reason: rationale, description: rationale },
+    bashApproval: { ...request, reviewRationale: rationale },
   });
 }
 

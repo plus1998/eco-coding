@@ -92,6 +92,33 @@ test("buildBridgeUpstreamMessagesPayload maps max_tokens for openai chat complet
   expect(body.max_completion_tokens).toBe(4096);
 });
 
+test("buildBridgeUpstreamMessagesPayload preserves JSON-shaped user text for openai chat completions", () => {
+  const content = JSON.stringify({
+    userRequest: "检查当前项目",
+    toolName: "Bash",
+    toolInput: { command: "git status" },
+  });
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 800,
+    system: "Review the requested tool action.",
+    messages: [{ role: "user", content }],
+  };
+
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "local-model",
+    true,
+  );
+  const messages = body.messages as Array<{ role: string; content: unknown }>;
+
+  expect(messages).toEqual([
+    { role: "system", content: "Review the requested tool action." },
+    { role: "user", content },
+  ]);
+});
+
 test("buildBridgeUpstreamMessagesPayload omits reasoning_effort for openai chat completions", () => {
   const request: AnthropicRequest = {
     model: "local-model",
