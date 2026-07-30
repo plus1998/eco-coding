@@ -7011,38 +7011,38 @@ function App() {
     </div>
   );
 
+  const isMacWindowChrome = window.eco?.platform === "darwin";
+
   return (
     <main className={shellClassName}>
-      {window.eco?.platform === "darwin" ? (
-        <div className="macos-window-toolbar">
+      <div className={isMacWindowChrome ? "macos-window-toolbar" : "window-sidebar-toolbar"}>
+        <button
+          type="button"
+          className="codex-main-toolbar-button"
+          onClick={() => setSidebarOpen((current) => !current)}
+          title={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
+          aria-label={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
+          aria-expanded={sidebarOpen}
+          aria-controls="primary-sidebar"
+        >
+          <PanelLeft size={15} aria-hidden />
+        </button>
+        {!sidebarOpen ? (
           <button
             type="button"
-            className="codex-main-toolbar-button"
-            onClick={() => setSidebarOpen((current) => !current)}
-            title={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
-            aria-label={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
-            aria-expanded={sidebarOpen}
-            aria-controls="primary-sidebar"
+            className={
+              sidebarSearchOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+            }
+            onClick={() => setSidebarSearchOpen((current) => !current)}
+            title={t("nav.search")}
+            aria-label={t("nav.search")}
+            aria-expanded={sidebarSearchOpen}
+            aria-haspopup="dialog"
           >
-            <PanelLeft size={15} aria-hidden />
+            <Search size={15} aria-hidden />
           </button>
-          {!sidebarOpen ? (
-            <button
-              type="button"
-              className={
-                sidebarSearchOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-              }
-              onClick={() => setSidebarSearchOpen((current) => !current)}
-              title={t("nav.search")}
-              aria-label={t("nav.search")}
-              aria-expanded={sidebarSearchOpen}
-              aria-haspopup="dialog"
-            >
-              <Search size={15} aria-hidden />
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       {fixedSidebarToolbar}
       {appMessageState ? (
         <AppMessage

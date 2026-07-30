@@ -24,12 +24,22 @@
   --activity-feed-composer-mask-height: 10px;
 }
 
+/* Windows/Linux use a native title bar — no in-content traffic-light spacer */
+html:not([data-platform="darwin"]) {
+  --window-chrome-top: 0px;
+}
+
 * {
   box-sizing: border-box;
 }
 
 html[data-theme] {
   background: transparent;
+}
+
+html:not([data-platform="darwin"])[data-theme],
+html:not([data-platform="darwin"]) body {
+  background: var(--bg-main);
 }
 
 body {
@@ -194,10 +204,10 @@ button:not(:disabled) {
   color: var(--codex-log-text);
 }
 
-.macos-window-toolbar {
+.macos-window-toolbar,
+.window-sidebar-toolbar {
   position: fixed;
   top: 0;
-  left: 72px;
   z-index: 2147483647;
   display: flex;
   align-items: center;
@@ -209,13 +219,27 @@ button:not(:disabled) {
   -webkit-app-region: no-drag !important;
 }
 
+.macos-window-toolbar {
+  left: 72px;
+}
+
+/* Native title bar platforms: sit in content top-left (below OS chrome) */
+.window-sidebar-toolbar {
+  left: 8px;
+  top: 4px;
+  height: 36px;
+}
+
 .macos-window-toolbar,
-.macos-window-toolbar * {
+.macos-window-toolbar *,
+.window-sidebar-toolbar,
+.window-sidebar-toolbar * {
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
 }
 
-.macos-window-toolbar .codex-main-toolbar-button {
+.macos-window-toolbar .codex-main-toolbar-button,
+.window-sidebar-toolbar .codex-main-toolbar-button {
   position: relative;
   z-index: 1;
   width: 32px;
@@ -224,8 +248,18 @@ button:not(:disabled) {
   -webkit-user-select: none;
 }
 
-.macos-window-toolbar .codex-main-toolbar-button:active {
+.macos-window-toolbar .codex-main-toolbar-button:active,
+.window-sidebar-toolbar .codex-main-toolbar-button:active {
   transform: scale(0.94);
+}
+
+/* Reserve a row for the sidebar toggle when the native-title-bar toolbar is visible */
+html:not([data-platform="darwin"]) .codex-sidebar {
+  padding-top: 40px;
+}
+
+html:not([data-platform="darwin"]) .settings-nav {
+  padding-top: 12px;
 }
 
 .responsive-sidebar-backdrop {
@@ -18571,6 +18605,13 @@ html[data-platform="darwin"]
   );
 }
 
+html:not([data-platform="darwin"])
+  .shell.shell-sidebar-hidden
+  .codex-main
+  .codex-main-topbar {
+  padding-left: max(var(--content-inline-start), 56px);
+}
+
 .codex-main:not(.codex-main-landing)
   .codex-main-scroll:not(.is-workspace-panel-open)
   .codex-main-scroll-body {
@@ -19954,6 +19995,13 @@ html[data-platform="darwin"]
     .codex-main:not(.codex-main-landing)
     .codex-main-topbar {
     padding-left: var(--macos-window-controls-safe-inline-start);
+  }
+
+  html:not([data-platform="darwin"])
+    .shell.shell-sidebar-hidden
+    .codex-main
+    .codex-main-topbar {
+    padding-left: max(22px, 56px);
   }
 
   .codex-main-topbar .activity-header {

@@ -931,20 +931,24 @@ function getThreadSubagentConcurrencyGate(threadId: string): SubagentConcurrency
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
+  const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 480,
     minHeight: 600,
-    titleBarStyle: "hiddenInset",
-    transparent: true,
-    backgroundColor: "#00000000",
-    ...(process.platform === "darwin"
+    // macOS: frameless + traffic lights inset. Windows/Linux: native title bar.
+    ...(isMac
       ? {
+          titleBarStyle: "hiddenInset" as const,
+          transparent: true,
+          backgroundColor: "#00000000",
           vibrancy: "under-window" as const,
           visualEffectState: "followWindow" as const,
         }
-      : {}),
+      : {
+          backgroundColor: "#212121",
+        }),
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
