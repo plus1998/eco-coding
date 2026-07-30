@@ -740,7 +740,7 @@ test("createNonEcoSubagentDenyPreToolHook allows explicitly opened Agent(general
   expect(result.hookSpecificOutput).toBeUndefined();
 });
 
-test("createNonEcoSubagentDenyPreToolHook denies SDK built-ins other than general-purpose", async () => {
+test("createNonEcoSubagentDenyPreToolHook reports unregistered SDK built-ins without instructions", async () => {
   const hook = createNonEcoSubagentDenyPreToolHook();
   const result = await hook(
     {
@@ -760,12 +760,12 @@ test("createNonEcoSubagentDenyPreToolHook denies SDK built-ins other than genera
     permissionDecision: "deny",
   });
   expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("Plan");
-  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Use agents registered for this session",
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toBe(
+    'Subagent "Plan" is not registered for this session.',
   );
 });
 
-test("createNonEcoSubagentDenyPreToolHook denies SDK Explore with session agent guidance", async () => {
+test("createNonEcoSubagentDenyPreToolHook reports unregistered SDK Explore without instructions", async () => {
   const hook = createNonEcoSubagentDenyPreToolHook();
   const result = await hook(
     {
@@ -785,8 +785,8 @@ test("createNonEcoSubagentDenyPreToolHook denies SDK Explore with session agent 
     permissionDecision: "deny",
   });
   expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("Explore");
-  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Use agents registered for this session",
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toBe(
+    'Subagent "Explore" is not registered for this session.',
   );
 });
 
@@ -864,8 +864,8 @@ test("createNonEcoSubagentDenyPreToolHook denies unlisted dynamic Eco agent keys
     permissionDecision: "deny",
   });
   expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("eco_writer");
-  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Use agents registered for this session",
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toBe(
+    'Subagent "eco_writer" is not registered for this session.',
   );
 });
 
@@ -1192,7 +1192,7 @@ test("createToolPermissionPreToolHook enforces read-only policy for SDK Plan sub
   expect(planWrite.hookSpecificOutput?.permissionDecisionReason).toContain(SDK_PLAN_AGENT_KEY);
 });
 
-test("createToolPermissionPreToolHook adds delegation guidance only to main agent policy denials", async () => {
+test("createToolPermissionPreToolHook reports policy denials without delegation instructions", async () => {
   const hook = createToolPermissionPreToolHook({
     main: {
       allowed: ["Agent", "Read", "Edit", "Bash"],
@@ -1227,8 +1227,8 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
   expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
     'Tool "Edit" is disallowed for main.',
   );
-  expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Delegate the work to an enabled subagent via the Agent tool",
+  expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toBe(
+    'Tool "Edit" is disallowed for main.',
   );
 
   const mainBash = await hook!(
@@ -1246,8 +1246,8 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
   expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
     'Tool "Bash" is disallowed for main.',
   );
-  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Delegate the work to an enabled subagent via the Agent tool",
+  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toBe(
+    'Tool "Bash" is disallowed for main.',
   );
 
   const subagentEdit = await hook!(
@@ -1803,8 +1803,7 @@ test("createToolPermissionPreToolHook reports denied permissions for audit", asy
     {
       toolName: "Bash",
       toolUseId: "tool_audit",
-      reason:
-        'Tool "Bash" is disallowed for main. This is the active Eco orchestration policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying.',
+      reason: 'Tool "Bash" is disallowed for main.',
       actor: "main",
     },
   ]);
@@ -2612,7 +2611,9 @@ test("createPlanModeBoundaryPreToolHook denies ExitPlanMode in Agent mode", asyn
   expect(result.hookSpecificOutput).toMatchObject({
     permissionDecision: "deny",
   });
-  expect(String(result.hookSpecificOutput?.permissionDecisionReason)).toContain("AskUserQuestion");
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toBe(
+    "Plan Mode tools are unavailable in Agent and Ask sessions.",
+  );
 });
 
 test("buildEcoSdkHooks keeps Agent mode forbidden when an approval callback is available", async () => {

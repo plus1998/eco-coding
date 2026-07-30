@@ -22,7 +22,7 @@
 
 1. **一个 runtime 入口**：`run` / `runAsk` / `runContinuation` 共用 `runSingleSession`，按 `sessionMode` 设参数。
 2. **行为由结构约束**：`permissionMode`、`allowedTools`、`disallowedTools`、`agents` 注册表、PreToolUse hooks。
-3. **System prompt 只保留**：SDK preset、极简产品边界、orchestration `mainAgent.prompt`。
+3. **System prompt 只保留**：SDK 官方 preset，以及用户在 UI 配置的 `mainAgent.prompt` / `strategy.guidancePrompt`；Eco 不追加固定产品边界或模式说教。
 4. **子代理路由**：`description` / `whenToUse` + 工具策略；deny hook 指向当前 session 注册的 agents。
 5. **破坏性迁移可接受**：仅 `sessionMode`；旧 `planModeEnabled` / `orchestrationMode` / run phase `"question"` 不再读取（SQLite 读路径对 `"question"` 做 `ask` 归一化）。
 

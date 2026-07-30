@@ -153,10 +153,8 @@ test("requireCodexSubagentThreadId rejects empty agent id", () => {
   expect(() => requireCodexSubagentThreadId(() => undefined, "  ")).toThrow(CodexResumeNotAvailable);
 });
 
-test("buildCodexSubagentFollowupPrompt injects followup_task boundary text", () => {
-  expect(buildCodexSubagentFollowupPrompt("thr_child", "finish the auth audit")).toBe(
-    "followup_task for agent thr_child: finish the auth audit",
-  );
+test("buildCodexSubagentFollowupPrompt forwards only the user task", () => {
+  expect(buildCodexSubagentFollowupPrompt("thr_child", "finish the auth audit")).toBe("finish the auth audit");
 });
 
 test("parseCodexThreadStatus and terminal classification", () => {

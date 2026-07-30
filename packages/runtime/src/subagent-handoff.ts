@@ -117,16 +117,13 @@ export function buildSubagentHandoffPrompt(
       ? handoff.recentMessages.map((message, index) => `${index + 1}. ${message}`).join("\n\n")
       : "（无保留的近期输出）";
 
-  const resumeNote = handoff.previousAgentId
-    ? `上一 ${role} 子代理（${handoff.previousAgentId}）`
-    : `上一 ${role} 子代理`;
-
   return [
     originalPrompt.trim(),
     "",
     "---",
     "## 子代理上下文交接（Eco）",
-    `${resumeNote} 已接近上下文上限，因此未 Resume 完整历史，改为全新实例继续。`,
+    ...(handoff.previousAgentId ? [`previous_agent_id: ${handoff.previousAgentId}`] : []),
+    `role: ${role}`,
     "",
     "### 工作摘要（结构化）",
     handoff.summary.trim() || "（无摘要）",
@@ -135,6 +132,5 @@ export function buildSubagentHandoffPrompt(
     recentSection,
     "",
     "---",
-    "请基于以上状态继续任务，避免重复已完成工作。",
   ].join("\n");
 }

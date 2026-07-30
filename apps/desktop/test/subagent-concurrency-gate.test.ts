@@ -13,7 +13,7 @@ test("SubagentConcurrencyGate counts active and pending launches against the con
   expect(blocked.ok).toBe(false);
   if (!blocked.ok) {
     expect(blocked.reason).toContain("5/5 subagents active or launching");
-    expect(blocked.reason).toContain("wait for existing subagents to finish");
+    expect(blocked.reason).not.toContain("wait for existing subagents to finish");
   }
 
   active = 5;

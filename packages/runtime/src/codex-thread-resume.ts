@@ -216,13 +216,9 @@ export function requireCodexSubagentThreadId(
  * Follow-up prompt for a resumed subagent thread (Codex multi-agent followup_task boundary).
  * Does not use Claude-style "Resume agent {id}" tool text.
  */
-export function buildCodexSubagentFollowupPrompt(agentId: string, task: string): string {
+export function buildCodexSubagentFollowupPrompt(_agentId: string, task: string): string {
   const trimmedTask = task.trim() || "Continue the previous task from where you left off.";
-  const id = agentId.trim();
-  if (!id) {
-    return trimmedTask;
-  }
-  return `followup_task for agent ${id}: ${trimmedTask}`;
+  return trimmedTask;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

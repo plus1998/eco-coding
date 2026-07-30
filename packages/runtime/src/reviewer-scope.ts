@@ -14,10 +14,6 @@ export function formatReviewerScopeAppend(changedFiles: readonly string[]): stri
 
   return [
     REVIEWER_SCOPE_SECTION_TITLE,
-    "Eco injected this list from the workspace (session diff vs HEAD).",
-    "Review ONLY these paths. Do NOT diff against main/master or audit unrelated history.",
-    "You may run `git diff HEAD -- <path>` for line context on these files only.",
-    "",
     list,
   ].join("\n");
 }

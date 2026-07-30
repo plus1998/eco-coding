@@ -80,5 +80,5 @@ export function buildPromptWithVisionAnalysis(input: {
   imageCount: number;
 }): string {
   const prompt = input.prompt.trim() || "请根据图片分析结果继续处理。";
-  return `${prompt}\n\n<vision_analysis source="builtin-vision-subagent" image_count="${input.imageCount}">\n说明：原始图片仅提供给独立看图子代理，未加入当前主代理会话。\n${input.report.trim()}\n</vision_analysis>`;
+  return `${prompt}\n\n<vision_analysis image_count="${input.imageCount}">\n${input.report.trim()}\n</vision_analysis>`;
 }

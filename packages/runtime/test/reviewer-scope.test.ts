@@ -11,7 +11,8 @@ test("formatReviewerScopeAppend lists changed paths", () => {
   const block = formatReviewerScopeAppend(["app/service/corp.service.ts", "src/pages/Home/Corp.vue"]);
   expect(block).toContain(REVIEWER_SCOPE_SECTION_TITLE);
   expect(block).toContain("- app/service/corp.service.ts");
-  expect(block).toContain("Do NOT diff against main");
+  expect(block).not.toContain("Do NOT");
+  expect(block).not.toContain("Review ONLY");
 });
 
 test("createReviewerScopeToolHandler injects scope for Agent(reviewer) only", async () => {

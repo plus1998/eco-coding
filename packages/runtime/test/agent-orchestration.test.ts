@@ -117,31 +117,33 @@ test("createAgentDefinitionsFromOrchestration merges dynamic session skills", ()
   expect(definition.skills).toEqual(["workspace-research"]);
 });
 
-test("buildMainAgentSystemPrompt injects orchestration strategy without leaking child prompts", () => {
-  const prompt = buildMainAgentSystemPrompt(orchestration, [researchTemplate], "PHASE APPEND");
+test("buildMainAgentSystemPrompt appends only UI-configured main prompts", () => {
+  const prompt = buildMainAgentSystemPrompt(orchestration, [researchTemplate]);
 
   expect(prompt).toMatchObject({ type: "preset", preset: "claude_code" });
   const append = String((prompt as Record<string, unknown>).append);
   expect(append).toContain("You coordinate research work without assuming a coding task.");
-  expect(append).toContain("PHASE APPEND");
-  expect(append).toContain("Eco orchestration.");
   expect(append).toContain("Delegate only when evidence quality improves.");
+  expect(append).not.toContain("PHASE APPEND");
+  expect(append).not.toContain("Eco orchestration.");
   expect(append).not.toContain("Orchestration has finite time, token, cost");
   expect(append).not.toContain("Never treat subagents as free or unlimited");
   expect(append).not.toContain("CHILD SECRET PROMPT");
   expect(append).not.toContain("Agent(eco_researcher)");
 });
 
-test("buildMainAgentSystemPrompt keeps claude_code preset for coding orchestrations", () => {
+test("buildMainAgentSystemPrompt keeps an unmodified claude_code preset when UI prompts are empty", () => {
   const codingOrchestration: EcoOrchestrationConfig = {
     ...orchestration,
     mainAgent: {
       ...orchestration.mainAgent,
       systemPromptPreset: "core_native",
+      prompt: "",
     },
+    strategy: { ...orchestration.strategy, guidancePrompt: "" },
   };
 
-  const systemPrompt = buildMainAgentSystemPrompt(codingOrchestration, [researchTemplate], "CODING PHASE APPEND", {
+  const systemPrompt = buildMainAgentSystemPrompt(codingOrchestration, [researchTemplate], {
     excludeDynamicSections: true,
   }) as Record<string, unknown>;
 
@@ -150,9 +152,7 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding orchestrati
     preset: "claude_code",
     excludeDynamicSections: true,
   });
-  expect(systemPrompt.append).toContain("CODING PHASE APPEND");
-  expect(systemPrompt.append).toContain("Eco orchestration.");
-  expect(systemPrompt.append).not.toContain("Agent(eco_researcher)");
+  expect(systemPrompt).not.toHaveProperty("append");
 });
 
 test("buildCodexMainAgentOrchestrationAppend includes custom append prompt text", () => {
@@ -172,6 +172,7 @@ test("buildCodexMainAgentOrchestrationAppend stays empty without custom guidance
         prompt: "",
       },
       agents: [],
+      strategy: { ...orchestration.strategy, guidancePrompt: "" },
     },
     [researchTemplate],
   );

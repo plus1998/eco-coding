@@ -45,7 +45,6 @@ import {
   resolveToolPermissionEntryForActor,
 } from "./agent-orchestration.js";
 import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
-import { WRITE_FILESYSTEM_TOOLS } from "./filesystem-scope-policy.js";
 import {
   isSubagentEnabled,
   isSubagentRole,
@@ -583,7 +582,7 @@ export function createPlanModeBoundaryPreToolHook(
         permissionDecision: "deny",
         permissionDecisionReason:
           policy === "forbidden"
-            ? "Plan Mode tools are unavailable in Agent and Ask sessions. Use AskUserQuestion when clarification is required."
+            ? "Plan Mode tools are unavailable in Agent and Ask sessions."
             : "This Plan Mode tool call is not the ExitPlanMode call previously approved in Eco.",
       },
     };
@@ -674,8 +673,7 @@ export function createWorkflowDenyPreToolHook(): HookCallback {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason:
-          "SDK Dynamic Workflows are disabled in Eco. Orchestrate with Eco Agent keys instead.",
+        permissionDecisionReason: "SDK Dynamic Workflows are disabled in Eco.",
       },
     };
   };
@@ -704,9 +702,6 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
     };
   };
 }
-
-const NON_ECO_SUBAGENT_DENY_REASON =
-  "Use agents registered for this session (Eco agent keys from the active Agents list).";
 
 export function createNonEcoSubagentDenyPreToolHook(
   allowedAgentKeys: readonly string[] = [],
@@ -742,7 +737,7 @@ export function createNonEcoSubagentDenyPreToolHook(
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Subagent "${rawType}" is not registered for this session. ${NON_ECO_SUBAGENT_DENY_REASON}`,
+        permissionDecisionReason: `Subagent "${rawType}" is not registered for this session.`,
       },
     };
   };
@@ -774,7 +769,7 @@ export function createDisabledSubagentPreToolHook(
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Subagent "${deniedLabel}" is disabled in Eco settings. Do not call Agent(${deniedLabel}).`,
+        permissionDecisionReason: `Subagent "${deniedLabel}" is disabled in Eco settings.`,
       },
     };
   };
@@ -793,7 +788,7 @@ export function createNestedSubagentDenyPreToolHook(): HookCallback {
     if (actorAgentId) {
       return denyTool(
         preInput.tool_name,
-        "Subagents cannot launch other subagents. Finish your current assignment and report back to the main agent instead.",
+        "Subagents cannot launch other subagents.",
       );
     }
     return {};
@@ -870,15 +865,10 @@ export function createToolPermissionPreToolHook(
       );
     }
     if (matchesAnyToolPattern(preInput.tool_name, entry.disallowed)) {
-      const handsOnDenial =
-        actor === "main" && (WRITE_FILESYSTEM_TOOLS.has(preInput.tool_name) || preInput.tool_name === "Bash");
       return recordToolPermissionDecision(
         preInput,
         actor,
-        denyTool(
-          preInput.tool_name,
-          `Tool "${preInput.tool_name}" is disallowed for ${actor}.${handsOnDenial ? mainAgentDelegationHint(actor) : ""}`,
-        ),
+        denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is disallowed for ${actor}.`),
         options,
       );
     }
@@ -921,16 +911,6 @@ function materializeRuntimeToolPermissionEntry(
     disallowed: materialized.disallowed,
     ...(materialized.bash ? { bash: materialized.bash } : {}),
   };
-}
-
-/**
- * Delegation guidance appended to main-agent policy denials, so the orchestrator
- * immediately knows the sanctioned alternative instead of retrying denied tools.
- */
-function mainAgentDelegationHint(actor: "main" | string | undefined): string {
-  return actor === "main"
-    ? " This is the active Eco orchestration policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying."
-    : "";
 }
 
 function evaluateStructuredToolPolicy(

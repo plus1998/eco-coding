@@ -27,9 +27,10 @@ describe("prompt image vision isolation", () => {
       imageCount: 1,
     });
 
-    expect(prompt).toContain('source="builtin-vision-subagent"');
-    expect(prompt).toContain("原始图片仅提供给独立看图子代理");
+    expect(prompt).toContain('<vision_analysis image_count="1">');
     expect(prompt).toContain("按钮与标题发生重叠。");
+    expect(prompt).not.toContain("builtin-vision-subagent");
+    expect(prompt).not.toContain("独立看图子代理");
     expect(prompt).not.toContain("data:image");
   });
 

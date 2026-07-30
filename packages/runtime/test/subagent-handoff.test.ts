@@ -23,7 +23,7 @@ test("splitSubagentActivityForHandoff keeps recent messages within budget", () =
   expect(split.older.length).toBe(2);
 });
 
-test("buildSubagentHandoffPrompt includes summary and fresh-instance note", () => {
+test("buildSubagentHandoffPrompt includes state data without behavioral instructions", () => {
   const prompt = buildSubagentHandoffPrompt(
     "Map auth flow",
     "explore",
@@ -34,10 +34,12 @@ test("buildSubagentHandoffPrompt includes summary and fresh-instance note", () =
     },
   );
   expect(prompt).toContain("Map auth flow");
-  expect(prompt).toContain("未 Resume 完整历史");
   expect(prompt).toContain("agent_explore_1");
   expect(prompt).toContain("Checked src/auth and middleware.");
   expect(prompt).toContain("Found JWT in middleware.ts");
+  expect(prompt).not.toContain("不要重复");
+  expect(prompt).not.toContain("继续完成");
+  expect(prompt).not.toContain("未 Resume 完整历史");
 });
 
 test("buildFallbackSubagentHandoffSummary uses structured headings", () => {

@@ -195,7 +195,6 @@ export function buildEcoCompactHandoffPrompt(
     "",
     "---",
     COMPACT_SUMMARY_HEADING,
-    "这是前一个编码代理留下的压缩交接。不要重复已经明确完成的工作；未明确记录的历史工具状态不可假设仍然存在。",
     handoff.summary.trim(),
     "",
     COMPACT_RECENT_HEADING,

@@ -308,10 +308,10 @@ Agent 模式保留 `AskUserQuestion`，但 `EnterPlanMode` / `ExitPlanMode` 在 
 
 ### Eco 子代理 vs SDK 内置
 
-- Eco 在 `agents` 中注册 `eco_*` 子代理（及 orchestration 动态 agent）；路由靠各 agent 的 `description`，**不在** main system prompt 里重复 mandatory roster。
+- Eco 只在 `agents` 中注册用户通过 orchestration UI 启用的子代理；没有 UI registry 时不注册硬编码 fallback roster。路由靠各 agent 的 `description`，**不在** main system prompt 里重复 roster。
 - SDK 内置 `Explore` / `Plan` / `Bash` 等通过两层机制屏蔽：
   1. **SDK `permissions.deny`** — `Agent(Explore)` 等 pattern（`sdkBuiltinSubagentDenyRules`）
-  2. **PreToolUse** — `createNonEcoSubagentDenyPreToolHook` 拒绝未注册的 `subagent_type`；拒绝文案指向 **「Use agents registered for this session」**，不引用 system prompt 里的 agent 列表。
+  2. **PreToolUse** — `createNonEcoSubagentDenyPreToolHook` 拒绝未注册的 `subagent_type`；拒绝文案只报告该子代理未注册，不追加行为指导。
 
 Plan 阶段可临时允许 `Agent(Plan)`（`allowedSdkBuiltinAgentKeys`）；`general-purpose` 始终允许。
 

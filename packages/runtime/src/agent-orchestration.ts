@@ -415,64 +415,42 @@ function resolveMainToolPermissionExtraAllowed(
 }
 
 export function buildMainAgentStrategySummary(orchestration: EcoOrchestrationConfig): string {
-  const strategy = orchestration.strategy;
-  return [
-    "Main-agent delegation guidance.",
-    strategy.guidancePrompt?.trim() || "Choose subagents only when they materially improve the result.",
-  ].join("\n");
+  return orchestration.strategy.guidancePrompt?.trim() ?? "";
 }
 
 export function buildMainAgentOrchestrationAppend(
   config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
-  options?: { summaryLabel?: string },
+  _options?: { summaryLabel?: string },
 ): string {
-  return [
-    options?.summaryLabel?.trim() || "Eco orchestration.",
-    buildMainAgentStrategySummary(config),
-  ].join("\n\n");
+  return buildMainAgentStrategySummary(config);
 }
 
 export function buildCodexMainAgentOrchestrationAppend(
   config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
-  options?: { subagentAvailability?: Partial<Record<string, boolean>> },
+  _options?: { subagentAvailability?: Partial<Record<string, boolean>> },
 ): string {
-  const availableRoles = config.agents
-    .filter((agent) => {
-      if (!agent.enabled) return false;
-      const role = agent.agentKey.trim().toLowerCase();
-      return options?.subagentAvailability?.[role] !== false;
-    })
-    .map((agent) => agent.agentKey.trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase())
-    .filter(Boolean);
   const customPrompt =
     config.mainAgent.systemPromptPreset === "custom_append" ? config.mainAgent.prompt.trim() : "";
-  const subagentProtocol = availableRoles.length > 0
-    ? [
-        `Available Codex subagent types: ${[...new Set(availableRoles)].join(", ")}.`,
-        'When calling spawn_agent with agent_type, always set fork_turns to "none" so the selected custom agent configuration is applied.',
-      ].join("\n")
-    : "";
-  const parts = [customPrompt, subagentProtocol].filter(Boolean);
+  const parts = [customPrompt, buildMainAgentStrategySummary(config)].filter(Boolean);
   return appendV4aTeachingToPrompt(parts.join("\n\n"), isV4aTeachingEnabled(config.mainAgent));
 }
 
 export function buildMainAgentSystemPrompt(
   orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
-  phaseAppend: string,
   options: { excludeDynamicSections?: boolean } = {},
 ): string | Record<string, unknown> {
   const customInstructions =
     orchestration.mainAgent.systemPromptPreset === "custom_append" ? orchestration.mainAgent.prompt.trim() : "";
-  const append = [customInstructions, phaseAppend, buildMainAgentOrchestrationAppend(orchestration, templates)]
+  const append = [customInstructions, buildMainAgentOrchestrationAppend(orchestration, templates)]
     .filter((entry) => entry.trim())
     .join("\n\n");
   return {
     type: "preset",
     preset: "claude_code",
-    append,
+    ...(append ? { append } : {}),
     ...(options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
   };
 }

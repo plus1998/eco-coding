@@ -32,7 +32,16 @@ See **[docs/session-mode-simplification.md](docs/session-mode-simplification.md)
 
 ## System prompt and project context
 
-Eco uses the Claude Agent SDK **`claude_code` preset** for the main Planner session. That preset is the same built-in coding system prompt Claude Code uses (tool usage, coding philosophy, safety, tone). Eco only **appends** product-specific rules on top: orchestration boundaries, orchestration roster, and deliverable headings the UI parses (e.g. reviewer `## P0` / `## Review Verdict`, tester `## Test Verdict`).
+Eco uses the Claude Agent SDK **`claude_code` preset** unchanged for the main session. Codex likewise keeps its official preset. Eco does not append hard-coded mode explanations, orchestration rules, tool advice, role rosters, or coding guidance.
+
+The main-agent prompt contract is UI-only:
+
+- append `mainAgent.prompt` only when the user selects the custom-append preset and provides text;
+- append `strategy.guidancePrompt` only when the user configures it in the orchestration UI;
+- append V4A teaching only when the user explicitly enables that option;
+- register only subagent definitions enabled by the user; without an agent registry, do not invent fallback Eco agents.
+
+Runtime state such as an approved plan, follow-up message, compact summary, changed-file list, or image-analysis report may still be sent as data needed to continue the task. Those payloads must not add Eco-authored behavioral instructions.
 
 Project conventions belong in **`CLAUDE.md`** (or `.claude/CLAUDE.md`) in the opened workspace, not in Eco's code. The runtime loads them automatically via `settingSources: ["user", "project"]`:
 
@@ -43,7 +52,7 @@ Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you ne
 
 ## Prompt architecture
 
-Prompts are layered. The SDK merges them into `systemPrompt` (preset + append) and per-subagent `agents` definitions.
+The SDK receives an official preset, optional user-configured append text, and optional UI-enabled subagent definitions.
 
 ### Main agent system prompt (every session)
 
@@ -51,35 +60,19 @@ Built in `runSingleSession()` (`packages/runtime/src/claude-agent-sdk.ts`):
 
 ```txt
 claude_code preset (SDK built-in)
-  + ecoBasePromptAppend                    # coding preset orchestrations
-    OR universalEcoBasePromptAppend        # non-coding / universal orchestrations
-  + phaseAppend                            # mode-specific line (see below)
-  + buildMainAgentOrchestrationAppend()     # orchestration strategy (when orchestration active)
-  + buildMainAgentHandsOnBoundaryAppend()  # only when orchestration disallows writes and/or Bash
+  + mainAgent.prompt             # only custom_append text entered in UI
+  + strategy.guidancePrompt      # only text configured in UI
 ```
 
-| `phaseAppend` source | Used in |
-|----------------------|---------|
-| `buildAutonomousOrchestratorAppend()` + Agent session rules | Agent mode: no Plan tools; use `AskUserQuestion` for material ambiguity |
-| `buildUniversalPhaseAppend(phase)` | Universal orchestrations: `Session mode: …` one-liner |
-| `askSessionPhaseAppend` | Ask mode: `Session mode: ask (read-only).` |
-
-**Coding orchestration append** (`packages/runtime/src/prompts/autonomous.ts`) is intentionally short:
-
-- Delegate via subagent **descriptions**; do not force review/test order
-- Do not use the SDK Workflow tool
-
-Subagent routing and SDK built-in blocks are enforced in **`agents` definitions**, SDK `permissions.deny` (`Agent(Explore)` etc.), and PreToolUse hooks — not repeated in the main prompt.
-
-**Hands-on boundary** is injected only when the active orchestration disables main-agent writes or Bash (mirrors PreToolUse policy).
+Session behavior is expressed structurally through `permissionMode`, `allowedTools`, `disallowedTools`, registered `agents`, SDK settings, and hooks. Tool denials report only the failed policy fact; they do not teach the model what to do next.
 
 ### User-turn prompts (not system)
 
 | Mode | Prompt | Notes |
 |------|--------|-------|
-| Agent | Raw user message | Activity context may be appended on continue (`buildAgentPromptWithContext`) |
-| Plan continuation | User message or universal planning wrapper | Reminds model to call `ExitPlanMode` with full plan body |
-| After plan approval | `buildAutonomousPlanContinuationPrompt()` | System-reminder that plan was approved; same session |
+| Agent | Raw user message | No Eco behavior wrapper |
+| Plan continuation | Raw user message | Plan behavior comes from official Plan Mode |
+| After plan approval | Approved plan/follow-up data when required | Same-session resume uses only the follow-up or a minimal continuation command |
 | Ask | Raw user message | No `buildQuestionAnswerPrompt` wrapper |
 
 ### Eco coding subagents (`createAutonomousAgentDefinitions`)
@@ -94,16 +87,14 @@ Subagent **description** (routing hint for the main agent) and **prompt** (subag
 | **reviewer** | High-risk review only | `execution-agents.ts` (`reviewerAgentPrompt`) | Read + Bash + network |
 | **tester** | Narrow verification | `execution-agents.ts` (`executionTester*`) | Read + Bash + network |
 
-`execution-agents.ts` also defines **planning-only** architect text (`planningArchitect*`) for `createPlanningAgentDefinitions()` (tests/legacy); **live planning continuation uses the autonomous roster** above.
-
-Universal orchestrations use **template prompts** from the orchestration (`agent-orchestration.ts` → `template.prompt`) instead of the built-in coding subagent prompts.
+Subagent prompt text comes from the template selected and enabled in the orchestration UI (`agent-orchestration.ts` → `template.prompt`). Live sessions without that UI registry do not register the hard-coded legacy coding roster.
 
 ### Runtime injection (hooks, not system append)
 
 - **ExitPlanMode** — captured in hooks; desktop `awaitPlanApproval` shows plan UI; `plan.ready` event for transcript fallback
-- **Reviewer scope** — `## Changed files (this session)` injected on `Agent(reviewer)` delegations
-- **Subagent handoff** — resume/summary prompt when context is compacted mid-subagent
-- **Tool policy** — PreToolUse denies disallowed tools; non-eco `Agent(...)` types get *Use agents registered for this session*
+- **Reviewer scope** — changed-file data attached to reviewer delegations
+- **Subagent handoff** — task, summary, and recent-output data needed to resume compacted work
+- **Tool policy** — PreToolUse denies disallowed tools with a factual reason
 
 ### Deprecated aliases
 

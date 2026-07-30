@@ -46,7 +46,6 @@ export class SubagentConcurrencyGate implements EcoSubagentLaunchGate {
         reason: [
           `Eco already has ${active + launching}/${limit} subagents active or launching`,
           `(active=${active}, launching=${launching}).`,
-          "Do not retry immediately; wait for existing subagents to finish, collect their outputs, then launch more only if still necessary.",
         ].join(" "),
       };
     }

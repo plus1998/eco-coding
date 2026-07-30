@@ -119,13 +119,7 @@ test("buildThreadFollowUpDrainPrompt sends only the first delivered follow-up", 
     }),
   ]);
 
-  expect(prompt).toContain("不要重规划");
-  expect(prompt).toContain("queuedDuringPhase=execution");
-  expect(prompt).toContain("boundary=safe_boundary");
-  expect(prompt).toContain("后续消息");
-  expect(prompt).toContain("先补测试");
-  expect(prompt).not.toContain("立即后续消息");
-  expect(prompt).not.toContain("再更新文档");
+  expect(prompt).toBe("先补测试");
 });
 
 test("buildThreadFollowUpDrainPrompt ignores queued records until claimed", () => {
