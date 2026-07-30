@@ -220,6 +220,7 @@ class ThreadRunProjectionSnapshot {
     this.requestSpans = const [],
     this.attempts = const [],
     this.historyRevision = 0,
+    this.hasEarlier = false,
   });
 
   factory ThreadRunProjectionSnapshot.fromJson(
@@ -237,6 +238,7 @@ class ThreadRunProjectionSnapshot {
       generatedAt: thread['generatedAt'] as String? ?? '',
       sourceEventCount: (json['sourceEventCount'] as num?)?.toInt() ?? 0,
       historyRevision: (json['historyRevision'] as num?)?.toInt() ?? 0,
+      hasEarlier: json['hasEarlier'] == true,
       agents: agentsRaw
           .map(
             (entry) => ThreadRunProjectionAgent.fromJson(
@@ -275,6 +277,7 @@ class ThreadRunProjectionSnapshot {
   final String generatedAt;
   final int sourceEventCount;
   final int historyRevision;
+  final bool hasEarlier;
   final List<ThreadRunProjectionAgent> agents;
   final List<ThreadRunProjectionTimelineItem> timeline;
   final List<ThreadRunProjectionRequestSpan> requestSpans;
@@ -321,6 +324,7 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(
         ? incoming.sourceEventCount
         : current.sourceEventCount,
     historyRevision: incoming.historyRevision,
+    hasEarlier: _mergedProjectionHasEarlier(current, incoming),
     timeline: _mergeProjectionTimeline(current.timeline, incoming.timeline),
     agents: _mergeProjectionAgents(current.agents, incoming.agents),
     requestSpans: _mergeProjectionRequestSpans(
@@ -329,6 +333,23 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionSnapshots(
     ),
     attempts: _mergeProjectionAttempts(current.attempts, incoming.attempts),
   );
+}
+
+bool _mergedProjectionHasEarlier(
+  ThreadRunProjectionSnapshot current,
+  ThreadRunProjectionSnapshot incoming,
+) {
+  final currentFirst = current.timeline.isEmpty
+      ? null
+      : current.timeline.first.sequence;
+  final incomingFirst = incoming.timeline.isEmpty
+      ? null
+      : incoming.timeline.first.sequence;
+  if (currentFirst == null) return incoming.hasEarlier;
+  if (incomingFirst == null) return current.hasEarlier;
+  if (currentFirst < incomingFirst) return current.hasEarlier;
+  if (incomingFirst < currentFirst) return incoming.hasEarlier;
+  return incoming.hasEarlier || current.hasEarlier;
 }
 
 List<ThreadRunProjectionAttempt> _mergeProjectionAttempts(
@@ -363,6 +384,8 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionDetailResult(
         ),
       );
     }
+  } else if (detail.kind == 'main') {
+    mainTimeline.addAll(detail.timeline);
   } else if (detail.kind == 'tool') {
     final byAgentId = <String, List<ThreadRunProjectionTimelineItem>>{};
     for (final item in detail.timeline) {
@@ -389,12 +412,31 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionDetailResult(
     status: current?.status ?? '',
     generatedAt: detail.generatedAt,
     sourceEventCount: detail.sourceEventCount,
+    historyRevision: current?.historyRevision ?? 0,
+    hasEarlier: detail.kind == 'main'
+        ? detail.hasEarlier
+        : (current?.hasEarlier ?? false),
     timeline: mainTimeline,
     agents: agents,
     requestSpans: current?.requestSpans ?? const [],
     attempts: current?.attempts ?? const [],
   );
-  return mergeThreadRunProjectionSnapshots(current, incoming);
+  final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+  if (detail.kind != 'main' || merged.hasEarlier == detail.hasEarlier) {
+    return merged;
+  }
+  return ThreadRunProjectionSnapshot(
+    threadId: merged.threadId,
+    status: merged.status,
+    generatedAt: merged.generatedAt,
+    sourceEventCount: merged.sourceEventCount,
+    historyRevision: merged.historyRevision,
+    hasEarlier: detail.hasEarlier,
+    timeline: merged.timeline,
+    agents: merged.agents,
+    requestSpans: merged.requestSpans,
+    attempts: merged.attempts,
+  );
 }
 
 List<ThreadRunProjectionTimelineItem> _mergeProjectionTimeline(
@@ -639,11 +681,16 @@ class ThreadRunProjectionDetailResult {
     required this.timeline,
     required this.sourceEventCount,
     required this.hasMore,
+    this.hasEarlier = false,
     this.nextAfterSequence,
+    this.previousBeforeSequence,
     this.agent,
   });
 
-  factory ThreadRunProjectionDetailResult.fromJson(Map<String, dynamic> json) {
+  factory ThreadRunProjectionDetailResult.fromJson(
+    Map<String, dynamic> json, {
+    bool includeToolOutputPreview = true,
+  }) {
     final timelineRaw = json['timeline'] as List<dynamic>? ?? const [];
     final agentRaw = json['agent'];
     return ThreadRunProjectionDetailResult(
@@ -653,14 +700,20 @@ class ThreadRunProjectionDetailResult {
       generatedAt: json['generatedAt'] as String? ?? '',
       sourceEventCount: (json['sourceEventCount'] as num?)?.toInt() ?? 0,
       hasMore: json['hasMore'] == true,
+      hasEarlier: json['hasEarlier'] == true,
       nextAfterSequence: (json['nextAfterSequence'] as num?)?.toInt(),
+      previousBeforeSequence: (json['previousBeforeSequence'] as num?)?.toInt(),
       agent: agentRaw is Map<String, dynamic>
-          ? ThreadRunProjectionAgent.fromJson(agentRaw)
+          ? ThreadRunProjectionAgent.fromJson(
+              agentRaw,
+              includeToolOutputPreview: includeToolOutputPreview,
+            )
           : null,
       timeline: timelineRaw
           .map(
             (entry) => ThreadRunProjectionTimelineItem.fromJson(
               entry as Map<String, dynamic>,
+              includeToolOutputPreview: includeToolOutputPreview,
             ),
           )
           .toList(),
@@ -673,7 +726,9 @@ class ThreadRunProjectionDetailResult {
   final String generatedAt;
   final int sourceEventCount;
   final bool hasMore;
+  final bool hasEarlier;
   final int? nextAfterSequence;
+  final int? previousBeforeSequence;
   final ThreadRunProjectionAgent? agent;
   final List<ThreadRunProjectionTimelineItem> timeline;
 }

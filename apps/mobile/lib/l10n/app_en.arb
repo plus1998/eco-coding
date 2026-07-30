@@ -572,5 +572,6 @@
   "landingHomePrompt": "What are you working on?",
   "landingProjectPrompt": "What should we build in {name}?",
   "composerLandingPlaceholder": "Ask anything",
-  "threadProjectionNoPcSelected": "Select a PC before requesting projection details"
+  "threadProjectionNoPcSelected": "Select a PC before requesting projection details",
+  "threadEarlierHistoryLoadFailed": "Failed to load earlier conversation history. Pull down at the top to retry."
 }

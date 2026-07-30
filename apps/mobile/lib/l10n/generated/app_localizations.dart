@@ -3115,6 +3115,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Select a PC before requesting projection details'**
   String get threadProjectionNoPcSelected;
+
+  /// No description provided for @threadEarlierHistoryLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load earlier conversation history. Pull down at the top to retry.'**
+  String get threadEarlierHistoryLoadFailed;
 }
 
 class _AppLocalizationsDelegate

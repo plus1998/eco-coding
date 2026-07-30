@@ -137,7 +137,10 @@ class DesktopRpc {
     required String kind,
     required String key,
     int? afterSequence,
+    int? beforeSequence,
+    bool tail = false,
     int? limit,
+    bool includeToolOutputPreview = true,
   }) async {
     final request = <String, dynamic>{
       'threadId': threadId,
@@ -146,6 +149,12 @@ class DesktopRpc {
     };
     if (afterSequence != null) {
       request['afterSequence'] = afterSequence;
+    }
+    if (beforeSequence != null) {
+      request['beforeSequence'] = beforeSequence;
+    }
+    if (tail) {
+      request['tail'] = true;
     }
     if (limit != null) {
       request['limit'] = limit;
@@ -156,7 +165,10 @@ class DesktopRpc {
       [request],
     );
     if (result is! Map<String, dynamic>) return null;
-    return ThreadRunProjectionDetailResult.fromJson(result);
+    return ThreadRunProjectionDetailResult.fromJson(
+      result,
+      includeToolOutputPreview: includeToolOutputPreview,
+    );
   }
 
   Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(

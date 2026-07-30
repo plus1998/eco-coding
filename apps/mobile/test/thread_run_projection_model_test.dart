@@ -80,6 +80,75 @@ void main() {
     },
   );
 
+  test('projection parsing preserves earlier history availability', () {
+    final projection = ThreadRunProjectionSnapshot.fromJson({
+      'thread': {
+        'threadId': 'thr_1',
+        'status': 'completed',
+        'generatedAt': '2026-01-01T00:00:00.000Z',
+      },
+      'sourceEventCount': 200,
+      'historyRevision': 3,
+      'hasEarlier': true,
+      'agents': const [],
+      'timeline': const [],
+    });
+
+    expect(projection.historyRevision, 3);
+    expect(projection.hasEarlier, isTrue);
+  });
+
+  test('merging an earlier main page prepends and closes pagination', () {
+    final current = _projection(
+      sourceEventCount: 200,
+      historyRevision: 4,
+      hasEarlier: true,
+      timeline: [
+        _item('main_101', 101, scope: 'main'),
+        _item('main_102', 102, scope: 'main'),
+      ],
+    );
+    final page = ThreadRunProjectionDetailResult(
+      threadId: 'thr_1',
+      kind: 'main',
+      key: 'thr_1',
+      generatedAt: '2026-01-01T00:00:01.000Z',
+      timeline: [
+        _item('main_1', 1, scope: 'main'),
+        _item('main_100', 100, scope: 'main'),
+      ],
+      sourceEventCount: 200,
+      hasMore: false,
+      hasEarlier: false,
+      previousBeforeSequence: 1,
+    );
+
+    final merged = mergeThreadRunProjectionDetailResult(current, page);
+
+    expect(merged.historyRevision, 4);
+    expect(merged.hasEarlier, isFalse);
+    expect(merged.timeline.map((item) => item.sequence), [1, 100, 101, 102]);
+  });
+
+  test('incremental live projection keeps exhausted earlier history state', () {
+    final current = _projection(
+      historyRevision: 2,
+      hasEarlier: false,
+      timeline: [_item('main_1', 1, scope: 'main')],
+    );
+    final incoming = _projection(
+      historyRevision: 2,
+      generatedAt: '2026-01-01T00:00:02.000Z',
+      hasEarlier: true,
+      timeline: [_item('main_100', 100, scope: 'main')],
+    );
+
+    final merged = mergeThreadRunProjectionSnapshots(current, incoming);
+
+    expect(merged.hasEarlier, isFalse);
+    expect(merged.timeline.map((item) => item.sequence), [1, 100]);
+  });
+
   test('mergeThreadRunProjectionSnapshots keeps longer stream text', () {
     final current = _projection(
       sourceEventCount: 2,
@@ -312,6 +381,7 @@ void main() {
 ThreadRunProjectionSnapshot _projection({
   int sourceEventCount = 1,
   int historyRevision = 0,
+  bool hasEarlier = false,
   String generatedAt = '2026-01-01T00:00:00.000Z',
   List<ThreadRunProjectionTimelineItem> timeline = const [],
   List<ThreadRunProjectionAgent> agents = const [],
@@ -323,6 +393,7 @@ ThreadRunProjectionSnapshot _projection({
     agents: agents,
     sourceEventCount: sourceEventCount,
     historyRevision: historyRevision,
+    hasEarlier: hasEarlier,
     timeline: timeline,
   );
 }

@@ -1744,4 +1744,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get threadProjectionNoPcSelected =>
       'Select a PC before requesting projection details';
+
+  @override
+  String get threadEarlierHistoryLoadFailed =>
+      'Failed to load earlier conversation history. Pull down at the top to retry.';
 }

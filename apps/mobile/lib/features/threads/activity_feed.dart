@@ -30,12 +30,28 @@ import 'thread_session_layout.dart';
 
 /// Feed primary text shares the theme body size across all entry types.
 const activityFeedBodyFontScale = 1.0;
+const activityFeedLoadEarlierThreshold = 160.0;
 const _scrollToBottomButtonSize = 36.0;
 const _scrollToBottomButtonAlignedBottomGap = 6.0;
 
 typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
 typedef ActivityFeedToolDetailLoader =
     Future<List<ActivityFeedEntry>> Function(ActivityFeedEntry entry);
+typedef ActivityFeedEarlierLoader = Future<void> Function();
+typedef ActivityFeedLoadErrorCallback = void Function(Object error);
+
+bool shouldLoadEarlierActivityFeed({
+  required double extentAfter,
+  required bool hasEarlier,
+  required bool loadingEarlier,
+  required bool shrinkWrap,
+  double threshold = activityFeedLoadEarlierThreshold,
+}) {
+  return !shrinkWrap &&
+      hasEarlier &&
+      !loadingEarlier &&
+      extentAfter <= threshold;
+}
 
 TextStyle? activityFeedBodyStyle(
   BuildContext context, {
@@ -592,6 +608,9 @@ class ActivityFeedList extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.hasEarlier = false,
+    this.onLoadEarlier,
+    this.onLoadEarlierError,
     this.expandUserPrompts = false,
     this.shrinkWrap = false,
     this.showScrollJumpButton = true,
@@ -605,6 +624,9 @@ class ActivityFeedList extends StatefulWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final bool hasEarlier;
+  final ActivityFeedEarlierLoader? onLoadEarlier;
+  final ActivityFeedLoadErrorCallback? onLoadEarlierError;
   final bool expandUserPrompts;
   final bool shrinkWrap;
   final bool showScrollJumpButton;
@@ -619,6 +641,8 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   late ActivityFeedScrollCoordinator _coordinator;
   String _layoutSignature = '';
   bool _showScrollJump = false;
+  bool _loadingEarlier = false;
+  bool _loadEarlierFailed = false;
 
   @override
   void initState() {
@@ -627,15 +651,21 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
         widget.scrollCoordinator ??
         ActivityFeedScrollCoordinator(widget.scrollController);
     _layoutSignature = activityFeedLayoutSignature(widget.entries);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadEarlier());
   }
 
   @override
   void didUpdateWidget(ActivityFeedList oldWidget) {
     super.didUpdateWidget(oldWidget);
     final nextSignature = activityFeedLayoutSignature(widget.entries);
-    if (nextSignature == _layoutSignature) return;
-    _layoutSignature = nextSignature;
-    _scheduleLayoutScroll();
+    if (nextSignature != _layoutSignature) {
+      _layoutSignature = nextSignature;
+      _scheduleLayoutScroll();
+    }
+    if (nextSignature != activityFeedLayoutSignature(oldWidget.entries) ||
+        (!oldWidget.hasEarlier && widget.hasEarlier)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadEarlier());
+    }
   }
 
   void _scheduleLayoutScroll() {
@@ -659,6 +689,39 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
     }
   }
 
+  Future<void> _maybeLoadEarlier({bool userInitiated = false}) async {
+    if (!mounted || !widget.scrollController.hasClients) return;
+    if (_loadEarlierFailed && !userInitiated) return;
+    if (userInitiated) {
+      _loadEarlierFailed = false;
+    }
+    if (widget.onLoadEarlier == null ||
+        !shouldLoadEarlierActivityFeed(
+          extentAfter: widget.scrollController.position.extentAfter,
+          hasEarlier: widget.hasEarlier,
+          loadingEarlier: _loadingEarlier,
+          shrinkWrap: widget.shrinkWrap,
+        )) {
+      return;
+    }
+    setState(() => _loadingEarlier = true);
+    var failed = false;
+    try {
+      await widget.onLoadEarlier!();
+    } catch (error) {
+      failed = true;
+      _loadEarlierFailed = true;
+      widget.onLoadEarlierError?.call(error);
+    } finally {
+      if (mounted) {
+        setState(() => _loadingEarlier = false);
+      }
+    }
+    if (!failed && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadEarlier());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final displayEntries = widget.entries.reversed.toList(growable: false);
@@ -673,6 +736,13 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
             onNotification: (notification) {
               _coordinator.onScrollNotification(notification);
               _syncScrollJumpVisibility();
+              unawaited(
+                _maybeLoadEarlier(
+                  userInitiated:
+                      notification is ScrollUpdateNotification &&
+                      notification.dragDetails != null,
+                ),
+              );
               return false;
             },
             child: ListView.builder(
@@ -689,8 +759,19 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     threadSessionFeedHorizontalPadding,
                     0,
                   ),
-              itemCount: displayEntries.length,
+              itemCount: displayEntries.length + (_loadingEarlier ? 1 : 0),
               itemBuilder: (context, index) {
+                if (index == displayEntries.length) {
+                  return const SizedBox(
+                    height: 44,
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                }
                 final entry = displayEntries[index];
                 return _ActivityFeedEntryTile(
                   key: ValueKey(entry.id),

@@ -69,6 +69,33 @@ void main() {
     expect(detail?.key, 'agent_1');
   });
 
+  test('getRunProjectionDetail sends earlier Feed page request', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.getRunProjectionDetail(
+      threadId: 'thr_1',
+      kind: 'main',
+      key: 'thr_1',
+      beforeSequence: 101,
+      tail: true,
+      limit: 100,
+      includeToolOutputPreview: false,
+    );
+
+    expect(client.channel, 'thread:run-projection-detail-get');
+    expect(client.args, [
+      {
+        'threadId': 'thr_1',
+        'kind': 'main',
+        'key': 'thr_1',
+        'beforeSequence': 101,
+        'tail': true,
+        'limit': 100,
+      },
+    ]);
+  });
+
   test('getBackgroundTerminalTask parses task progress', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');

@@ -84,6 +84,143 @@ ThreadRunProjectionTimelineItem _codexMessageTimelineItem({
 }
 
 void main() {
+  test('earlier Feed loading only triggers near the reverse list top', () {
+    expect(
+      shouldLoadEarlierActivityFeed(
+        extentAfter: 80,
+        hasEarlier: true,
+        loadingEarlier: false,
+        shrinkWrap: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldLoadEarlierActivityFeed(
+        extentAfter: 240,
+        hasEarlier: true,
+        loadingEarlier: false,
+        shrinkWrap: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldLoadEarlierActivityFeed(
+        extentAfter: 0,
+        hasEarlier: true,
+        loadingEarlier: true,
+        shrinkWrap: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldLoadEarlierActivityFeed(
+        extentAfter: 0,
+        hasEarlier: false,
+        loadingEarlier: false,
+        shrinkWrap: false,
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('ActivityFeedList loads earlier when content is underfilled', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    var hasEarlier = true;
+    var loadCount = 0;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setHostState) => ActivityFeedList(
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'assistant-1',
+                  kind: ActivityFeedKind.assistant,
+                  text: 'Latest response',
+                ),
+              ],
+              scrollController: scrollController,
+              hasEarlier: hasEarlier,
+              onLoadEarlier: () async {
+                loadCount += 1;
+                setHostState(() => hasEarlier = false);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(loadCount, 1);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('ActivityFeedList keeps its viewport after prepending history', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    var entries = List.generate(
+      20,
+      (index) => ActivityFeedEntry(
+        id: 'assistant-${index + 20}',
+        kind: ActivityFeedKind.assistant,
+        text: 'Response ${index + 20}: ${List.filled(8, 'content').join(' ')}',
+      ),
+    );
+    var hasEarlier = true;
+    var loadCount = 0;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setHostState) => ActivityFeedList(
+              entries: entries,
+              scrollController: scrollController,
+              hasEarlier: hasEarlier,
+              onLoadEarlier: () async {
+                loadCount += 1;
+                setHostState(() {
+                  entries = [
+                    ...List.generate(
+                      20,
+                      (index) => ActivityFeedEntry(
+                        id: 'assistant-$index',
+                        kind: ActivityFeedKind.assistant,
+                        text:
+                            'Response $index: ${List.filled(8, 'earlier').join(' ')}',
+                      ),
+                    ),
+                    ...entries,
+                  ];
+                  hasEarlier = false;
+                });
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(scrollController.position.maxScrollExtent, greaterThan(160));
+
+    final offsetBefore = scrollController.position.maxScrollExtent - 40;
+    scrollController.jumpTo(offsetBefore);
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 1);
+    expect(scrollController.offset, closeTo(offsetBefore, 1));
+  });
+
   test('configuredOrchestrationSubagentRoles hides unconfigured roles', () {
     const snapshot = ResolvedOrchestrationSnapshot(
       selection: OrchestrationSelection(

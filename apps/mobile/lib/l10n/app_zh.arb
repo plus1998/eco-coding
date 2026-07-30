@@ -527,5 +527,6 @@
   "landingHomePrompt": "你在忙什么？",
   "landingProjectPrompt": "我们应该在 {name} 中构建什么？",
   "composerLandingPlaceholder": "尽管问",
-  "threadProjectionNoPcSelected": "未选择 PC，无法请求投影详情"
+  "threadProjectionNoPcSelected": "未选择 PC，无法请求投影详情",
+  "threadEarlierHistoryLoadFailed": "加载更早的会话记录失败，请在顶部再次下拉重试"
 }

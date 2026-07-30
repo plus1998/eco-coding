@@ -845,6 +845,15 @@ class _ActivityFeedView extends ConsumerWidget {
           unawaited(_openAgentProjectionDetail(context, ref, threadId, entry)),
       loadToolDetail: (entry) =>
           _loadToolProjectionDetail(context, ref, threadId, entry),
+      hasEarlier: runProjection?.hasEarlier == true,
+      onLoadEarlier: () => ref
+          .read(threadSessionProvider(threadId).notifier)
+          .loadEarlierProjection(),
+      onLoadEarlierError: (error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.threadEarlierHistoryLoadFailed)),
+        );
+      },
     );
   }
 }

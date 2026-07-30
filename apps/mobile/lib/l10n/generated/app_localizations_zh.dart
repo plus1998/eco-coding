@@ -1641,4 +1641,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get threadProjectionNoPcSelected => '未选择 PC，无法请求投影详情';
+
+  @override
+  String get threadEarlierHistoryLoadFailed => '加载更早的会话记录失败，请在顶部再次下拉重试';
 }
