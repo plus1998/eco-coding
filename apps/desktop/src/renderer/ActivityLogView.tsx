@@ -1068,6 +1068,13 @@ function ProjectionToolGroupChildEntry({
   if (block?.kind === "action" && block.bashRun) {
     return <ProjectionToolGroupBashChild block={block} />;
   }
+  if (
+    block?.kind === "tool-failed" &&
+    !block.recoveredResult &&
+    block.tool.trim().toLowerCase() === "bash"
+  ) {
+    return <ProjectionToolGroupBashChild block={block} />;
+  }
   if (entry.kind === "timeline") {
     return (
       <ProjectionTimelineEntry
@@ -1083,19 +1090,30 @@ function ProjectionToolGroupChildEntry({
 function ProjectionToolGroupBashChild({
   block,
 }: {
-  block: Extract<ActivityDetailBlock, { kind: "action" }>;
+  block:
+    | Extract<ActivityDetailBlock, { kind: "action" }>
+    | Extract<ActivityDetailBlock, { kind: "tool-failed" }>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const bashRun = block.bashRun;
+  const bashRun =
+    block.kind === "action"
+      ? block.bashRun
+      : {
+          ...(block.command && { command: block.command }),
+          ...(block.error && { output: block.error }),
+        };
   if (!bashRun) {
     return null;
   }
   const hasDetails = Boolean(bashRun.command || bashRun.output);
   const summary =
-    block.lifecycle === "running"
-      ? summarizeRunningActionBlock(block)
-      : summarizeCompletedActionBlock(block);
-  const Icon = actionIcons[block.icon];
+    block.kind === "tool-failed"
+      ? summarizeFailedTool(block.tool, block.command)
+      : block.lifecycle === "running"
+        ? summarizeRunningActionBlock(block)
+        : summarizeCompletedActionBlock(block);
+  const lifecycle = block.kind === "tool-failed" ? "failed" : block.lifecycle;
+  const Icon = actionIcons[block.kind === "tool-failed" ? iconForToolName(block.tool) : block.icon];
 
   return (
     <div className={`run-log-tool-group-child${expanded ? " is-expanded" : ""}`}>
@@ -1104,7 +1122,7 @@ function ProjectionToolGroupBashChild({
         className={[
           "run-log-tool-group-trigger",
           "run-log-tool-group-child-trigger",
-          block.lifecycle === "running" ? "is-running" : "",
+          lifecycle === "running" ? "is-running" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -1115,9 +1133,9 @@ function ProjectionToolGroupBashChild({
           <Icon size={14} className="run-log-action-icon" />
         </span>
         <span className="run-log-tool-group-summary">
-          {block.lifecycle === "running" ? <ShimmerText>{summary}</ShimmerText> : summary}
+          {lifecycle === "running" ? <ShimmerText>{summary}</ShimmerText> : summary}
         </span>
-        {block.lifecycle === "failed" ? (
+        {lifecycle === "failed" ? (
           <span
             className="run-log-tool-status-dot"
             title={i18n.t("activity.incomplete")}

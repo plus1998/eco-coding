@@ -24,6 +24,7 @@ import {
   MessageSquarePlus,
   Monitor,
   PanelBottom,
+  PanelLeft,
   PanelRight,
   Plug,
   Search,
@@ -7002,6 +7003,19 @@ function App() {
 
   return (
     <main className={shellClassName}>
+      {window.eco?.platform === "darwin" ? (
+        <button
+          type="button"
+          className="macos-sidebar-toggle codex-main-toolbar-button"
+          onClick={() => setSidebarOpen((current) => !current)}
+          title={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
+          aria-label={sidebarOpen ? t("app.sidebarCollapse") : t("app.sidebarOpen")}
+          aria-expanded={sidebarOpen}
+          aria-controls="primary-sidebar"
+        >
+          <PanelLeft size={15} aria-hidden />
+        </button>
+      ) : null}
       {fixedSidebarToolbar}
       {appMessageState ? (
         <AppMessage
@@ -7011,6 +7025,7 @@ function App() {
         />
       ) : null}
       <aside
+        id="primary-sidebar"
         className={sidebarOpen ? "codex-sidebar" : "codex-sidebar is-hidden"}
         aria-hidden={!sidebarOpen}
       >

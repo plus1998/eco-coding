@@ -5,6 +5,7 @@
   --code-font-size: 12px;
   /* macOS traffic-light inset — use only on left sidebars (.codex-sidebar, .settings-nav) */
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
+  --macos-window-controls-safe-inline-start: 116px;
   --content-top-inset: 16px;
   --workspace-toolbar-clearance: 36px;
   --sidebar-width: 300px;
@@ -191,6 +192,14 @@ button:not(:disabled) {
 .codex-main-toolbar-button.is-active {
   background: var(--nav-hover-solid);
   color: var(--codex-log-text);
+}
+
+.macos-sidebar-toggle {
+  position: fixed;
+  top: 6px;
+  left: 76px;
+  z-index: 10000;
+  -webkit-app-region: no-drag;
 }
 
 .codex-fixed-sidebar-toolbar {
@@ -18530,6 +18539,16 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   width: 100%;
   padding-left: var(--content-inline-start);
   padding-right: var(--toolbar-edge-inset);
+}
+
+html[data-platform="darwin"]
+  .shell.shell-sidebar-hidden
+  .codex-main:not(.codex-main-landing)
+  .codex-main-topbar {
+  padding-left: max(
+    var(--content-inline-start),
+    var(--macos-window-controls-safe-inline-start)
+  );
 }
 
 .codex-main:not(.codex-main-landing)

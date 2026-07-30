@@ -1349,7 +1349,8 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
   );
 
   expect(expandedHtml).toContain("已运行 bun test");
-  expect(expandedHtml).toContain("run-log-action--bash-card");
+  expect(expandedHtml).toContain("run-log-tool-group-child-trigger");
+  expect(expandedHtml).not.toContain("run-log-action--bash-card");
   expect(expandedHtml).toContain('aria-expanded="false"');
   expect(expandedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
   expect(expandedHtml).not.toContain("run-log-bash-command");
