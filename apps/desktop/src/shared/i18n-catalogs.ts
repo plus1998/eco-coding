@@ -390,6 +390,7 @@ export const i18nCatalogs = {
       "settings.center.status.error": "连接异常",
       "git.commit.loadingModels": "加载模型…",
       "git.commit.noModel": "未配置模型",
+      "git.commit.selectModel": "请先选择 Git 提交信息生成模型。",
       "git.commit.noGeneratedMessage": "AI 未生成有效提交信息",
       "git.commit.dialog": "提交或推送",
       "git.commit.switchBranch": "切换分支",
@@ -969,7 +970,7 @@ export const i18nCatalogs = {
       "composer.route.prompt": "提示词",
       "composer.route.subagentOrchestration": "子代理编排",
       "composer.route.auxiliaryModel": "辅助模型",
-      "composer.route.auxiliaryModelHint": "用于会话标题、自动审批和 Git 提交信息",
+      "composer.route.auxiliaryModelHint": "用于会话标题和自动审批，并作为 Git 提交模型的初始默认值",
       "composer.route.defaultBuiltinPrompt": "跟随 Agent 内置提示词",
       "composer.route.notConfigured": "未配置",
       "composer.route.noSubagents": "不使用子代理",
@@ -1634,6 +1635,7 @@ export const i18nCatalogs = {
       "settings.center.status.error": "Connection error",
       "git.commit.loadingModels": "Loading models…",
       "git.commit.noModel": "No model configured",
+      "git.commit.selectModel": "Select a model for generating the Git commit message.",
       "git.commit.noGeneratedMessage": "AI did not generate a valid commit message",
       "git.commit.dialog": "Commit or push",
       "git.commit.switchBranch": "Switch branch",
@@ -2225,7 +2227,7 @@ export const i18nCatalogs = {
       "composer.route.prompt": "Prompt",
       "composer.route.subagentOrchestration": "Sub-agent orchestration",
       "composer.route.auxiliaryModel": "Auxiliary model",
-      "composer.route.auxiliaryModelHint": "Used for thread titles, automatic approvals, and Git commit messages",
+      "composer.route.auxiliaryModelHint": "Used for thread titles and automatic approvals, and as the initial default for Git commits",
       "composer.route.defaultBuiltinPrompt": "Use agent's built-in prompt",
       "composer.route.notConfigured": "Not configured",
       "composer.route.noSubagents": "No sub-agents",
@@ -2659,7 +2661,9 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   if (
     message === "没有已配置的候选模型，无法生成提交信息。请在 Provider 设置中添加候选模型。" ||
     message === "没有可用的候选模型，无法生成提交信息。" ||
-    message.startsWith("候选模型所属 Provider 未配置或已禁用：")
+    message === "未指定 Git 提交模型，无法生成提交信息。请在提交窗口中选择生成模型。" ||
+    message.startsWith("候选模型所属 Provider 未配置或已禁用：") ||
+    message.startsWith("Git 提交模型已不在候选模型列表中：")
   ) {
     return "native.error.modelConfiguration";
   }

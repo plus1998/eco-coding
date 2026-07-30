@@ -4948,19 +4948,19 @@ function App() {
     if (!window.eco || !mainAgentConfigId) {
       return;
     }
-    if (!canEditComposerConfig) {
-      throw new Error("当前会话运行中，不能切换辅助模型。请等待本轮完成后再试。");
-    }
     const result = await window.eco.listGitCommitModelOptions({ mainAgentConfigId });
     const option = result.options.find((candidate) => candidate.candidateModelId === candidateModelId);
     if (!option) {
-      throw new Error("所选辅助模型已不在候选模型列表中。");
+      throw new Error("所选 Git 提交模型已不在候选模型列表中。");
     }
-    await selectComposerAuxiliaryModel({
-      providerId: option.providerId,
-      modelId: option.modelId,
-      candidateModelId: option.candidateModelId,
+    const saved = await window.eco.saveGitSettings({
+      ...gitSettings,
+      commitMessageCandidateModelIdByMainAgentConfigId: {
+        ...gitSettings.commitMessageCandidateModelIdByMainAgentConfigId,
+        [mainAgentConfigId]: option.candidateModelId,
+      },
     });
+    setGitSettings(saved);
   }
 
   async function handleGitCheckoutBranch(branch: string) {
@@ -7058,7 +7058,7 @@ function App() {
                   mainAgentConfigId: composerRuntimeConfig.orchestrationSelection.mainAgentConfigId,
                 })}
                 {...(composerRuntimeConfig?.auxiliaryModel?.candidateModelId && {
-                  auxiliaryCandidateModelId: composerRuntimeConfig.auxiliaryModel.candidateModelId,
+                  defaultCommitCandidateModelId: composerRuntimeConfig.auxiliaryModel.candidateModelId,
                 })}
                 gitSettings={gitSettings}
                 onSaveCommitModelPreference={saveCommitMessageModelPreference}

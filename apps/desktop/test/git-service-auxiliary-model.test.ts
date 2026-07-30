@@ -3,7 +3,7 @@ import { handleGitCommit, handleGitGenerateCommitMessage } from "../src/main/git
 
 const unusedDeps = {} as never;
 
-test("commit message generation rejects a missing auxiliary model before touching Git", async () => {
+test("commit message generation rejects a missing Git commit model before touching Git", async () => {
   await expect(
     handleGitGenerateCommitMessage(
       {
@@ -13,10 +13,10 @@ test("commit message generation rejects a missing auxiliary model before touchin
       },
       unusedDeps,
     ),
-  ).rejects.toThrow(/辅助模型/);
+  ).rejects.toThrow(/Git 提交模型/);
 });
 
-test("commit without a message rejects a missing auxiliary model before touching Git", async () => {
+test("commit without a message rejects a missing Git commit model before touching Git", async () => {
   await expect(
     handleGitCommit(
       {
@@ -26,5 +26,5 @@ test("commit without a message rejects a missing auxiliary model before touching
       },
       unusedDeps,
     ),
-  ).rejects.toThrow(/辅助模型/);
+  ).rejects.toThrow(/Git 提交模型/);
 });

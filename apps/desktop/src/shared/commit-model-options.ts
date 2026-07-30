@@ -117,3 +117,17 @@ export function findCommitModelOptionForCandidateId(
   }
   return options.find((option) => option.candidateModelId === candidateModelId);
 }
+
+export function resolveInitialCommitModelOption(
+  options: readonly CommitModelOption[],
+  savedCandidateModelId: string | "auto" | undefined,
+  defaultCandidateModelId: string | undefined,
+): CommitModelOption | undefined {
+  if (savedCandidateModelId && savedCandidateModelId !== "auto") {
+    const saved = findCommitModelOptionForCandidateId(options, savedCandidateModelId);
+    if (saved) {
+      return saved;
+    }
+  }
+  return findCommitModelOptionForCandidateId(options, defaultCandidateModelId);
+}

@@ -26,6 +26,8 @@ test("known application IPC errors localize without raw Chinese in en-US", () =>
     "内置子代理模板不可直接修改，请先复制为用户模板。",
     "没有可提交的变更。",
     "模型未能生成有效的提交信息，请手动填写。",
+    "未指定 Git 提交模型，无法生成提交信息。请在提交窗口中选择生成模型。",
+    "Git 提交模型已不在候选模型列表中：candidate-1",
     "排队的后续消息缺少可发送内容。",
     "该节点缺少 SDK 检查点，无法安全回滚。",
   ];

@@ -58,7 +58,7 @@ export interface WorkspaceFloatingCardsProps {
   gitBusy?: boolean;
   commitDisabled?: boolean;
   mainAgentConfigId?: string;
-  auxiliaryCandidateModelId?: string;
+  defaultCommitCandidateModelId?: string;
   gitSettings?: GitSettingsSnapshot;
   onCheckoutGitBranch?: (branch: string) => void | Promise<void>;
   onCreateGitBranch?: (branch: string) => void | Promise<void>;
@@ -259,7 +259,7 @@ export function WorkspaceFloatingCards({
   gitBusy,
   commitDisabled,
   mainAgentConfigId,
-  auxiliaryCandidateModelId,
+  defaultCommitCandidateModelId,
   gitSettings,
   onCheckoutGitBranch,
   onCreateGitBranch,
@@ -361,7 +361,7 @@ export function WorkspaceFloatingCards({
             gitBusy={gitBusy ?? false}
             commitDisabled={commitDisabled ?? false}
             {...(mainAgentConfigId && { mainAgentConfigId })}
-            {...(auxiliaryCandidateModelId && { auxiliaryCandidateModelId })}
+            {...(defaultCommitCandidateModelId && { defaultCommitCandidateModelId })}
             {...(gitSettings && { gitSettings })}
             {...(onCheckoutGitBranch && { onCheckoutGitBranch })}
             {...(onCreateGitBranch && { onCreateGitBranch })}

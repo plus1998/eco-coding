@@ -27,6 +27,21 @@ export function resolvePendingThreadTitle(locale: string): string {
     : PENDING_THREAD_TITLE_EN;
 }
 
+export function resolveFailedThreadTitle(prompt: string, locale: string): string {
+  const firstLine = prompt
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.replace(/\s+/g, " ")
+    .trim();
+  if (!firstLine) {
+    return resolvePendingThreadTitle(locale);
+  }
+  return firstLine.length > TITLE_OUTPUT_MAX_CHARS
+    ? `${firstLine.slice(0, TITLE_OUTPUT_MAX_CHARS - 3)}...`
+    : firstLine;
+}
+
 export function isPendingThreadTitle(title: string): boolean {
   return pendingThreadTitles.has(title);
 }
@@ -55,6 +70,10 @@ type Fetcher = typeof fetch;
 /** Reject model refusals / internal capability messages (Codex #11396 class of bugs). */
 const TITLE_REFUSAL_PATTERN =
   /(?:对不起|抱歉|无法|不能|只能生成|I\s*(?:can't|cannot)|I\s*am\s*unable|unable\s+to)/i;
+
+/** Reject runtime status text accidentally returned by a shared auxiliary route. */
+const TITLE_OPERATIONAL_FAILURE_PATTERN =
+  /(?:辅助模型[^\n]{0,24}(?:审批)?(?:失败|不可用)|(?:会话)?标题(?:生成)?失败|自动审批[^\n]{0,24}失败|review_failed_closed|auxiliary model[^\n]{0,24}(?:failed|unavailable)|approval[^\n]{0,24}(?:failed|error))/i;
 
 /** Reject structured-artifact garbage sometimes appended to titles (Codex #17627). */
 const TITLE_GARBAGE_SUFFIX_PATTERN = /[\]})'"]{3,}$/;
@@ -199,7 +218,11 @@ export function sanitizeThreadTitle(title: string | undefined, prompt: string): 
     return undefined;
   }
 
-  if (TITLE_REFUSAL_PATTERN.test(cleaned) || TITLE_GARBAGE_SUFFIX_PATTERN.test(cleaned)) {
+  if (
+    TITLE_REFUSAL_PATTERN.test(cleaned) ||
+    TITLE_OPERATIONAL_FAILURE_PATTERN.test(cleaned) ||
+    TITLE_GARBAGE_SUFFIX_PATTERN.test(cleaned)
+  ) {
     return undefined;
   }
 
@@ -224,7 +247,7 @@ export function shouldReplaceAutoThreadTitle(currentTitle: string): boolean {
 export function previewThreadTitleFromStream(text: string | undefined): string | undefined {
   const fromJson = parseThreadTitleJson(text);
   if (fromJson) {
-    return fromJson;
+    return TITLE_OPERATIONAL_FAILURE_PATTERN.test(fromJson) ? undefined : fromJson;
   }
 
   const trimmed = text?.trim();

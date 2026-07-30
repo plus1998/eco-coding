@@ -6,6 +6,7 @@ import {
   extractTitleText,
   previewThreadTitleFromStream,
   parseThreadTitleJson,
+  resolveFailedThreadTitle,
   resolvePendingThreadTitle,
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
@@ -159,6 +160,9 @@ test("rejects empty, copied, refusal, or garbage thread titles", () => {
   expect(sanitizeThreadTitle("标题：\"任务状态面板\"", "实现 TODO 列表")).toBe("任务状态面板");
   expect(sanitizeThreadTitle("对不起我不能，只能生成任务标题。", "找 skills")).toBeUndefined();
   expect(sanitizeThreadTitle("导出筛选功能 })]}'}}}", "实现导出")).toBeUndefined();
+  expect(
+    sanitizeThreadTitle("辅助模型审批失败或返回了无效 JSON，已转人工审批", "实现导出"),
+  ).toBeUndefined();
 });
 
 test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
@@ -172,6 +176,15 @@ test("resolvePendingThreadTitle uses locale language", () => {
   expect(resolvePendingThreadTitle("zh-CN")).toBe("新任务");
   expect(resolvePendingThreadTitle("en-US")).toBe("New Task");
   expect(resolvePendingThreadTitle("ja-JP")).toBe("New Task");
+});
+
+test("resolveFailedThreadTitle falls back to the original request first line", () => {
+  expect(resolveFailedThreadTitle("\n  修复导出筛选问题  \n错误详情", "zh-CN")).toBe(
+    "修复导出筛选问题",
+  );
+  expect(resolveFailedThreadTitle("", "zh-CN")).toBe("新任务");
+  expect(resolveFailedThreadTitle("", "en-US")).toBe("New Task");
+  expect(resolveFailedThreadTitle("x".repeat(80), "zh-CN")).toBe(`${"x".repeat(39)}...`);
 });
 
 test("buildThreadTitleUserMessage includes prompt and JSON instruction", () => {
@@ -250,6 +263,7 @@ test("summarizeThreadTitle recovers title from thinking-only upstream responses"
 test("previewThreadTitleFromStream reads partial JSON while streaming", () => {
   expect(previewThreadTitleFromStream('{"title":"导出筛')).toBe("导出筛");
   expect(previewThreadTitleFromStream('{"title":"任务 TODO 面板"}')).toBe("任务 TODO 面板");
+  expect(previewThreadTitleFromStream('{"title":"辅助模型审批失败"}')).toBeUndefined();
 });
 
 test("summarizeThreadTitle streams title preview through onTitleDelta", async () => {

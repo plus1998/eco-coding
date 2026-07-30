@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Globe2,
   LinkIcon,
   Pencil,
   Plus,
@@ -556,13 +557,18 @@ export function ModelsSettingsPanel({
         <>
           <section className="settings-global-orchestration">
             <div className="settings-global-orchestration-header">
-              <div>
-                <h3>{t("settings.models.resources.globalOrchestration")}</h3>
-                <p>{t("settings.models.resources.globalOrchestrationHint")}</p>
+              <div className="settings-global-orchestration-heading">
+                <span className="settings-global-orchestration-icon" aria-hidden>
+                  <Globe2 size={18} strokeWidth={1.8} />
+                </span>
+                <div>
+                  <h3>{t("settings.models.resources.globalOrchestration")}</h3>
+                  <p>{t("settings.models.resources.globalOrchestrationHint")}</p>
+                </div>
               </div>
               <button
                 type="button"
-                className="mcp-icon-button"
+                className="settings-global-orchestration-reset"
                 title={t("settings.models.resources.clearGlobalOrchestration")}
                 aria-label={t("settings.models.resources.clearGlobalOrchestration")}
                 disabled={busy || !defaultOrchestrationSelection}
@@ -582,11 +588,13 @@ export function ModelsSettingsPanel({
                 <RotateCcw size={17} aria-hidden />
               </button>
             </div>
-            <div className="settings-global-orchestration-grid">
-              <label className="mcp-field">
-                <span className="mcp-field-label">{t("composer.route.mainAgent")}</span>
+            <div className="settings-global-orchestration-list">
+              <label className="settings-global-orchestration-row">
+                <span className="settings-global-orchestration-label">
+                  {t("composer.route.mainAgent")}
+                </span>
                 <select
-                  className="mcp-field-input"
+                  className="settings-global-orchestration-select"
                   value={
                     settings.mainAgentConfigs.some(
                       (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
@@ -607,10 +615,12 @@ export function ModelsSettingsPanel({
                   ))}
                 </select>
               </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">{t("composer.route.prompt")}</span>
+              <label className="settings-global-orchestration-row">
+                <span className="settings-global-orchestration-label">
+                  {t("composer.route.prompt")}
+                </span>
                 <select
-                  className="mcp-field-input"
+                  className="settings-global-orchestration-select"
                   value={
                     defaultOrchestrationDraft.mainPrompt.mode === "builtin"
                       ? "__builtin__"
@@ -636,12 +646,12 @@ export function ModelsSettingsPanel({
                     ))}
                 </select>
               </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">
+              <label className="settings-global-orchestration-row">
+                <span className="settings-global-orchestration-label">
                   {t("composer.route.subagentOrchestration")}
                 </span>
                 <select
-                  className="mcp-field-input"
+                  className="settings-global-orchestration-select"
                   value={
                     defaultOrchestrationDraft.subagents.mode === "none"
                       ? "__none__"

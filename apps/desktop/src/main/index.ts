@@ -350,6 +350,7 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
+import { presentDesktopWindow } from "./desktop-single-instance";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
@@ -534,7 +535,12 @@ import {
 } from "./thread-runtime-routes";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
-import { resolvePendingThreadTitle, shouldReplaceAutoThreadTitle, summarizeThreadTitle } from "./thread-title";
+import {
+  resolveFailedThreadTitle,
+  resolvePendingThreadTitle,
+  shouldReplaceAutoThreadTitle,
+  summarizeThreadTitle,
+} from "./thread-title";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
 import {
   reviewEcoApproval,
@@ -602,6 +608,28 @@ function loadAppIcon(): NativeImage | undefined {
 }
 
 const appIcon = loadAppIcon();
+
+// The shared SQLite store and fixed-port gateway require a single main-process writer.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+let desktopInitializationComplete = false;
+
+app.on("second-instance", () => {
+  const existingWindow = BrowserWindow.getAllWindows()[0];
+  if (presentDesktopWindow(existingWindow) || !desktopInitializationComplete) {
+    return;
+  }
+  void createMainWindow()
+    .then((window) => {
+      presentDesktopWindow(window);
+    })
+    .catch((error) => {
+      process.stderr.write(`[eco] failed to reopen primary window: ${errorMessage(error)}\n`);
+    });
+});
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
@@ -948,6 +976,9 @@ function isExternalHttpUrl(url: string): boolean {
 }
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) {
+    return;
+  }
   if (appIcon && process.platform === "darwin") {
     app.dock?.setIcon(appIcon);
   }
@@ -1402,6 +1433,7 @@ app.whenReady().then(async () => {
     void centerServerClient.start();
   }
   await createMainWindow();
+  desktopInitializationComplete = true;
 
   app.on("browser-window-focus", () => {
     gitAutoFetcher?.setWindowFocused(true);
@@ -1942,11 +1974,7 @@ async function openThreadFromDesktopNotification(threadId: string): Promise<void
   if (!window) {
     window = await createMainWindow();
   }
-  if (window.isMinimized()) {
-    window.restore();
-  }
-  window.show();
-  window.focus();
+  presentDesktopWindow(window);
   window.webContents.send(IPC_CHANNELS.appThreadOpenRequested);
 }
 
@@ -3876,7 +3904,13 @@ function emitThreadTitleFailure(threadId: string): void {
   if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
-  emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false);
+  const fallbackTitle = resolveFailedThreadTitle(thread.prompt, currentAppLocale());
+  if (fallbackTitle !== thread.title) {
+    conversationStore.updateThreadTitle(threadId, fallbackTitle);
+  }
+  emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false, {
+    title: fallbackTitle,
+  });
 }
 
 function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeConfig): void {

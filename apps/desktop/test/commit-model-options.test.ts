@@ -4,6 +4,7 @@ import {
   commitModelDedupeKey,
   formatCommitModelDisplayName,
   findCommitModelOptionForCandidateId,
+  resolveInitialCommitModelOption,
 } from "../src/shared/commit-model-options";
 import type { CommitModelPricingHint } from "../src/shared/ipc";
 import type { CommitMessageCandidateModel } from "../src/shared/resolve-commit-message-route";
@@ -57,5 +58,33 @@ describe("commit-model-options", () => {
       pricingResolved: true,
       rates: { inputPerM: 1, outputPerM: 2 },
     })).toContain("anthropic::sonnet::");
+  });
+
+  it("prefers the saved Git commit model and only uses the auxiliary model as the initial default", () => {
+    const options = buildCommitModelOptions(
+      [
+        {
+          candidateModelId: "auxiliary-model",
+          providerId: "p1",
+          providerName: "Provider A",
+          modelId: "model-a",
+        },
+        {
+          candidateModelId: "saved-git-model",
+          providerId: "p2",
+          providerName: "Provider B",
+          modelId: "model-b",
+        },
+      ],
+      [],
+    );
+
+    expect(
+      resolveInitialCommitModelOption(options, "saved-git-model", "auxiliary-model")
+        ?.candidateModelId,
+    ).toBe("saved-git-model");
+    expect(
+      resolveInitialCommitModelOption(options, "auto", "auxiliary-model")?.candidateModelId,
+    ).toBe("auxiliary-model");
   });
 });

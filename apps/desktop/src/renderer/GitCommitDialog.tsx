@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   findCommitModelOptionForCandidateId,
+  resolveInitialCommitModelOption,
 } from "../shared/commit-model-options";
 import type {
   CommitModelOptionView,
@@ -30,7 +31,7 @@ interface GitCommitDialogProps {
   open: boolean;
   workspacePath: string;
   mainAgentConfigId: string;
-  auxiliaryCandidateModelId?: string;
+  defaultCandidateModelId?: string;
   gitStatus?: GitWorkingTreeStatus;
   busy?: boolean;
   disabled?: boolean;
@@ -46,7 +47,7 @@ export function GitCommitDialog({
   open,
   workspacePath,
   mainAgentConfigId,
-  auxiliaryCandidateModelId,
+  defaultCandidateModelId,
   gitStatus,
   busy,
   disabled,
@@ -114,9 +115,10 @@ export function GitCommitDialog({
       .listGitCommitModelOptions({ mainAgentConfigId })
       .then((result) => {
         setModelOptions(result.options);
-        const matched = findCommitModelOptionForCandidateId(
+        const matched = resolveInitialCommitModelOption(
           result.options,
-          auxiliaryCandidateModelId,
+          result.savedCandidateModelId,
+          defaultCandidateModelId,
         );
         setSelectedCandidateModelId(matched?.candidateModelId);
       })
@@ -128,7 +130,7 @@ export function GitCommitDialog({
       .finally(() => {
         setModelOptionsLoading(false);
       });
-  }, [open, mainAgentConfigId, auxiliaryCandidateModelId]);
+  }, [open, mainAgentConfigId, defaultCandidateModelId]);
 
   const handleSelectCandidateModel = useCallback(
     async (candidateModelId: string) => {
@@ -191,7 +193,7 @@ export function GitCommitDialog({
       return;
     }
     if (!selectedCandidateModelId) {
-      setError(`${t("composer.route.auxiliaryModelHint")}。请先选择辅助模型。`);
+      setError(t("git.commit.selectModel"));
       return;
     }
     const operationId = beginWorkspaceGitAction(workspacePath, "generating");
@@ -271,7 +273,7 @@ export function GitCommitDialog({
 
             if (!trimmed) {
               if (!selectedCandidateModelId) {
-                throw new Error(`${t("composer.route.auxiliaryModelHint")}。请先选择辅助模型。`);
+                throw new Error(t("git.commit.selectModel"));
               }
               const generated = await window.eco.generateGitCommitMessage(
                 {

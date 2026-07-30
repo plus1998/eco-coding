@@ -79,13 +79,13 @@ async function resolveSavedCommitCandidateModel(input: {
   })));
   const savedCandidateModelId = input.candidateModelIdPreference;
   if (!savedCandidateModelId || savedCandidateModelId === "auto") {
-    throw new Error("未指定辅助模型，无法生成提交信息。请在 Composer 的编排设置中选择辅助模型。");
+    throw new Error("未指定 Git 提交模型，无法生成提交信息。请在提交窗口中选择生成模型。");
   }
   const selected = candidates.find(
     (candidate) => candidate.candidateModelId === savedCandidateModelId,
   );
   if (!selected) {
-    throw new Error(`辅助模型已不在候选模型列表中：${savedCandidateModelId}`);
+    throw new Error(`Git 提交模型已不在候选模型列表中：${savedCandidateModelId}`);
   }
   return { selected, hints, candidates };
 }
@@ -163,7 +163,7 @@ export async function handleGitGenerateCommitMessage(
     onCommitMessageDelta?: (text: string) => void;
   },
 ): Promise<GitGenerateCommitMessageResult> {
-  requireAuxiliaryCandidateModelId(request.candidateModelId);
+  requireCommitCandidateModelId(request.candidateModelId);
   const run = deps.run ?? defaultGitRunner;
   await stageChanges(request.workspacePath, { includeUnstaged: request.includeUnstaged }, run);
   const context = await collectCommitDiffContext(request.workspacePath, request.includeUnstaged, run);
@@ -222,7 +222,7 @@ export async function handleGitCommit(
   },
 ): Promise<GitCommitResult> {
   if (!request.message?.trim()) {
-    requireAuxiliaryCandidateModelId(request.candidateModelId);
+    requireCommitCandidateModelId(request.candidateModelId);
   }
   const run = deps.run ?? defaultGitRunner;
   await stageChanges(request.workspacePath, { includeUnstaged: request.includeUnstaged }, run);
@@ -251,9 +251,9 @@ export async function handleGitCommit(
   };
 }
 
-function requireAuxiliaryCandidateModelId(value: string | "auto" | undefined): asserts value is string {
+function requireCommitCandidateModelId(value: string | "auto" | undefined): asserts value is string {
   if (!value || value === "auto") {
-    throw new Error("未指定辅助模型，无法生成提交信息。请在 Composer 的编排设置中选择辅助模型。");
+    throw new Error("未指定 Git 提交模型，无法生成提交信息。请在提交窗口中选择生成模型。");
   }
 }
 
