@@ -22,6 +22,8 @@ import {
 import type { ModelsDevMapping } from "../shared/ipc";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** When models.dev is unreachable and there is no disk cache, retry sooner. */
+const FAILURE_RETRY_MS = 5 * 60 * 1000;
 
 export interface ModelsDevPricingCacheOptions {
   cachePath: string;
@@ -37,12 +39,14 @@ export interface ModelsDevRouteLookup {
 export class ModelsDevPricingCache {
   private catalog: ModelsDevCatalog | null = null;
   private loadedAt = 0;
+  private catalogTtlMs = CACHE_TTL_MS;
   private loading: Promise<ModelsDevCatalog> | null = null;
+  private lastLoadError: string | null = null;
 
   constructor(private readonly options: ModelsDevPricingCacheOptions) {}
 
   async getCatalog(): Promise<ModelsDevCatalog> {
-    if (this.catalog && Date.now() - this.loadedAt < CACHE_TTL_MS) {
+    if (this.catalog && Date.now() - this.loadedAt < this.catalogTtlMs) {
       return this.catalog;
     }
 
@@ -59,7 +63,13 @@ export class ModelsDevPricingCache {
   async refresh(): Promise<ModelsDevCatalog> {
     this.catalog = null;
     this.loadedAt = 0;
+    this.catalogTtlMs = CACHE_TTL_MS;
     return this.getCatalog();
+  }
+
+  /** Last network/parse failure message, if any. Cleared on successful fetch. */
+  getLastLoadError(): string | null {
+    return this.lastLoadError;
   }
 
   async listModelOptions(): Promise<ModelsDevCatalogModelOption[]> {
@@ -188,6 +198,7 @@ export class ModelsDevPricingCache {
     if (fromDisk) {
       this.catalog = fromDisk.catalog;
       this.loadedAt = fromDisk.fetchedAt;
+      this.catalogTtlMs = CACHE_TTL_MS;
       if (Date.now() - fromDisk.fetchedAt < CACHE_TTL_MS) {
         return this.catalog;
       }
@@ -197,13 +208,24 @@ export class ModelsDevPricingCache {
       const catalog = await fetchModelsDevCatalog(this.options.fetchImpl);
       this.catalog = catalog;
       this.loadedAt = Date.now();
+      this.catalogTtlMs = CACHE_TTL_MS;
+      this.lastLoadError = null;
       await this.writeDiskCache(catalog);
       return catalog;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastLoadError = message;
       if (fromDisk) {
+        // Keep serving stale disk cache; shorten TTL so we retry the network soon.
+        this.catalogTtlMs = FAILURE_RETRY_MS;
+        this.loadedAt = Date.now();
         return fromDisk.catalog;
       }
-      throw error;
+      // No disk cache: empty catalog so pricing/mapping is unresolved, but never throws.
+      this.catalog = {};
+      this.loadedAt = Date.now();
+      this.catalogTtlMs = FAILURE_RETRY_MS;
+      return this.catalog;
     }
   }
 

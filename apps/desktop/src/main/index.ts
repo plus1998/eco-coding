@@ -53,6 +53,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  net,
   type NativeImage,
   Notification,
   nativeImage,
@@ -1328,13 +1329,15 @@ app.whenReady().then(async () => {
   });
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
+    // Chromium net stack honors OS system proxy (Clash / PAC / etc.); Node fetch does not.
+    fetchImpl: net.fetch.bind(net) as typeof fetch,
   });
-  pricingCatalogReady = pricingCache.getCatalog().then(
-    () => {},
-    (error) => {
-      process.stderr.write(`[eco] models.dev pricing cache init failed: ${errorMessage(error)}\n`);
-    },
-  );
+  pricingCatalogReady = pricingCache.getCatalog().then(() => {
+    const loadError = pricingCache.getLastLoadError();
+    if (loadError) {
+      process.stderr.write(`[eco] models.dev pricing cache unavailable: ${loadError}\n`);
+    }
+  });
   billingRuntimeEnvironment = createBillingRuntimeEnvironment({
     waitUntilReady: () => pricingCatalogReady,
     resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
@@ -2644,7 +2647,15 @@ function registerIpcHandlers(): void {
     const candidates = providerStore.listCandidateModels(trimmedProviderId);
     const provider = providerStore.listProviders().find((p) => p.id === trimmedProviderId);
     const baseUrl = provider?.baseUrl ?? "";
-    return resolveCandidateModels(pricingCache, candidates, baseUrl);
+    // models.dev enrichment is best-effort; never block listing/adding candidates.
+    try {
+      return await resolveCandidateModels(pricingCache, candidates, baseUrl);
+    } catch (error) {
+      process.stderr.write(
+        `[eco] candidate-model:list pricing enrich failed: ${errorMessage(error)}\n`,
+      );
+      return candidates;
+    }
   });
 
   registerDesktopCommand(IPC_CHANNELS.candidateModelSave, async (payload: unknown) => {
@@ -2865,7 +2876,14 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.billingModelsDevList, async () => {
     await pricingCatalogReady;
-    return pricingCache.listModelOptions();
+    try {
+      return await pricingCache.listModelOptions();
+    } catch (error) {
+      process.stderr.write(
+        `[eco] billing:models-dev-list failed: ${errorMessage(error)}\n`,
+      );
+      return [];
+    }
   });
 
   registerDesktopCommand(IPC_CHANNELS.billingRefreshPricing, async () => {
