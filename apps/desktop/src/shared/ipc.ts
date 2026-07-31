@@ -163,6 +163,8 @@ export const IPC_CHANNELS = {
   gitRemoteFetched: "git:remote-fetched",
   gitSettingsGet: "git-settings:get",
   gitSettingsSave: "git-settings:save",
+  personalizationSettingsGet: "personalization-settings:get",
+  personalizationSettingsSave: "personalization-settings:save",
 } as const;
 
 export type AppMenuCommand =
@@ -686,6 +688,11 @@ export interface GitSettingsSnapshot {
   autofetch?: boolean;
   /** 自动 fetch 间隔（秒），默认 180 */
   autofetchPeriod?: number;
+}
+
+export interface PersonalizationSettingsSnapshot {
+  /** 注入 Claude systemPrompt.append / Codex developerInstructions 的全局个人规则 */
+  globalRules?: string;
 }
 
 export interface ProxyBridgeSettingsSnapshot {

@@ -31,6 +31,7 @@ export interface BuildSdkRunInput {
   resumableSubagents?: readonly ResumableSubagentRef[];
   executionPromptOverride?: string;
   agentRegistry?: EcoAgentRuntimeConfig | undefined;
+  globalUserRules?: string;
 }
 
 export function buildSdkRunInput(input: BuildSdkRunInput): AgentRuntimeRunInput {
@@ -46,6 +47,7 @@ export function buildSdkRunInput(input: BuildSdkRunInput): AgentRuntimeRunInput 
     ...(input.resumableSubagents ? { resumableSubagents: input.resumableSubagents } : {}),
     ...(input.executionPromptOverride ? { executionPromptOverride: input.executionPromptOverride } : {}),
     ...(input.agentRegistry ? { agentRegistry: input.agentRegistry } : {}),
+    ...(input.globalUserRules?.trim() ? { globalUserRules: input.globalUserRules.trim() } : {}),
   };
 }
 

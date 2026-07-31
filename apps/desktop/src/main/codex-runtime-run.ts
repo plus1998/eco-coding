@@ -10,6 +10,7 @@ import {
   assertCodexRoleProvidersAvailable,
   buildCodexGatewayModelAlias,
   buildCodexMainAgentOrchestrationAppend,
+  mergeMainAgentAppendParts,
   buildCodexSubagentFollowupPrompt,
   type CodexAppServerClient,
   CodexAppServerDriver,
@@ -133,6 +134,8 @@ export interface EcoProviderForCodexCatalog extends EcoProviderForCodexConfig {
 export interface CodexRuntimeRunDeps {
   ecoDataDir: string;
   listProviders: () => readonly EcoProviderForCodexCatalog[];
+  /** Eco personalization rules for thread developerInstructions. */
+  getGlobalUserRules?: () => string | undefined;
   /** Secret-free settings-level catalog expansion sources beyond provider defaults. */
   listCatalogRouteConfigs?: () => readonly CodexGatewayCatalogRoute[];
   listCatalogOrchestrationAgents?: () => readonly CodexGatewayCatalogRoute[];
@@ -835,15 +838,19 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   const codexHomeDir = resolveCodexHomeDir(runtimeDeps.ecoDataDir);
   const providers = [...runtimeDeps.listProviders()];
   const mcpServers = input.mcpServers ?? runtimeDeps.listGlobalMcpServers?.() ?? [];
+  const globalUserRules = runtimeDeps.getGlobalUserRules?.()?.trim() || undefined;
   const registryAppend = input.agentRegistry
     ? buildCodexMainAgentOrchestrationAppend(
         input.agentRegistry.orchestration,
         input.agentRegistry.templates,
         {
           ...(input.subagentAvailability ? { subagentAvailability: input.subagentAvailability } : {}),
+          ...(globalUserRules ? { globalUserRules } : {}),
         },
       )
-    : undefined;
+    : mergeMainAgentAppendParts({
+        ...(globalUserRules ? { globalUserRules } : {}),
+      });
   const orchestrationAppend = registryAppend?.trim() || undefined;
   const registryToolPolicy = input.agentRegistry
     ? normalizeCodexToolPolicy(input.agentRegistry.orchestration.mainAgent.tools, { allowSpawnDefault: true })

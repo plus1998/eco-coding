@@ -418,6 +418,18 @@ export function buildMainAgentStrategySummary(orchestration: EcoOrchestrationCon
   return orchestration.strategy.guidancePrompt?.trim() ?? "";
 }
 
+/** Stable join order for Claude append / Codex developerInstructions. */
+export function mergeMainAgentAppendParts(parts: {
+  globalUserRules?: string;
+  customPrompt?: string;
+  strategySummary?: string;
+}): string {
+  return [parts.globalUserRules, parts.customPrompt, parts.strategySummary]
+    .map((entry) => entry?.trim() ?? "")
+    .filter((entry) => entry.length > 0)
+    .join("\n\n");
+}
+
 export function buildMainAgentOrchestrationAppend(
   config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
@@ -429,24 +441,52 @@ export function buildMainAgentOrchestrationAppend(
 export function buildCodexMainAgentOrchestrationAppend(
   config: EcoOrchestrationConfig,
   _templates: readonly EcoAgentTemplateConfig[],
-  _options?: { subagentAvailability?: Partial<Record<string, boolean>> },
+  options?: {
+    subagentAvailability?: Partial<Record<string, boolean>>;
+    globalUserRules?: string;
+  },
 ): string {
   const customPrompt =
     config.mainAgent.systemPromptPreset === "custom_append" ? config.mainAgent.prompt.trim() : "";
-  const parts = [customPrompt, buildMainAgentStrategySummary(config)].filter(Boolean);
-  return appendV4aTeachingToPrompt(parts.join("\n\n"), isV4aTeachingEnabled(config.mainAgent));
+  const append = mergeMainAgentAppendParts({
+    globalUserRules: options?.globalUserRules,
+    customPrompt,
+    strategySummary: buildMainAgentStrategySummary(config),
+  });
+  return appendV4aTeachingToPrompt(append, isV4aTeachingEnabled(config.mainAgent));
 }
 
 export function buildMainAgentSystemPrompt(
   orchestration: EcoOrchestrationConfig,
   templates: readonly EcoAgentTemplateConfig[],
-  options: { excludeDynamicSections?: boolean } = {},
+  options: { excludeDynamicSections?: boolean; globalUserRules?: string } = {},
 ): string | Record<string, unknown> {
+  return buildClaudeCodeSystemPrompt({
+    orchestration,
+    templates,
+    ...options,
+  });
+}
+
+/** Claude `claude_code` preset + optional personalization / orchestration append. */
+export function buildClaudeCodeSystemPrompt(options: {
+  orchestration?: EcoOrchestrationConfig;
+  templates?: readonly EcoAgentTemplateConfig[];
+  excludeDynamicSections?: boolean;
+  globalUserRules?: string;
+}): string | Record<string, unknown> {
   const customInstructions =
-    orchestration.mainAgent.systemPromptPreset === "custom_append" ? orchestration.mainAgent.prompt.trim() : "";
-  const append = [customInstructions, buildMainAgentOrchestrationAppend(orchestration, templates)]
-    .filter((entry) => entry.trim())
-    .join("\n\n");
+    options.orchestration?.mainAgent.systemPromptPreset === "custom_append"
+      ? options.orchestration.mainAgent.prompt.trim()
+      : "";
+  const strategySummary = options.orchestration
+    ? buildMainAgentOrchestrationAppend(options.orchestration, options.templates ?? [])
+    : "";
+  const append = mergeMainAgentAppendParts({
+    globalUserRules: options.globalUserRules,
+    customPrompt: customInstructions,
+    strategySummary,
+  });
   return {
     type: "preset",
     preset: "claude_code",

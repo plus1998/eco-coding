@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildBuiltinPlanToolPermissionEntry,
+  buildClaudeCodeSystemPrompt,
   buildCodexMainAgentOrchestrationAppend,
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromOrchestration,
@@ -8,6 +9,7 @@ import {
   type EcoAgentTemplateConfig,
   type EcoOrchestrationConfig,
   type EcoToolPolicy,
+  mergeMainAgentAppendParts,
   resolveMainAgentAllowedTools,
   resolveMainAgentHandsOnCapability,
   resolveToolPermissionEntryForActor,
@@ -130,6 +132,45 @@ test("buildMainAgentSystemPrompt appends only UI-configured main prompts", () =>
   expect(append).not.toContain("Never treat subagents as free or unlimited");
   expect(append).not.toContain("CHILD SECRET PROMPT");
   expect(append).not.toContain("Agent(eco_researcher)");
+});
+
+test("mergeMainAgentAppendParts orders personalization before custom and strategy", () => {
+  expect(
+    mergeMainAgentAppendParts({
+      globalUserRules: "Always reply in Chinese.",
+      customPrompt: "Custom orchestration append.",
+      strategySummary: "Strategy guidance.",
+    }),
+  ).toBe("Always reply in Chinese.\n\nCustom orchestration append.\n\nStrategy guidance.");
+});
+
+test("buildMainAgentSystemPrompt prepends global user rules", () => {
+  const prompt = buildMainAgentSystemPrompt(orchestration, [researchTemplate], {
+    globalUserRules: "Always reply in Chinese.",
+  }) as Record<string, unknown>;
+  const append = String(prompt.append);
+  expect(append.startsWith("Always reply in Chinese.")).toBe(true);
+  expect(append).toContain("You coordinate research work without assuming a coding task.");
+  expect(append).toContain("Delegate only when evidence quality improves.");
+});
+
+test("buildClaudeCodeSystemPrompt injects personalization without orchestration", () => {
+  const prompt = buildClaudeCodeSystemPrompt({
+    globalUserRules: "Prefer small commits.",
+  }) as Record<string, unknown>;
+  expect(prompt).toMatchObject({
+    type: "preset",
+    preset: "claude_code",
+    append: "Prefer small commits.",
+  });
+});
+
+test("buildCodexMainAgentOrchestrationAppend prepends global user rules", () => {
+  const append = buildCodexMainAgentOrchestrationAppend(orchestration, [researchTemplate], {
+    globalUserRules: "Always reply in Chinese.",
+  });
+  expect(append.startsWith("Always reply in Chinese.")).toBe(true);
+  expect(append).toContain("You coordinate research work without assuming a coding task.");
 });
 
 test("buildMainAgentSystemPrompt keeps an unmodified claude_code preset when UI prompts are empty", () => {

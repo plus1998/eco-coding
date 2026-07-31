@@ -10,6 +10,7 @@ import {
 import { formatSubagentMissionMessage } from "./agent-mission";
 import {
   buildMainAgentSystemPrompt,
+  buildClaudeCodeSystemPrompt,
   buildToolPermissionPolicyFromOrchestration,
   createAgentDefinitionsFromOrchestration,
   resolveMainAgentAllowedTools,
@@ -775,13 +776,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ? buildMainAgentSystemPrompt(
           input.agentRegistry.orchestration,
           input.agentRegistry.templates,
-          this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {},
+          {
+            ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
+            ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
+          },
         )
-      : {
-          type: "preset",
-          preset: "claude_code",
+      : buildClaudeCodeSystemPrompt({
           ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
-        };
+          ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
+        });
     const sessionCwd = input.workspacePath.trim() || input.worktreePath;
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,

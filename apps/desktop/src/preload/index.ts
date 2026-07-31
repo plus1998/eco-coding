@@ -57,6 +57,7 @@ import {
   type GitPushRequest,
   type GitPushResult,
   type GitSettingsSnapshot,
+  type PersonalizationSettingsSnapshot,
   type GitWorkingTreeStatus,
   IPC_CHANNELS,
   type IpcChannel,
@@ -468,6 +469,14 @@ const api = {
   },
   saveGitSettings(settings: GitSettingsSnapshot): Promise<GitSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitSettingsSave, settings);
+  },
+  getPersonalizationSettings(): Promise<PersonalizationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.personalizationSettingsGet);
+  },
+  savePersonalizationSettings(
+    settings: PersonalizationSettingsSnapshot,
+  ): Promise<PersonalizationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.personalizationSettingsSave, settings);
   },
   getGitStatus(workspacePath: string): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGetStatus, workspacePath);

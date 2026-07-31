@@ -381,6 +381,12 @@ import {
   isGitSettingsSnapshot,
   normalizeGitSettingsSnapshot,
 } from "./git-settings-store";
+import {
+  createPersonalizationSettingsStore,
+  type PersonalizationSettingsStore,
+  isPersonalizationSettingsSnapshot,
+  normalizePersonalizationSettingsSnapshot,
+} from "./personalization-settings-store";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { listWorkspaceEntries, readWorkspaceFile } from "./workspace-file-browser";
@@ -431,7 +437,7 @@ import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { prepareSdkRunContextAfterCompaction } from "./sdk-run-context-compaction";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
-import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
+import { buildSdkRunInput, type BuildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
   listSdkSessionActivityLines,
   listSdkSessionCompactionActivityLines,
@@ -693,6 +699,7 @@ let projectMcpSettingsStore: ProjectMcpSettingsStore;
 let projectOrchestrationSettingsStore: ProjectOrchestrationSettingsStore;
 let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
+let personalizationSettingsStore: PersonalizationSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let centerServerClient: CenterServerDesktopClient;
@@ -1099,6 +1106,7 @@ app.whenReady().then(async () => {
   projectOrchestrationSettingsStore = await createProjectOrchestrationSettingsStore(dbPath);
   projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
+  personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
   packageScriptArgsStore = createPackageScriptArgsStore(
     path.join(app.getPath("userData"), "package-script-args.json"),
   );
@@ -1150,6 +1158,7 @@ app.whenReady().then(async () => {
   });
   configureCodexRuntimeRun({
     ecoDataDir: app.getPath("userData"),
+    getGlobalUserRules: () => personalizationSettingsStore.get().globalRules,
     listProviders: () =>
       providerStore.listProviders().map((provider) => ({
         id: provider.id,
@@ -3145,6 +3154,17 @@ function registerIpcHandlers(): void {
     return saved;
   });
 
+  registerDesktopCommand(IPC_CHANNELS.personalizationSettingsGet, async () =>
+    personalizationSettingsStore.get(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.personalizationSettingsSave, async (payload: unknown) => {
+    if (!isPersonalizationSettingsSnapshot(payload)) {
+      throw new Error("Invalid personalization settings.");
+    }
+    return personalizationSettingsStore.save(normalizePersonalizationSettingsSnapshot(payload));
+  });
+
   registerDesktopCommand(IPC_CHANNELS.gitGetStatus, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
@@ -4707,7 +4727,7 @@ async function runAskThread(
 
             return await consumeSdkRunEvents({
               events: driver.runAsk(
-                buildSdkRunInput({
+                buildDesktopSdkRunInput({
                   threadId: thread.id,
                   prompt: prepared.prompt,
                   workspacePath: workspace.path,
@@ -4844,7 +4864,7 @@ async function runPlanThread(
 
             const result = await consumeSdkRunEvents({
               events: driver.runPlan(
-                buildSdkRunInput({
+                buildDesktopSdkRunInput({
                   threadId: thread.id,
                   prompt: prepared.prompt,
                   workspacePath: workspace.path,
@@ -5046,7 +5066,7 @@ async function runCodingThreadAutonomous(
             );
             const result = await consumeSdkRunEvents({
               events: driver.run(
-                buildSdkRunInput({
+                buildDesktopSdkRunInput({
                   threadId: thread.id,
                   prompt: prepared.prompt,
                   workspacePath: workspace.path,
@@ -5238,7 +5258,7 @@ async function runCodingThreadExecution(
                   };
               const result = await consumeSdkRunEvents({
                 events: driver.runContinuation(
-                  buildSdkRunInput({
+                  buildDesktopSdkRunInput({
                     threadId,
                     prompt: prepared.prompt,
                     workspacePath: pending.workspacePath,
@@ -5881,7 +5901,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
     try {
       const built = buildDriverRoutes(proxy.routes);
       await driver.rewindSessionFiles(
-        buildSdkRunInput({
+        buildDesktopSdkRunInput({
           threadId,
           prompt: "",
           workspacePath: thread.workspacePath,
@@ -6272,6 +6292,16 @@ async function withThreadSdkDriver(
   }
 }
 
+function buildDesktopSdkRunInput(
+  input: Omit<BuildSdkRunInput, "globalUserRules">,
+): ReturnType<typeof buildSdkRunInput> {
+  const globalUserRules = personalizationSettingsStore.get().globalRules;
+  return buildSdkRunInput({
+    ...input,
+    ...(globalUserRules ? { globalUserRules } : {}),
+  });
+}
+
 function createSdkDriver(
   threadId: string,
   proxy: { apiKey: string; baseUrl: string },
@@ -6491,7 +6521,7 @@ async function prepareThreadRewindForContinue(input: {
       throw new Error("Runtime driver does not support file checkpoint rewind.");
     }
     await driver.rewindSessionFiles(
-      buildSdkRunInput({
+      buildDesktopSdkRunInput({
         threadId: input.threadId,
         prompt: "",
         workspacePath: input.workspace.path,
@@ -6916,7 +6946,7 @@ async function runThreadContinuation(
                 taskRunHooks?.hookContextExtras,
                 continuationPhase,
               );
-              const runInput = buildSdkRunInput({
+              const runInput = buildDesktopSdkRunInput({
                 threadId: thread.id,
                 prompt: prepared.prompt,
                 workspacePath: workspace.path,

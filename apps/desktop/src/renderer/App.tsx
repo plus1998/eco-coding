@@ -64,6 +64,7 @@ import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { GitSettingsPanel } from "./GitSettingsPanel";
+import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   formatPromptCacheConfigDriftHint,
@@ -95,6 +96,7 @@ import {
   type MainAgentPromptSelection,
   type ModelSettingsSnapshot,
   type GitSettingsSnapshot,
+  type PersonalizationSettingsSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
   type ProxyBridgeSettingsSnapshot,
@@ -394,6 +396,7 @@ interface RecentProject {
 
 type SettingsSectionId =
   | "general"
+  | "personalization"
   | "providers"
   | "mcp"
   | "centerServer"
@@ -433,6 +436,8 @@ const emptyGitSettings: GitSettingsSnapshot = {
   commitMessageRoleByMainAgentConfigId: {},
   commitMessageCandidateModelIdByMainAgentConfigId: {},
 };
+
+const emptyPersonalizationSettings: PersonalizationSettingsSnapshot = {};
 
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
   threadId: string;
@@ -885,6 +890,18 @@ function App() {
               "code",
             ],
           },
+          {
+            id: "personalization",
+            label: t("settings.personalization"),
+            icon: SlidersHorizontal,
+            keywords: [
+              t("settings.personalization.rules"),
+              "rules",
+              "prompt",
+              "claude",
+              "codex",
+            ],
+          },
         ],
       },
       {
@@ -1055,6 +1072,8 @@ function App() {
   >({});
   const gitStatusRequestRef = useRef(new Map<string, number>());
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
+  const [personalizationSettings, setPersonalizationSettings] =
+    useState<PersonalizationSettingsSnapshot>(emptyPersonalizationSettings);
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [storedTerminalByProject] = useState<TerminalWorkspaceState>(() => readTerminalWorkspaceState());
@@ -2668,6 +2687,7 @@ function App() {
       return;
     }
     void window.eco.getGitSettings().then(setGitSettings);
+    void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
   }, []);
 
   useEffect(() => {
@@ -5155,6 +5175,14 @@ function App() {
     setGitSettings(saved);
   }
 
+  async function savePersonalizationSettingsSnapshot(snapshot: PersonalizationSettingsSnapshot) {
+    if (!window.eco) {
+      return;
+    }
+    const saved = await window.eco.savePersonalizationSettings(snapshot);
+    setPersonalizationSettings(saved);
+  }
+
   async function saveCommitMessageModelPreference(candidateModelId: string) {
     const mainAgentConfigId = composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId;
     if (!window.eco || !mainAgentConfigId) {
@@ -7487,6 +7515,13 @@ function App() {
                   onTypographyChange={setTypographyPreferences}
                   localePreference={localePreference}
                   onLocalePreferenceChange={setLocalePreference}
+                />
+              )}
+
+              {settingsSection === "personalization" && (
+                <PersonalizationSettingsPanel
+                  settings={personalizationSettings}
+                  onSave={savePersonalizationSettingsSnapshot}
                 />
               )}
 

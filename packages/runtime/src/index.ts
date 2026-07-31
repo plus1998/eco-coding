@@ -74,6 +74,8 @@ export interface AgentRuntimeRunInput {
   resumableSubagents?: readonly ResumableSubagentRef[];
   /** Optional universal agent registry used to generate SDK AgentDefinitions dynamically. */
   agentRegistry?: EcoAgentRuntimeConfig;
+  /** Eco personalization rules injected into Claude systemPrompt.append. */
+  globalUserRules?: string;
 }
 
 export interface EcoPlanningContext {
