@@ -12825,6 +12825,11 @@ button.sidebar-core-heading {
   height: 14px;
 }
 
+.codex-composer.is-compact .composer-context-trigger.is-compact .composer-trigger-chevron {
+  width: 12px;
+  height: 12px;
+}
+
 .codex-composer.is-compact .composer-footer-config-row {
   flex: 1 1 auto;
   min-width: 0;
@@ -13231,6 +13236,11 @@ button.sidebar-core-heading {
 
 .composer-context-trigger-label.is-placeholder {
   color: var(--composer-context-placeholder);
+}
+
+.composer-trigger-chevron {
+  flex-shrink: 0;
+  opacity: 0.45;
 }
 
 .composer-meta-pill {

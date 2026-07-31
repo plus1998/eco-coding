@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -207,6 +207,7 @@ export function ComposerSkillsControl({
         <span className="composer-context-trigger-label">
           {compact ? summary : t("composer.skills.title")}
         </span>
+        <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}
     </span>

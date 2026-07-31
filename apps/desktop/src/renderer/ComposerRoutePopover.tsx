@@ -1,4 +1,4 @@
-import { LayoutTemplate, Settings2 } from "lucide-react";
+import { ChevronDown, LayoutTemplate, Settings2 } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -475,6 +475,7 @@ export function ComposerRoutePopoverTrigger({
       >
         {label}
       </span>
+      <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   );
 }
