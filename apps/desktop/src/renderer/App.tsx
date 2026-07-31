@@ -5320,9 +5320,9 @@ function App() {
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
-    setTaskDrawerOpen(true);
+    revealTaskPanel();
     await refreshReviewDiff();
-  }, [refreshReviewDiff]);
+  }, [refreshReviewDiff, revealTaskPanel]);
 
   async function handleGitPullSuccess() {
     await handleGitCommitSuccess();
