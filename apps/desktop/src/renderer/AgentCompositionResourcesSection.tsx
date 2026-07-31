@@ -35,6 +35,7 @@ interface AgentCompositionResourcesSectionProps {
   busy?: boolean | undefined;
   onRegistryChange: () => Promise<void> | void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
+  onErrorMessage?: ((message: string) => void) | undefined;
 }
 
 interface CompositionEditorSession {
@@ -49,6 +50,7 @@ export function AgentCompositionResourcesSection({
   busy = false,
   onRegistryChange,
   onSavingChange,
+  onErrorMessage,
 }: AgentCompositionResourcesSectionProps) {
   const [error, setError] = useState("");
   const [editorSession, setEditorSession] = useState<CompositionEditorSession>();
@@ -70,12 +72,16 @@ export function AgentCompositionResourcesSection({
         await Promise.resolve(onRegistryChange());
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : String(caught);
-        setError(message);
+        if (onErrorMessage) {
+          onErrorMessage(message);
+        } else {
+          setError(message);
+        }
       } finally {
         onSavingChange?.(false);
       }
     },
-    [onRegistryChange, onSavingChange, clearError],
+    [onErrorMessage, onRegistryChange, onSavingChange, clearError],
   );
 
   const mainAgentConfigs = settings.mainAgentConfigs ?? [];

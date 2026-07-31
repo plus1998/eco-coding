@@ -90,4 +90,43 @@ export class ProjectOrchestrationSettingsStore {
       })
       .filter((selection): selection is OrchestrationSelection => Boolean(selection));
   }
+
+  clearSubagentOrchestrationReference(orchestrationId: string): number {
+    const trimmedId = orchestrationId.trim();
+    if (!trimmedId) {
+      return 0;
+    }
+
+    const rows = this.db
+      .prepare(`SELECT workspace_path, selection_json FROM project_orchestration_settings`)
+      .all() as Array<{ workspace_path: string; selection_json: string }>;
+    let cleared = 0;
+    const update = this.db.prepare(
+      `UPDATE project_orchestration_settings
+       SET selection_json = ?, updated_at = ?
+       WHERE workspace_path = ?`,
+    );
+
+    for (const row of rows) {
+      let selection: OrchestrationSelection | undefined;
+      try {
+        selection = normalizeProjectOrchestrationSelection(JSON.parse(row.selection_json) as unknown);
+      } catch {
+        continue;
+      }
+      if (
+        selection?.subagents.mode !== "orchestration" ||
+        selection?.subagents.orchestrationId !== trimmedId
+      ) {
+        continue;
+      }
+      update.run(
+        JSON.stringify({ ...selection, subagents: { mode: "none" } }),
+        new Date().toISOString(),
+        row.workspace_path,
+      );
+      cleared += 1;
+    }
+    return cleared;
+  }
 }

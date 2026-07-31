@@ -122,3 +122,19 @@ test.skipIf(!sqliteAvailable)("agent template CRUD remains available", async () 
   store.deleteAgentTemplate(saved.id);
   expect(store.listAgentTemplates()).toEqual([]);
 });
+
+test.skipIf(!sqliteAvailable)("deleteSubagentOrchestration ignores selection references", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-orchestration-store-subagent-delete-"));
+  const store = await createAgentOrchestrationStore(path.join(dir, "orchestration.db"));
+  store.saveSubagentOrchestration({
+    id: "user.orchestration",
+    name: "Orchestration",
+    agents: [],
+    strategy: { kind: "autonomous" },
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    source: "user",
+  });
+
+  expect(() => store.deleteSubagentOrchestration("user.orchestration")).not.toThrow();
+  expect(store.getSubagentOrchestration("user.orchestration")).toBeUndefined();
+});

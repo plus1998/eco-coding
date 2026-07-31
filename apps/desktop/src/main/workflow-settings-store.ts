@@ -119,6 +119,24 @@ export class WorkflowSettingsStore {
     return this.get();
   }
 
+  clearDefaultSubagentOrchestrationReference(orchestrationId: string): boolean {
+    const trimmedId = orchestrationId.trim();
+    const selection = this.readDefaultOrchestrationSelection();
+    if (
+      !trimmedId ||
+      !selection ||
+      selection.subagents.mode !== "orchestration" ||
+      selection.subagents.orchestrationId !== trimmedId
+    ) {
+      return false;
+    }
+    this.save({
+      ...this.get(),
+      defaultOrchestrationSelection: { ...selection, subagents: { mode: "none" } },
+    });
+    return true;
+  }
+
   private readSessionMode(): SessionMode {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)

@@ -683,6 +683,7 @@ export function ModelsSettingsPanel({
             busy={busy}
             onRegistryChange={refreshSettings}
             onSavingChange={onSavingChange}
+            onErrorMessage={(message: string) => showProviderTestMessage("error", message)}
           />
         </>
       )}

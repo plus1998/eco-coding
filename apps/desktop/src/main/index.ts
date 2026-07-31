@@ -2943,10 +2943,9 @@ function registerIpcHandlers(): void {
     if (typeof orchestrationId !== "string" || !orchestrationId.trim()) {
       throw new Error("子代理编排 id 不能为空。");
     }
-    agentOrchestrationStore.deleteSubagentOrchestration(
-      orchestrationId,
-      getRememberedOrchestrationSelections(),
-    );
+    agentOrchestrationStore.deleteSubagentOrchestration(orchestrationId);
+    workflowSettingsStore.clearDefaultSubagentOrchestrationReference(orchestrationId);
+    projectOrchestrationSettingsStore.clearSubagentOrchestrationReference(orchestrationId);
     emitSettingsUpdated();
     return { ok: true as const };
   });

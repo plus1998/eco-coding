@@ -152,18 +152,8 @@ export class AgentOrchestrationStore {
     return normalized;
   }
 
-  deleteSubagentOrchestration(
-    id: string,
-    defaultSelection?: OrchestrationSelection | readonly OrchestrationSelection[],
-  ): void {
+  deleteSubagentOrchestration(id: string): void {
     const trimmed = id.trim();
-    if (
-      referencedBySelection(defaultSelection, (selection) =>
-        referencesSubagentOrchestration(selection, trimmed),
-      )
-    ) {
-      throw new Error(`子代理编排「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
-    }
     this.db.prepare(`DELETE FROM subagent_orchestrations WHERE id = ?`).run(trimmed);
   }
 
@@ -304,14 +294,6 @@ function referencesMainAgentPrompt(selection: OrchestrationSelection, id: string
     isOrchestrationSelection(selection) &&
     selection.mainPrompt.mode === "custom_append" &&
     selection.mainPrompt.promptId.trim() === id.trim()
-  );
-}
-
-function referencesSubagentOrchestration(selection: OrchestrationSelection, id: string): boolean {
-  return (
-    isOrchestrationSelection(selection) &&
-    selection.subagents.mode === "orchestration" &&
-    selection.subagents.orchestrationId.trim() === id.trim()
   );
 }
 
