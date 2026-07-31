@@ -225,6 +225,7 @@ import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { buildSidebarAttentionItems } from "./sidebar-attention-items";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
 import { SidebarSearchDialog } from "./SidebarSearchDialog";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
@@ -2055,6 +2056,12 @@ function App() {
   const taskPanelPlan = pendingPlan ?? approvedPlan;
   const pendingClarification = activeThread ? pendingClarificationsByThread[activeThread.id] : undefined;
   const pendingBashApproval = activeThread ? pendingBashApprovalsByThread[activeThread.id] : undefined;
+  const attentionItems = buildSidebarAttentionItems({
+    threads,
+    unreadThreadIds,
+    pendingPlansByThread,
+    pendingBashApprovalsByThread,
+  });
 
   useEffect(() => {
     pendingPlansByThreadRef.current = pendingPlansByThread;
@@ -7045,8 +7052,15 @@ function App() {
             {...(coreAvailability?.codex.reason && {
               codexUnavailableReason: coreAvailability.codex.reason,
             })}
+            attentionItems={attentionItems}
             onChange={setNewThreadCoreKind}
             onOpenSearch={() => setSidebarSearchOpen(true)}
+            onSelectAttentionThread={(threadId) => {
+              const thread = threads.find((item) => item.id === threadId);
+              if (thread) {
+                selectSearchThread(thread);
+              }
+            }}
           />
           <button type="button" className="sidebar-action" onClick={startNewChat}>
             <MessageSquarePlus size={18} />

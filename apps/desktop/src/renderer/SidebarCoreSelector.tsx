@@ -3,6 +3,8 @@ import { Check, ChevronDown, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "./i18n";
+import { SidebarAttentionButton } from "./SidebarAttentionButton";
+import type { SidebarAttentionItem } from "./sidebar-attention-items";
 
 interface SidebarCoreSelectorProps {
   coreKind: CoreKind | undefined;
@@ -10,8 +12,10 @@ interface SidebarCoreSelectorProps {
   busy: boolean;
   codexAvailable: boolean;
   codexUnavailableReason?: string;
+  attentionItems: readonly SidebarAttentionItem[];
   onChange: (coreKind: CoreKind) => void;
   onOpenSearch: () => void;
+  onSelectAttentionThread: (threadId: string) => void;
 }
 
 const coreOptions: Array<{ kind: CoreKind; label: string }> = [
@@ -31,11 +35,14 @@ export function SidebarCoreSelector({
   busy,
   codexAvailable,
   codexUnavailableReason,
+  attentionItems,
   onChange,
   onOpenSearch,
+  onSelectAttentionThread,
 }: SidebarCoreSelectorProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const editable = !locked && !busy;
 
@@ -68,7 +75,10 @@ export function SidebarCoreSelector({
           aria-label={t("sidebar.currentCore", { core: coreDisplayName(coreKind) })}
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
+          onClick={() => {
+            setAttentionOpen(false);
+            setOpen((current) => !current);
+          }}
         >
           <span>{coreDisplayName(coreKind)}</span>
           <ChevronDown size={15} aria-hidden />
@@ -77,18 +87,30 @@ export function SidebarCoreSelector({
         <div className="sidebar-core-heading">{coreDisplayName(coreKind)}</div>
       )}
 
-      <button
-        type="button"
-        className="sidebar-core-search"
-        aria-label={t("nav.search")}
-        title={t("nav.search")}
-        onClick={() => {
-          setOpen(false);
-          onOpenSearch();
-        }}
-      >
-        <Search size={17} aria-hidden />
-      </button>
+      <div className="sidebar-core-actions">
+        <button
+          type="button"
+          className="sidebar-core-search"
+          aria-label={t("nav.search")}
+          title={t("nav.search")}
+          onClick={() => {
+            setOpen(false);
+            setAttentionOpen(false);
+            onOpenSearch();
+          }}
+        >
+          <Search size={17} aria-hidden />
+        </button>
+        <SidebarAttentionButton
+          items={attentionItems}
+          open={attentionOpen}
+          onOpenChange={(next) => {
+            if (next) setOpen(false);
+            setAttentionOpen(next);
+          }}
+          onSelectThread={onSelectAttentionThread}
+        />
+      </div>
 
       {open ? (
         <div className="sidebar-core-menu" role="menu" aria-label={t("sidebar.selectCore")}>

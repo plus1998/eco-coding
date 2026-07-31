@@ -12,8 +12,10 @@ function renderSelector(locale: AppLocale, locked: boolean): string {
       locked,
       busy: false,
       codexAvailable: true,
+      attentionItems: [],
       onChange: () => undefined,
       onOpenSearch: () => undefined,
+      onSelectAttentionThread: () => undefined,
     }),
     locale,
   );
@@ -44,7 +46,10 @@ test("draft Core heading is switchable in both locales", () => {
   expect(chineseMarkup).toContain('aria-expanded="false"');
   expect(chineseMarkup).toContain("lucide-chevron-down");
   expect(chineseMarkup).toContain('aria-label="搜索会话和项目"');
+  expect(chineseMarkup).toContain('aria-label="需要关注的通知"');
+  expect(chineseMarkup).toContain("lucide-bell");
   expect(englishMarkup).toContain('aria-label="Search threads and projects"');
+  expect(englishMarkup).toContain('aria-label="Attention notifications"');
 });
 
 test("bound thread Core heading is read-only in both locales", () => {
@@ -54,5 +59,33 @@ test("bound thread Core heading is read-only in both locales", () => {
   expect(chineseMarkup).toContain("Codex");
   expect(chineseMarkup).not.toContain('aria-haspopup="menu"');
   expect(chineseMarkup).toContain('aria-label="搜索会话和项目"');
+  expect(chineseMarkup).toContain('aria-label="需要关注的通知"');
   expect(englishMarkup).toContain('aria-label="Search threads and projects"');
+  expect(englishMarkup).toContain('aria-label="Attention notifications"');
+});
+
+test("attention badge appears when items are present", () => {
+  const markup = renderLocalized(
+    createElement(SidebarCoreSelector, {
+      coreKind: "claude",
+      locked: false,
+      busy: false,
+      codexAvailable: true,
+      attentionItems: [
+        {
+          id: "completed:t-1",
+          threadId: "t-1",
+          title: "完成任务",
+          kind: "completed",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      onChange: () => undefined,
+      onOpenSearch: () => undefined,
+      onSelectAttentionThread: () => undefined,
+    }),
+    "zh-CN",
+  );
+
+  expect(markup).toContain("sidebar-core-attention-dot");
 });
